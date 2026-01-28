@@ -1,3 +1,4 @@
+import React from "react";
 import "./globals.css";
 import { IBM_Plex_Sans, IBM_Plex_Serif, IBM_Plex_Mono } from "next/font/google";
 

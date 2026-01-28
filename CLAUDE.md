@@ -164,6 +164,13 @@ sequenceDiagram
 - **写入队列机制**: 全局队列防止并发写入冲突
 - **类型安全**: 完整的 TypeScript 类型定义
 
+### AI 搜索引擎
+- **Claude Agent SDK**: Anthropic 官方 SDK，用于 AI 代理开发
+- **Exa MCP Server**: 高质量 AI 搜索引擎，通过 MCP 协议集成
+  - web_search_exa: 高质量网页搜索
+  - company_research_exa: 公司信息研究
+  - people_search_exa: 人物信息
+
 ### PWA 特性
 - **Manifest**: `app/manifest.ts` 定义应用元数据
 - **图标**: `app/icon.svg`

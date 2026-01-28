@@ -33,8 +33,8 @@ const emptyForm = {
   id: "",
   title: "",
   description: "",
-  priority: "P2" as const,
-  status: "open" as const
+  priority: "P2",
+  status: "open"
 };
 
 export default function TodoPage() {

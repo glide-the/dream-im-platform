@@ -1,0 +1,45 @@
+{
+  // TypeScript 设置
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  // 测试相关设置
+  "vitest.enable": true,
+  "vitest.commandLine": "pnpm test",
+
+  // 调试设置
+  "debug.javascript.autoAttachFilter": "disabled",
+  "debug.node.autoAttach": "off",
+  "debug.javascript.terminalOptions": {
+    "skipFiles": [
+      "<node_internals>/**",
+      "**/node_modules/**"
+    ]
+  },
+
+  // 编辑器设置
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "editor.formatOnSave": true,
+
+  // 文件关联
+  "files.associations": {
+    "*.css": "tailwindcss"
+  },
+
+  // 排除文件
+  "files.exclude": {
+    "**/.next": true,
+    "**/node_modules": true,
+    "**/.git": true,
+    "**/tsconfig.tsbuildinfo": true
+  },
+
+  // 搜索排除
+  "search.exclude": {
+    "**/.next": true,
+    "**/node_modules": true,
+    "**/pnpm-lock.yaml": true
+  }
+}

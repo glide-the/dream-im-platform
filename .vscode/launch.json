@@ -1,0 +1,113 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "🐛 调试当前测试文件（推荐）",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--inspect-brk=9229",
+        "--experimental-vm-modules",
+        "./node_modules/vitest/vitest.mjs",
+        "run",
+        "${relativeFile}",
+        "--no-file-parallelism"
+      ],
+      "port": 9229,
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**"
+      ],
+      "env": {
+        "NODE_ENV": "test",
+        "NODE_OPTIONS": ""
+      },
+      "smartStep": true,
+      "sourceMaps": true,
+      "autoAttachChildProcesses": false
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "🧪 调试单个测试用例",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--inspect-brk",
+        "--experimental-vm-modules",
+        "./node_modules/vitest/vitest.mjs",
+        "run",
+        "${relativeFile}",
+        "--no-file-parallelism",
+        "-t",
+        "${selectedText}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**"
+      ],
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "smartStep": true,
+      "sourceMaps": true
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "📦 调试所有测试",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--inspect-brk",
+        "--experimental-vm-modules",
+        "./node_modules/vitest/vitest.mjs",
+        "run",
+        "--no-file-parallelism"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**"
+      ],
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "smartStep": true,
+      "sourceMaps": true
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "👀 调试测试（监听模式）",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--inspect-brk",
+        "--experimental-vm-modules",
+        "./node_modules/vitest/vitest.mjs",
+        "watch",
+        "${relativeFile}",
+        "--no-file-parallelism"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**"
+      ],
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "smartStep": true,
+      "sourceMaps": true
+    }
+  ]
+}

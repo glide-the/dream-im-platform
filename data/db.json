@@ -1,6 +1,136 @@
 {
   "customers": [
     {
+      "id": "cus_mkxqxa5j_bev8uza",
+      "name": "北京智谱华章科技股份有限公司",
+      "company": "北京智谱华章科技股份有限公司",
+      "title": "人工智能大模型研发与服务商",
+      "phones": [
+        "010-82152508"
+      ],
+      "emails": [],
+      "wechat": "",
+      "address": "北京市海淀区中关村东路1号院9号楼10层整层",
+      "tags": [
+        "AI独角兽",
+        "上市公司",
+        "高新技术企业",
+        "清华系",
+        "大模型",
+        "已上市港交所2513",
+        "全球大模型第一股"
+      ],
+      "profile_markdown": "## 公司概况\n\n**智谱华章**（又称**智谱AI**、**Z.ai**）是中国领先的认知智能大模型研发企业，被誉为\"中国版OpenAI\"。公司成立于**2019年6月11日**，源自**清华大学计算机系知识工程实验室（KEG Lab）**的技术成果转化，专注于研发通用人工智能（AGI）基座模型。\n\n**2026年1月**，智谱在港交所成功上市（股票代码：**2513**），成为**\"全球大模型第一股\"**，上市首日涨幅达13.17%，总市值约**578.9亿港元**。\n\n## 核心技术与产品\n\n### 技术架构\n- **GLM系列大模型**：原创的GLM（General Language Model）预训练架构，突破传统GPT、BERT技术路径\n- **GLM-4.7**：新一代旗舰模型，在Artificial Analysis和LM Arena榜单上开源模型全球第一\n- **GLM-4.6V**：全球1000亿级效果最佳的开源视觉推理模型\n- **AutoGLM**：自主规划并执行复杂多步骤任务的智能体模型\n\n### 核心产品\n1. **智谱清言**：生成式AI助手，拥有超过**2500万用户**\n2. **MaaS开放平台**（bigmodel.cn）：服务**70万企业和开发者用户**\n3. **CodeGeeX**：智能编程助手\n4. **CogVLM**：多模态视觉语言模型\n\n## 市场地位与融资\n\n**估值与融资**：\n- 完成至少**12轮融资**，投资方包括**蚂蚁、阿里、腾讯、美团、小米、金山、红杉、高瓴**等顶级机构\n- 上市前估值超过**200亿人民币**\n- **2024年12月**完成30亿元新融资\n\n**市场表现**：\n- 开源模型累计获超**15万GitHub星标**，全球下载超过**3000万次**\n- 月访问量**182万次**，全球排名#245,780\n- 与**2000+生态伙伴**合作，覆盖金融、制造、汽车等20+行业\n\n## 创始团队（核心人物）\n\n**张鹏** - 创始人兼CEO\n- 清华大学计算机系博士，第十四届北京市政协委员\n- 清华大学知识工程实验室（KEG Lab）核心成员\n- 研究领域：知识图谱、大规模预训练模型\n- 领导开发了GLM系列大模型、AMiner等项目\n\n**唐杰** - 发起人/灵魂人物  \n- 清华大学教授，知识工程实验室负责人\n\n**刘德兵** - 董事长\n- 负责公司战略及整体管理\n\n## 业务需求与合作方向\n\n### 核心需求领域\n1. **算力基础设施**：大规模模型训练需要海量算力支持\n2. **行业应用落地**：金融、医疗、教育、制造等垂直领域深度合作\n3. **云服务合作**：端侧部署、云服务、边缘计算等技术合作\n4. **硬件适配**：国产化芯片、AI加速器等硬件适配\n5. **国际合作**：海外市场拓展、技术标准制定\n\n### 近期重要动态\n- **2025年1月**：被美国商务部列入实体清单（公司表示掌握全链路核心技术，不影响业务）\n- **2024年**：与**英特尔**、**三星**等国际巨头达成战略合作\n- **2025年8月**：当选中关村自主大模型产业联盟理事长单位\n\n### 竞争优势\n- **全链路技术自主可控**：从底层算法到预训练框架完全自主研发\n- **开源生态领先**：GitHub星标数和下载量全球领先\n- **商业化成熟**：拥有国内最成熟的MaaS商业模式\n- **清华学术基因**：深厚的产学研结合优势",
+      "created_at": "2026-01-28T08:11:03.463Z",
+      "updated_at": "2026-01-28T08:11:03.463Z",
+      "source": "ai_search",
+      "last_verified_at": "2026-01-28T08:11:03.463Z"
+    },
+    {
+      "id": "cus_mkxqg7w3_5y534s5",
+      "name": "董慧智",
+      "company": "零克云",
+      "title": "创始人兼CEO",
+      "phones": [],
+      "emails": [],
+      "wechat": "",
+      "address": "",
+      "tags": [
+        "AI应用托管",
+        "智能体经济",
+        "创作者经济",
+        "创业公司",
+        "科技创业"
+      ],
+      "profile_markdown": "## 背景与愿景\n\n董慧智是零克云(LingkeCloud)的创始人兼CEO,拥有深厚的技术前瞻性和战略视野。他提出当前正处于从\"移动互联网\"向\"智能体互联网\"演进的关键节点,并预言智能体将驱动生产力与商业模式的双重革命,到2030年数字经济规模有望突破百万亿美元,占GDP比重达77%。\n\n## 近期动态与产品发布\n\n2026年1月17日,董慧智在北京正式发布零克云AI应用托管平台。该平台以\"一键部署AI应用,0门槛传送AI员工\"为核心,致力于成为Vibe Coding创作者经济的关键基础设施。他强调:\"零克云的使命是成为智能体经济时代的'托管引擎',打造一个人人能创建AI应用的基础设施,让创意不再受困于部署与变现的高墙。\"\n\n## 核心产品特点\n\n零克云平台构建了\"双0门槛\"解决方案:\n- **部署0门槛**: 智能部署引擎无缝支持GitHub、Cursor、HuggingFace等主流平台,实现分钟级应用上线与全自动化部署\n- **操作0门槛**: 用户可像使用日常软件一样,通过搜索与点击轻松调用全球AI应用成果\n\n## 生态计划\n\n发布会上同步启动了两项关键计划:\n1. **OPC全栈扶持计划**: 聚焦\"一人公司\"模式的早期创作者,提供启动算力、产品指导到市场切入的全链路赋能\n2. **推广者(FDE)合作计划**: 联结全国具备行业知识的合作伙伴网络,将AI应用对接到金融、制造、医疗、跨境等垂直行业\n\n## 市场洞察\n\n董慧智指出当前AI项目失败率高达67%,85%的企业面临人才短缺。零克云通过平台化服务,旨在解决Vibe Coding模式下的\"工程鸿沟\"问题,帮助开发者跨越从创意到价值的最后一公里。",
+      "created_at": "2026-01-28T07:57:47.379Z",
+      "updated_at": "2026-01-28T07:57:47.379Z",
+      "source": "ai_search",
+      "last_verified_at": "2026-01-28T07:57:47.379Z"
+    },
+    {
+      "id": "cus_mkxqfss9_rse09fk",
+      "name": "董慧智",
+      "company": "零克云",
+      "title": "创始人兼CEO",
+      "phones": [],
+      "emails": [],
+      "wechat": "",
+      "address": "",
+      "tags": [
+        "AI应用托管",
+        "智能体经济",
+        "创作者经济",
+        "创业公司",
+        "科技创业"
+      ],
+      "profile_markdown": "## 背景与愿景\n\n董慧智是零克云(LingkeCloud)的创始人兼CEO,拥有深厚的技术前瞻性和战略视野。他提出当前正处于从\"移动互联网\"向\"智能体互联网\"演进的关键节点,并预言智能体将驱动生产力与商业模式的双重革命,到2030年数字经济规模有望突破百万亿美元,占GDP比重达77%。\n\n## 近期动态与产品发布\n\n2026年1月17日,董慧智在北京正式发布零克云AI应用托管平台。该平台以\"一键部署AI应用,0门槛传送AI员工\"为核心,致力于成为Vibe Coding创作者经济的关键基础设施。他强调:\"零克云的使命是成为智能体经济时代的'托管引擎',打造一个人人能创建AI应用的基础设施,让创意不再受困于部署与变现的高墙。\"\n\n## 核心产品特点\n\n零克云平台构建了\"双0门槛\"解决方案:\n- **部署0门槛**: 智能部署引擎无缝支持GitHub、Cursor、HuggingFace等主流平台,实现分钟级应用上线与全自动化部署\n- **操作0门槛**: 用户可像使用日常软件一样,通过搜索与点击轻松调用全球AI应用成果\n\n## 生态计划\n\n发布会上同步启动了两项关键计划:\n1. **OPC全栈扶持计划**: 聚焦\"一人公司\"模式的早期创作者,提供启动算力、产品指导到市场切入的全链路赋能\n2. **推广者(FDE)合作计划**: 联结全国具备行业知识的合作伙伴网络,将AI应用对接到金融、制造、医疗、跨境等垂直行业\n\n## 市场洞察\n\n董慧智指出当前AI项目失败率高达67%,85%的企业面临人才短缺。零克云通过平台化服务,旨在解决Vibe Coding模式下的\"工程鸿沟\"问题,帮助开发者跨越从创意到价值的最后一公里。",
+      "created_at": "2026-01-28T07:57:27.801Z",
+      "updated_at": "2026-01-28T07:57:27.801Z",
+      "source": "ai_search",
+      "last_verified_at": "2026-01-28T07:57:27.801Z"
+    },
+    {
+      "id": "cus_mkxmwbm9_kd7hpka",
+      "name": "董慧智",
+      "company": "零克云",
+      "title": "渠道负责人",
+      "phones": [
+        "+86 1382****4142"
+      ],
+      "emails": [],
+      "wechat": "",
+      "address": "",
+      "tags": [
+        "新线索"
+      ],
+      "profile_markdown": "- 公司正在推进渠道合作，适合切入联合方案。\n- 建议补充决策链与联系方式，确认需求优先级。",
+      "created_at": "2026-01-28T06:18:20.240Z",
+      "updated_at": "2026-01-28T06:18:20.240Z",
+      "source": "ai_search",
+      "last_verified_at": "2026-01-28T06:18:20.240Z"
+    },
+    {
+      "id": "cus_mkwpnpby_90ewjtq",
+      "name": "发现力量",
+      "company": "",
+      "title": "项目经理",
+      "phones": [
+        "+86 1317****4347"
+      ],
+      "emails": [],
+      "wechat": "",
+      "address": "",
+      "tags": [
+        "新线索"
+      ],
+      "profile_markdown": "- 公司正在推进渠道合作，适合切入联合方案。\n- 建议补充决策链与联系方式，确认需求优先级。",
+      "created_at": "2026-01-27T14:47:50.782Z",
+      "updated_at": "2026-01-27T14:47:50.782Z",
+      "source": "ai_search",
+      "last_verified_at": "2026-01-27T14:47:50.782Z"
+    },
+    {
+      "id": "cus_mkwivq8d_q8pmuwf",
+      "name": "王五",
+      "company": "阿里巴巴",
+      "title": "销售总监",
+      "phones": [
+        "+86 1386****7476"
+      ],
+      "emails": [],
+      "wechat": "",
+      "address": "",
+      "tags": [
+        "重点跟进"
+      ],
+      "profile_markdown": "- 公开活动中提到关注数字化销售流程。\n- 建议补充决策链与联系方式，确认需求优先级。",
+      "created_at": "2026-01-27T11:38:07.885Z",
+      "updated_at": "2026-01-27T11:38:07.885Z",
+      "source": "ai_search",
+      "last_verified_at": "2026-01-27T11:38:07.885Z"
+    },
+    {
       "id": "cus_mkwd5p1k_dd2ewna",
       "name": "占冰强",
       "company": "零克云",
@@ -112,6 +242,954 @@
     }
   ],
   "conversations": [
+    {
+      "id": "conv_mkxqubwc_g3o2hfd",
+      "title": "【北京智谱华章科技股份有限公司】北京智谱华章科技股份有限公司 客户信息检索",
+      "status": "confirmed",
+      "created_at": "2026-01-28T08:08:45.756Z",
+      "updated_at": "2026-01-28T08:11:03.463Z",
+      "messages": [
+        {
+          "id": "msg_mkxqubwq_39by3qj",
+          "role": "user",
+          "content": "智谱华章",
+          "created_at": "2026-01-28T08:08:45.756Z"
+        },
+        {
+          "id": "msg_mkxqubwq_69f8d4f",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-28T08:08:45.756Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "北京智谱华章科技股份有限公司",
+            "company": "北京智谱华章科技股份有限公司",
+            "title": "人工智能大模型研发与服务商",
+            "phones": [
+              "010-82152508"
+            ],
+            "emails": [],
+            "wechat": "",
+            "address": "北京市海淀区中关村东路1号院9号楼10层整层",
+            "tags": [
+              "AI独角兽",
+              "上市公司",
+              "高新技术企业",
+              "清华系",
+              "大模型",
+              "已上市港交所2513",
+              "全球大模型第一股"
+            ]
+          },
+          "profile_markdown": "## 公司概况\n\n**智谱华章**（又称**智谱AI**、**Z.ai**）是中国领先的认知智能大模型研发企业，被誉为\"中国版OpenAI\"。公司成立于**2019年6月11日**，源自**清华大学计算机系知识工程实验室（KEG Lab）**的技术成果转化，专注于研发通用人工智能（AGI）基座模型。\n\n**2026年1月**，智谱在港交所成功上市（股票代码：**2513**），成为**\"全球大模型第一股\"**，上市首日涨幅达13.17%，总市值约**578.9亿港元**。\n\n## 核心技术与产品\n\n### 技术架构\n- **GLM系列大模型**：原创的GLM（General Language Model）预训练架构，突破传统GPT、BERT技术路径\n- **GLM-4.7**：新一代旗舰模型，在Artificial Analysis和LM Arena榜单上开源模型全球第一\n- **GLM-4.6V**：全球1000亿级效果最佳的开源视觉推理模型\n- **AutoGLM**：自主规划并执行复杂多步骤任务的智能体模型\n\n### 核心产品\n1. **智谱清言**：生成式AI助手，拥有超过**2500万用户**\n2. **MaaS开放平台**（bigmodel.cn）：服务**70万企业和开发者用户**\n3. **CodeGeeX**：智能编程助手\n4. **CogVLM**：多模态视觉语言模型\n\n## 市场地位与融资\n\n**估值与融资**：\n- 完成至少**12轮融资**，投资方包括**蚂蚁、阿里、腾讯、美团、小米、金山、红杉、高瓴**等顶级机构\n- 上市前估值超过**200亿人民币**\n- **2024年12月**完成30亿元新融资\n\n**市场表现**：\n- 开源模型累计获超**15万GitHub星标**，全球下载超过**3000万次**\n- 月访问量**182万次**，全球排名#245,780\n- 与**2000+生态伙伴**合作，覆盖金融、制造、汽车等20+行业\n\n## 创始团队（核心人物）\n\n**张鹏** - 创始人兼CEO\n- 清华大学计算机系博士，第十四届北京市政协委员\n- 清华大学知识工程实验室（KEG Lab）核心成员\n- 研究领域：知识图谱、大规模预训练模型\n- 领导开发了GLM系列大模型、AMiner等项目\n\n**唐杰** - 发起人/灵魂人物  \n- 清华大学教授，知识工程实验室负责人\n\n**刘德兵** - 董事长\n- 负责公司战略及整体管理\n\n## 业务需求与合作方向\n\n### 核心需求领域\n1. **算力基础设施**：大规模模型训练需要海量算力支持\n2. **行业应用落地**：金融、医疗、教育、制造等垂直领域深度合作\n3. **云服务合作**：端侧部署、云服务、边缘计算等技术合作\n4. **硬件适配**：国产化芯片、AI加速器等硬件适配\n5. **国际合作**：海外市场拓展、技术标准制定\n\n### 近期重要动态\n- **2025年1月**：被美国商务部列入实体清单（公司表示掌握全链路核心技术，不影响业务）\n- **2024年**：与**英特尔**、**三星**等国际巨头达成战略合作\n- **2025年8月**：当选中关村自主大模型产业联盟理事长单位\n\n### 竞争优势\n- **全链路技术自主可控**：从底层算法到预训练框架完全自主研发\n- **开源生态领先**：GitHub星标数和下载量全球领先\n- **商业化成熟**：拥有国内最成熟的MaaS商业模式\n- **清华学术基因**：深厚的产学研结合优势",
+          "confidence": 0.95,
+          "sources": [
+            {
+              "label": "智谱官网",
+              "url": "https://www.zhipuai.cn/zh"
+            },
+            {
+              "label": "维基百科",
+              "url": "https://zh.wikipedia.org/zh-hans/%E6%99%BA%E8%B0%B1"
+            },
+            {
+              "label": "南方+新闻报道",
+              "url": "https://www.nfnews.com/content/ky9vZqlK3G.html"
+            },
+            {
+              "label": "企业信息查询",
+              "url": "https://www.qishucang.com/company/1njcja"
+            },
+            {
+              "label": "百度百科-张鹏",
+              "url": "https://baike.baidu.com/item/%E5%BC%A0%E9%B9%8F/63816341"
+            }
+          ]
+        }
+      },
+      "linked_customer_id": "cus_mkxqxa5j_bev8uza"
+    },
+    {
+      "id": "conv_mkxqpns4_urmxh1l",
+      "title": "【未知公司】智谱华章 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-28T08:05:07.875Z",
+      "updated_at": "2026-01-28T08:05:07.875Z",
+      "messages": [
+        {
+          "id": "msg_mkxqpns5_05vdtme",
+          "role": "user",
+          "content": "智谱华章",
+          "created_at": "2026-01-28T08:05:07.875Z"
+        },
+        {
+          "id": "msg_mkxqpns5_tm17uxo",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-28T08:05:07.875Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "智谱华章",
+            "company": "",
+            "title": "项目经理",
+            "phones": [
+              "+86 1335****5985"
+            ],
+            "tags": [
+              "高潜"
+            ]
+          },
+          "profile_markdown": "- 近期完成新一轮融资，扩建销售团队。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkxqm2pm_90am2o0",
+      "title": "【未知公司】帮我查下发现力量这家公司 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-28T08:02:20.601Z",
+      "updated_at": "2026-01-28T08:02:20.601Z",
+      "messages": [
+        {
+          "id": "msg_mkxqm2rg_kttllr5",
+          "role": "user",
+          "content": "帮我查下发现力量这家公司",
+          "created_at": "2026-01-28T08:02:20.601Z"
+        },
+        {
+          "id": "msg_mkxqm2rg_83585sd",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-28T08:02:20.601Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "帮我查下发现力量这家公司",
+            "company": "",
+            "title": "业务拓展经理",
+            "phones": [
+              "+86 1379****2069"
+            ],
+            "tags": [
+              "已联系"
+            ]
+          },
+          "profile_markdown": "- 近期在招聘销售岗位，可能需要效率工具。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkxqegx7_l75hkhj",
+      "title": "【零克云】董慧智 客户信息检索",
+      "status": "confirmed",
+      "created_at": "2026-01-28T07:56:25.771Z",
+      "updated_at": "2026-01-28T07:57:47.379Z",
+      "messages": [
+        {
+          "id": "msg_mkxqegxr_ffgweun",
+          "role": "user",
+          "content": "零克云 董慧智",
+          "created_at": "2026-01-28T07:56:25.771Z"
+        },
+        {
+          "id": "msg_mkxqegxr_hbiap70",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-28T07:56:25.771Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "董慧智",
+            "company": "零克云",
+            "title": "创始人兼CEO",
+            "phones": [],
+            "emails": [],
+            "wechat": "",
+            "address": "",
+            "tags": [
+              "AI应用托管",
+              "智能体经济",
+              "创作者经济",
+              "创业公司",
+              "科技创业"
+            ]
+          },
+          "profile_markdown": "## 背景与愿景\n\n董慧智是零克云(LingkeCloud)的创始人兼CEO,拥有深厚的技术前瞻性和战略视野。他提出当前正处于从\"移动互联网\"向\"智能体互联网\"演进的关键节点,并预言智能体将驱动生产力与商业模式的双重革命,到2030年数字经济规模有望突破百万亿美元,占GDP比重达77%。\n\n## 近期动态与产品发布\n\n2026年1月17日,董慧智在北京正式发布零克云AI应用托管平台。该平台以\"一键部署AI应用,0门槛传送AI员工\"为核心,致力于成为Vibe Coding创作者经济的关键基础设施。他强调:\"零克云的使命是成为智能体经济时代的'托管引擎',打造一个人人能创建AI应用的基础设施,让创意不再受困于部署与变现的高墙。\"\n\n## 核心产品特点\n\n零克云平台构建了\"双0门槛\"解决方案:\n- **部署0门槛**: 智能部署引擎无缝支持GitHub、Cursor、HuggingFace等主流平台,实现分钟级应用上线与全自动化部署\n- **操作0门槛**: 用户可像使用日常软件一样,通过搜索与点击轻松调用全球AI应用成果\n\n## 生态计划\n\n发布会上同步启动了两项关键计划:\n1. **OPC全栈扶持计划**: 聚焦\"一人公司\"模式的早期创作者,提供启动算力、产品指导到市场切入的全链路赋能\n2. **推广者(FDE)合作计划**: 联结全国具备行业知识的合作伙伴网络,将AI应用对接到金融、制造、医疗、跨境等垂直行业\n\n## 市场洞察\n\n董慧智指出当前AI项目失败率高达67%,85%的企业面临人才短缺。零克云通过平台化服务,旨在解决Vibe Coding模式下的\"工程鸿沟\"问题,帮助开发者跨越从创意到价值的最后一公里。",
+          "confidence": 0.9,
+          "sources": [
+            {
+              "label": "中国日报网 - 零克云AI应用托管平台发布会报道",
+              "url": "https://cn.chinadaily.com.cn/a/202601/19/WS696ddaf6a310942cc499bd5b.html"
+            },
+            {
+              "label": "新华网 - 零克云发布AI托管平台报道",
+              "url": "http://www.news.cn/enterprise/20260120/0af66f1cdcbc4e649320d2268489a52b/c.html"
+            },
+            {
+              "label": "零克云官网",
+              "url": "https://gpulink.cc/"
+            }
+          ]
+        }
+      },
+      "linked_customer_id": "cus_mkxqg7w3_5y534s5"
+    },
+    {
+      "id": "conv_mkxp3r99_pt7m3wq",
+      "title": "【零克云】董慧智 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-28T07:20:06.333Z",
+      "updated_at": "2026-01-28T07:20:06.333Z",
+      "messages": [
+        {
+          "id": "msg_mkxp3r9r_7lyziov",
+          "role": "user",
+          "content": "零克云 董慧智",
+          "created_at": "2026-01-28T07:20:06.333Z"
+        },
+        {
+          "id": "msg_mkxp3r9r_yijir0s",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-28T07:20:06.333Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "董慧智",
+            "company": "零克云",
+            "title": "渠道负责人",
+            "phones": [
+              "+86 1382****4142"
+            ],
+            "tags": [
+              "新线索"
+            ]
+          },
+          "profile_markdown": "- 公司正在推进渠道合作，适合切入联合方案。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkxmuw5l_9dkaqsl",
+      "title": "【零克云】董慧智 客户信息检索",
+      "status": "confirmed",
+      "created_at": "2026-01-28T06:17:13.545Z",
+      "updated_at": "2026-01-28T06:18:20.240Z",
+      "messages": [
+        {
+          "id": "msg_mkxmuw7i_wob1pc0",
+          "role": "user",
+          "content": "零克云 董慧智",
+          "created_at": "2026-01-28T06:17:13.545Z"
+        },
+        {
+          "id": "msg_mkxmuw7i_n6ay4xq",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-28T06:17:13.545Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [
+        "cus_mkwd5p1k_dd2ewna"
+      ],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "董慧智",
+            "company": "零克云",
+            "title": "渠道负责人",
+            "phones": [
+              "+86 1382****4142"
+            ],
+            "tags": [
+              "新线索"
+            ]
+          },
+          "profile_markdown": "- 公司正在推进渠道合作，适合切入联合方案。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      },
+      "linked_customer_id": "cus_mkxmwbm9_kd7hpka"
+    },
+    {
+      "id": "conv_mkxfblsp_3hyaz89",
+      "title": "【科邦实验室】牛斌 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-28T02:46:16.345Z",
+      "updated_at": "2026-01-28T02:46:16.345Z",
+      "messages": [
+        {
+          "id": "msg_mkxfblst_xr6hr4k",
+          "role": "user",
+          "content": "科邦实验室 牛斌",
+          "created_at": "2026-01-28T02:46:16.345Z"
+        },
+        {
+          "id": "msg_mkxfblst_okiyzr5",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-28T02:46:16.345Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [
+        "cus_test123"
+      ],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "牛斌",
+            "company": "科邦实验室",
+            "title": "采购负责人",
+            "phones": [
+              "+86 1330****6520"
+            ],
+            "tags": [
+              "高潜"
+            ]
+          },
+          "profile_markdown": "- 近期完成新一轮融资，扩建销售团队。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkxfaaqx_0xkzph0",
+      "title": "【零克云】董慧智 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-28T02:45:15.368Z",
+      "updated_at": "2026-01-28T02:45:15.368Z",
+      "messages": [
+        {
+          "id": "msg_mkxfaas5_5lcacdi",
+          "role": "user",
+          "content": "零克云 董慧智",
+          "created_at": "2026-01-28T02:45:15.368Z"
+        },
+        {
+          "id": "msg_mkxfaas5_uodowev",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-28T02:45:15.368Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "董慧智",
+            "company": "零克云",
+            "title": "渠道负责人",
+            "phones": [
+              "+86 1382****4142"
+            ],
+            "tags": [
+              "新线索"
+            ]
+          },
+          "profile_markdown": "- 公司正在推进渠道合作，适合切入联合方案。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkwpqnk7_w7pmq9s",
+      "title": "【@占冰强(零克云)】公司业务 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-27T14:50:08.455Z",
+      "updated_at": "2026-01-27T14:50:08.455Z",
+      "messages": [
+        {
+          "id": "msg_mkwpqnlu_ryvcow9",
+          "role": "user",
+          "content": "@占冰强(零克云)  公司业务",
+          "created_at": "2026-01-27T14:50:08.455Z"
+        },
+        {
+          "id": "msg_mkwpqnlu_zvqbj69",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-27T14:50:08.455Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [
+        "cus_mkwd5p1k_dd2ewna"
+      ],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "公司业务",
+            "company": "@占冰强(零克云)",
+            "title": "销售总监",
+            "phones": [
+              "+86 1374****3234"
+            ],
+            "tags": [
+              "已联系"
+            ]
+          },
+          "profile_markdown": "- 近期在招聘销售岗位，可能需要效率工具。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkwpnfnr_8r7cy5r",
+      "title": "【未知公司】发现力量 客户信息检索",
+      "status": "confirmed",
+      "created_at": "2026-01-27T14:47:38.247Z",
+      "updated_at": "2026-01-27T14:47:55.342Z",
+      "messages": [
+        {
+          "id": "msg_mkwpnfnx_8dqv8os",
+          "role": "user",
+          "content": "发现力量",
+          "created_at": "2026-01-27T14:47:38.247Z"
+        },
+        {
+          "id": "msg_mkwpnfnx_r9hd7p6",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-27T14:47:38.247Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "发现力量",
+            "company": "",
+            "title": "项目经理",
+            "phones": [
+              "+86 1317****4347"
+            ],
+            "tags": [
+              "新线索"
+            ]
+          },
+          "profile_markdown": "- 公司正在推进渠道合作，适合切入联合方案。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      },
+      "linked_customer_id": "cus_mkwpnsum_2cghd8y"
+    },
+    {
+      "id": "conv_mkwjrq9s_dhg1eci",
+      "title": "【零克云（零氪云（上海）科技有限公司）】占冰强 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-27T12:03:00.928Z",
+      "updated_at": "2026-01-27T12:03:00.928Z",
+      "messages": [
+        {
+          "id": "msg_mkwjrq9v_hdh5xv4",
+          "role": "user",
+          "content": "零克云 占冰强",
+          "created_at": "2026-01-27T12:03:00.928Z"
+        },
+        {
+          "id": "msg_mkwjrq9v_lw3z5im",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-27T12:03:00.928Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "占冰强",
+            "company": "零克云（零氪云（上海）科技有限公司）",
+            "title": "联合创始人兼COO",
+            "phones": [],
+            "emails": [],
+            "wechat": "",
+            "address": "上海市普陀区云岭西路600号",
+            "tags": [
+              "AI创业者",
+              "开发者社区领袖",
+              "微软MVP",
+              "AI布道者",
+              "AIGC生态推动者",
+              "重点客户"
+            ]
+          },
+          "profile_markdown": "# 占冰强 - 客户详细资料\n\n## 核心身份与职务\n\n**占冰强**是国内AI领域具有重要影响力的开发者社区领袖和创业者，现任**零克云联合创始人兼COO**。他同时拥有多重身份：\n\n- **AIGCLINK发起人** - 创建了覆盖全球近15万AI核心圈从业者的开发者社区\n- **微软MVP**（微软最有价值专家）\n- **MCP中国开发者联盟发起人**\n- **中国信通院金融领域大模型评估标准制定组专家**\n- **中国合作贸易企业协会出海分会副会长**\n- **中关村超互联联盟副秘书长**\n\n## 个人背景与经历\n\n### 技术背景\n- 拥有**5年算法研发经验**，深度学习领域早期从业者（2013年之前从事算法工作）\n- 2021年底ChatGPT发布后，准确判断AI大爆发时间将**提前十年**，决定All in AI领域\n\n### 职业经历\n- **2023年初**：创建AIGCLINK社区\n- **2023年5月**：曾担任行行AI合伙人\n- 早期曾在顺顺智慧担任产品运营总经理\n- 现任零克云联合创始人兼COO\n\n## AIGCLINK社区成就\n\n占冰强于2023年初创建的**AIGCLINK**已发展成为国内最具影响力的AI开发者社区之一：\n\n- **用户规模**：覆盖全球近**15万**AI核心圈从业者\n- **解决方案**：三年间输出近**500个**行业AI解决方案\n- **发展阶段使命**：\n  - 第一阶段（2023-2026）：推动国内AI行业渗透率从不足10%提升至30%以上\n  - 第二阶段（2026下半年-2029）：推动1000个AI超级个体/OPC实现商业化\"上岸\"\n\n### 社区影响力\n社区成员目前分布在模型公司、智能体公司、国央企、上市公司的AIGC核心岗位上，已成为连接AI开发者与产业需求的关键桥梁。\n\n## 创业项目：零克云\n\n### 公司基本信息\n- **公司全称**：零氪云（上海）科技有限公司\n- **成立时间**：2024年6月26日\n- **注册资本**：1000万元人民币\n- **注册地址**：上海市普陀区云岭西路600号\n- **法定代表人**：陈毅鸿\n\n### 核心业务\n零克云定位为\"**AI全要素托管平台**\"，主要提供：\n\n1. **GPU算力租赁** - 提供计算资源\n2. **AI应用托管** - 智能部署GitHub与本地项目，2分钟快速部署\n3. **模型市场** - 海量大模型统一API，按Token计费\n4. **MCP Server一键托管** - 快速部署服务\n\n### 2026年1月重大发布\n零克云于**2026年1月17日在北京**正式发布**AI应用托管平台**，主打：\n\n- **\"双0门槛\"**：部署0门槛、操作0门槛\n- **核心定位**：\"一键部署AI应用，0门槛传送AI员工\"\n- **目标**：破解AI应用落地的\"工程鸿沟\"，构建万亿创作者经济底座\n\n### 创始团队结构\n- **创始人兼CEO**：董慧智（曾深度参与人工智能产业规划）\n- **联合创始人兼COO**：占冰强（连接前沿开发者生态）\n\n团队特点：将\"产业视野\"（董慧智）与\"开发者基因\"（占冰强）相结合，形成战略与执行的双重优势。\n\n## 核心观点与理念\n\n### 1. 关于Vibe Coding\n- 认为**Vibe Coding**是让所有人能够创造软件的方式，不需要编程基础\n- 自己公司CTO写的代码**已经没有一行是人工写的**，整体AI写代码渗透率达60%，目标提升至80%\n\n### 2. 关于OPC（One Person Company，一人公司）\n- 预测2023-2030年将诞生**300万AI超级个体/OPC**\n- OPC群体特征：一个人带领一堆AI员工，完成以前需要几百人的工作\n- 类似于互联网时代的\"站长\"概念，会在AI史上留下重要一笔\n\n### 3. 关于AI发展趋势\n- **2027年临界点**：AI将从\"合作伙伴\"变成\"Master\"，超越行业最专业的人\n- **2030年预测**：AI对人类生产的接管比例将从不足20%提升到80%\n- **进化速度**：AI进化速度是互联网时代的10-15倍，并且每年还会加速1.1-1.2倍\n\n### 4. 核心哲学：利他主义\n占冰强的个人信条是\"**一万件利他的事情**\"，这源于他2019-2022年经历的至暗时刻。一位师傅告诉他\"利他能让你走出这段路\"，他坚持实践并成功走出迷茫。\n\n### 4字准则\n- **利他**：做事情的出发点必须是利他的\n- **务实**：从实实在在的需求出发，每一步都是为了解决问题\n- **创新**：用创新的心态和方式解决行业问题\n- **开放**：对人对事保持开放心态\n\n## 近期动态与规划\n\n### 第五届AIGC开发者大会（2026年1月17日）\n- 发布多项开发者扶持计划：\n  - **双百扶持计划**\n  - **国产芯片适配联盟**\n  - **AIGCLink基金**（针对优质AI项目进行投资）\n\n### 2026年发展规划\n- 在北上广深、杭州、西安、成都等地举办公益性开发者活动\n- 推动35%的行业AI渗透率目标完成\n- 进入下一阶段：帮助1000个OPC/AI超级个体实现商业化\n\n## 业务需求与合作方向\n\n### 对开发者的支持\n1. **宣发支持**：帮开发者获得第一批种子用户，快速验证PMF\n2. **核心卡位支持**：在AI行业关键节点提供支持\n3. **变现路径**：通过零克云应用市场实现Vibe Coding创作变现\n4. **投资支持**：对优质项目进行投资、并购等\n\n### 寻找的合作伙伴\n- 具备利他心的开发者和技术人才\n- OPC/AI超级个体创业者\n- 行业应用场景合作伙伴\n- 推广者（FDE）合作伙伴\n\n## 个人特质\n\n- **危机意识与洞察力**：能准确判断AI发展趋势，提前布局\n- **极强的社群运营能力**：三年时间从0到15万开发者\n- **务实风格**：强调从实际需求出发，反对空喊口号\n- **开放包容**：积极拥抱新技术、新趋势\n- **利他主义**：以帮助他人为出发点，建立广泛影响力\n\n## 关联人物\n\n- **董慧智**：零克云创始人兼CEO（产业战略方向）\n- **陈毅鸿**：零克云法定代表人\n- AIGCLINK社区核心团队成员及15万开发者社区成员\n\n## 媒体报道与公开活动\n\n- 2026年1月14日：接受界面新闻《Alpha说》栏目专访（上篇）\n- 2026年1月17日：第五届AIGC开发者大会发布多项重要计划\n- 多次在行业大会分享Vibe Coding、OPC等前沿话题\n\n---\n\n**信息来源**：公开网络信息整理，最后更新时间2026年1月",
+          "confidence": 0.95,
+          "sources": [
+            {
+              "label": "界面新闻对话占冰强专访",
+              "url": "https://finance.sina.com.cn/stock/t/2026-01-14/doc-inhhhhqx7231528.shtml"
+            },
+            {
+              "label": "零克云官方网站",
+              "url": "https://gpulink.cc/"
+            },
+            {
+              "label": "零克云AI托管平台发布报道",
+              "url": "https://www.jazzyear.com/article_info.html?id=1665"
+            },
+            {
+              "label": "第五届AIGC开发者大会报道",
+              "url": "https://m.jiemian.com/article/13899243.html"
+            },
+            {
+              "label": "AIGC创作者经济相关报道",
+              "url": "https://m.sohu.com/a/978145967_313745"
+            },
+            {
+              "label": "AI托管平台破解工程鸿沟报道",
+              "url": "https://caifuhao.eastmoney.com/news/20260118124912120331360"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkwjmmma_y9myahh",
+      "title": "【零克云】占冰强 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-27T11:59:02.913Z",
+      "updated_at": "2026-01-27T11:59:02.913Z",
+      "messages": [
+        {
+          "id": "msg_mkwjmmme_n3wv4v8",
+          "role": "user",
+          "content": "零克云 占冰强",
+          "created_at": "2026-01-27T11:59:02.913Z"
+        },
+        {
+          "id": "msg_mkwjmmme_9duinp2",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-27T11:59:02.913Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "占冰强",
+            "company": "零克云",
+            "title": "渠道负责人",
+            "phones": [
+              "+86 1328****2378"
+            ],
+            "tags": [
+              "需验证"
+            ]
+          },
+          "profile_markdown": "- 正筹备新产品线发布，需求可能集中在获客。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkwjkyzo_cbz98h9",
+      "title": "【零克云】占冰强 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-27T11:57:45.636Z",
+      "updated_at": "2026-01-27T11:57:45.636Z",
+      "messages": [
+        {
+          "id": "msg_mkwjkyzp_ipvhy7m",
+          "role": "user",
+          "content": "零克云 占冰强",
+          "created_at": "2026-01-27T11:57:45.636Z"
+        },
+        {
+          "id": "msg_mkwjkyzp_3zn64nz",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-27T11:57:45.636Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "占冰强",
+            "company": "零克云",
+            "title": "渠道负责人",
+            "phones": [
+              "+86 1328****2378"
+            ],
+            "tags": [
+              "需验证"
+            ]
+          },
+          "profile_markdown": "- 正筹备新产品线发布，需求可能集中在获客。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkwjjeoq_3dmbgou",
+      "title": "【字节跳动 李四】产品经理 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-27T11:56:32.666Z",
+      "updated_at": "2026-01-27T11:56:32.666Z",
+      "messages": [
+        {
+          "id": "msg_mkwjjeov_6mzvnkv",
+          "role": "user",
+          "content": "字节跳动 李四 产品经理",
+          "created_at": "2026-01-27T11:56:32.666Z"
+        },
+        {
+          "id": "msg_mkwjjeov_f58x2r0",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-27T11:56:32.666Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "产品经理",
+            "company": "字节跳动 李四",
+            "title": "销售总监",
+            "phones": [
+              "+86 1344****1404"
+            ],
+            "tags": [
+              "已联系"
+            ]
+          },
+          "profile_markdown": "- 近期在招聘销售岗位，可能需要效率工具。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkwjhod6_b65yrua",
+      "title": "【华为（示例用名）】张三 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-27T11:55:11.898Z",
+      "updated_at": "2026-01-27T11:55:11.898Z",
+      "messages": [
+        {
+          "id": "msg_mkwjhodc_31dbp3y",
+          "role": "user",
+          "content": "华为 张三",
+          "created_at": "2026-01-27T11:55:11.898Z"
+        },
+        {
+          "id": "msg_mkwjhodc_uaw8pbz",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-27T11:55:11.898Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "张三",
+            "company": "华为（示例用名）",
+            "title": "示例人员/非真实员工",
+            "phones": [],
+            "emails": [],
+            "wechat": "",
+            "address": "",
+            "tags": [
+              "示例姓名",
+              "虚拟人物",
+              "文档示例"
+            ]
+          },
+          "profile_markdown": "## 重要说明\n\n**\"张三\"并非华为的真实员工，而是一个常见的中文示例姓名。**\n\n### 使用场景\n\n根据网络搜索结果显示，\"张三\"在华为相关文档中被用作示例名称的情况包括：\n\n1. **技术文档示例**\n   - 在华为eCare问题单填写规范中，\"张三\"被用作示例客户联系人\n   - 格式示例：\"张三，15XXXXXXXXXX\"\n\n2. **产品功能演示**\n   - 华为小艺知识库功能介绍中，用\"张三\"作为示例姓名\n   - 演示提问：\"张三身体情况怎么样\"\n\n3. **大赛注册示例**\n   - 华为ICT大赛通知中用作报名格式示例\n   - 格式示例：\"21-机械-张三\"（年份-专业-姓名）\n\n### 相关真实华为员工\n\n如果您在寻找华为的真实\"张\"姓高管，搜索结果显示的公众人物包括：\n\n- **张平安**：华为云计算CEO，1996年加入华为，历任多个高层管理职位\n\n- **张霁**：华为\"天才少年\"项目成员，华中科技大学博士，年薪201万元，现任职于数据存储产品线\n\n### 建议\n\n如需查询华为公司的具体员工信息，请：\n1. 提供更准确的员工姓名\n2. 访问华为官网高管团队页面\n3. 使用华为官方联系方式咨询",
+          "confidence": 0.95,
+          "sources": [
+            {
+              "label": "华为eCare问题单填写规范",
+              "url": "https://support.huawei.com/enterprise/zh/doc/EDOC1000160160/414d2c2c"
+            },
+            {
+              "label": "华为小艺知识库功能介绍",
+              "url": "https://consumer.huawei.com/cn/support/content/zh-cn16051715/"
+            },
+            {
+              "label": "华为高管团队信息",
+              "url": "https://www.huawei.com/cn/executives"
+            },
+            {
+              "label": "华为天才少年相关报道",
+              "url": "https://m.mp.oeeee.com/a/BAAFRD000020805351915.html"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkwiucew_0jw9yv0",
+      "title": "【阿里巴巴】王五 客户信息检索",
+      "status": "confirmed",
+      "created_at": "2026-01-27T11:37:03.317Z",
+      "updated_at": "2026-01-27T11:38:07.885Z",
+      "messages": [
+        {
+          "id": "msg_mkwiucyo_iah3ehl",
+          "role": "user",
+          "content": "阿里巴巴 王五",
+          "created_at": "2026-01-27T11:37:03.317Z"
+        },
+        {
+          "id": "msg_mkwiucyp_fxto5vf",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-27T11:37:03.317Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "王五",
+            "company": "阿里巴巴",
+            "title": "销售总监",
+            "phones": [
+              "+86 1386****7476"
+            ],
+            "tags": [
+              "重点跟进"
+            ]
+          },
+          "profile_markdown": "- 公开活动中提到关注数字化销售流程。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      },
+      "linked_customer_id": "cus_mkwivq8d_q8pmuwf"
+    },
+    {
+      "id": "conv_mkwhy4fq_2vzgvum",
+      "title": "【腾讯】李四 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-27T11:11:59.990Z",
+      "updated_at": "2026-01-27T11:11:59.990Z",
+      "messages": [
+        {
+          "id": "msg_mkwhy4fr_7k4q9py",
+          "role": "user",
+          "content": "腾讯 李四",
+          "created_at": "2026-01-27T11:11:59.990Z"
+        },
+        {
+          "id": "msg_mkwhy4fr_jrl1og9",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-27T11:11:59.990Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [
+        "cus_test123"
+      ],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "李四",
+            "company": "腾讯",
+            "title": "采购负责人",
+            "phones": [
+              "+86 1360****8260"
+            ],
+            "tags": [
+              "高潜"
+            ]
+          },
+          "profile_markdown": "- 近期完成新一轮融资，扩建销售团队。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "conv_mkwhy3rh_0pec3l0",
+      "title": "【字节跳动】张三 客户信息检索",
+      "status": "pending",
+      "created_at": "2026-01-27T11:11:59.116Z",
+      "updated_at": "2026-01-27T11:11:59.116Z",
+      "messages": [
+        {
+          "id": "msg_mkwhy3rn_645yfw5",
+          "role": "user",
+          "content": "字节跳动 张三",
+          "created_at": "2026-01-27T11:11:59.116Z"
+        },
+        {
+          "id": "msg_mkwhy3rn_bf9to2m",
+          "role": "assistant",
+          "content": "已整理客户资料卡片，请确认后入库。",
+          "created_at": "2026-01-27T11:11:59.116Z"
+        }
+      ],
+      "attachments": [],
+      "context_customer_ids": [],
+      "ai_outputs": {
+        "customer_card": {
+          "structured_fields": {
+            "name": "张三",
+            "company": "字节跳动",
+            "title": "BD 经理",
+            "phones": [
+              "+86 1321****1201"
+            ],
+            "tags": [
+              "重点跟进"
+            ]
+          },
+          "profile_markdown": "- 公开活动中提到关注数字化销售流程。\n- 建议补充决策链与联系方式，确认需求优先级。",
+          "confidence": 0.72,
+          "sources": [
+            {
+              "label": "公开信息汇总"
+            },
+            {
+              "label": "企业官网/招聘信息"
+            }
+          ]
+        }
+      }
+    },
     {
       "id": "conv_mkwd710f_f5dte5h",
       "title": "【未知公司】查公司背景 客户信息检索",

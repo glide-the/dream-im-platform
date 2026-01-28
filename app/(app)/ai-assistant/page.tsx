@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   IconCamera,
@@ -67,7 +67,15 @@ const emptyCard: CustomerCard = {
   profile_markdown: ""
 };
 
-export default function AiAssistantPage() {
+export default function AiAssistantPageWrapper() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <AiAssistantPage />
+    </Suspense>
+  );
+}
+
+function AiAssistantPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

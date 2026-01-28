@@ -3,6 +3,7 @@ import { buildCustomerCard, createAttachment } from "../../../lib/agent";
 import { readDb, withDb } from "../../../lib/db";
 import { createId } from "../../../lib/id";
 import { CustomerCard } from "../../../lib/types";
+import { researchCustomer, isAiResearchEnabled } from "../../../lib/ai-researcher";
 
 export const runtime = "nodejs";
 
@@ -28,7 +29,28 @@ export async function POST(request: Request) {
     return badRequest("请输入客户单位或姓名");
   }
 
-  const { card, debug } = buildCustomerCard(queryText);
+  let card: CustomerCard;
+  let debug: { name?: string; company?: string };
+  let usedAiResearch = false;
+
+  if (isAiResearchEnabled()) {
+    try {
+      const result = await researchCustomer(queryText);
+      card = result.card;
+      debug = result.debug;
+      usedAiResearch = true;
+    } catch (error) {
+      console.error("AI research failed, falling back to mock:", error);
+      const result = buildCustomerCard(queryText);
+      card = result.card;
+      debug = result.debug;
+    }
+  } else {
+    const result = buildCustomerCard(queryText);
+    card = result.card;
+    debug = result.debug;
+  }
+
   const now = new Date().toISOString();
 
   const conversationId = createId("conv");
@@ -81,6 +103,7 @@ export async function POST(request: Request) {
     conversation_id: string;
     customer_card: CustomerCard;
     action_suggestions: string[];
+    research_method: "ai" | "mock";
   } = {
     conversation_id: conversationId,
     customer_card: card,
@@ -88,7 +111,8 @@ export async function POST(request: Request) {
       "补充联系方式",
       "确认决策链",
       "创建跟进待办"
-    ]
+    ],
+    research_method: usedAiResearch ? "ai" : "mock"
   };
 
   const db = await readDb();
