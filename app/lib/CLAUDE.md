@@ -2,7 +2,18 @@
 
 > **导航**: [← 返回根目录](../../CLAUDE.md) / 业务逻辑模块
 > **路径**: `app/lib/`
-> **最后更新**: 2026-01-27 17:25:20
+> **最后更新**: 2026-01-29 00:27:13
+
+---
+
+## 📋 变更记录 (Changelog)
+
+### 2026-01-29
+- **数据库操作重构**: 从 JSON 文件迁移到 PostgreSQL + Drizzle ORM
+- **新增 schema 模块**: `app/lib/db/schema.ts` 定义数据库表结构
+- **连接池管理**: 使用 pg Pool 管理数据库连接
+- **事务支持**: 新增事务式操作函数
+- **索引优化**: 为常用查询字段添加数据库索引
 
 ---
 
@@ -29,14 +40,16 @@
 
 ```
 app/lib/
-├── types.ts        # 类型定义
-├── db.ts           # 数据库操作
-├── agent.ts        # AI 客户卡片生成
-├── query.ts        # 查询/过滤/排序/分页
-├── id.ts           # ID 生成与哈希
-├── format.ts       # 格式化工具
-├── client.ts       # API 客户端
-└── seed.ts         # 种子数据
+├── db/
+│   └── schema.ts       # Drizzle ORM 数据库表定义
+├── types.ts            # 类型定义
+├── db.ts               # 数据库操作
+├── agent.ts            # AI 客户卡片生成
+├── query.ts            # 查询/过滤/排序/分页
+├── id.ts               # ID 生成与哈希
+├── format.ts           # 格式化工具
+├── client.ts           # API 客户端
+└── seed.ts             # 种子数据
 ```
 
 ---
@@ -143,46 +156,129 @@ export type DbShape = {
 
 ---
 
+## 🗄️ 数据库 Schema (`db/schema.ts`)
+
+### 表定义
+
+使用 Drizzle ORM 定义 PostgreSQL 表结构。
+
+#### customers 表
+
+```typescript
+export const customers = pgTable("customers", {
+  id: text("id").primaryKey(),
+  name: text("name"),
+  company: text("company"),
+  title: text("title"),
+  phones: text("phones").array(),
+  emails: text("emails").array(),
+  wechat: text("wechat"),
+  address: text("address"),
+  tags: text("tags").array(),
+  profile_markdown: text("profile_markdown"),
+  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }),
+  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
+  source: text("source"),
+  last_verified_at: timestamp("last_verified_at", { withTimezone: true, mode: "date" })
+});
+```
+
+#### todos 表
+
+```typescript
+export const todos = pgTable("todos", {
+  id: text("id").primaryKey(),
+  title: text("title"),
+  description: text("description"),
+  priority: text("priority"),
+  status: text("status"),
+  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }),
+  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+});
+```
+
+#### conversations 表
+
+```typescript
+export const conversations = pgTable("conversations", {
+  id: text("id").primaryKey(),
+  title: text("title"),
+  status: text("status"),
+  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }),
+  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
+  messages: jsonb("messages").$type<Conversation["messages"]>(),
+  attachments: jsonb("attachments").$type<Conversation["attachments"]>(),
+  context_customer_ids: text("context_customer_ids").array(),
+  ai_outputs: jsonb("ai_outputs").$type<Conversation["ai_outputs"]>(),
+  linked_customer_id: text("linked_customer_id")
+});
+```
+
+---
+
 ## 💾 数据库操作 (`db.ts`)
 
-### 文件存储
+### 连接池管理
 
-- **路径**: `data/db.json`
-- **格式**: JSON
-- **编码**: UTF-8
-- **缩进**: 2 空格
+使用 pg Pool 管理 PostgreSQL 连接。
+
+```typescript
+function getPool() {
+  const globalPool = globalThis as GlobalPool;
+  if (!globalPool.__ai4sales_pg_pool__) {
+    const connectionString = process.env.DATABASE_URL;
+    globalPool.__ai4sales_pg_pool__ = new Pool({
+      connectionString,
+      host: process.env.PGHOST,
+      port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
+      user: process.env.PGUSER,
+      password: process.env.PGPASSWORD,
+      database: process.env.PGDATABASE
+    });
+  }
+  return globalPool.__ai4sales_pg_pool__;
+}
+```
 
 ### 核心函数
 
-#### 1. 读取数据库
+#### 1. 初始化数据库
 
 ```typescript
-export async function readDb(): Promise<DbShape> {
-  await ensureDbFile();
-  const raw = await fs.readFile(DATA_FILE, "utf-8");
-  return JSON.parse(raw) as DbShape;
-}
+async function ensureInitialized()
 ```
 
-**功能**: 读取并解析 JSON 数据库文件
+**功能**: 自动创建表结构、索引和种子数据
 
 **特性**:
-- 自动创建文件 (如果不存在)
-- 自动初始化种子数据
+- 自动建表 (customers, todos, conversations)
+- 创建索引优化查询性能
+- 首次启动写入种子数据
 
-#### 2. 写入数据库 (内部函数)
+**索引列表**:
+- `idx_customers_name`: customers(name)
+- `idx_customers_company`: customers(company)
+- `idx_customers_updated_at`: customers(updated_at DESC)
+- `idx_customers_tags`: customers USING GIN(tags)
+- `idx_todos_status`: todos(status)
+- `idx_todos_priority`: todos(priority)
+- `idx_todos_updated_at`: todos(updated_at DESC)
+- `idx_conversations_status`: conversations(status)
+- `idx_conversations_updated_at`: conversations(updated_at DESC)
+- `idx_conversations_linked_customer`: conversations(linked_customer_id)
+
+#### 2. 读取数据库
 
 ```typescript
-async function writeDb(db: DbShape) {
-  await fs.writeFile(DATA_FILE, JSON.stringify(db, null, 2), "utf-8");
-}
+export async function readDb(): Promise<DbShape>
 ```
 
-**功能**: 将数据写入 JSON 文件
+**功能**: 读取所有数据
 
 **特性**:
-- 格式化输出 (2 空格缩进)
-- 异步写入
+- 自动初始化数据库
+- 使用连接池
+- 类型安全的返回值
 
 #### 3. 事务式写入
 
@@ -200,6 +296,7 @@ export async function withDb<T>(
 **特性**:
 - **全局队列**: 防止并发写入冲突
 - **原子操作**: 读取 → 修改 → 写入一气呵成
+- **事务支持**: 使用 PostgreSQL 事务
 - **类型安全**: 泛型返回值
 
 **使用示例**:
@@ -220,6 +317,72 @@ const newCustomer = await withDb((db) => {
     result: customer
   };
 });
+```
+
+#### 4. 客户操作
+
+```typescript
+// 列表查询 (支持分页、搜索、过滤、排序)
+export async function listCustomers(params: CustomerListParams)
+
+// 按 ID 查询
+export async function getCustomerById(id: string)
+
+// 查找重复客户
+export async function findDuplicateCustomers(name?: string, company?: string)
+
+// 创建客户
+export async function createCustomer(customer: Customer)
+
+// 更新客户
+export async function updateCustomer(customer: Customer)
+
+// 删除客户
+export async function deleteCustomer(id: string)
+
+// 创建客户并关联对话 (事务)
+export async function createCustomerWithConversationLink(
+  customer: Customer,
+  conversationId?: string
+)
+```
+
+#### 5. 待办操作
+
+```typescript
+// 列表查询 (支持分页、搜索、过滤、排序)
+export async function listTodos(params: TodoListParams)
+
+// 按 ID 查询
+export async function getTodoById(id: string)
+
+// 创建待办
+export async function createTodo(todo: Todo)
+
+// 更新待办
+export async function updateTodo(todo: Todo)
+
+// 删除待办
+export async function deleteTodo(id: string)
+```
+
+#### 6. 对话操作
+
+```typescript
+// 列表查询 (支持分页、搜索、过滤)
+export async function listConversations(params: ConversationListParams)
+
+// 创建对话
+export async function createConversation(conversation: Conversation)
+
+// 更新对话
+export async function updateConversation(conversation: Conversation)
+
+// 更新对话关联 (部分更新)
+export async function updateConversationLink(
+  id: string,
+  updates: Partial<Pick<Conversation, "status" | "linked_customer_id" | "ai_outputs" | "updated_at">>
+)
 ```
 
 ### 并发控制机制
@@ -540,19 +703,17 @@ export function seedData(): DbShape
 ### 数据库操作模式
 
 ```typescript
-// 读取
-const db = await readDb();
-const customers = db.customers;
+// 使用 Drizzle ORM 查询
+const customers = await withClient(async (client) => {
+  const db = drizzle(client);
+  return await db.select().from(customers).where(eq(customers.id, id));
+});
 
-// 写入
-const result = await withDb((db) => {
-  // 修改数据
-  const newData = [...db.customers, newCustomer];
-
-  return {
-    db: { ...db, customers: newData },
-    result: newCustomer
-  };
+// 使用事务
+const result = await withTransaction(async (db) => {
+  await db.insert(customers).values(customer);
+  await db.update(conversations).set({ status: "confirmed" });
+  return customer;
 });
 ```
 
@@ -560,19 +721,19 @@ const result = await withDb((db) => {
 
 ## 🐛 已知问题
 
-1. **JSON 数据库**: 不适合生产环境，需迁移到真实数据库
+1. **AI 模拟**: `buildCustomerCard` 仅为演示，需接入真实 LLM API
 2. **并发控制**: 简单队列机制，高并发场景需优化
-3. **AI 模拟**: `buildCustomerCard` 仅为演示，需接入真实 LLM API
-4. **错误处理**: 缺少详细的错误分类和恢复机制
+3. **错误处理**: 缺少详细的错误分类和恢复机制
 
 ---
 
 ## 📊 性能考虑
 
-1. **内存占用**: 所有数据加载到内存，大数据量需优化
-2. **文件 I/O**: 每次写入都重写整个文件，需增量写入
-3. **查询效率**: 线性搜索，需添加索引机制
+1. **连接池**: 使用 pg Pool 管理连接，避免频繁创建/销毁
+2. **索引优化**: 为常用查询字段添加索引
+3. **查询效率**: 使用 Drizzle ORM 生成优化的 SQL
+4. **事务支持**: 保证数据一致性
 
 ---
 
-**生成时间**: 2026-01-27 17:25:20
+**生成时间**: 2026-01-29 00:27:13

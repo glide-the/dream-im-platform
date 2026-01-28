@@ -8,6 +8,7 @@
 [![React](https://img.shields.io/badge/React-18.3.1-blue?logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5.4-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4.7-38B2AC?logo=tailwind-css)](https://tailwindcss.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql)](https://www.postgresql.org/)
 [![License](https://img.shields.io/badge/license-Private-red.svg)](LICENSE)
 
 [功能特性](#-功能特性) • [快速开始](#-快速开始) • [技术栈](#-技术栈) • [项目结构](#-项目结构) • [开发指南](#-开发指南)
@@ -74,6 +75,7 @@ AI4Sales 是一个移动优先的 PWA（Progressive Web App）应用，专为 B2
 
 - **Node.js**: 18.0 或更高版本
 - **包管理器**: pnpm (推荐) 或 npm
+- **Docker**: 用于本地 PostgreSQL 数据库
 
 ### 安装
 
@@ -87,11 +89,13 @@ pnpm install
 # 或
 npm install
 
-# 修改配置
-cp .env.local.example .env.local
+# 启动 PostgreSQL (使用 Docker Compose)
+docker-compose up -d
 
-# 配置 Postgres（任选其一）
-# DATABASE_URL=postgres://user:password@localhost:5432/ai4sales
+# 配置环境变量
+cp .env.local.example .env.local
+# 编辑 .env.local，设置以下变量：
+# DATABASE_URL=postgres://ai4sales:ai4sales@localhost:5433/ai4sales
 # 或设置 PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE
 ```
 
@@ -135,6 +139,16 @@ pnpm test:coverage
 pnpm test:ui
 ```
 
+### 数据库管理
+
+```bash
+# 生成数据库迁移文件
+pnpm db:generate
+
+# 推送 schema 到数据库
+pnpm db:migrate
+```
+
 ---
 
 ## 🛠️ 技术栈
@@ -163,14 +177,28 @@ pnpm test:ui
 
 ### 数据管理
 
-- **Postgres 数据库**: 使用 Drizzle ORM + `pg`
-- **自动建表与种子数据**: 首次启动会初始化表结构并写入示例数据
+- **[PostgreSQL 16](https://www.postgresql.org/)**: 生产级关系型数据库
+- **[Drizzle ORM 0.35.1](https://orm.drizzle.team/)**: 类型安全的 ORM 框架
+- **[pg 8.13.3](https://node-postgres.com/)**: PostgreSQL 客户端
+- **连接池管理**: 使用 pg Pool 管理数据库连接
 - **写入队列机制**: 全局队列防止并发写入冲突
 - **类型安全**: 完整的 TypeScript 类型定义
 
-### 测试框架
+### 数据库特性
 
-- **[Vitest](https://vitest.dev/)**: 快速的单元测试框架
+- **自动建表**: 首次启动自动创建表结构
+- **索引优化**: 为常用查询字段添加索引
+  - customers: name, company, updated_at, tags (GIN)
+  - todos: status, priority, updated_at
+  - conversations: status, updated_at, linked_customer_id
+- **种子数据**: 首次启动自动写入示例数据
+- **事务支持**: 使用 PostgreSQL 事务保证数据一致性
+
+### 开发工具
+
+- **[Docker Compose](https://docs.docker.com/compose/)**: 本地开发环境配置
+- **[Drizzle Kit 0.24.1](https://orm.drizzle.team/kit-docs/overview)**: 数据库迁移管理工具
+- **[Vitest 4.0.18](https://vitest.dev/)**: 快速的单元测试框架
 - **[@vitest/ui](https://vitest.dev/guide/ui.html)**: 测试 UI 界面
 
 ### PWA 特性
@@ -199,6 +227,8 @@ ai4sales-pwa-app/
 │   ├── components/             # 共享组件
 │   ├── hooks/                  # 自定义 Hooks
 │   ├── lib/                    # 业务逻辑与工具
+│   │   ├── db/                 # 数据库 Schema
+│   │   │   └── schema.ts       # Drizzle ORM 表定义
 │   │   ├── agent.ts            # AI 客户卡片生成
 │   │   ├── db.ts               # 数据库操作
 │   │   ├── query.ts            # 查询/过滤/排序
@@ -207,10 +237,10 @@ ai4sales-pwa-app/
 │   ├── layout.tsx              # 根布局
 │   ├── manifest.ts             # PWA Manifest
 │   └── page.tsx                # 首页 (重定向)
-├── data/
-│   └── db.json                 # JSON 数据库
 ├── docs/                       # 文档目录
 ├── public/                     # 静态资源
+├── docker-compose.yml          # Docker Compose 配置
+├── drizzle.config.ts           # Drizzle Kit 配置
 ├── CLAUDE.md                   # 项目架构文档
 ├── PRD.md                      # 产品需求文档
 ├── next.config.js              # Next.js 配置
@@ -334,14 +364,18 @@ npm run lint
 
 - ✅ **输入验证**: API 层验证所有用户输入
 - ✅ **错误处理**: 统一错误响应格式,不暴露敏感信息
+- ✅ **连接池管理**: 使用 pg Pool 管理数据库连接,防止连接泄漏
+- ✅ **SQL 注入防护**: 使用 Drizzle ORM 参数化查询
 - 🔜 **文件上传**: 类型和大小限制 (预留)
 
 ### 性能优化
 
 - ✅ **服务端渲染**: 利用 Next.js SSR/SSG
 - ✅ **代码分割**: 自动路由级代码分割
+- ✅ **数据库索引**: 为常用查询字段添加索引
+- ✅ **连接池复用**: 全局单例 Pool,避免重复创建连接
+- ✅ **写入队列**: 防止并发写入冲突
 - 🔜 **图片优化**: 使用 Next.js Image 组件 (预留)
-- ✅ **数据库优化**: 写入队列防止并发冲突
 
 ---
 
@@ -352,6 +386,8 @@ npm run lint
 - PWA 框架 + 3 Tab 导航
 - 客户/待办基础 CRUD
 - AI 助手页面与对话历史
+- PostgreSQL 数据库迁移
+- Drizzle ORM 集成
 
 ### 🚧 M2 (进行中)
 
@@ -382,16 +418,17 @@ npm run lint
 - [Next.js 官方文档](https://nextjs.org/docs)
 - [Tailwind CSS 文档](https://tailwindcss.com/docs)
 - [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk)
+- [Drizzle ORM 文档](https://orm.drizzle.team/)
+- [PostgreSQL 文档](https://www.postgresql.org/docs/)
 
 ---
 
 ## 🐛 已知问题
 
 1. **AI 检索模拟**: 当前使用 `app/lib/agent.ts` 模拟 AI 检索,未接入真实 LLM API
-2. **数据持久化**: 使用 JSON 文件,不适合生产环境大规模数据
-3. **并发控制**: 写入队列机制简单,高并发场景需优化
-4. **类型检查**: `tsconfig.json` 中 `strict: false`,建议逐步启用严格模式
-5. **测试覆盖**: 缺少单元测试和集成测试
+2. **并发控制**: 写入队列机制简单,高并发场景需优化
+3. **类型检查**: `tsconfig.json` 中 `strict: false`,建议逐步启用严格模式
+4. **测试覆盖**: 缺少单元测试和集成测试
 
 ---
 
@@ -409,6 +446,7 @@ npm run lint
 - 所有新功能需更新相应的 CLAUDE.md 文档
 - 提交前运行 `pnpm lint` 检查代码质量
 - 重大变更需更新 PRD.md 和架构图
+- 数据库 schema 变更需生成迁移文件
 
 ---
 

@@ -1,8 +1,19 @@
 # AI4Sales PWA 应用
 
-> **最后更新**: 2026-01-27 17:25:20
+> **最后更新**: 2026-01-29 00:27:13
 > **项目类型**: Next.js 14 PWA 应用
-> **技术栈**: React 18 + TypeScript + Tailwind CSS
+> **技术栈**: React 18 + TypeScript + Tailwind CSS + PostgreSQL
+
+---
+
+## 📋 变更记录 (Changelog)
+
+### 2026-01-29
+- **数据持久化层迁移**: 从 JSON 文件迁移到 PostgreSQL 数据库
+- **新增 Drizzle ORM**: 使用 Drizzle ORM 作为数据库访问层
+- **新增 Docker Compose**: 添加本地开发环境配置
+- **数据库索引优化**: 为常用查询字段添加索引
+- **新增数据库迁移管理**: 使用 Drizzle Kit 管理数据库迁移
 
 ---
 
@@ -50,10 +61,12 @@ graph TB
         M[app/lib/db.ts - 数据库操作]
         N[app/lib/query.ts - 查询/过滤/排序]
         O[app/lib/types.ts - 类型定义]
+        P[app/lib/db/schema.ts - 数据库 Schema]
     end
 
     subgraph "数据层"
-        P[data/db.json - JSON 文件数据库]
+        Q[(PostgreSQL 数据库)]
+        R[Drizzle ORM]
     end
 
     B --> C
@@ -76,16 +89,44 @@ graph TB
     M --> N
     M --> O
     M --> P
+    M --> R
+    R --> Q
 
     style C fill:#e1f5ff
     style H fill:#fff4e1
     style L fill:#ffe1f5
-    style P fill:#e1ffe1
+    style Q fill:#e1ffe1
 ```
 
 ---
 
 ## 📁 模块索引
+
+```mermaid
+graph TD
+    A["(根) AI4Sales PWA"] --> B["app/(app)"];
+    A --> C["app/api"];
+    A --> D["app/lib"];
+    A --> E["app/components"];
+
+    B --> B1["ai-assistant"];
+    B --> B2["customers"];
+    B --> B3["todo"];
+    B --> B4["me"];
+
+    C --> C1["agent"];
+    C --> C2["customers"];
+    C --> C3["todos"];
+    C --> C4["conversations"];
+
+    D --> D1["db"];
+    D1 --> D1a["schema.ts"];
+
+    click B "./app/(app)/CLAUDE.md" "查看前端页面模块文档"
+    click C "./app/api/CLAUDE.md" "查看 API 路由模块文档"
+    click D "./app/lib/CLAUDE.md" "查看业务逻辑模块文档"
+    click E "./app/components/CLAUDE.md" "查看共享组件模块文档"
+```
 
 ### 1. 前端页面模块 (`app/(app)/`)
 - **路径**: `app/(app)/`
@@ -102,7 +143,12 @@ graph TB
 - **职责**: 核心业务逻辑、数据库操作、类型定义
 - **详细文档**: [app/lib/CLAUDE.md](app/lib/CLAUDE.md)
 
-### 4. 共享组件模块 (`app/components/`)
+### 4. 数据库 Schema 模块 (`app/lib/db/`)
+- **路径**: `app/lib/db/`
+- **职责**: Drizzle ORM 数据库表定义
+- **关键文件**: `schema.ts` - 定义 customers、todos、conversations 表结构
+
+### 5. 共享组件模块 (`app/components/`)
 - **路径**: `app/components/`
 - **职责**: 可复用的 UI 组件
 - **详细文档**: [app/components/CLAUDE.md](app/components/CLAUDE.md)
@@ -119,7 +165,7 @@ sequenceDiagram
     participant AI as AI 助手页面
     participant API as /api/agent/search-customer
     participant Agent as app/lib/agent.ts
-    participant DB as data/db.json
+    participant DB as PostgreSQL
 
     U->>AI: 输入"公司名 + 姓名"
     AI->>API: POST 请求 (query_text)
@@ -160,9 +206,26 @@ sequenceDiagram
   - 字体系统: display/body/mono
 
 ### 数据管理
-- **JSON 文件数据库**: `data/db.json`
+- **PostgreSQL 16**: 生产级关系型数据库
+- **Drizzle ORM 0.35.1**: 类型安全的 ORM 框架
+- **pg 8.13.3**: PostgreSQL 客户端
+- **连接池管理**: 使用 pg Pool 管理数据库连接
 - **写入队列机制**: 全局队列防止并发写入冲突
 - **类型安全**: 完整的 TypeScript 类型定义
+
+### 数据库特性
+- **自动建表**: 首次启动自动创建表结构
+- **索引优化**: 为常用查询字段添加索引
+  - customers: name, company, updated_at, tags (GIN)
+  - todos: status, priority, updated_at
+  - conversations: status, updated_at, linked_customer_id
+- **种子数据**: 首次启动自动写入示例数据
+- **事务支持**: 使用 PostgreSQL 事务保证数据一致性
+
+### 开发工具
+- **Docker Compose**: 本地开发环境配置
+- **Drizzle Kit 0.24.1**: 数据库迁移管理工具
+- **Vitest 4.0.18**: 单元测试框架
 
 ### AI 搜索引擎
 - **Claude Agent SDK**: Anthropic 官方 SDK，用于 AI 代理开发
@@ -238,11 +301,19 @@ sequenceDiagram
 ### 环境要求
 - Node.js 18+
 - pnpm (推荐) 或 npm
+- Docker (用于本地 PostgreSQL)
 
 ### 快速开始
 ```bash
 # 安装依赖
 pnpm install
+
+# 启动 PostgreSQL (使用 Docker Compose)
+docker-compose up -d
+
+# 配置环境变量
+cp .env.local.example .env.local
+# 编辑 .env.local，设置 DATABASE_URL 或 PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE
 
 # 启动开发服务器
 pnpm dev
@@ -252,6 +323,15 @@ pnpm build
 
 # 启动生产服务器
 pnpm start
+```
+
+### 数据库管理
+```bash
+# 生成数据库迁移文件
+pnpm db:generate
+
+# 推送 schema 到数据库
+pnpm db:migrate
 ```
 
 ### 项目结构
@@ -271,12 +351,18 @@ ai4sales-pwa-app/
 │   ├── components/         # 共享组件
 │   ├── hooks/              # 自定义 Hooks
 │   ├── lib/                # 业务逻辑与工具
+│   │   ├── db/             # 数据库 Schema
+│   │   │   └── schema.ts   # Drizzle ORM 表定义
+│   │   ├── agent.ts        # AI 客户卡片生成
+│   │   ├── db.ts           # 数据库操作
+│   │   ├── query.ts        # 查询/过滤/排序
+│   │   └── types.ts        # 类型定义
 │   ├── globals.css         # 全局样式
 │   ├── layout.tsx          # 根布局
 │   ├── manifest.ts         # PWA Manifest
 │   └── page.tsx            # 首页 (重定向)
-├── data/
-│   └── db.json             # JSON 数据库
+├── docker-compose.yml      # Docker Compose 配置
+├── drizzle.config.ts       # Drizzle Kit 配置
 ├── PRD.md                  # 产品需求文档
 ├── next.config.js          # Next.js 配置
 ├── tailwind.config.js      # Tailwind 配置
@@ -313,13 +399,15 @@ ai4sales-pwa-app/
 ### 安全措施
 - **输入验证**: API 层验证所有用户输入
 - **错误处理**: 统一错误响应格式，不暴露敏感信息
-- **文件上传**: 类型和大小限制（预留）
+- **连接池管理**: 使用 pg Pool 管理数据库连接，防止连接泄漏
+- **SQL 注入防护**: 使用 Drizzle ORM 参数化查询
 
 ### 性能优化
 - **服务端渲染**: 利用 Next.js SSR/SSG
 - **代码分割**: 自动路由级代码分割
-- **图片优化**: 使用 Next.js Image 组件（预留）
-- **数据库优化**: 写入队列防止并发冲突
+- **数据库索引**: 为常用查询字段添加索引
+- **连接池复用**: 全局单例 Pool，避免重复创建连接
+- **写入队列**: 防止并发写入冲突
 
 ---
 
@@ -329,6 +417,8 @@ ai4sales-pwa-app/
 - ✅ PWA 框架 + 3 Tab 导航
 - ✅ 客户/待办基础 CRUD
 - ✅ AI 助手页面与对话历史
+- ✅ PostgreSQL 数据库迁移
+- ✅ Drizzle ORM 集成
 
 ### M2 (进行中)
 - ✅ Agentic Search 返回客户卡片
@@ -352,10 +442,9 @@ ai4sales-pwa-app/
 ## 🐛 已知问题与限制
 
 1. **AI 检索模拟**: 当前使用 `app/lib/agent.ts` 模拟 AI 检索，未接入真实 LLM API
-2. **数据持久化**: 使用 JSON 文件，不适合生产环境大规模数据
-3. **并发控制**: 写入队列机制简单，高并发场景需优化
-4. **类型检查**: `tsconfig.json` 中 `strict: false`，建议逐步启用严格模式
-5. **测试覆盖**: 缺少单元测试和集成测试
+2. **并发控制**: 写入队列机制简单，高并发场景需优化
+3. **类型检查**: `tsconfig.json` 中 `strict: false`，建议逐步启用严格模式
+4. **测试覆盖**: 缺少单元测试和集成测试
 
 ---
 
@@ -365,6 +454,8 @@ ai4sales-pwa-app/
 - [UI/UX 设计稿](./ui-ux.pen)
 - [Next.js 官方文档](https://nextjs.org/docs)
 - [Tailwind CSS 文档](https://tailwindcss.com/docs)
+- [Drizzle ORM 文档](https://orm.drizzle.team/)
+- [PostgreSQL 文档](https://www.postgresql.org/docs/)
 
 ---
 
@@ -374,8 +465,9 @@ ai4sales-pwa-app/
 2. 所有新功能需更新相应的 CLAUDE.md 文档
 3. 提交前运行 `pnpm lint` 检查代码质量
 4. 重大变更需更新 PRD.md 和架构图
+5. 数据库 schema 变更需生成迁移文件
 
 ---
 
-**生成时间**: 2026-01-27 17:25:20
-**文档版本**: v1.0.0
+**生成时间**: 2026-01-29 00:27:13
+**文档版本**: v2.0.0
