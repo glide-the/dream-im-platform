@@ -111,10 +111,10 @@ export default function CustomersPage() {
           name: form.name,
           company: form.company,
           title: form.title,
-          phones: form.phones,
-          emails: form.emails,
+          phones: form.phones ? form.phones.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
+          emails: form.emails ? form.emails.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
           wechat: form.wechat,
-          tags: form.tags,
+          tags: form.tags ? form.tags.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
           profile_markdown: form.profile_markdown,
           source: "manual"
         })
