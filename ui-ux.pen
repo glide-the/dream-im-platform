@@ -264,14 +264,14 @@
                     "fill": "$color/border"
                   },
                   "effect": {
-                    "type": "shadow",
+                    "type": "shadow-sm",
                     "shadowType": "outer",
                     "color": "#2D25220A",
                     "offset": {
                       "x": 0,
                       "y": 4
                     },
-                    "blur": 16
+                    "blur-sm": 16
                   },
                   "padding": [
                     6,
@@ -304,14 +304,14 @@
                     "fill": "$color/border"
                   },
                   "effect": {
-                    "type": "shadow",
+                    "type": "shadow-sm",
                     "shadowType": "outer",
                     "color": "#2D25220A",
                     "offset": {
                       "x": 0,
                       "y": 4
                     },
-                    "blur": 16
+                    "blur-sm": 16
                   },
                   "padding": [
                     6,
@@ -344,14 +344,14 @@
                     "fill": "$color/border"
                   },
                   "effect": {
-                    "type": "shadow",
+                    "type": "shadow-sm",
                     "shadowType": "outer",
                     "color": "#2D25220A",
                     "offset": {
                       "x": 0,
                       "y": 4
                     },
-                    "blur": 16
+                    "blur-sm": 16
                   },
                   "padding": [
                     6,
@@ -495,14 +495,14 @@
             "fill": "$color/border"
           },
           "effect": {
-            "type": "shadow",
+            "type": "shadow-sm",
             "shadowType": "outer",
             "color": "#2D25220A",
             "offset": {
               "x": 0,
               "y": 10
             },
-            "blur": 30
+            "blur-sm": 30
           },
           "layout": "vertical",
           "gap": 12,
@@ -746,14 +746,14 @@
                   "fill": "$color/accent",
                   "cornerRadius": 20,
                   "effect": {
-                    "type": "shadow",
+                    "type": "shadow-sm",
                     "shadowType": "outer",
                     "color": "#D4644E40",
                     "offset": {
                       "x": 0,
                       "y": 6
                     },
-                    "blur": 18
+                    "blur-sm": 18
                   },
                   "justifyContent": "center",
                   "alignItems": "center",
@@ -1014,14 +1014,14 @@
                   "fill": "$color/accent",
                   "cornerRadius": 24,
                   "effect": {
-                    "type": "shadow",
+                    "type": "shadow-sm",
                     "shadowType": "outer",
                     "color": "#D4644E40",
                     "offset": {
                       "x": 0,
                       "y": 6
                     },
-                    "blur": 18
+                    "blur-sm": 18
                   },
                   "justifyContent": "center",
                   "alignItems": "center",
@@ -1236,14 +1236,14 @@
                 "fill": "$color/border"
               },
               "effect": {
-                "type": "shadow",
+                "type": "shadow-sm",
                 "shadowType": "outer",
                 "color": "#2D25220A",
                 "offset": {
                   "x": 0,
                   "y": 8
                 },
-                "blur": 24
+                "blur-sm": 24
               },
               "layout": "vertical",
               "gap": 6,
@@ -1367,14 +1367,14 @@
                 "fill": "$color/border"
               },
               "effect": {
-                "type": "shadow",
+                "type": "shadow-sm",
                 "shadowType": "outer",
                 "color": "#2D25220A",
                 "offset": {
                   "x": 0,
                   "y": 8
                 },
-                "blur": 24
+                "blur-sm": 24
               },
               "layout": "vertical",
               "gap": 6,
@@ -1498,14 +1498,14 @@
                 "fill": "$color/border"
               },
               "effect": {
-                "type": "shadow",
+                "type": "shadow-sm",
                 "shadowType": "outer",
                 "color": "#2D25220A",
                 "offset": {
                   "x": 0,
                   "y": 8
                 },
-                "blur": 24
+                "blur-sm": 24
               },
               "layout": "vertical",
               "gap": 6,
@@ -1747,14 +1747,14 @@
           "fill": "$color/accent",
           "cornerRadius": 28,
           "effect": {
-            "type": "shadow",
+            "type": "shadow-sm",
             "shadowType": "outer",
             "color": "#D4644E40",
             "offset": {
               "x": 0,
               "y": 8
             },
-            "blur": 24
+            "blur-sm": 24
           },
           "justifyContent": "center",
           "alignItems": "center",
@@ -2667,14 +2667,14 @@
           "fill": "$color/accent",
           "cornerRadius": 28,
           "effect": {
-            "type": "shadow",
+            "type": "shadow-sm",
             "shadowType": "outer",
             "color": "#D4644E40",
             "offset": {
               "x": 0,
               "y": 8
             },
-            "blur": 24
+            "blur-sm": 24
           },
           "justifyContent": "center",
           "alignItems": "center",
@@ -2826,14 +2826,14 @@
             "fill": "$color/border"
           },
           "effect": {
-            "type": "shadow",
+            "type": "shadow-sm",
             "shadowType": "outer",
             "color": "#2D25220A",
             "offset": {
               "x": 0,
               "y": 10
             },
-            "blur": 30
+            "blur-sm": 30
           },
           "layout": "vertical",
           "gap": 12,
@@ -3403,14 +3403,14 @@
           "fill": "$color/accent",
           "cornerRadius": 28,
           "effect": {
-            "type": "shadow",
+            "type": "shadow-sm",
             "shadowType": "outer",
             "color": "#D4644E40",
             "offset": {
               "x": 0,
               "y": 8
             },
-            "blur": 24
+            "blur-sm": 24
           },
           "justifyContent": "center",
           "alignItems": "center",
@@ -3595,14 +3595,14 @@
                 "fill": "#E2E8F0"
               },
               "effect": {
-                "type": "shadow",
+                "type": "shadow-sm",
                 "shadowType": "outer",
                 "color": "#2D25220A",
                 "offset": {
                   "x": 0,
                   "y": 8
                 },
-                "blur": 24
+                "blur-sm": 24
               },
               "layout": "vertical",
               "gap": 8,
@@ -4347,14 +4347,14 @@
                   "fill": "$color/accent",
                   "cornerRadius": 24,
                   "effect": {
-                    "type": "shadow",
+                    "type": "shadow-sm",
                     "shadowType": "outer",
                     "color": "#D4644E40",
                     "offset": {
                       "x": 0,
                       "y": 6
                     },
-                    "blur": 18
+                    "blur-sm": 18
                   },
                   "justifyContent": "center",
                   "alignItems": "center",
@@ -4543,14 +4543,14 @@
                 "fill": "#E2E8F0"
               },
               "effect": {
-                "type": "shadow",
+                "type": "shadow-sm",
                 "shadowType": "outer",
                 "color": "#2D25220A",
                 "offset": {
                   "x": 0,
                   "y": 8
                 },
-                "blur": 24
+                "blur-sm": 24
               },
               "layout": "vertical",
               "gap": 8,
@@ -4991,14 +4991,14 @@
                   "fill": "$color/accent",
                   "cornerRadius": 24,
                   "effect": {
-                    "type": "shadow",
+                    "type": "shadow-sm",
                     "shadowType": "outer",
                     "color": "#D4644E40",
                     "offset": {
                       "x": 0,
                       "y": 6
                     },
-                    "blur": 18
+                    "blur-sm": 18
                   },
                   "justifyContent": "center",
                   "alignItems": "center",

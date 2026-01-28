@@ -31,8 +31,8 @@ export default function MePage() {
 
   return (
     <div className="relative overflow-hidden rounded-[32px] bg-bg-primary p-6 shadow-subtle md:rounded-[40px]">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-52 bg-gradient-to-b from-[var(--color-bg-secondary)] to-[var(--color-bg-primary)]" />
-      <div className="pointer-events-none absolute -right-12 top-6 h-44 w-44 rounded-full bg-[radial-gradient(circle,_var(--color-accent-light),_transparent_70%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-52 bg-linear-to-b from-bg-secondary to-bg-primary" />
+      <div className="pointer-events-none absolute -right-12 top-6 h-44 w-44 rounded-full bg-[radial-gradient(circle,var(--color-accent-light),transparent_70%)]" />
 
       <div className="relative">
         <div className="flex items-center justify-between">

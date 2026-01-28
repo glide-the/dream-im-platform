@@ -64,7 +64,7 @@ export default function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-bg-primary/95 backdrop-blur">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-bg-primary/95 backdrop-blur-sm">
       <div className="mx-auto flex max-w-6xl items-center justify-around px-4 py-2">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
@@ -88,7 +88,7 @@ export default function BottomNav() {
 ### 样式特点
 
 - **固定定位**: `fixed bottom-0`
-- **毛玻璃效果**: `backdrop-blur`
+- **毛玻璃效果**: `backdrop-blur-sm`
 - **半透明背景**: `bg-bg-primary/95`
 - **激活状态**: 蓝色高亮 + 粗体
 
@@ -220,7 +220,7 @@ export default function Modal({ open, title, onClose, children }: ModalProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] grid place-items-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-100 grid place-items-center bg-black/50 p-4">
       <div className="w-full max-w-md rounded-2xl border border-border bg-bg-primary p-6 shadow-medium">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
@@ -244,7 +244,7 @@ export default function Modal({ open, title, onClose, children }: ModalProps) {
 - **半透明背景**: `bg-black/50`
 - **居中显示**: `grid place-items-center`
 - **最大宽度**: `max-w-md`
-- **高层级**: `z-[100]`
+- **高层级**: `z-100`
 
 ### 使用示例
 
@@ -292,7 +292,7 @@ export default function Toast({
   }, [duration, onClose]);
 
   return (
-    <div className="fixed bottom-24 left-1/2 z-[100] -translate-x-1/2 rounded-full border border-border bg-bg-primary px-4 py-2 text-sm font-semibold text-text-primary shadow-medium">
+    <div className="fixed bottom-24 left-1/2 z-100 -translate-x-1/2 rounded-full border border-border bg-bg-primary px-4 py-2 text-sm font-semibold text-text-primary shadow-medium">
       {message}
     </div>
   );
@@ -304,7 +304,7 @@ export default function Toast({
 - **固定定位**: `fixed bottom-24`
 - **水平居中**: `left-1/2 -translate-x-1/2`
 - **圆角胶囊**: `rounded-full`
-- **高层级**: `z-[100]`
+- **高层级**: `z-100`
 
 ### 自动关闭
 

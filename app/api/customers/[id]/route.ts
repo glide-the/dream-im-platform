@@ -19,9 +19,10 @@ function normalizeList(input?: string | string[]) {
 
 export async function GET(
   _request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const customer = await getCustomerById(params.id);
+  const { id } = await params;
+  const customer = await getCustomerById(id);
   if (!customer) {
     return jsonError("客户不存在", 404);
   }
@@ -30,8 +31,10 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   let body: Partial<Customer> | null = null;
   try {
     body = (await request.json()) as typeof body;
@@ -41,7 +44,7 @@ export async function PATCH(
 
   const now = new Date().toISOString();
 
-  const current = await getCustomerById(params.id);
+  const current = await getCustomerById(id);
   if (!current) {
     return jsonError("客户不存在", 404);
   }
@@ -71,9 +74,10 @@ export async function PATCH(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const deleted = await deleteCustomer(params.id);
+  const { id } = await params;
+  const deleted = await deleteCustomer(id);
 
   if (!deleted) {
     return jsonError("客户不存在", 404);

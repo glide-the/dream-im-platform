@@ -78,7 +78,7 @@ function mapCustomerRow(row: typeof customers.$inferSelect): Customer {
     profile_markdown: row.profile_markdown ?? "",
     created_at: toIso(row.created_at),
     updated_at: toIso(row.updated_at),
-    source: row.source ?? "manual",
+    source: (row.source ?? "manual") as "ai_search" | "manual" | "import",
     last_verified_at: row.last_verified_at ? toIso(row.last_verified_at) : undefined
   };
 }
@@ -88,8 +88,8 @@ function mapTodoRow(row: typeof todos.$inferSelect): Todo {
     id: row.id,
     title: row.title ?? "",
     description: row.description ?? "",
-    priority: row.priority ?? "P2",
-    status: row.status ?? "open",
+    priority: (row.priority ?? "P2") as "P0" | "P1" | "P2" | "P3",
+    status: (row.status ?? "open") as "open" | "done",
     created_at: toIso(row.created_at),
     updated_at: toIso(row.updated_at)
   };
@@ -101,7 +101,7 @@ function mapConversationRow(
   return {
     id: row.id,
     title: row.title ?? "",
-    status: row.status ?? "pending",
+    status: (row.status ?? "pending") as "pending" | "confirmed" | "canceled",
     created_at: toIso(row.created_at),
     updated_at: toIso(row.updated_at),
     messages: parseJson<Conversation["messages"]>(row.messages) ?? [],
@@ -287,7 +287,7 @@ async function writeDbWithClient(client: PoolClient, db: DbShape) {
         last_verified_at: customer.last_verified_at
           ? new Date(customer.last_verified_at)
           : null
-      }))
+      })) as any
     );
   }
 
@@ -301,7 +301,7 @@ async function writeDbWithClient(client: PoolClient, db: DbShape) {
         status: todo.status ?? "open",
         created_at: todo.created_at ? new Date(todo.created_at) : null,
         updated_at: todo.updated_at ? new Date(todo.updated_at) : null
-      }))
+      })) as any
     );
   }
 
@@ -322,7 +322,7 @@ async function writeDbWithClient(client: PoolClient, db: DbShape) {
         context_customer_ids: conversation.context_customer_ids ?? null,
         ai_outputs: conversation.ai_outputs ?? null,
         linked_customer_id: conversation.linked_customer_id ?? null
-      }))
+      })) as any
     );
   }
 }
@@ -531,7 +531,7 @@ export async function createCustomer(customer: Customer) {
         last_verified_at: customer.last_verified_at
           ? new Date(customer.last_verified_at)
           : null
-      })
+      } as any)
       .returning();
     return rows[0] ? mapCustomerRow(rows[0]) : null;
   });
@@ -558,7 +558,7 @@ export async function updateCustomer(customer: Customer) {
         last_verified_at: customer.last_verified_at
           ? new Date(customer.last_verified_at)
           : null
-      })
+      } as any)
       .where(eq(customers.id, customer.id))
       .returning();
     return rows[0] ? mapCustomerRow(rows[0]) : null;
@@ -701,7 +701,7 @@ export async function createTodo(todo: Todo) {
         status: todo.status ?? "open",
         created_at: todo.created_at ? new Date(todo.created_at) : null,
         updated_at: todo.updated_at ? new Date(todo.updated_at) : null
-      })
+      } as any)
       .returning();
     return rows[0] ? mapTodoRow(rows[0]) : null;
   });
@@ -719,7 +719,7 @@ export async function updateTodo(todo: Todo) {
         status: todo.status ?? "open",
         created_at: todo.created_at ? new Date(todo.created_at) : null,
         updated_at: todo.updated_at ? new Date(todo.updated_at) : null
-      })
+      } as any)
       .where(eq(todos.id, todo.id))
       .returning();
     return rows[0] ? mapTodoRow(rows[0]) : null;
@@ -805,7 +805,7 @@ export async function createConversation(conversation: Conversation) {
         context_customer_ids: conversation.context_customer_ids ?? null,
         ai_outputs: conversation.ai_outputs ?? null,
         linked_customer_id: conversation.linked_customer_id ?? null
-      })
+      } as any)
       .returning();
     return rows[0] ? mapConversationRow(rows[0]) : null;
   });
@@ -830,7 +830,7 @@ export async function updateConversation(conversation: Conversation) {
         context_customer_ids: conversation.context_customer_ids ?? null,
         ai_outputs: conversation.ai_outputs ?? null,
         linked_customer_id: conversation.linked_customer_id ?? null
-      })
+      } as any)
       .where(eq(conversations.id, conversation.id))
       .returning();
     return rows[0] ? mapConversationRow(rows[0]) : null;
@@ -852,7 +852,7 @@ export async function updateConversationLink(
         updated_at: updates.updated_at
           ? new Date(updates.updated_at)
           : undefined
-      })
+      } as any)
       .where(eq(conversations.id, id))
       .returning();
     return rows[0] ? mapConversationRow(rows[0]) : null;
@@ -883,7 +883,7 @@ export async function createCustomerWithConversationLink(
         last_verified_at: customer.last_verified_at
           ? new Date(customer.last_verified_at)
           : null
-      })
+      } as any)
       .returning();
 
     if (conversationId) {
@@ -893,7 +893,7 @@ export async function createCustomerWithConversationLink(
           status: "confirmed",
           linked_customer_id: customer.id,
           updated_at: new Date(customer.updated_at)
-        })
+        } as any)
         .where(eq(conversations.id, conversationId));
     }
 

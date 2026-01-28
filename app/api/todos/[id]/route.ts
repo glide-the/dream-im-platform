@@ -10,9 +10,10 @@ function jsonError(message: string, status = 400) {
 
 export async function GET(
   _request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const todo = await getTodoById(params.id);
+  const { id } = await params;
+  const todo = await getTodoById(id);
   if (!todo) {
     return jsonError("待办不存在", 404);
   }
@@ -21,8 +22,10 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   let body: Partial<Todo> | null = null;
   try {
     body = (await request.json()) as typeof body;
@@ -32,7 +35,7 @@ export async function PATCH(
 
   const now = new Date().toISOString();
 
-  const current = await getTodoById(params.id);
+  const current = await getTodoById(id);
   if (!current) {
     return jsonError("待办不存在", 404);
   }
@@ -55,9 +58,10 @@ export async function PATCH(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const deleted = await deleteTodo(params.id);
+  const { id } = await params;
+  const deleted = await deleteTodo(id);
 
   if (!deleted) {
     return jsonError("待办不存在", 404);

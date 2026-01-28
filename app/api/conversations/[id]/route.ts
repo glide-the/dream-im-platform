@@ -10,8 +10,10 @@ function jsonError(message: string, status = 400) {
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   let body: Partial<Conversation> | null = null;
   try {
     body = (await request.json()) as typeof body;
@@ -21,7 +23,7 @@ export async function PATCH(
 
   const now = new Date().toISOString();
 
-  const updated = await updateConversationLink(params.id, {
+  const updated = await updateConversationLink(id, {
     status: (body?.status as Conversation["status"]) ?? undefined,
     linked_customer_id: body?.linked_customer_id ?? undefined,
     ai_outputs: body?.ai_outputs ?? undefined,

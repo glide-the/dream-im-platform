@@ -282,9 +282,9 @@ function AiAssistantPage() {
 
   return (
     <div className="relative overflow-hidden rounded-[32px] bg-bg-primary p-6 shadow-subtle md:rounded-[40px]">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-gradient-to-b from-[var(--color-bg-secondary)] to-[var(--color-bg-primary)]" />
-      <div className="pointer-events-none absolute -left-12 top-20 h-44 w-44 rounded-full bg-[radial-gradient(circle,_var(--color-accent-light),_transparent_70%)]" />
-      <div className="pointer-events-none absolute -right-12 top-4 h-52 w-52 rounded-full bg-[radial-gradient(circle,_var(--color-accent-light),_transparent_70%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-linear-to-b from-bg-secondary to-bg-primary" />
+      <div className="pointer-events-none absolute -left-12 top-20 h-44 w-44 rounded-full bg-[radial-gradient(circle,var(--color-accent-light),transparent_70%)]" />
+      <div className="pointer-events-none absolute -right-12 top-4 h-52 w-52 rounded-full bg-[radial-gradient(circle,var(--color-accent-light),transparent_70%)]" />
 
       <div className="relative">
         <div className="flex items-center justify-between">
@@ -561,7 +561,7 @@ function AiAssistantPage() {
         </div>
       </div>
 
-      <div className="sticky bottom-0 mt-6 rounded-2xl border border-border bg-bg-primary/95 p-4 backdrop-blur">
+      <div className="sticky bottom-0 mt-6 rounded-2xl border border-border bg-bg-primary/95 p-4 backdrop-blur-sm">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2">
             {[IconPaperclip, IconImage, IconCamera].map((Icon, idx) => (

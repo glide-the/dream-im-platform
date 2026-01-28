@@ -14,7 +14,7 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-bg-surface/95 backdrop-blur md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-bg-surface/95 backdrop-blur-sm md:hidden">
       <div className="mx-auto flex max-w-5xl items-center justify-around px-6 py-3">
         {items.map((item) => {
           const active =
