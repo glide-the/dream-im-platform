@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { IconChevronRight, IconEdit, IconTrash } from "../../../components/Icons";
+import { IconChevronLeft, IconEdit, IconTrash } from "../../../components/Icons";
 import { apiRequest } from "../../../lib/client";
 import Toast from "../../../components/Toast";
+import ProfileCard from "../../../components/customer-detail/ProfileCard";
+import BasicInfoSection from "../../../components/customer-detail/BasicInfoSection";
+import MarkdownDetailSection from "../../../components/customer-detail/MarkdownDetailSection";
 
 type Customer = {
   id: string;
@@ -41,6 +44,7 @@ export default function CustomerDetailPage({
   const [form, setForm] = useState({ ...emptyForm });
   const [editMode, setEditMode] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     apiRequest<{ data: Customer }>(`/api/customers/${params.id}`)
@@ -58,8 +62,13 @@ export default function CustomerDetailPage({
           profile_markdown: response.data.profile_markdown ?? ""
         });
       })
-      .catch(() => setToast("客户不存在或加载失败"));
+      .catch(() => setToast("客户不存在或加载失败"))
+      .finally(() => setIsLoading(false));
   }, [params.id]);
+
+  function handleFormChange(field: string, value: string) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  }
 
   async function handleSave() {
     try {
@@ -82,131 +91,150 @@ export default function CustomerDetailPage({
       );
       setCustomer(response.data);
       setEditMode(false);
-      setToast("客户已更新");
+      setToast("客户信息已更新");
     } catch (err) {
       setToast(err instanceof Error ? err.message : "保存失败");
     }
   }
 
   async function handleDelete() {
+    if (!confirm("确定要删除这位客户吗？")) return;
+
     try {
       await apiRequest(`/api/customers/${params.id}`, { method: "DELETE" });
       setToast("客户已删除");
+      setTimeout(() => {
+        window.location.href = "/customers";
+      }, 1000);
     } catch (err) {
       setToast(err instanceof Error ? err.message : "删除失败");
     }
   }
 
-  if (!customer) {
+  function handleCancelEdit() {
+    if (customer) {
+      setForm({
+        name: customer.name ?? "",
+        company: customer.company ?? "",
+        title: customer.title ?? "",
+        phones: (customer.phones ?? []).join(", "),
+        emails: (customer.emails ?? []).join(", "),
+        wechat: customer.wechat ?? "",
+        address: customer.address ?? "",
+        tags: (customer.tags ?? []).join(", "),
+        profile_markdown: customer.profile_markdown ?? ""
+      });
+    }
+    setEditMode(false);
+  }
+
+  if (isLoading) {
     return (
-      <div className="rounded-[32px] border border-border bg-bg-primary p-6 shadow-subtle">
+      <div className="flex min-h-screen items-center justify-center">
         <p className="text-sm text-text-secondary">加载中...</p>
-        {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
       </div>
     );
   }
 
+  if (!customer) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-text-secondary">客户不存在</p>
+        {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+      </div>
+    );
+  }
+
+  const hasContact = Boolean(
+    form.phones || form.emails || form.wechat
+  );
+
   return (
-    <div className="rounded-[32px] border border-border bg-bg-primary p-6 shadow-subtle">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-text-tertiary">
+    <div className="min-h-screen bg-bg-primary">
+      <div className="rounded-t-[32px] border border-border bg-bg-primary p-6 shadow-subtle md:mx-auto md:max-w-2xl">
+        {/* Header */}
+        <div className="mb-6 flex items-center justify-between">
+          <Link
+            href="/customers"
+            className="grid h-8 w-8 place-items-center rounded-full border border-border bg-surface"
+          >
+            <IconChevronLeft className="h-4 w-4 text-text-secondary" />
+          </Link>
+
+          <h1 className="font-display text-xl font-semibold text-text-primary">
             客户详情
-            <span className="mx-1">/</span>
-            {customer.name || "未命名"}
-          </p>
-          <h1 className="mt-1 font-display text-2xl font-semibold text-text-primary">
-            {customer.name || "未命名客户"}
           </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            className="grid h-9 w-9 place-items-center rounded-full border border-border bg-bg-surface text-text-secondary"
-            onClick={() => setEditMode((prev) => !prev)}
-          >
-            <IconEdit className="h-4 w-4" />
-          </button>
-          <button
-            className="grid h-9 w-9 place-items-center rounded-full border border-border bg-bg-surface text-text-secondary"
-            onClick={handleDelete}
-          >
-            <IconTrash className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-        {[
-          { key: "company", label: "公司" },
-          { key: "title", label: "职位" },
-          { key: "phones", label: "手机号" },
-          { key: "emails", label: "邮箱" },
-          { key: "wechat", label: "微信" },
-          { key: "address", label: "地址" },
-          { key: "tags", label: "标签" }
-        ].map((field) => (
-          <label key={field.key} className="space-y-1 text-xs">
-            <span className="text-text-tertiary">{field.label}</span>
-            {editMode ? (
-              <input
-                className="w-full rounded-xl border border-border bg-bg-secondary px-3 py-2 text-sm"
-                value={(form as Record<string, string>)[field.key]}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    [field.key]: event.target.value
-                  }))
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (editMode) {
+                  handleCancelEdit();
+                } else {
+                  setEditMode(true);
                 }
-              />
-            ) : (
-              <p className="rounded-xl bg-bg-secondary px-3 py-2 text-sm text-text-primary">
-                {(form as Record<string, string>)[field.key] || "-"}
-              </p>
+              }}
+              className="rounded-lg bg-accent-light px-3 py-1.5 text-xs font-semibold text-accent"
+            >
+              {editMode ? "取消" : "编辑"}
+            </button>
+
+            {editMode && (
+              <button
+                onClick={handleSave}
+                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-accent"
+              >
+                保存
+              </button>
             )}
-          </label>
-        ))}
-      </div>
+          </div>
+        </div>
 
-      <div className="mt-4 rounded-2xl border border-border bg-bg-surface p-4">
-        <p className="text-xs font-semibold text-text-tertiary">客户补充信息</p>
-        {editMode ? (
-          <textarea
-            className="mt-2 w-full rounded-xl border border-border bg-bg-secondary px-3 py-2 text-sm"
-            rows={4}
-            value={form.profile_markdown}
-            onChange={(event) =>
-              setForm((prev) => ({
-                ...prev,
-                profile_markdown: event.target.value
-              }))
-            }
+        {/* Profile Card */}
+        <ProfileCard
+          name={customer.name}
+          company={customer.company}
+          title={customer.title}
+          tags={customer.tags}
+          updated_at={customer.updated_at}
+          hasContact={hasContact}
+        />
+
+        {/* Basic Info Section */}
+        <div className="mt-4">
+          <BasicInfoSection
+            isEditMode={editMode}
+            form={form}
+            onFormChange={handleFormChange}
           />
-        ) : (
-          <p className="mt-2 text-sm text-text-secondary whitespace-pre-line">
-            {form.profile_markdown || "暂无补充信息"}
-          </p>
+        </div>
+
+        {/* Markdown Detail Section */}
+        <div className="mt-4">
+          <MarkdownDetailSection
+            isEditMode={editMode}
+            content={form.profile_markdown}
+            onContentChange={(value) => handleFormChange("profile_markdown", value)}
+          />
+        </div>
+
+        {/* Delete Button (Only in view mode) */}
+        {!editMode && (
+          <div className="mt-6 flex justify-center">
+            <button
+              onClick={handleDelete}
+              className="rounded-full border border-red-200 px-6 py-2 text-xs font-semibold text-red-500 transition-colors hover:bg-red-50"
+            >
+              删除客户
+            </button>
+          </div>
         )}
+
+        {/* Bottom Spacing */}
+        <div className="h-8" />
       </div>
 
-      <div className="mt-5 flex items-center justify-between">
-        <Link
-          href="/customers"
-          className="flex items-center gap-2 text-xs font-semibold text-text-secondary"
-        >
-          返回客户列表
-          <IconChevronRight className="h-4 w-4" />
-        </Link>
-        {editMode ? (
-          <button
-            className="rounded-full bg-accent px-4 py-2 text-xs font-semibold text-white shadow-accent"
-            onClick={handleSave}
-          >
-            保存修改
-          </button>
-        ) : null}
-      </div>
-
-      {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
+      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
   );
 }
