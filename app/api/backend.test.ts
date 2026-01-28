@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
 
 const rawBaseUrl = process.env.BASE_URL;
 const BASE_URL =
@@ -41,6 +41,17 @@ beforeAll(async () => {
 });
 
 describe("Customers API", () => {
+  const createdIds: string[] = [];
+
+  afterEach(async () => {
+    for (const id of createdIds) {
+      await fetchJson(`/api/customers/${id}`, { method: "DELETE" }).catch(
+        () => {}
+      );
+    }
+    createdIds.length = 0;
+  });
+
   it("lists customers with meta", async () => {
     const { status, json } = await fetchJson("/api/customers?page=1&pageSize=2");
     expect(status).toBe(200);
@@ -68,6 +79,7 @@ describe("Customers API", () => {
     expect(createStatus).toBe(201);
     const customerId = created?.data?.id as string;
     expect(customerId).toBeTruthy();
+    createdIds.push(customerId);
 
     const { status: getStatus, json: fetched } = await fetchJson(
       `/api/customers/${customerId}`
@@ -94,6 +106,15 @@ describe("Customers API", () => {
 });
 
 describe("Todos API", () => {
+  const createdIds: string[] = [];
+
+  afterEach(async () => {
+    for (const id of createdIds) {
+      await fetchJson(`/api/todos/${id}`, { method: "DELETE" }).catch(() => {});
+    }
+    createdIds.length = 0;
+  });
+
   it("lists todos with stats", async () => {
     const { status, json } = await fetchJson("/api/todos?page=1&pageSize=2");
     expect(status).toBe(200);
@@ -118,6 +139,7 @@ describe("Todos API", () => {
     expect(createStatus).toBe(201);
     const todoId = created?.data?.id as string;
     expect(todoId).toBeTruthy();
+    createdIds.push(todoId);
 
     const { status: getStatus, json: fetched } = await fetchJson(
       `/api/todos/${todoId}`
