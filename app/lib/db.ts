@@ -17,10 +17,21 @@ function getPool() {
   const globalPool = globalThis as GlobalPool;
   if (!globalPool.__ai4sales_pg_pool__) {
     const connectionString = process.env.DATABASE_URL;
-    if (!connectionString && !process.env.PGHOST) {
-      throw new Error(
-        "Postgres configuration missing: set DATABASE_URL or PGHOST/PGUSER/PGDATABASE."
-      );
+    if (!connectionString) {
+      const missing: string[] = [];
+      if (!process.env.PGHOST) missing.push("PGHOST");
+      if (!process.env.PGUSER) missing.push("PGUSER");
+      if (!process.env.PGDATABASE) missing.push("PGDATABASE");
+      if (missing.length) {
+        throw new Error(
+          [
+            "Postgres configuration missing.",
+            "Set DATABASE_URL or provide individual variables:",
+            missing.join(", "),
+            "Reference .env.local.example."
+          ].join(" ")
+        );
+      }
     }
     globalPool.__ai4sales_pg_pool__ = new Pool({
       connectionString,
@@ -177,6 +188,36 @@ async function ensureInitialized() {
           linked_customer_id TEXT
         );
       `);
+      await pool.query(
+        "CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);"
+      );
+      await pool.query(
+        "CREATE INDEX IF NOT EXISTS idx_customers_company ON customers(company);"
+      );
+      await pool.query(
+        "CREATE INDEX IF NOT EXISTS idx_customers_updated_at ON customers(updated_at DESC);"
+      );
+      await pool.query(
+        "CREATE INDEX IF NOT EXISTS idx_customers_tags ON customers USING GIN(tags);"
+      );
+      await pool.query(
+        "CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status);"
+      );
+      await pool.query(
+        "CREATE INDEX IF NOT EXISTS idx_todos_priority ON todos(priority);"
+      );
+      await pool.query(
+        "CREATE INDEX IF NOT EXISTS idx_todos_updated_at ON todos(updated_at DESC);"
+      );
+      await pool.query(
+        "CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);"
+      );
+      await pool.query(
+        "CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at DESC);"
+      );
+      await pool.query(
+        "CREATE INDEX IF NOT EXISTS idx_conversations_linked_customer ON conversations(linked_customer_id);"
+      );
 
       const { rows } = await pool.query(
         "SELECT (SELECT COUNT(*) FROM customers) AS customers, (SELECT COUNT(*) FROM todos) AS todos, (SELECT COUNT(*) FROM conversations) AS conversations;"
