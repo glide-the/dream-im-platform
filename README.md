@@ -89,6 +89,10 @@ npm install
 
 # 修改配置
 cp .env.local.example .env.local
+
+# 配置 Postgres（任选其一）
+# DATABASE_URL=postgres://user:password@localhost:5432/ai4sales
+# 或设置 PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE
 ```
 
 ### 开发
@@ -159,7 +163,8 @@ pnpm test:ui
 
 ### 数据管理
 
-- **JSON 文件数据库**: `data/db.json`
+- **Postgres 数据库**: 使用 Drizzle ORM + `pg`
+- **自动建表与种子数据**: 首次启动会初始化表结构并写入示例数据
 - **写入队列机制**: 全局队列防止并发写入冲突
 - **类型安全**: 完整的 TypeScript 类型定义
 

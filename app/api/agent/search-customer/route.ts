@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildCustomerCard, createAttachment } from "../../../lib/agent";
-import { readDb, withDb } from "../../../lib/db";
+import { createConversation, findDuplicateCustomers } from "../../../lib/db";
 import { createId } from "../../../lib/id";
 import { CustomerCard } from "../../../lib/types";
 import { researchCustomer, isAiResearchEnabled } from "../../../lib/ai-researcher";
@@ -58,45 +58,35 @@ export async function POST(request: Request) {
     createAttachment(item)
   );
 
-  await withDb((db) => {
-    const title = `【${debug.company || "未知公司"}】${
-      debug.name || "客户"
-    } 客户信息检索`;
+  const title = `【${debug.company || "未知公司"}】${
+    debug.name || "客户"
+  } 客户信息检索`;
 
-    const conversation = {
-      id: conversationId,
-      title,
-      status: "pending" as const,
-      created_at: now,
-      updated_at: now,
-      messages: [
-        {
-          id: createId("msg"),
-          role: "user" as const,
-          content: queryText,
-          created_at: now
-        },
-        {
-          id: createId("msg"),
-          role: "assistant" as const,
-          content: "已整理客户资料卡片，请确认后入库。",
-          created_at: now
-        }
-      ],
-      attachments,
-      context_customer_ids: body?.context_customer_ids ?? [],
-      ai_outputs: {
-        customer_card: card
-      }
-    };
-
-    return {
-      db: {
-        ...db,
-        conversations: [conversation, ...db.conversations]
+  await createConversation({
+    id: conversationId,
+    title,
+    status: "pending",
+    created_at: now,
+    updated_at: now,
+    messages: [
+      {
+        id: createId("msg"),
+        role: "user",
+        content: queryText,
+        created_at: now
       },
-      result: conversation
-    };
+      {
+        id: createId("msg"),
+        role: "assistant",
+        content: "已整理客户资料卡片，请确认后入库。",
+        created_at: now
+      }
+    ],
+    attachments,
+    context_customer_ids: body?.context_customer_ids ?? [],
+    ai_outputs: {
+      customer_card: card
+    }
   });
 
   const response: {
@@ -115,16 +105,10 @@ export async function POST(request: Request) {
     research_method: usedAiResearch ? "ai" : "mock"
   };
 
-  const db = await readDb();
-  const duplicates = db.customers.filter((customer) => {
-    const sameName = card.structured_fields.name
-      ? customer.name === card.structured_fields.name
-      : false;
-    const sameCompany = card.structured_fields.company
-      ? customer.company === card.structured_fields.company
-      : false;
-    return sameName && sameCompany;
-  });
+  const duplicates = await findDuplicateCustomers(
+    card.structured_fields.name,
+    card.structured_fields.company
+  );
 
   if (duplicates.length > 0) {
     response.action_suggestions.unshift("可能存在重复客户，请核对");

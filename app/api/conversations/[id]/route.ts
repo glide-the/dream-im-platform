@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { withDb } from "../../../lib/db";
+import { updateConversationLink } from "../../../lib/db";
 import { Conversation } from "../../../lib/types";
 
 export const runtime = "nodejs";
@@ -21,23 +21,11 @@ export async function PATCH(
 
   const now = new Date().toISOString();
 
-  const updated = await withDb((db) => {
-    const index = db.conversations.findIndex((item) => item.id === params.id);
-    if (index === -1) {
-      return { db, result: null };
-    }
-    const current = db.conversations[index];
-    const next: Conversation = {
-      ...current,
-      status: (body?.status as Conversation["status"]) ?? current.status,
-      linked_customer_id:
-        body?.linked_customer_id ?? current.linked_customer_id,
-      ai_outputs: body?.ai_outputs ?? current.ai_outputs,
-      updated_at: now
-    };
-    const conversations = [...db.conversations];
-    conversations[index] = next;
-    return { db: { ...db, conversations }, result: next };
+  const updated = await updateConversationLink(params.id, {
+    status: (body?.status as Conversation["status"]) ?? undefined,
+    linked_customer_id: body?.linked_customer_id ?? undefined,
+    ai_outputs: body?.ai_outputs ?? undefined,
+    updated_at: now
   });
 
   if (!updated) {

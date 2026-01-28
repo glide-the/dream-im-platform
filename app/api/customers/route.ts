@@ -1,13 +1,7 @@
 import { NextResponse } from "next/server";
-import { readDb, withDb } from "../../lib/db";
+import { createCustomerWithConversationLink, listCustomers } from "../../lib/db";
 import { createId } from "../../lib/id";
-import {
-  filterCustomers,
-  paginate,
-  searchCustomers,
-  sortCustomers,
-  toNumber
-} from "../../lib/query";
+import { toNumber } from "../../lib/query";
 import { Customer } from "../../lib/types";
 
 export const runtime = "nodejs";
@@ -35,23 +29,19 @@ export async function GET(request: Request) {
   const tag = searchParams.get("tag") ?? "";
   const hasContact = searchParams.get("hasContact") === "1";
 
-  const db = await readDb();
-  let result = searchCustomers(db.customers, search);
-  result = filterCustomers(result, { tag, hasContact });
-  result = sortCustomers(result, sort, order);
-
-  const { data, meta } = paginate(result, page, pageSize);
-  const tagOptions = Array.from(
-    new Set(db.customers.flatMap((customer) => customer.tags ?? []))
-  );
+  const result = await listCustomers({
+    page,
+    pageSize,
+    search,
+    sort,
+    order,
+    tag,
+    hasContact
+  });
 
   return NextResponse.json({
-    data,
-    meta: {
-      ...meta,
-      tagOptions,
-      totalCustomers: db.customers.length
-    }
+    data: result.data,
+    meta: result.meta
   });
 }
 
@@ -87,27 +77,10 @@ export async function POST(request: Request) {
     last_verified_at: body?.last_verified_at ?? now
   };
 
-  const result = await withDb((db) => {
-    const conversations = db.conversations.map((conv) => {
-      if (body?.conversation_id && conv.id === body.conversation_id) {
-        return {
-          ...conv,
-          status: "confirmed" as const,
-          linked_customer_id: customer.id,
-          updated_at: now
-        };
-      }
-      return conv;
-    });
-    return {
-      db: {
-        ...db,
-        customers: [customer, ...db.customers],
-        conversations
-      },
-      result: customer
-    };
-  });
+  const result = await createCustomerWithConversationLink(
+    customer,
+    body?.conversation_id
+  );
 
   return NextResponse.json({ data: result }, { status: 201 });
 }
