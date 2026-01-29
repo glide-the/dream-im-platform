@@ -1,5 +1,5 @@
 import { jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
-import { Conversation } from "../types";
+import { Conversation, DecisionChainItem } from "../types";
 
 export const customers = pgTable("customers", {
   id: text("id").primaryKey(),
@@ -11,6 +11,7 @@ export const customers = pgTable("customers", {
   wechat: text("wechat"),
   address: text("address"),
   tags: text("tags").array(),
+  decision_chain: jsonb("decision_chain").$type<DecisionChainItem[]>(),
   profile_markdown: text("profile_markdown"),
   created_at: timestamp("created_at", { withTimezone: true, mode: "date" }),
   updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),

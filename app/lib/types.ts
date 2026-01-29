@@ -1,5 +1,18 @@
 export type CustomerSource = "ai_search" | "manual" | "import";
 
+export type DecisionChainItem = {
+  name: string;
+  contacts?: {
+    phones?: string[];
+    emails?: string[];
+    wechat?: string;
+  };
+  age?: string;
+  personality?: string;
+  preferences?: string;
+  role_in_chain?: string;
+};
+
 export type Customer = {
   id: string;
   name?: string;
@@ -10,6 +23,7 @@ export type Customer = {
   wechat?: string;
   address?: string;
   tags?: string[];
+  decision_chain?: DecisionChainItem[];
   profile_markdown?: string;
   created_at: string;
   updated_at: string;
@@ -54,6 +68,7 @@ export type CustomerCard = {
     wechat?: string;
     address?: string;
     tags?: string[];
+    decision_chain?: DecisionChainItem[];
   };
   profile_markdown: string;
   confidence?: number;

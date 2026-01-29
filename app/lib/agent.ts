@@ -52,7 +52,8 @@ export function buildCustomerCard(queryText: string): {
       company: company || "",
       title,
       phones: [phone],
-      tags: selectedTags
+      tags: selectedTags,
+      decision_chain: []
     },
     profile_markdown: `- ${insight}\n- 建议补充决策链与联系方式，确认需求优先级。`,
     confidence,
