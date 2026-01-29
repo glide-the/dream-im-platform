@@ -2,13 +2,15 @@
 
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
-import { IconChevronLeft, IconEdit, IconTrash, IconChevronDown, IconChevronUp } from "../../../components/Icons";
+import { IconChevronLeft, IconChevronDown, IconChevronUp } from "../../../components/Icons";
 import Toast from "../../../components/Toast";
 import ProfileCard from "../../../components/customer-detail/ProfileCard";
 import BasicInfoSection from "../../../components/customer-detail/BasicInfoSection";
 import MarkdownDetailSection from "../../../components/customer-detail/MarkdownDetailSection";
+import DecisionChainSection from "../../../components/customer-detail/DecisionChainSection";
 import AIInputDock from "../../../components/AIInputDock";
-import { useCustomer, useUpdateCustomer, useDeleteCustomer } from "../../../lib/queries";
+import { useCustomer, useUpdateCustomer } from "../../../lib/queries";
+import type { DecisionChainItem } from "../../../lib/types";
 
 type Customer = {
   id: string;
@@ -20,6 +22,7 @@ type Customer = {
   wechat?: string;
   address?: string;
   tags?: string[];
+  decision_chain?: DecisionChainItem[];
   profile_markdown?: string;
   updated_at: string;
 };
@@ -33,6 +36,7 @@ const emptyForm = {
   wechat: "",
   address: "",
   tags: "",
+  decision_chain: [] as DecisionChainItem[],
   profile_markdown: ""
 };
 
@@ -43,16 +47,20 @@ export default function CustomerDetailPage({
 }) {
   const { id } = use(params);
   const [form, setForm] = useState({ ...emptyForm });
-  const [editMode, setEditMode] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   
-  // 新增状态：对话历史和折叠控制
+  // 卡片级独立编辑状态
+  const [editingCard, setEditingCard] = useState<"profileCard" | "basicSection" | "detailSection" | null>(null);
+  
+  // 卡片折叠状态
+  const [collapsedCards, setCollapsedCards] = useState<Set<"basicSection" | "detailSection">>(new Set());
+  
+  // 对话历史和折叠控制
   const [isInfoCollapsed, setIsInfoCollapsed] = useState(false);
   const [showChatArea, setShowChatArea] = useState(false);
 
   const { data: customerData, isLoading } = useCustomer(id);
   const updateMutation = useUpdateCustomer();
-  const deleteMutation = useDeleteCustomer();
 
   const customer = customerData?.data;
 
@@ -68,67 +76,24 @@ export default function CustomerDetailPage({
         wechat: customer.wechat ?? "",
         address: customer.address ?? "",
         tags: (customer.tags ?? []).join(", "),
+        decision_chain: customer.decision_chain ?? [],
         profile_markdown: customer.profile_markdown ?? ""
       });
     }
   }, [customer]);
 
-  function handleFormChange(field: string, value: string) {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  }
-
-  async function handleSave() {
-    try {
-      await updateMutation.mutateAsync({
-        id,
-        data: {
-          name: form.name,
-          company: form.company,
-          title: form.title,
-          phones: form.phones ? form.phones.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
-          emails: form.emails ? form.emails.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
-          wechat: form.wechat,
-          address: form.address,
-          tags: form.tags ? form.tags.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
-          profile_markdown: form.profile_markdown
-        }
+  function handleCardSave(updatedData: Partial<Customer>) {
+    updateMutation.mutateAsync({
+      id,
+      data: updatedData
+    })
+      .then(() => {
+        setToast("客户信息已更新");
+        setEditingCard(null);
+      })
+      .catch((err) => {
+        setToast(err instanceof Error ? err.message : "保存失败");
       });
-      setEditMode(false);
-      setToast("客户信息已更新");
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : "保存失败");
-    }
-  }
-
-  async function handleDelete() {
-    if (!confirm("确定要删除这位客户吗？")) return;
-
-    try {
-      await deleteMutation.mutateAsync(id);
-      setToast("客户已删除");
-      setTimeout(() => {
-        window.location.href = "/customers";
-      }, 1000);
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : "删除失败");
-    }
-  }
-
-  function handleCancelEdit() {
-    if (customer) {
-      setForm({
-        name: customer.name ?? "",
-        company: customer.company ?? "",
-        title: customer.title ?? "",
-        phones: (customer.phones ?? []).join(", "),
-        emails: (customer.emails ?? []).join(", "),
-        wechat: customer.wechat ?? "",
-        address: customer.address ?? "",
-        tags: (customer.tags ?? []).join(", "),
-        profile_markdown: customer.profile_markdown ?? ""
-      });
-    }
-    setEditMode(false);
   }
 
   if (isLoading) {
@@ -168,70 +133,75 @@ export default function CustomerDetailPage({
             客户详情
           </h1>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                if (editMode) {
-                  handleCancelEdit();
-                } else {
-                  setEditMode(true);
-                }
-              }}
-              className="rounded-lg bg-accent-light px-3 py-1.5 text-xs font-semibold text-accent"
-            >
-              {editMode ? "取消" : "编辑"}
-            </button>
-
-            {editMode && (
-              <button
-                onClick={handleSave}
-                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-accent"
-              >
-                保存
-              </button>
-            )}
-          </div>
+          <button
+            onClick={() => setIsInfoCollapsed(!isInfoCollapsed)}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text-secondary"
+          >
+            {isInfoCollapsed ? "展开" : "收起"}
+          </button>
         </div>
 
         {/* Profile Card */}
         <ProfileCard
-          name={customer.name}
-          company={customer.company}
-          title={customer.title}
-          tags={customer.tags}
-          updated_at={customer.updated_at}
-          hasContact={hasContact}
+          customer={customer}
+          isEditing={editingCard === "profileCard"}
+          onToggleEdit={() => setEditingCard(editingCard === "profileCard" ? null : "profileCard")}
+          onSave={handleCardSave}
         />
 
         {/* Basic Info Section */}
-        <div className="mt-4">
+        <div className="mt-4" style={{ display: isInfoCollapsed ? "none" : "block" }}>
           <BasicInfoSection
-            isEditMode={editMode}
-            form={form}
-            onFormChange={handleFormChange}
+            customer={customer}
+            isEditing={editingCard === "basicSection"}
+            isCollapsed={collapsedCards.has("basicSection")}
+            onToggleEdit={() => setEditingCard(editingCard === "basicSection" ? null : "basicSection")}
+            onToggleCollapse={() => {
+              setCollapsedCards(prev => {
+                const newSet = new Set(prev);
+                if (newSet.has("basicSection")) {
+                  newSet.delete("basicSection");
+                } else {
+                  newSet.add("basicSection");
+                }
+                return newSet;
+              });
+            }}
+            onSave={handleCardSave}
+          />
+        </div>
+
+        {/* Decision Chain Section */}
+        <div className="mt-4" style={{ display: isInfoCollapsed ? "none" : "block" }}>
+          <DecisionChainSection
+            customer={customer}
+            isEditing={false}
+            onToggleEdit={() => {}}
+            onSave={handleCardSave}
           />
         </div>
 
         {/* Markdown Detail Section */}
-        <div className="mt-4">
+        <div className="mt-4" style={{ display: isInfoCollapsed ? "none" : "block" }}>
           <MarkdownDetailSection
-            isEditMode={editMode}
-            content={form.profile_markdown}
-            onContentChange={(value) => handleFormChange("profile_markdown", value)}
+            customer={customer}
+            isEditing={editingCard === "detailSection"}
+            isCollapsed={collapsedCards.has("detailSection")}
+            onToggleEdit={() => setEditingCard(editingCard === "detailSection" ? null : "detailSection")}
+            onToggleCollapse={() => {
+              setCollapsedCards(prev => {
+                const newSet = new Set(prev);
+                if (newSet.has("detailSection")) {
+                  newSet.delete("detailSection");
+                } else {
+                  newSet.add("detailSection");
+                }
+                return newSet;
+              });
+            }}
+            onSave={handleCardSave}
           />
         </div>
-
-        {/* Delete Button (Only in view mode) */}
-        {!editMode && (
-          <div className="mt-6 flex justify-center">
-            <button
-              onClick={handleDelete}
-              className="rounded-full border border-red-200 px-6 py-2 text-xs font-semibold text-red-500 transition-colors hover:bg-red-50"
-            >
-              删除客户
-            </button>
-          </div>
-        )}
 
         {/* 收起/展开提示条 */}
         {isInfoCollapsed && (
@@ -272,33 +242,31 @@ export default function CustomerDetailPage({
       </div>
 
       {/* Fixed AI Input Dock at bottom */}
-      {!editMode && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 bg-bg-primary/95 backdrop-blur-sm md:mx-auto md:max-w-2xl">
-          <div className="border-t border-border p-4">
-            <AIInputDock
-              contextCustomerId={id}
-              contextCustomers={[
-                {
-                  id: customer.id,
-                  name: customer.name,
-                  company: customer.company
-                }
-              ]}
-              onSendMessage={async (message, attachments, customerIds) => {
-                console.log("发送消息:", { message, attachments, customerIds });
-                setShowChatArea(true);
-                setIsInfoCollapsed(true);
-              }}
-              onAddContextCustomer={() => {
-                // 可以添加客户选择器
-              }}
-              onRemoveContextCustomer={() => {}}
-              placeholder={`继续提问或补充信息...`}
-              loading={false}
-            />
-          </div>
+      <div className="fixed bottom-0 left-0 right-0 z-30 bg-bg-primary/95 backdrop-blur-sm md:mx-auto md:max-w-2xl">
+        <div className="border-t border-border p-4">
+          <AIInputDock
+            contextCustomerId={id}
+            contextCustomers={[
+              {
+                id: customer.id,
+                name: customer.name,
+                company: customer.company
+              }
+            ]}
+            onSendMessage={async (message, attachments, customerIds) => {
+              console.log("发送消息:", { message, attachments, customerIds });
+              setShowChatArea(true);
+              setIsInfoCollapsed(true);
+            }}
+            onAddContextCustomer={() => {
+              // 可以添加客户选择器
+            }}
+            onRemoveContextCustomer={() => {}}
+            placeholder={`继续提问或补充信息...`}
+            loading={false}
+          />
         </div>
-      )}
+      </div>
 
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
