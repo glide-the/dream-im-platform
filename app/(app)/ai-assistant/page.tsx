@@ -95,6 +95,10 @@ function AiAssistantPage() {
     { name: string; type: string; size: number }[]
   >([]);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [createdCustomerId, setCreatedCustomerId] = useState<string | null>(null);
+  const [createdCustomerName, setCreatedCustomerName] = useState<string>("");
+  const [createdCustomerCompany, setCreatedCustomerCompany] = useState<string>("");
   const [customerSearch, setCustomerSearch] = useState("");
   const [contextCustomers, setContextCustomers] = useState<CustomerOption[]>([]);
 
@@ -185,7 +189,7 @@ function AiAssistantPage() {
   async function handleConfirm() {
     if (!editCard) return;
     try {
-      await createCustomerMutation.mutateAsync({
+      const result = await createCustomerMutation.mutateAsync({
         name: editCard.structured_fields.name,
         company: editCard.structured_fields.company,
         title: editCard.structured_fields.title,
@@ -198,7 +202,17 @@ function AiAssistantPage() {
         source: "ai_search",
         conversation_id: conversationId
       } as any);
-      setToast("客户已新增");
+      
+      // Extract customer ID and info from the response
+      const customerId = result?.data?.id || "";
+      const customerName = editCard.structured_fields.name || "客户";
+      const customerCompany = editCard.structured_fields.company || "";
+      
+      setCreatedCustomerId(customerId);
+      setCreatedCustomerName(customerName);
+      setCreatedCustomerCompany(customerCompany);
+      setSuccessModalOpen(true);
+      
       setEditMode(false);
       setCard(null);
       setEditCard(emptyCard);
@@ -591,6 +605,47 @@ function AiAssistantPage() {
                 <span className="text-xs text-text-tertiary">添加</span>
               </button>
             ))}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Success Modal */}
+      <Modal
+        open={successModalOpen}
+        title="客户已新增"
+        onClose={() => setSuccessModalOpen(false)}
+      >
+        <div className="space-y-4 text-center">
+          <div className="rounded-full bg-accent-light mx-auto w-16 h-16 flex items-center justify-center">
+            <span className="text-3xl">✓</span>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-text-primary">客户已新增</h3>
+            <p className="mt-2 text-sm text-text-secondary">
+              {createdCustomerName}
+              {createdCustomerCompany && ` · ${createdCustomerCompany}`}
+            </p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <button
+              className="w-full rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white shadow-accent"
+              onClick={() => {
+                setSuccessModalOpen(false);
+                if (createdCustomerId) {
+                  router.push(`/customers/${createdCustomerId}`);
+                }
+              }}
+            >
+              查看客户详情
+            </button>
+            <button
+              className="w-full rounded-full border border-border bg-bg-surface px-4 py-2 text-sm font-semibold text-text-secondary"
+              onClick={() => {
+                setSuccessModalOpen(false);
+              }}
+            >
+              继续对话
+            </button>
           </div>
         </div>
       </Modal>
