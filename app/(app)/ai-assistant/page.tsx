@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   IconCamera,
   IconImage,
@@ -77,6 +77,7 @@ export default function AiAssistantPageWrapper() {
 }
 
 function AiAssistantPage() {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -282,12 +283,15 @@ function AiAssistantPage() {
   };
 
   return (
-    <div className="relative overflow-hidden rounded-[32px] bg-bg-primary p-6 shadow-subtle md:rounded-[40px]">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-linear-to-b from-bg-secondary to-bg-primary" />
-      <div className="pointer-events-none absolute -left-12 top-20 h-44 w-44 rounded-full bg-[radial-gradient(circle,var(--color-accent-light),transparent_70%)]" />
-      <div className="pointer-events-none absolute -right-12 top-4 h-52 w-52 rounded-full bg-[radial-gradient(circle,var(--color-accent-light),transparent_70%)]" />
+    <div className="relative min-h-screen bg-bg-primary">
+      <div className="mx-auto max-w-2xl rounded-[32px] bg-bg-primary shadow-subtle md:rounded-[40px]">
+        <div className="relative overflow-y-auto pb-[280px]">
+          <div className="p-6">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-linear-to-b from-bg-secondary to-bg-primary" />
+            <div className="pointer-events-none absolute -left-12 top-20 h-44 w-44 rounded-full bg-[radial-gradient(circle,var(--color-accent-light),transparent_70%)]" />
+            <div className="pointer-events-none absolute -right-12 top-4 h-52 w-52 rounded-full bg-[radial-gradient(circle,var(--color-accent-light),transparent_70%)]" />
 
-      <div className="relative">
+          <div className="relative">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <p className="font-display text-xl font-semibold text-text-primary">
@@ -297,7 +301,16 @@ function AiAssistantPage() {
               Beta
             </span>
           </div>
-          <button className="grid h-8 w-8 place-items-center rounded-full border border-border bg-bg-surface text-text-secondary">
+          <button
+            className="grid h-8 w-8 place-items-center rounded-full border border-border bg-bg-surface text-text-secondary"
+            onClick={() => {
+              if (window.history.length > 1) {
+                router.back();
+              } else {
+                router.push('/customers');
+              }
+            }}
+          >
             ×
           </button>
         </div>
@@ -562,77 +575,6 @@ function AiAssistantPage() {
         </div>
       </div>
 
-      <div className="sticky bottom-0 mt-6 rounded-2xl border border-border bg-bg-primary/95 p-4 backdrop-blur-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2">
-            {[IconPaperclip, IconImage, IconCamera].map((Icon, idx) => (
-              <label
-                key={idx}
-                className="grid h-9 w-9 cursor-pointer place-items-center rounded-full border border-border bg-bg-surface text-text-secondary"
-              >
-                <Icon className="h-4 w-4" />
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={(event) => handleAttachment(event.target.files)}
-                />
-              </label>
-            ))}
-          </div>
-          <button
-            className="rounded-full bg-accent-light px-3 py-1 text-xs font-semibold text-accent"
-            onClick={() => setCustomerModalOpen(true)}
-          >
-            @客户
-          </button>
-          {contextCustomers.length > 0 ? (
-            <div className="flex flex-wrap gap-2 text-[11px] text-text-tertiary">
-              {contextCustomers.map((customer) => (
-                <button
-                  key={customer.id}
-                  className="rounded-full border border-border bg-bg-surface px-2 py-1"
-                  onClick={() => removeContextCustomer(customer.id)}
-                >
-                  @{customer.name ?? "客户"} · 取消
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        {attachments.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {attachments.map((file, index) => (
-              <button
-                key={`${file.name}-${index}`}
-                className="rounded-full border border-border bg-bg-surface px-3 py-1 text-[11px] text-text-secondary"
-                onClick={() => removeAttachment(index)}
-              >
-                {file.name}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        <div className="mt-3 flex items-center gap-2">
-          <textarea
-            className="min-h-[44px] flex-1 rounded-2xl border border-border bg-bg-surface px-4 py-2 text-sm text-text-primary"
-            rows={2}
-            placeholder="输入公司 + 姓名…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <button
-            className="grid h-11 w-11 place-items-center rounded-full bg-accent text-white shadow-accent"
-            onClick={handleSearch}
-            disabled={loading}
-          >
-            <IconSend className="h-5 w-5" />
-          </button>
-        </div>
-        <p className="mt-2 text-[11px] text-text-tertiary">
-          长按发送键可语音输入（MVP 预留）
-        </p>
-      </div>
-
       <div className="pointer-events-none absolute -bottom-6 right-6 hidden rounded-full bg-accent-light p-3 text-accent shadow-subtle md:flex">
         <IconSparkles className="h-6 w-6" />
       </div>
@@ -670,6 +612,30 @@ function AiAssistantPage() {
       </Modal>
 
       {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
+          </div>
+        </div>
+      </div>
+
+      {/* Fixed AI Input Dock at bottom */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 bg-bg-primary/95 backdrop-blur-sm md:mx-auto md:max-w-2xl">
+        <div className="border-t border-border p-4">
+          <AIInputDock
+            contextCustomerId={contextCustomerId ?? undefined}
+            contextCustomers={contextCustomers}
+            onSendMessage={async (message, newAttachments, customerIds) => {
+              setQuery(message);
+              setAttachments(newAttachments ?? []);
+              // 等待状态更新后再调用 handleSearch
+              await new Promise(resolve => setTimeout(resolve, 0));
+              handleSearch();
+            }}
+            onAddContextCustomer={() => setCustomerModalOpen(true)}
+            onRemoveContextCustomer={(id) => removeContextCustomer(id)}
+            placeholder="输入公司 + 姓名…"
+            loading={loading}
+          />
+        </div>
+      </div>
     </div>
   );
 }

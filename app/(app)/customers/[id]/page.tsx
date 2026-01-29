@@ -2,12 +2,13 @@
 
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
-import { IconChevronLeft, IconEdit, IconTrash } from "../../../components/Icons";
+import { IconChevronLeft, IconEdit, IconTrash, IconChevronDown, IconChevronUp } from "../../../components/Icons";
 import { apiRequest } from "../../../lib/client";
 import Toast from "../../../components/Toast";
 import ProfileCard from "../../../components/customer-detail/ProfileCard";
 import BasicInfoSection from "../../../components/customer-detail/BasicInfoSection";
 import MarkdownDetailSection from "../../../components/customer-detail/MarkdownDetailSection";
+import AIInputDock from "../../../components/AIInputDock";
 
 type Customer = {
   id: string;
@@ -46,6 +47,11 @@ export default function CustomerDetailPage({
   const [editMode, setEditMode] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // 新增状态：对话历史和折叠控制
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [isInfoCollapsed, setIsInfoCollapsed] = useState(false);
+  const [showChatArea, setShowChatArea] = useState(false);
 
   useEffect(() => {
     apiRequest<{ data: Customer }>(`/api/customers/${id}`)
@@ -151,7 +157,7 @@ export default function CustomerDetailPage({
   );
 
   return (
-    <div className="min-h-screen bg-bg-primary">
+    <div className="relative min-h-screen bg-bg-primary pb-[220px]">
       <div className="rounded-t-[32px] border border-border bg-bg-primary p-6 shadow-subtle md:mx-auto md:max-w-2xl">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
@@ -231,9 +237,72 @@ export default function CustomerDetailPage({
           </div>
         )}
 
+        {/* 收起/展开提示条 */}
+        {isInfoCollapsed && (
+          <div className="mt-4 rounded-xl border border-border bg-bg-surface px-4 py-3 text-center">
+            <button
+              onClick={() => setIsInfoCollapsed(false)}
+              className="text-xs font-semibold text-accent"
+            >
+              展开客户信息
+              <IconChevronDown className="ml-1 inline h-3 w-3" />
+            </button>
+          </div>
+        )}
+
+        {/* 对话历史展示区（收起态显示） */}
+        {showChatArea && isInfoCollapsed && (
+          <div className="mt-4 rounded-2xl border border-border bg-bg-surface p-4">
+            <p className="mb-3 text-xs font-semibold text-text-tertiary">
+              与 AI 的对话
+            </p>
+            <div className="space-y-3">
+              <div className="flex justify-start">
+                <div className="rounded-2xl rounded-tl-none bg-bg-secondary px-3 py-2 text-sm text-text-secondary max-w-[80%]">
+                  你好！有什么我可以帮助你的吗？
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <div className="rounded-2xl rounded-tr-none bg-accent px-3 py-2 text-sm text-white max-w-[80%]">
+                  帮我查一下这个客户的背景信息
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Bottom Spacing */}
         <div className="h-8" />
       </div>
+
+      {/* Fixed AI Input Dock at bottom */}
+      {!editMode && (
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-bg-primary/95 backdrop-blur-sm md:mx-auto md:max-w-2xl">
+          <div className="border-t border-border p-4">
+            <AIInputDock
+              contextCustomerId={id}
+              contextCustomers={[
+                {
+                  id: customer.id,
+                  name: customer.name,
+                  company: customer.company
+                }
+              ]}
+              onSendMessage={async (message, attachments, customerIds) => {
+                console.log("发送消息:", { message, attachments, customerIds });
+                setShowChatArea(true);
+                setIsInfoCollapsed(true);
+              }}
+              onAddContextCustomer={() => {
+                // 可以添加客户选择器
+              }}
+              onRemoveContextCustomer={() => {}}
+              placeholder={`继续提问或补充信息...`}
+              loading={false}
+            />
+          </div>
+        </div>
+      )}
 
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
