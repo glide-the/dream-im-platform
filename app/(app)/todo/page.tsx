@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { IconCircle, IconSearch, IconPlus, IconEdit, IconTrash } from "../../components/Icons";
 import Modal from "../../components/Modal";
 import Toast from "../../components/Toast";
-import { apiRequest } from "../../lib/client";
 import { formatRelativeTime } from "../../lib/format";
 import { useDebounce } from "../../hooks/useDebounce";
+import {
+  useTodos,
+  useCreateTodo,
+  useUpdateTodo,
+  useDeleteTodo,
+} from "../../lib/queries";
 
 type Todo = {
   id: string;
@@ -15,18 +20,6 @@ type Todo = {
   priority: "P0" | "P1" | "P2" | "P3";
   status: "open" | "done";
   updated_at: string;
-};
-
-type TodoResponse = {
-  data: Todo[];
-  meta: {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-    stats: { open: number; done: number; high: number };
-    totalTodos: number;
-  };
 };
 
 const emptyForm = {
@@ -43,44 +36,36 @@ export default function TodoPage() {
   const [priority, setPriority] = useState("all");
   const [sort, setSort] = useState("updated_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
-  const [todos, setTodos] = useState<Todo[]>([]);
-  const [meta, setMeta] = useState<TodoResponse["meta"]>({
+  const [page, setPage] = useState(1);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState({ ...emptyForm });
+  const [toast, setToast] = useState<string | null>(null);
+
+  const debouncedSearch = useDebounce(search, 300);
+
+  const { data, isLoading } = useTodos({
+    page,
+    pageSize: 6,
+    search: debouncedSearch,
+    sort,
+    order,
+    status,
+    priority,
+  });
+
+  const createMutation = useCreateTodo();
+  const updateMutation = useUpdateTodo();
+  const deleteMutation = useDeleteTodo();
+
+  const todos = data?.data ?? [];
+  const meta = data?.meta ?? {
     page: 1,
     pageSize: 6,
     total: 0,
     totalPages: 1,
     stats: { open: 0, done: 0, high: 0 },
     totalTodos: 0
-  });
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ ...emptyForm });
-  const [toast, setToast] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const debouncedSearch = useDebounce(search, 300);
-
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set("page", String(meta.page));
-    params.set("pageSize", String(meta.pageSize));
-    params.set("search", debouncedSearch);
-    params.set("sort", sort);
-    params.set("order", order);
-    if (status !== "all") params.set("status", status);
-    if (priority !== "all") params.set("priority", priority);
-    return params.toString();
-  }, [debouncedSearch, sort, order, status, priority, meta.page, meta.pageSize]);
-
-  useEffect(() => {
-    setLoading(true);
-    apiRequest<TodoResponse>(`/api/todos?${queryString}`)
-      .then((response) => {
-        setTodos(response.data);
-        setMeta(response.meta);
-      })
-      .catch(() => undefined)
-      .finally(() => setLoading(false));
-  }, [queryString]);
+  };
 
   function openCreate() {
     setForm({ ...emptyForm });
@@ -105,30 +90,29 @@ export default function TodoPage() {
     }
     try {
       if (form.id) {
-        await apiRequest(`/api/todos/${form.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
+        await updateMutation.mutateAsync({
+          id: form.id,
+          data: {
             title: form.title,
             description: form.description,
             priority: form.priority,
             status: form.status
-          })
+          }
         });
         setToast("待办已更新");
       } else {
-        await apiRequest("/api/todos", {
-          method: "POST",
-          body: JSON.stringify({
-            title: form.title,
-            description: form.description,
-            priority: form.priority,
-            status: form.status
-          })
-        });
+        await createMutation.mutateAsync({
+          title: form.title,
+          description: form.description,
+          priority: form.priority,
+          status: form.status,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as any);
         setToast("待办已创建");
       }
       setModalOpen(false);
-      setMeta((prev) => ({ ...prev, page: 1 }));
+      setPage(1);
     } catch (err) {
       setToast(err instanceof Error ? err.message : "保存失败");
     }
@@ -136,14 +120,13 @@ export default function TodoPage() {
 
   async function toggleStatus(todo: Todo) {
     try {
-      await apiRequest(`/api/todos/${todo.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
+      await updateMutation.mutateAsync({
+        id: todo.id,
+        data: {
           status: todo.status === "open" ? "done" : "open"
-        })
+        }
       });
       setToast("状态已更新");
-      setMeta((prev) => ({ ...prev, page: 1 }));
     } catch (err) {
       setToast(err instanceof Error ? err.message : "更新失败");
     }
@@ -151,9 +134,8 @@ export default function TodoPage() {
 
   async function handleDelete(id: string) {
     try {
-      await apiRequest(`/api/todos/${id}`, { method: "DELETE" });
+      await deleteMutation.mutateAsync(id);
       setToast("待办已删除");
-      setMeta((prev) => ({ ...prev, page: 1 }));
     } catch (err) {
       setToast(err instanceof Error ? err.message : "删除失败");
     }
@@ -270,7 +252,7 @@ export default function TodoPage() {
         </div>
 
         <div className="mt-6 space-y-3">
-          {loading ? (
+          {isLoading ? (
             <div className="space-y-3">
               {[1, 2, 3].map((item) => (
                 <div
@@ -337,8 +319,8 @@ export default function TodoPage() {
         <div className="mt-6 flex items-center justify-between text-xs text-text-tertiary">
           <button
             className="rounded-full border border-border bg-bg-surface px-3 py-1"
-            disabled={meta.page <= 1}
-            onClick={() => setMeta((prev) => ({ ...prev, page: prev.page - 1 }))}
+            disabled={page <= 1}
+            onClick={() => setPage((prev) => prev - 1)}
           >
             上一页
           </button>
@@ -347,8 +329,8 @@ export default function TodoPage() {
           </span>
           <button
             className="rounded-full border border-border bg-bg-surface px-3 py-1"
-            disabled={meta.page >= meta.totalPages}
-            onClick={() => setMeta((prev) => ({ ...prev, page: prev.page + 1 }))}
+            disabled={page >= meta.totalPages}
+            onClick={() => setPage((prev) => prev + 1)}
           >
             下一页
           </button>

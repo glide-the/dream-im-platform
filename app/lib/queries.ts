@@ -1,0 +1,265 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient, UseQueryOptions } from "@tanstack/react-query";
+import { apiRequest } from "./client";
+
+// Query keys
+export const queryKeys = {
+  todos: (params: Record<string, any> = {}) => ["todos", params] as const,
+  todo: (id: string) => ["todo", id] as const,
+  customers: (params: Record<string, any> = {}) => ["customers", params] as const,
+  customer: (id: string) => ["customer", id] as const,
+  conversations: (params: Record<string, any> = {}) => ["conversations", params] as const,
+  conversation: (id: string) => ["conversation", id] as const,
+  searchCustomer: (query: string, contextCustomerIds: string[] = []) =>
+    ["searchCustomer", query, contextCustomerIds] as const,
+} as const;
+
+// Types
+type Todo = {
+  id: string;
+  title: string;
+  description?: string;
+  priority: "P0" | "P1" | "P2" | "P3";
+  status: "open" | "done";
+  updated_at: string;
+  created_at: string;
+};
+
+type Customer = {
+  id: string;
+  name?: string;
+  company?: string;
+  title?: string;
+  phones?: string[];
+  emails?: string[];
+  wechat?: string;
+  address?: string;
+  tags?: string[];
+  profile_markdown?: string;
+  updated_at: string;
+  created_at: string;
+};
+
+type Conversation = {
+  id: string;
+  title: string;
+  status: "pending" | "confirmed" | "canceled";
+  created_at: string;
+  updated_at: string;
+};
+
+type TodoListParams = {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+  status?: string;
+  priority?: string;
+};
+
+type CustomerListParams = {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+  tag?: string;
+  hasContact?: boolean;
+};
+
+type ConversationListParams = {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+  search?: string;
+};
+
+// ==================== Todos ====================
+
+export function useTodos(params: TodoListParams = {}, options?: Omit<UseQueryOptions<any>, 'queryKey' | 'queryFn'>) {
+  const queryString = new URLSearchParams(
+    Object.entries(params).map(([k, v]) => [k, String(v)])
+  ).toString();
+
+  return useQuery({
+    queryKey: queryKeys.todos(params),
+    queryFn: () => apiRequest<{ data: Todo[]; meta: any }>(`/api/todos?${queryString}`),
+    ...options,
+  });
+}
+
+export function useCreateTodo() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: Omit<Todo, "id" | "created_at" | "updated_at">) =>
+      apiRequest("/api/todos", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["todos"] });
+    },
+  });
+}
+
+export function useUpdateTodo() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Todo> }) =>
+      apiRequest(`/api/todos/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["todos"] });
+    },
+  });
+}
+
+export function useDeleteTodo() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiRequest(`/api/todos/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["todos"] });
+    },
+  });
+}
+
+// ==================== Customers ====================
+
+export function useCustomers(params: CustomerListParams = {}, options?: Omit<UseQueryOptions<any>, 'queryKey' | 'queryFn'>) {
+  const queryParams: Record<string, string> = {};
+  if (params.page !== undefined) queryParams.page = String(params.page);
+  if (params.pageSize !== undefined) queryParams.pageSize = String(params.pageSize);
+  if (params.search !== undefined) queryParams.search = params.search;
+  if (params.sort !== undefined) queryParams.sort = params.sort;
+  if (params.order !== undefined) queryParams.order = params.order;
+  if (params.tag !== undefined) queryParams.tag = params.tag;
+  if (params.hasContact !== undefined) queryParams.hasContact = "1";
+
+  const queryString = new URLSearchParams(queryParams).toString();
+
+  return useQuery({
+    queryKey: queryKeys.customers(params),
+    queryFn: () => apiRequest<{ data: Customer[]; meta: any }>(`/api/customers?${queryString}`),
+    ...options,
+  });
+}
+
+export function useCustomer(id: string, options?: Omit<UseQueryOptions<any>, 'queryKey' | 'queryFn'>) {
+  return useQuery({
+    queryKey: queryKeys.customer(id),
+    queryFn: () => apiRequest<{ data: Customer }>(`/api/customers/${id}`),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+export function useCreateCustomer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: Partial<Customer> & { conversation_id?: string }) =>
+      apiRequest("/api/customers", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+}
+
+export function useUpdateCustomer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Customer> }) =>
+      apiRequest(`/api/customers/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["customer", variables.id] });
+    },
+  });
+}
+
+export function useDeleteCustomer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiRequest(`/api/customers/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+    },
+  });
+}
+
+// ==================== Conversations ====================
+
+export function useConversations(params: ConversationListParams = {}, options?: Omit<UseQueryOptions<any>, 'queryKey' | 'queryFn'>) {
+  const queryString = new URLSearchParams(
+    Object.entries(params).map(([k, v]) => [k, String(v)])
+  ).toString();
+
+  return useQuery({
+    queryKey: queryKeys.conversations(params),
+    queryFn: () => apiRequest<{ data: Conversation[]; meta: any }>(`/api/conversations?${queryString}`),
+    ...options,
+  });
+}
+
+export function useUpdateConversation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Conversation> }) =>
+      apiRequest(`/api/conversations/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+}
+
+// ==================== AI Search Customer ====================
+
+export function useSearchCustomer() {
+  return useMutation({
+    mutationFn: (data: {
+      query_text: string;
+      attachments?: Array<{ name: string; type: string; size: number }>;
+      context_customer_ids?: string[];
+    }) =>
+      apiRequest<{
+        conversation_id: string;
+        customer_card: {
+          structured_fields: Partial<Customer>;
+          profile_markdown: string;
+          confidence?: number;
+          sources?: { label: string; url?: string }[];
+        };
+        action_suggestions: string[];
+      }>("/api/agent/search-customer", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: async () => {
+      // Refresh conversations after search
+      // Will be handled by the component
+    },
+  });
+}

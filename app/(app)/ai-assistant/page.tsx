@@ -12,9 +12,15 @@ import {
 import Modal from "../../components/Modal";
 import Toast from "../../components/Toast";
 import AIInputDock from "../../components/AIInputDock";
-import { apiRequest } from "../../lib/client";
 import { formatRelativeTime } from "../../lib/format";
 import { useDebounce } from "../../hooks/useDebounce";
+import {
+  useSearchCustomer,
+  useConversations,
+  useCustomers,
+  useCreateCustomer,
+  useUpdateConversation,
+} from "../../lib/queries";
 
 type CustomerCard = {
   structured_fields: {
@@ -79,12 +85,10 @@ export default function AiAssistantPageWrapper() {
 function AiAssistantPage() {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [card, setCard] = useState<CustomerCard | null>(null);
   const [editCard, setEditCard] = useState<CustomerCard>(emptyCard);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [history, setHistory] = useState<Conversation[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [attachments, setAttachments] = useState<
@@ -92,7 +96,6 @@ function AiAssistantPage() {
   >([]);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
-  const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
   const [contextCustomers, setContextCustomers] = useState<CustomerOption[]>([]);
 
   const searchParams = useSearchParams();
@@ -100,30 +103,30 @@ function AiAssistantPage() {
 
   const debouncedCustomerSearch = useDebounce(customerSearch, 300);
 
-  useEffect(() => {
-    apiRequest<{ data: Conversation[] }>(
-      "/api/conversations?pageSize=5"
-    )
-      .then((response) => setHistory(response.data))
-      .catch(() => undefined);
-  }, []);
+  // React Query hooks
+  const { data: conversationsData } = useConversations({ pageSize: 5 });
+  const searchMutation = useSearchCustomer();
+  const createCustomerMutation = useCreateCustomer();
+  const updateConversationMutation = useUpdateConversation();
 
-  useEffect(() => {
-    apiRequest<{ data: CustomerOption[] }>(
-      "/api/customers?pageSize=50&sort=updated_at&order=desc"
-    )
-      .then((response) => setCustomerOptions(response.data))
-      .catch(() => undefined);
-  }, []);
+  // Fetch customer options for context picker
+  const { data: customersData } = useCustomers({
+    pageSize: 50,
+    sort: "updated_at",
+    order: "desc"
+  });
 
+  const customerOptions = customersData?.data ?? [];
+  const history = conversationsData?.data ?? [];
+
+  // Load context customer from URL
   useEffect(() => {
     if (!contextCustomerId) return;
-    apiRequest<{ data: CustomerOption }>(`/api/customers/${contextCustomerId}`)
-      .then((response) => {
-        addContextCustomer(response.data);
-      })
-      .catch(() => undefined);
-  }, [contextCustomerId]);
+    const customer = customerOptions.find((c) => c.id === contextCustomerId);
+    if (customer) {
+      addContextCustomer(customer);
+    }
+  }, [contextCustomerId, customerOptions]);
 
   const filteredCustomers = useMemo(() => {
     const term = debouncedCustomerSearch.trim().toLowerCase();
@@ -160,68 +163,48 @@ function AiAssistantPage() {
       setError("请输入客户单位或姓名");
       return;
     }
-    setLoading(true);
     try {
-      const response = await apiRequest<SearchResponse>(
-        "/api/agent/search-customer",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            query_text: nextQuery,
-            attachments: nextAttachments,
-            context_customer_ids:
-              nextCustomerIds ?? contextCustomers.map((item) => item.id)
-          })
-        }
-      );
+      const response = await searchMutation.mutateAsync({
+        query_text: nextQuery,
+        attachments: nextAttachments,
+        context_customer_ids:
+          nextCustomerIds ?? contextCustomers.map((item) => item.id)
+      });
       setCard(response.customer_card);
       syncEditCard(response.customer_card);
       setConversationId(response.conversation_id);
       setEditMode(false);
       setToast("已生成客户资料卡片，请确认后入库");
-      const historyResponse = await apiRequest<{ data: Conversation[] }>(
-        "/api/conversations?pageSize=5"
-      );
-      setHistory(historyResponse.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "检索失败");
       setCard(null);
       setConversationId(null);
-    } finally {
-      setLoading(false);
     }
   }
 
   async function handleConfirm() {
     if (!editCard) return;
-    setLoading(true);
     try {
-      await apiRequest<{ data: unknown }>("/api/customers", {
-        method: "POST",
-        body: JSON.stringify({
-          name: editCard.structured_fields.name,
-          company: editCard.structured_fields.company,
-          title: editCard.structured_fields.title,
-          phones: editCard.structured_fields.phones,
-          emails: editCard.structured_fields.emails,
-          wechat: editCard.structured_fields.wechat,
-          address: editCard.structured_fields.address,
-          tags: editCard.structured_fields.tags,
-          profile_markdown: editCard.profile_markdown,
-          source: "ai_search",
-          conversation_id: conversationId
-        })
-      });
+      await createCustomerMutation.mutateAsync({
+        name: editCard.structured_fields.name,
+        company: editCard.structured_fields.company,
+        title: editCard.structured_fields.title,
+        phones: editCard.structured_fields.phones,
+        emails: editCard.structured_fields.emails,
+        wechat: editCard.structured_fields.wechat,
+        address: editCard.structured_fields.address,
+        tags: editCard.structured_fields.tags,
+        profile_markdown: editCard.profile_markdown,
+        source: "ai_search",
+        conversation_id: conversationId
+      } as any);
       setToast("客户已新增");
       setEditMode(false);
-      const historyResponse = await apiRequest<{ data: Conversation[] }>(
-        "/api/conversations?pageSize=5"
-      );
-      setHistory(historyResponse.data);
+      setCard(null);
+      setEditCard(emptyCard);
+      setConversationId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "入库失败");
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -231,17 +214,13 @@ function AiAssistantPage() {
       return;
     }
     try {
-      await apiRequest(`/api/conversations/${conversationId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "canceled" })
+      await updateConversationMutation.mutateAsync({
+        id: conversationId,
+        data: { status: "canceled" }
       });
       setToast("已取消，未新增客户");
       setCard(null);
       setConversationId(null);
-      const historyResponse = await apiRequest<{ data: Conversation[] }>(
-        "/api/conversations?pageSize=5"
-      );
-      setHistory(historyResponse.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "取消失败");
     }
@@ -395,7 +374,7 @@ function AiAssistantPage() {
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-text-primary">客户资料卡片</p>
             <span className="rounded-full bg-accent-light px-2 py-0.5 text-xs font-semibold text-accent">
-              {loading
+              {searchMutation.isPending
                 ? "检索中"
                 : card
                 ? editMode
@@ -407,12 +386,12 @@ function AiAssistantPage() {
           {error ? (
             <p className="mt-3 text-xs text-rose-500">{error}</p>
           ) : null}
-          {!card && !loading ? (
+          {!card && !searchMutation.isPending ? (
             <div className="mt-4 rounded-xl border border-dashed border-border bg-bg-secondary px-4 py-6 text-center text-xs text-text-tertiary">
               输入客户单位 + 姓名开始检索，或手动填写后入库
             </div>
           ) : null}
-          {loading ? (
+          {searchMutation.isPending ? (
             <div className="mt-4 space-y-2">
               {[1, 2, 3].map((item) => (
                 <div
@@ -558,7 +537,7 @@ function AiAssistantPage() {
                 <button
                   className="flex-1 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white shadow-accent disabled:opacity-50"
                   onClick={handleConfirm}
-                  disabled={loading}
+                  disabled={searchMutation.isPending}
                 >
                   确认新增
                 </button>
@@ -638,7 +617,7 @@ function AiAssistantPage() {
             onAddContextCustomer={() => setCustomerModalOpen(true)}
             onRemoveContextCustomer={(id) => removeContextCustomer(id)}
             placeholder="输入公司 + 姓名…"
-            loading={loading}
+            loading={searchMutation.isPending}
           />
         </div>
       </div>

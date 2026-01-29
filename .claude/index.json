@@ -1,10 +1,18 @@
 {
-  "timestamp": "2026-01-29T00:27:13.000Z",
-  "version": "2.0.0",
+  "timestamp": "2026-01-29T16:38:08.000Z",
+  "version": "3.0.0",
   "project": {
     "name": "AI4Sales PWA",
-    "type": "Next.js 14 PWA Application",
-    "tech_stack": ["React 18", "TypeScript 5.5", "Tailwind CSS 3.4", "PostgreSQL 16", "Drizzle ORM 0.35"]
+    "type": "Next.js 16 PWA Application",
+    "tech_stack": [
+      "Next.js 16.1.6",
+      "React 19.0.0",
+      "TypeScript 5.5.4",
+      "Tailwind CSS 4.1.18",
+      "PostgreSQL 16",
+      "Drizzle ORM 0.38.0",
+      "@tanstack/react-query 5.90.20"
+    ]
   },
   "modules": [
     {
@@ -55,6 +63,7 @@
       "entry_points": [
         "app/lib/db.ts",
         "app/lib/types.ts",
+        "app/lib/queries.ts",
         "app/lib/agent.ts",
         "app/lib/query.ts",
         "app/lib/id.ts",
@@ -90,11 +99,16 @@
       "name": "共享组件模块",
       "type": "frontend",
       "entry_points": [
+        "app/components/AIInputDock.tsx",
         "app/components/BottomNav.tsx",
         "app/components/FloatingAIButton.tsx",
         "app/components/Icons.tsx",
         "app/components/Modal.tsx",
-        "app/components/Toast.tsx"
+        "app/components/Toast.tsx",
+        "app/components/CollapsibleSection.tsx",
+        "app/components/customer-detail/ProfileCard.tsx",
+        "app/components/customer-detail/BasicInfoSection.tsx",
+        "app/components/customer-detail/MarkdownDetailSection.tsx"
       ],
       "documentation": "app/components/CLAUDE.md",
       "coverage": {
@@ -108,13 +122,13 @@
   "database": {
     "type": "PostgreSQL",
     "version": "16",
-    "orm": "Drizzle ORM 0.35.1",
+    "orm": "Drizzle ORM 0.38.0",
     "tables": ["customers", "todos", "conversations"],
     "indexes": [
       "idx_customers_name",
       "idx_customers_company",
       "idx_customers_updated_at",
-      "idx_customers_tags",
+      "idx_customers_tags (GIN)",
       "idx_todos_status",
       "idx_todos_priority",
       "idx_todos_updated_at",
@@ -127,6 +141,27 @@
       "docker-compose.yml"
     ]
   },
+  "state_management": {
+    "library": "@tanstack/react-query",
+    "version": "5.90.20",
+    "config_file": "app/app/providers.tsx",
+    "hooks_file": "app/lib/queries.ts",
+    "query_keys": [
+      "todos",
+      "todo",
+      "customers",
+      "customer",
+      "conversations",
+      "conversation",
+      "searchCustomer"
+    ],
+    "cache_settings": {
+      "staleTime": "5 minutes",
+      "gcTime": "30 minutes",
+      "retry": 1,
+      "refetchOnWindowFocus": false
+    }
+  },
   "important_files": [
     "package.json",
     "tsconfig.json",
@@ -137,15 +172,20 @@
     ".env.local.example",
     "CLAUDE.md",
     "README.md",
-    "PRD.md"
+    "PRD.md",
+    "app/app/providers.tsx",
+    "app/lib/queries.ts"
   ],
   "coverage": {
-    "total_files": 33,
-    "scanned_files": 33,
+    "total_files": 46,
+    "scanned_files": 46,
     "coverage_percentage": 100,
-    "modules_with_docs": 5,
-    "modules_without_docs": 0,
-    "gaps": []
+    "modules_with_docs": 3,
+    "modules_without_docs": 2,
+    "gaps": [
+      "app/api/CLAUDE.md 缺失",
+      "app/components/CLAUDE.md 缺失"
+    ]
   },
   "ignored": {
     "patterns": [
@@ -155,24 +195,57 @@
       "build/**",
       "coverage/**",
       "*.log",
-      ".DS_Store"
+      ".DS_Store",
+      ".git/**",
+      ".github/**",
+      "html/**",
+      "tsconfig.tsbuildinfo",
+      ".env*.local",
+      "*.lcov",
+      ".vscode/*",
+      ".idea",
+      "Thumbs.db",
+      "*.tmp",
+      "*.temp",
+      ".cache",
+      ".playwright-mcp/**"
     ],
-    "reason": "Standard ignore patterns from .gitignore"
+    "reason": "Standard ignore patterns from .gitignore and default rules"
   },
   "next_steps": [
-    "考虑为前端组件添加单元测试",
+    "生成 app/api/CLAUDE.md 文档",
+    "生成 app/components/CLAUDE.md 文档",
+    "为前端组件添加单元测试",
     "完善 API 路由的集成测试",
-    "添加数据库迁移文件管理",
-    "考虑启用 TypeScript strict 模式"
+    "接入真实 LLM API 替换模拟 AI (app/lib/agent.ts)",
+    "实现文件上传功能 (相册/拍照/文件)",
+    "实现语音输入功能",
+    "添加客户去重/合并功能",
+    "关联 TODO 与客户",
+    "启用 TypeScript strict 模式",
+    "添加错误边界组件和日志系统"
   ],
   "changes": [
     {
       "date": "2026-01-29",
+      "description": "React Query 集成 + Next.js/React 升级 + UI/UX 优化",
+      "files_affected": [
+        "app/lib/queries.ts",
+        "app/app/providers.tsx",
+        "app/components/AIInputDock.tsx",
+        "app/components/FloatingAIButton.tsx",
+        "app/components/BottomNav.tsx",
+        "package.json",
+        "app/(app)/customers/[id]/layout.tsx",
+        "app/(app)/ai-assistant/layout.tsx"
+      ]
+    },
+    {
+      "date": "2026-01-29 (早期)",
       "description": "数据持久化层从 JSON 文件迁移到 PostgreSQL + Drizzle ORM",
       "files_affected": [
         "app/lib/db.ts",
         "app/lib/db/schema.ts",
-        "package.json",
         "drizzle.config.ts",
         "docker-compose.yml",
         ".env.local.example"

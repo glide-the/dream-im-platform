@@ -1,14 +1,24 @@
 # AI4Sales PWA 应用
 
-> **最后更新**: 2026-01-29 00:27:13
-> **项目类型**: Next.js 14 PWA 应用
-> **技术栈**: React 18 + TypeScript + Tailwind CSS + PostgreSQL
+> **最后更新**: 2026-01-29 16:38:08
+> **项目类型**: Next.js 16 PWA 应用
+> **技术栈**: React 19 + TypeScript 5.5 + Tailwind CSS 4 + PostgreSQL 16 + Drizzle ORM 0.38
 
 ---
 
 ## 📋 变更记录 (Changelog)
 
 ### 2026-01-29
+- **React Query 集成**: 新增 @tanstack/react-query 用于服务器状态管理
+- **Next.js 升级**: 从 14.2.4 升级到 16.1.6
+- **React 升级**: 从 18.3.1 升级到 19.0.0
+- **Tailwind CSS 升级**: 从 3.4.7 升级到 4.1.18
+- **Drizzle ORM 升级**: 从 0.35.1 升级到 0.38.0
+- **新增 queries 模块**: app/lib/queries.ts 封装 React Query Hooks
+- **UI/UX 优化**: 新增 AIInputDock、FloatingAIButton、BottomNav 组件
+- **客户详情页增强**: 支持收起/展开信息区，集成 AI 对话交互
+
+### 2026-01-29 (早期)
 - **数据持久化层迁移**: 从 JSON 文件迁移到 PostgreSQL 数据库
 - **新增 Drizzle ORM**: 使用 Drizzle ORM 作为数据库访问层
 - **新增 Docker Compose**: 添加本地开发环境配置
@@ -49,24 +59,32 @@ graph TB
         G[全局组件]
     end
 
+    subgraph "状态管理层 (React Query)"
+        H[QueryClientProvider]
+        I[useCustomers]
+        J[useTodos]
+        K[useConversations]
+        L[useSearchCustomer]
+    end
+
     subgraph "API 层 (Route Handlers)"
-        H[/api/agent/search-customer]
-        I[/api/customers]
-        J[/api/todos]
-        K[/api/conversations]
+        M[/api/agent/search-customer]
+        N[/api/customers]
+        O[/api/todos]
+        P[/api/conversations]
     end
 
     subgraph "业务逻辑层"
-        L[app/lib/agent.ts - AI 客户卡片生成]
-        M[app/lib/db.ts - 数据库操作]
-        N[app/lib/query.ts - 查询/过滤/排序]
-        O[app/lib/types.ts - 类型定义]
-        P[app/lib/db/schema.ts - 数据库 Schema]
+        Q[app/lib/agent.ts - AI 客户卡片生成]
+        R[app/lib/db.ts - 数据库操作]
+        S[app/lib/queries.ts - React Query Hooks]
+        T[app/lib/types.ts - 类型定义]
+        U[app/lib/db/schema.ts - 数据库 Schema]
     end
 
     subgraph "数据层"
-        Q[(PostgreSQL 数据库)]
-        R[Drizzle ORM]
+        V[(PostgreSQL 数据库)]
+        W[Drizzle ORM]
     end
 
     B --> C
@@ -82,20 +100,26 @@ graph TB
 
     H --> L
     I --> M
-    J --> M
-    K --> M
+    J --> N
+    K --> O
 
-    L --> M
-    M --> N
-    M --> O
-    M --> P
-    M --> R
-    R --> Q
+    M --> Q
+    N --> R
+    O --> R
+    P --> R
+
+    Q --> R
+    R --> S
+    R --> T
+    R --> U
+    R --> W
+    W --> V
 
     style C fill:#e1f5ff
-    style H fill:#fff4e1
-    style L fill:#ffe1f5
-    style Q fill:#e1ffe1
+    style H fill:#f0e1ff
+    style M fill:#fff4e1
+    style Q fill:#ffe1f5
+    style V fill:#e1ffe1
 ```
 
 ---
@@ -140,7 +164,7 @@ graph TD
 
 ### 3. 业务逻辑模块 (`app/lib/`)
 - **路径**: `app/lib/`
-- **职责**: 核心业务逻辑、数据库操作、类型定义
+- **职责**: 核心业务逻辑、数据库操作、类型定义、React Query Hooks
 - **详细文档**: [app/lib/CLAUDE.md](app/lib/CLAUDE.md)
 
 ### 4. 数据库 Schema 模块 (`app/lib/db/`)
@@ -162,30 +186,37 @@ graph TD
 ```mermaid
 sequenceDiagram
     participant U as 用户
-    participant AI as AI 助手页面
+    participant UI as AI 助手页面
+    participant RQ as React Query
     participant API as /api/agent/search-customer
     participant Agent as app/lib/agent.ts
     participant DB as PostgreSQL
 
-    U->>AI: 输入"公司名 + 姓名"
-    AI->>API: POST 请求 (query_text)
+    U->>UI: 输入"公司名 + 姓名"
+    UI->>RQ: useSearchCustomer.mutate()
+    RQ->>API: POST 请求 (query_text)
     API->>Agent: buildCustomerCard()
     Agent-->>API: 返回 CustomerCard
     API->>DB: 创建 Conversation (pending)
-    API-->>AI: 返回客户卡片
-    AI->>U: 展示可编辑卡片
-    U->>AI: 确认/修改/取消
+    API-->>RQ: 返回客户卡片
+    RQ-->>UI: 更新状态
+    UI->>U: 展示可编辑卡片
+    U->>UI: 确认/修改/取消
 
     alt 确认新增
-        AI->>API: POST /api/customers
+        UI->>RQ: useCreateCustomer.mutate()
+        RQ->>API: POST /api/customers
         API->>DB: 写入客户 + 更新 Conversation (confirmed)
-        API-->>AI: 成功响应
-        AI->>U: Toast "客户已新增"
+        API-->>RQ: 成功响应
+        RQ-->>UI: invalidateQueries
+        UI->>U: Toast "客户已新增"
     else 取消
-        AI->>API: PATCH /api/conversations/{id}
+        UI->>RQ: useUpdateConversation.mutate()
+        RQ->>API: PATCH /api/conversations/{id}
         API->>DB: 更新 Conversation (canceled)
-        API-->>AI: 成功响应
-        AI->>U: Toast "已取消"
+        API-->>RQ: 成功响应
+        RQ-->>UI: invalidateQueries
+        UI->>U: Toast "已取消"
     end
 ```
 
@@ -194,12 +225,20 @@ sequenceDiagram
 ## 🔧 技术栈详情
 
 ### 前端框架
-- **Next.js 14.2.4**: App Router、Server Components、Route Handlers
-- **React 18.3.1**: 函数式组件、Hooks
-- **TypeScript 5.5.4**: 严格类型检查（strict: false）
+- **Next.js 16.1.6**: App Router、Server Components、Route Handlers
+- **React 19.0.0**: 函数式组件、Hooks、Server Actions
+- **TypeScript 5.5.4**: 类型检查（strict: false）
+
+### 状态管理
+- **@tanstack/react-query 5.90.20**: 服务器状态管理
+  - 自动缓存与重新验证
+  - 乐观更新
+  - 并行查询
+  - 分页与无限滚动支持
 
 ### 样式方案
-- **Tailwind CSS 3.4.7**: 实用优先的 CSS 框架
+- **Tailwind CSS 4.1.18**: 实用优先的 CSS 框架
+- **@tailwindcss/postcss 4.1.18**: PostCSS 插件
 - **自定义设计系统**: CSS 变量 + Tailwind 扩展配置
   - 颜色系统: bg-primary/secondary/surface, accent, text-primary/secondary/tertiary
   - 阴影系统: subtle/medium/accent
@@ -207,7 +246,7 @@ sequenceDiagram
 
 ### 数据管理
 - **PostgreSQL 16**: 生产级关系型数据库
-- **Drizzle ORM 0.35.1**: 类型安全的 ORM 框架
+- **Drizzle ORM 0.38.0**: 类型安全的 ORM 框架
 - **pg 8.13.3**: PostgreSQL 客户端
 - **连接池管理**: 使用 pg Pool 管理数据库连接
 - **写入队列机制**: 全局队列防止并发写入冲突
@@ -224,7 +263,7 @@ sequenceDiagram
 
 ### 开发工具
 - **Docker Compose**: 本地开发环境配置
-- **Drizzle Kit 0.24.1**: 数据库迁移管理工具
+- **Drizzle Kit 0.29.0**: 数据库迁移管理工具
 - **Vitest 4.0.18**: 单元测试框架
 
 ### AI 搜索引擎
@@ -355,8 +394,9 @@ ai4sales-pwa-app/
 │   │   │   └── schema.ts   # Drizzle ORM 表定义
 │   │   ├── agent.ts        # AI 客户卡片生成
 │   │   ├── db.ts           # 数据库操作
-│   │   ├── query.ts        # 查询/过滤/排序
+│   │   ├── queries.ts      # React Query Hooks
 │   │   └── types.ts        # 类型定义
+│   ├── app/                # React Query Provider
 │   ├── globals.css         # 全局样式
 │   ├── layout.tsx          # 根布局
 │   ├── manifest.ts         # PWA Manifest
@@ -386,6 +426,41 @@ ai4sales-pwa-app/
 - **异步处理**: async/await，统一错误处理
 - **注释**: 关键业务逻辑添加中文注释
 
+### React Query 使用规范
+
+#### Query Keys
+```typescript
+export const queryKeys = {
+  todos: (params = {}) => ["todos", params] as const,
+  todo: (id) => ["todo", id] as const,
+  customers: (params = {}) => ["customers", params] as const,
+  customer: (id) => ["customer", id] as const,
+  conversations: (params = {}) => ["conversations", params] as const,
+  conversation: (id) => ["conversation", id] as const,
+} as const;
+```
+
+#### 数据获取
+```typescript
+const { data, isLoading, error } = useCustomers(
+  { page: 1, pageSize: 10 },
+  {
+    staleTime: 1000 * 60 * 5, // 5 分钟
+    refetchOnWindowFocus: false,
+  }
+);
+```
+
+#### 数据变更
+```typescript
+const createCustomer = useCreateCustomer();
+createCustomer.mutate(data, {
+  onSuccess: () => {
+    // 成功后自动刷新相关查询
+  }
+});
+```
+
 ### 组件设计原则
 - **单一职责**: 每个组件只负责一个功能
 - **可复用性**: 提取通用组件到 `app/components/`
@@ -405,6 +480,7 @@ ai4sales-pwa-app/
 ### 性能优化
 - **服务端渲染**: 利用 Next.js SSR/SSG
 - **代码分割**: 自动路由级代码分割
+- **React Query 缓存**: 5 分钟 staleTime，减少不必要的网络请求
 - **数据库索引**: 为常用查询字段添加索引
 - **连接池复用**: 全局单例 Pool，避免重复创建连接
 - **写入队列**: 防止并发写入冲突
@@ -419,10 +495,13 @@ ai4sales-pwa-app/
 - ✅ AI 助手页面与对话历史
 - ✅ PostgreSQL 数据库迁移
 - ✅ Drizzle ORM 集成
+- ✅ React Query 状态管理
+- ✅ UI/UX 优化
 
 ### M2 (进行中)
 - ✅ Agentic Search 返回客户卡片
 - ✅ 客户入库闭环
+- ✅ 客户详情页 AI 交互
 - ⏳ 上传上下文 (相册/拍照/文件)
 - ⏳ @客户选择器
 
@@ -445,6 +524,8 @@ ai4sales-pwa-app/
 2. **并发控制**: 写入队列机制简单，高并发场景需优化
 3. **类型检查**: `tsconfig.json` 中 `strict: false`，建议逐步启用严格模式
 4. **测试覆盖**: 缺少单元测试和集成测试
+5. **语音输入**: 仅预留 UI，未实现实际功能
+6. **文件上传**: 仅预留 UI，未实现上传逻辑
 
 ---
 
@@ -453,6 +534,7 @@ ai4sales-pwa-app/
 - [产品需求文档 (PRD)](./PRD.md)
 - [UI/UX 设计稿](./ui-ux.pen)
 - [Next.js 官方文档](https://nextjs.org/docs)
+- [React Query 文档](https://tanstack.com/query/latest)
 - [Tailwind CSS 文档](https://tailwindcss.com/docs)
 - [Drizzle ORM 文档](https://orm.drizzle.team/)
 - [PostgreSQL 文档](https://www.postgresql.org/docs/)
@@ -470,5 +552,5 @@ ai4sales-pwa-app/
 
 ---
 
-**生成时间**: 2026-01-29 00:27:13
-**文档版本**: v2.0.0
+**生成时间**: 2026-01-29 16:38:08
+**文档版本**: v3.0.0

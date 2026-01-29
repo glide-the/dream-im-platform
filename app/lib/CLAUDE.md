@@ -2,13 +2,20 @@
 
 > **导航**: [← 返回根目录](../../CLAUDE.md) / 业务逻辑模块
 > **路径**: `app/lib/`
-> **最后更新**: 2026-01-29 00:27:13
+> **最后更新**: 2026-01-29 16:38:08
 
 ---
 
 ## 📋 变更记录 (Changelog)
 
 ### 2026-01-29
+- **新增 queries 模块**: `queries.ts` 封装 React Query Hooks
+- **类型安全增强**: 完整的 TypeScript 类型定义和泛型支持
+- **状态管理优化**: 使用 React Query 替代手动 API 调用
+- **缓存策略**: 5 分钟 staleTime，30 分钟 gcTime
+- **自动重新验证**: 数据变更后自动刷新相关查询
+
+### 2026-01-29 (早期)
 - **数据库操作重构**: 从 JSON 文件迁移到 PostgreSQL + Drizzle ORM
 - **新增 schema 模块**: `app/lib/db/schema.ts` 定义数据库表结构
 - **连接池管理**: 使用 pg Pool 管理数据库连接
@@ -19,13 +26,14 @@
 
 ## 📋 模块概览
 
-业务逻辑模块包含核心业务逻辑、数据库操作、类型定义和工具函数，是应用的核心层。
+业务逻辑模块包含核心业务逻辑、数据库操作、类型定义和 React Query Hooks，是应用的核心层。
 
 ### 核心职责
 
 - 数据库读写操作
 - 业务逻辑封装
 - 类型定义与约束
+- 服务器状态管理
 - 工具函数提供
 
 ### 技术特点
@@ -33,6 +41,7 @@
 - **类型安全**: 完整的 TypeScript 类型系统
 - **纯函数**: 大部分函数无副作用
 - **可测试**: 逻辑与 UI 分离
+- **缓存优化**: React Query 自动缓存与重新验证
 
 ---
 
@@ -45,7 +54,8 @@ app/lib/
 ├── types.ts            # 类型定义
 ├── db.ts               # 数据库操作
 ├── agent.ts            # AI 客户卡片生成
-├── query.ts            # 查询/过滤/排序/分页
+├── query.ts            # 查询/过滤/排序/分页 (已弃用，功能迁移到 db.ts)
+├── queries.ts          # React Query Hooks
 ├── id.ts               # ID 生成与哈希
 ├── format.ts           # 格式化工具
 ├── client.ts           # API 客户端
@@ -409,6 +419,219 @@ globalQueue.__ai4sales_write_queue__ = globalQueue.__ai4sales_write_queue__
 
 ---
 
+## 🔄 React Query Hooks (`queries.ts`)
+
+### Query Keys
+
+```typescript
+export const queryKeys = {
+  todos: (params = {}) => ["todos", params] as const,
+  todo: (id) => ["todo", id] as const,
+  customers: (params = {}) => ["customers", params] as const,
+  customer: (id) => ["customer", id] as const,
+  conversations: (params = {}) => ["conversations", params] as const,
+  conversation: (id) => ["conversation", id] as const,
+  searchCustomer: (query, contextCustomerIds = []) =>
+    ["searchCustomer", query, contextCustomerIds] as const,
+} as const;
+```
+
+### Todos Hooks
+
+#### useTodos
+
+```typescript
+export function useTodos(params: TodoListParams = {}, options?)
+```
+
+**功能**: 获取待办列表
+
+**参数**:
+- `params.page`: 页码
+- `params.pageSize`: 每页数量
+- `params.search`: 搜索关键字
+- `params.sort`: 排序字段
+- `params.order`: 排序方向 (asc/desc)
+- `params.status`: 状态过滤
+- `params.priority`: 优先级过滤
+
+**示例**:
+
+```typescript
+const { data, isLoading, error } = useTodos(
+  { page: 1, pageSize: 10, status: "open" },
+  {
+    staleTime: 1000 * 60 * 5, // 5 分钟
+  }
+);
+```
+
+#### useCreateTodo
+
+```typescript
+export function useCreateTodo()
+```
+
+**功能**: 创建待办
+
+**特性**:
+- 成功后自动刷新待办列表
+- 使用 `invalidateQueries` 重新验证
+
+**示例**:
+
+```typescript
+const createTodo = useCreateTodo();
+createTodo.mutate({
+  title: "完成客户拜访",
+  priority: "P1",
+  status: "open"
+});
+```
+
+#### useUpdateTodo / useDeleteTodo
+
+类似的 Hook 用于更新和删除待办。
+
+### Customers Hooks
+
+#### useCustomers
+
+```typescript
+export function useCustomers(params: CustomerListParams = {}, options?)
+```
+
+**功能**: 获取客户列表
+
+**参数**:
+- `params.page`: 页码
+- `params.pageSize`: 每页数量
+- `params.search`: 搜索关键字
+- `params.sort`: 排序字段
+- `params.order`: 排序方向 (asc/desc)
+- `params.tag`: 标签过滤
+- `params.hasContact`: 有无联系方式过滤
+
+**示例**:
+
+```typescript
+const { data, isLoading, error } = useCustomers(
+  { page: 1, pageSize: 6, tag: "高潜" },
+  {
+    staleTime: 1000 * 60 * 5, // 5 分钟
+  }
+);
+```
+
+#### useCustomer
+
+```typescript
+export function useCustomer(id: string, options?)
+```
+
+**功能**: 获取单个客户详情
+
+**特性**:
+- `enabled: !!id`: 仅在 ID 存在时才执行查询
+- 自动缓存客户详情
+
+**示例**:
+
+```typescript
+const { data: customer, isLoading } = useCustomer(customerId);
+```
+
+#### useCreateCustomer / useUpdateCustomer / useDeleteCustomer
+
+类似的 Hook 用于创建、更新和删除客户。
+
+**特性**:
+- 成功后自动刷新客户列表
+- 创建成功后同时刷新对话列表
+
+### Conversations Hooks
+
+#### useConversations
+
+```typescript
+export function useConversations(params: ConversationListParams = {}, options?)
+```
+
+**功能**: 获取对话列表
+
+**参数**:
+- `params.page`: 页码
+- `params.pageSize`: 每页数量
+- `params.status`: 状态过滤
+- `params.search`: 搜索关键字
+
+#### useUpdateConversation
+
+```typescript
+export function useUpdateConversation()
+```
+
+**功能**: 更新对话状态
+
+**示例**:
+
+```typescript
+const updateConversation = useUpdateConversation();
+updateConversation.mutate({
+  id: conversationId,
+  data: { status: "canceled" }
+});
+```
+
+### AI Search Hooks
+
+#### useSearchCustomer
+
+```typescript
+export function useSearchCustomer()
+```
+
+**功能**: AI 检索客户
+
+**参数**:
+- `query_text`: 查询文本
+- `attachments`: 附件列表 (可选)
+- `context_customer_ids`: 上下文客户 ID 列表 (可选)
+
+**返回**:
+- `conversation_id`: 对话 ID
+- `customer_card`: 客户卡片
+- `action_suggestions`: 操作建议
+
+**示例**:
+
+```typescript
+const searchCustomer = useSearchCustomer();
+searchCustomer.mutate({
+  query_text: "阿里巴巴 张三",
+  context_customer_ids: ["cus_xxx"]
+});
+```
+
+### Query Client 配置
+
+在 `app/app/providers.tsx` 中配置：
+
+```typescript
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,    // 5 分钟
+      gcTime: 1000 * 60 * 30,      // 30 分钟
+      retry: 1,                    // 失败重试 1 次
+      refetchOnWindowFocus: false,  // 窗口聚焦时不重新获取
+    },
+  },
+});
+```
+
+---
+
 ## 🤖 AI 客户卡片生成 (`agent.ts`)
 
 ### 核心函数
@@ -471,105 +694,9 @@ const insights = [
 
 ## 🔍 查询工具 (`query.ts`)
 
-### 核心函数
+> **注意**: 此文件已弃用，功能已迁移到 `db.ts`。
 
-#### 1. 搜索
-
-```typescript
-export function searchCustomers(
-  customers: Customer[],
-  search: string
-): Customer[]
-```
-
-**功能**: 按关键字搜索客户
-
-**搜索字段**:
-- 姓名 (`name`)
-- 公司 (`company`)
-- 职位 (`title`)
-- 手机号 (`phones`)
-- 邮箱 (`emails`)
-- 微信 (`wechat`)
-- 地址 (`address`)
-- 标签 (`tags`)
-- 补充信息 (`profile_markdown`)
-
-**特性**:
-- 不区分大小写
-- 支持部分匹配
-
-#### 2. 过滤
-
-```typescript
-export function filterCustomers(
-  customers: Customer[],
-  filters: {
-    tag?: string;
-    hasContact?: boolean;
-  }
-): Customer[]
-```
-
-**功能**: 按条件过滤客户
-
-**过滤条件**:
-- `tag`: 包含指定标签
-- `hasContact`: 有联系方式 (手机/邮箱/微信)
-
-#### 3. 排序
-
-```typescript
-export function sortCustomers(
-  customers: Customer[],
-  sort: string,
-  order: "asc" | "desc"
-): Customer[]
-```
-
-**功能**: 按字段排序
-
-**支持字段**:
-- `updated_at`: 更新时间
-- `created_at`: 创建时间
-- `name`: 姓名 (字母序)
-
-#### 4. 分页
-
-```typescript
-export function paginate<T>(
-  items: T[],
-  page: number,
-  pageSize: number
-): {
-  data: T[];
-  meta: {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-  };
-}
-```
-
-**功能**: 分页处理
-
-**返回**:
-- `data`: 当前页数据
-- `meta`: 分页元信息
-
-### 工具函数
-
-#### toNumber
-
-```typescript
-export function toNumber(
-  value: string | null,
-  defaultValue: number
-): number
-```
-
-**功能**: 安全地将字符串转换为数字
+原有的查询、过滤、排序、分页函数已整合到 `db.ts` 的各个 `list*` 函数中。
 
 ---
 
@@ -700,6 +827,55 @@ export function seedData(): DbShape
 3. 添加 TypeScript 类型注解
 4. 在 API 或组件中调用
 
+### 新增 React Query Hook
+
+1. 在 `queries.ts` 中定义 Query Key
+2. 创建 Hook 函数
+3. 使用 `useQuery` 或 `useMutation`
+4. 配置 `invalidateQueries` 自动刷新
+5. 在组件中导入使用
+
+**示例**:
+
+```typescript
+// 1. 定义 Query Key
+export const queryKeys = {
+  myResource: (params = {}) => ["myResource", params] as const,
+} as const;
+
+// 2. 创建 Hook
+export function useMyResource(params = {}, options?) {
+  return useQuery({
+    queryKey: queryKeys.myResource(params),
+    queryFn: () => apiRequest(`/api/my-resource?${params}`),
+    ...options,
+  });
+}
+
+// 3. 创建 Mutation Hook
+export function useCreateMyResource() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => apiRequest("/api/my-resource", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["myResource"] });
+    },
+  });
+}
+
+// 4. 在组件中使用
+function MyComponent() {
+  const { data, isLoading } = useMyResource();
+  const createMyResource = useCreateMyResource();
+
+  // ...
+}
+```
+
 ### 数据库操作模式
 
 ```typescript
@@ -724,6 +900,7 @@ const result = await withTransaction(async (db) => {
 1. **AI 模拟**: `buildCustomerCard` 仅为演示，需接入真实 LLM API
 2. **并发控制**: 简单队列机制，高并发场景需优化
 3. **错误处理**: 缺少详细的错误分类和恢复机制
+4. **query.ts 废弃**: 旧代码尚未完全清理
 
 ---
 
@@ -733,7 +910,9 @@ const result = await withTransaction(async (db) => {
 2. **索引优化**: 为常用查询字段添加索引
 3. **查询效率**: 使用 Drizzle ORM 生成优化的 SQL
 4. **事务支持**: 保证数据一致性
+5. **React Query 缓存**: 减少不必要的网络请求
+6. **自动重新验证**: 数据变更后保持数据新鲜度
 
 ---
 
-**生成时间**: 2026-01-29 00:27:13
+**生成时间**: 2026-01-29 16:38:08

@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { IconChevronLeft, IconEdit, IconTrash, IconChevronDown, IconChevronUp } from "../../../components/Icons";
-import { apiRequest } from "../../../lib/client";
 import Toast from "../../../components/Toast";
 import ProfileCard from "../../../components/customer-detail/ProfileCard";
 import BasicInfoSection from "../../../components/customer-detail/BasicInfoSection";
 import MarkdownDetailSection from "../../../components/customer-detail/MarkdownDetailSection";
 import AIInputDock from "../../../components/AIInputDock";
+import { useCustomer, useUpdateCustomer, useDeleteCustomer } from "../../../lib/queries";
 
 type Customer = {
   id: string;
@@ -42,36 +42,36 @@ export default function CustomerDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const [customer, setCustomer] = useState<Customer | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [editMode, setEditMode] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   
   // 新增状态：对话历史和折叠控制
-  const [conversations, setConversations] = useState<any[]>([]);
   const [isInfoCollapsed, setIsInfoCollapsed] = useState(false);
   const [showChatArea, setShowChatArea] = useState(false);
 
+  const { data: customerData, isLoading } = useCustomer(id);
+  const updateMutation = useUpdateCustomer();
+  const deleteMutation = useDeleteCustomer();
+
+  const customer = customerData?.data;
+
+  // Sync form when customer data changes
   useEffect(() => {
-    apiRequest<{ data: Customer }>(`/api/customers/${id}`)
-      .then((response) => {
-        setCustomer(response.data);
-        setForm({
-          name: response.data.name ?? "",
-          company: response.data.company ?? "",
-          title: response.data.title ?? "",
-          phones: (response.data.phones ?? []).join(", "),
-          emails: (response.data.emails ?? []).join(", "),
-          wechat: response.data.wechat ?? "",
-          address: response.data.address ?? "",
-          tags: (response.data.tags ?? []).join(", "),
-          profile_markdown: response.data.profile_markdown ?? ""
-        });
-      })
-      .catch(() => setToast("客户不存在或加载失败"))
-      .finally(() => setIsLoading(false));
-  }, [id]);
+    if (customer) {
+      setForm({
+        name: customer.name ?? "",
+        company: customer.company ?? "",
+        title: customer.title ?? "",
+        phones: (customer.phones ?? []).join(", "),
+        emails: (customer.emails ?? []).join(", "),
+        wechat: customer.wechat ?? "",
+        address: customer.address ?? "",
+        tags: (customer.tags ?? []).join(", "),
+        profile_markdown: customer.profile_markdown ?? ""
+      });
+    }
+  }, [customer]);
 
   function handleFormChange(field: string, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -79,24 +79,20 @@ export default function CustomerDetailPage({
 
   async function handleSave() {
     try {
-      const response = await apiRequest<{ data: Customer }>(
-        `/api/customers/${id}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({
-            name: form.name,
-            company: form.company,
-            title: form.title,
-            phones: form.phones,
-            emails: form.emails,
-            wechat: form.wechat,
-            address: form.address,
-            tags: form.tags,
-            profile_markdown: form.profile_markdown
-          })
+      await updateMutation.mutateAsync({
+        id,
+        data: {
+          name: form.name,
+          company: form.company,
+          title: form.title,
+          phones: form.phones ? form.phones.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
+          emails: form.emails ? form.emails.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
+          wechat: form.wechat,
+          address: form.address,
+          tags: form.tags ? form.tags.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
+          profile_markdown: form.profile_markdown
         }
-      );
-      setCustomer(response.data);
+      });
       setEditMode(false);
       setToast("客户信息已更新");
     } catch (err) {
@@ -108,7 +104,7 @@ export default function CustomerDetailPage({
     if (!confirm("确定要删除这位客户吗？")) return;
 
     try {
-      await apiRequest(`/api/customers/${id}`, { method: "DELETE" });
+      await deleteMutation.mutateAsync(id);
       setToast("客户已删除");
       setTimeout(() => {
         window.location.href = "/customers";

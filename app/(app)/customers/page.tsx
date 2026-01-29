@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { IconSearch, IconPlus, IconEdit, IconTrash } from "../../components/Icons";
 import Modal from "../../components/Modal";
 import Toast from "../../components/Toast";
-import { apiRequest } from "../../lib/client";
 import { formatContactStatus, formatRelativeTime } from "../../lib/format";
 import { useDebounce } from "../../hooks/useDebounce";
 import Link from "next/link";
+import {
+  useCustomers,
+  useCreateCustomer,
+  useDeleteCustomer,
+} from "../../lib/queries";
 
 type Customer = {
   id: string;
@@ -56,44 +60,35 @@ export default function CustomersPage() {
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [tag, setTag] = useState("all");
   const [hasContact, setHasContact] = useState(false);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [meta, setMeta] = useState<CustomerResponse["meta"]>({
-    page: 1,
-    pageSize: 6,
-    total: 0,
-    totalPages: 1,
-    tagOptions: [],
-    totalCustomers: 0
-  });
-  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
   const [toast, setToast] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({ ...emptyForm });
 
   const debouncedSearch = useDebounce(search, 300);
 
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set("page", String(meta.page));
-    params.set("pageSize", String(meta.pageSize));
-    params.set("search", debouncedSearch);
-    params.set("sort", sort);
-    params.set("order", order);
-    if (tag !== "all") params.set("tag", tag);
-    if (hasContact) params.set("hasContact", "1");
-    return params.toString();
-  }, [debouncedSearch, sort, order, tag, hasContact, meta.page, meta.pageSize]);
+  const { data, isLoading } = useCustomers({
+    page,
+    pageSize: 6,
+    search: debouncedSearch,
+    sort,
+    order,
+    tag,
+    hasContact,
+  });
 
-  useEffect(() => {
-    setLoading(true);
-    apiRequest<CustomerResponse>(`/api/customers?${queryString}`)
-      .then((response) => {
-        setCustomers(response.data);
-        setMeta(response.meta);
-      })
-      .catch(() => undefined)
-      .finally(() => setLoading(false));
-  }, [queryString]);
+  const createMutation = useCreateCustomer();
+  const deleteMutation = useDeleteCustomer();
+
+  const customers = data?.data ?? [];
+  const meta = data?.meta ?? {
+    page: 1,
+    pageSize: 6,
+    total: 0,
+    totalPages: 1,
+    tagOptions: [],
+    totalCustomers: 0
+  };
 
   function resetForm() {
     setForm({ ...emptyForm });
@@ -105,24 +100,23 @@ export default function CustomersPage() {
       return;
     }
     try {
-      await apiRequest("/api/customers", {
-        method: "POST",
-        body: JSON.stringify({
-          name: form.name,
-          company: form.company,
-          title: form.title,
-          phones: form.phones ? form.phones.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
-          emails: form.emails ? form.emails.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
-          wechat: form.wechat,
-          tags: form.tags ? form.tags.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
-          profile_markdown: form.profile_markdown,
-          source: "manual"
-        })
-      });
+      await createMutation.mutateAsync({
+        name: form.name,
+        company: form.company,
+        title: form.title,
+        phones: form.phones ? form.phones.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
+        emails: form.emails ? form.emails.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
+        wechat: form.wechat,
+        tags: form.tags ? form.tags.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
+        profile_markdown: form.profile_markdown,
+        source: "manual",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      } as any);
       setToast("客户已新增");
       resetForm();
       setModalOpen(false);
-      setMeta((prev) => ({ ...prev, page: 1 }));
+      setPage(1);
     } catch (err) {
       setToast(err instanceof Error ? err.message : "新增失败");
     }
@@ -130,9 +124,8 @@ export default function CustomersPage() {
 
   async function handleDelete(id: string) {
     try {
-      await apiRequest(`/api/customers/${id}`, { method: "DELETE" });
+      await deleteMutation.mutateAsync(id);
       setToast("客户已删除");
-      setMeta((prev) => ({ ...prev, page: 1 }));
     } catch (err) {
       setToast(err instanceof Error ? err.message : "删除失败");
     }
@@ -217,7 +210,7 @@ export default function CustomersPage() {
         </div>
 
         <div className="mt-6 space-y-4">
-          {loading ? (
+          {isLoading ? (
             <div className="space-y-3">
               {[1, 2, 3].map((item) => (
                 <div
@@ -291,8 +284,8 @@ export default function CustomersPage() {
         <div className="mt-6 flex items-center justify-between text-xs text-text-tertiary">
           <button
             className="rounded-full border border-border bg-bg-surface px-3 py-1"
-            disabled={meta.page <= 1}
-            onClick={() => setMeta((prev) => ({ ...prev, page: prev.page - 1 }))}
+            disabled={page <= 1}
+            onClick={() => setPage((prev) => prev - 1)}
           >
             上一页
           </button>
@@ -301,8 +294,8 @@ export default function CustomersPage() {
           </span>
           <button
             className="rounded-full border border-border bg-bg-surface px-3 py-1"
-            disabled={meta.page >= meta.totalPages}
-            onClick={() => setMeta((prev) => ({ ...prev, page: prev.page + 1 }))}
+            disabled={page >= meta.totalPages}
+            onClick={() => setPage((prev) => prev + 1)}
           >
             下一页
           </button>
