@@ -12,6 +12,13 @@ const items = [
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const hideNav =
+    pathname.startsWith("/ai-assistant") ||
+    (pathname.startsWith("/customers/") && pathname.split("/").length >= 3);
+
+  if (hideNav) {
+    return null;
+  }
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-bg-surface/95 backdrop-blur-sm md:hidden">

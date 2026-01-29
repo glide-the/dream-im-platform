@@ -62,7 +62,7 @@ export default function AIInputDock({
     if (!query.trim() && attachments.length === 0) return;
 
     const customerIds = contextCustomers.map((c) => c.id);
-    if (contextCustomerId) {
+    if (contextCustomerId && !customerIds.includes(contextCustomerId)) {
       customerIds.push(contextCustomerId);
     }
 

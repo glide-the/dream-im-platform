@@ -150,9 +150,13 @@ function AiAssistantPage() {
     });
   }
 
-  async function handleSearch() {
+  async function handleSearch(
+    nextQuery: string = query,
+    nextAttachments: { name: string; type: string; size: number }[] = attachments,
+    nextCustomerIds?: string[]
+  ) {
     setError(null);
-    if (!query.trim()) {
+    if (!nextQuery.trim()) {
       setError("请输入客户单位或姓名");
       return;
     }
@@ -163,9 +167,10 @@ function AiAssistantPage() {
         {
           method: "POST",
           body: JSON.stringify({
-            query_text: query,
-            attachments,
-            context_customer_ids: contextCustomers.map((item) => item.id)
+            query_text: nextQuery,
+            attachments: nextAttachments,
+            context_customer_ids:
+              nextCustomerIds ?? contextCustomers.map((item) => item.id)
           })
         }
       );
@@ -623,11 +628,12 @@ function AiAssistantPage() {
             contextCustomerId={contextCustomerId ?? undefined}
             contextCustomers={contextCustomers}
             onSendMessage={async (message, newAttachments, customerIds) => {
+              const safeAttachments = newAttachments ?? [];
+              const safeCustomerIds =
+                customerIds ?? contextCustomers.map((item) => item.id);
               setQuery(message);
-              setAttachments(newAttachments ?? []);
-              // 等待状态更新后再调用 handleSearch
-              await new Promise(resolve => setTimeout(resolve, 0));
-              handleSearch();
+              setAttachments(safeAttachments);
+              await handleSearch(message, safeAttachments, safeCustomerIds);
             }}
             onAddContextCustomer={() => setCustomerModalOpen(true)}
             onRemoveContextCustomer={(id) => removeContextCustomer(id)}
