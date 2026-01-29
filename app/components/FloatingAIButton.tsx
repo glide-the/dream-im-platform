@@ -6,6 +6,12 @@ import { IconSparkles } from "./Icons";
 
 export default function FloatingAIButton() {
   const pathname = usePathname();
+
+  // 在客户详情页隐藏悬浮球（因为已有固定在底部的 AI Input Dock）
+  if (pathname.startsWith("/customers/") && pathname.split("/").length === 3) {
+    return null;
+  }
+
   let href = "/ai-assistant";
   if (pathname.startsWith("/customers/")) {
     const id = pathname.split("/")[2];

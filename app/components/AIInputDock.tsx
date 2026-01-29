@@ -72,7 +72,7 @@ export default function AIInputDock({
   }
 
   return (
-    <div className="sticky bottom-0 mt-6 rounded-2xl border border-border bg-bg-primary/95 p-4 backdrop-blur-sm">
+    <div className="rounded-2xl border border-border bg-bg-primary p-4">
       {/* 上下文选择区 */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {/* 文件/相册/拍照按钮 */}
@@ -162,11 +162,6 @@ export default function AIInputDock({
           <IconSend className="h-5 w-5" />
         </button>
       </div>
-
-      {/* 提示文本 */}
-      <p className="mt-2 text-[11px] text-text-tertiary">
-        长按发送键可语音输入（MVP 预留）
-      </p>
     </div>
   );
 }
