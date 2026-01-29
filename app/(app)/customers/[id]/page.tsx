@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { IconChevronLeft, IconEdit, IconTrash } from "../../../components/Icons";
 import { apiRequest } from "../../../lib/client";
@@ -38,8 +38,9 @@ const emptyForm = {
 export default function CustomerDetailPage({
   params
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
+  const { id } = use(params);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [editMode, setEditMode] = useState(false);
@@ -47,7 +48,7 @@ export default function CustomerDetailPage({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    apiRequest<{ data: Customer }>(`/api/customers/${params.id}`)
+    apiRequest<{ data: Customer }>(`/api/customers/${id}`)
       .then((response) => {
         setCustomer(response.data);
         setForm({
@@ -64,7 +65,7 @@ export default function CustomerDetailPage({
       })
       .catch(() => setToast("客户不存在或加载失败"))
       .finally(() => setIsLoading(false));
-  }, [params.id]);
+  }, [id]);
 
   function handleFormChange(field: string, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -73,7 +74,7 @@ export default function CustomerDetailPage({
   async function handleSave() {
     try {
       const response = await apiRequest<{ data: Customer }>(
-        `/api/customers/${params.id}`,
+        `/api/customers/${id}`,
         {
           method: "PATCH",
           body: JSON.stringify({
@@ -101,7 +102,7 @@ export default function CustomerDetailPage({
     if (!confirm("确定要删除这位客户吗？")) return;
 
     try {
-      await apiRequest(`/api/customers/${params.id}`, { method: "DELETE" });
+      await apiRequest(`/api/customers/${id}`, { method: "DELETE" });
       setToast("客户已删除");
       setTimeout(() => {
         window.location.href = "/customers";
