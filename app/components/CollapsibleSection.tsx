@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { IconChevronDown, IconChevronUp } from "./Icons";
 
 interface CollapsibleSectionProps {
@@ -8,29 +8,67 @@ interface CollapsibleSectionProps {
   defaultCollapsed?: boolean;
   children: React.ReactNode;
   className?: string;
+  rightElement?: React.ReactNode;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export default function CollapsibleSection({
   title,
   defaultCollapsed = false,
   children,
-  className = ""
+  className = "",
+  rightElement,
+  collapsed = undefined,
+  onToggleCollapse
 }: CollapsibleSectionProps) {
-  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  const [internalCollapsed, setInternalCollapsed] = useState(defaultCollapsed);
+  
+  const isCollapsed = collapsed !== undefined ? collapsed : internalCollapsed;
+
+  function handleToggle() {
+    if (onToggleCollapse) {
+      onToggleCollapse();
+    } else {
+      setInternalCollapsed(!isCollapsed);
+    }
+  }
+
+  useEffect(() => {
+    if (collapsed !== undefined) {
+      setInternalCollapsed(collapsed);
+    }
+  }, [collapsed]);
 
   return (
     <div className={`transition-all duration-300 ${className}`}>
-      <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="flex w-full items-center justify-between rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:bg-bg-secondary"
-      >
-        <span className="text-sm font-semibold text-text-primary">{title}</span>
-        {isCollapsed ? (
-          <IconChevronDown className="h-4 w-4 text-text-secondary" />
-        ) : (
-          <IconChevronUp className="h-4 w-4 text-text-secondary" />
-        )}
-      </button>
+      <div className="flex items-center justify-between rounded-xl border border-border bg-surface px-4 py-3">
+        <div className="flex flex-1 items-center gap-3">
+          <button
+            onClick={handleToggle}
+            className="flex items-center gap-2"
+          >
+            <span className="text-sm font-semibold text-text-primary">{title}</span>
+          </button>
+        </div>
+        <div className="flex items-center gap-4">
+          {rightElement && (
+            <div className="flex items-center">
+              {rightElement}
+            </div>
+          )}
+          <button
+            onClick={handleToggle}
+            className="flex items-center"
+          >
+            {!isCollapsed ? (
+              <IconChevronUp className="h-4 w-4 text-text-secondary" />
+            ) : (
+              <IconChevronDown className="h-4 w-4 text-text-secondary" />
+            )}
+          </button>
+        </div>
+      </div>
 
       {!isCollapsed && (
         <div className="mt-3 rounded-xl border border-border bg-bg-secondary p-4 transition-all duration-300">
