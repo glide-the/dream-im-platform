@@ -58,6 +58,7 @@ export async function PATCH(
     wechat: body?.wechat?.trim() ?? current.wechat,
     address: body?.address?.trim() ?? current.address,
     tags: body?.tags ? normalizeList(body.tags) : current.tags,
+    decision_chain: body?.decision_chain ?? current.decision_chain,
     profile_markdown:
       body?.profile_markdown ?? current.profile_markdown,
     last_verified_at: body?.last_verified_at ?? current.last_verified_at,

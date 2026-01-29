@@ -70,6 +70,7 @@ export async function POST(request: Request) {
     wechat: body?.wechat?.trim() || "",
     address: body?.address?.trim() || "",
     tags: normalizeList(body?.tags ?? []),
+    decision_chain: body?.decision_chain ?? [],
     profile_markdown: body?.profile_markdown || "",
     created_at: now,
     updated_at: now,
