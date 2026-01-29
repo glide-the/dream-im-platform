@@ -109,10 +109,8 @@ export default function CustomersPage() {
         wechat: form.wechat,
         tags: form.tags ? form.tags.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
         profile_markdown: form.profile_markdown,
-        source: "manual",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      } as any);
+        source: "manual"
+      });
       setToast("客户已新增");
       resetForm();
       setModalOpen(false);

@@ -105,10 +105,8 @@ export default function TodoPage() {
           title: form.title,
           description: form.description,
           priority: form.priority,
-          status: form.status,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        } as any);
+          status: form.status
+        });
         setToast("待办已创建");
       }
       setModalOpen(false);

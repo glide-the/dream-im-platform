@@ -142,7 +142,7 @@ export function useCustomers(params: CustomerListParams = {}, options?: Omit<Use
   if (params.sort !== undefined) queryParams.sort = params.sort;
   if (params.order !== undefined) queryParams.order = params.order;
   if (params.tag !== undefined) queryParams.tag = params.tag;
-  if (params.hasContact !== undefined) queryParams.hasContact = "1";
+  if (params.hasContact === true) queryParams.hasContact = "1";
 
   const queryString = new URLSearchParams(queryParams).toString();
 
