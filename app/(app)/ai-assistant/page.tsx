@@ -189,6 +189,9 @@ function AiAssistantPage() {
   async function handleConfirm() {
     if (!editCard) return;
     try {
+      // 定义API响应类型
+      type CreateCustomerResponse = { data: { id: string } };
+      
       const result = await createCustomerMutation.mutateAsync({
         name: editCard.structured_fields.name,
         company: editCard.structured_fields.company,
@@ -204,7 +207,7 @@ function AiAssistantPage() {
       } as any);
       
       // Extract customer ID and info from the response
-      const customerId = result?.data?.id || "";
+      const customerId = (result as CreateCustomerResponse)?.data?.id || "";
       const customerName = editCard.structured_fields.name || "客户";
       const customerCompany = editCard.structured_fields.company || "";
       

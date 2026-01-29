@@ -4,11 +4,7 @@ import { useState } from "react";
 import { IconEdit, IconChevronDown, IconChevronUp } from "../Icons";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-type Customer = {
-  id: string;
-  profile_markdown?: string;
-};
+import type { Customer } from "../../lib/types";
 
 interface MarkdownDetailSectionProps {
   customer: Customer;
@@ -30,8 +26,8 @@ export default function MarkdownDetailSection({
   const [localContent, setLocalContent] = useState(customer.profile_markdown ?? "");
   const [showPreview, setShowPreview] = useState(false);
 
-  function handleSave() {
-    onSave({
+  async function handleSave() {
+    await onSave({
       profile_markdown: localContent || undefined
     });
   }

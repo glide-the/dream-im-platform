@@ -1,16 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { IconEdit, IconX, IconCheck } from "../Icons";
+import { IconEdit } from "../Icons";
 import { formatRelativeTime } from "../../lib/format";
-
-type Customer = {
-  id: string;
-  name?: string;
-  company?: string;
-  title?: string;
-  tags?: string[];
-};
+import type { Customer } from "../../lib/types";
 
 interface ProfileCardProps {
   customer: Customer;
@@ -30,8 +23,8 @@ export default function ProfileCard({
   const [localTitle, setLocalTitle] = useState(customer.title ?? "");
   const [localTags, setLocalTags] = useState((customer.tags ?? []).join(", "));
 
-  function handleSave() {
-    onSave({
+  async function handleSave() {
+    await onSave({
       name: localName || undefined,
       company: localCompany || undefined,
       title: localTitle || undefined,

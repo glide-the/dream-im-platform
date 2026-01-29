@@ -82,18 +82,17 @@ export default function CustomerDetailPage({
     }
   }, [customer]);
 
-  function handleCardSave(updatedData: Partial<Customer>) {
-    updateMutation.mutateAsync({
-      id,
-      data: updatedData
-    })
-      .then(() => {
-        setToast("客户信息已更新");
-        setEditingCard(null);
-      })
-      .catch((err) => {
-        setToast(err instanceof Error ? err.message : "保存失败");
+  async function handleCardSave(updatedData: Partial<Customer>) {
+    try {
+      await updateMutation.mutateAsync({
+        id,
+        data: updatedData
       });
+      setToast("客户信息已更新");
+      setEditingCard(null);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "保存失败");
+    }
   }
 
   if (isLoading) {

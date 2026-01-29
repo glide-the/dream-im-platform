@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createCustomerWithConversationLink, listCustomers } from "../../lib/db";
+import { createApiResponse } from "../../lib/api-types";
 import { createId } from "../../lib/id";
 import { toNumber } from "../../lib/query";
 import { Customer } from "../../lib/types";
@@ -83,5 +84,7 @@ export async function POST(request: Request) {
     body?.conversation_id
   );
 
-  return NextResponse.json({ data: result }, { status: 201 });
+  // 使用类型安全的响应格式
+  const response: ApiResponse<Customer> = createApiResponse(result);
+  return NextResponse.json(response, { status: 201 });
 }

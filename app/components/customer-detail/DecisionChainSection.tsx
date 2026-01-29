@@ -2,12 +2,7 @@
 
 import { useState } from "react";
 import { IconPlus, IconTrash, IconChevronDown, IconChevronUp, IconEdit } from "../Icons";
-import type { DecisionChainItem } from "../../lib/types";
-
-type Customer = {
-  id: string;
-  decision_chain?: DecisionChainItem[];
-};
+import type { Customer, DecisionChainItem } from "../../lib/types";
 
 interface DecisionChainSectionProps {
   customer: Customer;
@@ -50,8 +45,8 @@ export default function DecisionChainSection({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  function handleSave() {
-    onSave({
+  async function handleSave() {
+    await onSave({
       decision_chain: localDecisionChain
     });
   }

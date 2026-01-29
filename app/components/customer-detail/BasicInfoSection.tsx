@@ -2,18 +2,7 @@
 
 import { useState } from "react";
 import { IconEdit, IconChevronDown, IconChevronUp } from "../Icons";
-
-type Customer = {
-  id: string;
-  name?: string;
-  company?: string;
-  title?: string;
-  phones?: string[];
-  emails?: string[];
-  wechat?: string;
-  address?: string;
-  tags?: string[];
-};
+import type { Customer } from "../../lib/types";
 
 interface BasicInfoSectionProps {
   customer: Customer;
@@ -41,8 +30,8 @@ export default function BasicInfoSection({
     tags: (customer.tags ?? []).join(", ")
   });
 
-  function handleSave() {
-    onSave({
+  async function handleSave() {
+    await onSave({
       phones: localData.phones ? localData.phones.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
       emails: localData.emails ? localData.emails.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
       wechat: localData.wechat || undefined,
