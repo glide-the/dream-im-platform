@@ -11,6 +11,7 @@ import {
 } from "../../components/Icons";
 import Modal from "../../components/Modal";
 import Toast from "../../components/Toast";
+import AIInputDock from "../../components/AIInputDock";
 import { apiRequest } from "../../lib/client";
 import { formatRelativeTime } from "../../lib/format";
 import { useDebounce } from "../../hooks/useDebounce";
