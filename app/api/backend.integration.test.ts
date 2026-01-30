@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import type { ApiListResponse } from "../lib/queries";
+import type { Customer, Todo, Conversation } from "../lib/types";
 
 type ApiResponse<T = unknown> = {
   status: number;
@@ -12,10 +13,10 @@ const BASE_URL =
     ? rawBaseUrl
     : "http://localhost:3000";
 
-async function fetchJson(
+async function fetchJson<T = unknown>(
   path: string,
   init?: RequestInit
-): Promise<ApiResponse> {
+): Promise<ApiResponse<T>> {
   const response = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers: {
@@ -23,8 +24,7 @@ async function fetchJson(
       ...(init?.headers || {})
     }
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const json = await response.json().catch(() => ({})) as any;
+  const json = await response.json().catch(() => ({})) as T;
   return { status: response.status, json };
 }
 
@@ -60,7 +60,7 @@ describe("Customers API", () => {
   });
 
   it("lists customers with meta", async () => {
-    const { status, json } = await fetchJson("/api/customers?page=1&pageSize=2");
+    const { status, json } = await fetchJson<ApiListResponse<any>>("/api/customers?page=1&pageSize=2");
     expect(status).toBe(200);
     expect(Array.isArray(json.data)).toBe(true);
     expect(json.meta).toBeTruthy();
@@ -69,7 +69,7 @@ describe("Customers API", () => {
 
   it("creates, updates, and deletes a customer", async () => {
     const name = `测试客户-${Date.now()}`;
-    const { status: createStatus, json: created } = await fetchJson(
+    const { status: createStatus, json: created } = await fetchJson<{ data: Customer }>(
       "/api/customers",
       {
         method: "POST",
@@ -88,13 +88,13 @@ describe("Customers API", () => {
     expect(customerId).toBeTruthy();
     createdIds.push(customerId);
 
-    const { status: getStatus, json: fetched } = await fetchJson(
+    const { status: getStatus, json: fetched } = await fetchJson<{ data: Customer }>(
       `/api/customers/${customerId}`
     );
     expect(getStatus).toBe(200);
     expect(fetched.data.name).toBe(name);
 
-    const { status: patchStatus, json: patched } = await fetchJson(
+    const { status: patchStatus, json: patched } = await fetchJson<{ data: Customer }>(
       `/api/customers/${customerId}`,
       {
         method: "PATCH",
@@ -123,7 +123,7 @@ describe("Todos API", () => {
   });
 
   it("lists todos with stats", async () => {
-    const { status, json } = await fetchJson("/api/todos?page=1&pageSize=2");
+    const { status, json } = await fetchJson<ApiListResponse<any>>("/api/todos?page=1&pageSize=2");
     expect(status).toBe(200);
     expect(Array.isArray(json.data)).toBe(true);
     expect(json.meta?.stats).toBeTruthy();
@@ -131,7 +131,7 @@ describe("Todos API", () => {
 
   it("creates, updates, and deletes a todo", async () => {
     const title = `测试待办-${Date.now()}`;
-    const { status: createStatus, json: created } = await fetchJson(
+    const { status: createStatus, json: created } = await fetchJson<{ data: Todo }>(
       "/api/todos",
       {
         method: "POST",
@@ -148,13 +148,13 @@ describe("Todos API", () => {
     expect(todoId).toBeTruthy();
     createdIds.push(todoId);
 
-    const { status: getStatus, json: fetched } = await fetchJson(
+    const { status: getStatus, json: fetched } = await fetchJson<{ data: Todo }>(
       `/api/todos/${todoId}`
     );
     expect(getStatus).toBe(200);
     expect(fetched.data.title).toBe(title);
 
-    const { status: patchStatus, json: patched } = await fetchJson(
+    const { status: patchStatus, json: patched } = await fetchJson<{ data: Todo }>(
       `/api/todos/${todoId}`,
       {
         method: "PATCH",
@@ -173,7 +173,7 @@ describe("Todos API", () => {
 
 describe("Conversations API", () => {
   it("lists conversations", async () => {
-    const { status, json } = await fetchJson(
+    const { status, json } = await fetchJson<ApiListResponse<any>>(
       "/api/conversations?page=1&pageSize=2"
     );
     expect(status).toBe(200);
@@ -181,12 +181,12 @@ describe("Conversations API", () => {
   });
 
   it("updates conversation status", async () => {
-    const list = await fetchJson("/api/conversations?page=1&pageSize=1");
+    const list = await fetchJson<ApiListResponse<Conversation>>("/api/conversations?page=1&pageSize=1");
     expect(list.status).toBe(200);
     const conv = list.json.data?.[0];
     expect(conv?.id).toBeTruthy();
 
-    const { status: patchStatus, json: patched } = await fetchJson(
+    const { status: patchStatus, json: patched } = await fetchJson<{ data: Conversation }>(
       `/api/conversations/${conv.id}`,
       {
         method: "PATCH",

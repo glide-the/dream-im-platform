@@ -102,9 +102,11 @@ describe('researchCustomer', () => {
 
       // Mock 超时场景
       const { query } = await import('@anthropic-ai/claude-agent-sdk');
-      vi.mocked(query).mockImplementation(async function* () {
-        await new Promise(resolve => setTimeout(resolve, 200000));
-      });
+      vi.mocked(query).mockImplementation(() => ({
+        [Symbol.asyncIterator]: async function* () {
+          await new Promise(resolve => setTimeout(resolve, 200000));
+        }
+      } as any));
 
       await expect(
         researchCustomer('测试', { timeout: 1000 })

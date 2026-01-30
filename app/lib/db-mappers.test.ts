@@ -147,18 +147,18 @@ describe('Database Row Mappers', () => {
         status: 'pending',
         created_at: new Date('2024-01-01T00:00:00Z'),
         updated_at: new Date('2024-01-02T00:00:00Z'),
-        messages: JSON.stringify([
+        messages: [
           { id: 'msg_1', role: 'user', content: '查询腾讯马化腾', created_at: '2024-01-01T00:00:00Z' },
           { id: 'msg_2', role: 'assistant', content: '已生成客户卡片', created_at: '2024-01-01T00:00:01Z' }
-        ]),
+        ],
         attachments: null,
         context_customer_ids: ['cus_1', 'cus_2'],
-        ai_outputs: JSON.stringify({
+        ai_outputs: {
           customer_card: {
             structured_fields: { name: '马化腾', company: '腾讯' },
             profile_markdown: '腾讯创始人'
           }
-        }),
+        },
         linked_customer_id: null
       };
 
