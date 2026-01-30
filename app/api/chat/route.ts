@@ -17,7 +17,7 @@ import {
   getConversationById,
 } from "../../lib/db";
 import { createId } from "../../lib/id";
-import type { Conversation } from "../../lib/types";
+import type { Conversation, MessagePart } from "../../lib/types";
 
 export const runtime = "nodejs";
 
@@ -34,15 +34,12 @@ type ChatRequestBody = {
   customerId?: string;
 };
 
-// Helper type for message parts - supports both text parts and reasoning parts
-type MessagePart = {
-  type: "text" | "reasoning" | "step-start";
-  text?: string;
-  state?: "done" | "streaming";
-};
+// Supported message part types for storage
+const SUPPORTED_PART_TYPES = ["text", "reasoning", "step-start"] as const;
+type SupportedPartType = typeof SUPPORTED_PART_TYPES[number];
 
 // Extract text content from UIMessage parts
-function extractTextFromParts(parts: UIMessage["parts"]): string {
+function extractTextFromParts(parts: UIMessage["parts"] | undefined): string {
   if (!parts || !Array.isArray(parts)) return "";
   
   return parts
@@ -53,32 +50,38 @@ function extractTextFromParts(parts: UIMessage["parts"]): string {
     .join("");
 }
 
+// Check if a part type is supported
+function isSupportedPartType(type: string): type is SupportedPartType {
+  return SUPPORTED_PART_TYPES.includes(type as SupportedPartType);
+}
+
 // Convert UIMessage parts to our storage format
-function convertToStorageParts(parts: UIMessage["parts"]): MessagePart[] {
+function convertToStorageParts(parts: UIMessage["parts"] | undefined): MessagePart[] {
   if (!parts || !Array.isArray(parts)) return [];
   
-  return parts.map((part) => {
-    if (part.type === "text") {
+  return parts
+    .filter((part) => isSupportedPartType(part.type)) // Only include supported types
+    .map((part) => {
+      if (part.type === "text") {
+        return {
+          type: "text" as const,
+          text: part.text,
+          state: "done" as const,
+        };
+      }
+      if (part.type === "reasoning") {
+        return {
+          type: "reasoning" as const,
+          text: (part as { type: "reasoning"; text: string }).text,
+          state: "done" as const,
+        };
+      }
+      // step-start type
       return {
-        type: "text" as const,
-        text: part.text,
+        type: "step-start" as const,
         state: "done" as const,
       };
-    }
-    if (part.type === "reasoning") {
-      return {
-        type: "reasoning" as const,
-        text: (part as { type: "reasoning"; text: string }).text,
-        state: "done" as const,
-      };
-    }
-    // Handle other part types as needed
-    return {
-      type: part.type as "text" | "reasoning" | "step-start",
-      text: (part as { text?: string }).text,
-      state: "done" as const,
-    };
-  });
+    });
 }
 
 function badRequest(message: string) {
@@ -134,9 +137,6 @@ export async function POST(req: NextRequest) {
   // Check if conversation exists
   const existingConversation = await getConversationById(conversationId);
 
-  // Store the original messages for context
-  const originalMessages = messages;
-
   // Create streaming response using ai SDK (following better-chatbot pattern)
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
@@ -149,9 +149,6 @@ export async function POST(req: NextRequest) {
         ? `${lastMessage.id}-response` 
         : createId("msg");
       let hasStarted = false;
-
-      // Collect parts for the response message
-      const responseParts: MessagePart[] = [];
 
       // Set up callbacks to stream to UI
       const callbacks: AgentStreamingCallbacks = {
@@ -184,15 +181,6 @@ export async function POST(req: NextRequest) {
             writer.write({
               type: "text-end",
               id: assistantMessageId,
-            });
-          }
-
-          // Add the text part to response parts
-          if (fullText) {
-            responseParts.push({
-              type: "text",
-              text: fullText,
-              state: "done",
             });
           }
         },
@@ -238,19 +226,27 @@ export async function POST(req: NextRequest) {
         const userMessageParts = convertToStorageParts(lastMessage.parts);
         
         // Convert the response message parts for storage
-        const assistantMessageParts = responseMessage.parts 
+        // Use parts if available, otherwise create a text part from extracted content
+        const responseText = extractTextFromParts(responseMessage.parts);
+        const assistantMessageParts = responseMessage.parts && responseMessage.parts.length > 0
           ? convertToStorageParts(responseMessage.parts)
-          : [{ type: "text" as const, text: extractTextFromParts(responseMessage.parts), state: "done" as const }];
+          : (responseText ? [{ type: "text" as const, text: responseText, state: "done" as const }] : []);
 
-        // Build the messages array for storage
-        const storedMessages = [
-          ...((existingConversation?.messages || []).map(m => ({
+        // Get existing messages, excluding any with the same ID as the new messages
+        // This prevents duplicate messages when updating a conversation
+        const existingMessages = (existingConversation?.messages || [])
+          .filter(m => m.id !== lastMessage.id && m.id !== responseMessage.id)
+          .map(m => ({
             id: m.id,
             role: m.role,
             content: m.content,
-            parts: (m as unknown as { parts?: MessagePart[] }).parts,
+            parts: m.parts,  // Now properly typed with MessagePart[]
             created_at: m.created_at,
-          }))),
+          }));
+
+        // Build the messages array for storage
+        const storedMessages = [
+          ...existingMessages,
           {
             id: lastMessage.id || createId("msg"),
             role: "user" as const,
@@ -261,7 +257,7 @@ export async function POST(req: NextRequest) {
           {
             id: responseMessage.id || createId("msg"),
             role: "assistant" as const,
-            content: extractTextFromParts(responseMessage.parts),
+            content: responseText,
             parts: assistantMessageParts,
             created_at: new Date().toISOString(),
           },
@@ -299,8 +295,8 @@ export async function POST(req: NextRequest) {
       return error instanceof Error ? error.message : "Unknown error";
     },
 
-    // Pass original messages for context
-    originalMessages: originalMessages,
+    // Pass messages for context
+    originalMessages: messages,
   });
 
   // Return streaming response

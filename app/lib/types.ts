@@ -51,10 +51,18 @@ export type Attachment = {
   size: number;
 };
 
+// Message part types for storing rich message content (aligned with AI SDK UIMessage format)
+export type MessagePart = {
+  type: "text" | "reasoning" | "step-start";
+  text?: string;
+  state?: "done" | "streaming";
+};
+
 export type ConversationMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  parts?: MessagePart[];  // Optional parts array for rich message content
   created_at: string;
 };
 
