@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, use, useMemo } from "react";
+import { useState, useEffect, use, useMemo, useRef } from "react";
 import Link from "next/link";
-import { IconChevronLeft, IconChevronDown, IconChevronUp } from "../../../components/Icons";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+import { IconChevronLeft, IconChevronDown } from "../../../components/Icons";
 import Toast from "../../../components/Toast";
 import ProfileCard from "../../../components/customer-detail/ProfileCard";
 import BasicInfoSection from "../../../components/customer-detail/BasicInfoSection";
@@ -58,6 +60,37 @@ export default function CustomerDetailPage({
   // 对话历史和折叠控制
   const [isInfoCollapsed, setIsInfoCollapsed] = useState(false);
   const [showChatArea, setShowChatArea] = useState(false);
+
+  // Chat scroll reference
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // useChat hook for AI conversation
+  const {
+    messages: chatMessages,
+    sendMessage,
+    status,
+    error: chatError,
+  } = useChat({
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+      body: {
+        customerId: id,
+      },
+    }),
+    onError: (error) => {
+      console.error("Chat error:", error);
+      setToast(error.message || "对话出错");
+    },
+  });
+
+  const chatLoading = status === "streaming" || status === "submitted";
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (chatContainerRef.current && chatMessages.length > 0) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
 
   const { data: customerData, isLoading } = useCustomer(id);
   const updateMutation = useUpdateCustomer();
@@ -228,17 +261,62 @@ export default function CustomerDetailPage({
             <p className="mb-3 text-xs font-semibold text-text-tertiary">
               与 AI 的对话
             </p>
-            <div className="space-y-3">
-              <div className="flex justify-start">
-                <div className="rounded-2xl rounded-tl-none bg-bg-secondary px-3 py-2 text-sm text-text-secondary max-w-[80%]">
-                  你好！有什么我可以帮助你的吗？
+            <div
+              ref={chatContainerRef}
+              className="space-y-3 max-h-80 overflow-y-auto"
+            >
+              {chatMessages.length === 0 ? (
+                <div className="flex justify-start">
+                  <div className="rounded-2xl rounded-tl-none bg-bg-secondary px-3 py-2 text-sm text-text-secondary max-w-[80%]">
+                    你好！有什么我可以帮助你的吗？
+                  </div>
                 </div>
-              </div>
-              <div className="flex justify-end">
-                <div className="rounded-2xl rounded-tr-none bg-accent px-3 py-2 text-sm text-white max-w-[80%]">
-                  帮我查一下这个客户的背景信息
+              ) : (
+                chatMessages.map((msg) => {
+                  const isUser = msg.role === "user";
+                  // Extract text content from message parts
+                  const textContent = msg.parts
+                    ?.filter((part): part is { type: "text"; text: string } => part.type === "text")
+                    .map((part) => part.text)
+                    .join("") || "";
+                  
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={[
+                          "rounded-2xl px-3 py-2 text-sm max-w-[80%] whitespace-pre-wrap",
+                          isUser
+                            ? "rounded-tr-none bg-accent text-white"
+                            : "rounded-tl-none bg-bg-secondary text-text-secondary",
+                        ].join(" ")}
+                      >
+                        {textContent}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              {chatLoading && (
+                <div className="flex justify-start">
+                  <div className="rounded-2xl rounded-tl-none bg-bg-secondary px-3 py-2 text-sm text-text-secondary max-w-[80%]">
+                    <span className="inline-flex gap-1">
+                      <span className="animate-pulse">●</span>
+                      <span className="animate-pulse delay-75">●</span>
+                      <span className="animate-pulse delay-150">●</span>
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
+              {chatError && (
+                <div className="flex justify-start">
+                  <div className="rounded-2xl rounded-tl-none bg-red-100 px-3 py-2 text-sm text-red-600 max-w-[80%]">
+                    出错了：{chatError.message}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -259,17 +337,21 @@ export default function CustomerDetailPage({
                 company: customer.company
               }
             ]}
-            onSendMessage={async (message, attachments, customerIds) => {
-              console.log("发送消息:", { message, attachments, customerIds });
+            onSendMessage={async (message) => {
               setShowChatArea(true);
               setIsInfoCollapsed(true);
+              
+              // Send user message to chat via useChat
+              await sendMessage({
+                text: message,
+              });
             }}
             onAddContextCustomer={() => {
               // 可以添加客户选择器
             }}
             onRemoveContextCustomer={() => {}}
             placeholder={`继续提问或补充信息...`}
-            loading={false}
+            loading={chatLoading}
           />
         </div>
       </div>
