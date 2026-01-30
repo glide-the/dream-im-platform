@@ -1,8 +1,10 @@
 // app/api/chat/route.ts
+// Reference: cgoinglove/better-chatbot src/app/api/chat/route.ts
 import { NextRequest } from "next/server";
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
+  UIMessage,
 } from "ai";
 import {
   createAgentRunner,
@@ -12,20 +14,72 @@ import {
 import {
   createConversation,
   updateConversation,
-  listConversations,
+  getConversationById,
 } from "../../lib/db";
 import { createId } from "../../lib/id";
-import type { Conversation, ConversationMessage } from "../../lib/types";
+import type { Conversation } from "../../lib/types";
 
 export const runtime = "nodejs";
 
 const DEFAULT_MAX_TURNS = Number(process.env.MAX_TURNS) || 10;
 
+// Request body format aligned with AI SDK's DefaultChatTransport
+// The transport sends: { id, messages, trigger, messageId, ...body }
 type ChatRequestBody = {
-  conversationId?: string;
-  message: string;
+  id: string;                    // Chat/conversation ID
+  messages: UIMessage[];          // All messages including the new user message
+  trigger?: "submit-message" | "regenerate-message";
+  messageId?: string;
+  // Custom body fields from our transport configuration
   customerId?: string;
 };
+
+// Helper type for message parts - supports both text parts and reasoning parts
+type MessagePart = {
+  type: "text" | "reasoning" | "step-start";
+  text?: string;
+  state?: "done" | "streaming";
+};
+
+// Extract text content from UIMessage parts
+function extractTextFromParts(parts: UIMessage["parts"]): string {
+  if (!parts || !Array.isArray(parts)) return "";
+  
+  return parts
+    .filter((part): part is { type: "text"; text: string } => 
+      part.type === "text" && typeof part.text === "string"
+    )
+    .map((part) => part.text)
+    .join("");
+}
+
+// Convert UIMessage parts to our storage format
+function convertToStorageParts(parts: UIMessage["parts"]): MessagePart[] {
+  if (!parts || !Array.isArray(parts)) return [];
+  
+  return parts.map((part) => {
+    if (part.type === "text") {
+      return {
+        type: "text" as const,
+        text: part.text,
+        state: "done" as const,
+      };
+    }
+    if (part.type === "reasoning") {
+      return {
+        type: "reasoning" as const,
+        text: (part as { type: "reasoning"; text: string }).text,
+        state: "done" as const,
+      };
+    }
+    // Handle other part types as needed
+    return {
+      type: part.type as "text" | "reasoning" | "step-start",
+      text: (part as { text?: string }).text,
+      state: "done" as const,
+    };
+  });
+}
 
 function badRequest(message: string) {
   return new Response(JSON.stringify({ error: message }), {
@@ -35,7 +89,7 @@ function badRequest(message: string) {
 }
 
 export async function POST(req: NextRequest) {
-  let body: ChatRequestBody | null = null;
+  let body: ChatRequestBody;
 
   try {
     body = (await req.json()) as ChatRequestBody;
@@ -43,9 +97,22 @@ export async function POST(req: NextRequest) {
     return badRequest("Invalid request body");
   }
 
-  const message = body?.message?.trim();
-  if (!message) {
+  // Get the last message from the messages array
+  const messages = body.messages;
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return badRequest("Empty message");
+  }
+
+  // Get the latest user message
+  const lastMessage = messages[messages.length - 1];
+  if (!lastMessage || lastMessage.role !== "user") {
+    return badRequest("Last message must be from user");
+  }
+
+  // Extract text content from the message parts
+  const messageText = extractTextFromParts(lastMessage.parts);
+  if (!messageText.trim()) {
+    return badRequest("Empty message content");
   }
 
   // Check for API key
@@ -61,78 +128,16 @@ export async function POST(req: NextRequest) {
   const customerId = body.customerId ?? null;
   const now = new Date().toISOString();
 
-  // Handle conversation - create new or load existing
-  let conversationId = body.conversationId;
-  let existingMessages: ConversationMessage[] = [];
+  // Use the ID from the request (from DefaultChatTransport) or create a new one
+  const conversationId = body.id || createId("conv");
 
-  if (!conversationId) {
-    // Create new conversation
-    conversationId = createId("conv");
+  // Check if conversation exists
+  const existingConversation = await getConversationById(conversationId);
 
-    const conversation: Conversation = {
-      id: conversationId,
-      title: "与 AI 的对话",
-      status: "pending",
-      created_at: now,
-      updated_at: now,
-      messages: [
-        {
-          id: createId("msg"),
-          role: "user",
-          content: message,
-          created_at: now,
-        },
-      ],
-      attachments: undefined,
-      context_customer_ids: customerId ? [customerId] : [],
-      ai_outputs: undefined,
-      linked_customer_id: customerId ?? undefined,
-    };
+  // Store the original messages for context
+  const originalMessages = messages;
 
-    await createConversation(conversation);
-  } else {
-    // Load existing conversation messages
-    const result = await listConversations({
-      page: 1,
-      pageSize: 100,
-      status: undefined,
-      search: undefined,
-    });
-    const existingConversation = result.data.find(
-      (c) => c.id === conversationId
-    );
-    if (existingConversation) {
-      existingMessages = existingConversation.messages;
-    }
-
-    // Add user message to existing conversation
-    const userMessage: ConversationMessage = {
-      id: createId("msg"),
-      role: "user",
-      content: message,
-      created_at: now,
-    };
-
-    const updatedConversation: Conversation = {
-      id: conversationId,
-      title: existingConversation?.title ?? "与 AI 的对话",
-      status: "pending",
-      created_at: existingConversation?.created_at ?? now,
-      updated_at: now,
-      messages: [...existingMessages, userMessage],
-      attachments: existingConversation?.attachments,
-      context_customer_ids: existingConversation?.context_customer_ids ??
-        (customerId ? [customerId] : []),
-      ai_outputs: existingConversation?.ai_outputs,
-      linked_customer_id:
-        existingConversation?.linked_customer_id ?? customerId ?? undefined,
-    };
-
-    await updateConversation(updatedConversation);
-    existingMessages = updatedConversation.messages;
-  }
-
-  // Create streaming response using ai SDK
+  // Create streaming response using ai SDK (following better-chatbot pattern)
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
       // Create Claude Agent Runner
@@ -140,14 +145,25 @@ export async function POST(req: NextRequest) {
       const agentRunner = createAgentRunner(sdkClient);
 
       let fullText = "";
-      const assistantMessageId = createId("msg");
+      const assistantMessageId = lastMessage.id 
+        ? `${lastMessage.id}-response` 
+        : createId("msg");
       let hasStarted = false;
+
+      // Collect parts for the response message
+      const responseParts: MessagePart[] = [];
 
       // Set up callbacks to stream to UI
       const callbacks: AgentStreamingCallbacks = {
         onTextDelta: async (delta: string) => {
           // Send text-start on first delta
           if (!hasStarted) {
+            // Send step-start event
+            writer.write({
+              type: "step-start",
+              id: assistantMessageId,
+            } as unknown as Parameters<typeof writer.write>[0]);
+            
             writer.write({
               type: "text-start",
               id: assistantMessageId,
@@ -171,29 +187,14 @@ export async function POST(req: NextRequest) {
             });
           }
 
-          // Save assistant message to conversation
-          const assistantMessage: ConversationMessage = {
-            id: assistantMessageId,
-            role: "assistant",
-            content: fullText,
-            created_at: new Date().toISOString(),
-          };
-
-          const updatedMessages = [...existingMessages, assistantMessage];
-          const finalConversation: Conversation = {
-            id: conversationId!,
-            title: "与 AI 的对话",
-            status: "pending",
-            created_at: now,
-            updated_at: new Date().toISOString(),
-            messages: updatedMessages,
-            attachments: undefined,
-            context_customer_ids: customerId ? [customerId] : [],
-            ai_outputs: undefined,
-            linked_customer_id: customerId ?? undefined,
-          };
-
-          await updateConversation(finalConversation);
+          // Add the text part to response parts
+          if (fullText) {
+            responseParts.push({
+              type: "text",
+              text: fullText,
+              state: "done",
+            });
+          }
         },
         onError: async (error: Error) => {
           writer.write({
@@ -207,8 +208,8 @@ export async function POST(req: NextRequest) {
         // Run the agent
         await agentRunner.runStreaming(
           {
-            threadId: conversationId!,
-            userMessage: message,
+            threadId: conversationId,
+            userMessage: messageText,
             maxTurns: DEFAULT_MAX_TURNS,
             allowedTools: [], // Disable tools for now
           },
@@ -229,6 +230,77 @@ export async function POST(req: NextRequest) {
         });
       }
     },
+
+    // onFinish callback - save messages to database (following better-chatbot pattern)
+    onFinish: async ({ responseMessage }) => {
+      try {
+        // Convert the user message parts for storage
+        const userMessageParts = convertToStorageParts(lastMessage.parts);
+        
+        // Convert the response message parts for storage
+        const assistantMessageParts = responseMessage.parts 
+          ? convertToStorageParts(responseMessage.parts)
+          : [{ type: "text" as const, text: extractTextFromParts(responseMessage.parts), state: "done" as const }];
+
+        // Build the messages array for storage
+        const storedMessages = [
+          ...((existingConversation?.messages || []).map(m => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            parts: (m as unknown as { parts?: MessagePart[] }).parts,
+            created_at: m.created_at,
+          }))),
+          {
+            id: lastMessage.id || createId("msg"),
+            role: "user" as const,
+            content: messageText,
+            parts: userMessageParts,
+            created_at: now,
+          },
+          {
+            id: responseMessage.id || createId("msg"),
+            role: "assistant" as const,
+            content: extractTextFromParts(responseMessage.parts),
+            parts: assistantMessageParts,
+            created_at: new Date().toISOString(),
+          },
+        ];
+
+        const conversationData: Conversation = {
+          id: conversationId,
+          title: existingConversation?.title ?? "与 AI 的对话",
+          status: "pending",
+          created_at: existingConversation?.created_at ?? now,
+          updated_at: new Date().toISOString(),
+          messages: storedMessages,
+          attachments: existingConversation?.attachments,
+          context_customer_ids: existingConversation?.context_customer_ids ??
+            (customerId ? [customerId] : []),
+          ai_outputs: existingConversation?.ai_outputs,
+          linked_customer_id:
+            existingConversation?.linked_customer_id ?? customerId ?? undefined,
+        };
+
+        if (existingConversation) {
+          await updateConversation(conversationData);
+        } else {
+          await createConversation(conversationData);
+        }
+
+        console.log(`[Chat API] Conversation ${conversationId} saved with ${storedMessages.length} messages`);
+      } catch (error) {
+        console.error("[Chat API] Failed to save conversation:", error);
+      }
+    },
+
+    onError: (error) => {
+      console.error("[Chat API] Stream error:", error);
+      return error instanceof Error ? error.message : "Unknown error";
+    },
+
+    // Pass original messages for context
+    originalMessages: originalMessages,
   });
 
   // Return streaming response

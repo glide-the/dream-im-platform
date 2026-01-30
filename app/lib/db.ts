@@ -795,6 +795,18 @@ export async function listConversations(params: ConversationListParams) {
   });
 }
 
+export async function getConversationById(id: string) {
+  return await withClient(async (client) => {
+    const db = drizzle(client);
+    const rows = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, id))
+      .limit(1);
+    return rows[0] ? mapConversationRow(rows[0]) : null;
+  });
+}
+
 export async function createConversation(conversation: Conversation) {
   return await withClient(async (client) => {
     const db = drizzle(client);
