@@ -35,7 +35,7 @@ type ChatRequestBody = {
 };
 
 // Supported message part types for storage
-const SUPPORTED_PART_TYPES = ["text", "reasoning", "step-start"] as const;
+const SUPPORTED_PART_TYPES = ["text", "reasoning"] as const;
 type SupportedPartType = typeof SUPPORTED_PART_TYPES[number];
 
 // Extract text content from UIMessage parts
@@ -69,16 +69,10 @@ function convertToStorageParts(parts: UIMessage["parts"] | undefined): MessagePa
           state: "done" as const,
         };
       }
-      if (part.type === "reasoning") {
-        return {
-          type: "reasoning" as const,
-          text: (part as { type: "reasoning"; text: string }).text,
-          state: "done" as const,
-        };
-      }
-      // step-start type
+      // reasoning type
       return {
-        type: "step-start" as const,
+        type: "reasoning" as const,
+        text: (part as { type: "reasoning"; text: string }).text,
         state: "done" as const,
       };
     });
@@ -155,12 +149,6 @@ export async function POST(req: NextRequest) {
         onTextDelta: async (delta: string) => {
           // Send text-start on first delta
           if (!hasStarted) {
-            // Send step-start event
-            writer.write({
-              type: "step-start",
-              id: assistantMessageId,
-            } as unknown as Parameters<typeof writer.write>[0]);
-            
             writer.write({
               type: "text-start",
               id: assistantMessageId,

@@ -53,7 +53,7 @@ export type Attachment = {
 
 // Message part types for storing rich message content (aligned with AI SDK UIMessage format)
 export type MessagePart = {
-  type: "text" | "reasoning" | "step-start";
+  type: "text" | "reasoning";
   text?: string;
   state?: "done" | "streaming";
 };
