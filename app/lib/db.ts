@@ -156,6 +156,7 @@ async function ensureInitialized() {
           wechat TEXT,
           address TEXT,
           tags TEXT[],
+          decision_chain JSONB,
           profile_markdown TEXT,
           created_at TIMESTAMPTZ,
           updated_at TIMESTAMPTZ,
