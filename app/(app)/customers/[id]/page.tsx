@@ -50,13 +50,13 @@ export default function CustomerDetailPage({
   const { id } = use(params);
   const [form, setForm] = useState({ ...emptyForm });
   const [toast, setToast] = useState<string | null>(null);
-  
+
   // 卡片级独立编辑状态
   const [editingCard, setEditingCard] = useState<"profileCard" | "basicSection" | "detailSection" | null>(null);
-  
+
   // 卡片折叠状态
   const [collapsedCards, setCollapsedCards] = useState<Set<"basicSection" | "detailSection">>(new Set());
-  
+
   // 对话历史和折叠控制
   const [isInfoCollapsed, setIsInfoCollapsed] = useState(false);
   const [showChatArea, setShowChatArea] = useState(false);
@@ -72,7 +72,7 @@ export default function CustomerDetailPage({
     error: chatError,
   } = useChat({
     transport: new DefaultChatTransport({
-      api: "/api/chat",
+      api: "/api/claude-agent",
       body: {
         customerId: id,
       },
@@ -215,7 +215,7 @@ export default function CustomerDetailPage({
           <DecisionChainSection
             customer={customer}
             isEditing={false}
-            onToggleEdit={() => {}}
+            onToggleEdit={() => { }}
             onSave={handleCardSave}
           />
         </div>
@@ -279,7 +279,7 @@ export default function CustomerDetailPage({
                     ?.filter((part): part is { type: "text"; text: string } => part.type === "text")
                     .map((part) => part.text)
                     .join("") || "";
-                  
+
                   return (
                     <div
                       key={msg.id}
@@ -340,7 +340,7 @@ export default function CustomerDetailPage({
             onSendMessage={async (message) => {
               setShowChatArea(true);
               setIsInfoCollapsed(true);
-              
+
               // Send user message to chat via useChat
               await sendMessage({
                 text: message,
@@ -349,7 +349,7 @@ export default function CustomerDetailPage({
             onAddContextCustomer={() => {
               // 可以添加客户选择器
             }}
-            onRemoveContextCustomer={() => {}}
+            onRemoveContextCustomer={() => { }}
             placeholder={`继续提问或补充信息...`}
             loading={chatLoading}
           />

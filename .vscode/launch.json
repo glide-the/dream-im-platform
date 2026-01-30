@@ -108,6 +108,22 @@
       },
       "smartStep": true,
       "sourceMaps": true
+    },
+    {
+      "type": "pwa-node",
+      "request": "launch",
+      "name": "🚀 启动 Next.js 开发服务器",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "dev"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**"
+      ]
     }
   ]
 }
