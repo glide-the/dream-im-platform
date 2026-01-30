@@ -18,7 +18,7 @@ export default defineConfig({
     include: ['app/**/*.test.ts'],
 
     // 排除文件
-    exclude: ['node_modules', '.next', 'dist'],
+    exclude: ['node_modules', '.next', 'dist', '**/*.integration.test.ts', '**/*.e2e.test.ts', '**/*.e2e.ts'],
 
     // 超时时间（AI 调用可能较慢）
     testTimeout: 120_000, // 120 秒

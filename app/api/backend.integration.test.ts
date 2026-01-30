@@ -1,4 +1,10 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import type { ApiListResponse } from "../lib/queries";
+
+type ApiResponse<T = unknown> = {
+  status: number;
+  json: T;
+};
 
 const rawBaseUrl = process.env.BASE_URL;
 const BASE_URL =
@@ -9,7 +15,7 @@ const BASE_URL =
 async function fetchJson(
   path: string,
   init?: RequestInit
-): Promise<{ status: number; json: any }> {
+): Promise<ApiResponse> {
   const response = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers: {
@@ -17,7 +23,8 @@ async function fetchJson(
       ...(init?.headers || {})
     }
   });
-  const json = await response.json().catch(() => ({}));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const json = await response.json().catch(() => ({})) as any;
   return { status: response.status, json };
 }
 

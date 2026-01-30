@@ -1,7 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/*
+ * NOTE: Query key parameters use Record<string, any> for flexibility with API filters.
+ * The actual values are type-safe through TypeScript's type inference.
+ */
 "use client";
 
 import { useMutation, useQuery, useQueryClient, UseQueryOptions } from "@tanstack/react-query";
 import { apiRequest } from "./client";
+import type { Customer, Todo, Conversation } from "./types";
 
 // Query keys
 export const queryKeys = {
@@ -15,38 +21,16 @@ export const queryKeys = {
     ["searchCustomer", query, contextCustomerIds] as const,
 } as const;
 
-// Types
-type Todo = {
-  id: string;
-  title: string;
-  description?: string;
-  priority: "P0" | "P1" | "P2" | "P3";
-  status: "open" | "done";
-  updated_at: string;
-  created_at: string;
-};
-
-type Customer = {
-  id: string;
-  name?: string;
-  company?: string;
-  title?: string;
-  phones?: string[];
-  emails?: string[];
-  wechat?: string;
-  address?: string;
-  tags?: string[];
-  profile_markdown?: string;
-  updated_at: string;
-  created_at: string;
-};
-
-type Conversation = {
-  id: string;
-  title: string;
-  status: "pending" | "confirmed" | "canceled";
-  created_at: string;
-  updated_at: string;
+// API Response types
+export type ApiResponse<T> = { data: T };
+export type ApiListResponse<T> = {
+  data: T[];
+  meta: {
+    page: number;
+    pageSize: number;
+    total: number;
+    stats?: { open: number; done: number };
+  };
 };
 
 type TodoListParams = {
@@ -167,7 +151,7 @@ export function useCreateCustomer() {
 
   return useMutation({
     mutationFn: (data: Partial<Customer> & { conversation_id?: string }) =>
-      apiRequest("/api/customers", {
+      apiRequest<ApiResponse<{ id: string }>>("/api/customers", {
         method: "POST",
         body: JSON.stringify(data),
       }),

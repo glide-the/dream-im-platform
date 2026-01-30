@@ -22,7 +22,15 @@ type Todo = {
   updated_at: string;
 };
 
-const emptyForm = {
+type TodoForm = {
+  id: string;
+  title: string;
+  description: string;
+  priority: "P0" | "P1" | "P2" | "P3";
+  status: "open" | "done";
+};
+
+const emptyForm: TodoForm = {
   id: "",
   title: "",
   description: "",
@@ -38,7 +46,7 @@ export default function TodoPage() {
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ ...emptyForm });
+  const [form, setForm] = useState<TodoForm>(emptyForm);
   const [toast, setToast] = useState<string | null>(null);
 
   const debouncedSearch = useDebounce(search, 300);

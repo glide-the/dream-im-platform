@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, useMemo } from "react";
 import Link from "next/link";
 import { IconChevronLeft, IconChevronDown, IconChevronUp } from "../../../components/Icons";
 import Toast from "../../../components/Toast";
@@ -64,23 +64,30 @@ export default function CustomerDetailPage({
 
   const customer = customerData?.data;
 
-  // Sync form when customer data changes
-  useEffect(() => {
-    if (customer) {
-      setForm({
-        name: customer.name ?? "",
-        company: customer.company ?? "",
-        title: customer.title ?? "",
-        phones: (customer.phones ?? []).join(", "),
-        emails: (customer.emails ?? []).join(", "),
-        wechat: customer.wechat ?? "",
-        address: customer.address ?? "",
-        tags: (customer.tags ?? []).join(", "),
-        decision_chain: customer.decision_chain ?? [],
-        profile_markdown: customer.profile_markdown ?? ""
-      });
-    }
+  // Derive form state from customer data
+  const formFromCustomer = useMemo(() => {
+    if (!customer) return null;
+    return {
+      name: customer.name ?? "",
+      company: customer.company ?? "",
+      title: customer.title ?? "",
+      phones: (customer.phones ?? []).join(", "),
+      emails: (customer.emails ?? []).join(", "),
+      wechat: customer.wechat ?? "",
+      address: customer.address ?? "",
+      tags: (customer.tags ?? []).join(", "),
+      decision_chain: customer.decision_chain ?? [],
+      profile_markdown: customer.profile_markdown ?? ""
+    };
   }, [customer]);
+
+  // Sync form when customer data changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (formFromCustomer) {
+      setForm(formFromCustomer);
+    }
+  }, [formFromCustomer]);
 
   async function handleCardSave(updatedData: Partial<Customer>) {
     try {

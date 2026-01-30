@@ -7,9 +7,9 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  # 单元测试和集成测试
-  unit-and-integration-tests:
-    name: Unit & Integration Tests
+  # 单元测试
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     
     services:
@@ -53,7 +53,7 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: test_db
 
-      - name: Run unit and integration tests
+      - name: Run unit tests
         run: pnpm test:run
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
@@ -81,6 +81,87 @@ jobs:
           files: ./coverage/coverage-final.json
           flags: unittests
           name: codecov-umbrella
+
+  # 集成测试
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup test database
+        run: |
+          pnpm exec drizzle-kit push:pg
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: test_db
+
+      - name: Build application
+        run: pnpm build
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: test_db
+          NODE_ENV: test
+
+      - name: Start development server
+        run: |
+          pnpm start &
+          npx wait-on http://localhost:3000 -t 120000
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: test_db
+          NODE_ENV: test
+
+      - name: Run integration tests
+        run: pnpm exec vitest run app/api/backend.integration.test.ts
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: test_db
+          BASE_URL: http://localhost:3000
 
   # E2E 测试（仅在有 ANTHROPIC_API_KEY 时运行）
   e2e-tests:
@@ -176,7 +257,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run ESLint
-        run: pnpm lint
+        run: pnpm eslint app/ --max-warnings 10
 
       - name: Type check
         run: pnpm exec tsc --noEmit

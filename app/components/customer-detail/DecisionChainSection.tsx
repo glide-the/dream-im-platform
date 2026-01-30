@@ -73,12 +73,14 @@ export default function DecisionChainSection({
     }
   }
 
-  function handleItemChange(index: number, field: keyof DecisionChainItem, value: any) {
+  function handleItemChange(index: number, field: keyof DecisionChainItem, value: string | DecisionChainItem["contacts"]) {
     const newChain = [...localDecisionChain];
     if (field === "contacts") {
+      const currentContacts = newChain[index].contacts || {};
+      const newContacts = value as DecisionChainItem["contacts"] | undefined;
       newChain[index] = {
         ...newChain[index],
-        contacts: { ...newChain[index].contacts, ...value }
+        contacts: { ...currentContacts, ...(newContacts || {}) }
       };
     } else {
       newChain[index] = { ...newChain[index], [field]: value };

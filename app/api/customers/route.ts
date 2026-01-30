@@ -4,6 +4,7 @@ import { createApiResponse } from "../../lib/api-types";
 import { createId } from "../../lib/id";
 import { toNumber } from "../../lib/query";
 import { Customer } from "../../lib/types";
+import type { ApiResponse } from "../../lib/queries";
 
 export const runtime = "nodejs";
 

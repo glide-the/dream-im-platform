@@ -2,13 +2,7 @@
 
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import {
-  IconCamera,
-  IconImage,
-  IconPaperclip,
-  IconSend,
-  IconSparkles
-} from "../../components/Icons";
+import { IconSparkles } from "../../components/Icons";
 import Modal from "../../components/Modal";
 import Toast from "../../components/Toast";
 import AIInputDock from "../../components/AIInputDock";
@@ -50,12 +44,6 @@ type CustomerOption = {
   id: string;
   name?: string;
   company?: string;
-};
-
-type SearchResponse = {
-  conversation_id: string;
-  customer_card: CustomerCard;
-  action_suggestions: string[];
 };
 
 const quickPrompts = ["查公司背景", "找手机号/邮箱", "整理成客户档案"];
@@ -123,7 +111,23 @@ function AiAssistantPage() {
   const customerOptions = customersData?.data ?? [];
   const history = conversationsData?.data ?? [];
 
+  function addContextCustomer(customer: CustomerOption) {
+    setContextCustomers((prev) => {
+      if (prev.some((item) => item.id === customer.id)) return prev;
+      return [...prev, customer];
+    });
+    setQuery((prev) =>
+      prev.includes("@")
+        ? prev
+        : `${prev}${prev ? " " : ""}@${customer.name ?? "客户"}(${
+            customer.company ?? ""
+          })`
+    );
+    setCustomerModalOpen(false);
+  }
+
   // Load context customer from URL
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!contextCustomerId) return;
     const customer = customerOptions.find((c) => c.id === contextCustomerId);
@@ -189,9 +193,6 @@ function AiAssistantPage() {
   async function handleConfirm() {
     if (!editCard) return;
     try {
-      // 定义API响应类型
-      type CreateCustomerResponse = { data: { id: string } };
-      
       const result = await createCustomerMutation.mutateAsync({
         name: editCard.structured_fields.name,
         company: editCard.structured_fields.company,
@@ -204,10 +205,10 @@ function AiAssistantPage() {
         profile_markdown: editCard.profile_markdown,
         source: "ai_search",
         conversation_id: conversationId
-      } as any);
-      
+      });
+
       // Extract customer ID and info from the response
-      const customerId = (result as CreateCustomerResponse)?.data?.id || "";
+      const customerId = result?.data?.id || "";
       const customerName = editCard.structured_fields.name || "客户";
       const customerCompany = editCard.structured_fields.company || "";
       
@@ -251,25 +252,6 @@ function AiAssistantPage() {
       size: file.size
     }));
     setAttachments((prev) => [...prev, ...list]);
-  }
-
-  function removeAttachment(index: number) {
-    setAttachments((prev) => prev.filter((_, idx) => idx !== index));
-  }
-
-  function addContextCustomer(customer: CustomerOption) {
-    setContextCustomers((prev) => {
-      if (prev.some((item) => item.id === customer.id)) return prev;
-      return [...prev, customer];
-    });
-    setQuery((prev) =>
-      prev.includes("@")
-        ? prev
-        : `${prev}${prev ? " " : ""}@${customer.name ?? "客户"}(${
-            customer.company ?? ""
-          })`
-    );
-    setCustomerModalOpen(false);
   }
 
   function removeContextCustomer(id: string) {

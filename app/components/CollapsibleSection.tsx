@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { IconChevronDown, IconChevronUp } from "./Icons";
 
 interface CollapsibleSectionProps {
@@ -23,22 +23,25 @@ export default function CollapsibleSection({
   onToggleCollapse
 }: CollapsibleSectionProps) {
   const [internalCollapsed, setInternalCollapsed] = useState(defaultCollapsed);
-  
+
+  // Use derived state
   const isCollapsed = collapsed !== undefined ? collapsed : internalCollapsed;
 
-  function handleToggle() {
-    if (onToggleCollapse) {
-      onToggleCollapse();
-    } else {
-      setInternalCollapsed(!isCollapsed);
-    }
-  }
-
+  // Update internal state when collapsed prop changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (collapsed !== undefined) {
       setInternalCollapsed(collapsed);
     }
   }, [collapsed]);
+
+  const handleToggle = useCallback(() => {
+    if (onToggleCollapse) {
+      onToggleCollapse();
+    } else {
+      setInternalCollapsed(!isCollapsed);
+    }
+  }, [onToggleCollapse, isCollapsed]);
 
   return (
     <div className={`transition-all duration-300 ${className}`}>

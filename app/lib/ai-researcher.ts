@@ -162,28 +162,42 @@ export async function researchCustomer(
     });
 
     const researchPromise = (async () => {
-      const messages: any[] = [];
+      type DebugMessage = {
+        type: string;
+        subtype?: string;
+        hasStructuredOutput: boolean;
+        hasResult: boolean;
+      };
+
+      type ResultMessage = {
+        type: string;
+        subtype?: string;
+        structured_output?: unknown;
+        result?: string;
+        errors?: string[];
+      };
+
+      const messages: DebugMessage[] = [];
 
       for await (const message of query({ prompt, options: sdkOptions })) {
         // 记录消息用于调试
+        const resultMessage = message as ResultMessage;
         messages.push({
           type: message.type,
-          subtype: (message as any).subtype,
-          hasStructuredOutput: !!(message as any).structured_output,
-          hasResult: !!(message as any).result
+          subtype: resultMessage.subtype,
+          hasStructuredOutput: !!resultMessage.structured_output,
+          hasResult: !!resultMessage.result
         });
 
         console.log(`[AI Researcher] Message ${messages.length}:`, {
           type: message.type,
-          subtype: (message as any).subtype,
-          hasStructuredOutput: !!(message as any).structured_output,
-          resultLength: (message as any).result?.length || 0
+          subtype: resultMessage.subtype,
+          hasStructuredOutput: !!resultMessage.structured_output,
+          resultLength: resultMessage.result?.length || 0
         });
 
         // 处理成功结果 - 使用类型守卫
         if (message.type === "result") {
-          const resultMessage = message as any;
-
           if (resultMessage.subtype === "success") {
             // 优先使用 structured_output
             if (resultMessage.structured_output) {

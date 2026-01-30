@@ -81,9 +81,9 @@ export async function rollbackToTestSavepoint() {
  * 执行测试 SQL 查询
  * 用于在测试中直接操作数据库
  */
-export async function executeTestQuery<T = any>(
+export async function executeTestQuery<T = unknown>(
   text: string,
-  params?: any[]
+  params?: unknown[]
 ): Promise<T[]> {
   const client = await getTestClient();
   const result = await client.query(text, params);
