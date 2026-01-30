@@ -106,7 +106,7 @@ describe('researchCustomer', () => {
         [Symbol.asyncIterator]: async function* () {
           await new Promise(resolve => setTimeout(resolve, 200000));
         }
-      } as any));
+      } as unknown as ReturnType<typeof query>));
 
       await expect(
         researchCustomer('测试', { timeout: 1000 })

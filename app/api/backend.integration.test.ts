@@ -60,7 +60,7 @@ describe("Customers API", () => {
   });
 
   it("lists customers with meta", async () => {
-    const { status, json } = await fetchJson<ApiListResponse<any>>("/api/customers?page=1&pageSize=2");
+    const { status, json } = await fetchJson<ApiListResponse<Customer>>("/api/customers?page=1&pageSize=2");
     expect(status).toBe(200);
     expect(Array.isArray(json.data)).toBe(true);
     expect(json.meta).toBeTruthy();
@@ -123,7 +123,7 @@ describe("Todos API", () => {
   });
 
   it("lists todos with stats", async () => {
-    const { status, json } = await fetchJson<ApiListResponse<any>>("/api/todos?page=1&pageSize=2");
+    const { status, json } = await fetchJson<ApiListResponse<Todo>>("/api/todos?page=1&pageSize=2");
     expect(status).toBe(200);
     expect(Array.isArray(json.data)).toBe(true);
     expect(json.meta?.stats).toBeTruthy();
@@ -173,7 +173,7 @@ describe("Todos API", () => {
 
 describe("Conversations API", () => {
   it("lists conversations", async () => {
-    const { status, json } = await fetchJson<ApiListResponse<any>>(
+    const { status, json } = await fetchJson<ApiListResponse<Conversation>>(
       "/api/conversations?page=1&pageSize=2"
     );
     expect(status).toBe(200);
