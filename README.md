@@ -4,10 +4,10 @@
 
 **面向 B2B 销售人员的智能客户管理助手**
 
-[![Next.js](https://img.shields.io/badge/Next.js-14.2.4-black?logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-18.3.1-blue?logo=react)](https://reactjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.1.6-black?logo=next.js)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19.0.0-blue?logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5.4-blue?logo=typescript)](https://www.typescriptlang.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4.7-38B2AC?logo=tailwind-css)](https://tailwindcss.com/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.1.18-38B2AC?logo=tailwind-css)](https://tailwindcss.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql)](https://www.postgresql.org/)
 [![License](https://img.shields.io/badge/license-Private-red.svg)](LICENSE)
 
@@ -155,13 +155,13 @@ pnpm db:migrate
 
 ### 前端框架
 
-- **[Next.js 14.2.4](https://nextjs.org/)**: App Router、Server Components、Route Handlers
-- **[React 18.3.1](https://reactjs.org/)**: 函数式组件、Hooks
+- **[Next.js 16.1.6](https://nextjs.org/)**: App Router、Server Components、Route Handlers
+- **[React 19.0.0](https://reactjs.org/)**: 函数式组件、Hooks
 - **[TypeScript 5.5.4](https://www.typescriptlang.org/)**: 类型安全
 
 ### 样式方案
 
-- **[Tailwind CSS 3.4.7](https://tailwindcss.com/)**: 实用优先的 CSS 框架
+- **[Tailwind CSS 4.1.18](https://tailwindcss.com/)**: 实用优先的 CSS 框架
 - **自定义设计系统**: CSS 变量 + Tailwind 扩展配置
   - 颜色系统: primary/secondary/surface, accent, text-primary/secondary/tertiary
   - 阴影系统: subtle/medium/accent
@@ -178,7 +178,7 @@ pnpm db:migrate
 ### 数据管理
 
 - **[PostgreSQL 16](https://www.postgresql.org/)**: 生产级关系型数据库
-- **[Drizzle ORM 0.35.1](https://orm.drizzle.team/)**: 类型安全的 ORM 框架
+- **[Drizzle ORM 0.38.0](https://orm.drizzle.team/)**: 类型安全的 ORM 框架
 - **[pg 8.13.3](https://node-postgres.com/)**: PostgreSQL 客户端
 - **连接池管理**: 使用 pg Pool 管理数据库连接
 - **写入队列机制**: 全局队列防止并发写入冲突
@@ -197,7 +197,7 @@ pnpm db:migrate
 ### 开发工具
 
 - **[Docker Compose](https://docs.docker.com/compose/)**: 本地开发环境配置
-- **[Drizzle Kit 0.24.1](https://orm.drizzle.team/kit-docs/overview)**: 数据库迁移管理工具
+- **[Drizzle Kit 0.29.0](https://orm.drizzle.team/kit-docs/overview)**: 数据库迁移管理工具
 - **[Vitest 4.0.18](https://vitest.dev/)**: 快速的单元测试框架
 - **[@vitest/ui](https://vitest.dev/guide/ui.html)**: 测试 UI 界面
 
