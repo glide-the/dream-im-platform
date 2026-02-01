@@ -3,16 +3,21 @@
 import { useState, useEffect, use, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { DefaultChatTransport, type UIMessage } from "ai";
 import { IconChevronLeft, IconChevronDown } from "../../../components/Icons";
 import Toast from "../../../components/Toast";
 import ProfileCard from "../../../components/customer-detail/ProfileCard";
 import BasicInfoSection from "../../../components/customer-detail/BasicInfoSection";
 import MarkdownDetailSection from "../../../components/customer-detail/MarkdownDetailSection";
 import DecisionChainSection from "../../../components/customer-detail/DecisionChainSection";
-import AIInputDock from "../../../components/AIInputDock";
+import AIInputDock, { type Attachment } from "../../../components/AIInputDock";
 import { useCustomer, useUpdateCustomer } from "../../../lib/queries";
 import type { DecisionChainItem } from "../../../lib/types";
+import {
+  type ChatApiSchemaRequestBody,
+  type ChatAttachment,
+  DEFAULT_CHAT_MODEL,
+} from "../../../lib/chat-schema";
 
 type Customer = {
   id: string;
@@ -61,22 +66,71 @@ export default function CustomerDetailPage({
   const [isInfoCollapsed, setIsInfoCollapsed] = useState(false);
   const [showChatArea, setShowChatArea] = useState(false);
 
+  // Store attachments and context for the current message being sent
+  const pendingMessageDataRef = useRef<{
+    rawAttachments: Attachment[];
+    contextCustomerIds: string[];
+  } | null>(null);
+
   // Chat scroll reference
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // useChat hook for AI conversation
+  // Generate a unique ID for messages
+  const generateId = () =>
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+  // Thread ID = customer ID (one thread per customer)
+  const threadId = id;
+
+  // useChat hook for AI conversation with ChatApiSchemaRequestBody protocol
   const {
     messages: chatMessages,
     sendMessage,
     status,
     error: chatError,
   } = useChat({
+    id: threadId,
     transport: new DefaultChatTransport({
       api: "/api/claude-agent",
-      body: {
-        customerId: id,
+      prepareSendMessagesRequest: ({ messages, body, id: chatId }) => {
+        const lastMessage = messages.at(-1) as UIMessage | undefined;
+        if (!lastMessage) {
+          return { body };
+        }
+
+        // Get pending message data (attachments, customerIds)
+        const pendingData = pendingMessageDataRef.current;
+        const rawAttachments = pendingData?.rawAttachments ?? [];
+        const contextCustomerIds = pendingData?.contextCustomerIds ?? [id];
+
+        // Map AIInputDock attachments to ChatAttachment format
+        const attachments: ChatAttachment[] = rawAttachments.map((file) => ({
+          type: "file" as const,
+          url: file.name, // For now, just use filename as URL placeholder
+          mediaType: file.type,
+          filename: file.name,
+        }));
+
+        // Build the ChatApiSchemaRequestBody
+        const requestBody: ChatApiSchemaRequestBody = {
+          id: chatId,
+          message: lastMessage,
+          chatModel: DEFAULT_CHAT_MODEL,
+          toolChoice: "auto",
+          allowedAppDefaultToolkit: [],
+          allowedMcpServers: {},
+          attachments,
+          contextCustomerIds,
+        };
+
+        // Clear pending data after building request
+        pendingMessageDataRef.current = null;
+
+        return { body: requestBody };
       },
     }),
+    generateId,
+    experimental_throttle: 100,
     onError: (error) => {
       console.error("Chat error:", error);
       setToast(error.message || "对话出错");
@@ -337,11 +391,18 @@ export default function CustomerDetailPage({
                 company: customer.company
               }
             ]}
-            onSendMessage={async (message) => {
+            onSendMessage={async (message, attachments = [], customerIds = []) => {
               setShowChatArea(true);
               setIsInfoCollapsed(true);
 
+              // Store attachments and customer IDs for the prepareSendMessagesRequest
+              pendingMessageDataRef.current = {
+                rawAttachments: attachments,
+                contextCustomerIds: customerIds.length > 0 ? customerIds : [id],
+              };
+
               // Send user message to chat via useChat
+              // The prepareSendMessagesRequest will transform this into ChatApiSchemaRequestBody
               await sendMessage({
                 text: message,
               });

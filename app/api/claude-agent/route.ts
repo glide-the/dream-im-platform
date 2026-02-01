@@ -112,15 +112,6 @@ export async function POST(req: NextRequest) {
     return badRequest("Empty message content");
   }
 
-  // // Check for API key
-  // if (!process.env.ANTHROPIC_API_KEY) {
-  //   return new Response(
-  //     JSON.stringify({
-  //       error: "ANTHROPIC_API_KEY is not configured. Please set it in .env.local",
-  //     }),
-  //     { status: 500, headers: { "Content-Type": "application/json" } }
-  //   );
-  // }
 
   const customerId = body.customerId ?? null;
   const now = new Date().toISOString();
