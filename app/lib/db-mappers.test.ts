@@ -159,7 +159,8 @@ describe('Database Row Mappers', () => {
             profile_markdown: '腾讯创始人'
           }
         },
-        linked_customer_id: null
+        linked_customer_id: null,
+        claude_session_id: null
       };
 
       expect(dbRow.id).toBe('conv_test_123');

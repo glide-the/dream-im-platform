@@ -42,5 +42,7 @@ export const conversations = pgTable("conversations", {
   attachments: jsonb("attachments").$type<Conversation["attachments"]>(),
   context_customer_ids: text("context_customer_ids").array(),
   ai_outputs: jsonb("ai_outputs").$type<Conversation["ai_outputs"]>(),
-  linked_customer_id: text("linked_customer_id")
+  linked_customer_id: text("linked_customer_id"),
+  /** Claude SDK session_id for resuming conversations */
+  claude_session_id: text("claude_session_id")
 });
