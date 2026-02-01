@@ -133,6 +133,9 @@ export async function POST(req: NextRequest) {
   // Map attachments to DB format
   const dbAttachments = attachments.map(mapChatAttachmentToDbAttachment);
 
+  // Variable to store the session ID from the agent run
+  let capturedSessionId: string | null = null;
+
   // Create streaming response using ai SDK (following better-chatbot pattern)
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
@@ -183,16 +186,25 @@ export async function POST(req: NextRequest) {
       };
 
       try {
+        // Determine if we should resume an existing conversation
+        // Use the stored claude_session_id if available
+        const shouldResume = !!existingConversation?.claude_session_id;
+        const threadIdForAgent = existingConversation?.claude_session_id || conversationId;
+
         // Run the agent
-        await agentRunner.runStreaming(
+        const result = await agentRunner.runStreaming(
           {
-            threadId: conversationId,
+            threadId: threadIdForAgent,
             userMessage: messageText,
+            resume: shouldResume,
             maxTurns: DEFAULT_MAX_TURNS,
             allowedTools: [], // Disable tools for now
           },
           callbacks
         );
+
+        // Capture the session ID from the result
+        capturedSessionId = result.sessionId;
 
         // Finish the message
         writer.write({
@@ -293,6 +305,8 @@ export async function POST(req: NextRequest) {
           linked_customer_id:
             existingConversation?.linked_customer_id ??
             (contextCustomerIds.length > 0 ? contextCustomerIds[0] : undefined),
+          // Save the Claude SDK session_id for conversation resumption
+          claude_session_id: capturedSessionId ?? existingConversation?.claude_session_id,
         };
 
         if (existingConversation) {
@@ -302,7 +316,7 @@ export async function POST(req: NextRequest) {
         }
 
         console.log(
-          `[Claude Agent API] Conversation ${conversationId} saved with ${storedMessages.length} messages`
+          `[Claude Agent API] Conversation ${conversationId} saved with ${storedMessages.length} messages, session_id: ${conversationData.claude_session_id}`
         );
       } catch (error) {
         console.error("[Claude Agent API] Failed to save conversation:", error);

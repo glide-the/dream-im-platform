@@ -117,7 +117,8 @@ function mapConversationRow(
     attachments: parseJson<Conversation["attachments"]>(row.attachments),
     context_customer_ids: row.context_customer_ids ?? undefined,
     ai_outputs: parseJson<Conversation["ai_outputs"]>(row.ai_outputs),
-    linked_customer_id: row.linked_customer_id ?? undefined
+    linked_customer_id: row.linked_customer_id ?? undefined,
+    claude_session_id: row.claude_session_id ?? undefined
   };
 }
 
@@ -839,7 +840,8 @@ export async function createConversation(conversation: Conversation) {
         attachments: conversation.attachments ?? null,
         context_customer_ids: conversation.context_customer_ids ?? null,
         ai_outputs: conversation.ai_outputs ?? null,
-        linked_customer_id: conversation.linked_customer_id ?? null
+        linked_customer_id: conversation.linked_customer_id ?? null,
+        claude_session_id: conversation.claude_session_id ?? null
       } as any)
       .returning();
     return rows[0] ? mapConversationRow(rows[0]) : null;
@@ -864,7 +866,8 @@ export async function updateConversation(conversation: Conversation) {
         attachments: conversation.attachments ?? null,
         context_customer_ids: conversation.context_customer_ids ?? null,
         ai_outputs: conversation.ai_outputs ?? null,
-        linked_customer_id: conversation.linked_customer_id ?? null
+        linked_customer_id: conversation.linked_customer_id ?? null,
+        claude_session_id: conversation.claude_session_id ?? null
       } as any)
       .where(eq(conversations.id, conversation.id))
       .returning();

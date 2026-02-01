@@ -96,6 +96,8 @@ export type Conversation = {
     customer_card?: CustomerCard;
   };
   linked_customer_id?: string;
+  /** Claude SDK session_id for resuming conversations */
+  claude_session_id?: string;
 };
 
 export type DbShape = {
