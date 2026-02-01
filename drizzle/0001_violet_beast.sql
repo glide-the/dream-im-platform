@@ -1,0 +1,1 @@
+ALTER TABLE "conversations" ADD COLUMN "claude_session_id" text;

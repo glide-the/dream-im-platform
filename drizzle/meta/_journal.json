@@ -8,6 +8,13 @@
       "when": 1769688697082,
       "tag": "0000_yellow_quasimodo",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1769961877155,
+      "tag": "0001_violet_beast",
+      "breakpoints": true
     }
   ]
 }
