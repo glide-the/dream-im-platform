@@ -11,8 +11,8 @@ import BasicInfoSection from "../../../components/customer-detail/BasicInfoSecti
 import MarkdownDetailSection from "../../../components/customer-detail/MarkdownDetailSection";
 import DecisionChainSection from "../../../components/customer-detail/DecisionChainSection";
 import AIInputDock, { type Attachment } from "../../../components/AIInputDock";
-import { useCustomer, useUpdateCustomer } from "../../../lib/queries";
-import type { DecisionChainItem } from "../../../lib/types";
+import { useCustomer, useUpdateCustomer, useConversationByCustomer } from "../../../lib/queries";
+import type { DecisionChainItem, ConversationMessage } from "../../../lib/types";
 import {
   type ChatApiSchemaRequestBody,
   type ChatAttachment,
@@ -82,10 +82,14 @@ export default function CustomerDetailPage({
   // Thread ID = customer ID (one thread per customer)
   const threadId = id;
 
+  // Fetch existing conversation for this customer
+  const { data: conversationData, isLoading: isConversationLoading } = useConversationByCustomer(id);
+
   // useChat hook for AI conversation with ChatApiSchemaRequestBody protocol
   const {
     messages: chatMessages,
     sendMessage,
+    setMessages,
     status,
     error: chatError,
   } = useChat({
@@ -136,6 +140,34 @@ export default function CustomerDetailPage({
       setToast(error.message || "对话出错");
     },
   });
+
+  // Initialize chat messages from existing conversation
+  const hasInitializedRef = useRef(false);
+  useEffect(() => {
+    if (conversationData?.data && !hasInitializedRef.current && !isConversationLoading) {
+      const existingMessages = conversationData.data.messages;
+      if (existingMessages && existingMessages.length > 0) {
+        // Convert ConversationMessage[] to UIMessage[]
+        const uiMessages: UIMessage[] = existingMessages.map((msg: ConversationMessage) => ({
+          id: msg.id,
+          role: msg.role,
+          parts: msg.parts && msg.parts.length > 0
+            ? msg.parts.map(part => ({
+                type: part.type as "text",
+                text: part.text || "",
+              }))
+            : [{ type: "text" as const, text: msg.content }],
+          createdAt: new Date(msg.created_at),
+        }));
+        setMessages(uiMessages);
+        // Show chat area if there are existing messages
+        if (uiMessages.length > 0) {
+          setShowChatArea(true);
+        }
+        hasInitializedRef.current = true;
+      }
+    }
+  }, [conversationData, isConversationLoading, setMessages]);
 
   const chatLoading = status === "streaming" || status === "submitted";
 

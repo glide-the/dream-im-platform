@@ -807,6 +807,19 @@ export async function getConversationById(id: string) {
   });
 }
 
+export async function getConversationByCustomerId(customerId: string) {
+  return await withClient(async (client) => {
+    const db = drizzle(client);
+    const rows = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.linked_customer_id, customerId))
+      .orderBy(desc(conversations.updated_at))
+      .limit(1);
+    return rows[0] ? mapConversationRow(rows[0]) : null;
+  });
+}
+
 export async function createConversation(conversation: Conversation) {
   return await withClient(async (client) => {
     const db = drizzle(client);

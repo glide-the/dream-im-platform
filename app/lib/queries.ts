@@ -204,6 +204,15 @@ export function useConversations(params: ConversationListParams = {}, options?: 
   });
 }
 
+export function useConversationByCustomer(customerId: string, options?: Omit<UseQueryOptions<any>, 'queryKey' | 'queryFn'>) {
+  return useQuery({
+    queryKey: ["conversation", "by-customer", customerId] as const,
+    queryFn: () => apiRequest<{ data: Conversation | null }>(`/api/conversations/by-customer/${customerId}`),
+    enabled: !!customerId,
+    ...options,
+  });
+}
+
 export function useUpdateConversation() {
   const queryClient = useQueryClient();
 
