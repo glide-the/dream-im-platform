@@ -1,4 +1,4 @@
-// app/api/chat/route.ts
+// app/api/claude-agent/route.ts
 // Reference: cgoinglove/better-chatbot src/app/api/chat/route.ts
 import { NextRequest } from "next/server";
 import {
@@ -6,6 +6,12 @@ import {
   createUIMessageStreamResponse,
   UIMessage,
 } from "ai";
+import {
+  chatApiSchemaRequestBodySchema,
+  type ChatApiSchemaRequestBody,
+  type ChatAttachment,
+  DEFAULT_CHAT_MODEL,
+} from "../../lib/chat-schema";
 import {
   createAgentRunner,
   SimpleClaudeAgentSDKClient,
@@ -17,34 +23,24 @@ import {
   getConversationById,
 } from "../../lib/db";
 import { createId } from "../../lib/id";
-import type { Conversation, MessagePart } from "../../lib/types";
+import type { Conversation, MessagePart, Attachment } from "../../lib/types";
 
 export const runtime = "nodejs";
 
 const DEFAULT_MAX_TURNS = Number(process.env.MAX_TURNS) || 10;
 
-// Request body format aligned with AI SDK's DefaultChatTransport
-// The transport sends: { id, messages, trigger, messageId, ...body }
-type ChatRequestBody = {
-  id: string;                    // Chat/conversation ID
-  messages: UIMessage[];          // All messages including the new user message
-  trigger?: "submit-message" | "regenerate-message";
-  messageId?: string;
-  // Custom body fields from our transport configuration
-  customerId?: string;
-};
-
 // Supported message part types for storage
 const SUPPORTED_PART_TYPES = ["text", "reasoning"] as const;
-type SupportedPartType = typeof SUPPORTED_PART_TYPES[number];
+type SupportedPartType = (typeof SUPPORTED_PART_TYPES)[number];
 
 // Extract text content from UIMessage parts
 function extractTextFromParts(parts: UIMessage["parts"] | undefined): string {
   if (!parts || !Array.isArray(parts)) return "";
 
   return parts
-    .filter((part): part is { type: "text"; text: string } =>
-      part.type === "text" && typeof part.text === "string"
+    .filter(
+      (part): part is { type: "text"; text: string } =>
+        part.type === "text" && typeof part.text === "string"
     )
     .map((part) => part.text)
     .join("");
@@ -56,7 +52,9 @@ function isSupportedPartType(type: string): type is SupportedPartType {
 }
 
 // Convert UIMessage parts to our storage format
-function convertToStorageParts(parts: UIMessage["parts"] | undefined): MessagePart[] {
+function convertToStorageParts(
+  parts: UIMessage["parts"] | undefined
+): MessagePart[] {
   if (!parts || !Array.isArray(parts)) return [];
 
   return parts
@@ -78,6 +76,17 @@ function convertToStorageParts(parts: UIMessage["parts"] | undefined): MessagePa
     });
 }
 
+/** 把 ChatAttachment 映射成 DB Attachment（ai4sales 的 types.ts） */
+function mapChatAttachmentToDbAttachment(att: ChatAttachment): Attachment {
+  return {
+    id: createId("att"),
+    name: att.filename ?? att.url,
+    type: att.mediaType ?? "application/octet-stream",
+    // size 目前拿不到，可以后面接上传服务再补
+    size: 0,
+  };
+}
+
 function badRequest(message: string) {
   return new Response(JSON.stringify({ error: message }), {
     status: 400,
@@ -86,41 +95,43 @@ function badRequest(message: string) {
 }
 
 export async function POST(req: NextRequest) {
-  let body: ChatRequestBody;
+  // Parse and validate request body using Zod
+  let body: ChatApiSchemaRequestBody;
 
   try {
-    body = (await req.json()) as ChatRequestBody;
+    const json = await req.json();
+    const parsed = chatApiSchemaRequestBodySchema.safeParse(json);
+
+    if (!parsed.success) {
+      console.error("[Claude Agent API] Validation error:", parsed.error);
+      return badRequest(`Invalid chat body: ${parsed.error.message}`);
+    }
+
+    body = parsed.data;
   } catch {
     return badRequest("Invalid request body");
   }
 
-  // Get the last message from the messages array
-  const messages = body.messages;
-  if (!messages || !Array.isArray(messages) || messages.length === 0) {
-    return badRequest("Empty message");
-  }
+  const {
+    id: conversationId,
+    message: uiMessage,
+    attachments = [],
+    contextCustomerIds = [],
+  } = body;
 
-  // Get the latest user message
-  const lastMessage = messages[messages.length - 1];
-  if (!lastMessage || lastMessage.role !== "user") {
-    return badRequest("Last message must be from user");
-  }
-
-  // Extract text content from the message parts
-  const messageText = extractTextFromParts(lastMessage.parts);
+  // Extract text content from UIMessage
+  const messageText = extractTextFromParts(uiMessage.parts);
   if (!messageText.trim()) {
     return badRequest("Empty message content");
   }
 
-
-  const customerId = body.customerId ?? null;
   const now = new Date().toISOString();
-
-  // Use the ID from the request (from DefaultChatTransport) or create a new one
-  const conversationId = body.id || createId("conv");
 
   // Check if conversation exists
   const existingConversation = await getConversationById(conversationId);
+
+  // Map attachments to DB format
+  const dbAttachments = attachments.map(mapChatAttachmentToDbAttachment);
 
   // Create streaming response using ai SDK (following better-chatbot pattern)
   const stream = createUIMessageStream({
@@ -130,8 +141,8 @@ export async function POST(req: NextRequest) {
       const agentRunner = createAgentRunner(sdkClient);
 
       let fullText = "";
-      const assistantMessageId = lastMessage.id
-        ? `${lastMessage.id}-response`
+      const assistantMessageId = uiMessage.id
+        ? `${uiMessage.id}-response`
         : createId("msg");
       let hasStarted = false;
 
@@ -202,24 +213,33 @@ export async function POST(req: NextRequest) {
     onFinish: async ({ responseMessage }) => {
       try {
         // Convert the user message parts for storage
-        const userMessageParts = convertToStorageParts(lastMessage.parts);
+        const userMessageParts = convertToStorageParts(uiMessage.parts);
 
         // Convert the response message parts for storage
         // Use parts if available, otherwise create a text part from extracted content
         const responseText = extractTextFromParts(responseMessage.parts);
-        const assistantMessageParts = responseMessage.parts && responseMessage.parts.length > 0
-          ? convertToStorageParts(responseMessage.parts)
-          : (responseText ? [{ type: "text" as const, text: responseText, state: "done" as const }] : []);
+        const assistantMessageParts =
+          responseMessage.parts && responseMessage.parts.length > 0
+            ? convertToStorageParts(responseMessage.parts)
+            : responseText
+              ? [
+                  {
+                    type: "text" as const,
+                    text: responseText,
+                    state: "done" as const,
+                  },
+                ]
+              : [];
 
         // Get existing messages, excluding any with the same ID as the new messages
         // This prevents duplicate messages when updating a conversation
         const existingMessages = (existingConversation?.messages || [])
-          .filter(m => m.id !== lastMessage.id && m.id !== responseMessage.id)
-          .map(m => ({
+          .filter((m) => m.id !== uiMessage.id && m.id !== responseMessage.id)
+          .map((m) => ({
             id: m.id,
             role: m.role,
             content: m.content,
-            parts: m.parts,  // Now properly typed with MessagePart[]
+            parts: m.parts, // Now properly typed with MessagePart[]
             created_at: m.created_at,
           }));
 
@@ -227,7 +247,7 @@ export async function POST(req: NextRequest) {
         const storedMessages = [
           ...existingMessages,
           {
-            id: lastMessage.id || createId("msg"),
+            id: uiMessage.id || createId("msg"),
             role: "user" as const,
             content: messageText,
             parts: userMessageParts,
@@ -242,6 +262,20 @@ export async function POST(req: NextRequest) {
           },
         ];
 
+        // Merge context customer IDs
+        const mergedContextCustomerIds = [
+          ...new Set([
+            ...(existingConversation?.context_customer_ids || []),
+            ...contextCustomerIds,
+          ]),
+        ];
+
+        // Merge attachments
+        const mergedAttachments = [
+          ...(existingConversation?.attachments || []),
+          ...dbAttachments,
+        ];
+
         const conversationData: Conversation = {
           id: conversationId,
           title: existingConversation?.title ?? "与 AI 的对话",
@@ -249,12 +283,16 @@ export async function POST(req: NextRequest) {
           created_at: existingConversation?.created_at ?? now,
           updated_at: new Date().toISOString(),
           messages: storedMessages,
-          attachments: existingConversation?.attachments,
-          context_customer_ids: existingConversation?.context_customer_ids ??
-            (customerId ? [customerId] : []),
+          attachments:
+            mergedAttachments.length > 0 ? mergedAttachments : undefined,
+          context_customer_ids:
+            mergedContextCustomerIds.length > 0
+              ? mergedContextCustomerIds
+              : undefined,
           ai_outputs: existingConversation?.ai_outputs,
           linked_customer_id:
-            existingConversation?.linked_customer_id ?? customerId ?? undefined,
+            existingConversation?.linked_customer_id ??
+            (contextCustomerIds.length > 0 ? contextCustomerIds[0] : undefined),
         };
 
         if (existingConversation) {
@@ -263,19 +301,21 @@ export async function POST(req: NextRequest) {
           await createConversation(conversationData);
         }
 
-        console.log(`[Chat API] Conversation ${conversationId} saved with ${storedMessages.length} messages`);
+        console.log(
+          `[Claude Agent API] Conversation ${conversationId} saved with ${storedMessages.length} messages`
+        );
       } catch (error) {
-        console.error("[Chat API] Failed to save conversation:", error);
+        console.error("[Claude Agent API] Failed to save conversation:", error);
       }
     },
 
     onError: (error) => {
-      console.error("[Chat API] Stream error:", error);
+      console.error("[Claude Agent API] Stream error:", error);
       return error instanceof Error ? error.message : "Unknown error";
     },
 
-    // Pass messages for context
-    originalMessages: messages,
+    // Pass original message for context
+    originalMessages: [uiMessage],
   });
 
   // Return streaming response
