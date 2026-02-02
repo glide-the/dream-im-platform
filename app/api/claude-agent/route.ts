@@ -196,7 +196,7 @@ export async function POST(req: NextRequest) {
           // Determine if we should resume an existing conversation
           // Use the stored claude_session_id if available
           shouldResume = !!existingConversation?.claude_session_id;
-          threadIdForAgent = existingConversation?.claude_session_id || conversationId;
+          threadIdForAgent = existingConversation?.claude_session_id ?? conversationId;
 
         }
         // Run the agent
@@ -333,7 +333,8 @@ export async function POST(req: NextRequest) {
 
     onError: (error) => {
       console.error("[Claude Agent API] Stream error:", error);
-      return error instanceof Error ? error.message : "Unknown error";
+      // Re-throw the error to let the stream handle it and notify the client
+      throw error;
     },
 
     // Pass original message for context
