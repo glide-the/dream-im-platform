@@ -115,6 +115,7 @@ export async function POST(req: NextRequest) {
   const {
     id: conversationId,
     message: uiMessage,
+    resume: resume,
     attachments = [],
     contextCustomerIds = [],
   } = body;
@@ -186,11 +187,18 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-        // Determine if we should resume an existing conversation
-        // Use the stored claude_session_id if available
-        const shouldResume = !!existingConversation?.claude_session_id;
-        const threadIdForAgent = existingConversation?.claude_session_id || conversationId;
 
+        // For new conversations, do not resume
+        let shouldResume = false;
+        let threadIdForAgent = conversationId;
+        if (resume) {
+
+          // Determine if we should resume an existing conversation
+          // Use the stored claude_session_id if available
+          shouldResume = !!existingConversation?.claude_session_id;
+          threadIdForAgent = existingConversation?.claude_session_id || conversationId;
+
+        }
         // Run the agent
         const result = await agentRunner.runStreaming(
           {
@@ -235,12 +243,12 @@ export async function POST(req: NextRequest) {
             ? convertToStorageParts(responseMessage.parts)
             : responseText
               ? [
-                  {
-                    type: "text" as const,
-                    text: responseText,
-                    state: "done" as const,
-                  },
-                ]
+                {
+                  type: "text" as const,
+                  text: responseText,
+                  state: "done" as const,
+                },
+              ]
               : [];
 
         // Get existing messages, excluding any with the same ID as the new messages

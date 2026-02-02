@@ -42,6 +42,10 @@ export const chatApiSchemaRequestBodySchema = z.object({
    * 在 ai4sales 里可以直接等价于 Conversation.id
    */
   id: z.string(),
+  /**
+   * 是否为续聊
+   */
+  resume: z.boolean(),
 
   /**
    * 最后一个 UIMessage（通常是用户消息）
