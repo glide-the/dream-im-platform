@@ -236,6 +236,11 @@ export async function POST(req: NextRequest) {
   
   // Track tool calls for metadata
   let toolCallCount = 0;
+  
+  // Track ALL streamed parts EXACTLY as they are written to the stream
+  // This preserves the exact order and format of stream events
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const streamedParts: any[] = [];
 
   // Create streaming response using ai SDK (following better-chatbot pattern)
   const stream = createUIMessageStream({
@@ -249,13 +254,22 @@ export async function POST(req: NextRequest) {
         ? `${uiMessage.id}-response`
         : createId("msg");
       let hasStarted = false;
+      
+      // Helper to write to stream AND track the part
+      const writeAndTrack = (part: Parameters<typeof writer.write>[0]) => {
+        writer.write(part);
+        // Store exact copy of stream event (excluding 'finish' and 'error' types)
+        if (part.type !== 'finish' && part.type !== 'error') {
+          streamedParts.push({ ...part });
+        }
+      };
 
       // Set up callbacks to stream to UI
       const callbacks: AgentStreamingCallbacks = {
         onTextDelta: async (delta: string) => {
           // Send text-start on first delta
           if (!hasStarted) {
-            writer.write({
+            writeAndTrack({
               type: "text-start",
               id: assistantMessageId,
             });
@@ -263,7 +277,9 @@ export async function POST(req: NextRequest) {
           }
 
           fullText += delta;
-          writer.write({
+          
+          // Write and track text-delta
+          writeAndTrack({
             type: "text-delta",
             id: assistantMessageId,
             delta: delta,
@@ -272,13 +288,23 @@ export async function POST(req: NextRequest) {
         onTextDone: async () => {
           // Send text-end
           if (hasStarted) {
-            writer.write({
+            writeAndTrack({
               type: "text-end",
               id: assistantMessageId,
             });
+            hasStarted = false; // Reset for next text block
           }
         },
         onToolEvent: async (event) => {
+          // If we have ongoing text, close it first before tool events
+          if (hasStarted) {
+            writeAndTrack({
+              type: "text-end",
+              id: assistantMessageId,
+            });
+            hasStarted = false;
+          }
+          
           // Track tool calls
           if (event.type === "tool_use" || event.type === "tool_use_start") {
             toolCallCount++;
@@ -290,17 +316,17 @@ export async function POST(req: NextRequest) {
             const reasoningId = createId("reasoning");
             const reasoningText = String(event.output);
             
-            // Send as reasoning stream chunks
-            writer.write({
+            // Write and track reasoning stream chunks
+            writeAndTrack({
               type: "reasoning-start",
               id: reasoningId,
             });
-            writer.write({
+            writeAndTrack({
               type: "reasoning-delta",
               id: reasoningId,
               delta: reasoningText,
             });
-            writer.write({
+            writeAndTrack({
               type: "reasoning-end",
               id: reasoningId,
             });
@@ -310,8 +336,8 @@ export async function POST(req: NextRequest) {
           // Stream tool events to frontend using Vercel AI SDK types
           // Note: onToolConfirmationRequest handles manual mode confirmation events
           if (event.toolCallId && event.toolName) {
-            // Send tool-input-start first with extended parameters
-            writer.write({
+            // Write and track tool-input-start with extended parameters
+            writeAndTrack({
               type: "tool-input-start",
               toolCallId: event.toolCallId,
               toolName: event.toolName,
@@ -322,7 +348,7 @@ export async function POST(req: NextRequest) {
             
             // For non-manual mode, just send input-available without approval request
             if (toolChoice !== "manual" && event.state === "input-available") {
-              writer.write({
+              writeAndTrack({
                 type: "tool-input-available",
                 toolCallId: event.toolCallId,
                 toolName: event.toolName,
@@ -336,7 +362,7 @@ export async function POST(req: NextRequest) {
           
           // Forward tool results with extended parameters
           if (event.type === "tool_result" && event.toolCallId) {
-            writer.write({
+            writeAndTrack({
               type: "tool-output-available",
               toolCallId: event.toolCallId,
               output: event.output,
@@ -348,7 +374,7 @@ export async function POST(req: NextRequest) {
         onToolConfirmationRequest: async (event) => {
           // When manual tool confirmation is needed, send tool-input-available + tool-approval-request
           // This is the primary handler for manual mode - sends both events together
-          writer.write({
+          writeAndTrack({
             type: "tool-input-available",
             toolCallId: event.toolCallId,
             toolName: event.toolName,
@@ -356,7 +382,7 @@ export async function POST(req: NextRequest) {
           });
           
           const approvalId = createId("approval");
-          writer.write({
+          writeAndTrack({
             type: "tool-approval-request",
             approvalId,
             toolCallId: event.toolCallId,
@@ -420,21 +446,20 @@ export async function POST(req: NextRequest) {
         // Convert the user message parts for storage
         const userMessageParts = convertToStorageParts(uiMessage.parts);
 
-        // Convert the response message parts for storage
-        // Use parts if available, otherwise create a text part from extracted content
+        // Use the tracked streamedParts directly - these are EXACTLY as streamed
+        // This preserves the order of text-delta and tool-input-start events
         const responseText = extractTextFromParts(responseMessage.parts);
-        const assistantMessageParts =
-          responseMessage.parts && responseMessage.parts.length > 0
-            ? convertToStorageParts(responseMessage.parts)
-            : responseText
-              ? [
-                {
-                  type: "text" as const,
-                  text: responseText,
-                  state: "done" as const,
-                },
-              ]
-              : [];
+        const assistantMessageParts = streamedParts.length > 0
+          ? streamedParts
+          : responseText
+            ? [
+              {
+                type: "text" as const,
+                text: responseText,
+                state: "done" as const,
+              },
+            ]
+            : [];
 
         // Get existing messages, excluding any with the same ID as the new messages
         // This prevents duplicate messages when updating a conversation
