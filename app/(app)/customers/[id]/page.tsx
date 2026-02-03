@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage } from "ai";
+import { DefaultChatTransport, isToolUIPart, type UIMessage, type ToolUIPart, type DynamicToolUIPart } from "ai";
 import { IconChevronLeft, IconChevronDown } from "../../../components/Icons";
 import Toast from "../../../components/Toast";
 import ProfileCard from "../../../components/customer-detail/ProfileCard";
@@ -11,11 +11,13 @@ import BasicInfoSection from "../../../components/customer-detail/BasicInfoSecti
 import MarkdownDetailSection from "../../../components/customer-detail/MarkdownDetailSection";
 import DecisionChainSection from "../../../components/customer-detail/DecisionChainSection";
 import AIInputDock, { type Attachment } from "../../../components/AIInputDock";
+import { ToolMessagePart, isManualToolInvocationPart } from "../../../components/ToolMessagePart";
 import { useCustomer, useUpdateCustomer, useConversationByCustomer } from "../../../lib/queries";
 import type { DecisionChainItem, ConversationMessage } from "../../../lib/types";
 import {
   type ChatApiSchemaRequestBody,
   type ChatAttachment,
+  type ChatMetadata,
   DEFAULT_CHAT_MODEL,
 } from "../../../lib/chat-schema";
 
@@ -92,6 +94,7 @@ export default function CustomerDetailPage({
     setMessages,
     status,
     error: chatError,
+    addToolResult,
   } = useChat({
     id: threadId,
     transport: new DefaultChatTransport({
@@ -373,34 +376,68 @@ export default function CustomerDetailPage({
                   </div>
                 </div>
               ) : (
-                chatMessages.map((msg) => {
+                chatMessages.map((msg, msgIndex) => {
                   const isUser = msg.role === "user";
-                  // Extract text content from message parts
-                  const textContent = msg.parts
-                    ?.filter((part): part is { type: "text"; text: string } => part.type === "text")
-                    .map((part) => part.text)
-                    .join("") || "";
+                  const isLastMessage = msgIndex === chatMessages.length - 1;
+                  const metadata = msg.metadata as ChatMetadata | undefined;
 
                   return (
-                    <div
-                      key={msg.id}
-                      className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-                    >
-                      <div
-                        className={[
-                          "rounded-2xl px-3 py-2 text-sm max-w-[80%] whitespace-pre-wrap",
-                          isUser
-                            ? "rounded-tr-none bg-accent text-white"
-                            : "rounded-tl-none bg-bg-secondary text-text-secondary",
-                        ].join(" ")}
-                      >
-                        {textContent}
-                      </div>
+                    <div key={msg.id} className="flex flex-col gap-2">
+                      {msg.parts?.map((part, partIndex) => {
+                        const isLastPart = partIndex === (msg.parts?.length ?? 0) - 1;
+                        
+                        // Handle text parts
+                        if (part.type === "text" && part.text) {
+                          return (
+                            <div
+                              key={`${msg.id}-${partIndex}`}
+                              className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+                            >
+                              <div
+                                className={[
+                                  "rounded-2xl px-3 py-2 text-sm max-w-[80%] whitespace-pre-wrap",
+                                  isUser
+                                    ? "rounded-tr-none bg-accent text-white"
+                                    : "rounded-tl-none bg-bg-secondary text-text-secondary",
+                                ].join(" ")}
+                              >
+                                {part.text}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // Handle tool parts
+                        if (isToolUIPart(part)) {
+                          const isManual = isManualToolInvocationPart(
+                            part as ToolUIPart | DynamicToolUIPart,
+                            metadata,
+                            isLastMessage,
+                            chatLoading
+                          );
+                          return (
+                            <div key={`${msg.id}-${partIndex}`} className="flex justify-start">
+                              <div className="max-w-[90%]">
+                                <ToolMessagePart
+                                  part={part as ToolUIPart | DynamicToolUIPart}
+                                  isLast={isLastMessage && isLastPart}
+                                  isLoading={chatLoading}
+                                  isManualToolInvocation={isManual}
+                                  addToolResult={addToolResult}
+                                />
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // Skip other part types
+                        return null;
+                      })}
                     </div>
                   );
                 })
               )}
-              {chatLoading && (
+              {chatLoading && chatMessages.length > 0 && !chatMessages.at(-1)?.parts?.some(p => p.type === "text" || isToolUIPart(p)) && (
                 <div className="flex justify-start">
                   <div className="rounded-2xl rounded-tl-none bg-bg-secondary px-3 py-2 text-sm text-text-secondary max-w-[80%]">
                     <span className="inline-flex gap-1">
