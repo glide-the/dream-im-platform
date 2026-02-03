@@ -213,6 +213,7 @@ export async function POST(req: NextRequest) {
     message: uiMessage,
     resume = false,
     toolChoice = "auto",
+    chatModel,
     attachments = [],
     contextCustomerIds = [],
   } = body;
@@ -334,9 +335,18 @@ export async function POST(req: NextRequest) {
           }
           
           // Stream tool events to frontend using Vercel AI SDK types
-          // Note: onToolConfirmationRequest handles manual mode confirmation events
+          // Note: For manual mode, onToolConfirmationRequest handles the full event sequence
+          // For auto mode, we send tool-input-start and tool-input-available here
           if (event.toolCallId && event.toolName) {
-            // Send tool-input-start (AI SDK strictObject: type, toolCallId, toolName, providerExecuted?, providerMetadata?, dynamic?, title?)
+            // In manual mode, skip onToolEvent processing for tool_use events
+            // because onToolConfirmationRequest already sends the complete sequence:
+            // tool-input-start → tool-input-available → tool-approval-request
+            if (toolChoice === "manual" && (event.type === "tool_use" || event.type === "tool_use_start")) {
+              // Skip - already handled by onToolConfirmationRequest
+              return;
+            }
+            
+            // Auto mode: Send tool-input-start (AI SDK strictObject: type, toolCallId, toolName, providerExecuted?, providerMetadata?, dynamic?, title?)
             // NOTE: AI SDK's tool-input-start does NOT allow 'input' field - input goes in tool-input-available
             writeAndTrack({
               type: "tool-input-start",
@@ -350,7 +360,7 @@ export async function POST(req: NextRequest) {
             // For non-manual mode with available input, also send input-available
             // AI SDK's tool-input-available DOES include 'input' field
             // Note: In auto mode, event.state may be undefined but input is still available
-            if (toolChoice !== "manual" && event.input !== undefined) {
+            if (event.input !== undefined) {
               writeAndTrack({
                 type: "tool-input-available",
                 toolCallId: event.toolCallId,
@@ -375,8 +385,20 @@ export async function POST(req: NextRequest) {
           }
         },
         onToolConfirmationRequest: async (event) => {
-          // When manual tool confirmation is needed, send tool-input-available + tool-approval-request
-          // This is the primary handler for manual mode - sends both events together
+          // When manual tool confirmation is needed, send tool events in correct order:
+          // 1. tool-input-start (tool call begins)
+          // 2. tool-input-available (input ready for review)
+          // 3. tool-approval-request (explicit approval request)
+          // This is the primary handler for manual mode - sends all events together
+          
+          // First: Send tool-input-start (AI SDK expects this before input-available)
+          writeAndTrack({
+            type: "tool-input-start",
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+          });
+          
+          // Second: Send tool-input-available with the input
           writeAndTrack({
             type: "tool-input-available",
             toolCallId: event.toolCallId,
@@ -384,6 +406,7 @@ export async function POST(req: NextRequest) {
             input: event.input,
           });
           
+          // Third: Send tool-approval-request
           const approvalId = createId("approval");
           writeAndTrack({
             type: "tool-approval-request",
@@ -427,6 +450,19 @@ export async function POST(req: NextRequest) {
 
         // Capture the session ID from the result
         capturedSessionId = result.sessionId;
+
+        // Send message-metadata event with toolChoice and other metadata
+        // This allows the frontend to show manual tool confirmation UI when toolChoice="manual"
+        // Reference: cgoinglove/better-chatbot message metadata handling
+        // AI SDK format: { type: "message-metadata", messageMetadata: { ... } }
+        writer.write({
+          type: "message-metadata",
+          messageMetadata: {
+            toolChoice: toolChoice,
+            toolCount: toolCallCount,
+            chatModel: chatModel,
+          },
+        });
 
         // Finish the message
         writer.write({
