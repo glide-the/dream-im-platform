@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
           }
           
           // Stream tool events to frontend using Vercel AI SDK types
-          // For manual mode, frontend will show approve/reject UI
+          // Note: onToolConfirmationRequest handles manual mode confirmation events
           if (event.toolCallId && event.toolName) {
             // Send tool-input-start first
             writer.write({
@@ -234,22 +234,13 @@ export async function POST(req: NextRequest) {
               toolName: event.toolName,
             });
             
-            // If manual mode and input available, signal confirmation needed
-            if (toolChoice === "manual" && event.state === "input-available") {
-              // Send tool-input-available - frontend will show approve/reject UI
+            // For non-manual mode, just send input-available without approval request
+            if (toolChoice !== "manual" && event.state === "input-available") {
               writer.write({
                 type: "tool-input-available",
                 toolCallId: event.toolCallId,
                 toolName: event.toolName,
                 input: event.input as Record<string, unknown>,
-              });
-              
-              // Also send tool-approval-request for the UI to show approve/reject
-              const approvalId = createId("approval");
-              writer.write({
-                type: "tool-approval-request",
-                approvalId,
-                toolCallId: event.toolCallId,
               });
             }
           }
@@ -265,7 +256,7 @@ export async function POST(req: NextRequest) {
         },
         onToolConfirmationRequest: async (event) => {
           // When manual tool confirmation is needed, send tool-input-available + tool-approval-request
-          // Frontend should show Approve/Reject UI
+          // This is the primary handler for manual mode - sends both events together
           writer.write({
             type: "tool-input-available",
             toolCallId: event.toolCallId,

@@ -11,15 +11,14 @@
  * Reference: cgoinglove/better-chatbot and Vercel AI SDK patterns
  */
 
-import { tag } from "../../../tag";
+// Re-export the core types from chat-schema to avoid duplication
+export {
+  ManualToolConfirmTag,
+  MANUAL_REJECT_RESPONSE_PROMPT,
+  type ToolInvocationState,
+} from "../../../chat-schema";
 
-/**
- * Tool invocation state enum
- */
-export type ToolInvocationState = 
-  | "input-available"    // Tool call proposed, waiting for confirmation
-  | "output-available"   // Tool executed, result available  
-  | "error";             // Tool execution failed
+import { ManualToolConfirmTag as _ManualToolConfirmTag } from "../../../chat-schema";
 
 /**
  * Tool call stream event - sent when AI proposes a tool call
@@ -78,23 +77,17 @@ export interface ManualToolConfirmPayload {
 }
 
 /**
- * Tagged type for manual tool confirmation
- * Used to identify tool outputs that contain confirmation decisions
- */
-export const ManualToolConfirmTag = tag<ManualToolConfirmPayload>("manual-tool-confirm");
-
-/**
  * Check if a value is a manual tool confirmation
  */
 export function isManualToolConfirm(value: unknown): value is ManualToolConfirmPayload & { __$ref__: string } {
-  return ManualToolConfirmTag.isMaybe(value);
+  return _ManualToolConfirmTag.isMaybe(value);
 }
 
 /**
  * Create a manual tool confirmation
  */
 export function createManualToolConfirm(confirm: boolean) {
-  return ManualToolConfirmTag.create({ confirm });
+  return _ManualToolConfirmTag.create({ confirm });
 }
 
 /**
@@ -112,9 +105,3 @@ export interface AddToolResultPayload {
 export interface ToolConfirmationResult extends AddToolResultPayload {
   result: ReturnType<typeof createManualToolConfirm>;
 }
-
-/**
- * MANUAL_REJECT_RESPONSE_PROMPT - returned to AI when user rejects a tool
- */
-export const MANUAL_REJECT_RESPONSE_PROMPT = 
-  "The user has rejected this tool execution. Please acknowledge and ask if they would like to try a different approach.";

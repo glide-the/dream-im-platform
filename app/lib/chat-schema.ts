@@ -110,6 +110,20 @@ export const ManualToolConfirmTag = tag<{
 }>("manual-tool-confirm");
 
 /**
+ * Check if a value is a manual tool confirmation
+ */
+export function isManualToolConfirmValue(value: unknown): value is { confirm: boolean; __$ref__: string } {
+  return ManualToolConfirmTag.isMaybe(value);
+}
+
+/**
+ * Create a manual tool confirmation
+ */
+export function createManualToolConfirmValue(confirm: boolean) {
+  return ManualToolConfirmTag.create({ confirm });
+}
+
+/**
  * Prompt returned to AI when user rejects a manual tool invocation
  */
 export const MANUAL_REJECT_RESPONSE_PROMPT = 
@@ -157,7 +171,7 @@ export function isManualToolInvocation(
   return (
     metadata?.toolChoice === "manual" &&
     part.state === "input-available" &&
-    !!isLastMessage &&
-    !!isLoading
+    isLastMessage === true &&
+    isLoading === true
   );
 }
