@@ -264,8 +264,8 @@ export async function POST(req: NextRequest) {
       writer.write({
         type: "message-metadata",
         messageMetadata: {
-          toolChoice: toolChoice,
-          chatModel: chatModel,
+          toolChoice,
+          chatModel,
         },
       });
       
@@ -474,9 +474,9 @@ export async function POST(req: NextRequest) {
         writer.write({
           type: "message-metadata",
           messageMetadata: {
-            toolChoice: toolChoice,
+            toolChoice,
             toolCount: toolCallCount,
-            chatModel: chatModel,
+            chatModel,
           },
         });
 
