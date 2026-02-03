@@ -53,6 +53,8 @@ export type Attachment = {
 
 // Message part types for storing rich message content (aligned with AI SDK UIMessage format)
 // Reference: cgoinglove/better-chatbot convertToSavePart pattern
+// Note: We preserve the original type field as streamed (e.g., "tool-search", "dynamic-tool")
+// to allow faithful restoration when loading from database.
 
 export type TextMessagePart = {
   type: "text";
@@ -70,13 +72,21 @@ export type StepStartMessagePart = {
   type: "step-start";
 };
 
+// Tool type pattern: "tool", "dynamic-tool", or "tool-{toolName}"
+export type ToolType = "tool" | "dynamic-tool" | `tool-${string}`;
+
+// Tool message part - preserves original type from AI SDK stream
+// The type can be "tool-{toolName}", "dynamic-tool", or legacy "tool"
 export type ToolMessagePart = {
-  type: "tool";
+  type: ToolType; // Preserves original: "tool-{name}", "dynamic-tool", or "tool"
   toolCallId: string;
   toolName: string;
   input: Record<string, unknown>;
   output?: unknown;
   state: "input-available" | "input-streaming" | "output-available" | "output-error" | "error" | "done";
+  // Extended parameters from AI SDK
+  title?: string;
+  providerExecuted?: boolean;
 };
 
 export type FileMessagePart = {

@@ -177,16 +177,19 @@ export default function CustomerDetailPage({
                     type: "step-start" as const,
                   };
                 }
-                // Handle tool parts - convert stored "tool" type to AI SDK "dynamic-tool" format
-                // This allows the ToolMessagePart component to render properly
-                if (part.type === "tool") {
+                // Handle tool parts - the original type is now preserved in storage
+                // Types can be: "tool-{name}", "dynamic-tool", or legacy "tool"
+                // We pass them through as-is since AI SDK can handle these formats
+                if (part.type.startsWith("tool-") || part.type === "dynamic-tool" || part.type === "tool") {
                   const toolPart = part as {
-                    type: "tool";
+                    type: string;
                     toolCallId: string;
                     toolName: string;
                     input: Record<string, unknown>;
                     output?: unknown;
                     state: string;
+                    title?: string;
+                    providerExecuted?: boolean;
                   };
                   // State conversion: Our storage uses "done" to indicate completed tools,
                   // but AI SDK expects "output-available" for completed state with output.
@@ -195,13 +198,20 @@ export default function CustomerDetailPage({
                   const displayState = toolPart.state === "done" 
                     ? "output-available" 
                     : toolPart.state as "input-available" | "input-streaming" | "output-available" | "output-error";
+                  
+                  // If type is legacy "tool", convert to "dynamic-tool" for AI SDK compatibility
+                  // Otherwise preserve the original type
+                  const displayType = part.type === "tool" ? "dynamic-tool" : part.type;
+                  
                   return {
-                    type: "dynamic-tool" as const,
+                    type: displayType,
                     toolCallId: toolPart.toolCallId,
                     toolName: toolPart.toolName,
                     input: toolPart.input,
                     output: toolPart.output,
                     state: displayState,
+                    title: toolPart.title,
+                    providerExecuted: toolPart.providerExecuted,
                   };
                 }
                 // Handle file parts

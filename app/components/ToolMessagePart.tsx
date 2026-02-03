@@ -156,6 +156,11 @@ export function ToolMessagePart({
   const input = 'input' in part ? part.input : undefined;
   const output = 'output' in part ? part.output : undefined;
   const state = part.state;
+  
+  // Extract extended parameters
+  const title = 'title' in part ? (part as { title?: string }).title : undefined;
+  const providerExecuted = 'providerExecuted' in part ? (part as { providerExecuted?: boolean }).providerExecuted : undefined;
+  const partType = part.type; // Preserve original type for display
 
   // Determine if the tool is completed (has output)
   const isCompleted = useMemo(() => {
@@ -249,13 +254,24 @@ export function ToolMessagePart({
               <IconTool className="h-3.5 w-3.5 text-text-secondary" />
             )}
           </div>
-          <span className="font-medium text-sm text-text-primary flex-1">
-            {isExecuting ? (
-              <span className="text-accent">{toolName}</span>
-            ) : (
-              toolName
-            )}
-          </span>
+          <div className="flex-1">
+            <span className="font-medium text-sm text-text-primary">
+              {isExecuting ? (
+                <span className="text-accent">{title || toolName}</span>
+              ) : (
+                title || toolName
+              )}
+            </span>
+            {/* Show tool type and provider info as extended parameters */}
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-xs text-text-tertiary">{partType}</span>
+              {providerExecuted !== undefined && (
+                <span className="text-xs text-text-tertiary">
+                  {providerExecuted ? "• 提供者执行" : "• 本地执行"}
+                </span>
+              )}
+            </div>
+          </div>
           <button
             type="button"
             className="p-1 rounded hover:bg-bg-secondary transition-colors"
@@ -271,6 +287,23 @@ export function ToolMessagePart({
         {/* Expanded content */}
         {expanded && (
           <div className="px-3 pb-3 space-y-2">
+            {/* Extended parameters section */}
+            <div className="rounded-lg border border-border bg-bg-secondary p-3">
+              <h5 className="text-xs font-medium text-text-tertiary mb-2">
+                工具信息
+              </h5>
+              <div className="text-xs text-text-secondary space-y-1">
+                <div><span className="text-text-tertiary">类型:</span> {partType}</div>
+                <div><span className="text-text-tertiary">工具名:</span> {toolName}</div>
+                <div><span className="text-text-tertiary">调用ID:</span> <code className="bg-bg-primary px-1 rounded">{toolCallId}</code></div>
+                <div><span className="text-text-tertiary">状态:</span> {state}</div>
+                {title && <div><span className="text-text-tertiary">标题:</span> {title}</div>}
+                {providerExecuted !== undefined && (
+                  <div><span className="text-text-tertiary">执行方:</span> {providerExecuted ? "提供者" : "本地"}</div>
+                )}
+              </div>
+            </div>
+            
             {/* Input section */}
             <div className="rounded-lg border border-border bg-bg-secondary p-3">
               <h5 className="text-xs font-medium text-text-tertiary mb-2">

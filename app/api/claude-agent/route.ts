@@ -28,7 +28,7 @@ import {
   getConversationById,
 } from "../../lib/db";
 import { createId } from "../../lib/id";
-import type { Conversation, MessagePart, Attachment } from "../../lib/types";
+import type { Conversation, MessagePart, Attachment, ToolType } from "../../lib/types";
 
 export const runtime = "nodejs";
 
@@ -56,6 +56,9 @@ function isToolPartType(type: string): boolean {
  * Convert UIMessage parts to our storage format.
  * Following the better-chatbot convertToSavePart pattern, we save ALL parts 
  * from the chat stream (step-start, reasoning, text, tool, file, source-url, etc.)
+ * 
+ * IMPORTANT: We preserve the original `type` field as streamed (e.g., "tool-search", "dynamic-tool")
+ * to allow faithful restoration when loading from database.
  * 
  * Reference: cgoinglove/better-chatbot src/app/api/chat/shared.chat.ts - convertToSavePart
  */
@@ -91,6 +94,7 @@ function convertToStorageParts(
     }
     
     // Handle tool parts (tool-*, dynamic-tool)
+    // PRESERVE the original type field as-is for faithful restoration
     if (isToolPartType(part.type) || isToolUIPart(part)) {
       const toolPart = part as {
         type: string;
@@ -99,6 +103,8 @@ function convertToStorageParts(
         input: Record<string, unknown>;
         output?: unknown;
         state?: string;
+        title?: string;
+        providerExecuted?: boolean;
       };
       
       // Extract tool name from toolName property or from type (e.g., "tool-search" -> "search")
@@ -110,13 +116,18 @@ function convertToStorageParts(
         resolvedToolName = "unknown";
       }
       
+      // Preserve the original type (tool-xxx, dynamic-tool, etc.) for faithful restoration
+      // Cast to ToolType as we've validated it's a tool type above
       return {
-        type: "tool" as const,
+        type: part.type as ToolType, // PRESERVE original type: "tool-search", "dynamic-tool", etc.
         toolCallId: toolPart.toolCallId,
         toolName: resolvedToolName,
         input: toolPart.input ?? {},
         output: toolPart.output,
         state: (toolPart.state ?? "done") as "input-available" | "input-streaming" | "output-available" | "output-error" | "error" | "done",
+        // Extended parameters
+        title: toolPart.title,
+        providerExecuted: toolPart.providerExecuted,
       };
     }
     
