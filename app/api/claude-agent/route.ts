@@ -335,14 +335,18 @@ export async function POST(req: NextRequest) {
           }
           
           // Stream tool events to frontend using Vercel AI SDK types
-          // Note: For manual mode, onToolConfirmationRequest handles the full event sequence
-          // For auto mode, we send tool-input-start and tool-input-available here
+          // 
+          // IMPORTANT: Two-handler design for manual vs auto mode:
+          // - Manual mode (toolChoice === "manual"): onToolConfirmationRequest handles tool_use events
+          //   and sends the complete sequence: tool-input-start → tool-input-available → tool-approval-request
+          // - Auto mode: onToolEvent handles all tool events and sends tool-input-start → tool-input-available
+          //
+          // This design avoids duplicate events since both handlers fire for the same tool call
+          // in manual mode (see agent-runner.ts lines 297-328).
           if (event.toolCallId && event.toolName) {
-            // In manual mode, skip onToolEvent processing for tool_use events
-            // because onToolConfirmationRequest already sends the complete sequence:
-            // tool-input-start → tool-input-available → tool-approval-request
+            // Manual mode: Skip tool_use events here - they're handled by onToolConfirmationRequest
+            // to ensure the correct event sequence for frontend approval UI
             if (toolChoice === "manual" && (event.type === "tool_use" || event.type === "tool_use_start")) {
-              // Skip - already handled by onToolConfirmationRequest
               return;
             }
             
