@@ -151,28 +151,81 @@ export default function CustomerDetailPage({
       const existingMessages = conversationData.data.messages;
       if (existingMessages && existingMessages.length > 0) {
         // Convert ConversationMessage[] to UIMessage[]
+        // We need to convert stored parts back to AI SDK UIMessage format
         const uiMessages: UIMessage[] = existingMessages.map((msg: ConversationMessage) => ({
           id: msg.id,
           role: msg.role,
           parts: msg.parts && msg.parts.length > 0
             ? msg.parts.map(part => {
+                // Handle text parts
                 if (part.type === "text") {
                   return {
                     type: "text" as const,
-                    text: part.text || "",
+                    text: (part as { text: string }).text || "",
                   };
                 }
+                // Handle reasoning parts
                 if (part.type === "reasoning") {
                   return {
                     type: "reasoning" as const,
-                    text: part.text || "",
+                    text: (part as { text: string }).text || "",
                   };
                 }
-                // Handle tool type - for now just render as text summary
-                return {
-                  type: "text" as const,
-                  text: `[Tool: ${(part as { toolName?: string }).toolName || "unknown"}]`,
-                };
+                // Handle step-start parts
+                if (part.type === "step-start") {
+                  return {
+                    type: "step-start" as const,
+                  };
+                }
+                // Handle tool parts - convert stored "tool" type to AI SDK "dynamic-tool" format
+                // This allows the ToolMessagePart component to render properly
+                if (part.type === "tool") {
+                  const toolPart = part as {
+                    type: "tool";
+                    toolCallId: string;
+                    toolName: string;
+                    input: Record<string, unknown>;
+                    output?: unknown;
+                    state: string;
+                  };
+                  // State conversion: Our storage uses "done" to indicate completed tools,
+                  // but AI SDK expects "output-available" for completed state with output.
+                  // Other states (input-available, input-streaming, output-error, error)
+                  // pass through unchanged as they match AI SDK expectations.
+                  const displayState = toolPart.state === "done" 
+                    ? "output-available" 
+                    : toolPart.state as "input-available" | "input-streaming" | "output-available" | "output-error";
+                  return {
+                    type: "dynamic-tool" as const,
+                    toolCallId: toolPart.toolCallId,
+                    toolName: toolPart.toolName,
+                    input: toolPart.input,
+                    output: toolPart.output,
+                    state: displayState,
+                  };
+                }
+                // Handle file parts
+                if (part.type === "file") {
+                  const filePart = part as { url: string; mediaType?: string; filename?: string };
+                  return {
+                    type: "file" as const,
+                    url: filePart.url,
+                    mediaType: filePart.mediaType,
+                    filename: filePart.filename,
+                  };
+                }
+                // Handle source-url parts
+                if (part.type === "source-url") {
+                  const sourceUrlPart = part as { url: string; mediaType?: string; title?: string };
+                  return {
+                    type: "source-url" as const,
+                    url: sourceUrlPart.url,
+                    mediaType: sourceUrlPart.mediaType,
+                    title: sourceUrlPart.title,
+                  };
+                }
+                // For any other unknown types, pass through as-is
+                return part;
               })
             : [{ type: "text" as const, text: msg.content }],
           createdAt: new Date(msg.created_at),
