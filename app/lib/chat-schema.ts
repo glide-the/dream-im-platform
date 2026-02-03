@@ -1,7 +1,8 @@
 // app/lib/chat-schema.ts
 // Reference: cgoinglove/better-chatbot src/types/chat.ts
-import type { UIMessage } from "ai";
+import type { LanguageModelUsage, UIMessage } from "ai";
 import { z } from "zod";
+import { tag } from "./tag";
 
 /**
  * 与 better-chatbot 保持兼容的 ChatAttachment 定义
@@ -81,3 +82,82 @@ export const DEFAULT_CHAT_MODEL: ChatModel = {
   provider: "anthropic",
   model: "claude-sonnet-4-20250514",
 };
+
+/**
+ * Chat metadata returned with AI responses
+ * Reference: cgoinglove/better-chatbot src/types/chat.ts ChatMetadata
+ */
+export type ChatMetadata = {
+  usage?: LanguageModelUsage;
+  chatModel?: ChatModel;
+  toolChoice?: "auto" | "none" | "manual";
+  toolCount?: number;
+  agentId?: string;
+};
+
+/**
+ * Manual tool confirmation tag
+ * Used to mark tool outputs that need user confirmation before execution
+ * 
+ * When toolChoice="manual", the AI will propose tool calls but not execute them.
+ * The frontend shows [Approve]/[Reject] controls, and sends the user's decision
+ * via addToolResult({ confirm: true|false }).
+ * 
+ * Reference: cgoinglove/better-chatbot src/types/chat.ts ManualToolConfirmTag
+ */
+export const ManualToolConfirmTag = tag<{
+  confirm: boolean;
+}>("manual-tool-confirm");
+
+/**
+ * Prompt returned to AI when user rejects a manual tool invocation
+ */
+export const MANUAL_REJECT_RESPONSE_PROMPT = 
+  "The user has rejected this tool execution. Please acknowledge and ask if they would like to try a different approach.";
+
+/**
+ * Tool invocation state - indicates the current state of a tool call
+ * Reference: Vercel AI SDK ToolUIPart states
+ */
+export type ToolInvocationState = 
+  | "input-available"    // Tool call proposed, waiting for confirmation
+  | "output-available"   // Tool executed, result available
+  | "error";             // Tool execution failed
+
+/**
+ * Tool UI part for rendering tool invocations in the chat
+ * Reference: Vercel AI SDK ToolUIPart
+ */
+export interface ToolUIPart {
+  type: "tool";
+  toolCallId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  output?: unknown;
+  state: ToolInvocationState;
+  isError?: boolean;
+}
+
+/**
+ * Check if a message part is a tool UI part
+ */
+export function isToolUIPart(part: { type: string }): part is ToolUIPart {
+  return part.type === "tool";
+}
+
+/**
+ * Check if a tool part is awaiting manual confirmation
+ */
+export function isManualToolInvocation(
+  part: ToolUIPart,
+  metadata?: ChatMetadata,
+  isLastMessage?: boolean,
+  isLoading?: boolean
+): boolean {
+  return (
+    metadata?.toolChoice === "manual" &&
+    part.state === "input-available" &&
+    !!isLastMessage &&
+    !!isLoading
+  );
+}

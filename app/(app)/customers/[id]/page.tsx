@@ -152,10 +152,25 @@ export default function CustomerDetailPage({
           id: msg.id,
           role: msg.role,
           parts: msg.parts && msg.parts.length > 0
-            ? msg.parts.map(part => ({
-                type: part.type as "text",
-                text: part.text || "",
-              }))
+            ? msg.parts.map(part => {
+                if (part.type === "text") {
+                  return {
+                    type: "text" as const,
+                    text: part.text || "",
+                  };
+                }
+                if (part.type === "reasoning") {
+                  return {
+                    type: "reasoning" as const,
+                    text: part.text || "",
+                  };
+                }
+                // Handle tool type - for now just render as text summary
+                return {
+                  type: "text" as const,
+                  text: `[Tool: ${(part as { toolName?: string }).toolName || "unknown"}]`,
+                };
+              })
             : [{ type: "text" as const, text: msg.content }],
           createdAt: new Date(msg.created_at),
         }));

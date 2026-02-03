@@ -14,6 +14,20 @@ import { randomUUID } from "node:crypto";
 import { buildUserMessageContent } from "../../messages/messages/build-user-message-content";
 import type { IClaudeAgentSDKClient, SessionSDKOptions } from "../types";
 import { SimpleClaudeAgentSDKClient } from "./simple-cas-client";
+import type { ToolStreamEvent } from "../../messages/types/tool-invocation";
+
+/**
+ * Tool event payload for streaming
+ */
+export interface ToolEventPayload {
+  type: string;
+  toolName?: string;
+  toolCallId?: string;
+  input?: unknown;
+  output?: unknown;
+  state?: "input-available" | "output-available" | "error";
+  isError?: boolean;
+}
 
 /**
  * Callbacks for streaming responses
@@ -24,18 +38,26 @@ export interface AgentStreamingCallbacks {
   /** Called when full text is complete */
   onTextDone?: (fullText: string) => Promise<void> | void;
   /** Called when a tool event is received */
-  onToolEvent?: (event: {
-    type: string;
-    toolName?: string;
-    toolCallId?: string;
-    input?: unknown;
-    output?: unknown;
+  onToolEvent?: (event: ToolEventPayload) => Promise<void> | void;
+  /** 
+   * Called when a tool call needs manual confirmation
+   * This is triggered when toolChoice="manual" and a tool call is proposed
+   */
+  onToolConfirmationRequest?: (event: {
+    toolCallId: string;
+    toolName: string;
+    input: Record<string, unknown>;
   }) => Promise<void> | void;
   /** Called when an error occurs */
   onError?: (error: Error) => Promise<void> | void;
   /** Called when any message is received (for logging) */
   onMessage?: (message: SDKMessage) => Promise<void> | void;
 }
+
+/**
+ * Tool choice mode - determines how tool calls are handled
+ */
+export type ToolChoiceMode = "auto" | "none" | "manual";
 
 /**
  * Options for running the agent
@@ -62,6 +84,13 @@ export interface AgentRunOptions {
   maxTurns?: number;
   /** Allowed tools for the agent */
   allowedTools?: string[];
+  /** 
+   * Tool choice mode:
+   * - "auto": AI decides when to use tools
+   * - "none": No tool usage allowed
+   * - "manual": Tool calls require user confirmation
+   */
+  toolChoice?: ToolChoiceMode;
   /** Abort controller for cancellation */
   abortController?: AbortController;
 }
@@ -136,6 +165,7 @@ export class ClaudeAgentRunner {
       cwd,
       maxTurns = 100,
       allowedTools = [...DEFAULT_ALLOWED_TOOLS],
+      toolChoice = "auto",
       abortController,
     } = opts;
 
@@ -145,6 +175,9 @@ export class ClaudeAgentRunner {
     let currentSessionId: string | null = threadId;
     let success = true;
     let runError: Error | undefined;
+    
+    // Track pending tool calls for manual confirmation mode
+    const pendingToolCalls: Map<string, { toolName: string; input: Record<string, unknown> }> = new Map();
 
     // Build the user message
     // session_id in SDKUserMessage is the thread/conversation identifier
@@ -164,11 +197,14 @@ export class ClaudeAgentRunner {
       yield userMsg;
     }
 
+    // When toolChoice is "none", disable all tools
+    const effectiveAllowedTools = toolChoice === "none" ? [] : allowedTools;
+
     // Build SDK options
     // When resume is true, use threadId as the session to resume
     const sdkOptions: Partial<SDKOptions> = {
       maxTurns,
-      allowedTools, 
+      allowedTools: effectiveAllowedTools, 
       settingSources: ["project"],
       permissionMode: "default",
       ...(cwd ? { cwd } : { cwd: process.cwd() }),
@@ -194,7 +230,7 @@ export class ClaudeAgentRunner {
         }
 
         // Process message based on type
-        await this.processMessage(message, callbacks, (delta) => {
+        await this.processMessage(message, callbacks, toolChoice, pendingToolCalls, (delta) => {
           fullText += delta;
         });
       }
@@ -227,6 +263,8 @@ export class ClaudeAgentRunner {
   private async processMessage(
     message: SDKMessage,
     callbacks: AgentStreamingCallbacks,
+    toolChoice: ToolChoiceMode,
+    pendingToolCalls: Map<string, { toolName: string; input: Record<string, unknown> }>,
     onTextAccumulate: (delta: string) => void
   ): Promise<void> {
     switch (message.type) {
@@ -247,13 +285,43 @@ export class ClaudeAgentRunner {
                   output: thinkingBlock.thinking,
                 });
               }
-            } else if (block.type === "tool_use" && callbacks.onToolEvent) {
-              await callbacks.onToolEvent({
-                type: "tool_use",
-                toolName: block.name,
-                toolCallId: block.id,
-                input: block.input,
-              });
+            } else if (block.type === "tool_use") {
+              const toolCallId = block.id;
+              const toolName = block.name;
+              const input = block.input as Record<string, unknown>;
+              
+              // Store pending tool call for manual mode
+              if (toolChoice === "manual") {
+                pendingToolCalls.set(toolCallId, { toolName, input });
+                
+                // Notify that this tool call needs confirmation
+                if (callbacks.onToolConfirmationRequest) {
+                  await callbacks.onToolConfirmationRequest({
+                    toolCallId,
+                    toolName,
+                    input,
+                  });
+                }
+                
+                // Also send tool event with state for UI rendering
+                if (callbacks.onToolEvent) {
+                  await callbacks.onToolEvent({
+                    type: "tool_use",
+                    toolName,
+                    toolCallId,
+                    input,
+                    state: "input-available", // Waiting for confirmation
+                  });
+                }
+              } else if (callbacks.onToolEvent) {
+                // Auto mode - just report the tool use
+                await callbacks.onToolEvent({
+                  type: "tool_use",
+                  toolName,
+                  toolCallId,
+                  input,
+                });
+              }
             } else if (block.type === "tool_result" && callbacks.onToolEvent) {
               // Handle tool_result content blocks
               const toolResultBlock = block as { 
@@ -261,10 +329,15 @@ export class ClaudeAgentRunner {
                 tool_use_id: string; 
                 content?: unknown;
               };
+              
+              // Remove from pending if it was there
+              pendingToolCalls.delete(toolResultBlock.tool_use_id);
+              
               await callbacks.onToolEvent({
                 type: "tool_result",
                 toolCallId: toolResultBlock.tool_use_id,
                 output: toolResultBlock.content,
+                state: "output-available",
               });
             }
           }
@@ -312,13 +385,28 @@ export class ClaudeAgentRunner {
           }
         } else if (event.type === "content_block_start" && event.content_block) {
           // Handle content block start events for tool use
-          if (event.content_block.type === "tool_use" && callbacks.onToolEvent) {
-            await callbacks.onToolEvent({
-              type: "tool_use_start",
-              toolName: event.content_block.name ?? undefined,
-              toolCallId: event.content_block.id ?? undefined,
-              input: event.content_block.input,
-            });
+          if (event.content_block.type === "tool_use") {
+            const toolCallId = event.content_block.id;
+            const toolName = event.content_block.name;
+            const input = event.content_block.input as Record<string, unknown> | undefined;
+            
+            if (toolChoice === "manual" && toolCallId && toolName) {
+              // Store for manual confirmation
+              pendingToolCalls.set(toolCallId, { 
+                toolName, 
+                input: input ?? {} 
+              });
+            }
+            
+            if (callbacks.onToolEvent) {
+              await callbacks.onToolEvent({
+                type: "tool_use_start",
+                toolName: toolName ?? undefined,
+                toolCallId: toolCallId ?? undefined,
+                input,
+                state: toolChoice === "manual" ? "input-available" : undefined,
+              });
+            }
           }
         }
         break;
@@ -330,6 +418,7 @@ export class ClaudeAgentRunner {
           await callbacks.onToolEvent({
             type: "tool_result",
             output: (message as unknown as { result?: unknown }).result,
+            state: "output-available",
           });
         }
         break;

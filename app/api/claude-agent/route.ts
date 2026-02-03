@@ -10,12 +10,16 @@ import {
   chatApiSchemaRequestBodySchema,
   type ChatApiSchemaRequestBody,
   type ChatAttachment,
+  type ChatMetadata,
   DEFAULT_CHAT_MODEL,
+  ManualToolConfirmTag,
+  MANUAL_REJECT_RESPONSE_PROMPT,
 } from "../../lib/chat-schema";
 import {
   createAgentRunner,
   SimpleClaudeAgentSDKClient,
   type AgentStreamingCallbacks,
+  type ToolChoiceMode,
 } from "../../lib/claude-agent-kit/server";
 import {
   createConversation,
@@ -30,7 +34,7 @@ export const runtime = "nodejs";
 const DEFAULT_MAX_TURNS = Number(process.env.MAX_TURNS) || 10;
 
 // Supported message part types for storage
-const SUPPORTED_PART_TYPES = ["text", "reasoning"] as const;
+const SUPPORTED_PART_TYPES = ["text", "reasoning", "tool"] as const;
 type SupportedPartType = (typeof SUPPORTED_PART_TYPES)[number];
 
 // Extract text content from UIMessage parts
@@ -46,9 +50,15 @@ function extractTextFromParts(parts: UIMessage["parts"] | undefined): string {
     .join("");
 }
 
-// Check if a part type is supported
-function isSupportedPartType(type: string): type is SupportedPartType {
-  return SUPPORTED_PART_TYPES.includes(type as SupportedPartType);
+// Check if a part type is supported for storage
+function isSupportedPartType(type: string): type is SupportedPartType | string {
+  // Support text, reasoning, and tool-* patterns
+  return SUPPORTED_PART_TYPES.includes(type as SupportedPartType) || type.startsWith("tool-") || type === "dynamic-tool";
+}
+
+// Check if a part type is a tool type
+function isToolPartType(type: string): boolean {
+  return type.startsWith("tool-") || type === "dynamic-tool";
 }
 
 // Convert UIMessage parts to our storage format
@@ -67,10 +77,36 @@ function convertToStorageParts(
           state: "done" as const,
         };
       }
-      // reasoning type
+      if (part.type === "reasoning") {
+        return {
+          type: "reasoning" as const,
+          text: (part as { type: "reasoning"; text: string }).text,
+          state: "done" as const,
+        };
+      }
+      if (isToolPartType(part.type)) {
+        // Handle tool parts - store tool invocation data
+        const toolPart = part as {
+          type: string;
+          toolCallId: string;
+          toolName: string;
+          input: Record<string, unknown>;
+          output?: unknown;
+          state?: string;
+        };
+        return {
+          type: "tool" as const,
+          toolCallId: toolPart.toolCallId,
+          toolName: toolPart.toolName,
+          input: toolPart.input,
+          output: toolPart.output,
+          state: (toolPart.state ?? "done") as "input-available" | "output-available" | "error" | "done",
+        };
+      }
+      // Fallback - shouldn't reach here due to filter
       return {
-        type: "reasoning" as const,
-        text: (part as { type: "reasoning"; text: string }).text,
+        type: "text" as const,
+        text: "",
         state: "done" as const,
       };
     });
@@ -116,6 +152,7 @@ export async function POST(req: NextRequest) {
     id: conversationId,
     message: uiMessage,
     resume = false,
+    toolChoice = "auto",
     attachments = [],
     contextCustomerIds = [],
   } = body;
@@ -136,6 +173,9 @@ export async function POST(req: NextRequest) {
 
   // Variable to store the session ID from the agent run
   let capturedSessionId: string | null = null;
+  
+  // Track tool calls for metadata
+  let toolCallCount = 0;
 
   // Create streaming response using ai SDK (following better-chatbot pattern)
   const stream = createUIMessageStream({
@@ -178,6 +218,68 @@ export async function POST(req: NextRequest) {
             });
           }
         },
+        onToolEvent: async (event) => {
+          // Track tool calls
+          if (event.type === "tool_use" || event.type === "tool_use_start") {
+            toolCallCount++;
+          }
+          
+          // Stream tool events to frontend using Vercel AI SDK types
+          // For manual mode, frontend will show approve/reject UI
+          if (event.toolCallId && event.toolName) {
+            // Send tool-input-start first
+            writer.write({
+              type: "tool-input-start",
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+            });
+            
+            // If manual mode and input available, signal confirmation needed
+            if (toolChoice === "manual" && event.state === "input-available") {
+              // Send tool-input-available - frontend will show approve/reject UI
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                input: event.input as Record<string, unknown>,
+              });
+              
+              // Also send tool-approval-request for the UI to show approve/reject
+              const approvalId = createId("approval");
+              writer.write({
+                type: "tool-approval-request",
+                approvalId,
+                toolCallId: event.toolCallId,
+              });
+            }
+          }
+          
+          // Forward tool results
+          if (event.type === "tool_result" && event.toolCallId) {
+            writer.write({
+              type: "tool-output-available",
+              toolCallId: event.toolCallId,
+              output: event.output,
+            });
+          }
+        },
+        onToolConfirmationRequest: async (event) => {
+          // When manual tool confirmation is needed, send tool-input-available + tool-approval-request
+          // Frontend should show Approve/Reject UI
+          writer.write({
+            type: "tool-input-available",
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            input: event.input,
+          });
+          
+          const approvalId = createId("approval");
+          writer.write({
+            type: "tool-approval-request",
+            approvalId,
+            toolCallId: event.toolCallId,
+          });
+        },
         onError: async (error: Error) => {
           writer.write({
             type: "error",
@@ -206,7 +308,8 @@ export async function POST(req: NextRequest) {
             userMessage: messageText,
             resume: shouldResume,
             maxTurns: DEFAULT_MAX_TURNS,
-            allowedTools: [], // Disable tools for now
+            toolChoice: toolChoice as ToolChoiceMode,
+            allowedTools: [], // Disable tools for now - can be enabled later
           },
           callbacks
         );

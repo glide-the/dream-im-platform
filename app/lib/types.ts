@@ -52,11 +52,28 @@ export type Attachment = {
 };
 
 // Message part types for storing rich message content (aligned with AI SDK UIMessage format)
-export type MessagePart = {
-  type: "text" | "reasoning";
-  text?: string;
+export type TextMessagePart = {
+  type: "text";
+  text: string;
   state?: "done" | "streaming";
 };
+
+export type ReasoningMessagePart = {
+  type: "reasoning";
+  text: string;
+  state?: "done" | "streaming";
+};
+
+export type ToolMessagePart = {
+  type: "tool";
+  toolCallId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  output?: unknown;
+  state: "input-available" | "output-available" | "error" | "done";
+};
+
+export type MessagePart = TextMessagePart | ReasoningMessagePart | ToolMessagePart;
 
 export type ConversationMessage = {
   id: string;
