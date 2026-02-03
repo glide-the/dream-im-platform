@@ -179,7 +179,7 @@ export class ClaudeAgentRunner {
     let currentSessionId: string | null = threadId;
     let success = true;
     let runError: Error | undefined;
-    
+
     // Track pending tool calls for manual confirmation mode
     const pendingToolCalls: Map<string, { toolName: string; input: Record<string, unknown> }> = new Map();
 
@@ -208,9 +208,9 @@ export class ClaudeAgentRunner {
     // When resume is true, use threadId as the session to resume
     const sdkOptions: Partial<SDKOptions> = {
       maxTurns,
-      allowedTools: effectiveAllowedTools, 
+      allowedTools: effectiveAllowedTools,
       settingSources: ["project"],
-      permissionMode: "default",
+      permissionMode: "dontAsk",
       ...(cwd ? { cwd } : { cwd: process.cwd() }),
       ...(resume ? { resume: threadId } : {}),  // Use threadId for resume since they're the same
       ...(abortController ? { abortController } : {}),
@@ -246,7 +246,7 @@ export class ClaudeAgentRunner {
     } catch (error) {
       success = false;
       runError = error instanceof Error ? error : new Error(String(error));
-      
+
       if (callbacks.onError) {
         await callbacks.onError(runError);
       }
@@ -293,11 +293,11 @@ export class ClaudeAgentRunner {
               const toolCallId = block.id;
               const toolName = block.name;
               const input = block.input as Record<string, unknown>;
-              
+
               // Store pending tool call for manual mode
               if (toolChoice === "manual") {
                 pendingToolCalls.set(toolCallId, { toolName, input });
-                
+
                 // Notify that this tool call needs confirmation
                 if (callbacks.onToolConfirmationRequest) {
                   await callbacks.onToolConfirmationRequest({
@@ -306,7 +306,7 @@ export class ClaudeAgentRunner {
                     input,
                   });
                 }
-                
+
                 // Also send tool event with state for UI rendering
                 if (callbacks.onToolEvent) {
                   await callbacks.onToolEvent({
@@ -328,15 +328,15 @@ export class ClaudeAgentRunner {
               }
             } else if (block.type === "tool_result" && callbacks.onToolEvent) {
               // Handle tool_result content blocks
-              const toolResultBlock = block as { 
-                type: "tool_result"; 
-                tool_use_id: string; 
+              const toolResultBlock = block as {
+                type: "tool_result";
+                tool_use_id: string;
                 content?: unknown;
               };
-              
+
               // Remove from pending if it was there
               pendingToolCalls.delete(toolResultBlock.tool_use_id);
-              
+
               await callbacks.onToolEvent({
                 type: "tool_result",
                 toolCallId: toolResultBlock.tool_use_id,
@@ -354,17 +354,17 @@ export class ClaudeAgentRunner {
 
       case "stream_event": {
         // Handle streaming events (SDKPartialAssistantMessage)
-        const streamMsg = message as unknown as { 
-          type: "stream_event"; 
-          event: { 
-            type: string; 
+        const streamMsg = message as unknown as {
+          type: "stream_event";
+          event: {
+            type: string;
             delta?: { type: string; text?: string; partial_json?: string };
             index?: number;
             content_block?: { type: string; id?: string; name?: string; input?: unknown };
-          } 
+          }
         };
         const event = streamMsg.event;
-        
+
         if (event.type === "content_block_delta" && event.delta) {
           // Handle text deltas
           if (event.delta.type === "text_delta" && typeof event.delta.text === "string") {
@@ -393,15 +393,15 @@ export class ClaudeAgentRunner {
             const toolCallId = event.content_block.id;
             const toolName = event.content_block.name;
             const input = event.content_block.input as Record<string, unknown> | undefined;
-            
+
             if (toolChoice === "manual" && toolCallId && toolName) {
               // Store for manual confirmation
-              pendingToolCalls.set(toolCallId, { 
-                toolName, 
-                input: input ?? {} 
+              pendingToolCalls.set(toolCallId, {
+                toolName,
+                input: input ?? {}
               });
             }
-            
+
             if (callbacks.onToolEvent) {
               await callbacks.onToolEvent({
                 type: "tool_use_start",
