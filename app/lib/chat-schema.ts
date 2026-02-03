@@ -45,7 +45,7 @@ export const chatApiSchemaRequestBodySchema = z.object({
   /**
    * 是否为续聊
    */
-  resume: z.boolean(),
+  resume: z.boolean().optional(),
 
   /**
    * 最后一个 UIMessage（通常是用户消息）

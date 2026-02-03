@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
   const {
     id: conversationId,
     message: uiMessage,
-    resume: resume,
+    resume = false,
     attachments = [],
     contextCustomerIds = [],
   } = body;
