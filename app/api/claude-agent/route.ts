@@ -349,7 +349,8 @@ export async function POST(req: NextRequest) {
             
             // For non-manual mode with available input, also send input-available
             // AI SDK's tool-input-available DOES include 'input' field
-            if (toolChoice !== "manual" && event.state === "input-available") {
+            // Note: In auto mode, event.state may be undefined but input is still available
+            if (toolChoice !== "manual" && event.input !== undefined) {
               writeAndTrack({
                 type: "tool-input-available",
                 toolCallId: event.toolCallId,
