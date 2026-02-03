@@ -152,94 +152,242 @@ export default function CustomerDetailPage({
       if (existingMessages && existingMessages.length > 0) {
         // Convert ConversationMessage[] to UIMessage[]
         // We need to convert stored parts back to AI SDK UIMessage format
-        const uiMessages: UIMessage[] = existingMessages.map((msg: ConversationMessage) => ({
-          id: msg.id,
-          role: msg.role,
-          parts: msg.parts && msg.parts.length > 0
-            ? msg.parts.map(part => {
-                // Handle text parts
-                if (part.type === "text") {
-                  return {
-                    type: "text" as const,
-                    text: (part as { text: string }).text || "",
-                  };
+        const uiMessages: UIMessage[] = existingMessages.map((msg: ConversationMessage) => {
+          // Process stored parts - they are in exact stream format
+          // We need to:
+          // 1. Combine text-delta events into text parts
+          // 2. Convert tool-input-start/tool-input-available to tool parts
+          const processedParts: Array<{type: string; [key: string]: unknown}> = [];
+          
+          if (msg.parts && msg.parts.length > 0) {
+            let currentTextPart: { type: "text"; text: string; id?: string } | null = null;
+            
+            for (const part of msg.parts) {
+              // Handle text-start: begin a new text part
+              if (part.type === "text-start") {
+                const startPart = part as { id?: string };
+                currentTextPart = { type: "text", text: "", id: startPart.id };
+                continue;
+              }
+              
+              // Handle text-delta: append delta to current text part
+              if (part.type === "text-delta") {
+                const deltaPart = part as { id?: string; delta?: string };
+                if (currentTextPart) {
+                  currentTextPart.text += deltaPart.delta || "";
+                } else {
+                  // No text-start, create inline text part
+                  currentTextPart = { type: "text", text: deltaPart.delta || "", id: deltaPart.id };
                 }
-                // Handle reasoning parts
-                if (part.type === "reasoning") {
-                  return {
-                    type: "reasoning" as const,
-                    text: (part as { text: string }).text || "",
-                  };
+                continue;
+              }
+              
+              // Handle text-end: finalize current text part
+              if (part.type === "text-end") {
+                if (currentTextPart && currentTextPart.text.trim()) {
+                  processedParts.push(currentTextPart);
                 }
-                // Handle step-start parts
-                if (part.type === "step-start") {
-                  return {
-                    type: "step-start" as const,
-                  };
+                currentTextPart = null;
+                continue;
+              }
+              
+              // Before processing non-text parts, save any pending text
+              if (currentTextPart && currentTextPart.text.trim()) {
+                processedParts.push(currentTextPart);
+                currentTextPart = null;
+              }
+              
+              // Handle reasoning-start: begin reasoning part (similar to text)
+              if (part.type === "reasoning-start") {
+                // Push a reasoning marker, actual content comes in reasoning-delta
+                continue;
+              }
+              
+              // Handle reasoning-delta: create reasoning part with text
+              if (part.type === "reasoning-delta") {
+                const deltaPart = part as { id?: string; delta?: string };
+                if (deltaPart.delta) {
+                  processedParts.push({
+                    type: "reasoning",
+                    text: deltaPart.delta,
+                  });
                 }
-                // Handle tool parts - the original type is now preserved in storage
-                // Types can be: "tool-{name}", "dynamic-tool", or legacy "tool"
-                // We pass them through as-is since AI SDK can handle these formats
-                if (part.type.startsWith("tool-") || part.type === "dynamic-tool" || part.type === "tool") {
-                  const toolPart = part as {
-                    type: string;
-                    toolCallId: string;
-                    toolName: string;
-                    input: Record<string, unknown>;
-                    output?: unknown;
-                    state: string;
-                    title?: string;
-                    providerExecuted?: boolean;
-                  };
-                  // State conversion: Our storage uses "done" to indicate completed tools,
-                  // but AI SDK expects "output-available" for completed state with output.
-                  // Other states (input-available, input-streaming, output-error, error)
-                  // pass through unchanged as they match AI SDK expectations.
-                  const displayState = toolPart.state === "done" 
-                    ? "output-available" 
-                    : toolPart.state as "input-available" | "input-streaming" | "output-available" | "output-error";
-                  
-                  // If type is legacy "tool", convert to "dynamic-tool" for AI SDK compatibility
-                  // Otherwise preserve the original type
-                  const displayType = part.type === "tool" ? "dynamic-tool" : part.type;
-                  
-                  return {
-                    type: displayType,
-                    toolCallId: toolPart.toolCallId,
-                    toolName: toolPart.toolName,
-                    input: toolPart.input,
-                    output: toolPart.output,
-                    state: displayState,
-                    title: toolPart.title,
-                    providerExecuted: toolPart.providerExecuted,
-                  };
-                }
-                // Handle file parts
-                if (part.type === "file") {
-                  const filePart = part as { url: string; mediaType?: string; filename?: string };
-                  return {
-                    type: "file" as const,
-                    url: filePart.url,
-                    mediaType: filePart.mediaType,
-                    filename: filePart.filename,
-                  };
-                }
-                // Handle source-url parts
-                if (part.type === "source-url") {
-                  const sourceUrlPart = part as { url: string; mediaType?: string; title?: string };
-                  return {
-                    type: "source-url" as const,
-                    url: sourceUrlPart.url,
-                    mediaType: sourceUrlPart.mediaType,
-                    title: sourceUrlPart.title,
-                  };
-                }
-                // For any other unknown types, pass through as-is
-                return part;
-              })
-            : [{ type: "text" as const, text: msg.content }],
-          createdAt: new Date(msg.created_at),
-        }));
+                continue;
+              }
+              
+              // Handle reasoning-end: no action needed
+              if (part.type === "reasoning-end") {
+                continue;
+              }
+              
+              // Handle tool-input-start: convert to tool part format
+              if (part.type === "tool-input-start") {
+                const toolPart = part as {
+                  toolCallId?: string;
+                  toolName?: string;
+                  input?: Record<string, unknown>;
+                  title?: string;
+                  providerExecuted?: boolean;
+                };
+                processedParts.push({
+                  type: `tool-${toolPart.toolName || "unknown"}`,
+                  toolCallId: toolPart.toolCallId || "",
+                  toolName: toolPart.toolName || "",
+                  input: toolPart.input || {},
+                  state: "input-streaming",
+                  title: toolPart.title,
+                  providerExecuted: toolPart.providerExecuted,
+                });
+                continue;
+              }
+              
+              // Handle tool-input-available: convert to tool part with input-available state
+              if (part.type === "tool-input-available") {
+                const toolPart = part as {
+                  toolCallId?: string;
+                  toolName?: string;
+                  input?: Record<string, unknown>;
+                  title?: string;
+                  providerExecuted?: boolean;
+                };
+                processedParts.push({
+                  type: `tool-${toolPart.toolName || "unknown"}`,
+                  toolCallId: toolPart.toolCallId || "",
+                  toolName: toolPart.toolName || "",
+                  input: toolPart.input || {},
+                  state: "input-available",
+                  title: toolPart.title,
+                  providerExecuted: toolPart.providerExecuted,
+                });
+                continue;
+              }
+              
+              // Handle tool-output-available: convert to completed tool part
+              if (part.type === "tool-output-available") {
+                const toolPart = part as {
+                  toolCallId?: string;
+                  toolName?: string;
+                  input?: Record<string, unknown>;
+                  output?: unknown;
+                  title?: string;
+                  providerExecuted?: boolean;
+                };
+                processedParts.push({
+                  type: `tool-${toolPart.toolName || "unknown"}`,
+                  toolCallId: toolPart.toolCallId || "",
+                  toolName: toolPart.toolName || "",
+                  input: toolPart.input || {},
+                  output: toolPart.output,
+                  state: "output-available",
+                  title: toolPart.title,
+                  providerExecuted: toolPart.providerExecuted,
+                });
+                continue;
+              }
+              
+              // Handle legacy text parts (from old storage format)
+              if (part.type === "text") {
+                processedParts.push({
+                  type: "text" as const,
+                  text: (part as { text: string }).text || "",
+                });
+                continue;
+              }
+              
+              // Handle legacy reasoning parts
+              if (part.type === "reasoning") {
+                processedParts.push({
+                  type: "reasoning" as const,
+                  text: (part as { text: string }).text || "",
+                });
+                continue;
+              }
+              
+              // Handle step-start parts
+              if (part.type === "step-start") {
+                processedParts.push({ type: "step-start" });
+                continue;
+              }
+              
+              // Handle legacy tool parts - types like "tool-{name}", "dynamic-tool", or "tool"
+              if (part.type.startsWith("tool-") || part.type === "dynamic-tool" || part.type === "tool") {
+                const toolPart = part as {
+                  type: string;
+                  toolCallId: string;
+                  toolName: string;
+                  input: Record<string, unknown>;
+                  output?: unknown;
+                  state: string;
+                  title?: string;
+                  providerExecuted?: boolean;
+                };
+                // State conversion
+                const displayState = toolPart.state === "done" 
+                  ? "output-available" 
+                  : toolPart.state;
+                const displayType = part.type === "tool" ? "dynamic-tool" : part.type;
+                
+                processedParts.push({
+                  type: displayType,
+                  toolCallId: toolPart.toolCallId,
+                  toolName: toolPart.toolName,
+                  input: toolPart.input,
+                  output: toolPart.output,
+                  state: displayState,
+                  title: toolPart.title,
+                  providerExecuted: toolPart.providerExecuted,
+                });
+                continue;
+              }
+              
+              // Handle file parts
+              if (part.type === "file") {
+                const filePart = part as { url: string; mediaType?: string; filename?: string };
+                processedParts.push({
+                  type: "file" as const,
+                  url: filePart.url,
+                  mediaType: filePart.mediaType,
+                  filename: filePart.filename,
+                });
+                continue;
+              }
+              
+              // Handle source-url parts
+              if (part.type === "source-url") {
+                const sourceUrlPart = part as { url: string; mediaType?: string; title?: string };
+                processedParts.push({
+                  type: "source-url" as const,
+                  url: sourceUrlPart.url,
+                  mediaType: sourceUrlPart.mediaType,
+                  title: sourceUrlPart.title,
+                });
+                continue;
+              }
+              
+              // Skip finish and other meta events
+              if (part.type === "finish" || part.type === "error") {
+                continue;
+              }
+              
+              // For any other unknown types, pass through as-is
+              processedParts.push(part);
+            }
+            
+            // Don't forget any pending text at the end
+            if (currentTextPart && currentTextPart.text.trim()) {
+              processedParts.push(currentTextPart);
+            }
+          }
+          
+          return {
+            id: msg.id,
+            role: msg.role,
+            parts: processedParts.length > 0
+              ? processedParts
+              : [{ type: "text" as const, text: msg.content }],
+            createdAt: new Date(msg.created_at),
+          };
+        });
         setMessages(uiMessages);
         // Show chat area if there are existing messages
         if (uiMessages.length > 0) {
