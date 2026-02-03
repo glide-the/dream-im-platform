@@ -2,11 +2,28 @@
 
 > **导航**: [← 返回根目录](../../CLAUDE.md) / 业务逻辑模块
 > **路径**: `app/lib/`
-> **最后更新**: 2026-01-29 16:38:08
+> **最后更新**: 2026-02-03
 
 ---
 
 ## 📋 变更记录 (Changelog)
+
+### 2026-02-03
+- **新增 file-storage 模块**: 从 better-chatbot 迁移的文件存储模块
+  - 支持 S3 和 Vercel Blob 两种存储驱动
+  - 提供统一的文件上传、下载、删除接口
+  - 支持 presigned URL 客户端直传
+- **新增工具模块**: 
+  - `utils.ts` - 通用工具函数 (UUID、超时、类型检查等)
+  - `errors.ts` - 自定义错误类 (文件存储错误等)
+  - `const.ts` - 环境常量
+  - `logger.ts` - 日志工具
+- **新增依赖**:
+  - `@aws-sdk/client-s3` - AWS S3 客户端
+  - `@aws-sdk/s3-request-presigner` - S3 预签名 URL
+  - `@vercel/blob` - Vercel Blob 存储
+  - `server-only` - 服务端专用标记
+- **TypeScript 配置**: 添加 `@/*` 路径别名到 tsconfig.json
 
 ### 2026-01-29
 - **新增 queries 模块**: `queries.ts` 封装 React Query Hooks
@@ -51,6 +68,12 @@
 app/lib/
 ├── db/
 │   └── schema.ts       # Drizzle ORM 数据库表定义
+├── file-storage/       # 文件存储模块 (新增)
+│   ├── index.ts        # 入口文件，导出 serverFileStorage
+│   ├── file-storage.interface.ts  # 存储接口定义
+│   ├── s3-file-storage.ts         # S3 存储实现
+│   ├── vercel-blob-storage.ts     # Vercel Blob 存储实现
+│   └── storage-utils.ts           # 存储工具函数
 ├── types.ts            # 类型定义
 ├── db.ts               # 数据库操作
 ├── agent.ts            # AI 客户卡片生成
@@ -59,6 +82,10 @@ app/lib/
 ├── id.ts               # ID 生成与哈希
 ├── format.ts           # 格式化工具
 ├── client.ts           # API 客户端
+├── utils.ts            # 通用工具函数 (新增)
+├── errors.ts           # 自定义错误类 (新增)
+├── const.ts            # 环境常量 (新增)
+├── logger.ts           # 日志工具 (新增)
 └── seed.ts             # 种子数据
 ```
 
@@ -222,6 +249,104 @@ export const conversations = pgTable("conversations", {
   ai_outputs: jsonb("ai_outputs").$type<Conversation["ai_outputs"]>(),
   linked_customer_id: text("linked_customer_id")
 });
+```
+
+---
+
+## 📁 文件存储模块 (`file-storage/`)
+
+从 better-chatbot 项目迁移的文件存储模块，提供统一的文件存储接口，支持 S3 和 Vercel Blob 两种存储驱动。
+
+### 环境变量配置
+
+```bash
+# 选择存储驱动 (vercel-blob 或 s3)，默认为 vercel-blob
+FILE_STORAGE_TYPE=s3
+
+# 存储路径前缀，默认为 uploads
+FILE_STORAGE_PREFIX=uploads
+
+# S3 配置 (当 FILE_STORAGE_TYPE=s3 时)
+FILE_STORAGE_S3_BUCKET=my-bucket
+FILE_STORAGE_S3_REGION=us-east-2
+FILE_STORAGE_S3_ENDPOINT=http://localhost:9000  # 可选，用于 MinIO 等
+FILE_STORAGE_S3_FORCE_PATH_STYLE=true           # 可选，MinIO 需要
+FILE_STORAGE_S3_PUBLIC_BASE_URL=https://cdn.example.com  # 可选，CDN URL
+
+# Vercel Blob 配置 (当 FILE_STORAGE_TYPE=vercel-blob 时)
+BLOB_READ_WRITE_TOKEN=xxx  # Vercel Blob 访问令牌
+```
+
+### 核心接口
+
+#### FileStorage
+
+```typescript
+interface FileStorage {
+  /** 从服务端上传文件 */
+  upload(content: UploadContent, options?: UploadOptions): Promise<UploadResult>;
+
+  /** 创建客户端上传 URL (presigned URL) */
+  createUploadUrl?(options: UploadUrlOptions): Promise<UploadUrl | null>;
+
+  /** 下载文件 */
+  download(key: string): Promise<Buffer>;
+
+  /** 删除文件 */
+  delete(key: string): Promise<void>;
+
+  /** 检查文件是否存在 */
+  exists(key: string): Promise<boolean>;
+
+  /** 获取文件元数据 */
+  getMetadata(key: string): Promise<FileMetadata | null>;
+
+  /** 获取文件公开 URL */
+  getSourceUrl(key: string): Promise<string | null>;
+
+  /** 获取强制下载 URL (可选) */
+  getDownloadUrl?(key: string): Promise<string | null>;
+}
+```
+
+### 使用示例
+
+```typescript
+import { serverFileStorage } from "@/lib/file-storage";
+
+// 上传文件
+const result = await serverFileStorage.upload(
+  Buffer.from("Hello World"),
+  { filename: "hello.txt", contentType: "text/plain" }
+);
+console.log(result.sourceUrl); // 公开访问 URL
+
+// 创建客户端上传 URL (S3)
+const uploadUrl = await serverFileStorage.createUploadUrl?.({
+  filename: "image.png",
+  contentType: "image/png",
+  expiresInSeconds: 600
+});
+// 返回 presigned URL，客户端可直接上传
+
+// 下载文件
+const buffer = await serverFileStorage.download(result.key);
+
+// 删除文件
+await serverFileStorage.delete(result.key);
+```
+
+### 工具函数
+
+```typescript
+import {
+  sanitizeFilename,        // 清理文件名中的非法字符
+  getContentTypeFromFilename,  // 根据扩展名推断 MIME 类型
+  resolveStoragePrefix,    // 解析存储路径前缀
+  storageKeyFromUrl,       // 从 URL 提取存储 key
+  toBuffer,                // 将各种格式转换为 Buffer
+  getBase64Data,           // 获取 base64 编码的图片数据
+} from "@/lib/file-storage";
 ```
 
 ---
