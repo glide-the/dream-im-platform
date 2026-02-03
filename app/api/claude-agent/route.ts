@@ -256,6 +256,19 @@ export async function POST(req: NextRequest) {
         : createId("msg");
       let hasStarted = false;
       
+      // Send message-metadata at the START of the stream
+      // This allows the frontend to have access to toolChoice BEFORE any tool events arrive
+      // This is critical for manual tool confirmation UI - the frontend checks
+      // message.metadata?.toolChoice === "manual" to show approve/reject buttons
+      // Reference: cgoinglove/better-chatbot passes metadata via toUIMessageStream({ messageMetadata })
+      writer.write({
+        type: "message-metadata",
+        messageMetadata: {
+          toolChoice: toolChoice,
+          chatModel: chatModel,
+        },
+      });
+      
       // Helper to write to stream AND track the part
       const writeAndTrack = (part: Parameters<typeof writer.write>[0]) => {
         writer.write(part);
@@ -455,10 +468,9 @@ export async function POST(req: NextRequest) {
         // Capture the session ID from the result
         capturedSessionId = result.sessionId;
 
-        // Send message-metadata event with toolChoice and other metadata
-        // This allows the frontend to show manual tool confirmation UI when toolChoice="manual"
-        // Reference: cgoinglove/better-chatbot message metadata handling
-        // AI SDK format: { type: "message-metadata", messageMetadata: { ... } }
+        // Send final message-metadata event with updated toolCount
+        // This complements the initial metadata sent at stream start
+        // and provides the final tool count after all tools have been processed
         writer.write({
           type: "message-metadata",
           messageMetadata: {
