@@ -41,10 +41,16 @@ app/api/
 │   ├── route.ts           # 待办列表 (GET) + 创建 (POST)
 │   └── [id]/
 │       └── route.ts       # 待办详情 (GET/PATCH/DELETE)
-└── conversations/
-    ├── route.ts           # 对话列表 (GET) + 创建 (POST)
-    └── [id]/
-        └── route.ts       # 对话详情 (GET/PATCH)
+├── conversations/
+│   ├── route.ts           # 对话列表 (GET) + 创建 (POST)
+│   └── [id]/
+│       └── route.ts       # 对话详情 (GET/PATCH)
+└── storage/
+    ├── route.ts           # 存储配置信息 (GET)
+    ├── upload/
+    │   └── route.ts       # 文件直接上传 (POST)
+    └── upload-url/
+        └── route.ts       # 获取预签名上传 URL (POST)
 ```
 
 ---
@@ -413,6 +419,109 @@ PATCH /api/conversations/{id}
   status: "pending" | "confirmed" | "canceled";
 }
 ```
+
+---
+
+## 📁 存储 API
+
+文件存储 API，支持 Vercel Blob 和 S3 存储后端。详细文档参见 [docs/storage-api.md](../../docs/storage-api.md)。
+
+### 1. 获取存储配置信息
+
+```
+GET /api/storage
+```
+
+#### 响应
+
+```typescript
+{
+  type: "vercel-blob" | "s3";        // 存储驱动类型
+  supportsDirectUpload: boolean;     // 是否支持客户端直传
+  isConfigured: boolean;             // 是否正确配置
+  error?: string;                    // 配置错误信息
+  solution?: string;                 // 解决方案
+}
+```
+
+### 2. 直接上传文件
+
+```
+POST /api/storage/upload
+Content-Type: multipart/form-data
+```
+
+#### 请求参数
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `file` | File | ✅ | 要上传的文件 |
+
+#### 响应
+
+```typescript
+{
+  success: true;
+  key: string;           // 存储 key
+  url: string;           // 公开访问 URL
+  metadata: {
+    key: string;
+    filename: string;
+    contentType: string;
+    size: number;
+    uploadedAt: string;
+  };
+}
+```
+
+### 3. 获取预签名上传 URL
+
+```
+POST /api/storage/upload-url
+Content-Type: application/json
+```
+
+#### 请求体
+
+```typescript
+{
+  filename?: string;     // 文件名
+  contentType?: string;  // MIME 类型
+}
+```
+
+#### 响应（S3）
+
+```typescript
+{
+  directUploadSupported: true;
+  key: string;           // 存储 key
+  url: string;           // 预签名上传 URL
+  method: "PUT";
+  expiresAt: string;     // 过期时间
+  headers: Record<string, string>;
+  sourceUrl: string;     // 上传后的公开访问 URL
+}
+```
+
+#### 响应（不支持直传）
+
+```typescript
+{
+  directUploadSupported: false;
+  fallbackUrl: "/api/storage/upload";
+  message: string;
+}
+```
+
+### 环境变量配置
+
+| 变量名 | 必填 | 说明 |
+|--------|------|------|
+| `FILE_STORAGE_TYPE` | 否 | 存储类型：`vercel-blob`（默认）或 `s3` |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob | Vercel Blob 访问令牌 |
+| `FILE_STORAGE_S3_BUCKET` | S3 | S3 存储桶名称 |
+| `FILE_STORAGE_S3_REGION` | S3 | S3 区域 |
 
 ---
 
