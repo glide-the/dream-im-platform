@@ -1,0 +1,55 @@
+---
+description: "组件层（app/components）开发规则"
+globs: ["app/components/**/*.tsx", "app/components/**/*.ts"]
+---
+
+# 组件层规则 — `app/components/`
+
+## 职责边界
+
+组件只负责：
+- 可复用 UI 展示
+- 局部交互逻辑
+- Props 驱动的状态
+
+## 命名规范
+
+- 组件文件：`PascalCase.tsx`
+- 组件目录：`kebab-case/` 或 `PascalCase/`
+
+## AI 输入组件特殊约束
+
+`AIInputDock.tsx` 等输入组件：
+- **必须**按 `app/lib/chat-schema.ts` 构建请求体
+- **禁止**在组件内新增"私有协议字段"绕过 schema
+
+## 正确示例
+
+```tsx
+// ✅ 使用 schema 定义的类型
+import { ChatRequest } from '@/app/lib/chat-schema'
+
+const request: ChatRequest = {
+  messages: [...],
+  // 只使用 schema 定义的字段
+}
+```
+
+## 错误示例
+
+```tsx
+// ❌ 私自添加未定义字段
+const request = {
+  messages: [...],
+  myCustomField: 'bypass schema', // 未在 schema 中定义
+}
+```
+
+## 依赖方向
+
+```
+components → lib ✅
+components → api ✅ (通过 fetch)
+components → pages ❌
+lib → components ❌
+```

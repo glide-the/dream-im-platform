@@ -1,0 +1,65 @@
+---
+description: "数据库开发规则（强约束）"
+globs: ["app/lib/db/**/*.ts", "app/lib/db.ts", "app/lib/queries.ts", "drizzle/**/*"]
+---
+
+# 数据库规则
+
+## Schema 管理
+
+- Schema **只在** `app/lib/db/schema.ts`（或 `app/lib/db/**`）维护
+- Schema 变更**必须**走 Drizzle 迁移
+
+## 迁移流程
+
+```bash
+# 1. 修改 schema
+# 2. 生成迁移文件
+pnpm db:generate
+
+# 3. 应用迁移
+pnpm db:migrate
+
+# 4. 提交 drizzle/ 下的产物
+git add drizzle/
+```
+
+## 查询组织
+
+查询与 CRUD 尽量集中在：
+- `app/lib/db.ts` — 数据库连接
+- `app/lib/queries.ts` — 通用查询函数
+- `app/lib/query.ts` — 查询工具函数
+
+## 禁止事项
+
+❌ `app/api/**` 写原生 SQL
+❌ 在 route 中直接使用 `db.query.*`（应封装到 `queries.ts`）
+❌ 在 pages/components 中直接访问数据库
+
+## 复杂查询处理
+
+如遇复杂查询：
+1. 优先在 `app/lib/queries.ts` 组织
+2. 使用 Drizzle 的查询构建器
+3. 必要时可使用 `sql` 模板标签
+
+## 正确示例
+
+```ts
+// queries.ts
+export async function getCustomerWithTodos(customerId: string) {
+  return db.query.customers.findFirst({
+    where: eq(customers.id, customerId),
+    with: { todos: true },
+  })
+}
+
+// route.ts
+import { getCustomerWithTodos } from '@/app/lib/queries'
+
+export async function GET(req, { params }) {
+  const customer = await getCustomerWithTodos(params.id)
+  return NextResponse.json(customer)
+}
+```

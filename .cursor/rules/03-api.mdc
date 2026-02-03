@@ -1,0 +1,67 @@
+---
+description: "API 层（app/api）开发规则"
+globs: ["app/api/**/*.ts"]
+---
+
+# API 层规则 — `app/api/**/route.ts`
+
+## 职责边界
+
+API route 只负责：
+1. 请求解析（query/path/body）
+2. 请求体校验（优先 zod）
+3. 调用 `app/lib/**` 完成数据/业务处理
+4. 返回统一结构（含错误结构）
+
+## 标准 route 结构
+
+```ts
+import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { someFunction } from '@/app/lib/queries'
+
+const requestSchema = z.object({
+  // 定义请求体结构
+})
+
+export async function POST(req: NextRequest) {
+  // 1) 解析输入
+  const body = await req.json()
+  
+  // 2) zod 校验
+  const parsed = requestSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 })
+  }
+  
+  // 3) 调用 lib 层函数
+  const result = await someFunction(parsed.data)
+  
+  // 4) 返回结果
+  return NextResponse.json(result)
+}
+```
+
+## 禁止事项
+
+❌ 在 route 里堆叠复杂业务编排
+❌ 把查询逻辑散落在多个 route（应下沉到 `app/lib`）
+❌ 写原生 SQL（应放在 `app/lib/queries.ts`）
+❌ 跳过 zod 校验直接使用输入
+
+## 校验优先级
+
+1. 复用 `app/lib/chat-schema.ts`（对话相关）
+2. 复用 `app/lib` 中既有 schema
+3. 在 route 文件内定义局部 schema
+
+## 错误处理
+
+统一返回结构：
+```ts
+// 成功
+{ data: T }
+
+// 失败
+{ error: string | ZodError, status: number }
+```

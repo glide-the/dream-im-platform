@@ -1,0 +1,121 @@
+---
+title: "ai4sales-pwa-app Architecture Rules"
+description: "Cursor rules for editing this repository safely and consistently."
+---
+
+# ai4sales-pwa-app Architecture Rules
+
+本规则用于约束 Cursor 在本仓库内的代码改动方式，确保目录职责清晰、协议一致、`app/lib` 稳定。
+
+---
+
+## 1) 目录职责边界（必须遵守）
+
+### `app/(app)/`（页面）
+- 只负责：页面布局、交互状态、数据展示
+- 数据交互统一走 `app/api/**`
+- 不允许：直接写 DB/SQL、在页面内实现复杂领域逻辑
+
+### `app/components/`（组件）
+- 只负责：可复用 UI 组件
+- 输入组件（尤其 `AIInputDock.tsx`）必须按 `app/lib/chat-schema.ts` 构建请求体
+- 不允许：组件内新增“私有协议字段”绕过 schema
+
+### `app/api/**/route.ts`（接口）
+- 只负责：接入、校验、调用 lib、返回结果
+- 必须：对外输入使用 zod（优先复用 `app/lib/chat-schema.ts` 或 `app/lib` 中既有 schema）
+- 不允许：
+  - 在 route 里堆叠复杂业务编排
+  - 把查询逻辑散落在多个 route（应下沉到 `app/lib`）
+
+### `app/lib/**`（通用能力）
+- 原则：**功能基本不变，结构尽量稳定**
+- 改动优先级：
+  1) 复用现有文件与导出
+  2) 小改动就地补强（不拆目录、不换抽象）
+  3) 只有在重复代码明显或职责必须分离时，才新增文件
+
+---
+
+## 2) AI 对话协议（强约束）
+
+- 统一协议入口：`app/lib/chat-schema.ts`
+- 所有对话请求体必须通过 schema 校验后才进入 Agent 逻辑
+- UI（如 `AIInputDock.tsx`）不得绕过 schema 自行拼装“额外字段”
+- 若确需扩展协议：
+  1) 先更新 `chat-schema.ts`（zod + types）
+  2) 再更新 UI 组装逻辑
+  3) 最后更新 `app/api/claude-agent/route.ts` 处理逻辑
+  4) 补充至少 1 个失败路径测试（schema invalid）
+
+---
+
+## 3) DB 规则（强约束）
+
+- schema 只在 `app/lib/db/schema.ts`（或 `app/lib/db/**`）维护
+- 查询与 CRUD 尽量集中在 `app/lib/db.ts` / `app/lib/queries.ts` / `app/lib/query.ts`
+- `app/api/**` 不写原生 SQL；如遇复杂查询，优先在 `app/lib/queries.ts` 组织
+- schema 变更必须走 drizzle 迁移（`drizzle/` 下产物入库）
+
+---
+
+## 4) 代码风格与命名
+
+- TypeScript 优先，避免 `any`
+- 组件：`PascalCase.tsx`
+- hooks：`useX.ts`
+- util：`camelCase.ts`
+- 尽量保持 imports 单向依赖：
+  - pages/components/api → lib
+  - lib 不依赖 pages/components
+
+---
+
+## 5) 测试策略（最低要求）
+
+- 新增/修改 API：
+  - 至少补 1 个失败路径（校验失败/404/DB 错误/权限不足之一）
+- 新增/修改 UI：
+  - 若影响关键用户路径，补 E2E（`tests/e2e/*.spec.ts`）
+- 常用命令（存在即使用）：
+  - `pnpm lint`
+  - `pnpm test:run`
+  - `pnpm test:e2e`
+
+---
+
+## 6) 改动建议（Cursor 行为准则）
+
+- 优先做“最小改动”：
+  - 不重排目录
+  - 不替换抽象
+  - 不引入与现有栈不一致的新依赖
+- 遇到重复逻辑：
+  - 先判断是否能合并到 `app/lib` 的现有文件
+  - 只有明显跨域复用才新增模块
+
+---
+
+## 7) 常见正确模式（示例）
+
+### API route 结构（推荐）
+
+```ts
+// 1) parse input
+// 2) zod validate
+// 3) call app/lib function
+// 4) return typed response
+````
+
+### UI 发送对话（推荐）
+
+* UI 组装请求体 → `chat-schema` 校验 → 调用 `/api/claude-agent` → 流式渲染输出
+
+---
+
+## 8) 禁止事项（Hard No）
+
+* 在 `app/api/**` 内实现大量领域逻辑或复制粘贴查询
+* 在 UI 里引入“私有协议字段”导致前后端结构不一致
+* 大规模重构 `app/lib`（除非明确需求：抽象重复/边界错误/测试覆盖充分）
+ 

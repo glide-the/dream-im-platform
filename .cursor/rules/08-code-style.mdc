@@ -1,0 +1,76 @@
+---
+description: "代码风格与命名规范"
+globs: ["**/*.ts", "**/*.tsx"]
+---
+
+# 代码风格规范
+
+## TypeScript 规则
+
+- **TypeScript everywhere**：所有文件使用 TypeScript
+- **避免 `any`**：优先显式类型与 zod 推导
+- **优先 zod**：类型推导使用 `z.infer<typeof schema>`
+
+## 文件命名
+
+| 类型 | 命名规范 | 示例 |
+|------|----------|------|
+| 组件 | `PascalCase.tsx` | `CustomerCard.tsx` |
+| Hooks | `useX.ts` | `useDebounce.ts` |
+| Utils | `camelCase.ts` | `formatDate.ts` |
+| Types | `types.ts` 或 `PascalCase.ts` | `types.ts` |
+| Schema | `*-schema.ts` | `chat-schema.ts` |
+
+## 目录命名
+
+- 页面路由：`kebab-case`（如 `ai-assistant`）
+- 组件目录：`kebab-case` 或 `PascalCase`
+- 工具目录：`kebab-case`
+
+## Import 规范
+
+### 依赖方向（单向）
+
+```
+pages/components/api → lib ✅
+lib → pages/components ❌
+```
+
+### Import 顺序
+
+```ts
+// 1. Node/外部包
+import { useState } from 'react'
+import { z } from 'zod'
+
+// 2. 内部模块（绝对路径）
+import { db } from '@/app/lib/db'
+import { CustomerCard } from '@/app/components/CustomerCard'
+
+// 3. 相对路径
+import { helper } from './helper'
+
+// 4. 类型导入
+import type { Customer } from '@/app/lib/types'
+```
+
+## 类型定义
+
+```ts
+// ✅ 优先使用 zod 推导
+const customerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+})
+type Customer = z.infer<typeof customerSchema>
+
+// ✅ 显式类型
+function getCustomer(id: string): Promise<Customer | null> {
+  // ...
+}
+
+// ❌ 避免
+function getCustomer(id: any): any {
+  // ...
+}
+```

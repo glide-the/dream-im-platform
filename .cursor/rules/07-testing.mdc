@@ -1,0 +1,75 @@
+---
+description: "测试策略与规则"
+globs: ["**/*.test.ts", "**/*.spec.ts", "tests/**/*"]
+---
+
+# 测试规则
+
+## 测试类型
+
+| 类型 | 位置 | 命名 | 工具 |
+|------|------|------|------|
+| 单元测试 | 同目录或 `__tests__/` | `*.test.ts` | Vitest |
+| 集成测试 | 同目录 | `*.integration.test.ts` | Vitest |
+| E2E 测试 | `tests/e2e/` | `*.spec.ts` | Playwright |
+
+## 最低要求
+
+### 新增/修改 API
+- ✅ 至少 1 个成功路径测试
+- ✅ 至少 1 个失败路径测试（以下之一）：
+  - 校验失败（400）
+  - 资源不存在（404）
+  - 数据库错误
+  - 权限不足（401/403）
+
+### 新增/修改 UI
+- ✅ 若影响关键用户路径，补 E2E
+
+## 常用命令
+
+```bash
+# ESLint 检查
+pnpm lint
+
+# 单测（交互模式）
+pnpm test
+
+# 单测（仅运行，排除 integration）
+pnpm test:run
+
+# 单测覆盖率
+pnpm test:coverage
+
+# E2E 测试
+pnpm test:e2e
+
+# 全部测试
+pnpm test:all
+```
+
+## 测试文件结构
+
+```ts
+import { describe, it, expect, beforeEach } from 'vitest'
+
+describe('功能名称', () => {
+  beforeEach(() => {
+    // 测试前准备
+  })
+
+  it('should 成功场景描述', async () => {
+    // 成功路径
+  })
+
+  it('should 失败场景描述', async () => {
+    // 失败路径
+  })
+})
+```
+
+## PR 提交前检查
+
+```bash
+pnpm lint && pnpm test:run
+```

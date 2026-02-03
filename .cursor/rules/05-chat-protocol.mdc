@@ -1,0 +1,74 @@
+---
+description: "AI 对话协议规则（强约束）"
+globs: ["app/lib/chat-schema.ts", "app/api/claude-agent/**/*.ts", "app/components/AIInputDock.tsx"]
+---
+
+# AI 对话协议规则
+
+## 统一协议入口
+
+`app/lib/chat-schema.ts` 是所有对话请求的唯一协议定义处。
+
+## 强约束
+
+- 所有对话请求体**必须**通过 schema 校验后才进入 Agent 逻辑
+- UI（如 `AIInputDock.tsx`）**不得**绕过 schema 自行拼装"额外字段"
+
+## 协议扩展流程
+
+若确需扩展协议，必须按以下顺序：
+
+1. **更新 schema**：修改 `app/lib/chat-schema.ts`（zod + types）
+2. **更新 UI**：修改组件中的请求体组装逻辑
+3. **更新 API**：修改 `app/api/claude-agent/route.ts` 处理逻辑
+4. **补充测试**：至少 1 个失败路径测试（schema invalid）
+
+## 数据流
+
+```
+┌─────────────────┐
+│   AIInputDock   │ 组装请求体
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  chat-schema    │ 校验请求体
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ /api/claude-agent│ 处理请求
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ claude-agent-kit │ Agent 逻辑
+└─────────────────┘
+```
+
+## 正确示例
+
+```ts
+// chat-schema.ts 定义
+export const chatRequestSchema = z.object({
+  messages: z.array(messageSchema),
+  context: z.object({...}).optional(),
+})
+
+// UI 使用
+const request = chatRequestSchema.parse({
+  messages: [...],
+  context: {...},
+})
+```
+
+## 错误示例
+
+```ts
+// ❌ 跳过 schema 校验
+const request = {
+  messages: [...],
+  secretField: 'not in schema', // 危险！
+}
+await fetch('/api/claude-agent', { body: JSON.stringify(request) })
+```

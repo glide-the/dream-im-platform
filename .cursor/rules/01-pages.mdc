@@ -1,0 +1,42 @@
+---
+description: "页面层（app/(app)）开发规则"
+globs: ["app/(app)/**/*.tsx", "app/(app)/**/*.ts"]
+---
+
+# 页面层规则 — `app/(app)/`
+
+## 职责边界
+
+页面只负责：
+- 页面布局
+- 交互状态管理
+- 数据展示
+
+## 数据交互
+
+- 数据交互统一走 `app/api/**`
+- 使用 `fetch` 或封装的 client 调用 API
+
+## 禁止事项
+
+❌ 直接写 DB/SQL
+❌ 在页面内实现复杂领域逻辑
+❌ 直接导入 `app/lib/db.ts` 或 `app/lib/queries.ts`
+
+## 正确示例
+
+```tsx
+// ✅ 通过 API 获取数据
+const customers = await fetch('/api/customers').then(r => r.json())
+
+// ✅ 使用 hooks 管理状态
+const [isLoading, setIsLoading] = useState(false)
+```
+
+## 错误示例
+
+```tsx
+// ❌ 直接调用数据库
+import { db } from '@/app/lib/db'
+const customers = await db.query.customers.findMany()
+```
