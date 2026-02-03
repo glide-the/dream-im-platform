@@ -52,6 +52,8 @@ export type Attachment = {
 };
 
 // Message part types for storing rich message content (aligned with AI SDK UIMessage format)
+// Reference: cgoinglove/better-chatbot convertToSavePart pattern
+
 export type TextMessagePart = {
   type: "text";
   text: string;
@@ -64,16 +66,48 @@ export type ReasoningMessagePart = {
   state?: "done" | "streaming";
 };
 
+export type StepStartMessagePart = {
+  type: "step-start";
+};
+
 export type ToolMessagePart = {
   type: "tool";
   toolCallId: string;
   toolName: string;
   input: Record<string, unknown>;
   output?: unknown;
-  state: "input-available" | "output-available" | "error" | "done";
+  state: "input-available" | "input-streaming" | "output-available" | "output-error" | "error" | "done";
 };
 
-export type MessagePart = TextMessagePart | ReasoningMessagePart | ToolMessagePart;
+export type FileMessagePart = {
+  type: "file";
+  url: string;
+  mediaType?: string;
+  filename?: string;
+};
+
+export type SourceUrlMessagePart = {
+  type: "source-url";
+  url: string;
+  mediaType?: string;
+  title?: string;
+};
+
+// Generic part for any other unknown types - preserves raw data
+export type GenericMessagePart = {
+  type: string;
+  [key: string]: unknown;
+};
+
+// Union type for all supported message parts
+export type MessagePart = 
+  | TextMessagePart 
+  | ReasoningMessagePart 
+  | StepStartMessagePart
+  | ToolMessagePart 
+  | FileMessagePart
+  | SourceUrlMessagePart
+  | GenericMessagePart;
 
 export type ConversationMessage = {
   id: string;

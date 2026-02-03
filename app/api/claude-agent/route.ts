@@ -5,6 +5,7 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   UIMessage,
+  isToolUIPart,
 } from "ai";
 import {
   chatApiSchemaRequestBodySchema,
@@ -33,10 +34,6 @@ export const runtime = "nodejs";
 
 const DEFAULT_MAX_TURNS = Number(process.env.MAX_TURNS) || 10;
 
-// Supported message part types for storage
-const SUPPORTED_PART_TYPES = ["text", "reasoning", "tool"] as const;
-type SupportedPartType = (typeof SUPPORTED_PART_TYPES)[number];
-
 // Extract text content from UIMessage parts
 function extractTextFromParts(parts: UIMessage["parts"] | undefined): string {
   if (!parts || !Array.isArray(parts)) return "";
@@ -50,66 +47,116 @@ function extractTextFromParts(parts: UIMessage["parts"] | undefined): string {
     .join("");
 }
 
-// Check if a part type is supported for storage
-function isSupportedPartType(type: string): type is SupportedPartType | string {
-  // Support text, reasoning, and tool-* patterns
-  return SUPPORTED_PART_TYPES.includes(type as SupportedPartType) || type.startsWith("tool-") || type === "dynamic-tool";
-}
-
-// Check if a part type is a tool type
+// Check if a part type is a tool type (starts with "tool-" or is "dynamic-tool")
 function isToolPartType(type: string): boolean {
   return type.startsWith("tool-") || type === "dynamic-tool";
 }
 
-// Convert UIMessage parts to our storage format
+/**
+ * Convert UIMessage parts to our storage format.
+ * Following the better-chatbot convertToSavePart pattern, we save ALL parts 
+ * from the chat stream (step-start, reasoning, text, tool, file, source-url, etc.)
+ * 
+ * Reference: cgoinglove/better-chatbot src/app/api/chat/shared.chat.ts - convertToSavePart
+ */
 function convertToStorageParts(
   parts: UIMessage["parts"] | undefined
 ): MessagePart[] {
   if (!parts || !Array.isArray(parts)) return [];
 
-  return parts
-    .filter((part) => isSupportedPartType(part.type)) // Only include supported types
-    .map((part) => {
-      if (part.type === "text") {
-        return {
-          type: "text" as const,
-          text: part.text,
-          state: "done" as const,
-        };
-      }
-      if (part.type === "reasoning") {
-        return {
-          type: "reasoning" as const,
-          text: (part as { type: "reasoning"; text: string }).text,
-          state: "done" as const,
-        };
-      }
-      if (isToolPartType(part.type)) {
-        // Handle tool parts - store tool invocation data
-        const toolPart = part as {
-          type: string;
-          toolCallId: string;
-          toolName: string;
-          input: Record<string, unknown>;
-          output?: unknown;
-          state?: string;
-        };
-        return {
-          type: "tool" as const,
-          toolCallId: toolPart.toolCallId,
-          toolName: toolPart.toolName,
-          input: toolPart.input,
-          output: toolPart.output,
-          state: (toolPart.state ?? "done") as "input-available" | "output-available" | "error" | "done",
-        };
-      }
-      // Fallback - shouldn't reach here due to filter
+  return parts.map((part) => {
+    // Handle text parts
+    if (part.type === "text") {
       return {
         type: "text" as const,
-        text: "",
+        text: part.text,
         state: "done" as const,
       };
-    });
+    }
+    
+    // Handle reasoning parts
+    if (part.type === "reasoning") {
+      return {
+        type: "reasoning" as const,
+        text: (part as { type: "reasoning"; text: string }).text,
+        state: "done" as const,
+      };
+    }
+    
+    // Handle step-start parts
+    if (part.type === "step-start") {
+      return {
+        type: "step-start" as const,
+      };
+    }
+    
+    // Handle tool parts (tool-*, dynamic-tool)
+    if (isToolPartType(part.type) || isToolUIPart(part)) {
+      const toolPart = part as {
+        type: string;
+        toolCallId: string;
+        toolName?: string;
+        input: Record<string, unknown>;
+        output?: unknown;
+        state?: string;
+      };
+      
+      // Extract tool name from toolName property or from type (e.g., "tool-search" -> "search")
+      let resolvedToolName = toolPart.toolName;
+      if (!resolvedToolName && part.type.startsWith("tool-")) {
+        resolvedToolName = part.type.slice(5); // Remove "tool-" prefix
+      }
+      if (!resolvedToolName) {
+        resolvedToolName = "unknown";
+      }
+      
+      return {
+        type: "tool" as const,
+        toolCallId: toolPart.toolCallId,
+        toolName: resolvedToolName,
+        input: toolPart.input ?? {},
+        output: toolPart.output,
+        state: (toolPart.state ?? "done") as "input-available" | "input-streaming" | "output-available" | "output-error" | "error" | "done",
+      };
+    }
+    
+    // Handle file parts
+    if (part.type === "file") {
+      const filePart = part as {
+        type: "file";
+        url: string;
+        mediaType?: string;
+        filename?: string;
+      };
+      return {
+        type: "file" as const,
+        url: filePart.url,
+        mediaType: filePart.mediaType,
+        filename: filePart.filename,
+      };
+    }
+    
+    // Handle source-url parts
+    if (part.type === "source-url") {
+      const sourceUrlPart = part as {
+        type: "source-url";
+        url: string;
+        mediaType?: string;
+        title?: string;
+      };
+      return {
+        type: "source-url" as const,
+        url: sourceUrlPart.url,
+        mediaType: sourceUrlPart.mediaType,
+        title: sourceUrlPart.title,
+      };
+    }
+    
+    // For any other unknown types, preserve them as-is (excluding internal metadata)
+    // Following better-chatbot pattern: exclude providerMetadata, callProviderMetadata
+    const { providerMetadata, callProviderMetadata, ...cleanPart } = part as Record<string, unknown>;
+    return cleanPart as MessagePart;
+  });
 }
 
 /** 把 ChatAttachment 映射成 DB Attachment（ai4sales 的 types.ts） */
