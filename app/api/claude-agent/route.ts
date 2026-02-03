@@ -336,17 +336,19 @@ export async function POST(req: NextRequest) {
           // Stream tool events to frontend using Vercel AI SDK types
           // Note: onToolConfirmationRequest handles manual mode confirmation events
           if (event.toolCallId && event.toolName) {
-            // Write and track tool-input-start with extended parameters
+            // Write and track tool-input-start with extended parameters including input
             writeAndTrack({
               type: "tool-input-start",
               toolCallId: event.toolCallId,
               toolName: event.toolName,
+              // Include input when available
+              ...(event.input !== undefined ? { input: event.input as Record<string, unknown> } : {}),
               // Extended parameters
               title: event.title,
               providerExecuted: event.providerExecuted,
             });
             
-            // For non-manual mode, just send input-available without approval request
+            // For non-manual mode with available input, also send input-available
             if (toolChoice !== "manual" && event.state === "input-available") {
               writeAndTrack({
                 type: "tool-input-available",
