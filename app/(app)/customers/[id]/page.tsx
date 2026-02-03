@@ -189,6 +189,17 @@ export default function CustomerDetailPage({
 
   const chatLoading = status === "streaming" || status === "submitted";
 
+  // Helper function to determine if we should show the loading indicator
+  // We show it when loading and there's no visible content in the last message
+  const shouldShowLoadingIndicator = useMemo(() => {
+    if (!chatLoading || chatMessages.length === 0) return false;
+    const lastMessage = chatMessages.at(-1);
+    const hasVisibleParts = lastMessage?.parts?.some(p => 
+      p.type === "text" || isToolUIPart(p)
+    );
+    return !hasVisibleParts;
+  }, [chatLoading, chatMessages]);
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (chatContainerRef.current && chatMessages.length > 0) {
@@ -437,7 +448,7 @@ export default function CustomerDetailPage({
                   );
                 })
               )}
-              {chatLoading && chatMessages.length > 0 && !chatMessages.at(-1)?.parts?.some(p => p.type === "text" || isToolUIPart(p)) && (
+              {shouldShowLoadingIndicator && (
                 <div className="flex justify-start">
                   <div className="rounded-2xl rounded-tl-none bg-bg-secondary px-3 py-2 text-sm text-text-secondary max-w-[80%]">
                     <span className="inline-flex gap-1">
