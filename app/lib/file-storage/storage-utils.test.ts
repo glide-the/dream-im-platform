@@ -121,9 +121,14 @@ describe("resolveStoragePrefix", () => {
     expect(resolveStoragePrefix()).toBe("custom/path");
   });
 
-  it("strips dots", () => {
-    process.env.FILE_STORAGE_PREFIX = "../uploads/../test";
-    expect(resolveStoragePrefix()).toBe("/uploads//test");
+  it("strips leading and trailing dots and slashes", () => {
+    process.env.FILE_STORAGE_PREFIX = "../uploads/";
+    expect(resolveStoragePrefix()).toBe("uploads");
+  });
+
+  it("preserves dots within path", () => {
+    process.env.FILE_STORAGE_PREFIX = "my.folder/uploads";
+    expect(resolveStoragePrefix()).toBe("my.folder/uploads");
   });
 });
 

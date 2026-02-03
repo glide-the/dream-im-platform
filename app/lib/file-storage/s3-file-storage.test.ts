@@ -57,7 +57,7 @@ describe("s3-file-storage", () => {
     });
     expect(res.key).toMatch(/^uploads\//);
     expect(res.sourceUrl).toMatch(
-      /^https:\/\/my-bucket.s3.us-east-2.amazonaws.com\//,
+      /^https:\/\/my-bucket\.s3\.us-east-2\.amazonaws\.com\//,
     );
     expect(res.metadata.size).toBe(3);
   });
@@ -84,6 +84,13 @@ describe("s3-file-storage", () => {
     err.$metadata = { httpStatusCode: 404 };
     sendMock.mockRejectedValueOnce(err);
     expect(await storage.exists("uploads/missing.txt")).toBe(false);
+  });
+
+  it("exists throws on non-404 errors", async () => {
+    const storage = createS3FileStorage();
+    const err = new Error("network error");
+    sendMock.mockRejectedValueOnce(err);
+    await expect(storage.exists("uploads/a.txt")).rejects.toThrow("network error");
   });
 
   it("getMetadata maps fields", async () => {

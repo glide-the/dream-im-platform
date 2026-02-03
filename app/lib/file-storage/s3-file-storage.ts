@@ -180,7 +180,7 @@ export const createS3FileStorage = (): FileStorage => {
         return true;
       } catch (error: unknown) {
         if ((error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 404) return false;
-        return false;
+        throw error;
       }
     },
 

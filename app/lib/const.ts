@@ -12,7 +12,7 @@ export const BASE_URL = (() => {
 
   if (IS_VERCEL_ENV) {
     const vercelDomain =
-      (process.env.VERCEL_ENV == "production"
+      (process.env.VERCEL_ENV === "production"
         ? process.env.VERCEL_PROJECT_PRODUCTION_URL
         : process.env.VERCEL_URL) || process.env.VERCEL_URL;
 
