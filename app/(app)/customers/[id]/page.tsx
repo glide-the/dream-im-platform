@@ -460,6 +460,44 @@ export default function CustomerDetailPage({
                       {msg.parts?.map((part, partIndex) => {
                         const isLastPart = partIndex === (msg.parts?.length ?? 0) - 1;
                         
+                        // Handle step-start parts (step markers)
+                        if (part.type === "step-start") {
+                          return (
+                            <div
+                              key={`${msg.id}-${partIndex}`}
+                              className="flex justify-center my-1"
+                              role="separator"
+                              aria-label="新步骤开始"
+                            >
+                              <div className="text-xs text-text-tertiary bg-bg-secondary/50 px-2 py-0.5 rounded-full" aria-hidden="true">
+                                ⎯ 新步骤 ⎯
+                              </div>
+                            </div>
+                          );
+                        }
+                        
+                        // Handle reasoning parts (AI thinking/reasoning)
+                        if (part.type === "reasoning") {
+                          const reasoningText = (part as { text?: string }).text;
+                          if (!reasoningText) return null;
+                          return (
+                            <div
+                              key={`${msg.id}-${partIndex}`}
+                              className="flex justify-start"
+                            >
+                              <div className="rounded-2xl rounded-tl-none bg-purple-50 border border-purple-200 px-3 py-2 text-sm max-w-[80%] whitespace-pre-wrap">
+                                <div className="flex items-center gap-1.5 mb-1" aria-label="AI 正在思考">
+                                  <span className="text-purple-500 text-xs" aria-hidden="true">💭</span>
+                                  <span className="text-purple-500 text-xs">思考中</span>
+                                </div>
+                                <div className="text-purple-700 text-sm">
+                                  {reasoningText}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+                        
                         // Handle text parts
                         if (part.type === "text" && part.text) {
                           return (

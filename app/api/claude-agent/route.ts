@@ -55,9 +55,10 @@ function isToolPartType(type: string): boolean {
 /**
  * Convert UIMessage parts to our storage format.
  * Following the better-chatbot convertToSavePart pattern, we save ALL parts 
- * from the chat stream (step-start, reasoning, text, tool, file, source-url, etc.)
+ * from the chat stream preserving their original type as streamed.
  * 
- * IMPORTANT: We preserve the original `type` field as streamed (e.g., "tool-search", "dynamic-tool")
+ * IMPORTANT: We preserve the original `type` field exactly as streamed
+ * (e.g., "text", "reasoning", "tool-search", "dynamic-tool", "step-start")
  * to allow faithful restoration when loading from database.
  * 
  * Reference: cgoinglove/better-chatbot src/app/api/chat/shared.chat.ts - convertToSavePart
@@ -68,16 +69,17 @@ function convertToStorageParts(
   if (!parts || !Array.isArray(parts)) return [];
 
   return parts.map((part) => {
-    // Handle text parts
+    // Handle text parts - preserve as-is with state
     if (part.type === "text") {
+      const textPart = part as { type: "text"; text: string };
       return {
         type: "text" as const,
-        text: part.text,
+        text: textPart.text,
         state: "done" as const,
       };
     }
     
-    // Handle reasoning parts
+    // Handle reasoning parts - preserve type exactly as streamed
     if (part.type === "reasoning") {
       return {
         type: "reasoning" as const,
@@ -86,15 +88,15 @@ function convertToStorageParts(
       };
     }
     
-    // Handle step-start parts
+    // Handle step-start parts - preserve type exactly
     if (part.type === "step-start") {
       return {
         type: "step-start" as const,
       };
     }
     
-    // Handle tool parts (tool-*, dynamic-tool)
-    // PRESERVE the original type field as-is for faithful restoration
+    // Handle tool parts (tool-*, dynamic-tool, tool)
+    // PRESERVE the original type field EXACTLY as streamed
     if (isToolPartType(part.type) || isToolUIPart(part)) {
       const toolPart = part as {
         type: string;
@@ -116,22 +118,21 @@ function convertToStorageParts(
         resolvedToolName = "unknown";
       }
       
-      // Preserve the original type (tool-xxx, dynamic-tool, etc.) for faithful restoration
-      // Cast to ToolType as we've validated it's a tool type above
+      // PRESERVE original type EXACTLY: "tool-search", "dynamic-tool", "tool", etc.
       return {
-        type: part.type as ToolType, // PRESERVE original type: "tool-search", "dynamic-tool", etc.
+        type: part.type as ToolType,
         toolCallId: toolPart.toolCallId,
         toolName: resolvedToolName,
         input: toolPart.input ?? {},
         output: toolPart.output,
         state: (toolPart.state ?? "done") as "input-available" | "input-streaming" | "output-available" | "output-error" | "error" | "done",
-        // Extended parameters
+        // Extended parameters - preserved from stream
         title: toolPart.title,
         providerExecuted: toolPart.providerExecuted,
       };
     }
     
-    // Handle file parts
+    // Handle file parts - preserve type exactly
     if (part.type === "file") {
       const filePart = part as {
         type: "file";
@@ -147,7 +148,7 @@ function convertToStorageParts(
       };
     }
     
-    // Handle source-url parts
+    // Handle source-url parts - preserve type exactly
     if (part.type === "source-url") {
       const sourceUrlPart = part as {
         type: "source-url";
@@ -163,8 +164,9 @@ function convertToStorageParts(
       };
     }
     
-    // For any other unknown types, preserve them as-is (excluding internal metadata)
-    // Following better-chatbot pattern: exclude providerMetadata, callProviderMetadata
+    // For any other unknown types, preserve them EXACTLY as-is
+    // Exclude internal metadata fields that shouldn't be persisted
+    // This ensures we don't lose any new part types added in the future
     const { providerMetadata, callProviderMetadata, ...cleanPart } = part as Record<string, unknown>;
     return cleanPart as MessagePart;
   });
@@ -282,14 +284,40 @@ export async function POST(req: NextRequest) {
             toolCallCount++;
           }
           
+          // Handle thinking/reasoning events - stream them as reasoning parts
+          // Use the correct AI SDK stream chunk types: reasoning-start, reasoning-delta, reasoning-end
+          if (event.type === "thinking" && event.output) {
+            const reasoningId = createId("reasoning");
+            const reasoningText = String(event.output);
+            
+            // Send as reasoning stream chunks
+            writer.write({
+              type: "reasoning-start",
+              id: reasoningId,
+            });
+            writer.write({
+              type: "reasoning-delta",
+              id: reasoningId,
+              delta: reasoningText,
+            });
+            writer.write({
+              type: "reasoning-end",
+              id: reasoningId,
+            });
+            return; // Don't process as tool event
+          }
+          
           // Stream tool events to frontend using Vercel AI SDK types
           // Note: onToolConfirmationRequest handles manual mode confirmation events
           if (event.toolCallId && event.toolName) {
-            // Send tool-input-start first
+            // Send tool-input-start first with extended parameters
             writer.write({
               type: "tool-input-start",
               toolCallId: event.toolCallId,
               toolName: event.toolName,
+              // Extended parameters
+              title: event.title,
+              providerExecuted: event.providerExecuted,
             });
             
             // For non-manual mode, just send input-available without approval request
@@ -299,16 +327,21 @@ export async function POST(req: NextRequest) {
                 toolCallId: event.toolCallId,
                 toolName: event.toolName,
                 input: event.input as Record<string, unknown>,
+                // Extended parameters
+                title: event.title,
+                providerExecuted: event.providerExecuted,
               });
             }
           }
           
-          // Forward tool results
+          // Forward tool results with extended parameters
           if (event.type === "tool_result" && event.toolCallId) {
             writer.write({
               type: "tool-output-available",
               toolCallId: event.toolCallId,
               output: event.output,
+              // Extended parameters - Note: toolName not supported in AI SDK's tool-output-available type
+              providerExecuted: event.providerExecuted,
             });
           }
         },

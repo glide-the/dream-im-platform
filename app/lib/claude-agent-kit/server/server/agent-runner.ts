@@ -18,6 +18,7 @@ import type { ToolStreamEvent } from "../../messages/types/tool-invocation";
 
 /**
  * Tool event payload for streaming
+ * Extended to include all parameters that might be present in tool calls
  */
 export interface ToolEventPayload {
   type: string;
@@ -25,8 +26,11 @@ export interface ToolEventPayload {
   toolCallId?: string;
   input?: unknown;
   output?: unknown;
-  state?: "input-available" | "output-available" | "error";
+  state?: "input-available" | "input-streaming" | "output-available" | "output-error" | "error";
   isError?: boolean;
+  // Extended parameters
+  title?: string;
+  providerExecuted?: boolean;
 }
 
 /**
