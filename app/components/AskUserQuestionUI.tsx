@@ -108,7 +108,8 @@ export function AskUserQuestionUI({
     }
 
     // Fallback: treat all input keys as potential fields
-    return Object.entries(input)
+    // This handles edge cases but may produce unexpected UI for complex inputs
+    const fallbackFields = Object.entries(input)
       .filter(([key]) => !["questions", "options", "choices", "default"].includes(key))
       .map(([key, value]) => ({
         id: key,
@@ -116,6 +117,15 @@ export function AskUserQuestionUI({
         type: "text" as const,
         required: true,
       }));
+    
+    if (fallbackFields.length > 0) {
+      console.warn(
+        "[AskUserQuestionUI] Using fallback parsing for input keys:",
+        fallbackFields.map((f) => f.id)
+      );
+    }
+    
+    return fallbackFields;
   }, [input]);
 
   // Form state

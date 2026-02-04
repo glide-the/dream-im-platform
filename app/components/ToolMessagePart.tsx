@@ -186,14 +186,24 @@ export function ToolMessagePart({
   }, [state]);
 
   // Check if this is an AskUserQuestion tool
-  // It can be identified by tool type or tool name
+  // Use strict matching to avoid false positives
   const isAskUserQuestion = useMemo(() => {
-    return (
-      partType === 'tool-AskUserQuestion' ||
-      toolName === 'AskUserQuestion' ||
-      toolName.toLowerCase().includes('askuser') ||
-      toolName.toLowerCase().includes('ask_user')
-    );
+    const normalizedType = partType?.toLowerCase() || '';
+    const normalizedName = toolName?.toLowerCase() || '';
+    
+    // Exact type match
+    if (normalizedType === 'tool-askuserquestion') return true;
+    
+    // Exact name matches or common variations
+    const exactNames = ['askuserquestion', 'ask_user_question', 'ask_user', 'askuser'];
+    if (exactNames.includes(normalizedName)) return true;
+    
+    // Prefix match for namespaced tools (e.g., "mcp__user__ask_user")
+    if (normalizedName.endsWith('__ask_user') || normalizedName.endsWith('__askuserquestion')) {
+      return true;
+    }
+    
+    return false;
   }, [partType, toolName]);
 
   // Determine if we should show the AskUserQuestion interactive UI
