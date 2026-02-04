@@ -8,6 +8,8 @@
 export interface ToolConfirmationResult {
     approved: boolean;
     reason?: string;
+    /** User's answers for AskUserQuestion tool */
+    answers?: Record<string, unknown>;
 }
 
 /**

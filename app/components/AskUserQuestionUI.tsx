@@ -88,6 +88,16 @@ export function AskUserQuestionUI({
 }: AskUserQuestionUIProps) {
   // Parse the questions from input
   const questions = useMemo<QuestionField[]>(() => {
+    // Guard against undefined input
+    if (!input) {
+      return [{
+        id: "answer",
+        question: "请回答问题",
+        type: "text",
+        required: true,
+      }];
+    }
+
     // Multiple questions format
     if (input.questions && Array.isArray(input.questions)) {
       return input.questions.map((q, i) => {
@@ -171,13 +181,25 @@ export function AskUserQuestionUI({
     []
   );
 
+  // Filter out empty answers before submitting
+  const getCleanAnswers = useCallback(() => {
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(answers)) {
+      // Only include non-empty values
+      if (value !== "" && value !== undefined && value !== null) {
+        cleaned[key] = value;
+      }
+    }
+    return cleaned;
+  }, [answers]);
+
   // Handle form submit
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      onSubmit(answers);
+      onSubmit(getCleanAnswers());
     },
-    [answers, onSubmit]
+    [getCleanAnswers, onSubmit]
   );
 
   // Keyboard shortcuts
@@ -186,7 +208,7 @@ export function AskUserQuestionUI({
       // Cmd/Ctrl + Enter to submit
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
-        onSubmit(answers);
+        onSubmit(getCleanAnswers());
       }
       // Cmd/Ctrl + Escape to cancel
       if ((e.metaKey || e.ctrlKey) && e.key === "Escape") {
@@ -197,7 +219,7 @@ export function AskUserQuestionUI({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [answers, onSubmit, onCancel]);
+  }, [getCleanAnswers, onSubmit, onCancel]);
 
   // Check if form is valid
   const isValid = useMemo(() => {

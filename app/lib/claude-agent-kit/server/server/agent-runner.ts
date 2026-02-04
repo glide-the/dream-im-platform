@@ -52,12 +52,15 @@ export interface AgentStreamingCallbacks {
    * Returns a confirmation result indicating whether the tool should be executed.
    * The callback should block (await) until user confirmation is received.
    * If undefined is returned, the tool will NOT be auto-executed.
+   * 
+   * For interactive tools like AskUserQuestion, the answers field contains
+   * the user's responses which will be passed as the tool result.
    */
   onToolConfirmationRequest?: (event: {
     toolCallId: string;
     toolName: string;
     input: Record<string, unknown>;
-  }) => Promise<{ approved: boolean; reason?: string } | void> | { approved: boolean; reason?: string } | void;
+  }) => Promise<{ approved: boolean; reason?: string; answers?: Record<string, unknown> } | void> | { approved: boolean; reason?: string; answers?: Record<string, unknown> } | void;
   /** Called when an error occurs */
   onError?: (error: Error) => Promise<void> | void;
   /** Called when any message is received (for logging) */
@@ -248,9 +251,16 @@ export class ClaudeAgentRunner {
           if (confirmationResult.approved === true) {
             // User approved - allow tool execution
             pendingToolCalls.delete(toolCallId);
+
+            // For interactive tools like AskUserQuestion, include user's answers
+            // in the updatedInput so the tool can use them as the result
+            const hasAnswers = confirmationResult.answers && Object.keys(confirmationResult.answers).length > 0;
+
             return {
               behavior: 'allow',
               toolUseID: toolCallId,
+              // Pass answers as updatedInput for interactive tools
+              ...(hasAnswers ? { updatedInput: { ...toolInput, userResponse: confirmationResult.answers } } : {}),
             };
           } else if (confirmationResult.approved === false) {
             // User rejected - deny tool execution

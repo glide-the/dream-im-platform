@@ -19,6 +19,8 @@ const toolConfirmRequestSchema = z.object({
     approved: z.boolean(),
     /** Optional reason for rejection */
     reason: z.string().optional(),
+    /** User's answers for AskUserQuestion tool */
+    answers: z.record(z.string(), z.any()).optional(),
 });
 
 export type ToolConfirmRequest = z.infer<typeof toolConfirmRequestSchema>;
@@ -42,7 +44,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const { toolCallId, approved, reason } = parsed.data;
+        const { toolCallId, approved, reason, answers } = parsed.data;
 
         // Check if there's a pending confirmation for this tool call
         const pending = getPendingToolConfirmation(toolCallId);
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Resolve the pending confirmation
-        resolvePendingToolConfirmation(toolCallId, { approved, reason });
+        resolvePendingToolConfirmation(toolCallId, { approved, reason, answers });
 
         return NextResponse.json({
             success: true,
