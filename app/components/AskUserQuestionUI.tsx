@@ -158,25 +158,27 @@ export function AskUserQuestionUI({
     return fallbackFields;
   }, [input]);
 
-  // Form state
+  // Form state - use question text as key (required by Claude Agent SDK)
   const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
     const initial: Record<string, unknown> = {};
     questions.forEach((q) => {
+      // Use question text as key per Claude Agent SDK spec
+      const key = q.question || q.id || "answer";
       if (q.default !== undefined) {
-        initial[q.id || "answer"] = q.default;
+        initial[key] = q.default;
       } else if (q.type === "checkbox") {
-        initial[q.id || "answer"] = false;
+        initial[key] = false;
       } else {
-        initial[q.id || "answer"] = "";
+        initial[key] = "";
       }
     });
     return initial;
   });
 
-  // Handle field change
+  // Handle field change - use question text as key
   const handleChange = useCallback(
-    (fieldId: string, value: unknown) => {
-      setAnswers((prev) => ({ ...prev, [fieldId]: value }));
+    (questionText: string, value: unknown) => {
+      setAnswers((prev) => ({ ...prev, [questionText]: value }));
     },
     []
   );
@@ -221,11 +223,13 @@ export function AskUserQuestionUI({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [getCleanAnswers, onSubmit, onCancel]);
 
-  // Check if form is valid
+  // Check if form is valid - use question text as key (same as answers)
   const isValid = useMemo(() => {
     return questions.every((q) => {
       if (!q.required) return true;
-      const val = answers[q.id || "answer"];
+      // Use question text as key (same as how answers are stored)
+      const answerKey = q.question || q.id || "answer";
+      const val = answers[answerKey];
       if (val === undefined || val === null || val === "") return false;
       return true;
     });
@@ -247,8 +251,10 @@ export function AskUserQuestionUI({
       {/* Form */}
       <form onSubmit={handleSubmit} className="p-4 space-y-4">
         {questions.map((q, idx) => {
-          const fieldId = q.id || `q${idx}`;
-          const value = answers[fieldId];
+          // Use question text as key for answers (required by Claude Agent SDK)
+          const answerKey = q.question || q.id || `q${idx}`;
+          const fieldId = q.id || `q${idx}`; // Keep fieldId for HTML element IDs
+          const value = answers[answerKey];
 
           return (
             <div key={fieldId} className="space-y-2">
@@ -271,7 +277,7 @@ export function AskUserQuestionUI({
                 <textarea
                   id={fieldId}
                   value={String(value || "")}
-                  onChange={(e) => handleChange(fieldId, e.target.value)}
+                  onChange={(e) => handleChange(answerKey, e.target.value)}
                   placeholder={q.placeholder}
                   rows={4}
                   className="w-full px-3 py-2 text-sm bg-bg-primary border border-border rounded-lg
@@ -284,7 +290,7 @@ export function AskUserQuestionUI({
                 <select
                   id={fieldId}
                   value={String(value || "")}
-                  onChange={(e) => handleChange(fieldId, e.target.value)}
+                  onChange={(e) => handleChange(answerKey, e.target.value)}
                   className="w-full px-3 py-2 text-sm bg-bg-primary border border-border rounded-lg
                     focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
                   required={q.required}
@@ -318,7 +324,7 @@ export function AskUserQuestionUI({
                           value={optValue}
                           checked={value === optValue}
                           onChange={(e) =>
-                            handleChange(fieldId, e.target.value)
+                            handleChange(answerKey, e.target.value)
                           }
                           className="w-4 h-4 mt-0.5 text-accent border-border focus:ring-accent"
                           disabled={isProcessing}
@@ -343,7 +349,7 @@ export function AskUserQuestionUI({
                     type="checkbox"
                     id={fieldId}
                     checked={Boolean(value)}
-                    onChange={(e) => handleChange(fieldId, e.target.checked)}
+                    onChange={(e) => handleChange(answerKey, e.target.checked)}
                     className="w-4 h-4 text-accent border-border rounded focus:ring-accent"
                     disabled={isProcessing}
                   />
@@ -356,7 +362,7 @@ export function AskUserQuestionUI({
                   value={String(value || "")}
                   onChange={(e) =>
                     handleChange(
-                      fieldId,
+                      answerKey,
                       e.target.value === "" ? "" : Number(e.target.value)
                     )
                   }
@@ -372,7 +378,7 @@ export function AskUserQuestionUI({
                   type="text"
                   id={fieldId}
                   value={String(value || "")}
-                  onChange={(e) => handleChange(fieldId, e.target.value)}
+                  onChange={(e) => handleChange(answerKey, e.target.value)}
                   placeholder={q.placeholder}
                   className="w-full px-3 py-2 text-sm bg-bg-primary border border-border rounded-lg
                     focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent

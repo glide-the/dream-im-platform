@@ -475,7 +475,8 @@ export async function POST(req: NextRequest) {
             resume: shouldResume,
             maxTurns: DEFAULT_MAX_TURNS,
             toolChoice: toolChoice as ToolChoiceMode,
-            allowedTools: [], // Disable tools for now - can be enabled later
+            // Use default allowed tools from agent-runner (includes AskUserQuestion)
+            // Don't pass allowedTools to use the defaults
           },
           callbacks
         );

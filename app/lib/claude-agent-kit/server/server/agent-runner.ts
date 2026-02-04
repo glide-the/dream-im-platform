@@ -252,15 +252,23 @@ export class ClaudeAgentRunner {
             // User approved - allow tool execution
             pendingToolCalls.delete(toolCallId);
 
-            // For interactive tools like AskUserQuestion, include user's answers
-            // in the updatedInput so the tool can use them as the result
+            // For AskUserQuestion tool, format the response per Claude Agent SDK spec:
+            // updatedInput = { questions: [...], answers: { "question text": "selected label" } }
             const hasAnswers = confirmationResult.answers && Object.keys(confirmationResult.answers).length > 0;
+
+            let updatedInput = toolInput;
+            if (hasAnswers && (toolName === 'AskUserQuestion' || toolName === 'mcp__user__ask_user')) {
+              // Per Claude Agent SDK: answers keys must be the question text, values are selected option labels
+              updatedInput = {
+                questions: toolInput.questions, // Pass through original questions array
+                answers: confirmationResult.answers,
+              };
+            }
 
             return {
               behavior: 'allow',
               toolUseID: toolCallId,
-              // Pass answers as updatedInput for interactive tools
-              ...(hasAnswers ? { updatedInput: { ...toolInput, userResponse: confirmationResult.answers } } : {}),
+              updatedInput,
             };
           } else if (confirmationResult.approved === false) {
             // User rejected - deny tool execution
