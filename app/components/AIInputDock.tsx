@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { IconPaperclip, IconImage, IconCamera, IconSend, IconX, IconFile, IconLoader } from "./Icons";
+import { useFileUpload } from "../hooks/useFileUpload";
 
 /** Extended file type with upload status and preview */
 export interface UploadedFile {
@@ -21,6 +22,8 @@ export interface UploadedFile {
   isUploading?: boolean;
   /** Abort controller for canceling uploads */
   abortController?: AbortController;
+  /** Original File object for upload */
+  file?: File;
 }
 
 /** Backward-compatible attachment type alias */
@@ -93,16 +96,86 @@ export default function AIInputDock({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const uploadIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  
+  // File upload hook
+  const { upload, error: uploadHookError } = useFileUpload();
+  
+  // Show upload hook errors
+  useEffect(() => {
+    if (uploadHookError) {
+      setUploadError(uploadHookError);
+      setTimeout(() => setUploadError(null), 5000);
+    }
+  }, [uploadHookError]);
+
+  /** Upload a single file to storage backend */
+  const uploadFileToStorage = useCallback(async (fileId: string, file: File) => {
+    try {
+      const result = await upload(file, {
+        filename: file.name,
+        contentType: file.type || "application/octet-stream",
+        onProgress: (progress) => {
+          setUploadedFiles((prev) =>
+            prev.map((f) =>
+              f.id === fileId ? { ...f, progress } : f
+            )
+          );
+        },
+      });
+
+      if (result) {
+        // Upload successful - update file with URL
+        setUploadedFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileId
+              ? { ...f, url: result.url, progress: 100, isUploading: false }
+              : f
+          )
+        );
+      } else {
+        // Upload failed - remove file from list
+        setUploadedFiles((prev) => {
+          const file = prev.find((f) => f.id === fileId);
+          if (file?.previewUrl) {
+            URL.revokeObjectURL(file.previewUrl);
+          }
+          return prev.filter((f) => f.id !== fileId);
+        });
+      }
+    } catch (err) {
+      console.error("Upload failed:", err);
+      // Remove failed file
+      setUploadedFiles((prev) => {
+        const file = prev.find((f) => f.id === fileId);
+        if (file?.previewUrl) {
+          URL.revokeObjectURL(file.previewUrl);
+        }
+        return prev.filter((f) => f.id !== fileId);
+      });
+      
+      setUploadError(err instanceof Error ? err.message : "上传失败");
+      setTimeout(() => setUploadError(null), 5000);
+    }
+  }, [upload]);
 
   /** Process files and add to upload list */
   const handleFiles = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return;
 
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB max
     const newFiles: UploadedFile[] = [];
+    const filesToUpload: { id: string; file: File }[] = [];
     
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      
+      // Check file size
+      if (file.size > MAX_FILE_SIZE) {
+        setUploadError(`${file.name}: 文件过大 (最大 50MB)`);
+        setTimeout(() => setUploadError(null), 5000);
+        continue;
+      }
+      
       const fileId = generateFileId();
       
       // Create preview URL for images
@@ -119,58 +192,25 @@ export default function AIInputDock({
         progress: 0,
         isUploading: true,
         abortController: new AbortController(),
+        file, // Store original file for upload
       };
       
       newFiles.push(uploadedFile);
+      filesToUpload.push({ id: fileId, file });
     }
     
-    setUploadedFiles((prev) => [...prev, ...newFiles]);
-    
-    // Simulate upload progress for UI demo (frontend only)
-    // In real implementation, this would be replaced with actual upload logic
-    for (const uploadedFile of newFiles) {
-      simulateUploadProgress(uploadedFile.id);
-    }
-  }, []);
-
-  /** Simulate upload progress (for UI demo) */
-  const simulateUploadProgress = useCallback((fileId: string) => {
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += Math.random() * 30;
-      if (progress >= 100) {
-        progress = 100;
-        clearInterval(interval);
-        uploadIntervalsRef.current.delete(fileId);
-        setUploadedFiles((prev) =>
-          prev.map((f) =>
-            f.id === fileId
-              ? { ...f, progress: 100, isUploading: false }
-              : f
-          )
-        );
-      } else {
-        setUploadedFiles((prev) =>
-          prev.map((f) =>
-            f.id === fileId ? { ...f, progress: Math.min(progress, 99) } : f
-          )
-        );
+    if (newFiles.length > 0) {
+      setUploadedFiles((prev) => [...prev, ...newFiles]);
+      
+      // Start actual uploads
+      for (const { id, file } of filesToUpload) {
+        uploadFileToStorage(id, file);
       }
-    }, 200);
-    
-    // Store interval for cleanup
-    uploadIntervalsRef.current.set(fileId, interval);
-  }, []);
+    }
+  }, [uploadFileToStorage]);
 
   /** Delete file from list */
   const deleteFile = useCallback((fileId: string) => {
-    // Clear upload interval if exists
-    const interval = uploadIntervalsRef.current.get(fileId);
-    if (interval) {
-      clearInterval(interval);
-      uploadIntervalsRef.current.delete(fileId);
-    }
-    
     setUploadedFiles((prev) => {
       const file = prev.find((f) => f.id === fileId);
       
@@ -250,16 +290,6 @@ export default function AIInputDock({
     });
     setUploadedFiles([]);
   }
-
-  // Cleanup preview URLs and intervals on unmount
-  useEffect(() => {
-    const intervalsRef = uploadIntervalsRef.current;
-    return () => {
-      // Clear all intervals
-      intervalsRef.forEach((interval) => clearInterval(interval));
-      intervalsRef.clear();
-    };
-  }, []);
 
   const hasUploadingFiles = uploadedFiles.some((f) => f.isUploading);
 
