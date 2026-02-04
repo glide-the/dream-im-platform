@@ -147,6 +147,9 @@ const DEFAULT_ALLOWED_TOOLS: readonly string[] = [
   "WebSearch",
   "BashOutput",
   "KillBash",
+  // Interactive user confirmation tools
+  "mcp__user__ask_user",
+  "AskUserQuestion",
 ];
 
 /**

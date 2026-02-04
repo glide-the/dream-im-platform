@@ -7,16 +7,27 @@ import { IconCheck, IconX } from "./Icons";
  * Question field type definitions
  * Based on common ask_user tool patterns
  */
+/**
+ * Option type for select/radio fields
+ * Supports multiple formats from different AI tool schemas
+ */
+export type QuestionOption =
+  | string
+  | { value: string; label: string }
+  | { label: string; description?: string; value?: string };
+
 export interface QuestionField {
   /** Field identifier */
   id?: string;
   /** Question/label text */
   question?: string;
   label?: string;
+  /** Header text (used by some AI tools) */
+  header?: string;
   /** Field type */
   type?: "text" | "textarea" | "select" | "checkbox" | "radio" | "number";
   /** Options for select/radio fields */
-  options?: string[] | { value: string; label: string }[];
+  options?: QuestionOption[];
   /** Whether this field is required */
   required?: boolean;
   /** Default value */
@@ -25,6 +36,8 @@ export interface QuestionField {
   placeholder?: string;
   /** Description/help text */
   description?: string;
+  /** Whether multiple selections are allowed (for select type) */
+  multiSelect?: boolean;
 }
 
 /**
@@ -77,16 +90,23 @@ export function AskUserQuestionUI({
   const questions = useMemo<QuestionField[]>(() => {
     // Multiple questions format
     if (input.questions && Array.isArray(input.questions)) {
-      return input.questions.map((q, i) => ({
-        id: q.id || `q${i}`,
-        question: q.question || q.label || `问题 ${i + 1}`,
-        type: q.type || "text",
-        options: q.options,
-        required: q.required ?? true,
-        default: q.default,
-        placeholder: q.placeholder,
-        description: q.description,
-      }));
+      return input.questions.map((q, i) => {
+        // Auto-detect type based on options presence
+        const hasOptions = q.options && Array.isArray(q.options) && q.options.length > 0;
+        const detectedType = q.type || (hasOptions ? 'radio' : 'text');
+
+        return {
+          id: q.id || `q${i}`,
+          question: q.question || q.label || q.header || `问题 ${i + 1}`,
+          type: detectedType,
+          options: q.options,
+          required: q.required ?? true,
+          default: q.default,
+          placeholder: q.placeholder,
+          description: q.description,
+          multiSelect: q.multiSelect,
+        };
+      });
     }
 
     // Single question format
@@ -117,14 +137,14 @@ export function AskUserQuestionUI({
         type: "text" as const,
         required: true,
       }));
-    
+
     if (fallbackFields.length > 0) {
       console.warn(
         "[AskUserQuestionUI] Using fallback parsing for input keys:",
         fallbackFields.map((f) => f.id)
       );
     }
-    
+
     return fallbackFields;
   }, [input]);
 
@@ -250,7 +270,7 @@ export function AskUserQuestionUI({
                 >
                   <option value="">请选择...</option>
                   {q.options.map((opt) => {
-                    const optValue = typeof opt === "string" ? opt : opt.value;
+                    const optValue = typeof opt === "string" ? opt : (opt.value || opt.label);
                     const optLabel = typeof opt === "string" ? opt : opt.label;
                     return (
                       <option key={optValue} value={optValue}>
@@ -262,12 +282,13 @@ export function AskUserQuestionUI({
               ) : q.type === "radio" && q.options ? (
                 <div className="space-y-2">
                   {q.options.map((opt) => {
-                    const optValue = typeof opt === "string" ? opt : opt.value;
+                    const optValue = typeof opt === "string" ? opt : (opt.value || opt.label);
                     const optLabel = typeof opt === "string" ? opt : opt.label;
+                    const optDescription = typeof opt === "string" ? undefined : (opt as { description?: string }).description;
                     return (
                       <label
                         key={optValue}
-                        className="flex items-center gap-2 cursor-pointer"
+                        className="flex items-start gap-3 cursor-pointer p-2 rounded-lg hover:bg-bg-secondary transition-colors"
                       >
                         <input
                           type="radio"
@@ -277,12 +298,19 @@ export function AskUserQuestionUI({
                           onChange={(e) =>
                             handleChange(fieldId, e.target.value)
                           }
-                          className="w-4 h-4 text-accent border-border focus:ring-accent"
+                          className="w-4 h-4 mt-0.5 text-accent border-border focus:ring-accent"
                           disabled={isProcessing}
                         />
-                        <span className="text-sm text-text-primary">
-                          {optLabel}
-                        </span>
+                        <div className="flex-1">
+                          <span className="text-sm font-medium text-text-primary">
+                            {optLabel}
+                          </span>
+                          {optDescription && (
+                            <p className="text-xs text-text-tertiary mt-0.5">
+                              {optDescription}
+                            </p>
+                          )}
+                        </div>
                       </label>
                     );
                   })}

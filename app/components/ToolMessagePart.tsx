@@ -190,29 +190,30 @@ export function ToolMessagePart({
   const isAskUserQuestion = useMemo(() => {
     const normalizedType = partType?.toLowerCase() || '';
     const normalizedName = toolName?.toLowerCase() || '';
-    
+
     // Exact type match
     if (normalizedType === 'tool-askuserquestion') return true;
-    
+
     // Exact name matches or common variations
     const exactNames = ['askuserquestion', 'ask_user_question', 'ask_user', 'askuser'];
     if (exactNames.includes(normalizedName)) return true;
-    
+
     // Prefix match for namespaced tools (e.g., "mcp__user__ask_user")
     if (normalizedName.endsWith('__ask_user') || normalizedName.endsWith('__askuserquestion')) {
       return true;
     }
-    
+
     return false;
   }, [partType, toolName]);
 
   // Determine if we should show the AskUserQuestion interactive UI
   // Only show when the tool is awaiting input (not completed)
+  // Include 'approval-requested' state for AskUserQuestion tools
   const shouldShowAskUserUI = useMemo(() => {
     return (
       isAskUserQuestion &&
       !isCompleted &&
-      (state === 'input-available' || !state || state === 'input-streaming')
+      (state === 'input-available' || state === 'approval-requested' || !state || state === 'input-streaming')
     );
   }, [isAskUserQuestion, isCompleted, state]);
 
@@ -327,9 +328,9 @@ export function ToolMessagePart({
       const response = await fetch("/api/claude-agent/tool-confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          toolCallId, 
-          approved: true, 
+        body: JSON.stringify({
+          toolCallId,
+          approved: true,
           answers, // Include user's answers
         }),
       });
