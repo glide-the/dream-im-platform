@@ -1,5 +1,14 @@
 {
   "version": "0.2.0",
+  "compounds": [
+    {
+      "name": "🧭 前端调试（含启动服务）",
+      "configurations": [
+        "🚀 启动 Next.js 开发服务器",
+        "🌐 前端调试（Chrome）"
+      ]
+    }
+  ],
   "configurations": [
     {
       "type": "node",
@@ -120,6 +129,23 @@
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**"
+      ],
+      "serverReadyAction": {
+        "pattern": "ready - started server on .*",
+        "action": "debugWithChrome",
+        "uriFormat": "http://localhost:3000"
+      }
+    },
+    {
+      "type": "pwa-chrome",
+      "request": "launch",
+      "name": "🌐 前端调试（Chrome）",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
       "skipFiles": [
         "<node_internals>/**",
         "**/node_modules/**"

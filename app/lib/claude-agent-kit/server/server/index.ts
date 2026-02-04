@@ -5,4 +5,6 @@ export {
   type AgentStreamingCallbacks,
   type AgentRunOptions,
   type AgentRunResult,
+  type ToolChoiceMode,
+  type ToolEventPayload,
 } from "./agent-runner";

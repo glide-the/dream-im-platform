@@ -52,11 +52,72 @@ export type Attachment = {
 };
 
 // Message part types for storing rich message content (aligned with AI SDK UIMessage format)
-export type MessagePart = {
-  type: "text" | "reasoning";
-  text?: string;
+// Reference: cgoinglove/better-chatbot convertToSavePart pattern
+// Note: We preserve the original type field as streamed (e.g., "tool-search", "dynamic-tool")
+// to allow faithful restoration when loading from database.
+
+export type TextMessagePart = {
+  type: "text";
+  text: string;
   state?: "done" | "streaming";
 };
+
+export type ReasoningMessagePart = {
+  type: "reasoning";
+  text: string;
+  state?: "done" | "streaming";
+};
+
+export type StepStartMessagePart = {
+  type: "step-start";
+};
+
+// Tool type pattern: "tool", "dynamic-tool", or "tool-{toolName}"
+export type ToolType = "tool" | "dynamic-tool" | `tool-${string}`;
+
+// Tool message part - preserves original type from AI SDK stream
+// The type can be "tool-{toolName}", "dynamic-tool", or legacy "tool"
+export type ToolMessagePart = {
+  type: ToolType; // Preserves original: "tool-{name}", "dynamic-tool", or "tool"
+  toolCallId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  output?: unknown;
+  state: "input-available" | "input-streaming" | "output-available" | "output-error" | "error" | "done";
+  // Extended parameters from AI SDK
+  title?: string;
+  providerExecuted?: boolean;
+};
+
+export type FileMessagePart = {
+  type: "file";
+  url: string;
+  mediaType?: string;
+  filename?: string;
+};
+
+export type SourceUrlMessagePart = {
+  type: "source-url";
+  url: string;
+  mediaType?: string;
+  title?: string;
+};
+
+// Generic part for any other unknown types - preserves raw data
+export type GenericMessagePart = {
+  type: string;
+  [key: string]: unknown;
+};
+
+// Union type for all supported message parts
+export type MessagePart = 
+  | TextMessagePart 
+  | ReasoningMessagePart 
+  | StepStartMessagePart
+  | ToolMessagePart 
+  | FileMessagePart
+  | SourceUrlMessagePart
+  | GenericMessagePart;
 
 export type ConversationMessage = {
   id: string;
