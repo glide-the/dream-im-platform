@@ -34,3 +34,4 @@ pnpm-debug.log*
 .cache
 .playwright-mcp
 app/api/chat/route.ts
+.env
