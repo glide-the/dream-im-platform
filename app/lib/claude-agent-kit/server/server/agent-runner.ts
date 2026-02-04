@@ -284,6 +284,7 @@ export class ClaudeAgentRunner {
       ...(abortController ? { abortController } : {}),
       // Add canUseTool callback for manual confirmation mode
       ...(canUseTool ? { canUseTool } : {}),
+      includePartialMessages: true,
     };
 
     try {
