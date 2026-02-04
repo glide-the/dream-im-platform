@@ -4,15 +4,15 @@ services:
     image: postgres:16-alpine
     container_name: ai4sales-postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ai4sales
+      POSTGRES_PASSWORD: ai4sales
       POSTGRES_DB: ai4sales
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ai4sales_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ai4sales"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -28,7 +28,7 @@ services:
       - "9000:9000"   # S3 API
       - "9001:9001"   # Console UI
     volumes:
-      - minio_data:/data
+      - ai4sales_minio_data:/data
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
@@ -53,5 +53,5 @@ services:
       "
 
 volumes:
-  postgres_data:
-  minio_data:
+  ai4sales_postgres_data:
+  ai4sales_minio_data:

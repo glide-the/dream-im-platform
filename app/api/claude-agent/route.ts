@@ -40,17 +40,35 @@ export const runtime = "nodejs";
 
 const DEFAULT_MAX_TURNS = Number(process.env.MAX_TURNS) || 10;
 
-// Extract text content from UIMessage parts
-function extractTextFromParts(parts: UIMessage["parts"] | undefined): string {
+/**
+ * Extract and format text content from UIMessage parts.
+ * Supports multiple text parts with proper formatting/separation.
+ * 
+ * @param parts - UIMessage parts array
+ * @param separator - Separator between multiple text parts (default: "\n\n")
+ * @returns Formatted text content
+ */
+function extractTextFromParts(
+  parts: UIMessage["parts"] | undefined,
+  separator: string = "\n\n"
+): string {
   if (!parts || !Array.isArray(parts)) return "";
 
-  return parts
-    .filter(
-      (part): part is { type: "text"; text: string } =>
-        part.type === "text" && typeof part.text === "string"
-    )
-    .map((part) => part.text)
-    .join("");
+  const textContents: string[] = [];
+
+  for (const part of parts) {
+    // Handle text parts
+    if (part.type === "text" && typeof (part as { text?: string }).text === "string") {
+      const text = (part as { type: "text"; text: string }).text.trim();
+      if (text) {
+        textContents.push(text);
+      }
+    }
+    // Handle file parts with text content (e.g., document previews injected by WeKnora)
+    // These are already converted to text parts during ingestion, but handle edge cases
+  }
+
+  return textContents.join(separator);
 }
 
 // Check if a part type is a tool type (starts with "tool-" or is "dynamic-tool")
@@ -246,7 +264,7 @@ export async function POST(req: NextRequest) {
   if (ingestionPreviewParts.length > 0) {
     const baseParts = [...(uiMessage.parts || [])];
     let insertionIndex = -1;
-    
+
     // Find the last text part to insert before
     for (let i = baseParts.length - 1; i >= 0; i -= 1) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
