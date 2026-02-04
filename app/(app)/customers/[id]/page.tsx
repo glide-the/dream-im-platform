@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, isToolUIPart, type UIMessage, type ToolUIPart, type DynamicToolUIPart } from "ai";
+import { DefaultChatTransport, isToolUIPart, type UIMessage, type ToolUIPart, type DynamicToolUIPart, type FileUIPart } from "ai";
 import { IconChevronLeft, IconChevronDown } from "../../../components/Icons";
 import Toast from "../../../components/Toast";
 import ProfileCard from "../../../components/customer-detail/ProfileCard";
@@ -12,6 +12,7 @@ import MarkdownDetailSection from "../../../components/customer-detail/MarkdownD
 import DecisionChainSection from "../../../components/customer-detail/DecisionChainSection";
 import AIInputDock, { type UploadedFile, type Attachment, type ToolChoice, toAttachment } from "../../../components/AIInputDock";
 import { ToolMessagePart } from "../../../components/ToolMessagePart";
+import { FileMessagePart } from "../../../components/FileMessagePart";
 import { useCustomer, useUpdateCustomer, useConversationByCustomer } from "../../../lib/queries";
 import type { DecisionChainItem, ConversationMessage } from "../../../lib/types";
 import {
@@ -685,6 +686,23 @@ export default function CustomerDetailPage({
                                   isLoading={chatLoading}
                                   isManualToolInvocation={false}
                                   addToolResult={addToolResult}
+                                />
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // Handle file parts (uploaded files in messages)
+                        if (part.type === "file") {
+                          return (
+                            <div
+                              key={`${msg.id}-${partIndex}`}
+                              className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+                            >
+                              <div className="max-w-[80%]">
+                                <FileMessagePart
+                                  part={part as FileUIPart}
+                                  isUserMessage={isUser}
                                 />
                               </div>
                             </div>
