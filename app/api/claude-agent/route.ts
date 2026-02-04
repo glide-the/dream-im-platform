@@ -5,17 +5,22 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   UIMessage,
+  isToolUIPart,
 } from "ai";
 import {
   chatApiSchemaRequestBodySchema,
   type ChatApiSchemaRequestBody,
   type ChatAttachment,
+  type ChatMetadata,
   DEFAULT_CHAT_MODEL,
+  ManualToolConfirmTag,
+  MANUAL_REJECT_RESPONSE_PROMPT,
 } from "../../lib/chat-schema";
 import {
   createAgentRunner,
   SimpleClaudeAgentSDKClient,
   type AgentStreamingCallbacks,
+  type ToolChoiceMode,
 } from "../../lib/claude-agent-kit/server";
 import {
   createConversation,
@@ -23,15 +28,12 @@ import {
   getConversationById,
 } from "../../lib/db";
 import { createId } from "../../lib/id";
-import type { Conversation, MessagePart, Attachment } from "../../lib/types";
+import type { Conversation, MessagePart, Attachment, ToolType } from "../../lib/types";
+import { createPendingToolConfirmation } from "../../lib/tool-confirmation-store";
 
 export const runtime = "nodejs";
 
 const DEFAULT_MAX_TURNS = Number(process.env.MAX_TURNS) || 10;
-
-// Supported message part types for storage
-const SUPPORTED_PART_TYPES = ["text", "reasoning"] as const;
-type SupportedPartType = (typeof SUPPORTED_PART_TYPES)[number];
 
 // Extract text content from UIMessage parts
 function extractTextFromParts(parts: UIMessage["parts"] | undefined): string {
@@ -46,34 +48,129 @@ function extractTextFromParts(parts: UIMessage["parts"] | undefined): string {
     .join("");
 }
 
-// Check if a part type is supported
-function isSupportedPartType(type: string): type is SupportedPartType {
-  return SUPPORTED_PART_TYPES.includes(type as SupportedPartType);
+// Check if a part type is a tool type (starts with "tool-" or is "dynamic-tool")
+function isToolPartType(type: string): boolean {
+  return type.startsWith("tool-") || type === "dynamic-tool";
 }
 
-// Convert UIMessage parts to our storage format
+/**
+ * Convert UIMessage parts to our storage format.
+ * Following the better-chatbot convertToSavePart pattern, we save ALL parts 
+ * from the chat stream preserving their original type as streamed.
+ * 
+ * IMPORTANT: We preserve the original `type` field exactly as streamed
+ * (e.g., "text", "reasoning", "tool-search", "dynamic-tool", "step-start")
+ * to allow faithful restoration when loading from database.
+ * 
+ * Reference: cgoinglove/better-chatbot src/app/api/chat/shared.chat.ts - convertToSavePart
+ */
 function convertToStorageParts(
   parts: UIMessage["parts"] | undefined
 ): MessagePart[] {
   if (!parts || !Array.isArray(parts)) return [];
 
-  return parts
-    .filter((part) => isSupportedPartType(part.type)) // Only include supported types
-    .map((part) => {
-      if (part.type === "text") {
-        return {
-          type: "text" as const,
-          text: part.text,
-          state: "done" as const,
-        };
-      }
-      // reasoning type
+  return parts.map((part) => {
+    // Handle text parts - preserve as-is with state
+    if (part.type === "text") {
+      const textPart = part as { type: "text"; text: string };
+      return {
+        type: "text" as const,
+        text: textPart.text,
+        state: "done" as const,
+      };
+    }
+
+    // Handle reasoning parts - preserve type exactly as streamed
+    if (part.type === "reasoning") {
       return {
         type: "reasoning" as const,
         text: (part as { type: "reasoning"; text: string }).text,
         state: "done" as const,
       };
-    });
+    }
+
+    // Handle step-start parts - preserve type exactly
+    if (part.type === "step-start") {
+      return {
+        type: "step-start" as const,
+      };
+    }
+
+    // Handle tool parts (tool-*, dynamic-tool, tool)
+    // PRESERVE the original type field EXACTLY as streamed
+    if (isToolPartType(part.type) || isToolUIPart(part)) {
+      const toolPart = part as {
+        type: string;
+        toolCallId: string;
+        toolName?: string;
+        input: Record<string, unknown>;
+        output?: unknown;
+        state?: string;
+        title?: string;
+        providerExecuted?: boolean;
+      };
+
+      // Extract tool name from toolName property or from type (e.g., "tool-search" -> "search")
+      let resolvedToolName = toolPart.toolName;
+      if (!resolvedToolName && part.type.startsWith("tool-")) {
+        resolvedToolName = part.type.slice(5); // Remove "tool-" prefix
+      }
+      if (!resolvedToolName) {
+        resolvedToolName = "unknown";
+      }
+
+      // PRESERVE original type EXACTLY: "tool-search", "dynamic-tool", "tool", etc.
+      return {
+        type: part.type as ToolType,
+        toolCallId: toolPart.toolCallId,
+        toolName: resolvedToolName,
+        input: toolPart.input ?? {},
+        output: toolPart.output,
+        state: (toolPart.state ?? "done") as "input-available" | "input-streaming" | "output-available" | "output-error" | "error" | "done",
+        // Extended parameters - preserved from stream
+        title: toolPart.title,
+        providerExecuted: toolPart.providerExecuted,
+      };
+    }
+
+    // Handle file parts - preserve type exactly
+    if (part.type === "file") {
+      const filePart = part as {
+        type: "file";
+        url: string;
+        mediaType?: string;
+        filename?: string;
+      };
+      return {
+        type: "file" as const,
+        url: filePart.url,
+        mediaType: filePart.mediaType,
+        filename: filePart.filename,
+      };
+    }
+
+    // Handle source-url parts - preserve type exactly
+    if (part.type === "source-url") {
+      const sourceUrlPart = part as {
+        type: "source-url";
+        url: string;
+        mediaType?: string;
+        title?: string;
+      };
+      return {
+        type: "source-url" as const,
+        url: sourceUrlPart.url,
+        mediaType: sourceUrlPart.mediaType,
+        title: sourceUrlPart.title,
+      };
+    }
+
+    // For any other unknown types, preserve them EXACTLY as-is
+    // Exclude internal metadata fields that shouldn't be persisted
+    // This ensures we don't lose any new part types added in the future
+    const { providerMetadata, callProviderMetadata, ...cleanPart } = part as Record<string, unknown>;
+    return cleanPart as MessagePart;
+  });
 }
 
 /** 把 ChatAttachment 映射成 DB Attachment（ai4sales 的 types.ts） */
@@ -116,6 +213,8 @@ export async function POST(req: NextRequest) {
     id: conversationId,
     message: uiMessage,
     resume = false,
+    toolChoice = "auto",
+    chatModel,
     attachments = [],
     contextCustomerIds = [],
   } = body;
@@ -137,6 +236,14 @@ export async function POST(req: NextRequest) {
   // Variable to store the session ID from the agent run
   let capturedSessionId: string | null = null;
 
+  // Track tool calls for metadata
+  let toolCallCount = 0;
+
+  // Track ALL streamed parts EXACTLY as they are written to the stream
+  // This preserves the exact order and format of stream events
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const streamedParts: any[] = [];
+
   // Create streaming response using ai SDK (following better-chatbot pattern)
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
@@ -150,12 +257,34 @@ export async function POST(req: NextRequest) {
         : createId("msg");
       let hasStarted = false;
 
+      // Send message-metadata at the START of the stream
+      // This allows the frontend to have access to toolChoice BEFORE any tool events arrive
+      // This is critical for manual tool confirmation UI - the frontend checks
+      // message.metadata?.toolChoice === "manual" to show approve/reject buttons
+      // Reference: cgoinglove/better-chatbot passes metadata via toUIMessageStream({ messageMetadata })
+      writer.write({
+        type: "message-metadata",
+        messageMetadata: {
+          toolChoice,
+          chatModel,
+        },
+      });
+
+      // Helper to write to stream AND track the part
+      const writeAndTrack = (part: Parameters<typeof writer.write>[0]) => {
+        writer.write(part);
+        // Store exact copy of stream event (excluding 'finish' and 'error' types)
+        if (part.type !== 'finish' && part.type !== 'error') {
+          streamedParts.push({ ...part });
+        }
+      };
+
       // Set up callbacks to stream to UI
       const callbacks: AgentStreamingCallbacks = {
         onTextDelta: async (delta: string) => {
           // Send text-start on first delta
           if (!hasStarted) {
-            writer.write({
+            writeAndTrack({
               type: "text-start",
               id: assistantMessageId,
             });
@@ -163,7 +292,9 @@ export async function POST(req: NextRequest) {
           }
 
           fullText += delta;
-          writer.write({
+
+          // Write and track text-delta
+          writeAndTrack({
             type: "text-delta",
             id: assistantMessageId,
             delta: delta,
@@ -172,11 +303,148 @@ export async function POST(req: NextRequest) {
         onTextDone: async () => {
           // Send text-end
           if (hasStarted) {
-            writer.write({
+            writeAndTrack({
               type: "text-end",
               id: assistantMessageId,
             });
+            hasStarted = false; // Reset for next text block
           }
+        },
+        onToolEvent: async (event) => {
+          // If we have ongoing text, close it first before tool events
+          if (hasStarted) {
+            writeAndTrack({
+              type: "text-end",
+              id: assistantMessageId,
+            });
+            hasStarted = false;
+          }
+
+          // Track tool calls
+          if (event.type === "tool_use" || event.type === "tool_use_start") {
+            toolCallCount++;
+          }
+
+          // Handle thinking/reasoning events - stream them as reasoning parts
+          // Use the correct AI SDK stream chunk types: reasoning-start, reasoning-delta, reasoning-end
+          if (event.type === "thinking" && event.output) {
+            const reasoningId = createId("reasoning");
+            const reasoningText = String(event.output);
+
+            // Write and track reasoning stream chunks
+            writeAndTrack({
+              type: "reasoning-start",
+              id: reasoningId,
+            });
+            writeAndTrack({
+              type: "reasoning-delta",
+              id: reasoningId,
+              delta: reasoningText,
+            });
+            writeAndTrack({
+              type: "reasoning-end",
+              id: reasoningId,
+            });
+            return; // Don't process as tool event
+          }
+
+          // Stream tool events to frontend using Vercel AI SDK types
+          // 
+          // IMPORTANT: Two-handler design for manual vs auto mode:
+          // - Manual mode (toolChoice === "manual"): onToolConfirmationRequest handles tool_use events
+          //   and sends the complete sequence: tool-input-start → tool-input-available → tool-approval-request
+          // - Auto mode: onToolEvent handles all tool events and sends tool-input-start → tool-input-available
+          //
+          // This design avoids duplicate events since both handlers fire for the same tool call
+          // in manual mode (see agent-runner.ts lines 297-328).
+          if (event.toolCallId && event.toolName) {
+            // Manual mode: Skip tool_use events here - they're handled by onToolConfirmationRequest
+            // to ensure the correct event sequence for frontend approval UI
+            if (toolChoice === "manual" && (event.type === "tool_use" || event.type === "tool_use_start")) {
+              return;
+            }
+
+            // Auto mode: Send tool-input-start (AI SDK strictObject: type, toolCallId, toolName, providerExecuted?, providerMetadata?, dynamic?, title?)
+            // NOTE: AI SDK's tool-input-start does NOT allow 'input' field - input goes in tool-input-available
+            writeAndTrack({
+              type: "tool-input-start",
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              // Extended parameters allowed by AI SDK
+              title: event.title,
+              providerExecuted: event.providerExecuted,
+            });
+
+            // For non-manual mode with available input, also send input-available
+            // AI SDK's tool-input-available DOES include 'input' field
+            // Note: In auto mode, event.state may be undefined but input is still available
+            if (event.input !== undefined) {
+              writeAndTrack({
+                type: "tool-input-available",
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                input: event.input as Record<string, unknown>,
+                // Extended parameters
+                title: event.title,
+                providerExecuted: event.providerExecuted,
+              });
+            }
+          }
+
+          // Forward tool results with extended parameters
+          if (event.type === "tool_result" && event.toolCallId) {
+            writeAndTrack({
+              type: "tool-output-available",
+              toolCallId: event.toolCallId,
+              output: event.output,
+              // Extended parameters - Note: toolName not supported in AI SDK's tool-output-available type
+              providerExecuted: event.providerExecuted,
+            });
+          }
+        },
+        onToolConfirmationRequest: async (event) => {
+          // When manual tool confirmation is needed:
+          // 1. Send tool events to frontend for review
+          // 2. Block and wait for user confirmation via /api/claude-agent/tool-confirm
+          // 3. Return the user's decision to the agent
+          //
+          // This implements the blocking pattern from: docs/Claude Agent SDK 交互式工具时序图.md
+          // Backend creates Promise → blocks with await → frontend POSTs to confirm endpoint → Promise resolves
+
+          // First: Send tool-input-start (AI SDK expects this before input-available)
+          writeAndTrack({
+            type: "tool-input-start",
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+          });
+
+          // Second: Send tool-input-available with the input
+          writeAndTrack({
+            type: "tool-input-available",
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            input: event.input,
+          });
+
+          // Third: Send tool-approval-request
+          const approvalId = createId("approval");
+          writeAndTrack({
+            type: "tool-approval-request",
+            approvalId,
+            toolCallId: event.toolCallId,
+          });
+
+          // BLOCK: Wait for user confirmation via /api/claude-agent/tool-confirm endpoint
+          // This creates a Promise that resolves when the user clicks approve/reject
+          // The frontend will POST to /api/claude-agent/tool-confirm to resolve this
+          const confirmationResult = await createPendingToolConfirmation(
+            event.toolCallId,
+            event.toolName,
+            event.input
+          );
+
+          // Return the user's decision to the agent
+          return confirmationResult;
         },
         onError: async (error: Error) => {
           writer.write({
@@ -206,13 +474,27 @@ export async function POST(req: NextRequest) {
             userMessage: messageText,
             resume: shouldResume,
             maxTurns: DEFAULT_MAX_TURNS,
-            allowedTools: [], // Disable tools for now
+            toolChoice: toolChoice as ToolChoiceMode,
+            // Use default allowed tools from agent-runner (includes AskUserQuestion)
+            // Don't pass allowedTools to use the defaults
           },
           callbacks
         );
 
         // Capture the session ID from the result
         capturedSessionId = result.sessionId;
+
+        // Send final message-metadata event with updated toolCount
+        // This complements the initial metadata sent at stream start
+        // and provides the final tool count after all tools have been processed
+        writer.write({
+          type: "message-metadata",
+          messageMetadata: {
+            toolChoice,
+            toolCount: toolCallCount,
+            chatModel,
+          },
+        });
 
         // Finish the message
         writer.write({
@@ -235,21 +517,20 @@ export async function POST(req: NextRequest) {
         // Convert the user message parts for storage
         const userMessageParts = convertToStorageParts(uiMessage.parts);
 
-        // Convert the response message parts for storage
-        // Use parts if available, otherwise create a text part from extracted content
+        // Use the tracked streamedParts directly - these are EXACTLY as streamed
+        // This preserves the order of text-delta and tool-input-start events
         const responseText = extractTextFromParts(responseMessage.parts);
-        const assistantMessageParts =
-          responseMessage.parts && responseMessage.parts.length > 0
-            ? convertToStorageParts(responseMessage.parts)
-            : responseText
-              ? [
-                {
-                  type: "text" as const,
-                  text: responseText,
-                  state: "done" as const,
-                },
-              ]
-              : [];
+        const assistantMessageParts = streamedParts.length > 0
+          ? streamedParts
+          : responseText
+            ? [
+              {
+                type: "text" as const,
+                text: responseText,
+                state: "done" as const,
+              },
+            ]
+            : [];
 
         // Get existing messages, excluding any with the same ID as the new messages
         // This prevents duplicate messages when updating a conversation
