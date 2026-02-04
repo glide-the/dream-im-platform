@@ -25,7 +25,11 @@
     "types": [
       "vitest/globals",
       "node"
-    ]
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./app/*"]
+    }
   },
   "include": [
     "next-env.d.ts",

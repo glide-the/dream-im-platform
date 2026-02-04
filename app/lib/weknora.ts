@@ -177,7 +177,7 @@ export class WeKnoraClient {
 
     const json = await response.json();
     const parsed = ListKnowledgeBasesResponseSchema.safeParse(json);
-    
+
     if (!parsed.success || !parsed.data.success) {
       throw new Error(`[WeKnora] Invalid response: ${parsed.error?.message || json.error?.message}`);
     }
@@ -195,10 +195,11 @@ export class WeKnoraClient {
     }
   ): Promise<WeKnoraKnowledge> {
     const kbId = options?.knowledgeBaseId || this.knowledgeBaseId;
-    
+    const fileName = options?.fileName || (file instanceof File ? file.name : "attachment");
+
     const formData = new FormData();
-    formData.append("file", file, options?.fileName || (file instanceof File ? file.name : "attachment"));
-    
+    formData.append("file", file, fileName);
+
     if (options?.enableMultimodel !== undefined) {
       formData.append("enable_multimodel", String(options.enableMultimodel));
     }
@@ -209,14 +210,26 @@ export class WeKnoraClient {
       body: formData,
     });
 
+    const json = await response.json();
+
+    // Handle 409 Conflict (duplicate file by hash) - reuse existing knowledge
+    // WeKnora uses file_hash to detect duplicates, so same content = same knowledge
+    if (response.status === 409 && json.code === "duplicate_file" && json.data) {
+      console.log(`[WeKnora] File with same hash already exists, reusing: ${json.data.id}`);
+      const existingParsed = WeKnoraKnowledgeSchema.safeParse(json.data);
+      if (existingParsed.success) {
+        return existingParsed.data;
+      }
+      // If parsing fails, fall through to error handling
+    }
+
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
+      const errorText = typeof json === "object" ? JSON.stringify(json) : String(json);
       throw new Error(`[WeKnora] Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    const json = await response.json();
     const parsed = CreateKnowledgeFromFileResponseSchema.safeParse(json);
-    
+
     if (!parsed.success) {
       throw new Error(`[WeKnora] Invalid response: ${parsed.error.message}`);
     }
@@ -237,7 +250,7 @@ export class WeKnoraClient {
     }
   ): Promise<WeKnoraKnowledge> {
     const kbId = options?.knowledgeBaseId || this.knowledgeBaseId;
-    
+
     const response = await fetch(`${this.baseUrl}/api/v1/knowledge-bases/${kbId}/knowledge/url`, {
       method: "POST",
       headers: {
@@ -257,7 +270,7 @@ export class WeKnoraClient {
 
     const json = await response.json();
     const parsed = CreateKnowledgeFromFileResponseSchema.safeParse(json);
-    
+
     if (!parsed.success) {
       throw new Error(`[WeKnora] Invalid response: ${parsed.error.message}`);
     }
@@ -285,7 +298,7 @@ export class WeKnoraClient {
 
     const json = await response.json();
     const parsed = GetKnowledgeResponseSchema.safeParse(json);
-    
+
     if (!parsed.success) {
       throw new Error(`[WeKnora] Invalid response: ${parsed.error.message}`);
     }
@@ -310,7 +323,7 @@ export class WeKnoraClient {
     if (options?.pageSize) params.set("page_size", String(options.pageSize));
 
     const url = `${this.baseUrl}/api/v1/chunks/${knowledgeId}${params.toString() ? `?${params}` : ""}`;
-    
+
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -325,7 +338,7 @@ export class WeKnoraClient {
 
     const json = await response.json();
     const parsed = GetChunksResponseSchema.safeParse(json);
-    
+
     if (!parsed.success) {
       throw new Error(`[WeKnora] Invalid response: ${parsed.error.message}`);
     }
@@ -374,11 +387,11 @@ export class WeKnoraClient {
 
     while (Date.now() - startTime < maxWait) {
       const knowledge = await this.getKnowledge(knowledgeId);
-      
+
       if (knowledge.parse_status === "completed") {
         return knowledge;
       }
-      
+
       if (knowledge.parse_status === "failed") {
         throw new Error(`[WeKnora] Processing failed: ${knowledge.error_message || "Unknown error"}`);
       }
@@ -443,7 +456,7 @@ export async function processDocument(
   }
 ): Promise<DocumentProcessingResult | null> {
   const client = options?.client || new WeKnoraClient();
-  
+
   if (!client.isConfigured()) {
     console.warn("[WeKnora] Client not configured, skipping document processing");
     return null;
@@ -501,7 +514,7 @@ export async function processUrl(
   }
 ): Promise<DocumentProcessingResult | null> {
   const client = options?.client || new WeKnoraClient();
-  
+
   if (!client.isConfigured()) {
     console.warn("[WeKnora] Client not configured, skipping URL processing");
     return null;
@@ -551,7 +564,7 @@ export async function processUrl(
 function formatChunksAsPreview(source: string, chunks: WeKnoraChunk[]): string {
   const header = `--- Document: ${source} ---\n`;
   const footer = `\n--- End of Document (${chunks.length} chunks) ---`;
-  
+
   // 合并所有分块内容
   const content = chunks
     .sort((a, b) => a.chunk_index - b.chunk_index)
@@ -577,7 +590,7 @@ export async function buildDocumentIngestionPreviewParts(
   if (!attachments?.length) return [];
 
   const client = new WeKnoraClient();
-  
+
   if (!client.isConfigured()) {
     console.warn("[WeKnora] Client not configured, skipping attachment processing");
     return [];

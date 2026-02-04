@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { IconSparkles } from "../../components/Icons";
 import Modal from "../../components/Modal";
 import Toast from "../../components/Toast";
-import AIInputDock from "../../components/AIInputDock";
+import AIInputDock, { type UploadedFile, type Attachment, toAttachment } from "../../components/AIInputDock";
 import { formatRelativeTime } from "../../lib/format";
 import { useDebounce } from "../../hooks/useDebounce";
 import {
@@ -79,9 +79,7 @@ function AiAssistantPage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
-  const [attachments, setAttachments] = useState<
-    { name: string; type: string; size: number }[]
-  >([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
   const [createdCustomerId, setCreatedCustomerId] = useState<string | null>(null);
@@ -163,7 +161,7 @@ function AiAssistantPage() {
 
   async function handleSearch(
     nextQuery: string = query,
-    nextAttachments: { name: string; type: string; size: number }[] = attachments,
+    nextAttachments: Attachment[] = attachments,
     nextCustomerIds?: string[]
   ) {
     setError(null);
@@ -646,8 +644,9 @@ function AiAssistantPage() {
           <AIInputDock
             contextCustomerId={contextCustomerId ?? undefined}
             contextCustomers={contextCustomers}
-            onSendMessage={async (message, newAttachments, customerIds) => {
-              const safeAttachments = newAttachments ?? [];
+            onSendMessage={async (message, uploadedFiles, customerIds) => {
+              // Convert UploadedFile[] to Attachment[] for backward compatibility
+              const safeAttachments = uploadedFiles?.map(toAttachment) ?? [];
               const safeCustomerIds =
                 customerIds ?? contextCustomers.map((item) => item.id);
               setQuery(message);

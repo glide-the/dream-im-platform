@@ -3,15 +3,16 @@
 import { useState, useEffect, use, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, isToolUIPart, type UIMessage, type ToolUIPart, type DynamicToolUIPart } from "ai";
+import { DefaultChatTransport, isToolUIPart, type UIMessage, type ToolUIPart, type DynamicToolUIPart, type FileUIPart, type TextUIPart } from "ai";
 import { IconChevronLeft, IconChevronDown } from "../../../components/Icons";
 import Toast from "../../../components/Toast";
 import ProfileCard from "../../../components/customer-detail/ProfileCard";
 import BasicInfoSection from "../../../components/customer-detail/BasicInfoSection";
 import MarkdownDetailSection from "../../../components/customer-detail/MarkdownDetailSection";
 import DecisionChainSection from "../../../components/customer-detail/DecisionChainSection";
-import AIInputDock, { type Attachment, type ToolChoice } from "../../../components/AIInputDock";
+import AIInputDock, { type UploadedFile, type Attachment, type ToolChoice, toAttachment } from "../../../components/AIInputDock";
 import { ToolMessagePart } from "../../../components/ToolMessagePart";
+import { FileMessagePart } from "../../../components/FileMessagePart";
 import { useCustomer, useUpdateCustomer, useConversationByCustomer } from "../../../lib/queries";
 import type { DecisionChainItem, ConversationMessage } from "../../../lib/types";
 import {
@@ -115,15 +116,18 @@ export default function CustomerDetailPage({
         const contextCustomerIds = pendingData?.contextCustomerIds ?? [id];
         const toolChoice = pendingData?.toolChoice ?? currentToolChoiceRef.current;
 
-        // Map AIInputDock attachments to ChatAttachment format
-        const attachments: ChatAttachment[] = rawAttachments.map((file) => ({
-          type: "file" as const,
-          url: file.name, // For now, just use filename as URL placeholder
-          mediaType: file.type,
-          filename: file.name,
-        }));
+        // Map AIInputDock attachments to ChatAttachment format for the API
+        const attachments: ChatAttachment[] = rawAttachments
+          .filter((file) => file.url) // Only include files with valid URLs
+          .map((file) => ({
+            type: "file" as const,
+            url: file.url!,
+            mediaType: file.type,
+            filename: file.name,
+          }));
 
         // Build the ChatApiSchemaRequestBody
+        // Note: File parts are already included in the message.parts from sendMessage
         const requestBody: ChatApiSchemaRequestBody = {
           id: chatId,
           message: lastMessage,
@@ -691,6 +695,23 @@ export default function CustomerDetailPage({
                           );
                         }
 
+                        // Handle file parts (uploaded files in messages)
+                        if (part.type === "file") {
+                          return (
+                            <div
+                              key={`${msg.id}-${partIndex}`}
+                              className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+                            >
+                              <div className="max-w-[80%]">
+                                <FileMessagePart
+                                  part={part as FileUIPart}
+                                  isUserMessage={isUser}
+                                />
+                              </div>
+                            </div>
+                          );
+                        }
+
                         // Skip other part types
                         return null;
                       })}
@@ -736,12 +757,18 @@ export default function CustomerDetailPage({
                 company: customer.company
               }
             ]}
-            onSendMessage={async (message, attachments = [], customerIds = [], toolChoice = "auto") => {
+            onSendMessage={async (message, uploadedFiles = [], customerIds = [], toolChoice = "auto") => {
               setShowChatArea(true);
               setIsInfoCollapsed(true);
 
               // Update current toolChoice ref for manual confirmation UI
               currentToolChoiceRef.current = toolChoice;
+
+              // Convert UploadedFile[] to Attachment[] for the prepareSendMessagesRequest
+              const attachments = uploadedFiles.map(toAttachment);
+              
+              // Filter to only include files with valid URLs
+              const validFiles = uploadedFiles.filter(f => f.url);
 
               // Store attachments, customer IDs, and toolChoice for the prepareSendMessagesRequest
               pendingMessageDataRef.current = {
@@ -750,10 +777,31 @@ export default function CustomerDetailPage({
                 toolChoice,
               };
 
-              // Send user message to chat via useChat
-              // The prepareSendMessagesRequest will transform this into ChatApiSchemaRequestBody
-              await sendMessage({
+              // Build message parts: file parts first, then text
+              // Using AI SDK types for proper type safety
+              const parts: Array<FileUIPart | TextUIPart> = [];
+              
+              // Add file parts for valid uploaded files
+              for (const file of validFiles) {
+                parts.push({
+                  type: "file",
+                  url: file.url!,
+                  mediaType: file.mimeType,
+                  filename: file.name,
+                } as FileUIPart);
+              }
+              
+              // Add text part
+              parts.push({
+                type: "text",
                 text: message,
+              } as TextUIPart);
+
+              // Send user message with file parts included
+              // The prepareSendMessagesRequest will add attachments to the request body
+              await sendMessage({
+                role: "user",
+                parts,
               });
             }}
             onAddContextCustomer={() => {
