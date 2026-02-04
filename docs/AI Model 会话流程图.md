@@ -258,20 +258,23 @@ sequenceDiagram
       end
     end
 
-    opt 需要外部信息（Manual Tool Invocation）
+    opt 需要外部信息（Manual Tool Invocation via canUseTool）
       AG->>SYS: Propose tool call (intent)
-      SYS-->>FE: Tool-call args only (`toolChoice="manual"`, no execute)
-      Note over FE: isManualToolInvocation=true\npart.state="input-available"\nShow [Approve]/[Reject]
+      Note over SYS: canUseTool 回调拦截工具调用<br/>toolChoice="manual" 时触发
+      SYS-->>FE: SSE: tool-input-available
+      Note over FE: isManualToolInvocation=true<br/>part.state="input-available"<br/>Show [Approve]/[Reject]
       FE-->>U: Render Approve / Reject controls
       U-->>FE: Click Approve or Reject
-      FE->>SYS: addToolResult({ confirm: true|false })
+      FE->>SYS: POST /api/claude-agent/tool-confirm<br/>{toolCallId, approved: true|false}
 
-      alt confirm = true
+      alt approved = true
+        Note over SYS: canUseTool 返回<br/>{ behavior: "allow" }
         SYS->>EXT: Execute tool call (API / Search / DB)
         EXT-->>SYS: Results
         SYS->>AG: Provide results
-      else confirm = false
-        SYS->>AG: Provide rejection prompt (MANUAL_REJECT_RESPONSE_PROMPT)
+      else approved = false
+        Note over SYS: canUseTool 返回<br/>{ behavior: "deny", message: "..." }
+        SYS->>AG: Tool blocked, provide rejection reason
       end
     end
   end

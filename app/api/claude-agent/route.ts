@@ -29,6 +29,7 @@ import {
 } from "../../lib/db";
 import { createId } from "../../lib/id";
 import type { Conversation, MessagePart, Attachment, ToolType } from "../../lib/types";
+import { createPendingToolConfirmation } from "../../lib/tool-confirmation-store";
 
 export const runtime = "nodejs";
 
@@ -78,7 +79,7 @@ function convertToStorageParts(
         state: "done" as const,
       };
     }
-    
+
     // Handle reasoning parts - preserve type exactly as streamed
     if (part.type === "reasoning") {
       return {
@@ -87,14 +88,14 @@ function convertToStorageParts(
         state: "done" as const,
       };
     }
-    
+
     // Handle step-start parts - preserve type exactly
     if (part.type === "step-start") {
       return {
         type: "step-start" as const,
       };
     }
-    
+
     // Handle tool parts (tool-*, dynamic-tool, tool)
     // PRESERVE the original type field EXACTLY as streamed
     if (isToolPartType(part.type) || isToolUIPart(part)) {
@@ -108,7 +109,7 @@ function convertToStorageParts(
         title?: string;
         providerExecuted?: boolean;
       };
-      
+
       // Extract tool name from toolName property or from type (e.g., "tool-search" -> "search")
       let resolvedToolName = toolPart.toolName;
       if (!resolvedToolName && part.type.startsWith("tool-")) {
@@ -117,7 +118,7 @@ function convertToStorageParts(
       if (!resolvedToolName) {
         resolvedToolName = "unknown";
       }
-      
+
       // PRESERVE original type EXACTLY: "tool-search", "dynamic-tool", "tool", etc.
       return {
         type: part.type as ToolType,
@@ -131,7 +132,7 @@ function convertToStorageParts(
         providerExecuted: toolPart.providerExecuted,
       };
     }
-    
+
     // Handle file parts - preserve type exactly
     if (part.type === "file") {
       const filePart = part as {
@@ -147,7 +148,7 @@ function convertToStorageParts(
         filename: filePart.filename,
       };
     }
-    
+
     // Handle source-url parts - preserve type exactly
     if (part.type === "source-url") {
       const sourceUrlPart = part as {
@@ -163,7 +164,7 @@ function convertToStorageParts(
         title: sourceUrlPart.title,
       };
     }
-    
+
     // For any other unknown types, preserve them EXACTLY as-is
     // Exclude internal metadata fields that shouldn't be persisted
     // This ensures we don't lose any new part types added in the future
@@ -234,10 +235,10 @@ export async function POST(req: NextRequest) {
 
   // Variable to store the session ID from the agent run
   let capturedSessionId: string | null = null;
-  
+
   // Track tool calls for metadata
   let toolCallCount = 0;
-  
+
   // Track ALL streamed parts EXACTLY as they are written to the stream
   // This preserves the exact order and format of stream events
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -255,7 +256,7 @@ export async function POST(req: NextRequest) {
         ? `${uiMessage.id}-response`
         : createId("msg");
       let hasStarted = false;
-      
+
       // Send message-metadata at the START of the stream
       // This allows the frontend to have access to toolChoice BEFORE any tool events arrive
       // This is critical for manual tool confirmation UI - the frontend checks
@@ -268,7 +269,7 @@ export async function POST(req: NextRequest) {
           chatModel,
         },
       });
-      
+
       // Helper to write to stream AND track the part
       const writeAndTrack = (part: Parameters<typeof writer.write>[0]) => {
         writer.write(part);
@@ -291,7 +292,7 @@ export async function POST(req: NextRequest) {
           }
 
           fullText += delta;
-          
+
           // Write and track text-delta
           writeAndTrack({
             type: "text-delta",
@@ -318,18 +319,18 @@ export async function POST(req: NextRequest) {
             });
             hasStarted = false;
           }
-          
+
           // Track tool calls
           if (event.type === "tool_use" || event.type === "tool_use_start") {
             toolCallCount++;
           }
-          
+
           // Handle thinking/reasoning events - stream them as reasoning parts
           // Use the correct AI SDK stream chunk types: reasoning-start, reasoning-delta, reasoning-end
           if (event.type === "thinking" && event.output) {
             const reasoningId = createId("reasoning");
             const reasoningText = String(event.output);
-            
+
             // Write and track reasoning stream chunks
             writeAndTrack({
               type: "reasoning-start",
@@ -346,7 +347,7 @@ export async function POST(req: NextRequest) {
             });
             return; // Don't process as tool event
           }
-          
+
           // Stream tool events to frontend using Vercel AI SDK types
           // 
           // IMPORTANT: Two-handler design for manual vs auto mode:
@@ -362,7 +363,7 @@ export async function POST(req: NextRequest) {
             if (toolChoice === "manual" && (event.type === "tool_use" || event.type === "tool_use_start")) {
               return;
             }
-            
+
             // Auto mode: Send tool-input-start (AI SDK strictObject: type, toolCallId, toolName, providerExecuted?, providerMetadata?, dynamic?, title?)
             // NOTE: AI SDK's tool-input-start does NOT allow 'input' field - input goes in tool-input-available
             writeAndTrack({
@@ -373,7 +374,7 @@ export async function POST(req: NextRequest) {
               title: event.title,
               providerExecuted: event.providerExecuted,
             });
-            
+
             // For non-manual mode with available input, also send input-available
             // AI SDK's tool-input-available DOES include 'input' field
             // Note: In auto mode, event.state may be undefined but input is still available
@@ -389,7 +390,7 @@ export async function POST(req: NextRequest) {
               });
             }
           }
-          
+
           // Forward tool results with extended parameters
           if (event.type === "tool_result" && event.toolCallId) {
             writeAndTrack({
@@ -402,19 +403,21 @@ export async function POST(req: NextRequest) {
           }
         },
         onToolConfirmationRequest: async (event) => {
-          // When manual tool confirmation is needed, send tool events in correct order:
-          // 1. tool-input-start (tool call begins)
-          // 2. tool-input-available (input ready for review)
-          // 3. tool-approval-request (explicit approval request)
-          // This is the primary handler for manual mode - sends all events together
-          
+          // When manual tool confirmation is needed:
+          // 1. Send tool events to frontend for review
+          // 2. Block and wait for user confirmation via /api/claude-agent/tool-confirm
+          // 3. Return the user's decision to the agent
+          //
+          // This implements the blocking pattern from: docs/Claude Agent SDK 交互式工具时序图.md
+          // Backend creates Promise → blocks with await → frontend POSTs to confirm endpoint → Promise resolves
+
           // First: Send tool-input-start (AI SDK expects this before input-available)
           writeAndTrack({
             type: "tool-input-start",
             toolCallId: event.toolCallId,
             toolName: event.toolName,
           });
-          
+
           // Second: Send tool-input-available with the input
           writeAndTrack({
             type: "tool-input-available",
@@ -422,7 +425,7 @@ export async function POST(req: NextRequest) {
             toolName: event.toolName,
             input: event.input,
           });
-          
+
           // Third: Send tool-approval-request
           const approvalId = createId("approval");
           writeAndTrack({
@@ -430,6 +433,18 @@ export async function POST(req: NextRequest) {
             approvalId,
             toolCallId: event.toolCallId,
           });
+
+          // BLOCK: Wait for user confirmation via /api/claude-agent/tool-confirm endpoint
+          // This creates a Promise that resolves when the user clicks approve/reject
+          // The frontend will POST to /api/claude-agent/tool-confirm to resolve this
+          const confirmationResult = await createPendingToolConfirmation(
+            event.toolCallId,
+            event.toolName,
+            event.input
+          );
+
+          // Return the user's decision to the agent
+          return confirmationResult;
         },
         onError: async (error: Error) => {
           writer.write({

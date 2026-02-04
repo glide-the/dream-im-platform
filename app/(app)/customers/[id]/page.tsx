@@ -10,14 +10,13 @@ import ProfileCard from "../../../components/customer-detail/ProfileCard";
 import BasicInfoSection from "../../../components/customer-detail/BasicInfoSection";
 import MarkdownDetailSection from "../../../components/customer-detail/MarkdownDetailSection";
 import DecisionChainSection from "../../../components/customer-detail/DecisionChainSection";
-import AIInputDock, { type Attachment } from "../../../components/AIInputDock";
-import { ToolMessagePart, isManualToolInvocationPart } from "../../../components/ToolMessagePart";
+import AIInputDock, { type Attachment, type ToolChoice } from "../../../components/AIInputDock";
+import { ToolMessagePart } from "../../../components/ToolMessagePart";
 import { useCustomer, useUpdateCustomer, useConversationByCustomer } from "../../../lib/queries";
 import type { DecisionChainItem, ConversationMessage } from "../../../lib/types";
 import {
   type ChatApiSchemaRequestBody,
   type ChatAttachment,
-  type ChatMetadata,
   DEFAULT_CHAT_MODEL,
 } from "../../../lib/chat-schema";
 
@@ -72,7 +71,12 @@ export default function CustomerDetailPage({
   const pendingMessageDataRef = useRef<{
     rawAttachments: Attachment[];
     contextCustomerIds: string[];
+    toolChoice: ToolChoice;
   } | null>(null);
+
+  // Track current toolChoice for manual confirmation UI
+  // This persists across re-renders while streaming
+  const currentToolChoiceRef = useRef<ToolChoice>("auto");
 
   // Chat scroll reference
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -105,10 +109,11 @@ export default function CustomerDetailPage({
           return { body };
         }
 
-        // Get pending message data (attachments, customerIds)
+        // Get pending message data (attachments, customerIds, toolChoice)
         const pendingData = pendingMessageDataRef.current;
         const rawAttachments = pendingData?.rawAttachments ?? [];
         const contextCustomerIds = pendingData?.contextCustomerIds ?? [id];
+        const toolChoice = pendingData?.toolChoice ?? currentToolChoiceRef.current;
 
         // Map AIInputDock attachments to ChatAttachment format
         const attachments: ChatAttachment[] = rawAttachments.map((file) => ({
@@ -123,7 +128,7 @@ export default function CustomerDetailPage({
           id: chatId,
           message: lastMessage,
           chatModel: DEFAULT_CHAT_MODEL,
-          toolChoice: "auto",
+          toolChoice,
           allowedAppDefaultToolkit: [],
           allowedMcpServers: {},
           attachments,
@@ -138,6 +143,9 @@ export default function CustomerDetailPage({
     }),
     generateId,
     experimental_throttle: 100,
+    // Note: We do NOT use sendAutomaticallyWhen here because the backend 
+    // blocks and waits for tool confirmation via /api/claude-agent/tool-confirm.
+    // The backend will continue automatically after receiving the confirmation.
     onError: (error) => {
       console.error("Chat error:", error);
       setToast(error.message || "对话出错");
@@ -157,11 +165,11 @@ export default function CustomerDetailPage({
           // We need to:
           // 1. Combine text-delta events into text parts
           // 2. Convert tool-input-start/tool-input-available to tool parts
-          const processedParts: Array<{type: string; [key: string]: unknown}> = [];
-          
+          const processedParts: Array<{ type: string;[key: string]: unknown }> = [];
+
           if (msg.parts && msg.parts.length > 0) {
             let currentTextPart: { type: "text"; text: string; id?: string } | null = null;
-            
+
             for (const part of msg.parts) {
               // Handle text-start: begin a new text part
               if (part.type === "text-start") {
@@ -169,7 +177,7 @@ export default function CustomerDetailPage({
                 currentTextPart = { type: "text", text: "", id: startPart.id };
                 continue;
               }
-              
+
               // Handle text-delta: append delta to current text part
               if (part.type === "text-delta") {
                 const deltaPart = part as { id?: string; delta?: string };
@@ -181,7 +189,7 @@ export default function CustomerDetailPage({
                 }
                 continue;
               }
-              
+
               // Handle text-end: finalize current text part
               if (part.type === "text-end") {
                 if (currentTextPart && currentTextPart.text.trim()) {
@@ -190,19 +198,19 @@ export default function CustomerDetailPage({
                 currentTextPart = null;
                 continue;
               }
-              
+
               // Before processing non-text parts, save any pending text
               if (currentTextPart && currentTextPart.text.trim()) {
                 processedParts.push(currentTextPart);
                 currentTextPart = null;
               }
-              
+
               // Handle reasoning-start: begin reasoning part (similar to text)
               if (part.type === "reasoning-start") {
                 // Push a reasoning marker, actual content comes in reasoning-delta
                 continue;
               }
-              
+
               // Handle reasoning-delta: create reasoning part with text
               if (part.type === "reasoning-delta") {
                 const deltaPart = part as { id?: string; delta?: string };
@@ -214,12 +222,12 @@ export default function CustomerDetailPage({
                 }
                 continue;
               }
-              
+
               // Handle reasoning-end: no action needed
               if (part.type === "reasoning-end") {
                 continue;
               }
-              
+
               // Handle tool-input-start: convert to tool part format
               if (part.type === "tool-input-start") {
                 const toolPart = part as {
@@ -240,7 +248,7 @@ export default function CustomerDetailPage({
                 });
                 continue;
               }
-              
+
               // Handle tool-input-available: convert to tool part with input-available state
               if (part.type === "tool-input-available") {
                 const toolPart = part as {
@@ -261,7 +269,7 @@ export default function CustomerDetailPage({
                 });
                 continue;
               }
-              
+
               // Handle tool-output-available: convert to completed tool part
               if (part.type === "tool-output-available") {
                 const toolPart = part as {
@@ -284,7 +292,7 @@ export default function CustomerDetailPage({
                 });
                 continue;
               }
-              
+
               // Handle legacy text parts (from old storage format)
               if (part.type === "text") {
                 processedParts.push({
@@ -293,7 +301,7 @@ export default function CustomerDetailPage({
                 });
                 continue;
               }
-              
+
               // Handle legacy reasoning parts
               if (part.type === "reasoning") {
                 processedParts.push({
@@ -302,13 +310,13 @@ export default function CustomerDetailPage({
                 });
                 continue;
               }
-              
+
               // Handle step-start parts
               if (part.type === "step-start") {
                 processedParts.push({ type: "step-start" });
                 continue;
               }
-              
+
               // Handle legacy tool parts - types like "tool-{name}", "dynamic-tool", or "tool"
               if (part.type.startsWith("tool-") || part.type === "dynamic-tool" || part.type === "tool") {
                 const toolPart = part as {
@@ -322,11 +330,11 @@ export default function CustomerDetailPage({
                   providerExecuted?: boolean;
                 };
                 // State conversion
-                const displayState = toolPart.state === "done" 
-                  ? "output-available" 
+                const displayState = toolPart.state === "done"
+                  ? "output-available"
                   : toolPart.state;
                 const displayType = part.type === "tool" ? "dynamic-tool" : part.type;
-                
+
                 processedParts.push({
                   type: displayType,
                   toolCallId: toolPart.toolCallId,
@@ -339,7 +347,7 @@ export default function CustomerDetailPage({
                 });
                 continue;
               }
-              
+
               // Handle file parts
               if (part.type === "file") {
                 const filePart = part as { url: string; mediaType?: string; filename?: string };
@@ -351,7 +359,7 @@ export default function CustomerDetailPage({
                 });
                 continue;
               }
-              
+
               // Handle source-url parts
               if (part.type === "source-url") {
                 const sourceUrlPart = part as { url: string; mediaType?: string; title?: string };
@@ -363,22 +371,22 @@ export default function CustomerDetailPage({
                 });
                 continue;
               }
-              
+
               // Skip finish and other meta events
               if (part.type === "finish" || part.type === "error") {
                 continue;
               }
-              
+
               // For any other unknown types, pass through as-is
               processedParts.push(part);
             }
-            
+
             // Don't forget any pending text at the end
             if (currentTextPart && currentTextPart.text.trim()) {
               processedParts.push(currentTextPart);
             }
           }
-          
+
           return {
             id: msg.id,
             role: msg.role,
@@ -405,7 +413,7 @@ export default function CustomerDetailPage({
   const shouldShowLoadingIndicator = useMemo(() => {
     if (!chatLoading || chatMessages.length === 0) return false;
     const lastMessage = chatMessages.at(-1);
-    const hasVisibleParts = lastMessage?.parts?.some(p => 
+    const hasVisibleParts = lastMessage?.parts?.some(p =>
       p.type === "text" || isToolUIPart(p)
     );
     return !hasVisibleParts;
@@ -601,13 +609,12 @@ export default function CustomerDetailPage({
                 chatMessages.map((msg, msgIndex) => {
                   const isUser = msg.role === "user";
                   const isLastMessage = msgIndex === chatMessages.length - 1;
-                  const metadata = msg.metadata as ChatMetadata | undefined;
-
+                  console.log("Rendering message:", msg);
                   return (
                     <div key={msg.id} className="flex flex-col gap-2">
                       {msg.parts?.map((part, partIndex) => {
                         const isLastPart = partIndex === (msg.parts?.length ?? 0) - 1;
-                        
+
                         // Handle step-start parts (step markers)
                         if (part.type === "step-start") {
                           return (
@@ -623,7 +630,7 @@ export default function CustomerDetailPage({
                             </div>
                           );
                         }
-                        
+
                         // Handle reasoning parts (AI thinking/reasoning)
                         if (part.type === "reasoning") {
                           const reasoningText = (part as { text?: string }).text;
@@ -645,7 +652,7 @@ export default function CustomerDetailPage({
                             </div>
                           );
                         }
-                        
+
                         // Handle text parts
                         if (part.type === "text" && part.text) {
                           return (
@@ -669,12 +676,6 @@ export default function CustomerDetailPage({
 
                         // Handle tool parts
                         if (isToolUIPart(part)) {
-                          const isManual = isManualToolInvocationPart(
-                            part as ToolUIPart | DynamicToolUIPart,
-                            metadata,
-                            isLastMessage,
-                            chatLoading
-                          );
                           return (
                             <div key={`${msg.id}-${partIndex}`} className="flex justify-start">
                               <div className="max-w-[90%]">
@@ -682,7 +683,7 @@ export default function CustomerDetailPage({
                                   part={part as ToolUIPart | DynamicToolUIPart}
                                   isLast={isLastMessage && isLastPart}
                                   isLoading={chatLoading}
-                                  isManualToolInvocation={isManual}
+                                  isManualToolInvocation={false}
                                   addToolResult={addToolResult}
                                 />
                               </div>
@@ -735,14 +736,18 @@ export default function CustomerDetailPage({
                 company: customer.company
               }
             ]}
-            onSendMessage={async (message, attachments = [], customerIds = []) => {
+            onSendMessage={async (message, attachments = [], customerIds = [], toolChoice = "auto") => {
               setShowChatArea(true);
               setIsInfoCollapsed(true);
 
-              // Store attachments and customer IDs for the prepareSendMessagesRequest
+              // Update current toolChoice ref for manual confirmation UI
+              currentToolChoiceRef.current = toolChoice;
+
+              // Store attachments, customer IDs, and toolChoice for the prepareSendMessagesRequest
               pendingMessageDataRef.current = {
                 rawAttachments: attachments,
                 contextCustomerIds: customerIds.length > 0 ? customerIds : [id],
+                toolChoice,
               };
 
               // Send user message to chat via useChat

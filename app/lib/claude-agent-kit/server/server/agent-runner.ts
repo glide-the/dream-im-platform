@@ -9,6 +9,8 @@ import type {
   SDKMessage,
   SDKUserMessage,
   Options as SDKOptions,
+  CanUseTool,
+  PermissionResult,
 } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
 import { buildUserMessageContent } from "../../messages/messages/build-user-message-content";
@@ -44,14 +46,18 @@ export interface AgentStreamingCallbacks {
   /** Called when a tool event is received */
   onToolEvent?: (event: ToolEventPayload) => Promise<void> | void;
   /** 
-   * Called when a tool call needs manual confirmation
-   * This is triggered when toolChoice="manual" and a tool call is proposed
+   * Called when a tool call needs manual confirmation.
+   * This is triggered when toolChoice="manual" and a tool call is proposed.
+   * 
+   * Returns a confirmation result indicating whether the tool should be executed.
+   * The callback should block (await) until user confirmation is received.
+   * If undefined is returned, the tool will NOT be auto-executed.
    */
   onToolConfirmationRequest?: (event: {
     toolCallId: string;
     toolName: string;
     input: Record<string, unknown>;
-  }) => Promise<void> | void;
+  }) => Promise<{ approved: boolean; reason?: string } | void> | { approved: boolean; reason?: string } | void;
   /** Called when an error occurs */
   onError?: (error: Error) => Promise<void> | void;
   /** Called when any message is received (for logging) */
@@ -204,16 +210,80 @@ export class ClaudeAgentRunner {
     // When toolChoice is "none", disable all tools
     const effectiveAllowedTools = toolChoice === "none" ? [] : allowedTools;
 
+    // Create canUseTool callback for manual tool confirmation mode
+    // This is the official SDK permission handler called before each tool execution
+    // Reference: https://platform.claude.com/docs/en/agent-sdk/user-input
+    const canUseTool: CanUseTool | undefined = async (
+      toolName: string,
+      toolInput: Record<string, unknown>,
+      options: {
+        signal: AbortSignal;
+        toolUseID: string;
+        suggestions?: unknown[];
+        blockedPath?: string;
+        decisionReason?: string;
+        agentID?: string;
+      }
+    ): Promise<PermissionResult> => {
+      const toolCallId = options.toolUseID;
+
+      // Store pending tool call
+      pendingToolCalls.set(toolCallId, { toolName, input: toolInput });
+
+
+      // Call the confirmation callback and WAIT for user response
+      // This blocks until the user approves or rejects
+      if (callbacks.onToolConfirmationRequest) {
+        const confirmationResult = await callbacks.onToolConfirmationRequest({
+          toolCallId,
+          toolName,
+          input: toolInput,
+        });
+
+        // Type guard: check if we got a valid result object
+        if (confirmationResult && typeof confirmationResult === 'object' && 'approved' in confirmationResult) {
+          if (confirmationResult.approved === true) {
+            // User approved - allow tool execution
+            pendingToolCalls.delete(toolCallId);
+            return {
+              behavior: 'allow',
+              toolUseID: toolCallId,
+            };
+          } else if (confirmationResult.approved === false) {
+            // User rejected - deny tool execution
+            pendingToolCalls.delete(toolCallId);
+            const reason = confirmationResult.reason || "用户拒绝执行该工具";
+            return {
+              behavior: 'deny',
+              message: reason,
+              toolUseID: toolCallId,
+            };
+          }
+        }
+      }
+
+      // No confirmation callback or no result - default to deny
+      pendingToolCalls.delete(toolCallId);
+      return {
+        behavior: 'deny',
+        message: '需要用户确认但未收到响应',
+        toolUseID: toolCallId,
+      };
+    }
+
+
     // Build SDK options
     // When resume is true, use threadId as the session to resume
     const sdkOptions: Partial<SDKOptions> = {
       maxTurns,
       allowedTools: effectiveAllowedTools,
       settingSources: ["project"],
-      permissionMode: "dontAsk",
+      // permissionMode: toolChoice === "manual" ? "bypassPermissions" : "dontAsk",
       ...(cwd ? { cwd } : { cwd: process.cwd() }),
       ...(resume ? { resume: threadId } : {}),  // Use threadId for resume since they're the same
       ...(abortController ? { abortController } : {}),
+      // Add canUseTool callback for manual confirmation mode
+      ...(canUseTool ? { canUseTool } : {}),
     };
 
     try {
@@ -294,31 +364,12 @@ export class ClaudeAgentRunner {
               const toolName = block.name;
               const input = block.input as Record<string, unknown>;
 
-              // Store pending tool call for manual mode
-              if (toolChoice === "manual") {
-                pendingToolCalls.set(toolCallId, { toolName, input });
-
-                // Notify that this tool call needs confirmation
-                if (callbacks.onToolConfirmationRequest) {
-                  await callbacks.onToolConfirmationRequest({
-                    toolCallId,
-                    toolName,
-                    input,
-                  });
-                }
-
-                // Also send tool event with state for UI rendering
-                if (callbacks.onToolEvent) {
-                  await callbacks.onToolEvent({
-                    type: "tool_use",
-                    toolName,
-                    toolCallId,
-                    input,
-                    state: "input-available", // Waiting for confirmation
-                  });
-                }
-              } else if (callbacks.onToolEvent) {
-                // Auto mode - just report the tool use
+              // In manual mode, the PreToolUse hook handles confirmation before tool execution.
+              // Here we just report the tool_use event for UI display.
+              // The hook will block and wait for user approval, then either:
+              // - Allow: tool executes and we'll receive tool_result later
+              // - Deny: tool is blocked and Claude receives the rejection
+              if (callbacks.onToolEvent) {
                 await callbacks.onToolEvent({
                   type: "tool_use",
                   toolName,

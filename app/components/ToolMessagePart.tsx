@@ -3,13 +3,30 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { getToolName, type ToolUIPart, type DynamicToolUIPart } from "ai";
 import { IconChevronDown, IconChevronUp } from "./Icons";
-import { 
-  ManualToolConfirmTag, 
+import {
+  ManualToolConfirmTag,
   type ChatMetadata,
 } from "../lib/chat-schema";
 
 // Union type for tool parts
 type AnyToolUIPart = ToolUIPart | DynamicToolUIPart;
+
+/**
+ * Helper to call the tool confirmation API
+ * This sends the user's decision to the backend which unblocks the waiting agent
+ */
+async function confirmToolCall(
+  toolCallId: string,
+  approved: boolean,
+  reason?: string
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch("/api/claude-agent/tool-confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ toolCallId, approved, reason }),
+  });
+  return response.json();
+}
 
 /**
  * Tool icon component
@@ -151,16 +168,23 @@ export function ToolMessagePart({
   // Extract toolCallId and toolName
   const toolCallId = part.toolCallId;
   const toolName = getToolName(part);
-  
+
   // Extract input and output based on part state
   const input = 'input' in part ? part.input : undefined;
   const output = 'output' in part ? part.output : undefined;
   const state = part.state;
-  
+
   // Extract extended parameters
   const title = 'title' in part ? (part as { title?: string }).title : undefined;
   const providerExecuted = 'providerExecuted' in part ? (part as { providerExecuted?: boolean }).providerExecuted : undefined;
   const partType = part.type; // Preserve original type for display
+
+  // Determine if we should show the approval UI
+  // The parent component (page.tsx) passes isManualToolInvocation=true when:
+  // 1. The tool is in "input-available" state
+  // 2. It's the last message and still streaming
+  // This means the backend is waiting for user confirmation
+  const shouldShowApprovalUI = isManualToolInvocation === true || partType === 'tool-AskUserQuestion';
 
   // Determine if the tool is completed (has output)
   const isCompleted = useMemo(() => {
@@ -196,29 +220,50 @@ export function ToolMessagePart({
     }
   }, [output]);
 
-  // Handle approve action
-  const handleApprove = useCallback(() => {
-    if (!addToolResult) return;
-    addToolResult({
-      tool: toolName,
-      toolCallId,
-      output: ManualToolConfirmTag.create({ confirm: true }),
-    });
-  }, [addToolResult, toolName, toolCallId]);
+  // Local state for confirmation status
+  const [confirmationStatus, setConfirmationStatus] = useState<"idle" | "confirming" | "confirmed" | "rejected">("idle");
 
-  // Handle reject action
-  const handleReject = useCallback(() => {
-    if (!addToolResult) return;
-    addToolResult({
-      tool: toolName,
-      toolCallId,
-      output: ManualToolConfirmTag.create({ confirm: false }),
-    });
-  }, [addToolResult, toolName, toolCallId]);
+  // Handle approve action - calls the backend confirmation API
+  const handleApprove = useCallback(async () => {
+    if (confirmationStatus !== "idle") return;
+
+    setConfirmationStatus("confirming");
+    try {
+      const result = await confirmToolCall(toolCallId, true);
+      if (result.success) {
+        setConfirmationStatus("confirmed");
+      } else {
+        console.error("Tool confirmation failed:", result.message);
+        setConfirmationStatus("idle"); // Reset to allow retry
+      }
+    } catch (error) {
+      console.error("Tool confirmation error:", error);
+      setConfirmationStatus("idle"); // Reset to allow retry
+    }
+  }, [toolCallId, confirmationStatus]);
+
+  // Handle reject action - calls the backend confirmation API
+  const handleReject = useCallback(async () => {
+    if (confirmationStatus !== "idle") return;
+
+    setConfirmationStatus("confirming");
+    try {
+      const result = await confirmToolCall(toolCallId, false, "用户拒绝执行工具");
+      if (result.success) {
+        setConfirmationStatus("rejected");
+      } else {
+        console.error("Tool rejection failed:", result.message);
+        setConfirmationStatus("idle"); // Reset to allow retry
+      }
+    } catch (error) {
+      console.error("Tool rejection error:", error);
+      setConfirmationStatus("idle"); // Reset to allow retry
+    }
+  }, [toolCallId, confirmationStatus]);
 
   // Keyboard shortcuts for approve/reject
   useEffect(() => {
-    if (!isManualToolInvocation) return;
+    if (!shouldShowApprovalUI) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Cmd/Ctrl + Enter to approve
@@ -235,7 +280,7 @@ export function ToolMessagePart({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isManualToolInvocation, handleApprove, handleReject]);
+  }, [shouldShowApprovalUI, handleApprove, handleReject]);
 
   return (
     <div className="group w-full">
@@ -303,7 +348,7 @@ export function ToolMessagePart({
                 )}
               </div>
             </div>
-            
+
             {/* Input section */}
             <div className="rounded-lg border border-border bg-bg-secondary p-3">
               <h5 className="text-xs font-medium text-text-tertiary mb-2">
@@ -329,7 +374,7 @@ export function ToolMessagePart({
         )}
 
         {/* Manual tool confirmation buttons */}
-        {isManualToolInvocation && (
+        {shouldShowApprovalUI && confirmationStatus === "idle" && (
           <div className="px-3 pb-3 flex flex-row gap-2 items-center">
             <button
               type="button"
@@ -352,6 +397,30 @@ export function ToolMessagePart({
           </div>
         )}
 
+        {/* Confirmation in progress */}
+        {shouldShowApprovalUI && confirmationStatus === "confirming" && (
+          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-accent">
+            <IconLoader className="h-4 w-4 animate-spin" />
+            <span>处理中...</span>
+          </div>
+        )}
+
+        {/* Confirmed status */}
+        {shouldShowApprovalUI && confirmationStatus === "confirmed" && (
+          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-green-600">
+            <IconCheck className="h-4 w-4" />
+            <span>已确认，工具执行中</span>
+          </div>
+        )}
+
+        {/* Rejected status */}
+        {shouldShowApprovalUI && confirmationStatus === "rejected" && (
+          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-red-500">
+            <IconClose className="h-4 w-4" />
+            <span>已取消</span>
+          </div>
+        )}
+
         {/* Status indicator */}
         {isExecuting && (
           <div className="px-3 pb-2">
@@ -366,24 +435,5 @@ export function ToolMessagePart({
   );
 }
 
-/**
- * Helper function to check if a tool part is awaiting manual confirmation
- * This is used in the message rendering loop to determine if approval UI should be shown.
- * 
- * Reference: cgoinglove/better-chatbot src/components/message.tsx
- */
-export function isManualToolInvocationPart(
-  part: AnyToolUIPart,
-  metadata?: ChatMetadata,
-  isLastMessage?: boolean,
-  isLoading?: boolean
-): boolean {
-  return (
-    metadata?.toolChoice === "manual" &&
-    isLastMessage === true &&
-    part.state === "input-available" &&
-    isLoading === true
-  );
-}
 
 export default ToolMessagePart;

@@ -15,15 +15,20 @@ export interface ContextCustomer {
   company?: string;
 }
 
+/** Tool choice mode - determines how tool calls are handled */
+export type ToolChoice = "auto" | "none" | "manual";
+
 interface AIInputDockProps {
   contextCustomerId?: string;
   contextCustomers?: ContextCustomer[];
-  onSendMessage: (message: string, attachments?: Attachment[], customerIds?: string[]) => void;
+  onSendMessage: (message: string, attachments?: Attachment[], customerIds?: string[], toolChoice?: ToolChoice) => void;
   onAddContextCustomer?: () => void;
   onRemoveContextCustomer?: (id: string) => void;
   placeholder?: string;
   disabled?: boolean;
   loading?: boolean;
+  /** Default tool choice mode */
+  defaultToolChoice?: ToolChoice;
 }
 
 export default function AIInputDock({
@@ -34,10 +39,12 @@ export default function AIInputDock({
   onRemoveContextCustomer,
   placeholder = "输入公司 + 姓名…",
   disabled = false,
-  loading = false
+  loading = false,
+  defaultToolChoice = "auto"
 }: AIInputDockProps) {
   const [query, setQuery] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [toolChoice, setToolChoice] = useState<ToolChoice>(defaultToolChoice);
 
   function handleAttachment(files?: FileList | null) {
     if (!files) return;
@@ -66,7 +73,7 @@ export default function AIInputDock({
       customerIds.push(contextCustomerId);
     }
 
-    onSendMessage(query, attachments, customerIds);
+    onSendMessage(query, attachments, customerIds, toolChoice);
     setQuery("");
     setAttachments([]);
   }
@@ -92,6 +99,18 @@ export default function AIInputDock({
             </label>
           ))}
         </div>
+
+        {/* 工具选项 */}
+        <select
+          className="rounded-full border border-border bg-bg-surface px-2 py-1 text-xs text-text-secondary"
+          value={toolChoice}
+          onChange={(e) => setToolChoice(e.target.value as ToolChoice)}
+          disabled={disabled}
+        >
+          <option value="auto">🔧 自动</option>
+          <option value="manual">✋ 手动确认</option>
+          <option value="none">🚫 禁用工具</option>
+        </select>
 
         {/* @客户按钮 */}
         {onAddContextCustomer && (
