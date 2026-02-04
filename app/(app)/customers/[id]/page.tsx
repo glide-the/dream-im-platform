@@ -10,7 +10,7 @@ import ProfileCard from "../../../components/customer-detail/ProfileCard";
 import BasicInfoSection from "../../../components/customer-detail/BasicInfoSection";
 import MarkdownDetailSection from "../../../components/customer-detail/MarkdownDetailSection";
 import DecisionChainSection from "../../../components/customer-detail/DecisionChainSection";
-import AIInputDock, { type Attachment, type ToolChoice } from "../../../components/AIInputDock";
+import AIInputDock, { type UploadedFile, type Attachment, type ToolChoice, toAttachment } from "../../../components/AIInputDock";
 import { ToolMessagePart } from "../../../components/ToolMessagePart";
 import { useCustomer, useUpdateCustomer, useConversationByCustomer } from "../../../lib/queries";
 import type { DecisionChainItem, ConversationMessage } from "../../../lib/types";
@@ -736,12 +736,15 @@ export default function CustomerDetailPage({
                 company: customer.company
               }
             ]}
-            onSendMessage={async (message, attachments = [], customerIds = [], toolChoice = "auto") => {
+            onSendMessage={async (message, uploadedFiles = [], customerIds = [], toolChoice = "auto") => {
               setShowChatArea(true);
               setIsInfoCollapsed(true);
 
               // Update current toolChoice ref for manual confirmation UI
               currentToolChoiceRef.current = toolChoice;
+
+              // Convert UploadedFile[] to Attachment[] for the prepareSendMessagesRequest
+              const attachments = uploadedFiles.map(toAttachment);
 
               // Store attachments, customer IDs, and toolChoice for the prepareSendMessagesRequest
               pendingMessageDataRef.current = {
