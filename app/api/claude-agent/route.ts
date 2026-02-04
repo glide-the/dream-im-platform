@@ -30,6 +30,11 @@ import {
 import { createId } from "../../lib/id";
 import type { Conversation, MessagePart, Attachment, ToolType } from "../../lib/types";
 import { createPendingToolConfirmation } from "../../lib/tool-confirmation-store";
+import {
+  buildDocumentIngestionPreviewParts,
+  isWeKnoraSupported,
+  type DocumentProcessingResult,
+} from "../../lib/weknora";
 
 export const runtime = "nodejs";
 
@@ -218,6 +223,54 @@ export async function POST(req: NextRequest) {
     attachments = [],
     contextCustomerIds = [],
   } = body;
+
+  // ===========================================================================
+  // Process attachments via WeKnora (Reference: better-chatbot processDocument)
+  // ===========================================================================
+  // Process document attachments and inject content previews into the message
+  // This is similar to better-chatbot's buildCsvIngestionPreviewParts pattern
+  const ingestionPreviewParts: DocumentProcessingResult[] = await buildDocumentIngestionPreviewParts(
+    attachments,
+    // Download function for file attachments (fetch the file content)
+    async (url: string) => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.status}`);
+      }
+      return response.blob();
+    }
+  );
+
+  // Inject ingestion preview parts into the message
+  // Following better-chatbot pattern: insert before the last text part
+  if (ingestionPreviewParts.length > 0) {
+    const baseParts = [...(uiMessage.parts || [])];
+    let insertionIndex = -1;
+    
+    // Find the last text part to insert before
+    for (let i = baseParts.length - 1; i >= 0; i -= 1) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((baseParts[i] as any)?.type === "text") {
+        insertionIndex = i;
+        break;
+      }
+    }
+
+    // Convert DocumentProcessingResult to message parts
+    const previewParts = ingestionPreviewParts.map((result) => ({
+      type: "text" as const,
+      text: result.text,
+    }));
+
+    if (insertionIndex !== -1) {
+      baseParts.splice(insertionIndex, 0, ...previewParts);
+      uiMessage.parts = baseParts;
+    } else {
+      uiMessage.parts = [...baseParts, ...previewParts];
+    }
+
+    console.log(`[Claude Agent API] Injected ${ingestionPreviewParts.length} document previews into message`);
+  }
 
   // Extract text content from UIMessage
   const messageText = extractTextFromParts(uiMessage.parts);
