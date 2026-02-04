@@ -31,6 +31,8 @@ export interface Attachment {
   name: string;
   type: string;
   size: number;
+  /** Remote URL after upload completes */
+  url?: string;
 }
 
 /** Convert UploadedFile to Attachment for backward compatibility */
@@ -39,6 +41,7 @@ export function toAttachment(file: UploadedFile): Attachment {
     name: file.name,
     type: file.mimeType,
     size: file.size,
+    url: file.url,
   };
 }
 

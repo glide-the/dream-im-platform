@@ -117,12 +117,30 @@ export default function CustomerDetailPage({
         const toolChoice = pendingData?.toolChoice ?? currentToolChoiceRef.current;
 
         // Map AIInputDock attachments to ChatAttachment format
+        // Also filter to only include files with valid URLs for display
+        const validAttachments = rawAttachments.filter((file) => file.url);
+        
         const attachments: ChatAttachment[] = rawAttachments.map((file) => ({
           type: "file" as const,
-          url: file.name, // For now, just use filename as URL placeholder
+          url: file.url || file.name, // Use actual uploaded URL, fallback to filename
           mediaType: file.type,
           filename: file.name,
         }));
+
+        // Add file parts to the user message so they appear in the chat preview
+        // Only include files with valid URLs to avoid broken references
+        if (validAttachments.length > 0 && lastMessage.role === "user") {
+          const fileParts = validAttachments.map((file) => ({
+            type: "file" as const,
+            url: file.url!,
+            mediaType: file.type,
+            filename: file.name,
+          }));
+          
+          // Append file parts to the message parts
+          const existingParts = lastMessage.parts || [];
+          lastMessage.parts = [...existingParts, ...fileParts];
+        }
 
         // Build the ChatApiSchemaRequestBody
         const requestBody: ChatApiSchemaRequestBody = {
