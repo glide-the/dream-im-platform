@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, isToolUIPart, type UIMessage, type ToolUIPart, type DynamicToolUIPart, type FileUIPart } from "ai";
+import { DefaultChatTransport, isToolUIPart, type UIMessage, type ToolUIPart, type DynamicToolUIPart, type FileUIPart, type TextUIPart } from "ai";
 import { IconChevronLeft, IconChevronDown } from "../../../components/Icons";
 import Toast from "../../../components/Toast";
 import ProfileCard from "../../../components/customer-detail/ProfileCard";
@@ -778,7 +778,8 @@ export default function CustomerDetailPage({
               };
 
               // Build message parts: file parts first, then text
-              const parts: Array<{ type: string; text?: string; url?: string; mediaType?: string; filename?: string }> = [];
+              // Using AI SDK types for proper type safety
+              const parts: Array<FileUIPart | TextUIPart> = [];
               
               // Add file parts for valid uploaded files
               for (const file of validFiles) {
@@ -787,21 +788,21 @@ export default function CustomerDetailPage({
                   url: file.url!,
                   mediaType: file.mimeType,
                   filename: file.name,
-                });
+                } as FileUIPart);
               }
               
               // Add text part
               parts.push({
                 type: "text",
                 text: message,
-              });
+              } as TextUIPart);
 
               // Send user message with file parts included
               // The prepareSendMessagesRequest will add attachments to the request body
               await sendMessage({
                 role: "user",
                 parts,
-              } as Parameters<typeof sendMessage>[0]);
+              });
             }}
             onAddContextCustomer={() => {
               // 可以添加客户选择器
