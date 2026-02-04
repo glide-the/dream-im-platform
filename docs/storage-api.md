@@ -1,7 +1,7 @@
 # Storage API 文档
 
 > **路径**: `app/api/storage/`
-> **最后更新**: 2026-02-03
+> **最后更新**: 2026-02-04
 
 ---
 
@@ -10,6 +10,63 @@
 Storage API 提供文件上传和存储服务，支持多种存储后端：
 - **Vercel Blob**: Vercel 提供的对象存储服务（默认）
 - **S3**: AWS S3 或兼容的对象存储（如 MinIO、DigitalOcean Spaces）
+
+---
+
+## 🐳 Docker 本地开发
+
+项目提供 `docker-compose.yml` 用于本地开发测试，包含：
+- **PostgreSQL 16**: 数据库
+- **MinIO**: S3 兼容的对象存储
+
+### 启动服务
+
+```bash
+# 启动所有服务
+docker compose up -d
+
+# 查看服务状态
+docker compose ps
+
+# 查看 MinIO 初始化日志
+docker compose logs minio-init
+```
+
+### 访问地址
+
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| MinIO API | http://localhost:9000 | S3 兼容 API |
+| MinIO Console | http://localhost:9001 | Web 管理界面 |
+| PostgreSQL | localhost:5432 | 数据库 |
+
+### 默认凭证
+
+| 项目 | 用户名/密码 |
+|------|-------------|
+| MinIO | `minioadmin` / `minioadmin` |
+| PostgreSQL | `postgres` / `postgres` |
+| 数据库名 | `ai4sales` |
+| S3 Bucket | `vibesales` (自动创建，设为公开访问) |
+
+### 配置环境变量
+
+创建 `.env.local` 文件使用 Docker MinIO：
+
+```bash
+# 使用 Docker MinIO
+FILE_STORAGE_TYPE=s3
+FILE_STORAGE_S3_BUCKET=vibesales
+FILE_STORAGE_S3_REGION=us-east-1
+FILE_STORAGE_S3_ENDPOINT=http://localhost:9000
+FILE_STORAGE_S3_FORCE_PATH_STYLE=true
+AWS_ACCESS_KEY_ID=minioadmin
+AWS_SECRET_ACCESS_KEY=minioadmin
+FILE_STORAGE_PREFIX=uploads
+
+# PostgreSQL
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/ai4sales
+```
 
 ---
 
