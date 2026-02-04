@@ -7,6 +7,7 @@ import {
   ManualToolConfirmTag,
   type ChatMetadata,
 } from "../lib/chat-schema";
+import { AskUserQuestionUI, type AskUserQuestionInput } from "./AskUserQuestionUI";
 
 // Union type for tool parts
 type AnyToolUIPart = ToolUIPart | DynamicToolUIPart;
@@ -179,17 +180,39 @@ export function ToolMessagePart({
   const providerExecuted = 'providerExecuted' in part ? (part as { providerExecuted?: boolean }).providerExecuted : undefined;
   const partType = part.type; // Preserve original type for display
 
+  // Determine if the tool is completed (has output)
+  const isCompleted = useMemo(() => {
+    return state === "output-available" || state === "output-error";
+  }, [state]);
+
+  // Check if this is an AskUserQuestion tool
+  // It can be identified by tool type or tool name
+  const isAskUserQuestion = useMemo(() => {
+    return (
+      partType === 'tool-AskUserQuestion' ||
+      toolName === 'AskUserQuestion' ||
+      toolName.toLowerCase().includes('askuser') ||
+      toolName.toLowerCase().includes('ask_user')
+    );
+  }, [partType, toolName]);
+
+  // Determine if we should show the AskUserQuestion interactive UI
+  // Only show when the tool is awaiting input (not completed)
+  const shouldShowAskUserUI = useMemo(() => {
+    return (
+      isAskUserQuestion &&
+      !isCompleted &&
+      (state === 'input-available' || !state || state === 'input-streaming')
+    );
+  }, [isAskUserQuestion, isCompleted, state]);
+
   // Determine if we should show the approval UI
   // The parent component (page.tsx) passes isManualToolInvocation=true when:
   // 1. The tool is in "input-available" state
   // 2. It's the last message and still streaming
   // This means the backend is waiting for user confirmation
-  const shouldShowApprovalUI = isManualToolInvocation === true || partType === 'tool-AskUserQuestion';
-
-  // Determine if the tool is completed (has output)
-  const isCompleted = useMemo(() => {
-    return state === "output-available" || state === "output-error";
-  }, [state]);
+  // Don't show approval UI for AskUserQuestion - it has its own interactive UI
+  const shouldShowApprovalUI = (isManualToolInvocation === true || partType === 'tool-AskUserQuestion') && !shouldShowAskUserUI;
 
   // Determine if the tool is currently executing
   const isExecuting = useMemo(() => {
@@ -282,6 +305,57 @@ export function ToolMessagePart({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [shouldShowApprovalUI, handleApprove, handleReject]);
 
+  // Handle AskUserQuestion form submission
+  // Sends user's answers back to the backend via tool confirmation API
+  const handleAskUserSubmit = useCallback(async (answers: Record<string, unknown>) => {
+    if (confirmationStatus !== "idle") return;
+
+    setConfirmationStatus("confirming");
+    try {
+      // Send answers as the tool result
+      // The backend will use these answers to continue the agent execution
+      const response = await fetch("/api/claude-agent/tool-confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          toolCallId, 
+          approved: true, 
+          answers, // Include user's answers
+        }),
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        setConfirmationStatus("confirmed");
+      } else {
+        console.error("AskUserQuestion submission failed:", result.message);
+        setConfirmationStatus("idle");
+      }
+    } catch (error) {
+      console.error("AskUserQuestion submission error:", error);
+      setConfirmationStatus("idle");
+    }
+  }, [toolCallId, confirmationStatus]);
+
+  // Handle AskUserQuestion cancellation
+  const handleAskUserCancel = useCallback(async () => {
+    if (confirmationStatus !== "idle") return;
+
+    setConfirmationStatus("confirming");
+    try {
+      const result = await confirmToolCall(toolCallId, false, "用户取消了问题回答");
+      if (result.success) {
+        setConfirmationStatus("rejected");
+      } else {
+        console.error("AskUserQuestion cancellation failed:", result.message);
+        setConfirmationStatus("idle");
+      }
+    } catch (error) {
+      console.error("AskUserQuestion cancellation error:", error);
+      setConfirmationStatus("idle");
+    }
+  }, [toolCallId, confirmationStatus]);
+
   return (
     <div className="group w-full">
       <div className="flex flex-col rounded-lg border border-border bg-bg-surface">
@@ -370,6 +444,44 @@ export function ToolMessagePart({
                 </pre>
               </div>
             )}
+          </div>
+        )}
+
+        {/* AskUserQuestion interactive form */}
+        {shouldShowAskUserUI && confirmationStatus === "idle" && (
+          <div className="px-3 pb-3">
+            <AskUserQuestionUI
+              input={input as AskUserQuestionInput}
+              toolCallId={toolCallId}
+              toolName={toolName}
+              isProcessing={confirmationStatus === "confirming"}
+              onSubmit={handleAskUserSubmit}
+              onCancel={handleAskUserCancel}
+            />
+          </div>
+        )}
+
+        {/* AskUserQuestion processing status */}
+        {shouldShowAskUserUI && confirmationStatus === "confirming" && (
+          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-accent">
+            <IconLoader className="h-4 w-4 animate-spin" />
+            <span>提交中...</span>
+          </div>
+        )}
+
+        {/* AskUserQuestion confirmed status */}
+        {shouldShowAskUserUI && confirmationStatus === "confirmed" && (
+          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-green-600">
+            <IconCheck className="h-4 w-4" />
+            <span>已提交回答</span>
+          </div>
+        )}
+
+        {/* AskUserQuestion rejected/cancelled status */}
+        {shouldShowAskUserUI && confirmationStatus === "rejected" && (
+          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-red-500">
+            <IconClose className="h-4 w-4" />
+            <span>已取消回答</span>
           </div>
         )}
 
