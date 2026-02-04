@@ -116,33 +116,18 @@ export default function CustomerDetailPage({
         const contextCustomerIds = pendingData?.contextCustomerIds ?? [id];
         const toolChoice = pendingData?.toolChoice ?? currentToolChoiceRef.current;
 
-        // Map AIInputDock attachments to ChatAttachment format
-        // Also filter to only include files with valid URLs for display
-        const validAttachments = rawAttachments.filter((file) => file.url);
-        
-        const attachments: ChatAttachment[] = rawAttachments.map((file) => ({
-          type: "file" as const,
-          url: file.url || file.name, // Use actual uploaded URL, fallback to filename
-          mediaType: file.type,
-          filename: file.name,
-        }));
-
-        // Add file parts to the user message so they appear in the chat preview
-        // Only include files with valid URLs to avoid broken references
-        if (validAttachments.length > 0 && lastMessage.role === "user") {
-          const fileParts = validAttachments.map((file) => ({
+        // Map AIInputDock attachments to ChatAttachment format for the API
+        const attachments: ChatAttachment[] = rawAttachments
+          .filter((file) => file.url) // Only include files with valid URLs
+          .map((file) => ({
             type: "file" as const,
             url: file.url!,
             mediaType: file.type,
             filename: file.name,
           }));
-          
-          // Append file parts to the message parts
-          const existingParts = lastMessage.parts || [];
-          lastMessage.parts = [...existingParts, ...fileParts];
-        }
 
         // Build the ChatApiSchemaRequestBody
+        // Note: File parts are already included in the message.parts from sendMessage
         const requestBody: ChatApiSchemaRequestBody = {
           id: chatId,
           message: lastMessage,
@@ -781,6 +766,9 @@ export default function CustomerDetailPage({
 
               // Convert UploadedFile[] to Attachment[] for the prepareSendMessagesRequest
               const attachments = uploadedFiles.map(toAttachment);
+              
+              // Filter to only include files with valid URLs
+              const validFiles = uploadedFiles.filter(f => f.url);
 
               // Store attachments, customer IDs, and toolChoice for the prepareSendMessagesRequest
               pendingMessageDataRef.current = {
@@ -789,11 +777,31 @@ export default function CustomerDetailPage({
                 toolChoice,
               };
 
-              // Send user message to chat via useChat
-              // The prepareSendMessagesRequest will transform this into ChatApiSchemaRequestBody
-              await sendMessage({
+              // Build message parts: file parts first, then text
+              const parts: Array<{ type: string; text?: string; url?: string; mediaType?: string; filename?: string }> = [];
+              
+              // Add file parts for valid uploaded files
+              for (const file of validFiles) {
+                parts.push({
+                  type: "file",
+                  url: file.url!,
+                  mediaType: file.mimeType,
+                  filename: file.name,
+                });
+              }
+              
+              // Add text part
+              parts.push({
+                type: "text",
                 text: message,
               });
+
+              // Send user message with file parts included
+              // The prepareSendMessagesRequest will add attachments to the request body
+              await sendMessage({
+                role: "user",
+                parts,
+              } as Parameters<typeof sendMessage>[0]);
             }}
             onAddContextCustomer={() => {
               // 可以添加客户选择器
