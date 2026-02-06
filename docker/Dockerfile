@@ -51,6 +51,9 @@ RUN apk add --no-cache curl
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
+# Copy claude-agent-sdk cli.js (resolved at runtime via import.meta.url, not traced by Next.js)
+COPY --from=builder /app/node_modules/@anthropic-ai/claude-agent-sdk /app/node_modules/@anthropic-ai/claude-agent-sdk
+
 # Copy drizzle migrations for runtime DB migration
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
