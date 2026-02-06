@@ -6,7 +6,7 @@
  * following the _init_workspace scaffolding from research_agent_processor.py.
  */
 import { mkdirSync, existsSync, copyFileSync, cpSync, readdirSync, statSync, rmSync, renameSync, writeFileSync } from "node:fs";
-import { join, resolve, isAbsolute } from "node:path";
+import { join, resolve, isAbsolute, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 
@@ -194,7 +194,7 @@ export function moveWorkspaceFile(
 
   try {
     // Ensure target directory exists
-    const targetDir = join(fullToPath, "..");
+    const targetDir = dirname(fullToPath);
     mkdirSync(targetDir, { recursive: true });
     renameSync(fullFromPath, fullToPath);
     return true;
@@ -221,7 +221,7 @@ export function writeWorkspaceFile(
   }
 
   // Ensure parent directory exists
-  const parentDir = join(fullPath, "..");
+  const parentDir = dirname(fullPath);
   mkdirSync(parentDir, { recursive: true });
 
   writeFileSync(fullPath, content);

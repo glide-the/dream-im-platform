@@ -10,9 +10,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [fileSidebarOpen, setFileSidebarOpen] = useState(false);
 
-  // Use a stable session ID for the file sidebar workspace
-  // In a real app this could come from router params or context
-  const [fileSidebarSessionId] = useState(() => "default-workspace");
+  // Shared workspace ID for the file sidebar - used for global file browsing.
+  // Conversation-specific workspaces are created per-session in the API route.
+  const [fileSidebarSessionId] = useState(() => "shared-workspace");
 
   return (
     <div className="flex min-h-screen bg-[var(--luxury-ivory)]">
