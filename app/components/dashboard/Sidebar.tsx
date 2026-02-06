@@ -17,17 +17,21 @@ interface SidebarProps {
   onClose: () => void;
 }
 
+const DEFAULT_SYSTEM_PROMPT = "You are a concise and practical AI sales assistant.";
+
 export default function Sidebar({ open, desktopCollapsed = false, onClose }: SidebarProps) {
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    if (typeof window === "undefined") return "system";
-    return (localStorage.getItem("dashboard-theme") as ThemeMode | null) ?? "system";
-  });
-  const [systemPrompt, setSystemPrompt] = useState(() => {
-    if (typeof window === "undefined") return "You are a concise and practical AI sales assistant.";
-    return localStorage.getItem("dashboard-system-prompt") ?? "You are a concise and practical AI sales assistant.";
-  });
+  const [theme, setTheme] = useState<ThemeMode>("system");
+  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
   const [workspaceMode, setWorkspaceMode] = useState(true);
   const [model, setModel] = useState("Auto");
+
+  // Hydrate from localStorage after mount to avoid SSR mismatch
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("dashboard-theme") as ThemeMode | null;
+    if (savedTheme) setTheme(savedTheme);
+    const savedPrompt = localStorage.getItem("dashboard-system-prompt");
+    if (savedPrompt) setSystemPrompt(savedPrompt);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("dashboard-theme", theme);

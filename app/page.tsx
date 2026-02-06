@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatPanel } from "./components/chat";
 import QuickActionCard from "./components/dashboard/QuickActionCard";
 import Sidebar from "./components/dashboard/Sidebar";
 import VerticalNav from "./components/dashboard/VerticalNav";
-import { IconArrowUp } from "./components/Icons";
+import { IconArrowUp, IconPlus } from "./components/Icons";
 import { QUICK_ACTION_CARDS } from "./components/dashboard/const";
 import { useCustomers } from "./lib/queries";
+import { createId } from "./lib/id";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
@@ -21,6 +22,7 @@ export default function HomePage() {
   const [desktopCollapsed, setDesktopCollapsed] = useState(true);
   const [prompt, setPrompt] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
+  const [threadId, setThreadId] = useState(() => createId("chat"));
   const [queuedPrompt, setQueuedPrompt] = useState("");
   const [queuedPromptNonce, setQueuedPromptNonce] = useState(0);
   const [openFileDialogSignal, setOpenFileDialogSignal] = useState(0);
@@ -66,15 +68,34 @@ export default function HomePage() {
     setOpenFileDialogSignal((v) => v + 1);
   }
 
+  const handleNewChat = useCallback(() => {
+    setThreadId(createId("chat"));
+    setQueuedPrompt("");
+    setQueuedPromptNonce(0);
+    setOpenFileDialogSignal(0);
+    setChatOpen(false);
+  }, []);
+
   return (
     <div className="flex min-h-screen bg-[var(--luxury-ivory)]">
       <VerticalNav onToggleSidebar={() => (window.innerWidth >= 768 ? setDesktopCollapsed((v) => !v) : setSidebarOpen((v) => !v))} />
       <Sidebar open={sidebarOpen} desktopCollapsed={desktopCollapsed} onClose={() => setSidebarOpen(false)} />
 
       <main className="flex min-h-screen min-w-0 flex-1 flex-col px-4 py-6 md:px-12">
-        <button className="mb-4 rounded-lg border border-border bg-white px-3 py-2 md:hidden" onClick={() => setSidebarOpen(true)}>
-          ☰ Menu
-        </button>
+        <div className="mb-4 flex items-center justify-between">
+          <button className="rounded-lg border border-border bg-white px-3 py-2 md:hidden" onClick={() => setSidebarOpen(true)}>
+            ☰ Menu
+          </button>
+          {chatOpen && (
+            <button
+              onClick={handleNewChat}
+              className="ml-auto flex items-center gap-1.5 rounded-lg border border-[var(--neutral-border)] bg-white px-3 py-2 text-sm font-medium text-text-secondary shadow-sm transition-all duration-200 hover:border-accent-orange hover:text-accent-orange hover:shadow-md active:scale-95"
+            >
+              <IconPlus className="h-4 w-4" />
+              New Chat
+            </button>
+          )}
+        </div>
 
         {!chatOpen ? (
           <>
@@ -123,7 +144,8 @@ export default function HomePage() {
         ) : (
           <section className="flex min-h-0 flex-1 animate-fadeUp">
             <ChatPanel
-              threadId="dashboard-thread"
+              key={threadId}
+              threadId={threadId}
               contextCustomers={contextCustomers}
               inputPlaceholder="继续提问..."
               className="flex flex-1 min-h-0 flex-col"
