@@ -96,7 +96,7 @@ export default function AIInputDock({
   const { upload, error: uploadHookError } = useFileUpload();
 
   useEffect(() => {
-    if (openFileDialogSignal === undefined) return;
+    if (!openFileDialogSignal) return;
     fileInputRef.current?.click();
   }, [openFileDialogSignal]);
 
