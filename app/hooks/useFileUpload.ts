@@ -223,17 +223,10 @@ async function serverUpload(
     return await uploadWithXHR("/api/storage/upload", formData, onProgress);
   }
 
-  const response = await fetch("/api/storage/upload", {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.error || "服务器上传失败");
-  }
-
-  const result = await response.json();
+  const result = await uploadFormData<{ key: string; url: string; metadata?: { contentType?: string; size?: number } }>(
+    "/api/storage/upload",
+    formData
+  );
 
   return {
     key: result.key,
@@ -241,6 +234,23 @@ async function serverUpload(
     contentType: result.metadata?.contentType,
     size: result.metadata?.size,
   };
+}
+
+export async function uploadFormData<T>(url: string, formData: FormData): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    const errorMessage = typeof errorBody === "object" && errorBody && "error" in errorBody
+      ? String((errorBody as { error?: string }).error ?? "服务器上传失败")
+      : "服务器上传失败";
+    throw new Error(errorMessage);
+  }
+
+  return (await response.json()) as T;
 }
 
 /**

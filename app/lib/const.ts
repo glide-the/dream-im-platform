@@ -1,3 +1,6 @@
+import os from "node:os";
+import path from "node:path";
+
 export const IS_DEV = process.env.NODE_ENV !== "production";
 export const IS_BROWSER = typeof window !== "undefined";
 
@@ -6,6 +9,8 @@ export const IS_EDGE_RUNTIME = typeof EdgeRuntime !== "undefined";
 
 export const IS_VERCEL_ENV = process.env.VERCEL === "1";
 export const IS_DOCKER_ENV = process.env.DOCKER_BUILD === "1";
+export const AGENT_WORKSPACE_BASE_PATH = process.env.AGENT_WORKSPACE_BASE_PATH
+  ?? path.join(os.tmpdir(), "ai4sales-workspace");
 
 export const BASE_URL = (() => {
   if (process.env.BETTER_AUTH_URL) return process.env.BETTER_AUTH_URL;

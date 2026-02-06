@@ -51,6 +51,8 @@ export interface MessagesUpdatedOutcomingMessage extends BaseOutcomingMessage {
 
 export type SessionSDKOptions = SDKOptions & {
   thinkingLevel?: ThinkingLevel;
+  cwd?: string;
+  workspaceEnabled?: boolean;
 };
 
 export type SessionStateSnapshot = {

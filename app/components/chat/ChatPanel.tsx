@@ -8,6 +8,7 @@ import { type ChatApiSchemaRequestBody, type ChatAttachment, DEFAULT_CHAT_MODEL 
 import { useConversationByCustomer } from "../../lib/queries";
 import type { ConversationMessage } from "../../lib/types";
 import ChatMessageList from "./ChatMessageList";
+import WorkspaceFileManager from "./WorkspaceFileManager";
 
 interface ChatPanelProps {
   threadId: string;
@@ -50,6 +51,7 @@ export default function ChatPanel({
   } | null>(null);
   const getPendingData = () => pendingDataRef.current;
   const [currentToolChoice, setCurrentToolChoice] = useState<ToolChoice>("auto");
+  const [mobileTab, setMobileTab] = useState<"chat" | "files">("chat");
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const hasInitializedRef = useRef(false);
   const lastQueuedNonceRef = useRef<number | undefined>(undefined);
@@ -131,39 +133,62 @@ export default function ChatPanel({
   }, [messages]);
 
   return (
-    <div className={`flex min-h-0 flex-col ${className ?? ""}`}>
-      <div ref={chatContainerRef} className="flex-1 overflow-y-auto rounded-2xl border border-border bg-surface p-4">
-        <ChatMessageList messages={messages} isLoading={chatLoading} error={error} addToolResult={addToolResult} shouldShowLoadingIndicator={shouldShowLoadingIndicator} />
+    <div className={`flex min-h-0 flex-1 flex-col gap-4 pb-16 md:flex-row md:pb-0 ${className ?? ""}`}>
+      <div className={`flex min-h-0 flex-1 flex-col ${mobileTab === "chat" ? "flex" : "hidden md:flex"}`}>
+        <div ref={chatContainerRef} className="flex-1 overflow-y-auto rounded-2xl border border-border bg-surface p-4">
+          <ChatMessageList messages={messages} isLoading={chatLoading} error={error} addToolResult={addToolResult} shouldShowLoadingIndicator={shouldShowLoadingIndicator} />
+        </div>
+
+        <div className="sticky bottom-0 mx-auto mt-3 w-full max-w-3xl rounded-2xl border border-[var(--neutral-border)] bg-white/80 p-5 shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md">
+          <AIInputDock
+            contextCustomerId={contextCustomerId}
+            contextCustomers={contextCustomers}
+            openFileDialogSignal={openFileDialogSignal}
+            onSendMessage={async (message, uploadedFiles = [], customerIds = [], toolChoice = "auto") => {
+              setCurrentToolChoice(toolChoice);
+              pendingDataRef.current = {
+                rawAttachments: uploadedFiles.map(toAttachment),
+                contextCustomerIds: customerIds.length > 0 ? customerIds : contextCustomers.map((c) => c.id),
+                toolChoice,
+              };
+
+              const validFiles = uploadedFiles.filter((f) => f.url);
+              const parts: Array<FileUIPart | TextUIPart> = validFiles.map((file) => ({
+                type: "file",
+                url: file.url!,
+                mediaType: file.mimeType,
+                filename: file.name,
+              } as FileUIPart));
+              parts.push({ type: "text", text: message } as TextUIPart);
+              await sendMessage({ role: "user", parts });
+            }}
+            onAddContextCustomer={() => undefined}
+            onRemoveContextCustomer={() => undefined}
+            placeholder={inputPlaceholder}
+            loading={chatLoading}
+          />
+        </div>
       </div>
 
-      <div className="sticky bottom-0 mx-auto mt-3 w-full max-w-3xl rounded-2xl border border-[var(--neutral-border)] bg-white/80 p-5 shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md">
-        <AIInputDock
-          contextCustomerId={contextCustomerId}
-          contextCustomers={contextCustomers}
-          openFileDialogSignal={openFileDialogSignal}
-          onSendMessage={async (message, uploadedFiles = [], customerIds = [], toolChoice = "auto") => {
-            setCurrentToolChoice(toolChoice);
-            pendingDataRef.current = {
-              rawAttachments: uploadedFiles.map(toAttachment),
-              contextCustomerIds: customerIds.length > 0 ? customerIds : contextCustomers.map((c) => c.id),
-              toolChoice,
-            };
+      <div className={`${mobileTab === "files" ? "flex" : "hidden md:flex"} min-h-0 md:sticky md:top-6 md:h-[calc(100vh-6rem)]`}>
+        <WorkspaceFileManager conversationId={threadId} />
+      </div>
 
-            const validFiles = uploadedFiles.filter((f) => f.url);
-            const parts: Array<FileUIPart | TextUIPart> = validFiles.map((file) => ({
-              type: "file",
-              url: file.url!,
-              mediaType: file.mimeType,
-              filename: file.name,
-            } as FileUIPart));
-            parts.push({ type: "text", text: message } as TextUIPart);
-            await sendMessage({ role: "user", parts });
-          }}
-          onAddContextCustomer={() => undefined}
-          onRemoveContextCustomer={() => undefined}
-          placeholder={inputPlaceholder}
-          loading={chatLoading}
-        />
+      <div className="fixed bottom-0 left-0 right-0 z-20 flex items-center justify-around gap-2 border-t border-border bg-white/90 p-2 text-xs text-text-secondary md:hidden">
+        <button
+          type="button"
+          className={`flex-1 rounded-full px-3 py-2 font-semibold ${mobileTab === "chat" ? "bg-accent-orange text-white" : "bg-white"}`}
+          onClick={() => setMobileTab("chat")}
+        >
+          Chat
+        </button>
+        <button
+          type="button"
+          className={`flex-1 rounded-full px-3 py-2 font-semibold ${mobileTab === "files" ? "bg-accent-orange text-white" : "bg-white"}`}
+          onClick={() => setMobileTab("files")}
+        >
+          Files
+        </button>
       </div>
     </div>
   );

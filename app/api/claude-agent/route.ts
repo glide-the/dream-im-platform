@@ -21,6 +21,7 @@ import {
   SimpleClaudeAgentSDKClient,
   type AgentStreamingCallbacks,
   type ToolChoiceMode,
+  resolveWorkspaceCwd,
 } from "../../lib/claude-agent-kit/server";
 import {
   createConversation,
@@ -526,6 +527,7 @@ export async function POST(req: NextRequest) {
       };
 
       try {
+        const workspaceCwd = await resolveWorkspaceCwd(conversationId);
 
         // For new conversations, do not resume
         let shouldResume = false;
@@ -546,6 +548,7 @@ export async function POST(req: NextRequest) {
             resume: shouldResume,
             maxTurns: DEFAULT_MAX_TURNS,
             toolChoice: toolChoice as ToolChoiceMode,
+            cwd: workspaceCwd,
             // Use default allowed tools from agent-runner (includes AskUserQuestion)
             // Don't pass allowedTools to use the defaults
           },
