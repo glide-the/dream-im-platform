@@ -82,7 +82,12 @@ services:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin};
+      echo 'Waiting for MinIO to be ready...';
+      for i in 1 2 3 4 5 6 7 8 9 10; do
+        mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin} && break;
+        echo \"Attempt $$i failed, retrying in 3s...\";
+        sleep 3;
+      done;
       mc mb myminio/$${MINIO_BUCKET:-vibesales} --ignore-existing;
       mc anonymous set public myminio/$${MINIO_BUCKET:-vibesales};
       echo 'MinIO bucket initialized successfully';
