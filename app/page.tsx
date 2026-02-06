@@ -8,9 +8,16 @@ import VerticalNav from "./components/dashboard/VerticalNav";
 import { QUICK_ACTION_CARDS } from "./components/dashboard/const";
 import { useCustomers } from "./lib/queries";
 
+function isTypingTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  if (!element) return false;
+  const tagName = element.tagName;
+  return tagName === "INPUT" || tagName === "TEXTAREA" || element.isContentEditable;
+}
+
 export default function HomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(true);
   const [prompt, setPrompt] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   const [queuedPrompt, setQueuedPrompt] = useState("");
@@ -27,8 +34,14 @@ export default function HomePage() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() === "i") {
+        if (isTypingTarget(document.activeElement) || isTypingTarget(event.target)) return;
         event.preventDefault();
-        inputRef.current?.focus();
+        if (chatOpen) {
+          const chatInput = document.getElementById("chat-input") as HTMLTextAreaElement | null;
+          chatInput?.focus();
+        } else {
+          inputRef.current?.focus();
+        }
       }
       if (event.key === "Escape") {
         setSidebarOpen(false);
@@ -37,7 +50,7 @@ export default function HomePage() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [chatOpen]);
 
   function handleSendFromQuickInput() {
     if (!prompt.trim()) return;
@@ -57,52 +70,54 @@ export default function HomePage() {
       <VerticalNav onToggleSidebar={() => (window.innerWidth >= 768 ? setDesktopCollapsed((v) => !v) : setSidebarOpen((v) => !v))} />
       <Sidebar open={sidebarOpen} desktopCollapsed={desktopCollapsed} onClose={() => setSidebarOpen(false)} />
 
-      <main className="flex-1 px-4 py-6 md:px-12">
+      <main className="flex min-h-screen min-w-0 flex-1 flex-col px-4 py-6 md:px-12">
         <button className="mb-4 rounded-lg border border-border bg-white px-3 py-2 md:hidden" onClick={() => setSidebarOpen(true)}>
           ☰ Menu
         </button>
 
-        <section className="animate-fadeUp">
-          <h1 className="text-[clamp(1.75rem,4vw,2.5rem)] font-display font-bold text-[var(--luxury-charcoal)]">
-            Howdy <span className="text-[var(--luxury-rose)]">there</span>, ready to make some magic?
-          </h1>
-        </section>
+        {!chatOpen ? (
+          <>
+            <section className="animate-fadeUp">
+              <h1 className="text-[clamp(1.75rem,4vw,2.5rem)] font-display font-bold text-[var(--luxury-charcoal)]">
+                Howdy <span className="text-[var(--luxury-rose)]">there</span>, ready to make some magic?
+              </h1>
+            </section>
 
-        <section className="mt-6 rounded-2xl border border-[var(--neutral-border)] bg-white/70 p-5 backdrop-blur-md">
-          <input
-            ref={inputRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Press i to chat"
-            className="w-full bg-transparent py-2 text-base placeholder:text-text-tertiary"
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                handleSendFromQuickInput();
-              }
-            }}
-          />
-          <div className="mt-4 flex items-center justify-between">
-            <button className="text-sm text-text-secondary" onClick={handleAddFile}>+ Add</button>
-            <button onClick={handleSendFromQuickInput} className="rounded-full bg-[var(--luxury-rose)] px-4 py-1 text-sm text-white">
-              Send
-            </button>
-          </div>
-        </section>
+            <section className="mt-6 rounded-2xl border border-[var(--neutral-border)] bg-white/70 p-5 backdrop-blur-md">
+              <input
+                ref={inputRef}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Press i to chat"
+                className="w-full bg-transparent py-2 text-base placeholder:text-text-tertiary"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    handleSendFromQuickInput();
+                  }
+                }}
+              />
+              <div className="mt-4 flex items-center justify-between">
+                <button className="text-sm text-text-secondary" onClick={handleAddFile}>+ Add</button>
+                <button onClick={handleSendFromQuickInput} className="rounded-full bg-[var(--luxury-rose)] px-4 py-1 text-sm text-white">
+                  Send
+                </button>
+              </div>
+            </section>
 
-        <section className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {QUICK_ACTION_CARDS.map((item) => (
-            <QuickActionCard key={item.title} item={item} onClick={(nextPrompt) => setPrompt(nextPrompt)} />
-          ))}
-        </section>
-
-        {chatOpen && (
-          <section className="mt-8">
+            <section className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {QUICK_ACTION_CARDS.map((item) => (
+                <QuickActionCard key={item.title} item={item} onClick={(nextPrompt) => setPrompt(nextPrompt)} />
+              ))}
+            </section>
+          </>
+        ) : (
+          <section className="flex min-h-0 flex-1 animate-fadeUp">
             <ChatPanel
               threadId="dashboard-thread"
               contextCustomers={contextCustomers}
               inputPlaceholder="继续提问..."
-              className="space-y-3"
+              className="flex flex-1 min-h-0 flex-col"
               queuedPrompt={queuedPrompt}
               queuedPromptNonce={queuedPromptNonce}
               openFileDialogSignal={openFileDialogSignal}

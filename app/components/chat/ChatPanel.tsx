@@ -128,8 +128,8 @@ export default function ChatPanel({
   }, [messages]);
 
   return (
-    <div className={className}>
-      <div ref={chatContainerRef} className="max-h-[60vh] overflow-y-auto rounded-2xl border border-border bg-surface p-4">
+    <div className={`flex min-h-0 flex-col ${className ?? ""}`}>
+      <div ref={chatContainerRef} className="flex-1 overflow-y-auto rounded-2xl border border-border bg-surface p-4">
         <ChatMessageList messages={messages} isLoading={chatLoading} error={error} addToolResult={addToolResult} shouldShowLoadingIndicator={shouldShowLoadingIndicator} />
       </div>
 
