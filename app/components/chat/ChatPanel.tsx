@@ -17,6 +17,9 @@ interface ChatPanelProps {
   isLoading?: boolean;
   className?: string;
   inputPlaceholder?: string;
+  queuedPrompt?: string;
+  queuedPromptNonce?: number;
+  openFileDialogSignal?: number;
 }
 
 function mapConversationToUiMessages(conversationMessages: ConversationMessage[]): UIMessage[] {
@@ -36,6 +39,9 @@ export default function ChatPanel({
   isLoading = false,
   className,
   inputPlaceholder = "继续提问或补充信息...",
+  queuedPrompt,
+  queuedPromptNonce,
+  openFileDialogSignal,
 }: ChatPanelProps) {
   const [pendingData, setPendingData] = useState<{
     rawAttachments: Attachment[];
@@ -45,6 +51,7 @@ export default function ChatPanel({
   const [currentToolChoice, setCurrentToolChoice] = useState<ToolChoice>("auto");
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const hasInitializedRef = useRef(false);
+  const lastQueuedNonceRef = useRef<number | undefined>(undefined);
 
   const { data: conversationData, isLoading: isConversationLoading } = useConversationByCustomer(contextCustomerId ?? threadId);
 
@@ -74,7 +81,7 @@ export default function ChatPanel({
           contextCustomerIds: pendingData?.contextCustomerIds ?? (contextCustomerId ? [contextCustomerId] : contextCustomers.map((c) => c.id)),
         };
 
-        setPendingData(null);
+        setTimeout(() => setPendingData(null), 0);
         return { body: requestBody };
       },
     }),
@@ -90,6 +97,22 @@ export default function ChatPanel({
       hasInitializedRef.current = true;
     }
   }, [conversationData?.data?.messages, initialMessages, setMessages]);
+
+  useEffect(() => {
+    if (!queuedPromptNonce || queuedPromptNonce === lastQueuedNonceRef.current) return;
+    if (!queuedPrompt?.trim()) return;
+    lastQueuedNonceRef.current = queuedPromptNonce;
+
+    void (async () => {
+      setCurrentToolChoice("auto");
+      setPendingData({
+        rawAttachments: [],
+        contextCustomerIds: contextCustomerId ? [contextCustomerId] : contextCustomers.map((c) => c.id),
+        toolChoice: "auto",
+      });
+      await sendMessage({ role: "user", parts: [{ type: "text", text: queuedPrompt } as TextUIPart] });
+    })();
+  }, [contextCustomerId, contextCustomers, queuedPrompt, queuedPromptNonce, sendMessage]);
 
   const chatLoading = status === "streaming" || status === "submitted" || isLoading || isConversationLoading;
 
@@ -114,6 +137,7 @@ export default function ChatPanel({
         <AIInputDock
           contextCustomerId={contextCustomerId}
           contextCustomers={contextCustomers}
+          openFileDialogSignal={openFileDialogSignal}
           onSendMessage={async (message, uploadedFiles = [], customerIds = [], toolChoice = "auto") => {
             setCurrentToolChoice(toolChoice);
             setPendingData({

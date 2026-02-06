@@ -6,10 +6,11 @@ type ThemeMode = "light" | "system" | "dark";
 
 interface SidebarProps {
   open: boolean;
+  desktopCollapsed?: boolean;
   onClose: () => void;
 }
 
-export default function Sidebar({ open, onClose }: SidebarProps) {
+export default function Sidebar({ open, desktopCollapsed = false, onClose }: SidebarProps) {
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "system";
     return (localStorage.getItem("dashboard-theme") as ThemeMode | null) ?? "system";
@@ -30,7 +31,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     <>
       <div className={`fixed inset-0 z-30 bg-black/30 md:hidden ${open ? "block" : "hidden"}`} onClick={onClose} />
       <aside
-        className={`fixed left-0 top-0 z-40 h-full w-[280px] border-r border-[var(--neutral-border)] bg-white p-5 transition-transform md:static md:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
+        className={`fixed left-0 top-0 z-40 h-full w-[280px] border-r border-[var(--neutral-border)] bg-white p-5 transition-all duration-300 md:static md:z-auto ${open ? "translate-x-0" : "-translate-x-full"} ${desktopCollapsed ? "md:w-0 md:translate-x-0 md:overflow-hidden md:border-r-0 md:p-0" : "md:w-[280px] md:translate-x-0"}`}
       >
         <div className="mb-8">
           <p className="text-xs uppercase tracking-[0.2em] text-text-tertiary">Workspace</p>

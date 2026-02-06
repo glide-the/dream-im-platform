@@ -65,6 +65,8 @@ interface AIInputDockProps {
   loading?: boolean;
   /** Default tool choice mode */
   defaultToolChoice?: ToolChoice;
+  /** increment this value to programmatically open file picker */
+  openFileDialogSignal?: number;
 }
 
 /** Generate unique file ID */
@@ -88,7 +90,8 @@ export default function AIInputDock({
   placeholder = "输入公司 + 姓名…",
   disabled = false,
   loading = false,
-  defaultToolChoice = "auto"
+  defaultToolChoice = "auto",
+  openFileDialogSignal
 }: AIInputDockProps) {
   const [query, setQuery] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -103,6 +106,11 @@ export default function AIInputDock({
   // File upload hook
   const { upload, error: uploadHookError } = useFileUpload();
   
+
+  useEffect(() => {
+    if (openFileDialogSignal === undefined) return;
+    fileInputRef.current?.click();
+  }, [openFileDialogSignal]);
 
   /** Upload a single file to storage backend */
   const uploadFileToStorage = useCallback(async (fileId: string, file: File) => {

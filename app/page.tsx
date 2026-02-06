@@ -10,8 +10,12 @@ import { useCustomers } from "./lib/queries";
 
 export default function HomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
+  const [queuedPrompt, setQueuedPrompt] = useState("");
+  const [queuedPromptNonce, setQueuedPromptNonce] = useState(0);
+  const [openFileDialogSignal, setOpenFileDialogSignal] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const { data } = useCustomers({ pageSize: 6, sort: "updated_at", order: "desc" });
 
@@ -26,17 +30,32 @@ export default function HomePage() {
         event.preventDefault();
         inputRef.current?.focus();
       }
-      if (event.key === "Escape") setSidebarOpen(false);
+      if (event.key === "Escape") {
+        setSidebarOpen(false);
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  function handleSendFromQuickInput() {
+    if (!prompt.trim()) return;
+    setChatOpen(true);
+    setQueuedPrompt(prompt.trim());
+    setQueuedPromptNonce((v) => v + 1);
+    setPrompt("");
+  }
+
+  function handleAddFile() {
+    setChatOpen(true);
+    setOpenFileDialogSignal((v) => v + 1);
+  }
+
   return (
     <div className="flex min-h-screen bg-[var(--luxury-ivory)]">
-      <VerticalNav onToggleSidebar={() => setSidebarOpen((v) => !v)} />
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <VerticalNav onToggleSidebar={() => (window.innerWidth >= 768 ? setDesktopCollapsed((v) => !v) : setSidebarOpen((v) => !v))} />
+      <Sidebar open={sidebarOpen} desktopCollapsed={desktopCollapsed} onClose={() => setSidebarOpen(false)} />
 
       <main className="flex-1 px-4 py-6 md:px-12">
         <button className="mb-4 rounded-lg border border-border bg-white px-3 py-2 md:hidden" onClick={() => setSidebarOpen(true)}>
@@ -56,10 +75,16 @@ export default function HomePage() {
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Press i to chat"
             className="w-full bg-transparent py-2 text-base placeholder:text-text-tertiary"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                handleSendFromQuickInput();
+              }
+            }}
           />
           <div className="mt-4 flex items-center justify-between">
-            <button className="text-sm text-text-secondary">+ Add</button>
-            <button onClick={() => setChatOpen(true)} className="rounded-full bg-[var(--luxury-rose)] px-4 py-1 text-sm text-white">
+            <button className="text-sm text-text-secondary" onClick={handleAddFile}>+ Add</button>
+            <button onClick={handleSendFromQuickInput} className="rounded-full bg-[var(--luxury-rose)] px-4 py-1 text-sm text-white">
               Send
             </button>
           </div>
@@ -76,8 +101,11 @@ export default function HomePage() {
             <ChatPanel
               threadId="dashboard-thread"
               contextCustomers={contextCustomers}
-              inputPlaceholder={prompt || "继续提问..."}
+              inputPlaceholder="继续提问..."
               className="space-y-3"
+              queuedPrompt={queuedPrompt}
+              queuedPromptNonce={queuedPromptNonce}
+              openFileDialogSignal={openFileDialogSignal}
             />
           </section>
         )}
