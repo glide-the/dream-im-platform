@@ -37,6 +37,10 @@ services:
     image: postgres:16-alpine
     env_file:
       - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ai4sales}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai4sales}
+      POSTGRES_DB: ${POSTGRES_DB:-ai4sales}
     networks:
       - ai4sales-network
     volumes:
