@@ -16,7 +16,11 @@
     "test:e2e": "playwright test",
     "test:all": "pnpm test:run && pnpm test:e2e",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit push"
+    "db:migrate": "drizzle-kit push",
+    "docker:build": "cd docker && docker compose build",
+    "docker:up": "cd docker && docker compose up -d --build",
+    "docker:down": "cd docker && docker compose down",
+    "docker:logs": "cd docker && docker compose logs -f ai4sales-app"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.64",
