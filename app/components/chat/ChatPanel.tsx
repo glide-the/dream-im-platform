@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isToolUIPart, type FileUIPart, type TextUIPart, type UIMessage } from "ai";
 import AIInputDock, { type Attachment, type ContextCustomer, type ToolChoice, toAttachment } from "../AIInputDock";
@@ -8,6 +8,7 @@ import { type ChatApiSchemaRequestBody, type ChatAttachment, DEFAULT_CHAT_MODEL 
 import { useConversationByCustomer } from "../../lib/queries";
 import type { ConversationMessage } from "../../lib/types";
 import ChatMessageList from "./ChatMessageList";
+import { useWorkspaceSession } from "../../app/workspace-context";
 
 interface ChatPanelProps {
   threadId: string;
@@ -51,13 +52,16 @@ export default function ChatPanel({
   const getPendingData = () => pendingDataRef.current;
   const [currentToolChoice, setCurrentToolChoice] = useState<ToolChoice>("auto");
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
   const hasInitializedRef = useRef(false);
   const lastQueuedNonceRef = useRef<number | undefined>(undefined);
+  const { setActiveSessionId } = useWorkspaceSession();
 
   const { data: conversationData, isLoading: isConversationLoading } = useConversationByCustomer(contextCustomerId ?? threadId);
 
   /* eslint-disable react-hooks/refs */
-  const { messages, sendMessage, setMessages, status, error, addToolResult } = useChat({
+  const { messages, sendMessage, setMessages, status, error, addToolResult, stop } = useChat({
     id: threadId,
     transport: new DefaultChatTransport({
       api: "/api/claude-agent",
@@ -93,6 +97,13 @@ export default function ChatPanel({
   /* eslint-enable react-hooks/refs */
 
   useEffect(() => {
+    setActiveSessionId(threadId);
+    return () => {
+      setActiveSessionId((current) => (current === threadId ? null : current));
+    };
+  }, [threadId, setActiveSessionId]);
+
+  useEffect(() => {
     if (hasInitializedRef.current) return;
     const baseMessages = initialMessages ?? conversationData?.data?.messages;
     if ((baseMessages?.length ?? 0) > 0) {
@@ -126,14 +137,29 @@ export default function ChatPanel({
     return !hasVisibleParts;
   }, [chatLoading, messages]);
 
+  // Track whether user is near the bottom of the chat scroll area
+  const handleScroll = useCallback(() => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const threshold = 100;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+  }, []);
+
+  // Auto-scroll to bottom when new messages arrive or during streaming,
+  // but only if the user hasn't intentionally scrolled up
   useEffect(() => {
-    if (chatContainerRef.current) chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-  }, [messages]);
+    if (isNearBottomRef.current) {
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+  }, [messages, status]);
 
   return (
     <div className={`flex min-h-0 flex-col ${className ?? ""}`}>
-      <div ref={chatContainerRef} className="flex-1 overflow-y-auto rounded-2xl border border-border bg-surface p-4">
+      <div ref={chatContainerRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-border bg-surface p-4">
         <ChatMessageList messages={messages} isLoading={chatLoading} error={error} addToolResult={addToolResult} shouldShowLoadingIndicator={shouldShowLoadingIndicator} />
+        <div ref={bottomRef} aria-hidden="true" />
       </div>
 
       <div className="sticky bottom-0 mx-auto mt-3 w-full max-w-3xl rounded-2xl border border-[var(--neutral-border)] bg-white/80 p-5 shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md">
@@ -163,6 +189,7 @@ export default function ChatPanel({
           onRemoveContextCustomer={() => undefined}
           placeholder={inputPlaceholder}
           loading={chatLoading}
+          onStop={status === "streaming" ? stop : undefined}
         />
       </div>
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { IconPaperclip, IconImage, IconCamera, IconSend, IconX, IconFile, IconLoader } from "./Icons";
+import { IconPaperclip, IconImage, IconCamera, IconSend, IconX, IconFile, IconLoader, IconStop } from "./Icons";
 import { useFileUpload } from "../hooks/useFileUpload";
 import { shouldSendMessageOnKeyDown } from "./chat/interaction-utils";
 
@@ -54,6 +54,7 @@ interface AIInputDockProps {
   loading?: boolean;
   defaultToolChoice?: ToolChoice;
   openFileDialogSignal?: number;
+  onStop?: () => void;
 }
 
 const MAX_MESSAGE_LENGTH = 2000;
@@ -78,7 +79,8 @@ export default function AIInputDock({
   disabled = false,
   loading = false,
   defaultToolChoice = "auto",
-  openFileDialogSignal
+  openFileDialogSignal,
+  onStop,
 }: AIInputDockProps) {
   const [query, setQuery] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -376,22 +378,32 @@ export default function AIInputDock({
           )}
         </div>
 
-        <button
-          className="grid h-10 w-10 place-items-center rounded-full bg-accent-orange text-white shadow-md transition-transform duration-100 active:scale-95 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-accent-orange"
-          onClick={handleSend}
-          disabled={loading || disabled || hasUploadingFiles || (!query.trim() && uploadedFiles.length === 0)}
-          title={hasUploadingFiles ? "等待上传完成..." : "发送"}
-          aria-label="发送消息"
-          type="button"
-        >
-          {loading ? (
-            <IconSend className="h-5 w-5 animate-spin-soft" />
-          ) : hasUploadingFiles ? (
-            <IconLoader className="h-5 w-5 animate-spin" />
-          ) : (
-            <IconSend className="h-5 w-5" />
-          )}
-        </button>
+        {loading && onStop ? (
+          <button
+            className="grid h-10 w-10 place-items-center rounded-full bg-red-500 text-white shadow-md transition-transform duration-100 active:scale-95 focus-visible:ring-2 focus-visible:ring-red-400"
+            onClick={onStop}
+            title="停止生成"
+            aria-label="停止生成"
+            type="button"
+          >
+            <IconStop className="h-5 w-5" />
+          </button>
+        ) : (
+          <button
+            className="grid h-10 w-10 place-items-center rounded-full bg-accent-orange text-white shadow-md transition-transform duration-100 active:scale-95 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-accent-orange"
+            onClick={handleSend}
+            disabled={loading || disabled || hasUploadingFiles || (!query.trim() && uploadedFiles.length === 0)}
+            title={hasUploadingFiles ? "等待上传完成..." : "发送"}
+            aria-label="发送消息"
+            type="button"
+          >
+            {hasUploadingFiles ? (
+              <IconLoader className="h-5 w-5 animate-spin" />
+            ) : (
+              <IconSend className="h-5 w-5" />
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -93,6 +93,8 @@ export type ChatMetadata = {
   toolChoice?: "auto" | "none" | "manual";
   toolCount?: number;
   agentId?: string;
+  workspacePath?: string;
+  workspaceSessionId?: string;
 };
 
 /**

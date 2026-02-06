@@ -35,6 +35,7 @@ import {
   isWeKnoraSupported,
   type DocumentProcessingResult,
 } from "../../lib/weknora";
+import { getOrCreateWorkspace } from "../../lib/workspace";
 
 export const runtime = "nodejs";
 
@@ -214,6 +215,13 @@ function badRequest(message: string) {
   });
 }
 
+function internalServerError(message: string) {
+  return new Response(JSON.stringify({ error: message }), {
+    status: 500,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 export async function POST(req: NextRequest) {
   // Parse and validate request body using Zod
   let body: ChatApiSchemaRequestBody;
@@ -241,6 +249,14 @@ export async function POST(req: NextRequest) {
     attachments = [],
     contextCustomerIds = [],
   } = body;
+
+  let workspaceCwd: string;
+  try {
+    workspaceCwd = getOrCreateWorkspace(conversationId);
+  } catch (error) {
+    console.error("[Claude Agent API] Failed to initialize workspace:", error);
+    return internalServerError("Failed to initialize workspace");
+  }
 
   // ===========================================================================
   // Process attachments via WeKnora (Reference: better-chatbot processDocument)
@@ -322,6 +338,12 @@ export async function POST(req: NextRequest) {
       const sdkClient = new SimpleClaudeAgentSDKClient();
       const agentRunner = createAgentRunner(sdkClient);
 
+      // Create AbortController and wire it to the client disconnect signal
+      const abortController = new AbortController();
+      req.signal.addEventListener("abort", () => {
+        abortController.abort();
+      });
+
       let fullText = "";
       const assistantMessageId = uiMessage.id
         ? `${uiMessage.id}-response`
@@ -333,12 +355,15 @@ export async function POST(req: NextRequest) {
       // This is critical for manual tool confirmation UI - the frontend checks
       // message.metadata?.toolChoice === "manual" to show approve/reject buttons
       // Reference: cgoinglove/better-chatbot passes metadata via toUIMessageStream({ messageMetadata })
+      const initialMetadata: ChatMetadata = {
+        toolChoice,
+        chatModel,
+        workspacePath: workspaceCwd,
+        workspaceSessionId: conversationId,
+      };
       writer.write({
         type: "message-metadata",
-        messageMetadata: {
-          toolChoice,
-          chatModel,
-        },
+        messageMetadata: initialMetadata,
       });
 
       // Helper to write to stream AND track the part
@@ -546,6 +571,8 @@ export async function POST(req: NextRequest) {
             resume: shouldResume,
             maxTurns: DEFAULT_MAX_TURNS,
             toolChoice: toolChoice as ToolChoiceMode,
+            cwd: workspaceCwd,
+            abortController,
             // Use default allowed tools from agent-runner (includes AskUserQuestion)
             // Don't pass allowedTools to use the defaults
           },
@@ -558,13 +585,16 @@ export async function POST(req: NextRequest) {
         // Send final message-metadata event with updated toolCount
         // This complements the initial metadata sent at stream start
         // and provides the final tool count after all tools have been processed
+        const finalMetadata: ChatMetadata = {
+          toolChoice,
+          toolCount: toolCallCount,
+          chatModel,
+          workspacePath: workspaceCwd,
+          workspaceSessionId: conversationId,
+        };
         writer.write({
           type: "message-metadata",
-          messageMetadata: {
-            toolChoice,
-            toolCount: toolCallCount,
-            chatModel,
-          },
+          messageMetadata: finalMetadata,
         });
 
         // Finish the message

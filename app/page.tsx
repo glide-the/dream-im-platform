@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatPanel } from "./components/chat";
+import FileSidebar from "./components/dashboard/FileSidebar";
 import QuickActionCard from "./components/dashboard/QuickActionCard";
 import Sidebar from "./components/dashboard/Sidebar";
 import VerticalNav from "./components/dashboard/VerticalNav";
@@ -9,6 +10,7 @@ import { IconArrowUp, IconPlus } from "./components/Icons";
 import { QUICK_ACTION_CARDS } from "./components/dashboard/const";
 import { useCustomers } from "./lib/queries";
 import { createId } from "./lib/id";
+import { useWorkspaceSession } from "./app/workspace-context";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
@@ -20,6 +22,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export default function HomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(true);
+  const [fileSidebarOpen, setFileSidebarOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   const [threadId, setThreadId] = useState(() => createId("chat"));
@@ -27,6 +30,8 @@ export default function HomePage() {
   const [queuedPromptNonce, setQueuedPromptNonce] = useState(0);
   const [openFileDialogSignal, setOpenFileDialogSignal] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { activeSessionId, setActiveSessionId } = useWorkspaceSession();
+  const fileSidebarSessionId = activeSessionId ?? threadId;
   const { data } = useCustomers({ pageSize: 6, sort: "updated_at", order: "desc" });
 
   const contextCustomers = useMemo(
@@ -55,6 +60,16 @@ export default function HomePage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [chatOpen]);
 
+  useEffect(() => {
+    setActiveSessionId(threadId);
+  }, [threadId, setActiveSessionId]);
+
+  useEffect(() => {
+    return () => {
+      setActiveSessionId(null);
+    };
+  }, [setActiveSessionId]);
+
   function handleSendFromQuickInput() {
     if (!prompt.trim()) return;
     setChatOpen(true);
@@ -76,12 +91,40 @@ export default function HomePage() {
     setChatOpen(false);
   }, []);
 
-  return (
-    <div className="flex min-h-screen bg-[var(--luxury-ivory)]">
-      <VerticalNav onToggleSidebar={() => (window.innerWidth >= 768 ? setDesktopCollapsed((v) => !v) : setSidebarOpen((v) => !v))} />
-      <Sidebar open={sidebarOpen} desktopCollapsed={desktopCollapsed} onClose={() => setSidebarOpen(false)} />
+  const handleToggleSidebar = useCallback(() => {
+    setFileSidebarOpen(false);
+    if (window.innerWidth >= 768) {
+      setDesktopCollapsed((v) => !v);
+    } else {
+      setSidebarOpen((v) => !v);
+    }
+  }, []);
 
-      <main className="flex min-h-screen min-w-0 flex-1 flex-col px-4 py-6 md:px-12">
+  const handleToggleFileSidebar = useCallback(() => {
+    const nextOpen = !fileSidebarOpen;
+    setFileSidebarOpen(nextOpen);
+    if (nextOpen) {
+      setSidebarOpen(false);
+      if (window.innerWidth >= 768) {
+        setDesktopCollapsed(true);
+      }
+    }
+  }, [fileSidebarOpen]);
+
+  return (
+    <div className="flex h-screen bg-[var(--luxury-ivory)]">
+      <VerticalNav
+        onToggleSidebar={handleToggleSidebar}
+        onToggleFileSidebar={handleToggleFileSidebar}
+      />
+      <Sidebar open={sidebarOpen} desktopCollapsed={desktopCollapsed} onClose={() => setSidebarOpen(false)} />
+      <FileSidebar
+        sessionId={fileSidebarSessionId}
+        open={fileSidebarOpen}
+        onClose={() => setFileSidebarOpen(false)}
+      />
+
+      <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden px-4 py-6 md:px-12">
         <div className="mb-4 flex items-center justify-between">
           <button className="rounded-lg border border-border bg-white px-3 py-2 md:hidden" onClick={() => setSidebarOpen(true)}>
             ☰ Menu
@@ -98,7 +141,7 @@ export default function HomePage() {
         </div>
 
         {!chatOpen ? (
-          <>
+          <div className="flex-1 overflow-y-auto">
             <section className="relative animate-fadeUp pt-4 pb-2">
               <div className="pointer-events-none absolute -right-10 top-6 h-32 w-32 rounded-full bg-accent-orange/10 blur-xl" />
               <h1 className="relative z-10 text-[clamp(1.75rem,4vw,2.5rem)] font-display font-bold text-[var(--luxury-charcoal)]">
@@ -140,7 +183,7 @@ export default function HomePage() {
                 <QuickActionCard key={item.title} item={item} onClick={(nextPrompt) => setPrompt(nextPrompt)} />
               ))}
             </section>
-          </>
+          </div>
         ) : (
           <section className="flex min-h-0 flex-1 animate-fadeUp">
             <ChatPanel

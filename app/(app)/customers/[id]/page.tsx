@@ -42,12 +42,12 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   if (!customer) return <div className="p-10 text-center text-text-secondary">客户不存在</div>;
 
   return (
-    <div className="space-y-4 pb-6">
-      <Link href="/" className="inline-flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+      <Link href="/" className="shrink-0 inline-flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary">
         <IconChevronLeft className="h-4 w-4" /> 返回首页
       </Link>
 
-      <div className="flex items-center justify-between rounded-2xl border border-border bg-surface px-4 py-3">
+      <div className="shrink-0 flex items-center justify-between rounded-2xl border border-border bg-surface px-4 py-3">
         <h1 className="font-display text-lg font-semibold">{customer.name || "客户详情"}</h1>
         <button
           className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1 text-sm"
@@ -58,7 +58,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       </div>
 
       {!isInfoCollapsed && (
-        <div className="space-y-4">
+        <div className="shrink-0 space-y-4 overflow-y-auto" style={{ maxHeight: '40vh' }}>
           <ProfileCard
             customer={customer}
             isEditing={editingCard === "profileCard"}
@@ -104,7 +104,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </div>
       )}
 
-      <ChatPanel threadId={id} contextCustomerId={id} contextCustomers={contextCustomers} className="space-y-3" />
+      <ChatPanel threadId={id} contextCustomerId={id} contextCustomers={contextCustomers} className="min-h-0 flex-1" />
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
   );
