@@ -52,7 +52,9 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
 # Copy claude-agent-sdk cli.js (resolved at runtime via import.meta.url, not traced by Next.js)
+# Must copy both the hoisted path and the pnpm store path since import.meta.url resolves to .pnpm
 COPY --from=builder /app/node_modules/@anthropic-ai/claude-agent-sdk /app/node_modules/@anthropic-ai/claude-agent-sdk
+COPY --from=builder /app/node_modules/.pnpm/@anthropic-ai+claude-agent-sdk@0.2.20_zod@4.3.6 /app/node_modules/.pnpm/@anthropic-ai+claude-agent-sdk@0.2.20_zod@4.3.6
 
 # Copy drizzle migrations for runtime DB migration
 COPY --from=builder /app/drizzle ./drizzle
