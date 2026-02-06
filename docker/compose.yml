@@ -24,11 +24,32 @@ services:
       - 8.8.4.4
     networks:
       - ai4sales-network
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./agent_workspaces:/app/agent-workspaces
       - ./.claude:/app/.claude
     restart: unless-stopped
 
+  # ---- PostgreSQL ----
+  postgres:
+    image: postgres:16-alpine
+    env_file:
+      - .env
+    networks:
+      - ai4sales-network
+    volumes:
+      - ai4sales_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ai4sales}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  ai4sales_postgres_data:
 
 networks:
   ai4sales-network:
