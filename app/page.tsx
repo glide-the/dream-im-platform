@@ -152,7 +152,7 @@ export default function HomePage() {
             <section className="relative animate-fadeUp pt-4 pb-2">
               <div className="pointer-events-none absolute -right-10 top-6 h-32 w-32 rounded-full bg-accent-orange/10 blur-xl" />
               <h1 className="relative z-10 text-[clamp(1.75rem,4vw,2.5rem)] font-display font-bold text-[var(--luxury-charcoal)]">
-                Howdy <span className="text-accent-orange">there</span>, ready to make some magic?
+                嗨，准备好<span className="text-accent-orange">开始</span>了吗？
               </h1>
             </section>
 
@@ -162,7 +162,7 @@ export default function HomePage() {
                   ref={inputRef}
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Press i to chat"
+                  placeholder="按 i 开始对话"
                   className={QUICK_INPUT_FIELD_CLASS_NAME}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
