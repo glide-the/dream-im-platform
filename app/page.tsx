@@ -20,9 +20,10 @@ export default function HomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(true);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
+  const [prompt, setPrompt] = useState("");
   const [queuedPrompt, setQueuedPrompt] = useState("");
   const [queuedPromptNonce, setQueuedPromptNonce] = useState(0);
-  const openFileDialogSignal = 0;
+  const [openFileDialogSignal, setOpenFileDialogSignal] = useState(0);
   const { data } = useCustomers({ pageSize: 6, sort: "updated_at", order: "desc" });
 
   const contextCustomers = useMemo(
@@ -52,6 +53,17 @@ export default function HomePage() {
     setActiveConversation({ id: "new", title: "", status: "pending", created_at: "", updated_at: "", messages: [] });
     setQueuedPrompt(nextPrompt.trim());
     setQueuedPromptNonce((v) => v + 1);
+  }
+
+  function handleSendFromQuickInput() {
+    if (!prompt.trim()) return;
+    handleQueuePrompt(prompt.trim());
+    setPrompt("");
+  }
+
+  function handleAddFile() {
+    setActiveConversation({ id: "new", title: "", status: "pending", created_at: "", updated_at: "", messages: [] });
+    setOpenFileDialogSignal((v) => v + 1);
   }
 
   const hasActiveConversation = Boolean(activeConversation);
@@ -89,6 +101,27 @@ export default function HomePage() {
                   欢迎回来，今天想聊点什么？
                 </h1>
                 <p className="mt-2 text-sm text-text-secondary">选择一个快捷问题或开始新的对话。</p>
+              </section>
+
+              <section className="mt-6 rounded-2xl border border-border bg-white/80 p-5 backdrop-blur-md">
+                <input
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Press i to chat"
+                  className="w-full bg-transparent py-2 text-base placeholder:text-text-tertiary"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleSendFromQuickInput();
+                    }
+                  }}
+                />
+                <div className="mt-4 flex items-center justify-between">
+                  <button className="text-sm text-text-secondary" onClick={handleAddFile}>+ Add</button>
+                  <button onClick={handleSendFromQuickInput} className="rounded-full bg-accent-orange px-4 py-1 text-sm text-white">
+                    Send
+                  </button>
+                </div>
               </section>
 
               <section className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
