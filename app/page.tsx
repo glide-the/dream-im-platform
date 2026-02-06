@@ -10,6 +10,7 @@ import { IconArrowUp, IconPlus } from "./components/Icons";
 import { QUICK_ACTION_CARDS } from "./components/dashboard/const";
 import { useCustomers } from "./lib/queries";
 import { createId } from "./lib/id";
+import { useWorkspaceSession } from "./app/workspace-context";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
@@ -28,8 +29,9 @@ export default function HomePage() {
   const [queuedPrompt, setQueuedPrompt] = useState("");
   const [queuedPromptNonce, setQueuedPromptNonce] = useState(0);
   const [openFileDialogSignal, setOpenFileDialogSignal] = useState(0);
-  const [fileSidebarSessionId] = useState(() => "shared-workspace");
   const inputRef = useRef<HTMLInputElement>(null);
+  const { activeSessionId, setActiveSessionId } = useWorkspaceSession();
+  const fileSidebarSessionId = activeSessionId ?? threadId;
   const { data } = useCustomers({ pageSize: 6, sort: "updated_at", order: "desc" });
 
   const contextCustomers = useMemo(
@@ -57,6 +59,16 @@ export default function HomePage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [chatOpen]);
+
+  useEffect(() => {
+    setActiveSessionId(threadId);
+  }, [threadId, setActiveSessionId]);
+
+  useEffect(() => {
+    return () => {
+      setActiveSessionId(null);
+    };
+  }, [setActiveSessionId]);
 
   function handleSendFromQuickInput() {
     if (!prompt.trim()) return;
@@ -100,7 +112,7 @@ export default function HomePage() {
   }, [fileSidebarOpen]);
 
   return (
-    <div className="flex min-h-screen bg-[var(--luxury-ivory)]">
+    <div className="flex h-screen bg-[var(--luxury-ivory)]">
       <VerticalNav
         onToggleSidebar={handleToggleSidebar}
         onToggleFileSidebar={handleToggleFileSidebar}
@@ -112,7 +124,7 @@ export default function HomePage() {
         onClose={() => setFileSidebarOpen(false)}
       />
 
-      <main className="flex min-h-screen min-w-0 flex-1 flex-col px-4 py-6 md:px-12">
+      <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden px-4 py-6 md:px-12">
         <div className="mb-4 flex items-center justify-between">
           <button className="rounded-lg border border-border bg-white px-3 py-2 md:hidden" onClick={() => setSidebarOpen(true)}>
             ☰ Menu
@@ -129,7 +141,7 @@ export default function HomePage() {
         </div>
 
         {!chatOpen ? (
-          <>
+          <div className="flex-1 overflow-y-auto">
             <section className="relative animate-fadeUp pt-4 pb-2">
               <div className="pointer-events-none absolute -right-10 top-6 h-32 w-32 rounded-full bg-accent-orange/10 blur-xl" />
               <h1 className="relative z-10 text-[clamp(1.75rem,4vw,2.5rem)] font-display font-bold text-[var(--luxury-charcoal)]">
@@ -171,7 +183,7 @@ export default function HomePage() {
                 <QuickActionCard key={item.title} item={item} onClick={(nextPrompt) => setPrompt(nextPrompt)} />
               ))}
             </section>
-          </>
+          </div>
         ) : (
           <section className="flex min-h-0 flex-1 animate-fadeUp">
             <ChatPanel

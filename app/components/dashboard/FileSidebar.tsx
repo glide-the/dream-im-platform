@@ -52,9 +52,26 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
   }, [sessionId]);
 
   useEffect(() => {
+    setCurrentPath("");
+    setExpandedDirs(new Set());
+  }, [sessionId]);
+
+  useEffect(() => {
     if (open && sessionId) {
       fetchFiles(currentPath);
     }
+  }, [open, sessionId, currentPath, fetchFiles]);
+
+  useEffect(() => {
+    if (!open || !sessionId) return;
+
+    const intervalId = window.setInterval(() => {
+      void fetchFiles(currentPath);
+    }, 3000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, [open, sessionId, currentPath, fetchFiles]);
 
   const handleUpload = async (fileList: FileList | null) => {
