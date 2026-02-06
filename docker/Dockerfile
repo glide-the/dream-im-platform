@@ -51,9 +51,6 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Install curl for healthcheck
 RUN apk add --no-cache curl
 
-# Copy public assets
-COPY --from=builder /app/public ./public
-
 # Copy standalone output (includes server.js and node_modules)
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
