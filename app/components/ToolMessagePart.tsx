@@ -369,10 +369,10 @@ export function ToolMessagePart({
 
   return (
     <div className="group w-full">
-      <div className="flex flex-col rounded-lg border border-border bg-bg-surface">
+      <div className="flex flex-col rounded-lg border border-border bg-[#F5F5F5] transition duration-200 hover:-translate-y-[3px] hover:shadow-medium">
         {/* Header */}
         <div
-          className="flex items-center gap-2 px-3 py-2 cursor-pointer"
+          className="flex cursor-pointer items-center gap-2 px-3 py-2"
           onClick={() => setExpanded(!expanded)}
         >
           <div className="p-1.5 rounded bg-bg-secondary">
@@ -385,7 +385,7 @@ export function ToolMessagePart({
             )}
           </div>
           <div className="flex-1">
-            <span className="font-medium text-sm text-text-primary">
+            <span className="font-display text-base font-semibold text-text-primary">
               {isExecuting ? (
                 <span className="text-accent">{title || toolName}</span>
               ) : (
@@ -404,7 +404,7 @@ export function ToolMessagePart({
           </div>
           <button
             type="button"
-            className="p-1 rounded hover:bg-bg-secondary transition-colors"
+            className="rounded p-1 transition-colors hover:bg-bg-secondary focus-visible:ring-2 focus-visible:ring-accent-orange" aria-label="展开工具详情"
           >
             {expanded ? (
               <IconChevronUp className="h-4 w-4 text-text-tertiary" />
@@ -422,7 +422,7 @@ export function ToolMessagePart({
               <h5 className="text-xs font-medium text-text-tertiary mb-2">
                 工具信息
               </h5>
-              <div className="text-xs text-text-secondary space-y-1">
+              <div className="space-y-1 text-xs text-text-secondary [&_a]:text-accent-orange [&_a]:underline">
                 <div><span className="text-text-tertiary">类型:</span> {partType}</div>
                 <div><span className="text-text-tertiary">工具名:</span> {toolName}</div>
                 <div><span className="text-text-tertiary">调用ID:</span> <code className="bg-bg-primary px-1 rounded">{toolCallId}</code></div>

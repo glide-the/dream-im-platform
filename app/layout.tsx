@@ -1,17 +1,17 @@
 import React from "react";
 import "./globals.css";
-import { IBM_Plex_Sans, IBM_Plex_Serif, IBM_Plex_Mono } from "next/font/google";
+import { Noto_Sans_SC, Noto_Serif_SC, IBM_Plex_Mono } from "next/font/google";
 import { Providers } from "./app/providers";
 
-const plexSans = IBM_Plex_Sans({
+const notoSans = Noto_Sans_SC({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500"],
   variable: "--font-body"
 });
 
-const plexSerif = IBM_Plex_Serif({
+const notoSerif = Noto_Serif_SC({
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: ["600"],
   variable: "--font-display"
 });
 
@@ -47,7 +47,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body
-        className={`${plexSans.variable} ${plexSerif.variable} ${plexMono.variable} font-body`}
+        className={`${notoSans.variable} ${notoSerif.variable} ${plexMono.variable} font-body`}
       >
         <Providers>{children}</Providers>
       </body>

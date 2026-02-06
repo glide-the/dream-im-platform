@@ -38,7 +38,7 @@ export default function ChatPanel({
   initialMessages,
   isLoading = false,
   className,
-  inputPlaceholder = "继续提问或补充信息...",
+  inputPlaceholder = "Press i chat",
   queuedPrompt,
   queuedPromptNonce,
   openFileDialogSignal,
@@ -133,7 +133,7 @@ export default function ChatPanel({
         <ChatMessageList messages={messages} isLoading={chatLoading} error={error} addToolResult={addToolResult} shouldShowLoadingIndicator={shouldShowLoadingIndicator} />
       </div>
 
-      <div className="mt-3 rounded-2xl border border-border bg-surface p-3">
+      <div className="sticky bottom-0 mt-3 rounded-2xl border border-border bg-surface/95 p-3 backdrop-blur">
         <AIInputDock
           contextCustomerId={contextCustomerId}
           contextCustomers={contextCustomers}
