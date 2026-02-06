@@ -265,9 +265,8 @@ export default function AIInputDock({
 
   return (
     <div
-      className={`rounded-2xl border bg-bg-primary p-3 transition-colors ${
-        isDragOver ? "border-accent-orange bg-accent-orange-light" : "border-border"
-      }`}
+      className={`rounded-2xl border bg-bg-primary p-3 transition-colors ${isDragOver ? "border-accent-orange bg-accent-orange-light" : "border-border"
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -280,43 +279,9 @@ export default function AIInputDock({
         <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{uploadError || uploadHookError}</div>
       )}
 
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <select
-          aria-label="工具选择"
-          className="rounded-full border border-border bg-bg-surface px-2 py-1 text-xs text-text-secondary focus-visible:ring-2 focus-visible:ring-accent-orange"
-          value={toolChoice}
-          onChange={(e) => setToolChoice(e.target.value as ToolChoice)}
-          disabled={disabled}
-        >
-          <option value="auto">🔧 自动</option>
-          <option value="manual">✋ 手动确认</option>
-          <option value="none">🚫 禁用工具</option>
-        </select>
-
-        {onAddContextCustomer && (
-          <button
-            className="rounded-full bg-accent-orange-light px-3 py-1 text-xs font-semibold text-accent-orange focus-visible:ring-2 focus-visible:ring-accent-orange"
-            onClick={onAddContextCustomer}
-            disabled={disabled}
-            aria-label="添加客户上下文"
-            type="button"
-          >
-            @客户
-          </button>
-        )}
-
+      <div className="mb-2 flex items-center">
         <span className="ml-auto text-xs text-text-tertiary">⌘ + Enter 发送</span>
       </div>
-
-      {contextCustomers.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2 text-[11px] text-text-tertiary">
-          {contextCustomers.map((customer) => (
-            <button key={customer.id} className="rounded-full border border-border bg-bg-surface px-2 py-1" onClick={() => onRemoveContextCustomer?.(customer.id)} disabled={disabled} type="button">
-              @{customer.name ?? "客户"} · 取消
-            </button>
-          ))}
-        </div>
-      )}
 
       {uploadedFiles.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-2">

@@ -1,5 +1,5 @@
 export interface QuickActionCardItem {
-  icon: "sparkles" | "search" | "users" | "checklist";
+  icon: "envelope" | "table" | "calendar" | "tasks" | "calendarAlt" | "database";
   title: string;
   description: string;
   prompt: string;
@@ -8,45 +8,45 @@ export interface QuickActionCardItem {
 
 export const QUICK_ACTION_CARDS: QuickActionCardItem[] = [
   {
-    icon: "sparkles",
+    icon: "envelope",
     title: "Create Email Draft",
     description: "Generate a polished sales follow-up email tailored to your lead.",
     prompt: "Draft a follow-up email for my lead with clear CTA and concise tone.",
-    color: "bg-amber-100 text-amber-700",
+    color: "bg-red-100 text-red-500",
   },
   {
-    icon: "search",
+    icon: "table",
     title: "Competitor Pricing Research",
     description: "Summarize competitor pricing and positioning highlights.",
     prompt: "Research competitor pricing and summarize opportunities for our offer.",
-    color: "bg-blue-100 text-blue-700",
+    color: "bg-green-100 text-green-600",
   },
   {
-    icon: "users",
+    icon: "calendar",
     title: "Meeting Preparation",
     description: "Build a practical prep brief with talking points and risks.",
-    prompt: "Prepare me for tomorrow's customer meeting with agenda and objections.",
-    color: "bg-emerald-100 text-emerald-700",
+    prompt: "Prepare for my upcoming meeting by getting relevant issues from linear.",
+    color: "bg-blue-100 text-blue-500",
   },
   {
-    icon: "checklist",
+    icon: "tasks",
     title: "Create Issue",
     description: "Turn notes into a structured issue with owner and next actions.",
     prompt: "Create an issue from my notes and include owner, impact, and timeline.",
-    color: "bg-rose-100 text-rose-700",
+    color: "bg-gray-100 text-gray-800",
   },
   {
-    icon: "sparkles",
+    icon: "calendarAlt",
     title: "Next Week's Schedule",
     description: "Plan next week around meetings, follow-ups, and deep work.",
-    prompt: "Draft my next week's schedule balancing sales calls and follow-ups.",
-    color: "bg-violet-100 text-violet-700",
+    prompt: "What's my busiest day next week and when do I have free time?",
+    color: "bg-yellow-100 text-yellow-600",
   },
   {
-    icon: "search",
+    icon: "database",
     title: "Optimize Queries",
     description: "Improve prompt quality for better AI output consistency.",
-    prompt: "Optimize this prompt to get more specific and actionable output.",
-    color: "bg-sky-100 text-sky-700",
+    prompt: "Explore opportunities to add indexes and make my queries more efficient.",
+    color: "bg-green-100 text-green-600",
   },
 ];

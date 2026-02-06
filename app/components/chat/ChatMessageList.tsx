@@ -89,9 +89,9 @@ export default function ChatMessageList({
                   <div key={`${msg.id}-${partIndex}`} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
                     <div
                       className={[
-                        "max-w-[90%] rounded-2xl px-3 py-2 text-[14px] leading-[1.6]",
+                        "max-w-3xl rounded-2xl px-4 py-3 text-sm leading-[1.6]",
                         isUser
-                          ? "rounded-tr-none bg-accent-orange text-white"
+                          ? "bg-accent-orange text-white"
                           : "rounded-tl-none bg-[#F5F5F5] text-text-secondary",
                       ].join(" ")}
                     >

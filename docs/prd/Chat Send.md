@@ -1,122 +1,236 @@
-以下是根据您提供的对话页面图片生成的**极简对话界面 UI 设计方案（杂志级视觉规范）**，涵盖视觉风格、核心模块规范、色彩系统、代码示例及动效规则：
+# Chat Send — 输入与发送 PRD
 
+> 对话页面「消息输入区」与「已发送消息」的布局、交互与视觉规范。
+> 核心原则：**发送前（输入态）与发送后（已发消息）使用统一布局容器**，保证视觉一致性。
 
-### 🎨 总体视觉风格（Aesthetic Direction）
-| 方向                          | 描述                                                                 |
-|-----------------------------|----------------------------------------------------------------------|
-| 🖤 **高级灰调极简主义**         | 浅灰渐变背景（#F5F5F5 → #EAEAEA）+ 纯白交互组件 + 橙色功能强调（#FF7A00） |
-| 📐 **几何精准排版**           | 严格遵循 8px 网格系统，模块间距 16px/24px，确保视觉平衡与呼吸感           |
-| ✨ **微质感层次**             | 白色组件使用 1px 浅灰边框 + 2px 内阴影（0 2px 4px rgba(0,0,0,0.05)），营造悬浮感 |
-| 🔄 **克制动效系统**           | 模块载入淡入（0.3s ease-out）、交互元素悬停缩放（1.03x）、按钮点击微压缩（0.98x） |
+---
 
+## 1. 页面结构总览
 
-### 🧩 核心模块设计规范（按视觉层级）
-#### 1. 左侧导航栏（A区）  
-**视觉定位**：垂直功能脊柱，极简图标语言  
-| 元素                | 设计细节                                                                 |
-|---------------------|--------------------------------------------------------------------------|
-| 🔸 **Logo**         | 24×24px 橙色网格图标（#FF7A00），顶部距边 24px，点击时有 0.2s 旋转15°动效 |
-| 🔹 **功能图标组**   | 4个 20×20px 线性图标（Font Awesome），默认 #8A8A8A，激活态 #FF7A00，间距 32px |
-| 🔴 **未读标记**     | 消息图标右上角 16×16px 圆形标记，背景 #FF7A00，白色 12px 数字“7”，字重 600 |
-| 👤 **用户头像**     | 36×36px 圆形头像，底部距边 24px，边框 2px 白色，轻微外阴影（0 2px 6px rgba(0,0,0,0.1)） |
+```
++---------------------------------------------------+
+|  VerticalNav | Sidebar |       Main Area           |
+|              |         | +---------------------+   |
+|              |         | |  ChatMessageList    |   |
+|              |         | |  (flex-1 scroll)    |   |
+|              |         | |  +---------------+  |   |
+|              |         | |  | Message Card  |  |   |
+|              |         | |  | (unified style)|  |   |
+|              |         | |  +---------------+  |   |
+|              |         | |        ...          |   |
+|              |         | +---------------------+   |
+|              |         | +---------------------+   |
+|              |         | |  AIInputDock        |   |
+|              |         | |  (sticky bottom)    |   |
+|              |         | +---------------------+   |
+|              |         |                           |
++---------------------------------------------------+
+```
 
+- **ChatPanel**（`app/components/chat/ChatPanel.tsx`）：容器组件，`flex min-h-0 flex-col`
+- **ChatMessageList**：`flex-1 overflow-y-auto`，消息滚动区
+- **AIInputDock**：`sticky bottom-0`，输入区固定在底部
 
-#### 2. 底部输入区（E区）  
-**视觉定位**：高频交互中枢，操作流畅性优先  
-| 元素                | 设计细节                                                                 |
-|---------------------|--------------------------------------------------------------------------|
-| 📥 **输入框**       | 64px 高，左右内边距 16px，圆角 32px，背景 #FFFFFF，边框 1px #E0E0E0，提示文字“Press i chat”（#B3B3B3，14px） |
-| ➕ **Add 按钮**     | 24×24px “+”图标（Font Awesome），#8A8A8A，悬停 #FF7A00，点击时图标旋转 90° |
-| 🚀 **发送按钮**     | 36×36px 圆形，背景 #FF7A00，白色箭头图标（18×18px），禁用时背景 #FFD4B3 |
+---
 
+## 2. 输入区（发送前）— AIInputDock
 
-### 🎨 色彩系统（CSS Variables）
-```css
-:root {
-  /* 基础色 */
-  --bg-gradient: linear-gradient(180deg, #F5F5F5 0%, #EAEAEA 100%);
-  --color-text-primary: #333333; /* 主要文字 */
-  --color-text-secondary: #666666; /* 次要文字 */
-  --color-text-hint: #8A8A8A; /* 提示文字 */
-  --color-border: #E0E0E0; /* 边框色 */
-  
-  /* 功能色 */
-  --color-accent: #FF7A00; /* 主强调色（橙色） */
-  --color-accent-light: #FFEFE0; /* 强调色浅背景 */
-  --color-accent-disabled: #FFD4B3; /* 禁用状态强调色 */
+### 2.1 外层容器
+
+| 属性    | 规范                                                 |
+|---------|------------------------------------------------------|
+| 定位    | `sticky bottom-0`，居中 `mx-auto`                     |
+| 最大宽度 | `max-w-3xl`（768px）                                  |
+| 圆角    | `rounded-2xl`（16px）                                 |
+| 边框    | `1px solid var(--neutral-border)`                     |
+| 背景    | `bg-white/80 backdrop-blur-md`                        |
+| 内边距  | `p-5`（外层）-> 内部 `p-3`（AIInputDock 自身）          |
+| 阴影    | `shadow-sm`，hover 时 `shadow-md`（0.3s transition）   |
+
+### 2.2 快捷键提示行
+
+| 元素           | 规范                                                              |
+|----------------|-------------------------------------------------------------------|
+| 快捷键提示     | `ml-auto text-xs text-text-tertiary`，显示 "Cmd + Enter 发送"       |
+
+### 2.3 文件预览区
+
+- 条件显示：当 `uploadedFiles.length > 0` 时出现
+- 图片文件：`h-20 w-20 object-cover rounded-lg`
+- 非图片文件：`h-20 w-28`，显示图标 + 文件名 + 扩展名 + 大小
+- 上传中覆盖层：半透明背景 + 旋转加载图标 + 进度条
+- hover 显示删除按钮
+
+### 2.4 输入行
+
+| 元素        | 规范                                                              |
+|-------------|-------------------------------------------------------------------|
+| 文本框      | `min-h-[44px] rounded-md border bg-bg-surface px-4 py-3 text-sm`  |
+| 浮动标签    | `"Press i chat"`，`text-xs text-[#999]`，聚焦/有内容时上移至 `-top-2` |
+| 字符计数    | `absolute bottom-1.5 right-2 text-[11px]`，显示 `{n}/2000`        |
+| + Add 按钮  | `h-10 rounded-md border px-3 text-sm`，点击展开附件菜单            |
+| 发送按钮    | `h-10 w-10 rounded-full bg-accent-orange text-white shadow-md`     |
+
+### 2.5 输入框聚焦态
+
+- 边框：`border-accent-orange`
+- 光环：`ring-2 ring-accent-orange`
+- 浮动标签上移至 `-top-2`
+
+---
+
+## 3. 已发送消息（发送后）— ChatMessageList
+
+### 3.1 核心规范：与输入区布局对齐
+
+> **发送后的用户消息卡片应继承输入区的容器风格**，保持视觉一致。
+
+### 3.2 消息卡片规范
+
+#### 用户消息（右对齐）
+
+| 属性    | 当前实现                                  | 目标规范（与输入区对齐）                      |
+|---------|------------------------------------------|----------------------------------------------|
+| 最大宽度 | `max-w-[90%]`                           | `max-w-3xl`（与输入区一致）                   |
+| 圆角    | `rounded-2xl rounded-tr-none`            | `rounded-2xl`（与输入区容器对齐）              |
+| 背景    | `bg-accent-orange text-white`            | `bg-accent-orange text-white`（保持）         |
+| 内边距  | `px-3 py-2`                              | `px-4 py-3`（与输入区文本框内边距对齐）        |
+| 字号    | `text-[14px] leading-[1.6]`              | `text-sm leading-[1.6]`（与输入区一致）      |
+| 对齐    | `justify-end`                            | `justify-end`（保持右对齐）                   |
+
+#### AI 回复消息（左对齐）
+
+| 属性    | 规范                                                              |
+|---------|-------------------------------------------------------------------|
+| 最大宽度 | `max-w-[90%]`                                                    |
+| 圆角    | `rounded-2xl rounded-tl-none`                                     |
+| 背景    | `bg-[#F5F5F5] text-text-secondary`                                |
+| 内边距  | `px-3 py-2`                                                       |
+| 内容    | Markdown 渲染（`react-markdown` + `remark-gfm`）                  |
+| 链接色  | `text-accent-orange underline`                                    |
+| 强调色  | `text-accent-orange font-semibold`                                |
+
+#### 工具调用消息
+
+| 属性    | 规范                                                              |
+|---------|-------------------------------------------------------------------|
+| 最大宽度 | `max-w-[90%]`                                                    |
+| 圆角    | `rounded-lg`                                                      |
+| 背景    | `bg-[#F5F5F5]`                                                    |
+| 动效    | hover 时 `translateY(-3px)` + `shadow-medium`                     |
+
+#### 文件消息
+
+| 属性    | 规范                                                              |
+|---------|-------------------------------------------------------------------|
+| 最大宽度 | `max-w-[80%]`                                                    |
+| 渲染    | `FileMessagePart` 组件，支持图片预览与非图片文件卡片                |
+
+### 3.3 操作历史折叠区
+
+- 步骤 / 推理内容折叠在消息顶部
+- 容器：`rounded-lg border border-border/60 bg-bg-secondary/40 p-2`
+- 左侧指示条：`h-4 w-0.5 bg-accent-orange`
+- 折叠/展开按钮：`text-xs text-accent-orange underline`
+
+### 3.4 加载指示器
+
+- 宽度固定 `w-[220px]`
+- 橙色渐变进度条动画：`animate-orange-progress`
+
+### 3.5 错误消息
+
+- `rounded-2xl rounded-tl-none bg-red-100 px-3 py-2 text-sm text-red-600`
+
+---
+
+## 4. 发送流程
+
+```
+用户输入 -> 点击发送 / Cmd+Enter
+  |
+  +-- 校验：文本非空 或 有附件
+  +-- 校验：无正在上传的文件
+  |
+  +-- 组装 parts: FileUIPart[] + TextUIPart
+  +-- 设置 pendingData（attachments, customerIds, toolChoice）
+  +-- 调用 sendMessage({ role: "user", parts })
+  |
+  +-- 清空输入框
+  +-- 释放文件预览 URL
+  +-- 清空 uploadedFiles
+```
+
+### 4.1 请求体结构（ChatApiSchemaRequestBody）
+
+```typescript
+{
+  id: string;                    // chat ID
+  message: UIMessage;            // 最后一条用户消息
+  chatModel: string;             // 默认模型
+  toolChoice: "auto" | "manual" | "none";
+  allowedAppDefaultToolkit: [];
+  allowedMcpServers: {};
+  attachments: ChatAttachment[]; // { type, url, mediaType, filename }
+  contextCustomerIds: string[];
 }
 ```
 
+### 4.2 键盘快捷键
 
-### 📝 核心组件代码示例（HTML+Tailwind）
-#### 1. 左侧导航栏
-```html
-<div class="fixed left-0 top-0 h-full w-16 bg-white shadow-sm flex flex-col items-center py-6 z-10">
-  <!-- Logo -->
-  <div class="w-6 h-6 mb-10 cursor-pointer transition-transform duration-200 hover:rotate-12">
-    <div class="w-full h-full bg-accent grid grid-cols-2 grid-rows-2 gap-[2px]">
-      <div class="bg-white rounded-sm"></div>
-      <div class="bg-white rounded-sm"></div>
-      <div class="bg-white rounded-sm"></div>
-      <div class="bg-white rounded-sm"></div>
-    </div>
-  </div>
-  
-  <!-- 功能图标组 -->
-  <div class="flex flex-col items-center space-y-8 flex-1">
-    <i class="fas fa-folder text-text-hint text-lg hover:text-accent transition-colors"></i>
-    <div class="relative">
-      <i class="fas fa-comment text-accent text-lg"></i>
-      <span class="absolute -top-2 -right-2 w-4 h-4 bg-accent text-white text-xs rounded-full flex items-center justify-center font-semibold">7</span>
-    </div>
-    <i class="fas fa-clock text-text-hint text-lg hover:text-accent transition-colors"></i>
-    <i class="fas fa-cog text-text-hint text-lg hover:text-accent transition-colors"></i>
-  </div>
-  
-  <!-- 用户头像 -->
-  <div class="w-9 h-9 rounded-full border-2 border-white shadow-md overflow-hidden mb-6">
-    <img src="user-avatar.jpg" alt="User" class="w-full h-full object-cover">
-  </div>
-</div>
+| 快捷键       | 行为              |
+|-------------|-------------------|
+| Cmd + Enter   | 发送消息          |
+| Shift + Enter | 换行（不发送）   |
+
+---
+
+## 5. 色彩系统
+
+```css
+:root {
+  --bg-primary: #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --luxury-ivory: #F8F7F4;       /* 页面背景 */
+  --neutral-border: #E5E5E5;     /* 边框 */
+  --accent-orange: #FF7A00;      /* 主强调色 */
+  --accent-orange-light: #FFEFE0; /* 强调色浅背景 */
+  --text-primary: #333333;
+  --text-secondary: #666666;
+  --text-tertiary: #999999;
+}
 ```
 
-#### 2. 底部输入区
-```html
-<div class="fixed bottom-6 left-1/2 transform -translate-x-1/2 w-[calc(100%-32px)] max-w-4xl flex items-center bg-card rounded-full border border-border px-4 py-2 shadow-sm">
-  <!-- Add Button -->
-  <button class="w-6 h-6 flex items-center justify-center text-text-hint hover:text-accent transition-colors mr-2">
-    <i class="fas fa-plus text-lg"></i>
-  </button>
-  
-  <!-- Input Field -->
-  <input type="text" placeholder="Press i chat" 
-         class="flex-1 bg-transparent outline-none text-text-primary text-sm placeholder-text-hint py-2">
-  
-  <!-- Send Button -->
-  <button class="w-9 h-9 rounded-full bg-accent flex items-center justify-center text-white ml-2 transition-transform active:scale-90">
-    <i class="fas fa-paper-plane text-sm"></i>
-  </button>
-</div>
-```
+---
 
+## 6. 动效规范
 
-### ✨ 动效设计规范（Motion Guidelines）
-| 动效类型          | 实现方式                                                                 | 应用场景                     |
-|-------------------|--------------------------------------------------------------------------|------------------------------|
-| 页面载入          | `opacity-0` → `opacity-100`，0.3s ease-out，按模块层级延迟 0.1s 依次入场 | 导航栏→顶部操作区→主内容区→输入区 |
-| 图标悬停          | `transform: scale(1.03)`，0.2s ease-in-out                               | 导航图标、Add按钮            |
-| 按钮点击          | `transform: scale(0.98)`，0.1s ease-in-out                               | 发送按钮、New Chat按钮       |
+| 动效               | 实现                                        | 场景            |
+|--------------------|---------------------------------------------|-----------------|
+| 输入区 hover       | `shadow-sm -> shadow-md`，`0.3s transition`   | 输入区容器      |
+| 发送按钮点击       | `active:scale-95`，0.1s                      | 发送按钮        |
+| 文件预览 hover     | `border-border -> border-accent-orange`       | 文件缩略图      |
+| 浮动标签动画       | `transition-all`，top 从 `top-3` 到 `-top-2` | 输入框标签      |
+| 工具消息 hover     | `translateY(-3px) + shadow-medium`           | 工具调用卡片    |
+| 加载进度           | `animate-orange-progress` 渐变滑动           | 加载指示器      |
 
+---
 
-### 📐 响应式适配规则
-- **桌面端**（≥1200px）：左侧导航固定160px宽，主内容区最大宽度1200px居中  
-- **平板端**（768px-1199px）：左侧导航收缩为80px宽，仅显示图标  
-- **移动端**（≤767px）：左侧导航隐藏，通过顶部汉堡按钮呼出（全屏侧边栏）  
+## 7. 响应式适配
 
+| 断点                | 适配策略                                        |
+|---------------------|-------------------------------------------------|
+| 桌面端（>=768px）    | 输入区 `max-w-3xl` 居中，侧边栏展开              |
+| 移动端（<768px）     | 输入区全宽 `w-full`，侧边栏隐藏，通过汉堡按钮呼出 |
 
-### 💎 设计亮点总结
-1. **克制的奢华感**：通过精准的阴影层次、渐变背景和微妙动效，在极简框架中注入高级杂志质感  
-2. **功能与美学平衡**：橙色强调色严格用于核心功能（未读、发送、激活态），确保视觉引导清晰  
-3. **细节交互温度**：每个元素的悬停、点击反馈都经过调校，让工具类产品拥有情感化体验  
+---
 
-如需进一步细化某个模块的视觉细节或交互原型，可随时告知！
+## 8. 关联文件
+
+| 文件                                        | 职责                    |
+|---------------------------------------------|------------------------|
+| `app/components/AIInputDock.tsx`            | 输入区组件              |
+| `app/components/chat/ChatPanel.tsx`         | 对话面板容器            |
+| `app/components/chat/ChatMessageList.tsx`   | 消息列表渲染            |
+| `app/lib/chat-schema.ts`                   | 请求体 Schema 定义      |
+| `app/components/chat/interaction-utils.ts`  | 键盘快捷键逻辑          |
