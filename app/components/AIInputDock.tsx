@@ -103,13 +103,6 @@ export default function AIInputDock({
   // File upload hook
   const { upload, error: uploadHookError } = useFileUpload();
   
-  // Show upload hook errors
-  useEffect(() => {
-    if (uploadHookError) {
-      setUploadError(uploadHookError);
-      setTimeout(() => setUploadError(null), 5000);
-    }
-  }, [uploadHookError]);
 
   /** Upload a single file to storage backend */
   const uploadFileToStorage = useCallback(async (fileId: string, file: File) => {
@@ -342,9 +335,9 @@ export default function AIInputDock({
       )}
 
       {/* Upload error message */}
-      {uploadError && (
+      {(uploadError || uploadHookError) && (
         <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-          {uploadError}
+          {uploadError || uploadHookError}
         </div>
       )}
 

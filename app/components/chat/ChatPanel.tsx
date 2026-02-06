@@ -1,0 +1,143 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport, isToolUIPart, type FileUIPart, type TextUIPart, type UIMessage } from "ai";
+import AIInputDock, { type Attachment, type ContextCustomer, type ToolChoice, toAttachment } from "../AIInputDock";
+import { type ChatApiSchemaRequestBody, type ChatAttachment, DEFAULT_CHAT_MODEL } from "../../lib/chat-schema";
+import { useConversationByCustomer } from "../../lib/queries";
+import type { ConversationMessage } from "../../lib/types";
+import ChatMessageList from "./ChatMessageList";
+
+interface ChatPanelProps {
+  threadId: string;
+  contextCustomerId?: string;
+  contextCustomers: ContextCustomer[];
+  initialMessages?: ConversationMessage[];
+  isLoading?: boolean;
+  className?: string;
+  inputPlaceholder?: string;
+}
+
+function mapConversationToUiMessages(conversationMessages: ConversationMessage[]): UIMessage[] {
+  return conversationMessages.map((msg) => ({
+    id: msg.id,
+    role: msg.role,
+    parts: msg.parts as UIMessage["parts"],
+    createdAt: new Date(msg.created_at),
+  }));
+}
+
+export default function ChatPanel({
+  threadId,
+  contextCustomerId,
+  contextCustomers,
+  initialMessages,
+  isLoading = false,
+  className,
+  inputPlaceholder = "继续提问或补充信息...",
+}: ChatPanelProps) {
+  const [pendingData, setPendingData] = useState<{
+    rawAttachments: Attachment[];
+    contextCustomerIds: string[];
+    toolChoice: ToolChoice;
+  } | null>(null);
+  const [currentToolChoice, setCurrentToolChoice] = useState<ToolChoice>("auto");
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const hasInitializedRef = useRef(false);
+
+  const { data: conversationData, isLoading: isConversationLoading } = useConversationByCustomer(contextCustomerId ?? threadId);
+
+  const { messages, sendMessage, setMessages, status, error, addToolResult } = useChat({
+    id: threadId,
+    transport: new DefaultChatTransport({
+      api: "/api/claude-agent",
+      prepareSendMessagesRequest: ({ messages: outgoingMessages, body, id }) => {
+        const lastMessage = outgoingMessages.at(-1) as UIMessage | undefined;
+        if (!lastMessage) return { body };
+
+        const attachments: ChatAttachment[] = (pendingData?.rawAttachments ?? []).filter((file) => file.url).map((file) => ({
+          type: "file",
+          url: file.url!,
+          mediaType: file.type,
+          filename: file.name,
+        }));
+
+        const requestBody: ChatApiSchemaRequestBody = {
+          id,
+          message: lastMessage,
+          chatModel: DEFAULT_CHAT_MODEL,
+          toolChoice: pendingData?.toolChoice ?? currentToolChoice,
+          allowedAppDefaultToolkit: [],
+          allowedMcpServers: {},
+          attachments,
+          contextCustomerIds: pendingData?.contextCustomerIds ?? (contextCustomerId ? [contextCustomerId] : contextCustomers.map((c) => c.id)),
+        };
+
+        setPendingData(null);
+        return { body: requestBody };
+      },
+    }),
+    generateId: () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+    experimental_throttle: 100,
+  });
+
+  useEffect(() => {
+    if (hasInitializedRef.current) return;
+    const baseMessages = initialMessages ?? conversationData?.data?.messages;
+    if ((baseMessages?.length ?? 0) > 0) {
+      setMessages(mapConversationToUiMessages(baseMessages ?? []));
+      hasInitializedRef.current = true;
+    }
+  }, [conversationData?.data?.messages, initialMessages, setMessages]);
+
+  const chatLoading = status === "streaming" || status === "submitted" || isLoading || isConversationLoading;
+
+  const shouldShowLoadingIndicator = useMemo(() => {
+    if (!chatLoading || messages.length === 0) return false;
+    const lastMessage = messages.at(-1);
+    const hasVisibleParts = lastMessage?.parts?.some((p) => p.type === "text" || isToolUIPart(p));
+    return !hasVisibleParts;
+  }, [chatLoading, messages]);
+
+  useEffect(() => {
+    if (chatContainerRef.current) chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+  }, [messages]);
+
+  return (
+    <div className={className}>
+      <div ref={chatContainerRef} className="max-h-[60vh] overflow-y-auto rounded-2xl border border-border bg-surface p-4">
+        <ChatMessageList messages={messages} isLoading={chatLoading} error={error} addToolResult={addToolResult} shouldShowLoadingIndicator={shouldShowLoadingIndicator} />
+      </div>
+
+      <div className="mt-3 rounded-2xl border border-border bg-surface p-3">
+        <AIInputDock
+          contextCustomerId={contextCustomerId}
+          contextCustomers={contextCustomers}
+          onSendMessage={async (message, uploadedFiles = [], customerIds = [], toolChoice = "auto") => {
+            setCurrentToolChoice(toolChoice);
+            setPendingData({
+              rawAttachments: uploadedFiles.map(toAttachment),
+              contextCustomerIds: customerIds.length > 0 ? customerIds : contextCustomers.map((c) => c.id),
+              toolChoice,
+            });
+
+            const validFiles = uploadedFiles.filter((f) => f.url);
+            const parts: Array<FileUIPart | TextUIPart> = validFiles.map((file) => ({
+              type: "file",
+              url: file.url!,
+              mediaType: file.mimeType,
+              filename: file.name,
+            } as FileUIPart));
+            parts.push({ type: "text", text: message } as TextUIPart);
+            await sendMessage({ role: "user", parts });
+          }}
+          onAddContextCustomer={() => undefined}
+          onRemoveContextCustomer={() => undefined}
+          placeholder={inputPlaceholder}
+          loading={chatLoading}
+        />
+      </div>
+    </div>
+  );
+}
