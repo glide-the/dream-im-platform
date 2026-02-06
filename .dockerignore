@@ -5,6 +5,7 @@ node_modules
 .env*
 !.env.local.example
 docker
+!docker/entrypoint.sh
 agent-workspaces
 tests
 html
