@@ -465,7 +465,7 @@ export function ToolMessagePart({
               input={input as AskUserQuestionInput}
               toolCallId={toolCallId}
               toolName={toolName}
-              isProcessing={confirmationStatus === "confirming"}
+              isProcessing={false}
               onSubmit={handleAskUserSubmit}
               onCancel={handleAskUserCancel}
             />
