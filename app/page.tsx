@@ -5,6 +5,7 @@ import { ChatPanel } from "./components/chat";
 import QuickActionCard from "./components/dashboard/QuickActionCard";
 import Sidebar from "./components/dashboard/Sidebar";
 import VerticalNav from "./components/dashboard/VerticalNav";
+import { IconArrowUp } from "./components/Icons";
 import { QUICK_ACTION_CARDS } from "./components/dashboard/const";
 import { useCustomers } from "./lib/queries";
 
@@ -77,35 +78,43 @@ export default function HomePage() {
 
         {!chatOpen ? (
           <>
-            <section className="animate-fadeUp">
-              <h1 className="text-[clamp(1.75rem,4vw,2.5rem)] font-display font-bold text-[var(--luxury-charcoal)]">
-                Howdy <span className="text-[var(--luxury-rose)]">there</span>, ready to make some magic?
+            <section className="relative animate-fadeUp pt-4 pb-2">
+              <div className="pointer-events-none absolute -right-10 top-6 h-32 w-32 rounded-full bg-accent-orange/10 blur-xl" />
+              <h1 className="relative z-10 text-[clamp(1.75rem,4vw,2.5rem)] font-display font-bold text-[var(--luxury-charcoal)]">
+                Howdy <span className="text-accent-orange">there</span>, ready to make some magic?
               </h1>
             </section>
 
-            <section className="mt-6 rounded-2xl border border-[var(--neutral-border)] bg-white/70 p-5 backdrop-blur-md">
-              <input
-                ref={inputRef}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Press i to chat"
-                className="w-full bg-transparent py-2 text-base placeholder:text-text-tertiary"
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    handleSendFromQuickInput();
-                  }
-                }}
-              />
-              <div className="mt-4 flex items-center justify-between">
-                <button className="text-sm text-text-secondary" onClick={handleAddFile}>+ Add</button>
-                <button onClick={handleSendFromQuickInput} className="rounded-full bg-[var(--luxury-rose)] px-4 py-1 text-sm text-white">
-                  Send
-                </button>
+            <section className="mx-auto mt-6 w-full max-w-3xl">
+              <div className="rounded-2xl border border-[var(--neutral-border)] bg-white/80 p-5 shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md">
+                <input
+                  ref={inputRef}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Press i to chat"
+                  className="w-full bg-transparent py-2 text-base text-[var(--luxury-charcoal)] placeholder:text-text-tertiary focus:outline-none"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleSendFromQuickInput();
+                    }
+                  }}
+                />
+                <div className="mt-4 flex items-center justify-between">
+                  <button className="text-sm font-medium text-text-secondary transition-colors hover:text-accent-orange" onClick={handleAddFile}>
+                    + Add
+                  </button>
+                  <button
+                    onClick={handleSendFromQuickInput}
+                    className="grid h-9 w-9 place-items-center rounded-full bg-accent-orange text-white shadow-md transition-all duration-200 hover:scale-105 hover:bg-orange-600 active:scale-95"
+                  >
+                    <IconArrowUp className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </section>
 
-            <section className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <section className="mx-auto mt-8 w-full max-w-6xl grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
               {QUICK_ACTION_CARDS.map((item) => (
                 <QuickActionCard key={item.title} item={item} onClick={(nextPrompt) => setPrompt(nextPrompt)} />
               ))}

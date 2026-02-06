@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { IconSun, IconMonitor, IconMoon } from "../Icons";
 
 type ThemeMode = "light" | "system" | "dark";
+
+const THEME_OPTIONS: { mode: ThemeMode; Icon: typeof IconSun; label: string }[] = [
+  { mode: "light", Icon: IconSun, label: "浅色" },
+  { mode: "system", Icon: IconMonitor, label: "系统" },
+  { mode: "dark", Icon: IconMoon, label: "深色" },
+];
 
 interface SidebarProps {
   open: boolean;
@@ -40,15 +47,18 @@ export default function Sidebar({ open, desktopCollapsed = false, onClose }: Sid
 
         <div className="space-y-6 text-sm">
           <section>
-            <p className="mb-2 font-medium">Theme</p>
-            <div className="flex gap-2">
-              {(["light", "system", "dark"] as ThemeMode[]).map((mode) => (
+            <p className="mb-1 font-medium">Theme</p>
+            <p className="mb-3 text-xs text-text-tertiary">Switch between light, dark, and system themes</p>
+            <div className="flex gap-3">
+              {THEME_OPTIONS.map(({ mode, Icon, label }) => (
                 <button
                   key={mode}
                   onClick={() => setTheme(mode)}
-                  className={`rounded-full border px-3 py-1 capitalize ${theme === mode ? "border-[var(--luxury-rose)] text-[var(--luxury-rose)]" : "border-border text-text-secondary"}`}
+                  className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${theme === mode ? "border-2 border-[var(--luxury-rose)] bg-bg-secondary" : "hover:bg-bg-secondary"}`}
+                  aria-label={label}
+                  title={label}
                 >
-                  {mode}
+                  <Icon className={`h-4 w-4 ${theme === mode ? "text-[var(--luxury-charcoal)]" : "text-text-tertiary"}`} />
                 </button>
               ))}
             </div>
@@ -56,7 +66,7 @@ export default function Sidebar({ open, desktopCollapsed = false, onClose }: Sid
 
           <section>
             <p className="mb-2 font-medium">Model</p>
-            <select value={model} onChange={(e) => setModel(e.target.value)} className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2">
+            <select value={model} onChange={(e) => setModel(e.target.value)} className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]">
               <option>Auto</option>
               <option>Claude Sonnet</option>
               <option>GPT-4.1</option>
@@ -68,7 +78,7 @@ export default function Sidebar({ open, desktopCollapsed = false, onClose }: Sid
             <textarea
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
-              className="h-24 w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm"
+              className="h-24 w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm focus:border-[var(--luxury-rose)] focus:ring-1 focus:ring-[var(--luxury-rose)]"
             />
             <div className="mt-2 flex justify-between">
               <button onClick={() => setSystemPrompt("")} className="text-text-tertiary">Reset</button>
@@ -82,12 +92,15 @@ export default function Sidebar({ open, desktopCollapsed = false, onClose }: Sid
           </section>
 
           <section className="flex items-center justify-between">
-            <p className="font-medium">Workspace config</p>
+            <div>
+              <p className="font-medium">Workspace config</p>
+              <p className="text-xs text-text-tertiary">Enable workspace file access</p>
+            </div>
             <button
               onClick={() => setWorkspaceMode((v) => !v)}
-              className={`relative h-6 w-11 rounded-full ${workspaceMode ? "bg-[var(--luxury-rose)]" : "bg-gray-300"}`}
+              className={`relative h-6 w-11 rounded-full transition-colors duration-200 ${workspaceMode ? "bg-[var(--luxury-rose)]" : "bg-gray-300"}`}
             >
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition ${workspaceMode ? "left-5" : "left-0.5"}`} />
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all duration-200 ${workspaceMode ? "left-5" : "left-0.5"}`} />
             </button>
           </section>
         </div>
