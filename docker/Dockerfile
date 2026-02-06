@@ -44,16 +44,12 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Use Alibaba Cloud mirror for apk
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
-
 # Install curl for healthcheck
 RUN apk add --no-cache curl
 
 # Copy standalone output (includes server.js and node_modules)
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
 # Copy drizzle migrations for runtime DB migration
 COPY --from=builder /app/drizzle ./drizzle
@@ -63,10 +59,8 @@ COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY docker/entrypoint.sh ./docker/entrypoint.sh
 RUN chmod +x ./docker/entrypoint.sh
 
-# Create agent-workspaces directory with correct ownership
-RUN mkdir -p /app/agent-workspaces && chown -R nextjs:nodejs /app/agent-workspaces
-
-USER nextjs
+# Create agent-workspaces directory
+RUN mkdir -p /app/agent-workspaces
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
