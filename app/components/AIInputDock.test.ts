@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import AIInputDock from "./AIInputDock";
 import {
   runWithFileDialogTaskLock,
   shouldHandleOpenFileDialogSignal,
@@ -31,5 +34,20 @@ describe("runWithFileDialogTaskLock", () => {
     expect(callback).toHaveBeenCalledTimes(2);
 
     await Promise.resolve();
+  });
+});
+
+describe("AIInputDock mode rendering", () => {
+  it("does not render legacy attachment submenu entries in simple mode", () => {
+    const html = renderToStaticMarkup(
+      createElement(AIInputDock, {
+        mode: "simple",
+        onSendMessage: () => undefined,
+      }),
+    );
+
+    expect(html).not.toContain("上传附件");
+    expect(html).not.toContain("上传图片");
+    expect(html).not.toContain("拍照上传");
   });
 });

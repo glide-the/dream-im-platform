@@ -162,7 +162,7 @@ export default function ChatPanel({
         <div ref={bottomRef} aria-hidden="true" />
       </div>
 
-      <div className="sticky bottom-0 mx-auto mt-3 w-full max-w-3xl rounded-2xl border border-[var(--neutral-border)] bg-white/80 p-5 shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md">
+      <div className="sticky bottom-0 mx-auto mt-3 w-full max-w-3xl">
         <AIInputDock
           contextCustomerId={contextCustomerId}
           contextCustomers={contextCustomers}
@@ -185,8 +185,6 @@ export default function ChatPanel({
             parts.push({ type: "text", text: message } as TextUIPart);
             await sendMessage({ role: "user", parts });
           }}
-          onAddContextCustomer={() => undefined}
-          onRemoveContextCustomer={() => undefined}
           placeholder={inputPlaceholder}
           loading={chatLoading}
           onStop={status === "streaming" ? stop : undefined}

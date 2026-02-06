@@ -7,6 +7,13 @@ import QuickActionCard from "./components/dashboard/QuickActionCard";
 import Sidebar from "./components/dashboard/Sidebar";
 import VerticalNav from "./components/dashboard/VerticalNav";
 import { IconArrowUp, IconPlus } from "./components/Icons";
+import {
+  QUICK_INPUT_ACTIONS_CLASS_NAME,
+  QUICK_INPUT_ADD_BUTTON_CLASS_NAME,
+  QUICK_INPUT_FIELD_CLASS_NAME,
+  QUICK_INPUT_SHELL_CLASS_NAME,
+  QUICK_INPUT_SEND_BUTTON_CLASS_NAME,
+} from "./components/chatInputStyles";
 import { QUICK_ACTION_CARDS } from "./components/dashboard/const";
 import { useCustomers } from "./lib/queries";
 import { createId } from "./lib/id";
@@ -150,13 +157,13 @@ export default function HomePage() {
             </section>
 
             <section className="mx-auto mt-6 w-full max-w-3xl">
-              <div className="rounded-2xl border border-[var(--neutral-border)] bg-white/80 p-5 shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md">
+              <div className={QUICK_INPUT_SHELL_CLASS_NAME}>
                 <input
                   ref={inputRef}
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="Press i to chat"
-                  className="w-full bg-transparent py-2 text-base text-[var(--luxury-charcoal)] placeholder:text-text-tertiary focus:outline-none"
+                  className={QUICK_INPUT_FIELD_CLASS_NAME}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
@@ -164,13 +171,13 @@ export default function HomePage() {
                     }
                   }}
                 />
-                <div className="mt-4 flex items-center justify-between">
-                  <button className="text-sm font-medium text-text-secondary transition-colors hover:text-accent-orange" onClick={handleAddFile}>
+                <div className={QUICK_INPUT_ACTIONS_CLASS_NAME}>
+                  <button className={QUICK_INPUT_ADD_BUTTON_CLASS_NAME} onClick={handleAddFile}>
                     + Add
                   </button>
                   <button
                     onClick={handleSendFromQuickInput}
-                    className="grid h-9 w-9 place-items-center rounded-full bg-accent-orange text-white shadow-md transition-all duration-200 hover:scale-105 hover:bg-orange-600 active:scale-95"
+                    className={QUICK_INPUT_SEND_BUTTON_CLASS_NAME}
                   >
                     <IconArrowUp className="h-4 w-4" />
                   </button>
