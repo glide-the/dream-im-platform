@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatPanel } from "./components/chat";
+import FileSidebar from "./components/dashboard/FileSidebar";
 import QuickActionCard from "./components/dashboard/QuickActionCard";
 import Sidebar from "./components/dashboard/Sidebar";
 import VerticalNav from "./components/dashboard/VerticalNav";
@@ -20,12 +21,14 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export default function HomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(true);
+  const [fileSidebarOpen, setFileSidebarOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   const [threadId, setThreadId] = useState(() => createId("chat"));
   const [queuedPrompt, setQueuedPrompt] = useState("");
   const [queuedPromptNonce, setQueuedPromptNonce] = useState(0);
   const [openFileDialogSignal, setOpenFileDialogSignal] = useState(0);
+  const [fileSidebarSessionId] = useState(() => "shared-workspace");
   const inputRef = useRef<HTMLInputElement>(null);
   const { data } = useCustomers({ pageSize: 6, sort: "updated_at", order: "desc" });
 
@@ -76,10 +79,38 @@ export default function HomePage() {
     setChatOpen(false);
   }, []);
 
+  const handleToggleSidebar = useCallback(() => {
+    setFileSidebarOpen(false);
+    if (window.innerWidth >= 768) {
+      setDesktopCollapsed((v) => !v);
+    } else {
+      setSidebarOpen((v) => !v);
+    }
+  }, []);
+
+  const handleToggleFileSidebar = useCallback(() => {
+    const nextOpen = !fileSidebarOpen;
+    setFileSidebarOpen(nextOpen);
+    if (nextOpen) {
+      setSidebarOpen(false);
+      if (window.innerWidth >= 768) {
+        setDesktopCollapsed(true);
+      }
+    }
+  }, [fileSidebarOpen]);
+
   return (
     <div className="flex min-h-screen bg-[var(--luxury-ivory)]">
-      <VerticalNav onToggleSidebar={() => (window.innerWidth >= 768 ? setDesktopCollapsed((v) => !v) : setSidebarOpen((v) => !v))} />
+      <VerticalNav
+        onToggleSidebar={handleToggleSidebar}
+        onToggleFileSidebar={handleToggleFileSidebar}
+      />
       <Sidebar open={sidebarOpen} desktopCollapsed={desktopCollapsed} onClose={() => setSidebarOpen(false)} />
+      <FileSidebar
+        sessionId={fileSidebarSessionId}
+        open={fileSidebarOpen}
+        onClose={() => setFileSidebarOpen(false)}
+      />
 
       <main className="flex min-h-screen min-w-0 flex-1 flex-col px-4 py-6 md:px-12">
         <div className="mb-4 flex items-center justify-between">

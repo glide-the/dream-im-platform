@@ -142,8 +142,8 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
         onClick={onClose}
       />
       <aside
-        className={`fixed right-0 top-0 z-40 flex h-full w-[320px] flex-col border-l border-[var(--neutral-border)] bg-white transition-transform duration-300 md:static md:z-auto ${
-          open ? "translate-x-0" : "translate-x-full md:w-0 md:translate-x-0 md:overflow-hidden md:border-l-0"
+        className={`fixed left-0 top-0 z-40 flex h-full w-[320px] flex-col border-r border-[var(--neutral-border)] bg-white transition-transform duration-300 md:static md:z-auto ${
+          open ? "translate-x-0" : "-translate-x-full md:w-0 md:translate-x-0 md:overflow-hidden md:border-r-0"
         }`}
       >
         {/* Header */}
