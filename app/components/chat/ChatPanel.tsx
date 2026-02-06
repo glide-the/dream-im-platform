@@ -136,7 +136,7 @@ export default function ChatPanel({
         <ChatMessageList messages={messages} isLoading={chatLoading} error={error} addToolResult={addToolResult} shouldShowLoadingIndicator={shouldShowLoadingIndicator} />
       </div>
 
-      <div className="sticky bottom-0 mt-3 rounded-2xl border border-border bg-surface/95 p-3 backdrop-blur">
+      <div className="sticky bottom-0 mt-4 bg-white">
         <AIInputDock
           contextCustomerId={contextCustomerId}
           contextCustomers={contextCustomers}

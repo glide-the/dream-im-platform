@@ -110,7 +110,7 @@ export default function ChatMessageList({
               if (isToolUIPart(part)) {
                 return (
                   <div key={`${msg.id}-${partIndex}`} className="flex justify-start">
-                    <div className="max-w-[90%] rounded-lg bg-[#F5F5F5] p-2 shadow-subtle transition duration-200 hover:-translate-y-[3px] hover:shadow-medium">
+                    <div className="max-w-[90%] rounded-lg bg-gray-50 p-6 shadow-sm transition duration-200 hover:-translate-y-[3px] hover:shadow-medium [&_a]:text-accent-orange hover:[&_a]:underline [&_h4]:mb-3 [&_h4]:font-display [&_h4]:text-[16px] [&_h4]:font-semibold [&_h4]:text-gray-800">
                       <ToolMessagePart
                         part={part as ToolUIPart | DynamicToolUIPart}
                         isLast={isLastMessage && isLastPart}

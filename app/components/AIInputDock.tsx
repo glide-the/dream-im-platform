@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { IconPaperclip, IconImage, IconCamera, IconSend, IconX, IconFile, IconLoader } from "./Icons";
+import { IconPaperclip, IconImage, IconCamera, IconSend, IconX, IconFile, IconLoader, IconPlus } from "./Icons";
 import { useFileUpload } from "../hooks/useFileUpload";
 import { shouldSendMessageOnKeyDown } from "./chat/interaction-utils";
 
@@ -265,8 +265,8 @@ export default function AIInputDock({
 
   return (
     <div
-      className={`rounded-2xl border bg-bg-primary p-3 transition-colors ${
-        isDragOver ? "border-accent-orange bg-accent-orange-light" : "border-border"
+      className={`min-h-[80px] border-t border-[#EEEEEE] bg-white p-4 transition-colors ${
+        isDragOver ? "border-accent-orange bg-accent-orange-light" : "border-[#EEEEEE]"
       }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -365,7 +365,7 @@ export default function AIInputDock({
           <textarea
             id="chat-input"
             aria-label="聊天输入"
-            className="min-h-[44px] w-full resize-none rounded-md border border-border bg-bg-surface px-4 py-3 pr-16 text-sm text-text-primary shadow-[inset_0_1px_2px_rgba(0,0,0,0.08)] placeholder:text-[#999] focus-visible:border-accent-orange focus-visible:ring-2 focus-visible:ring-accent-orange"
+            className="min-h-[44px] w-full resize-none rounded-lg border border-border bg-bg-surface px-4 py-3 pr-16 text-sm text-text-primary shadow-[inset_0_1px_2px_rgba(0,0,0,0.08)] placeholder:text-[#999] focus-visible:border-2 focus-visible:border-accent-orange focus-visible:ring-2 focus-visible:ring-accent-orange"
             rows={2}
             maxLength={MAX_MESSAGE_LENGTH}
             placeholder={placeholder}
@@ -392,9 +392,10 @@ export default function AIInputDock({
               event.stopPropagation();
               setIsAddMenuOpen((prev) => !prev);
             }}
-            className="h-10 rounded-md border border-border px-3 text-sm text-text-secondary transition-colors hover:bg-[#F5F5F5] focus-visible:ring-2 focus-visible:ring-accent-orange"
+            className="flex h-10 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] text-text-secondary transition-colors hover:bg-[#F5F5F5] focus-visible:ring-2 focus-visible:ring-accent-orange"
           >
-            + Add
+            <IconPlus className="h-4 w-4" />
+            Add
           </button>
           {isAddMenuOpen && (
             <div className="absolute bottom-12 right-0 z-20 w-32 rounded-md border border-border bg-white p-1 shadow-medium">
