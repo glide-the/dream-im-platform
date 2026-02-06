@@ -35,6 +35,7 @@ import {
   isWeKnoraSupported,
   type DocumentProcessingResult,
 } from "../../lib/weknora";
+import { getOrCreateWorkspace } from "../../lib/workspace";
 
 export const runtime = "nodejs";
 
@@ -538,6 +539,9 @@ export async function POST(req: NextRequest) {
           threadIdForAgent = existingConversation?.claude_session_id ?? conversationId;
 
         }
+        // Initialize workspace for this conversation
+        const workspaceCwd = getOrCreateWorkspace(conversationId);
+
         // Run the agent
         const result = await agentRunner.runStreaming(
           {
@@ -546,6 +550,7 @@ export async function POST(req: NextRequest) {
             resume: shouldResume,
             maxTurns: DEFAULT_MAX_TURNS,
             toolChoice: toolChoice as ToolChoiceMode,
+            cwd: workspaceCwd,
             // Use default allowed tools from agent-runner (includes AskUserQuestion)
             // Don't pass allowedTools to use the defaults
           },
