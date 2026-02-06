@@ -9,7 +9,7 @@
 
 ```
 +---------------------------------------------------+
-|  VerticalNav | Sidebar |       Main Area           |
+|  VerticalNav | Sidebar |       Main Area         New Chat |
 |              |         | +---------------------+   |
 |              |         | |  ChatMessageList    |   |
 |              |         | |  (flex-1 scroll)    |   |
