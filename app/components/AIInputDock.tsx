@@ -58,6 +58,24 @@ interface AIInputDockProps {
 }
 
 const MAX_MESSAGE_LENGTH = 2000;
+let fileDialogOpenLocked = false;
+
+export function shouldHandleOpenFileDialogSignal(
+  signal: number | undefined,
+  lastHandledSignal: number,
+): signal is number {
+  return typeof signal === "number" && signal > 0 && signal !== lastHandledSignal;
+}
+
+export function runWithFileDialogTaskLock(callback: () => void): boolean {
+  if (fileDialogOpenLocked) return false;
+  fileDialogOpenLocked = true;
+  callback();
+  queueMicrotask(() => {
+    fileDialogOpenLocked = false;
+  });
+  return true;
+}
 
 function generateFileId(): string {
   return `file_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -94,13 +112,28 @@ export default function AIInputDock({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const lastHandledOpenFileDialogSignalRef = useRef(0);
 
   const { upload, error: uploadHookError } = useFileUpload();
 
+  const openAttachmentDialog = useCallback(() => {
+    runWithFileDialogTaskLock(() => {
+      fileInputRef.current?.click();
+    });
+  }, []);
+
   useEffect(() => {
-    if (!openFileDialogSignal) return;
-    fileInputRef.current?.click();
-  }, [openFileDialogSignal]);
+    if (
+      !shouldHandleOpenFileDialogSignal(
+        openFileDialogSignal,
+        lastHandledOpenFileDialogSignalRef.current,
+      )
+    ) {
+      return;
+    }
+    lastHandledOpenFileDialogSignalRef.current = openFileDialogSignal;
+    openAttachmentDialog();
+  }, [openAttachmentDialog, openFileDialogSignal]);
 
   useEffect(() => {
     const closeMenuOnOutsideClick = (event: MouseEvent) => {
@@ -365,7 +398,7 @@ export default function AIInputDock({
           </button>
           {isAddMenuOpen && (
             <div className="absolute bottom-12 right-0 z-20 w-32 rounded-md border border-border bg-white p-1 shadow-medium">
-              <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-[#F5F5F5]" onClick={() => { fileInputRef.current?.click(); setIsAddMenuOpen(false); }} aria-label="上传附件">
+              <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-[#F5F5F5]" onClick={() => { openAttachmentDialog(); setIsAddMenuOpen(false); }} aria-label="上传附件">
                 <IconPaperclip className="h-4 w-4" /> 附件
               </button>
               <button type="button" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-[#F5F5F5]" onClick={() => { imageInputRef.current?.click(); setIsAddMenuOpen(false); }} aria-label="上传图片">

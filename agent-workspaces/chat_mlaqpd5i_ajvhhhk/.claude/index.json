@@ -1,0 +1,255 @@
+{
+  "timestamp": "2026-01-29T16:38:08.000Z",
+  "version": "3.0.0",
+  "project": {
+    "name": "AI4Sales PWA",
+    "type": "Next.js 16 PWA Application",
+    "tech_stack": [
+      "Next.js 16.1.6",
+      "React 19.0.0",
+      "TypeScript 5.5.4",
+      "Tailwind CSS 4.1.18",
+      "PostgreSQL 16",
+      "Drizzle ORM 0.38.0",
+      "@tanstack/react-query 5.90.20"
+    ]
+  },
+  "modules": [
+    {
+      "path": "app/(app)",
+      "name": "前端页面模块",
+      "type": "frontend",
+      "entry_points": [
+        "app/(app)/layout.tsx",
+        "app/(app)/ai-assistant/page.tsx",
+        "app/(app)/customers/page.tsx",
+        "app/(app)/customers/[id]/page.tsx",
+        "app/(app)/todo/page.tsx",
+        "app/(app)/me/page.tsx"
+      ],
+      "documentation": "app/(app)/CLAUDE.md",
+      "coverage": {
+        "scanned": true,
+        "has_entry": true,
+        "has_tests": false,
+        "has_config": false
+      }
+    },
+    {
+      "path": "app/api",
+      "name": "API 路由模块",
+      "type": "backend",
+      "entry_points": [
+        "app/api/agent/search-customer/route.ts",
+        "app/api/customers/route.ts",
+        "app/api/customers/[id]/route.ts",
+        "app/api/todos/route.ts",
+        "app/api/todos/[id]/route.ts",
+        "app/api/conversations/route.ts",
+        "app/api/conversations/[id]/route.ts"
+      ],
+      "documentation": "app/api/CLAUDE.md",
+      "coverage": {
+        "scanned": true,
+        "has_entry": true,
+        "has_tests": true,
+        "has_config": false
+      }
+    },
+    {
+      "path": "app/lib",
+      "name": "业务逻辑模块",
+      "type": "library",
+      "entry_points": [
+        "app/lib/db.ts",
+        "app/lib/types.ts",
+        "app/lib/queries.ts",
+        "app/lib/agent.ts",
+        "app/lib/query.ts",
+        "app/lib/id.ts",
+        "app/lib/format.ts",
+        "app/lib/client.ts",
+        "app/lib/seed.ts"
+      ],
+      "documentation": "app/lib/CLAUDE.md",
+      "coverage": {
+        "scanned": true,
+        "has_entry": true,
+        "has_tests": true,
+        "has_config": false
+      }
+    },
+    {
+      "path": "app/lib/db",
+      "name": "数据库 Schema 模块",
+      "type": "database",
+      "entry_points": [
+        "app/lib/db/schema.ts"
+      ],
+      "documentation": "app/lib/CLAUDE.md",
+      "coverage": {
+        "scanned": true,
+        "has_entry": true,
+        "has_tests": false,
+        "has_config": true
+      }
+    },
+    {
+      "path": "app/components",
+      "name": "共享组件模块",
+      "type": "frontend",
+      "entry_points": [
+        "app/components/AIInputDock.tsx",
+        "app/components/BottomNav.tsx",
+        "app/components/FloatingAIButton.tsx",
+        "app/components/Icons.tsx",
+        "app/components/Modal.tsx",
+        "app/components/Toast.tsx",
+        "app/components/CollapsibleSection.tsx",
+        "app/components/customer-detail/ProfileCard.tsx",
+        "app/components/customer-detail/BasicInfoSection.tsx",
+        "app/components/customer-detail/MarkdownDetailSection.tsx"
+      ],
+      "documentation": "app/components/CLAUDE.md",
+      "coverage": {
+        "scanned": true,
+        "has_entry": true,
+        "has_tests": false,
+        "has_config": false
+      }
+    }
+  ],
+  "database": {
+    "type": "PostgreSQL",
+    "version": "16",
+    "orm": "Drizzle ORM 0.38.0",
+    "tables": ["customers", "todos", "conversations"],
+    "indexes": [
+      "idx_customers_name",
+      "idx_customers_company",
+      "idx_customers_updated_at",
+      "idx_customers_tags (GIN)",
+      "idx_todos_status",
+      "idx_todos_priority",
+      "idx_todos_updated_at",
+      "idx_conversations_status",
+      "idx_conversations_updated_at",
+      "idx_conversations_linked_customer"
+    ],
+    "config_files": [
+      "drizzle.config.ts",
+      "docker-compose.yml"
+    ]
+  },
+  "state_management": {
+    "library": "@tanstack/react-query",
+    "version": "5.90.20",
+    "config_file": "app/app/providers.tsx",
+    "hooks_file": "app/lib/queries.ts",
+    "query_keys": [
+      "todos",
+      "todo",
+      "customers",
+      "customer",
+      "conversations",
+      "conversation",
+      "searchCustomer"
+    ],
+    "cache_settings": {
+      "staleTime": "5 minutes",
+      "gcTime": "30 minutes",
+      "retry": 1,
+      "refetchOnWindowFocus": false
+    }
+  },
+  "important_files": [
+    "package.json",
+    "tsconfig.json",
+    "next.config.js",
+    "tailwind.config.js",
+    "drizzle.config.ts",
+    "docker-compose.yml",
+    ".env.local.example",
+    "CLAUDE.md",
+    "README.md",
+    "PRD.md",
+    "app/app/providers.tsx",
+    "app/lib/queries.ts"
+  ],
+  "coverage": {
+    "total_files": 46,
+    "scanned_files": 46,
+    "coverage_percentage": 100,
+    "modules_with_docs": 3,
+    "modules_without_docs": 2,
+    "gaps": [
+      "app/api/CLAUDE.md 缺失",
+      "app/components/CLAUDE.md 缺失"
+    ]
+  },
+  "ignored": {
+    "patterns": [
+      "node_modules/**",
+      ".next/**",
+      "dist/**",
+      "build/**",
+      "coverage/**",
+      "*.log",
+      ".DS_Store",
+      ".git/**",
+      ".github/**",
+      "html/**",
+      "tsconfig.tsbuildinfo",
+      ".env*.local",
+      "*.lcov",
+      ".vscode/*",
+      ".idea",
+      "Thumbs.db",
+      "*.tmp",
+      "*.temp",
+      ".cache",
+      ".playwright-mcp/**"
+    ],
+    "reason": "Standard ignore patterns from .gitignore and default rules"
+  },
+  "next_steps": [
+    "生成 app/api/CLAUDE.md 文档",
+    "生成 app/components/CLAUDE.md 文档",
+    "为前端组件添加单元测试",
+    "完善 API 路由的集成测试",
+    "接入真实 LLM API 替换模拟 AI (app/lib/agent.ts)",
+    "实现文件上传功能 (相册/拍照/文件)",
+    "实现语音输入功能",
+    "添加客户去重/合并功能",
+    "关联 TODO 与客户",
+    "启用 TypeScript strict 模式",
+    "添加错误边界组件和日志系统"
+  ],
+  "changes": [
+    {
+      "date": "2026-01-29",
+      "description": "React Query 集成 + Next.js/React 升级 + UI/UX 优化",
+      "files_affected": [
+        "app/lib/queries.ts",
+        "app/app/providers.tsx",
+        "app/components/AIInputDock.tsx",
+        "app/components/FloatingAIButton.tsx",
+        "app/components/BottomNav.tsx",
+        "package.json",
+        "app/(app)/customers/[id]/layout.tsx",
+        "app/(app)/ai-assistant/layout.tsx"
+      ]
+    },
+    {
+      "date": "2026-01-29 (早期)",
+      "description": "数据持久化层从 JSON 文件迁移到 PostgreSQL + Drizzle ORM",
+      "files_affected": [
+        "app/lib/db.ts",
+        "app/lib/db/schema.ts",
+        "drizzle.config.ts",
+        "docker-compose.yml",
+        ".env.local.example"
+      ]
+    }
+  ]
+}
