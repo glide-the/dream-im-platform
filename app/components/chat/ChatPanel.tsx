@@ -38,16 +38,17 @@ export default function ChatPanel({
   initialMessages,
   isLoading = false,
   className,
-  inputPlaceholder = "继续提问或补充信息...",
+  inputPlaceholder = "Press i chat",
   queuedPrompt,
   queuedPromptNonce,
   openFileDialogSignal,
 }: ChatPanelProps) {
-  const [pendingData, setPendingData] = useState<{
+  const pendingDataRef = useRef<{
     rawAttachments: Attachment[];
     contextCustomerIds: string[];
     toolChoice: ToolChoice;
   } | null>(null);
+  const getPendingData = () => pendingDataRef.current;
   const [currentToolChoice, setCurrentToolChoice] = useState<ToolChoice>("auto");
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const hasInitializedRef = useRef(false);
@@ -55,6 +56,7 @@ export default function ChatPanel({
 
   const { data: conversationData, isLoading: isConversationLoading } = useConversationByCustomer(contextCustomerId ?? threadId);
 
+  /* eslint-disable react-hooks/refs */
   const { messages, sendMessage, setMessages, status, error, addToolResult } = useChat({
     id: threadId,
     transport: new DefaultChatTransport({
@@ -63,7 +65,7 @@ export default function ChatPanel({
         const lastMessage = outgoingMessages.at(-1) as UIMessage | undefined;
         if (!lastMessage) return { body };
 
-        const attachments: ChatAttachment[] = (pendingData?.rawAttachments ?? []).filter((file) => file.url).map((file) => ({
+        const attachments: ChatAttachment[] = (getPendingData()?.rawAttachments ?? []).filter((file) => file.url).map((file) => ({
           type: "file",
           url: file.url!,
           mediaType: file.type,
@@ -74,20 +76,21 @@ export default function ChatPanel({
           id,
           message: lastMessage,
           chatModel: DEFAULT_CHAT_MODEL,
-          toolChoice: pendingData?.toolChoice ?? currentToolChoice,
+          toolChoice: getPendingData()?.toolChoice ?? currentToolChoice,
           allowedAppDefaultToolkit: [],
           allowedMcpServers: {},
           attachments,
-          contextCustomerIds: pendingData?.contextCustomerIds ?? (contextCustomerId ? [contextCustomerId] : contextCustomers.map((c) => c.id)),
+          contextCustomerIds: getPendingData()?.contextCustomerIds ?? (contextCustomerId ? [contextCustomerId] : contextCustomers.map((c) => c.id)),
         };
 
-        setTimeout(() => setPendingData(null), 0);
+        setTimeout(() => { pendingDataRef.current = null; }, 0);
         return { body: requestBody };
       },
     }),
     generateId: () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
     experimental_throttle: 100,
   });
+  /* eslint-enable react-hooks/refs */
 
   useEffect(() => {
     if (hasInitializedRef.current) return;
@@ -105,11 +108,11 @@ export default function ChatPanel({
 
     void (async () => {
       setCurrentToolChoice("auto");
-      setPendingData({
+      pendingDataRef.current = {
         rawAttachments: [],
         contextCustomerIds: contextCustomerId ? [contextCustomerId] : contextCustomers.map((c) => c.id),
         toolChoice: "auto",
-      });
+      };
       await sendMessage({ role: "user", parts: [{ type: "text", text: queuedPrompt } as TextUIPart] });
     })();
   }, [contextCustomerId, contextCustomers, queuedPrompt, queuedPromptNonce, sendMessage]);
@@ -128,23 +131,23 @@ export default function ChatPanel({
   }, [messages]);
 
   return (
-    <div className={className}>
-      <div ref={chatContainerRef} className="max-h-[60vh] overflow-y-auto rounded-2xl border border-border bg-surface p-4">
+    <div className={`flex min-h-0 flex-col ${className ?? ""}`}>
+      <div ref={chatContainerRef} className="flex-1 overflow-y-auto rounded-2xl border border-border bg-surface p-4">
         <ChatMessageList messages={messages} isLoading={chatLoading} error={error} addToolResult={addToolResult} shouldShowLoadingIndicator={shouldShowLoadingIndicator} />
       </div>
 
-      <div className="mt-3 rounded-2xl border border-border bg-surface p-3">
+      <div className="sticky bottom-0 mt-3 rounded-2xl border border-border bg-surface/95 p-3 backdrop-blur">
         <AIInputDock
           contextCustomerId={contextCustomerId}
           contextCustomers={contextCustomers}
           openFileDialogSignal={openFileDialogSignal}
           onSendMessage={async (message, uploadedFiles = [], customerIds = [], toolChoice = "auto") => {
             setCurrentToolChoice(toolChoice);
-            setPendingData({
+            pendingDataRef.current = {
               rawAttachments: uploadedFiles.map(toAttachment),
               contextCustomerIds: customerIds.length > 0 ? customerIds : contextCustomers.map((c) => c.id),
               toolChoice,
-            });
+            };
 
             const validFiles = uploadedFiles.filter((f) => f.url);
             const parts: Array<FileUIPart | TextUIPart> = validFiles.map((file) => ({
