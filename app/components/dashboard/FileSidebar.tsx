@@ -271,11 +271,15 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
         return;
       }
 
-      updateUploadQueue((prev) => [...prev, ...items]);
+      // Keep the ref in sync immediately so the upload worker can read
+      // newly enqueued items in the same tick.
+      const nextQueue = [...uploadQueueRef.current, ...items];
+      uploadQueueRef.current = nextQueue;
+      setUploadQueue(nextQueue);
       pendingUploadIdsRef.current.push(...items.map((item) => item.id));
       void processPendingUploads();
     },
-    [processPendingUploads, updateUploadQueue],
+    [processPendingUploads],
   );
 
   const collectFromSelection = useCallback(
