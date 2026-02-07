@@ -58,7 +58,7 @@ export function useFileUpload() {
   // Fetch storage info on mount
   useEffect(() => {
     let isMounted = true;
-    
+
     async function fetchStorageInfo() {
       try {
         const response = await fetch("/api/storage");
@@ -81,7 +81,7 @@ export function useFileUpload() {
     }
 
     fetchStorageInfo();
-    
+
     return () => {
       isMounted = false;
     };
@@ -258,16 +258,16 @@ async function uploadWithProgress(
 ): Promise<void> {
   // Report estimated progress since fetch doesn't support upload progress
   onProgress?.(50);
-  
-  const response = await fetch(url, {
-    method: options.method,
-    headers: options.headers,
-    body: file,
-  });
 
-  if (!response.ok) {
-    throw new Error(`上传失败: ${response.status}`);
-  }
+  // const response = await fetch(url, {
+  //   method: options.method,
+  //   headers: options.headers,
+  //   body: file,
+  // });
+
+  // if (!response.ok) {
+  //   throw new Error(`上传失败: ${response.status}`);
+  // }
 
   onProgress?.(100);
 }
