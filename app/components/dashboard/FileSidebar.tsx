@@ -1,7 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { IconFolder, IconFile, IconTrash, IconPlus, IconLoader, IconChevronRight, IconChevronDown, IconX } from "../Icons";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  collectUploadItemsFromDrop,
+  collectUploadItemsFromFileSelection,
+  type WorkspaceUploadItem,
+} from "../../lib/workspace-upload";
+import {
+  IconCheck,
+  IconChevronDown,
+  IconChevronRight,
+  IconClock,
+  IconFile,
+  IconFolder,
+  IconLoader,
+  IconPlus,
+  IconTrash,
+  IconX,
+} from "../Icons";
 
 export interface FileInfo {
   name: string;
@@ -17,11 +33,56 @@ interface FileSidebarProps {
   onClose: () => void;
 }
 
+type UploadQueueUpdater = (prev: WorkspaceUploadItem[]) => WorkspaceUploadItem[];
+
+const MAX_UPLOAD_FILES = 2000;
+const MAX_UPLOAD_TOTAL_BYTES = 1024 * 1024 * 1024; // 1 GB
+const MAX_UPLOAD_BATCH_FILES = 20;
+const MAX_UPLOAD_BATCH_TOTAL_BYTES = 64 * 1024 * 1024; // 64 MB
+const UPLOAD_REQUEST_TIMEOUT_MS = 90_000;
+
+const folderPickerAttributes = {
+  webkitdirectory: "",
+  directory: "",
+} as Record<string, string>;
+
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+function sourceLabel(source: WorkspaceUploadItem["source"]): string {
+  if (source === "drag") return "拖拽";
+  if (source === "folder-picker") return "文件夹";
+  return "文件";
+}
+
+function statusLabel(status: WorkspaceUploadItem["status"]): string {
+  if (status === "pending") return "pending";
+  if (status === "uploading") return "uploading";
+  if (status === "success") return "success";
+  return "error";
+}
+
+function statusIcon(item: WorkspaceUploadItem) {
+  if (item.status === "uploading") {
+    return <IconLoader className="h-3.5 w-3.5 animate-spin text-accent-orange" />;
+  }
+  if (item.status === "success") {
+    return <IconCheck className="h-3.5 w-3.5 text-success" />;
+  }
+  if (item.status === "error") {
+    return <IconX className="h-3.5 w-3.5 text-danger" />;
+  }
+  return <IconClock className="h-3.5 w-3.5 text-text-tertiary" />;
+}
+
+async function yieldToMainThread(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 export default function FileSidebar({ sessionId, open, onClose }: FileSidebarProps) {
@@ -31,36 +92,253 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadQueue, setUploadQueue] = useState<WorkspaceUploadItem[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const fetchFiles = useCallback(async (subPath: string = "") => {
-    if (!sessionId) return;
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ sessionId });
-      if (subPath) params.set("path", subPath);
-      const res = await fetch(`/api/workspace/files?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        setFiles(data.files || []);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const uploadQueueRef = useRef<WorkspaceUploadItem[]>([]);
+  const pendingUploadIdsRef = useRef<string[]>([]);
+  const processingUploadsRef = useRef(false);
+
+  const updateUploadQueue = useCallback((updater: UploadQueueUpdater) => {
+    setUploadQueue((prev) => {
+      const next = updater(prev);
+      uploadQueueRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const fetchFiles = useCallback(
+    async (subPath: string = "") => {
+      if (!sessionId) return;
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ sessionId });
+        if (subPath) params.set("path", subPath);
+        const res = await fetch(`/api/workspace/files?${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          setFiles(data.files || []);
+        }
+      } catch (error) {
+        console.error("Failed to fetch files:", error);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to fetch files:", error);
-    } finally {
-      setLoading(false);
+    },
+    [sessionId],
+  );
+
+  const markBatchStatus = useCallback(
+    (ids: string[], status: WorkspaceUploadItem["status"], errorMessage?: string) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      updateUploadQueue((prev) =>
+        prev.map((item) => {
+          if (!idSet.has(item.id)) {
+            return item;
+          }
+
+          if (status === "error") {
+            return { ...item, status, error: errorMessage || "上传失败" };
+          }
+
+          return {
+            ...item,
+            status,
+            error: status === "success" ? undefined : item.error,
+          };
+        }),
+      );
+    },
+    [updateUploadQueue],
+  );
+
+  const processPendingUploads = useCallback(async () => {
+    if (processingUploadsRef.current || !sessionId) {
+      return;
     }
-  }, [sessionId]);
+
+    processingUploadsRef.current = true;
+    setUploading(true);
+
+    let shouldRefreshFiles = false;
+
+    try {
+      while (pendingUploadIdsRef.current.length > 0) {
+        const pendingIdsSnapshot = [...pendingUploadIdsRef.current];
+        pendingUploadIdsRef.current = [];
+
+        const deferredIds: string[] = [];
+        const batchIds: string[] = [];
+        let batchTotalBytes = 0;
+
+        for (const id of pendingIdsSnapshot) {
+          const item = uploadQueueRef.current.find((entry) => entry.id === id);
+          if (!item) {
+            continue;
+          }
+
+          const isBatchFull = batchIds.length >= MAX_UPLOAD_BATCH_FILES;
+          const exceedsBatchBytes =
+            batchIds.length > 0 &&
+            batchTotalBytes + item.size > MAX_UPLOAD_BATCH_TOTAL_BYTES;
+
+          if (isBatchFull || exceedsBatchBytes) {
+            deferredIds.push(id);
+            continue;
+          }
+
+          batchIds.push(id);
+          batchTotalBytes += item.size;
+        }
+
+        pendingUploadIdsRef.current.push(...deferredIds);
+        const batchItems = batchIds
+          .map((id) => uploadQueueRef.current.find((item) => item.id === id))
+          .filter((item): item is WorkspaceUploadItem => Boolean(item));
+
+        if (batchItems.length === 0) {
+          continue;
+        }
+
+        const activeIds = batchItems.map((item) => item.id);
+        markBatchStatus(activeIds, "uploading");
+
+        const formData = new FormData();
+        formData.set("sessionId", sessionId);
+        if (currentPath) {
+          formData.set("path", currentPath);
+        }
+
+        for (const item of batchItems) {
+          formData.append("file", item.file);
+          formData.append("relativePath", item.relativePath);
+        }
+
+        try {
+          const abortController = new AbortController();
+          const timeoutId = window.setTimeout(() => {
+            abortController.abort();
+          }, UPLOAD_REQUEST_TIMEOUT_MS);
+          let res: Response;
+          try {
+            res = await fetch("/api/workspace/files", {
+              method: "POST",
+              body: formData,
+              signal: abortController.signal,
+            });
+          } finally {
+            window.clearTimeout(timeoutId);
+          }
+
+          if (!res.ok) {
+            const body = (await res.json().catch(() => ({}))) as { error?: string };
+            const message = body.error || `上传失败 (${res.status})`;
+            markBatchStatus(activeIds, "error", message);
+            setUploadError(message);
+            continue;
+          }
+
+          shouldRefreshFiles = true;
+          markBatchStatus(activeIds, "success");
+        } catch (error) {
+          const message =
+            error instanceof Error && error.name === "AbortError"
+              ? "上传超时，请重试或减少单次上传文件数量。"
+              : error instanceof Error
+                ? error.message
+                : "上传失败";
+          markBatchStatus(activeIds, "error", message);
+          setUploadError(message);
+        }
+
+        await yieldToMainThread();
+      }
+    } finally {
+      processingUploadsRef.current = false;
+      setUploading(false);
+      if (shouldRefreshFiles) {
+        await fetchFiles(currentPath);
+      }
+    }
+  }, [currentPath, fetchFiles, markBatchStatus, sessionId]);
+
+  const enqueueUploads = useCallback(
+    (items: WorkspaceUploadItem[]) => {
+      if (!items.length) {
+        return;
+      }
+
+      updateUploadQueue((prev) => [...prev, ...items]);
+      pendingUploadIdsRef.current.push(...items.map((item) => item.id));
+      void processPendingUploads();
+    },
+    [processPendingUploads, updateUploadQueue],
+  );
+
+  const collectFromSelection = useCallback(
+    async (fileList: FileList | null, source: WorkspaceUploadItem["source"]) => {
+      if (!fileList || fileList.length === 0) {
+        if (source === "folder-picker") {
+          setUploadError("未检测到文件。请确认所选目录包含可读取文件。");
+        }
+        return;
+      }
+
+      const result = await collectUploadItemsFromFileSelection(fileList, source, {
+        limits: {
+          maxFiles: MAX_UPLOAD_FILES,
+          maxTotalBytes: MAX_UPLOAD_TOTAL_BYTES,
+        },
+        yieldEvery: 50,
+      });
+
+      if (result.errors.length > 0) {
+        setUploadError(result.errors.join(" "));
+      }
+
+      if (result.items.length === 0 && result.errors.length === 0) {
+        setUploadError("未检测到可上传文件。请检查文件夹是否为空。");
+      }
+
+      enqueueUploads(result.items);
+    },
+    [enqueueUploads],
+  );
+
+  const handleDropTransfer = useCallback(
+    async (dataTransfer: DataTransfer) => {
+      const result = await collectUploadItemsFromDrop(dataTransfer, {
+        limits: {
+          maxFiles: MAX_UPLOAD_FILES,
+          maxTotalBytes: MAX_UPLOAD_TOTAL_BYTES,
+        },
+        yieldEvery: 50,
+      });
+
+      if (result.errors.length > 0) {
+        setUploadError(result.errors.join(" "));
+      }
+
+      if (result.items.length === 0 && result.errors.length === 0) {
+        setUploadError("未检测到可上传文件。请检查文件夹是否为空。");
+      }
+
+      enqueueUploads(result.items);
+    },
+    [enqueueUploads],
+  );
 
   useEffect(() => {
     setCurrentPath("");
     setExpandedDirs(new Set());
+    setUploadError(null);
+    pendingUploadIdsRef.current = [];
+    uploadQueueRef.current = [];
+    setUploadQueue([]);
   }, [sessionId]);
-
-  useEffect(() => {
-    if (open && sessionId) {
-      fetchFiles(currentPath);
-    }
-  }, [open, sessionId, currentPath, fetchFiles]);
 
   useEffect(() => {
     if (!open || !sessionId) return;
@@ -74,35 +352,23 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
     };
   }, [open, sessionId, currentPath, fetchFiles]);
 
-  const handleUpload = async (fileList: FileList | null) => {
-    if (!fileList || fileList.length === 0 || !sessionId) return;
-
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.set("sessionId", sessionId);
-      if (currentPath) formData.set("path", currentPath);
-      for (let i = 0; i < fileList.length; i++) {
-        formData.append("file", fileList[i]);
-      }
-
-      const res = await fetch("/api/workspace/files", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (res.ok) {
-        await fetchFiles(currentPath);
-      }
-    } catch (error) {
-      console.error("Upload failed:", error);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+  useEffect(() => {
+    if (open && sessionId) {
+      void fetchFiles(currentPath);
     }
-  };
+  }, [open, sessionId, currentPath, fetchFiles]);
+
+  useEffect(() => {
+    const folderInput = folderInputRef.current;
+    if (!folderInput) {
+      return;
+    }
+
+    // Some browsers only enable folder picking when the attribute is set on
+    // the real DOM node (not just JSX props), so we keep both.
+    folderInput.setAttribute("webkitdirectory", "");
+    folderInput.setAttribute("directory", "");
+  }, []);
 
   const handleDelete = async (filePath: string) => {
     if (!sessionId) return;
@@ -123,7 +389,8 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    handleUpload(e.dataTransfer.files);
+    setUploadError(null);
+    void handleDropTransfer(e.dataTransfer);
   };
 
   const navigateToDir = (dirPath: string) => {
@@ -149,11 +416,54 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
     navigateToDir(dirPath);
   };
 
+  const handleRetryFailed = useCallback(() => {
+    const failedIds = uploadQueueRef.current
+      .filter((item) => item.status === "error")
+      .map((item) => item.id);
+
+    if (failedIds.length === 0) {
+      return;
+    }
+
+    const idSet = new Set(failedIds);
+    updateUploadQueue((prev) =>
+      prev.map((item) =>
+        idSet.has(item.id)
+          ? { ...item, status: "pending", error: undefined }
+          : item,
+      ),
+    );
+
+    pendingUploadIdsRef.current.push(...failedIds);
+    setUploadError(null);
+    void processPendingUploads();
+  }, [processPendingUploads, updateUploadQueue]);
+
+  const handleClearQueue = useCallback(() => {
+    if (uploading) {
+      return;
+    }
+
+    pendingUploadIdsRef.current = [];
+    updateUploadQueue(() => []);
+    setUploadError(null);
+  }, [updateUploadQueue, uploading]);
+
   const breadcrumbs = ["workspace", ...currentPath.split("/").filter(Boolean)];
+
+  const uploadSummary = useMemo(() => {
+    return {
+      pending: uploadQueue.filter((item) => item.status === "pending").length,
+      uploading: uploadQueue.filter((item) => item.status === "uploading").length,
+      success: uploadQueue.filter((item) => item.status === "success").length,
+      error: uploadQueue.filter((item) => item.status === "error").length,
+    };
+  }, [uploadQueue]);
+
+  const hasFailedItems = uploadSummary.error > 0;
 
   return (
     <>
-      {/* Overlay for mobile */}
       <div
         className={`fixed inset-0 z-30 bg-[var(--color-overlay)] md:hidden ${open ? "block" : "hidden"}`}
         onClick={onClose}
@@ -163,7 +473,6 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
           open ? "translate-x-0" : "-translate-x-full md:w-0 md:translate-x-0 md:overflow-hidden md:border-r-0"
         }`}
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-2">
             <IconFolder className="h-5 w-5 text-accent-orange" />
@@ -176,11 +485,15 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
               title="Upload files"
               disabled={uploading}
             >
-              {uploading ? (
-                <IconLoader className="h-4 w-4 animate-spin" />
-              ) : (
-                <IconPlus className="h-4 w-4" />
-              )}
+              <IconPlus className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => folderInputRef.current?.click()}
+              className="rounded-md p-1.5 text-text-tertiary transition-colors hover:bg-bg-secondary hover:text-accent-orange"
+              title="Upload folder"
+              disabled={uploading}
+            >
+              <IconFolder className="h-4 w-4" />
             </button>
             <button
               onClick={onClose}
@@ -191,7 +504,6 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
           </div>
         </div>
 
-        {/* Breadcrumbs */}
         <div className="flex items-center gap-1 border-b border-border px-4 py-2 text-xs text-text-tertiary">
           {breadcrumbs.map((part, i) => (
             <span key={i} className="flex items-center gap-1">
@@ -212,14 +524,19 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
           ))}
         </div>
 
-        {/* File list */}
         <div
           className={`flex-1 overflow-y-auto ${dragOver ? "bg-accent-orange-light ring-2 ring-inset ring-accent-orange" : ""}`}
           onDragOver={(e) => {
             e.preventDefault();
             setDragOver(true);
           }}
-          onDragLeave={() => setDragOver(false)}
+          onDragLeave={(e) => {
+            const nextTarget = e.relatedTarget;
+            if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+              return;
+            }
+            setDragOver(false);
+          }}
           onDrop={handleDrop}
         >
           {loading ? (
@@ -230,7 +547,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
             <div className="flex flex-col items-center justify-center py-12 text-center text-sm text-text-tertiary">
               <IconFolder className="mb-3 h-10 w-10 opacity-30" />
               <p>No files yet</p>
-              <p className="mt-1 text-xs">Upload files or drag & drop here</p>
+              <p className="mt-1 text-xs">Upload files/folders or drag & drop here</p>
             </div>
           ) : (
             <ul className="divide-y divide-border">
@@ -284,32 +601,125 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
           )}
         </div>
 
-        {/* Upload zone / drop target hint */}
         <div className="border-t border-border p-3">
-          <button
+          <div
             onClick={() => fileInputRef.current?.click()}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-bg-secondary/30 px-4 py-3 text-sm text-text-tertiary transition-colors hover:border-accent-orange hover:text-accent-orange"
-            disabled={uploading}
+            className={`mb-3 cursor-pointer rounded-lg border-2 border-dashed px-3 py-3 text-center text-sm transition-colors ${
+              dragOver
+                ? "border-accent-orange bg-accent-orange-light text-accent-orange"
+                : "border-border bg-bg-secondary/30 text-text-tertiary hover:border-accent-orange hover:text-accent-orange"
+            }`}
           >
-            {uploading ? (
-              <>
-                <IconLoader className="h-4 w-4 animate-spin" /> Uploading...
-              </>
-            ) : (
-              <>
-                <IconPlus className="h-4 w-4" /> Upload files
-              </>
-            )}
-          </button>
+            <p className="font-medium">拖拽文件或文件夹到这里</p>
+            <p className="mt-1 text-xs">或点击选择文件（支持目录递归上传）</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-lg border border-border bg-bg-secondary/40 px-3 py-2 text-xs text-text-secondary transition-colors hover:border-accent-orange hover:text-accent-orange"
+              disabled={uploading}
+            >
+              选择文件
+            </button>
+            <button
+              onClick={() => folderInputRef.current?.click()}
+              className="rounded-lg border border-border bg-bg-secondary/40 px-3 py-2 text-xs text-text-secondary transition-colors hover:border-accent-orange hover:text-accent-orange"
+              disabled={uploading}
+            >
+              选择文件夹
+            </button>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between text-[11px] text-text-tertiary">
+            <span>
+              pending {uploadSummary.pending} · uploading {uploadSummary.uploading} · success {uploadSummary.success} · error {uploadSummary.error}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRetryFailed}
+                disabled={!hasFailedItems || uploading}
+                className="rounded px-1.5 py-0.5 transition-colors hover:text-accent-orange disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                重试失败项
+              </button>
+              <button
+                onClick={handleClearQueue}
+                disabled={uploading || uploadQueue.length === 0}
+                className="rounded px-1.5 py-0.5 transition-colors hover:text-accent-orange disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                清空队列
+              </button>
+            </div>
+          </div>
+
+          {uploadError && (
+            <div className="mt-2 rounded-md border border-danger/40 bg-danger/10 px-2 py-1 text-xs text-danger">
+              {uploadError}
+            </div>
+          )}
+
+          {uploadQueue.length > 0 && (
+            <div className="mt-2 max-h-36 overflow-y-auto rounded-md border border-border bg-bg-secondary/20">
+              <ul className="divide-y divide-border">
+                {uploadQueue.map((item) => (
+                  <li key={item.id} className="px-2 py-1.5 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      {statusIcon(item)}
+                      <span className="truncate text-text-primary" title={item.relativePath}>
+                        {item.relativePath}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 flex items-center justify-between text-[11px] text-text-tertiary">
+                      <span>{sourceLabel(item.source)}</span>
+                      <span>
+                        {statusLabel(item.status)} · {formatFileSize(item.size)}
+                      </span>
+                    </div>
+                    {item.status === "error" && item.error && (
+                      <p className="mt-0.5 text-[11px] text-danger">{item.error}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {uploading && (
+            <div className="mt-2 flex items-center gap-1 text-xs text-accent-orange">
+              <IconLoader className="h-3.5 w-3.5 animate-spin" />
+              正在上传...
+            </div>
+          )}
         </div>
 
-        {/* Hidden file input */}
         <input
           ref={fileInputRef}
           type="file"
           multiple
           className="hidden"
-          onChange={(e) => handleUpload(e.target.files)}
+          onChange={(e) => {
+            setUploadError(null);
+            void collectFromSelection(e.target.files, "file-picker");
+            if (fileInputRef.current) {
+              fileInputRef.current.value = "";
+            }
+          }}
+        />
+
+        <input
+          ref={folderInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          {...folderPickerAttributes}
+          onChange={(e) => {
+            setUploadError(null);
+            void collectFromSelection(e.target.files, "folder-picker");
+            if (folderInputRef.current) {
+              folderInputRef.current.value = "";
+            }
+          }}
         />
       </aside>
     </>

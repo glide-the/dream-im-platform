@@ -19,6 +19,7 @@ import {
   QUICK_INPUT_SHELL_CLASS_NAME,
 } from "./chatInputStyles";
 import { useFileUpload } from "../hooks/useFileUpload";
+import { toFileProxyUrl } from "../lib/file-proxy";
 import { shouldSendMessageOnKeyDown } from "./chat/interaction-utils";
 
 export interface UploadedFile {
@@ -118,6 +119,12 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function revokeObjectPreviewUrl(url?: string): void {
+  if (url?.startsWith("blob:")) {
+    URL.revokeObjectURL(url);
+  }
 }
 
 function shouldSendWithKeyboard(mode: AIInputDockMode, event: KeyboardEvent<HTMLInputElement>): boolean {
@@ -236,7 +243,7 @@ export default function AIInputDock({
           setUploadedFiles((prev) => {
             const fileInList = prev.find((f) => f.id === fileId);
             if (fileInList?.previewUrl) {
-              URL.revokeObjectURL(fileInList.previewUrl);
+              revokeObjectPreviewUrl(fileInList.previewUrl);
             }
             return prev.filter((f) => f.id !== fileId);
           });
@@ -263,7 +270,7 @@ export default function AIInputDock({
         setUploadedFiles((prev) => {
           const fileInList = prev.find((f) => f.id === fileId);
           if (fileInList?.previewUrl) {
-            URL.revokeObjectURL(fileInList.previewUrl);
+            revokeObjectPreviewUrl(fileInList.previewUrl);
           }
           return prev.filter((f) => f.id !== fileId);
         });
@@ -323,7 +330,7 @@ export default function AIInputDock({
         fileInList.abortController.abort();
       }
       if (fileInList?.previewUrl) {
-        URL.revokeObjectURL(fileInList.previewUrl);
+        revokeObjectPreviewUrl(fileInList.previewUrl);
       }
       return prev.filter((f) => f.id !== fileId);
     });
@@ -396,7 +403,7 @@ export default function AIInputDock({
     setQuery("");
     uploadedFiles.forEach((file) => {
       if (file.previewUrl) {
-        URL.revokeObjectURL(file.previewUrl);
+        revokeObjectPreviewUrl(file.previewUrl);
       }
     });
     setUploadedFiles([]);
@@ -441,14 +448,15 @@ export default function AIInputDock({
         <div className="mb-3 flex flex-wrap gap-2">
           {uploadedFiles.map((file) => {
             const isImage = file.mimeType.startsWith("image/");
+            const previewUrl = file.url ? toFileProxyUrl(file.url) : file.previewUrl;
             const displayExt = file.name.split(".").pop()?.toUpperCase() || "FILE";
             return (
               <div
                 key={file.id}
                 className="group relative overflow-hidden rounded-lg border-2 border-border transition-all hover:border-accent-orange"
               >
-                {isImage && file.previewUrl ? (
-                  <img src={file.previewUrl} alt={file.name} className="h-20 w-20 object-cover" />
+                {isImage && previewUrl ? (
+                  <img src={previewUrl} alt={file.name} className="h-20 w-20 object-cover" />
                 ) : (
                   <div className="flex h-20 w-28 flex-col items-center justify-center bg-bg-surface px-2 py-2 text-center">
                     <IconFile className="mb-1 h-6 w-6 text-text-tertiary" />

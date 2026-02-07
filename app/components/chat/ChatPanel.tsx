@@ -9,6 +9,7 @@ import { useConversationByCustomer } from "../../lib/queries";
 import type { ConversationMessage } from "../../lib/types";
 import ChatMessageList from "./ChatMessageList";
 import { useWorkspaceSession } from "../../app/workspace-context";
+import { toFileProxyUrl } from "../../lib/file-proxy";
 
 interface ChatPanelProps {
   threadId: string;
@@ -136,7 +137,7 @@ export default function ChatPanel({
       const validFiles = queuedAttachments.filter((file) => file.url);
       const queuedMessageParts: Array<FileUIPart | TextUIPart> = validFiles.map((file) => ({
         type: "file",
-        url: file.url!,
+        url: toFileProxyUrl(file.url!),
         mediaType: file.type,
         filename: file.name,
       } as FileUIPart));
@@ -203,7 +204,7 @@ export default function ChatPanel({
             const validFiles = uploadedFiles.filter((f) => f.url);
             const parts: Array<FileUIPart | TextUIPart> = validFiles.map((file) => ({
               type: "file",
-              url: file.url!,
+              url: toFileProxyUrl(file.url!),
               mediaType: file.mimeType,
               filename: file.name,
             } as FileUIPart));

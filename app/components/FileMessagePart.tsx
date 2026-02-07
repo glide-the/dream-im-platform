@@ -3,6 +3,7 @@
 import { memo } from "react";
 import type { FileUIPart } from "ai";
 import { IconFile, IconDownload } from "./Icons";
+import { toFileProxyUrl, toFileDownloadUrl } from "@/lib/file-proxy";
 
 /**
  * Props for FileMessagePart component
@@ -41,7 +42,9 @@ export const FileMessagePart = memo(
       part.filename?.split(".").pop()?.toUpperCase() ||
       part.mediaType?.split("/").pop()?.toUpperCase() ||
       "FILE";
-    const fileUrl = part.url;
+    const rawUrl = part.url;
+    const fileUrl = rawUrl ? toFileProxyUrl(rawUrl) : rawUrl;
+    const downloadUrl = rawUrl ? toFileDownloadUrl(rawUrl) : rawUrl;
     const filename =
       part.filename || part.url?.split("/").pop() || "附件";
     const fileSize = (part as { size?: number }).size;
@@ -54,9 +57,8 @@ export const FileMessagePart = memo(
     if (isImage && fileUrl) {
       return (
         <div
-          className={`max-w-md rounded-lg overflow-hidden border border-border ${
-            isUserMessage ? "ml-auto" : "mr-auto"
-          }`}
+          className={`max-w-md rounded-lg overflow-hidden border border-border ${isUserMessage ? "ml-auto" : "mr-auto"
+            }`}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -77,48 +79,42 @@ export const FileMessagePart = memo(
     // Non-image file card
     return (
       <div
-        className={`max-w-md rounded-2xl border p-4 shadow-sm ${
-          isUserMessage
+        className={`max-w-md rounded-2xl border p-4 shadow-sm ${isUserMessage
             ? "ml-auto bg-accent text-white border-accent/40"
             : "mr-auto bg-bg-surface text-text-primary border-border/80"
-        }`}
+          }`}
       >
         <div className="flex items-start gap-4">
           {/* File icon */}
           <div
-            className={`flex-shrink-0 rounded-xl p-3 ${
-              isUserMessage ? "bg-white/10" : "bg-bg-secondary"
-            }`}
+            className={`flex-shrink-0 rounded-xl p-3 ${isUserMessage ? "bg-white/10" : "bg-bg-secondary"
+              }`}
           >
             <IconFile
-              className={`h-6 w-6 ${
-                isUserMessage ? "text-white/80" : "text-text-tertiary"
-              }`}
+              className={`h-6 w-6 ${isUserMessage ? "text-white/80" : "text-text-tertiary"
+                }`}
             />
           </div>
 
           {/* File info */}
           <div className="flex-1 min-w-0 space-y-1 pr-3">
             <p
-              className={`text-sm font-medium truncate ${
-                isUserMessage ? "text-white" : "text-text-primary"
-              }`}
+              className={`text-sm font-medium truncate ${isUserMessage ? "text-white" : "text-text-primary"
+                }`}
               title={filename}
             >
               {filename}
             </p>
             <div
-              className={`flex flex-wrap items-center gap-2 text-xs ${
-                isUserMessage ? "text-white/70" : "text-text-tertiary"
-              }`}
+              className={`flex flex-wrap items-center gap-2 text-xs ${isUserMessage ? "text-white/70" : "text-text-tertiary"
+                }`}
             >
               {/* File extension badge */}
               <span
-                className={`uppercase tracking-wide px-2 py-0.5 rounded border ${
-                  isUserMessage
+                className={`uppercase tracking-wide px-2 py-0.5 rounded border ${isUserMessage
                     ? "border-white/30 text-white/90"
                     : "border-border text-text-secondary"
-                }`}
+                  }`}
               >
                 {fileExtension}
               </span>
@@ -139,15 +135,14 @@ export const FileMessagePart = memo(
           </div>
 
           {/* Download button */}
-          {fileUrl && (
+          {downloadUrl && (
             <a
-              href={fileUrl}
+              href={downloadUrl}
               download={part.filename ?? filename}
-              className={`flex-shrink-0 p-2 rounded-full transition-colors ${
-                isUserMessage
+              className={`flex-shrink-0 p-2 rounded-full transition-colors ${isUserMessage
                   ? "text-white/70 hover:text-white hover:bg-white/10"
                   : "text-text-tertiary hover:text-text-primary hover:bg-bg-secondary"
-              }`}
+                }`}
               title={`下载 ${filename}`}
             >
               <IconDownload className="h-5 w-5" />

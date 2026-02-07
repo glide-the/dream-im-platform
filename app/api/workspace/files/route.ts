@@ -20,6 +20,27 @@ function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
+function normalizeIncomingRelativePath(rawPath: string): string {
+  const normalized = rawPath
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+/g, "/")
+    .split("/")
+    .filter((segment) => segment && segment !== ".")
+    .join("/");
+
+  if (!normalized) {
+    return "";
+  }
+
+  const segments = normalized.split("/");
+  if (segments.some((segment) => segment === "..")) {
+    return "";
+  }
+
+  return normalized;
+}
+
 /**
  * GET /api/workspace/files?sessionId=xxx&path=subdir
  * List files in a workspace directory
@@ -63,6 +84,12 @@ export async function POST(req: NextRequest) {
     }
 
     const workspacePath = getOrCreateWorkspace(sessionId);
+    const files = formData
+      .getAll("file")
+      .filter((value): value is File => value instanceof File);
+    const relativePaths = formData
+      .getAll("relativePath")
+      .map((value) => (typeof value === "string" ? value : ""));
     const uploadedFiles: string[] = [];
     const uploadedMetadata: Array<{
       type: "workspace-file";
@@ -74,26 +101,36 @@ export async function POST(req: NextRequest) {
       hash?: string;
     }> = [];
 
-    // Process all uploaded files
-    for (const [key, value] of formData.entries()) {
-      if (key === "file" && value instanceof File) {
-        const buffer = Buffer.from(await value.arrayBuffer());
-        const shouldSaveToFilesDir = targetPath === WORKSPACE_DIRS.FILES;
+    // Process all uploaded files in input order and preserve per-file relativePath.
+    for (let index = 0; index < files.length; index += 1) {
+      const value = files[index];
+      const rawRelativePath = relativePaths[index] || value.name;
+      const normalizedRelativePath = normalizeIncomingRelativePath(rawRelativePath);
 
-        if (shouldSaveToFilesDir) {
-          const savedFile = saveBufferToWorkspaceFiles({
-            workspacePath,
-            fileName: value.name,
-            mimeType: value.type || "application/octet-stream",
-            content: buffer,
-          });
-          uploadedFiles.push(savedFile.workspacePath);
-          uploadedMetadata.push(savedFile);
-        } else {
-          const filePath = targetPath ? `${targetPath}/${value.name}` : value.name;
-          writeWorkspaceFile(workspacePath, filePath, buffer);
-          uploadedFiles.push(filePath);
-        }
+      if (!normalizedRelativePath) {
+        return badRequest(`Invalid relativePath for uploaded file #${index + 1}`);
+      }
+
+      const buffer = Buffer.from(await value.arrayBuffer());
+      const filePath = targetPath
+        ? `${targetPath}/${normalizedRelativePath}`
+        : normalizedRelativePath;
+      const isSingleFileToFilesDir =
+        targetPath === WORKSPACE_DIRS.FILES &&
+        !normalizedRelativePath.includes("/");
+
+      if (isSingleFileToFilesDir) {
+        const savedFile = saveBufferToWorkspaceFiles({
+          workspacePath,
+          fileName: value.name,
+          mimeType: value.type || "application/octet-stream",
+          content: buffer,
+        });
+        uploadedFiles.push(savedFile.workspacePath);
+        uploadedMetadata.push(savedFile);
+      } else {
+        writeWorkspaceFile(workspacePath, filePath, buffer);
+        uploadedFiles.push(filePath);
       }
     }
 
