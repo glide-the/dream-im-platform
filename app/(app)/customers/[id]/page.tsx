@@ -47,7 +47,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         <IconChevronLeft className="h-4 w-4" /> 返回首页
       </Link>
 
-      <div className="shrink-0 flex items-center justify-between rounded-2xl border border-border bg-surface px-4 py-3">
+      <div className="shrink-0 flex items-center justify-between rounded-2xl border border-border bg-bg-surface px-4 py-3">
         <h1 className="font-display text-lg font-semibold">{customer.name || "客户详情"}</h1>
         <button
           className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1 text-sm"

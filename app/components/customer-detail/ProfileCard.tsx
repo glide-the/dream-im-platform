@@ -44,7 +44,7 @@ export default function ProfileCard({
   const hasContact = false;
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-4 shadow-subtle">
+    <div className="rounded-2xl border border-border bg-bg-surface p-4 shadow-subtle">
       <div className="flex items-start justify-between">
         <div className="flex-1">
           {isEditing ? (

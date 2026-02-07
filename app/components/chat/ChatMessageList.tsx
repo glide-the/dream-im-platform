@@ -92,7 +92,7 @@ export default function ChatMessageList({
                         "max-w-3xl rounded-2xl px-4 py-3 text-sm leading-[1.6]",
                         isUser
                           ? "bg-accent-orange text-white"
-                          : "rounded-tl-none bg-[#F5F5F5] text-text-secondary",
+                          : "rounded-tl-none bg-bg-surface text-text-primary",
                       ].join(" ")}
                     >
                       {isUser ? (
@@ -110,7 +110,7 @@ export default function ChatMessageList({
               if (isToolUIPart(part)) {
                 return (
                   <div key={`${msg.id}-${partIndex}`} className="flex justify-start">
-                    <div className="max-w-[90%] rounded-lg bg-[#F5F5F5] p-2 shadow-subtle transition duration-200 hover:-translate-y-[3px] hover:shadow-medium">
+                    <div className="max-w-[90%] rounded-lg border border-border bg-bg-surface p-2 shadow-subtle transition duration-200 hover:-translate-y-[3px] hover:shadow-medium">
                       <ToolMessagePart
                         part={part as ToolUIPart | DynamicToolUIPart}
                         isLast={isLastMessage && isLastPart}
@@ -141,7 +141,7 @@ export default function ChatMessageList({
 
       {shouldShowLoadingIndicator && (
         <div className="flex justify-start" aria-live="polite">
-          <div className="w-[220px] overflow-hidden rounded-lg bg-[#F5F5F5] px-3 py-2 text-sm text-text-secondary">
+          <div className="w-[220px] overflow-hidden rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-secondary">
             <div className="relative h-px w-full bg-gradient-to-r from-transparent via-accent-orange/20 to-transparent">
               <span className="animate-orange-progress absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-accent-orange to-transparent" />
             </div>
@@ -151,7 +151,7 @@ export default function ChatMessageList({
 
       {error && (
         <div className="flex justify-start">
-          <div className="max-w-[80%] rounded-2xl rounded-tl-none bg-red-100 px-3 py-2 text-sm text-red-600">出错了：{error.message}</div>
+          <div className="max-w-[80%] rounded-2xl rounded-tl-none bg-danger-light px-3 py-2 text-sm text-danger">出错了：{error.message}</div>
         </div>
       )}
     </div>

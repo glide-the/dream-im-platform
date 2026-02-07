@@ -36,3 +36,4 @@ pnpm-debug.log*
 app/api/chat/route.ts
 .env
 agent-workspaces
+output

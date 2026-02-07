@@ -5,10 +5,11 @@
  * Creates isolated workspace directories for each agent session,
  * following the _init_workspace scaffolding from research_agent_processor.py.
  */
-import { mkdirSync, existsSync, copyFileSync, cpSync, readdirSync, statSync, rmSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, existsSync, copyFileSync, cpSync, readdirSync, statSync, rmSync, renameSync, writeFileSync, symlinkSync, lstatSync, readlinkSync, unlinkSync } from "node:fs";
 import { join, resolve, isAbsolute, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import logger from "./logger";
 
 /**
  * Workspace directory structure constants
@@ -16,6 +17,7 @@ import { randomUUID } from "node:crypto";
 export const WORKSPACE_DIRS = {
   FILES: "files",
   LOGS: "logs",
+  SKILLS: "skills",
 } as const;
 
 /**
@@ -51,6 +53,7 @@ export function initWorkspace(sessionId?: string): string {
   // Create workspace directory and subdirectories
   mkdirSync(join(workspacePath, WORKSPACE_DIRS.FILES), { recursive: true });
   mkdirSync(join(workspacePath, WORKSPACE_DIRS.LOGS), { recursive: true });
+  mkdirSync(join(workspacePath, WORKSPACE_DIRS.SKILLS), { recursive: true });
 
   // Copy .claude/ directory from project root if it exists
   const projectRoot = process.cwd();
@@ -75,7 +78,118 @@ export function initWorkspace(sessionId?: string): string {
     }
   }
 
+  // Sync skills symlinks to project-level .claude/skills/
+  syncSkillsSymlinks(workspacePath);
+
   return workspacePath;
+}
+
+/**
+ * Sync skills from a workspace's skills/ directory to the project-level
+ * .claude/skills/ directory via symlinks.
+ *
+ * Claude Code only recognizes skills in two fixed locations:
+ * - Project-level: .claude/skills/
+ * - User-level: ~/.claude/skills/
+ *
+ * Since there's no official config to change the skills root, we create
+ * symlinks from each workspace's skills/ entries into the project-level
+ * .claude/skills/ directory, namespaced by sessionId to avoid collisions.
+ *
+ * Structure:
+ *   {workspace}/skills/my-skill.md
+ *     → symlink at .claude/skills/{sessionId}--my-skill.md
+ */
+export function syncSkillsSymlinks(workspacePath: string): void {
+  const projectRoot = process.cwd();
+  const projectSkillsDir = join(projectRoot, ".claude", "skills");
+  const workspaceSkillsDir = join(workspacePath, WORKSPACE_DIRS.SKILLS);
+
+  // Extract sessionId from workspace path (last segment)
+  const sessionId = workspacePath.split("/").pop() || "unknown";
+
+  // Ensure project-level .claude/skills/ exists
+  mkdirSync(projectSkillsDir, { recursive: true });
+
+  if (!existsSync(workspaceSkillsDir)) {
+    return;
+  }
+
+  try {
+    const skillFiles = readdirSync(workspaceSkillsDir, { withFileTypes: true });
+
+    for (const entry of skillFiles) {
+      if (entry.isDirectory() || entry.name.startsWith(".")) {
+        continue;
+      }
+
+      const sourcePath = join(workspaceSkillsDir, entry.name);
+      const symlinkName = `${sessionId}--${entry.name}`;
+      const symlinkPath = join(projectSkillsDir, symlinkName);
+
+      try {
+        // Remove stale symlink if it exists
+        if (existsSync(symlinkPath) || lstatSync(symlinkPath).isSymbolicLink()) {
+          const currentTarget = readlinkSync(symlinkPath);
+          if (currentTarget === sourcePath) {
+            continue; // Already correct
+          }
+          unlinkSync(symlinkPath);
+        }
+      } catch {
+        // lstatSync throws if path doesn't exist at all — that's fine
+      }
+
+      try {
+        symlinkSync(sourcePath, symlinkPath);
+        logger.info(`Symlinked skill: ${entry.name} → ${symlinkPath}`);
+      } catch (err) {
+        logger.warn(`Failed to symlink skill ${entry.name}: ${err}`);
+      }
+    }
+
+    // Clean up stale symlinks for this session
+    cleanStaleSkillSymlinks(sessionId, projectSkillsDir, workspaceSkillsDir);
+  } catch (err) {
+    logger.warn(`Failed to sync skills symlinks: ${err}`);
+  }
+}
+
+/**
+ * Remove symlinks in .claude/skills/ that belong to a session but whose
+ * source file no longer exists in the workspace skills/ directory.
+ */
+function cleanStaleSkillSymlinks(
+  sessionId: string,
+  projectSkillsDir: string,
+  workspaceSkillsDir: string
+): void {
+  try {
+    const entries = readdirSync(projectSkillsDir, { withFileTypes: true });
+    const prefix = `${sessionId}--`;
+
+    for (const entry of entries) {
+      if (!entry.name.startsWith(prefix)) {
+        continue;
+      }
+
+      const symlinkPath = join(projectSkillsDir, entry.name);
+      try {
+        const stats = lstatSync(symlinkPath);
+        if (stats.isSymbolicLink()) {
+          const target = readlinkSync(symlinkPath);
+          if (!existsSync(target)) {
+            unlinkSync(symlinkPath);
+            logger.info(`Removed stale skill symlink: ${entry.name}`);
+          }
+        }
+      } catch {
+        // Ignore errors during cleanup
+      }
+    }
+  } catch {
+    // Non-critical
+  }
 }
 
 /**

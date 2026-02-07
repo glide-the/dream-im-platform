@@ -109,7 +109,7 @@ export default function DecisionChainSection({
   const hasItems = localDecisionChain.length > 0;
 
   return (
-    <div className="rounded-2xl border border-border bg-surface shadow-subtle">
+    <div className="rounded-2xl border border-border bg-bg-surface shadow-subtle">
       <div
         className="flex cursor-pointer items-center justify-between border-b border-border px-4 py-3"
         onClick={() => setIsCollapsed(!isCollapsed)}
@@ -166,7 +166,7 @@ export default function DecisionChainSection({
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="mb-1 block text-xs font-semibold text-text-tertiary">
-                              姓名 <span className="text-red-500">*</span>
+                              姓名 <span className="text-danger">*</span>
                             </label>
                             <input
                               className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
@@ -274,7 +274,7 @@ export default function DecisionChainSection({
                               完成
                             </button>
                             <button
-                              className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-500 hover:bg-red-50"
+                              className="rounded-lg border border-danger/40 px-3 py-1 text-xs font-semibold text-danger hover:bg-danger-light"
                               onClick={() => handleDeleteItem(index)}
                             >
                               删除
@@ -314,7 +314,7 @@ export default function DecisionChainSection({
                             <IconEdit className="h-3 w-3" />
                           </button>
                           <button
-                            className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-500 hover:bg-red-50"
+                            className="rounded-lg border border-danger/40 px-3 py-1 text-xs font-semibold text-danger hover:bg-danger-light"
                             onClick={() => handleDeleteItem(index)}
                           >
                             <IconTrash className="h-3 w-3" />

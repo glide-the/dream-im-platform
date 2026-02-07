@@ -61,7 +61,7 @@ export default function BasicInfoSection({
   ];
 
   return (
-    <div className="rounded-2xl border border-border bg-surface shadow-subtle">
+    <div className="rounded-2xl border border-border bg-bg-surface shadow-subtle">
       <div
         className="flex cursor-pointer items-center justify-between border-b border-border px-4 py-3"
         onClick={onToggleCollapse}

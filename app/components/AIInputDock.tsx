@@ -345,7 +345,7 @@ export default function AIInputDock({
       />
 
       {(uploadError || uploadHookError) && (
-        <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+        <div className="mb-3 rounded-lg bg-danger-light px-3 py-2 text-sm text-danger">
           {uploadError || uploadHookError}
         </div>
       )}
@@ -394,7 +394,7 @@ export default function AIInputDock({
                 >
                   <button
                     type="button"
-                    className="rounded-full bg-bg-surface p-1.5 text-text-secondary transition-colors hover:bg-red-100 hover:text-red-500"
+                    className="rounded-full bg-bg-surface p-1.5 text-text-secondary transition-colors hover:bg-danger-light hover:text-danger"
                     onClick={() => deleteFile(file.id)}
                     disabled={file.isUploading}
                     aria-label={`删除文件 ${file.name}`}
@@ -443,7 +443,7 @@ export default function AIInputDock({
 
         {loading && onStop ? (
           <button
-            className="grid h-9 w-9 place-items-center rounded-full bg-red-500 text-white shadow-md transition-all duration-200 hover:scale-105 hover:bg-red-600 active:scale-95"
+            className="grid h-9 w-9 place-items-center rounded-full bg-danger text-white shadow-medium transition-all duration-200 hover:scale-105 hover:bg-danger/90 active:scale-95"
             onClick={onStop}
             title="停止生成"
             aria-label="停止生成"

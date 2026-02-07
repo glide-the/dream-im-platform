@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { join } from "node:path";
-import { existsSync, mkdirSync, writeFileSync, rmSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, rmSync, readdirSync, lstatSync, readlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 
@@ -50,6 +50,7 @@ describe("workspace", () => {
       expect(existsSync(workspacePath)).toBe(true);
       expect(existsSync(join(workspacePath, "files"))).toBe(true);
       expect(existsSync(join(workspacePath, "logs"))).toBe(true);
+      expect(existsSync(join(workspacePath, "skills"))).toBe(true);
     });
 
     it("should generate random UUID when no sessionId provided", async () => {
@@ -233,6 +234,81 @@ describe("workspace", () => {
       expect(() => {
         writeWorkspaceFile(workspacePath, "../../etc/evil", Buffer.from("bad"));
       }).toThrow("Path traversal not allowed");
+    });
+  });
+
+  describe("syncSkillsSymlinks", () => {
+    it("should create symlinks from workspace skills to project .claude/skills/", async () => {
+      const { initWorkspace, syncSkillsSymlinks } = await import("./workspace");
+      const sessionId = "skills-sync-test";
+      const workspacePath = initWorkspace(sessionId);
+
+      // Create a skill file in workspace
+      const skillsDir = join(workspacePath, "skills");
+      writeFileSync(join(skillsDir, "my-skill.md"), "# My Skill\nDo something.");
+
+      // Run sync
+      syncSkillsSymlinks(workspacePath);
+
+      // Check symlink exists in project .claude/skills/
+      const projectSkillsDir = join(process.cwd(), ".claude", "skills");
+      const symlinkPath = join(projectSkillsDir, `${sessionId}--my-skill.md`);
+
+      expect(existsSync(symlinkPath)).toBe(true);
+      const stats = lstatSync(symlinkPath);
+      expect(stats.isSymbolicLink()).toBe(true);
+      expect(readlinkSync(symlinkPath)).toBe(join(skillsDir, "my-skill.md"));
+
+      // Cleanup
+      rmSync(symlinkPath);
+      // Remove .claude/skills dir if empty
+      try { rmSync(projectSkillsDir); } catch { /* ignore */ }
+    });
+
+    it("should skip dotfiles and directories in skills/", async () => {
+      const { initWorkspace, syncSkillsSymlinks } = await import("./workspace");
+      const sessionId = "skills-skip-test";
+      const workspacePath = initWorkspace(sessionId);
+
+      const skillsDir = join(workspacePath, "skills");
+      writeFileSync(join(skillsDir, ".hidden"), "hidden");
+      mkdirSync(join(skillsDir, "subdir"), { recursive: true });
+
+      syncSkillsSymlinks(workspacePath);
+
+      const projectSkillsDir = join(process.cwd(), ".claude", "skills");
+      // Neither dotfile nor directory should be symlinked
+      expect(existsSync(join(projectSkillsDir, `${sessionId}--.hidden`))).toBe(false);
+      expect(existsSync(join(projectSkillsDir, `${sessionId}--subdir`))).toBe(false);
+
+      // Cleanup
+      try { rmSync(projectSkillsDir, { recursive: true }); } catch { /* ignore */ }
+    });
+
+    it("should clean stale symlinks for a session", async () => {
+      const { initWorkspace, syncSkillsSymlinks } = await import("./workspace");
+      const sessionId = "skills-stale-test";
+      const workspacePath = initWorkspace(sessionId);
+
+      const skillsDir = join(workspacePath, "skills");
+      writeFileSync(join(skillsDir, "old-skill.md"), "# Old");
+
+      // First sync creates the symlink
+      syncSkillsSymlinks(workspacePath);
+
+      const projectSkillsDir = join(process.cwd(), ".claude", "skills");
+      const symlinkPath = join(projectSkillsDir, `${sessionId}--old-skill.md`);
+      expect(existsSync(symlinkPath)).toBe(true);
+
+      // Remove the source file
+      rmSync(join(skillsDir, "old-skill.md"));
+
+      // Re-sync should clean the stale symlink
+      syncSkillsSymlinks(workspacePath);
+      expect(existsSync(symlinkPath)).toBe(false);
+
+      // Cleanup
+      try { rmSync(projectSkillsDir, { recursive: true }); } catch { /* ignore */ }
     });
   });
 });

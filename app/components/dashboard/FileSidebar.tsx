@@ -155,16 +155,16 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
     <>
       {/* Overlay for mobile */}
       <div
-        className={`fixed inset-0 z-30 bg-black/30 md:hidden ${open ? "block" : "hidden"}`}
+        className={`fixed inset-0 z-30 bg-[var(--color-overlay)] md:hidden ${open ? "block" : "hidden"}`}
         onClick={onClose}
       />
       <aside
-        className={`fixed left-0 top-0 z-40 flex h-full w-[320px] flex-col border-r border-[var(--neutral-border)] bg-white transition-transform duration-300 md:static md:z-auto ${
+        className={`fixed left-0 top-0 z-40 flex h-full w-[320px] flex-col border-r border-border bg-[var(--color-glass-surface)] backdrop-blur-xl transition-transform duration-300 md:static md:z-auto ${
           open ? "translate-x-0" : "-translate-x-full md:w-0 md:translate-x-0 md:overflow-hidden md:border-r-0"
         }`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[var(--neutral-border)] px-4 py-3">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-2">
             <IconFolder className="h-5 w-5 text-accent-orange" />
             <span className="text-sm font-semibold">Files</span>
@@ -192,7 +192,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
         </div>
 
         {/* Breadcrumbs */}
-        <div className="flex items-center gap-1 border-b border-[var(--neutral-border)] px-4 py-2 text-xs text-text-tertiary">
+        <div className="flex items-center gap-1 border-b border-border px-4 py-2 text-xs text-text-tertiary">
           {breadcrumbs.map((part, i) => (
             <span key={i} className="flex items-center gap-1">
               {i > 0 && <span>/</span>}
@@ -214,7 +214,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
 
         {/* File list */}
         <div
-          className={`flex-1 overflow-y-auto ${dragOver ? "bg-orange-50 ring-2 ring-inset ring-accent-orange" : ""}`}
+          className={`flex-1 overflow-y-auto ${dragOver ? "bg-accent-orange-light ring-2 ring-inset ring-accent-orange" : ""}`}
           onDragOver={(e) => {
             e.preventDefault();
             setDragOver(true);
@@ -233,7 +233,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
               <p className="mt-1 text-xs">Upload files or drag & drop here</p>
             </div>
           ) : (
-            <ul className="divide-y divide-[var(--neutral-border)]">
+            <ul className="divide-y divide-border">
               {currentPath && (
                 <li>
                   <button
@@ -272,7 +272,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
                     )}
                     <button
                       onClick={() => handleDelete(file.path)}
-                      className="rounded p-1 text-text-tertiary opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+                      className="rounded p-1 text-text-tertiary opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
                       title="Delete"
                     >
                       <IconTrash className="h-3.5 w-3.5" />
@@ -285,10 +285,10 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
         </div>
 
         {/* Upload zone / drop target hint */}
-        <div className="border-t border-[var(--neutral-border)] p-3">
+        <div className="border-t border-border p-3">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-200 px-4 py-3 text-sm text-text-tertiary transition-colors hover:border-accent-orange hover:text-accent-orange"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-bg-secondary/30 px-4 py-3 text-sm text-text-tertiary transition-colors hover:border-accent-orange hover:text-accent-orange"
             disabled={uploading}
           >
             {uploading ? (

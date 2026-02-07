@@ -264,7 +264,7 @@ export function AskUserQuestionUI({
                 className="block text-sm font-medium text-text-primary"
               >
                 {q.question}
-                {q.required && <span className="text-red-500 ml-1">*</span>}
+                {q.required && <span className="text-danger ml-1">*</span>}
               </label>
 
               {/* Description */}

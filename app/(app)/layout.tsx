@@ -34,7 +34,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [fileSidebarOpen]);
 
   return (
-    <div className="flex h-screen bg-[var(--luxury-ivory)]">
+    <div className="flex h-screen bg-bg-primary">
       <VerticalNav
         onToggleSidebar={handleToggleSidebar}
         onToggleFileSidebar={handleToggleFileSidebar}
@@ -47,7 +47,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       />
       <main className="flex flex-1 flex-col overflow-y-auto px-4 pb-8 pt-4 md:px-8">
         <div className="mb-4 md:hidden">
-          <button className="rounded-lg border border-border bg-white px-3 py-2 text-sm" onClick={() => setSidebarOpen(true)}>
+          <button className="rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary" onClick={() => setSidebarOpen(true)}>
             ☰ Menu
           </button>
         </div>

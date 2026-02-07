@@ -16,7 +16,7 @@ export default function Modal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] px-4">
       <div className="w-full max-w-lg rounded-3xl border border-border bg-bg-surface p-5 shadow-medium">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg font-semibold text-text-primary">

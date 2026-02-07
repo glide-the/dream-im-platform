@@ -10,7 +10,7 @@ interface VerticalNavProps {
 
 export default function VerticalNav({ onToggleSidebar, onToggleFileSidebar, unreadCount = 7 }: VerticalNavProps) {
   return (
-    <aside className="hidden w-16 shrink-0 flex-col items-center border-r border-[var(--neutral-border)] bg-white/70 py-6 backdrop-blur-sm md:flex">
+    <aside className="hidden w-16 shrink-0 flex-col items-center border-r border-border bg-[var(--color-glass-nav)] py-6 backdrop-blur-xl md:flex">
       <button type="button" onClick={onToggleSidebar} className="mb-8 rounded-lg bg-accent-orange p-2 text-white transition-transform duration-200 hover:rotate-12">
         <IconGrid className="h-4 w-4" />
       </button>
@@ -33,7 +33,7 @@ export default function VerticalNav({ onToggleSidebar, onToggleFileSidebar, unre
           <IconSettings className="h-5 w-5" />
         </button>
       </div>
-      <div className="rounded-full border-2 border-white shadow-md overflow-hidden">
+      <div className="overflow-hidden rounded-full border-2 border-border shadow-subtle">
         <div className="rounded-full border border-border p-2">
           <IconUser className="h-4 w-4" />
         </div>

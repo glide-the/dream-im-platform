@@ -369,7 +369,7 @@ export function ToolMessagePart({
 
   return (
     <div className="group w-full">
-      <div className="flex flex-col rounded-lg border border-border bg-[#F5F5F5] transition duration-200 hover:-translate-y-[3px] hover:shadow-medium">
+      <div className="flex flex-col rounded-lg border border-border bg-bg-surface transition duration-200 hover:-translate-y-[3px] hover:shadow-medium">
         {/* Header */}
         <div
           className="flex cursor-pointer items-center gap-2 px-3 py-2"
@@ -379,7 +379,7 @@ export function ToolMessagePart({
             {isExecuting ? (
               <IconLoader className="h-3.5 w-3.5 text-accent animate-spin" />
             ) : isError ? (
-              <IconAlert className="h-3.5 w-3.5 text-red-500" />
+              <IconAlert className="h-3.5 w-3.5 text-danger" />
             ) : (
               <IconTool className="h-3.5 w-3.5 text-text-secondary" />
             )}
@@ -450,7 +450,7 @@ export function ToolMessagePart({
                 <h5 className="text-xs font-medium text-text-tertiary mb-2">
                   {isError ? "错误信息" : "输出结果"}
                 </h5>
-                <pre className={`text-xs overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap ${isError ? "text-red-500" : "text-text-secondary"}`}>
+                <pre className={`text-xs overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap ${isError ? "text-danger" : "text-text-secondary"}`}>
                   {outputDisplay}
                 </pre>
               </div>
@@ -482,7 +482,7 @@ export function ToolMessagePart({
 
         {/* AskUserQuestion confirmed status */}
         {shouldShowAskUserUI && confirmationStatus === "confirmed" && (
-          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-green-600">
+          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-success">
             <IconCheck className="h-4 w-4" />
             <span>已提交回答</span>
           </div>
@@ -490,7 +490,7 @@ export function ToolMessagePart({
 
         {/* AskUserQuestion rejected/cancelled status */}
         {shouldShowAskUserUI && confirmationStatus === "rejected" && (
-          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-red-500">
+          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-danger">
             <IconClose className="h-4 w-4" />
             <span>已取消回答</span>
           </div>
@@ -530,7 +530,7 @@ export function ToolMessagePart({
 
         {/* Confirmed status */}
         {shouldShowApprovalUI && confirmationStatus === "confirmed" && (
-          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-green-600">
+          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-success">
             <IconCheck className="h-4 w-4" />
             <span>已确认，工具执行中</span>
           </div>
@@ -538,7 +538,7 @@ export function ToolMessagePart({
 
         {/* Rejected status */}
         {shouldShowApprovalUI && confirmationStatus === "rejected" && (
-          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-red-500">
+          <div className="px-3 pb-3 flex items-center justify-center gap-2 text-sm text-danger">
             <IconClose className="h-4 w-4" />
             <span>已取消</span>
           </div>

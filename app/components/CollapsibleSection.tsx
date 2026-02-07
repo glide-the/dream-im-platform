@@ -32,7 +32,7 @@ export default function CollapsibleSection({
 
   return (
     <div className={`transition-all duration-300 ${className}`}>
-      <div className="flex items-center justify-between rounded-xl border border-border bg-surface px-4 py-3">
+      <div className="flex items-center justify-between rounded-xl border border-border bg-bg-surface px-4 py-3">
         <div className="flex flex-1 items-center gap-3">
           <button onClick={handleToggle} className="flex items-center gap-2">
             <span className="text-sm font-semibold text-text-primary">{title}</span>

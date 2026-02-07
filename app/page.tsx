@@ -119,7 +119,7 @@ export default function HomePage() {
   }, [fileSidebarOpen]);
 
   return (
-    <div className="flex h-screen bg-[var(--luxury-ivory)]">
+    <div className="flex h-screen bg-bg-primary">
       <VerticalNav
         onToggleSidebar={handleToggleSidebar}
         onToggleFileSidebar={handleToggleFileSidebar}
@@ -133,13 +133,13 @@ export default function HomePage() {
 
       <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden px-4 py-6 md:px-12">
         <div className="mb-4 flex items-center justify-between">
-          <button className="rounded-lg border border-border bg-white px-3 py-2 md:hidden" onClick={() => setSidebarOpen(true)}>
+          <button className="rounded-lg border border-border bg-bg-surface px-3 py-2 text-text-primary md:hidden" onClick={() => setSidebarOpen(true)}>
             ☰ Menu
           </button>
           {chatOpen && (
             <button
               onClick={handleNewChat}
-              className="ml-auto flex items-center gap-1.5 rounded-lg border border-[var(--neutral-border)] bg-white px-3 py-2 text-sm font-medium text-text-secondary shadow-sm transition-all duration-200 hover:border-accent-orange hover:text-accent-orange hover:shadow-md active:scale-95"
+              className="ml-auto flex items-center gap-1.5 rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm font-medium text-text-secondary shadow-subtle transition-all duration-200 hover:border-accent-orange hover:text-accent-orange hover:shadow-medium active:scale-95"
             >
               <IconPlus className="h-4 w-4" />
               New Chat
@@ -151,7 +151,7 @@ export default function HomePage() {
           <div className="flex-1 overflow-y-auto">
             <section className="relative animate-fadeUp pt-4 pb-2">
               <div className="pointer-events-none absolute -right-10 top-6 h-32 w-32 rounded-full bg-accent-orange/10 blur-xl" />
-              <h1 className="relative z-10 text-[clamp(1.75rem,4vw,2.5rem)] font-display font-bold text-[var(--luxury-charcoal)]">
+              <h1 className="relative z-10 text-[clamp(1.75rem,4vw,2.5rem)] font-display font-bold text-text-primary">
                 嗨，准备好<span className="text-accent-orange">开始</span>了吗？
               </h1>
             </section>
