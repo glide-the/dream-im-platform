@@ -6,8 +6,13 @@ import {
   listWorkspaceFiles,
   deleteWorkspaceFile,
   moveWorkspaceFile,
+  WORKSPACE_DIRS,
   writeWorkspaceFile,
 } from "../../../lib/workspace";
+import {
+  normalizeWorkspaceFileSyncError,
+  saveBufferToWorkspaceFiles,
+} from "../../../lib/workspace-file-sync";
 
 export const runtime = "nodejs";
 
@@ -49,7 +54,9 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const sessionId = formData.get("sessionId") as string;
-    const targetPath = (formData.get("path") as string) || "";
+    const targetPath = ((formData.get("path") as string) || "")
+      .replace(/\\/g, "/")
+      .replace(/^\/+|\/+$/g, "");
 
     if (!sessionId) {
       return badRequest("sessionId is required");
@@ -57,14 +64,36 @@ export async function POST(req: NextRequest) {
 
     const workspacePath = getOrCreateWorkspace(sessionId);
     const uploadedFiles: string[] = [];
+    const uploadedMetadata: Array<{
+      type: "workspace-file";
+      fileName: string;
+      mimeType: string;
+      size: number;
+      workspacePath: string;
+      savedAt: string;
+      hash?: string;
+    }> = [];
 
     // Process all uploaded files
     for (const [key, value] of formData.entries()) {
       if (key === "file" && value instanceof File) {
         const buffer = Buffer.from(await value.arrayBuffer());
-        const filePath = targetPath ? `${targetPath}/${value.name}` : value.name;
-        writeWorkspaceFile(workspacePath, filePath, buffer);
-        uploadedFiles.push(filePath);
+        const shouldSaveToFilesDir = targetPath === WORKSPACE_DIRS.FILES;
+
+        if (shouldSaveToFilesDir) {
+          const savedFile = saveBufferToWorkspaceFiles({
+            workspacePath,
+            fileName: value.name,
+            mimeType: value.type || "application/octet-stream",
+            content: buffer,
+          });
+          uploadedFiles.push(savedFile.workspacePath);
+          uploadedMetadata.push(savedFile);
+        } else {
+          const filePath = targetPath ? `${targetPath}/${value.name}` : value.name;
+          writeWorkspaceFile(workspacePath, filePath, buffer);
+          uploadedFiles.push(filePath);
+        }
       }
     }
 
@@ -72,11 +101,19 @@ export async function POST(req: NextRequest) {
       return badRequest("No files uploaded");
     }
 
-    return NextResponse.json({ uploaded: uploadedFiles });
+    return NextResponse.json({
+      uploaded: uploadedFiles,
+      files: uploadedMetadata,
+    });
   } catch (error) {
+    const normalizedError = normalizeWorkspaceFileSyncError(error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Upload failed" },
-      { status: 500 }
+      {
+        error: normalizedError.message,
+        code: normalizedError.code,
+        details: normalizedError.details,
+      },
+      { status: normalizedError.status }
     );
   }
 }

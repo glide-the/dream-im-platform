@@ -49,5 +49,6 @@ describe("AIInputDock mode rendering", () => {
     expect(html).not.toContain("上传附件");
     expect(html).not.toContain("上传图片");
     expect(html).not.toContain("拍照上传");
+    expect(html).toContain("上传方式：粘贴 (Ctrl/Cmd + V) · 拖拽 · 点击选择");
   });
 });

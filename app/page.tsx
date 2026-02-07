@@ -1,19 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import AIInputDock, { toAttachment, type Attachment as DockAttachment } from "./components/AIInputDock";
 import { ChatPanel } from "./components/chat";
 import FileSidebar from "./components/dashboard/FileSidebar";
 import QuickActionCard from "./components/dashboard/QuickActionCard";
 import Sidebar from "./components/dashboard/Sidebar";
 import VerticalNav from "./components/dashboard/VerticalNav";
-import { IconArrowUp, IconPlus } from "./components/Icons";
-import {
-  QUICK_INPUT_ACTIONS_CLASS_NAME,
-  QUICK_INPUT_ADD_BUTTON_CLASS_NAME,
-  QUICK_INPUT_FIELD_CLASS_NAME,
-  QUICK_INPUT_SHELL_CLASS_NAME,
-  QUICK_INPUT_SEND_BUTTON_CLASS_NAME,
-} from "./components/chatInputStyles";
+import { IconPlus } from "./components/Icons";
 import { QUICK_ACTION_CARDS } from "./components/dashboard/const";
 import { useCustomers } from "./lib/queries";
 import { createId } from "./lib/id";
@@ -30,13 +24,11 @@ export default function HomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(true);
   const [fileSidebarOpen, setFileSidebarOpen] = useState(false);
-  const [prompt, setPrompt] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   const [threadId, setThreadId] = useState(() => createId("chat"));
   const [queuedPrompt, setQueuedPrompt] = useState("");
+  const [queuedAttachments, setQueuedAttachments] = useState<DockAttachment[]>([]);
   const [queuedPromptNonce, setQueuedPromptNonce] = useState(0);
-  const [openFileDialogSignal, setOpenFileDialogSignal] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
   const { activeSessionId, setActiveSessionId } = useWorkspaceSession();
   const fileSidebarSessionId = activeSessionId ?? threadId;
   const { data } = useCustomers({ pageSize: 6, sort: "updated_at", order: "desc" });
@@ -51,12 +43,8 @@ export default function HomePage() {
       if (event.key.toLowerCase() === "i") {
         if (isTypingTarget(document.activeElement) || isTypingTarget(event.target)) return;
         event.preventDefault();
-        if (chatOpen) {
-          const chatInput = document.getElementById("chat-input") as HTMLTextAreaElement | null;
-          chatInput?.focus();
-        } else {
-          inputRef.current?.focus();
-        }
+        const chatInput = document.getElementById("chat-input") as HTMLInputElement | null;
+        chatInput?.focus();
       }
       if (event.key === "Escape") {
         setSidebarOpen(false);
@@ -65,7 +53,7 @@ export default function HomePage() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [chatOpen]);
+  }, []);
 
   useEffect(() => {
     setActiveSessionId(threadId);
@@ -77,24 +65,19 @@ export default function HomePage() {
     };
   }, [setActiveSessionId]);
 
-  function handleSendFromQuickInput() {
-    if (!prompt.trim()) return;
+  function handleSendFromQuickInput(promptText: string, attachments: DockAttachment[] = []) {
+    if (!promptText.trim() && attachments.length === 0) return;
     setChatOpen(true);
-    setQueuedPrompt(prompt.trim());
+    setQueuedPrompt(promptText.trim());
+    setQueuedAttachments(attachments);
     setQueuedPromptNonce((v) => v + 1);
-    setPrompt("");
-  }
-
-  function handleAddFile() {
-    setChatOpen(true);
-    setOpenFileDialogSignal((v) => v + 1);
   }
 
   const handleNewChat = useCallback(() => {
     setThreadId(createId("chat"));
     setQueuedPrompt("");
+    setQueuedAttachments([]);
     setQueuedPromptNonce(0);
-    setOpenFileDialogSignal(0);
     setChatOpen(false);
   }, []);
 
@@ -157,37 +140,26 @@ export default function HomePage() {
             </section>
 
             <section className="mx-auto mt-6 w-full max-w-3xl">
-              <div className={QUICK_INPUT_SHELL_CLASS_NAME}>
-                <input
-                  ref={inputRef}
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="按 i 开始对话"
-                  className={QUICK_INPUT_FIELD_CLASS_NAME}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      handleSendFromQuickInput();
-                    }
-                  }}
-                />
-                <div className={QUICK_INPUT_ACTIONS_CLASS_NAME}>
-                  <button className={QUICK_INPUT_ADD_BUTTON_CLASS_NAME} onClick={handleAddFile}>
-                    + Add
-                  </button>
-                  <button
-                    onClick={handleSendFromQuickInput}
-                    className={QUICK_INPUT_SEND_BUTTON_CLASS_NAME}
-                  >
-                    <IconArrowUp className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
+              <AIInputDock
+                contextCustomers={contextCustomers}
+                workspaceSessionId={threadId}
+                placeholder="按 i 开始对话"
+                onSendMessage={(message, uploadedFiles = []) => {
+                  handleSendFromQuickInput(
+                    message,
+                    uploadedFiles.map(toAttachment),
+                  );
+                }}
+              />
             </section>
 
             <section className="mx-auto mt-8 w-full max-w-6xl grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
               {QUICK_ACTION_CARDS.map((item) => (
-                <QuickActionCard key={item.title} item={item} onClick={(nextPrompt) => setPrompt(nextPrompt)} />
+                <QuickActionCard
+                  key={item.title}
+                  item={item}
+                  onClick={(nextPrompt) => handleSendFromQuickInput(nextPrompt)}
+                />
               ))}
             </section>
           </div>
@@ -200,8 +172,8 @@ export default function HomePage() {
               inputPlaceholder="继续提问..."
               className="flex flex-1 min-h-0 flex-col"
               queuedPrompt={queuedPrompt}
+              queuedAttachments={queuedAttachments}
               queuedPromptNonce={queuedPromptNonce}
-              openFileDialogSignal={openFileDialogSignal}
             />
           </section>
         )}

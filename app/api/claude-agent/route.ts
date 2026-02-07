@@ -31,46 +31,16 @@ import { createId } from "../../lib/id";
 import type { Conversation, MessagePart, Attachment, ToolType } from "../../lib/types";
 import { createPendingToolConfirmation } from "../../lib/tool-confirmation-store";
 import {
-  buildDocumentIngestionPreviewParts,
-  isWeKnoraSupported,
-  type DocumentProcessingResult,
-} from "../../lib/weknora";
+  injectAttachmentMessageParts,
+  processChatAttachmentsForMessage,
+} from "../../lib/chat-attachment-processing";
 import { getOrCreateWorkspace } from "../../lib/workspace";
+import { normalizeWorkspaceFileSyncError } from "../../lib/workspace-file-sync";
+import { extractTextFromParts } from "../../lib/message-parts";
 
 export const runtime = "nodejs";
 
 const DEFAULT_MAX_TURNS = Number(process.env.MAX_TURNS) || 10;
-
-/**
- * Extract and format text content from UIMessage parts.
- * Supports multiple text parts with proper formatting/separation.
- * 
- * @param parts - UIMessage parts array
- * @param separator - Separator between multiple text parts (default: "\n\n")
- * @returns Formatted text content
- */
-function extractTextFromParts(
-  parts: UIMessage["parts"] | undefined,
-  separator: string = "\n\n"
-): string {
-  if (!parts || !Array.isArray(parts)) return "";
-
-  const textContents: string[] = [];
-
-  for (const part of parts) {
-    // Handle text parts
-    if (part.type === "text" && typeof (part as { text?: string }).text === "string") {
-      const text = (part as { type: "text"; text: string }).text.trim();
-      if (text) {
-        textContents.push(text);
-      }
-    }
-    // Handle file parts with text content (e.g., document previews injected by WeKnora)
-    // These are already converted to text parts during ingestion, but handle edge cases
-  }
-
-  return textContents.join(separator);
-}
 
 // Check if a part type is a tool type (starts with "tool-" or is "dynamic-tool")
 function isToolPartType(type: string): boolean {
@@ -189,6 +159,28 @@ function convertToStorageParts(
       };
     }
 
+    // Handle workspace-file parts - preserve type exactly
+    if (part.type === "workspace-file") {
+      const workspaceFilePart = part as {
+        type: "workspace-file";
+        fileName: string;
+        mimeType: string;
+        size: number;
+        workspacePath: string;
+        savedAt: string;
+        hash?: string;
+      };
+      return {
+        type: "workspace-file" as const,
+        fileName: workspaceFilePart.fileName,
+        mimeType: workspaceFilePart.mimeType,
+        size: workspaceFilePart.size,
+        workspacePath: workspaceFilePart.workspacePath,
+        savedAt: workspaceFilePart.savedAt,
+        hash: workspaceFilePart.hash,
+      };
+    }
+
     // For any other unknown types, preserve them EXACTLY as-is
     // Exclude internal metadata fields that shouldn't be persisted
     // This ensures we don't lose any new part types added in the future
@@ -203,22 +195,45 @@ function mapChatAttachmentToDbAttachment(att: ChatAttachment): Attachment {
     id: createId("att"),
     name: att.filename ?? att.url,
     type: att.mediaType ?? "application/octet-stream",
-    // size 目前拿不到，可以后面接上传服务再补
-    size: 0,
+    size: att.size ?? 0,
   };
 }
 
-function badRequest(message: string) {
-  return new Response(JSON.stringify({ error: message }), {
-    status: 400,
+function errorResponse(
+  status: number,
+  payload: {
+    error: string;
+    code?: string;
+    details?: unknown;
+  }
+) {
+  return new Response(JSON.stringify(payload), {
+    status,
     headers: { "Content-Type": "application/json" },
   });
 }
 
-function internalServerError(message: string) {
-  return new Response(JSON.stringify({ error: message }), {
-    status: 500,
-    headers: { "Content-Type": "application/json" },
+function badRequest(message: string, code?: string, details?: unknown) {
+  return errorResponse(400, {
+    error: message,
+    code,
+    details,
+  });
+}
+
+function internalServerError(message: string, code?: string, details?: unknown) {
+  return errorResponse(500, {
+    error: message,
+    code,
+    details,
+  });
+}
+
+function serviceError(status: number, message: string, code?: string, details?: unknown) {
+  return errorResponse(status, {
+    error: message,
+    code,
+    details,
   });
 }
 
@@ -258,52 +273,37 @@ export async function POST(req: NextRequest) {
     return internalServerError("Failed to initialize workspace");
   }
 
-  // ===========================================================================
-  // Process attachments via WeKnora (Reference: better-chatbot processDocument)
-  // ===========================================================================
-  // Process document attachments and inject content previews into the message
-  // This is similar to better-chatbot's buildCsvIngestionPreviewParts pattern
-  const ingestionPreviewParts: DocumentProcessingResult[] = await buildDocumentIngestionPreviewParts(
-    attachments,
-    // Download function for file attachments (fetch the file content)
-    async (url: string) => {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to download file: ${response.status}`);
-      }
-      return response.blob();
+  try {
+    const attachmentProcessingResult = await processChatAttachmentsForMessage({
+      attachments,
+      workspacePath: workspaceCwd,
+      downloadFile: async (url: string) => {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed to download file: ${response.status}`);
+        }
+        return response.blob();
+      },
+    });
+
+    if (attachmentProcessingResult.messageParts.length > 0) {
+      uiMessage.parts = injectAttachmentMessageParts(
+        uiMessage.parts,
+        attachmentProcessingResult.messageParts
+      );
+      console.log(
+        `[Claude Agent API] Injected ${attachmentProcessingResult.ingestionPreviewParts.length} document previews and ${attachmentProcessingResult.workspaceFilePathParts.length} workspace file parts into message`
+      );
     }
-  );
-
-  // Inject ingestion preview parts into the message
-  // Following better-chatbot pattern: insert before the last text part
-  if (ingestionPreviewParts.length > 0) {
-    const baseParts = [...(uiMessage.parts || [])];
-    let insertionIndex = -1;
-
-    // Find the last text part to insert before
-    for (let i = baseParts.length - 1; i >= 0; i -= 1) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((baseParts[i] as any)?.type === "text") {
-        insertionIndex = i;
-        break;
-      }
-    }
-
-    // Convert DocumentProcessingResult to message parts
-    const previewParts = ingestionPreviewParts.map((result) => ({
-      type: "text" as const,
-      text: result.text,
-    }));
-
-    if (insertionIndex !== -1) {
-      baseParts.splice(insertionIndex, 0, ...previewParts);
-      uiMessage.parts = baseParts;
-    } else {
-      uiMessage.parts = [...baseParts, ...previewParts];
-    }
-
-    console.log(`[Claude Agent API] Injected ${ingestionPreviewParts.length} document previews into message`);
+  } catch (error) {
+    const normalizedError = normalizeWorkspaceFileSyncError(error);
+    console.error("[Claude Agent API] Attachment processing failed:", normalizedError);
+    return serviceError(
+      normalizedError.status,
+      normalizedError.message,
+      normalizedError.code,
+      normalizedError.details
+    );
   }
 
   // Extract text content from UIMessage

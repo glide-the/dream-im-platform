@@ -103,6 +103,16 @@ export type SourceUrlMessagePart = {
   title?: string;
 };
 
+export type WorkspaceFilePathMessagePart = {
+  type: "workspace-file";
+  fileName: string;
+  mimeType: string;
+  size: number;
+  workspacePath: string;
+  savedAt: string;
+  hash?: string;
+};
+
 // Generic part for any other unknown types - preserves raw data
 export type GenericMessagePart = {
   type: string;
@@ -117,6 +127,7 @@ export type MessagePart =
   | ToolMessagePart 
   | FileMessagePart
   | SourceUrlMessagePart
+  | WorkspaceFilePathMessagePart
   | GenericMessagePart;
 
 export type ConversationMessage = {

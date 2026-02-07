@@ -12,9 +12,29 @@ export const ChatAttachmentSchema = z.object({
   url: z.string(),
   mediaType: z.string().optional(),
   filename: z.string().optional(),
+  size: z.number().int().nonnegative().optional(),
+  workspacePath: z.string().optional(),
+  savedAt: z.string().datetime().optional(),
+  hash: z.string().optional(),
 });
 
 export type ChatAttachment = z.infer<typeof ChatAttachmentSchema>;
+
+/**
+ * Workspace file location metadata part.
+ * Added to message.parts after attachment sync succeeds.
+ */
+export const WorkspaceFilePathPartSchema = z.object({
+  type: z.literal("workspace-file"),
+  fileName: z.string().min(1),
+  mimeType: z.string().min(1),
+  size: z.number().int().nonnegative(),
+  workspacePath: z.string().min(1),
+  savedAt: z.string().datetime(),
+  hash: z.string().optional(),
+});
+
+export type WorkspaceFilePathPart = z.infer<typeof WorkspaceFilePathPartSchema>;
 
 /**
  * 目前 ai4sales 暂时用不到 mentions / MCP，先用 any 占位，

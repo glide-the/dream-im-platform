@@ -162,3 +162,163 @@ AGENT_CWD=/data/workspaces (生产环境)
             └── research-tools/    ← 支持文件夹
                 └── web-search.md
 ```
+
+---
+
+## 会话输入框上传与工作空间同步（新增）
+
+### 触发方式
+
+会话输入框（`AIInputDock`）支持三种上传入口，并在 UI 中显示提示文案：
+
+- 点击选择文件（`+ Add`）
+- 拖拽文件到输入框区域
+- 粘贴文件（`Ctrl/Cmd + V`）
+
+### 保存路径规则
+
+输入框上传后会调用 `POST /api/workspace/files`（`path=files`），文件落盘到：
+
+`{AGENT_CWD}/{conversationId}/files/{finalName}`
+
+规则如下：
+
+- 始终写入工作空间 `files/` 目录
+- 文件名会做安全清洗（去除路径分隔符、控制字符等）
+- 同名冲突自动重命名（如 `report-1.pdf`、`report-2.pdf`）
+- 路径安全校验，禁止路径穿越
+- 上传限制：最大 `50MB`，并校验允许的 MIME 类型
+
+### Message Parts 协议新增字段
+
+在保留现有 `DocumentProcessingResult`（文本 preview part）的同时，新增 `workspace-file` part：
+
+```json
+{
+  "type": "workspace-file",
+  "fileName": "report.pdf",
+  "mimeType": "application/pdf",
+  "size": 123456,
+  "workspacePath": "files/report.pdf",
+  "savedAt": "2026-02-07T22:00:00.000Z",
+  "hash": "sha256-hex-optional"
+}
+```
+
+对应 schema 位于：`app/lib/chat-schema.ts` 的 `WorkspaceFilePathPartSchema`。
+
+### 错误处理
+
+文件同步失败时，接口返回统一错误结构：
+
+```json
+{
+  "error": "File MIME type is not allowed: application/x-msdownload",
+  "code": "MIME_TYPE_NOT_ALLOWED",
+  "details": {
+    "index": 0,
+    "fileName": "malware.exe",
+    "mimeType": "application/x-msdownload"
+  }
+}
+```
+
+常见错误码：
+
+- `INVALID_ATTACHMENT`
+- `INVALID_WORKSPACE_PATH`
+- `FILE_TOO_LARGE`
+- `MIME_TYPE_NOT_ALLOWED`
+- `DOWNLOAD_FAILED`
+- `WRITE_FAILED`
+- `INTERNAL_ERROR`
+
+### 请求/响应示例
+
+#### 1) 输入框上传到工作空间
+
+请求：
+
+`POST /api/workspace/files`（`multipart/form-data`）
+
+- `sessionId`: `conversationId`
+- `path`: `files`
+- `file`: 一个或多个文件
+
+响应：
+
+```json
+{
+  "uploaded": ["files/report.pdf"],
+  "files": [
+    {
+      "type": "workspace-file",
+      "fileName": "report.pdf",
+      "mimeType": "application/pdf",
+      "size": 123456,
+      "workspacePath": "files/report.pdf",
+      "savedAt": "2026-02-07T22:00:00.000Z",
+      "hash": "2cf24dba5fb0a30e26e83b2ac5..."
+    }
+  ]
+}
+```
+
+#### 2) 发送会话消息（带附件）
+
+请求体（节选）：
+
+```json
+{
+  "id": "conv_123",
+  "message": {
+    "id": "msg_1",
+    "role": "user",
+    "parts": [
+      { "type": "file", "url": "https://...", "filename": "report.pdf", "mediaType": "application/pdf" },
+      { "type": "text", "text": "请总结这个文件" }
+    ]
+  },
+  "attachments": [
+    {
+      "type": "file",
+      "url": "https://...",
+      "filename": "report.pdf",
+      "mediaType": "application/pdf",
+      "workspacePath": "files/report.pdf",
+      "savedAt": "2026-02-07T22:00:00.000Z",
+      "hash": "2cf24dba5fb0a30e26e83b2ac5..."
+    }
+  ]
+}
+```
+
+服务端会在用户消息 part 中注入：
+
+- 文档 ingestion 文本 part（既有）
+- `workspace-file` 路径描述 part（新增）
+
+### 上传到回写时序图
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant UI as AIInputDock
+    participant WAPI as /api/workspace/files
+    participant CAPI as /api/claude-agent
+    participant LIB as chat-attachment-processing/workspace-file-sync
+    participant DISK as Workspace FS
+
+    U->>UI: 点击/拖拽/粘贴文件
+    UI->>WAPI: POST multipart(sessionId, path=files, file)
+    WAPI->>LIB: saveBufferToWorkspaceFiles()
+    LIB->>DISK: 写入 {cid}/files/{finalName}
+    DISK-->>WAPI: savedPath + hash
+    WAPI-->>UI: uploaded + files(metadata)
+
+    U->>UI: 发送消息
+    UI->>CAPI: POST /api/claude-agent (attachments)
+    CAPI->>LIB: processChatAttachmentsForMessage()
+    LIB-->>CAPI: ingestion preview parts + workspace-file parts
+    CAPI-->>UI: 流式响应（message parts）
+```

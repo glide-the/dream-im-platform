@@ -19,6 +19,7 @@ interface ChatPanelProps {
   className?: string;
   inputPlaceholder?: string;
   queuedPrompt?: string;
+  queuedAttachments?: Attachment[];
   queuedPromptNonce?: number;
   openFileDialogSignal?: number;
 }
@@ -41,6 +42,7 @@ export default function ChatPanel({
   className,
   inputPlaceholder = "Press i chat",
   queuedPrompt,
+  queuedAttachments = [],
   queuedPromptNonce,
   openFileDialogSignal,
 }: ChatPanelProps) {
@@ -74,6 +76,10 @@ export default function ChatPanel({
           url: file.url!,
           mediaType: file.type,
           filename: file.name,
+          size: file.size,
+          workspacePath: file.workspacePath,
+          savedAt: file.savedAt,
+          hash: file.hash,
         }));
 
         const requestBody: ChatApiSchemaRequestBody = {
@@ -114,19 +120,36 @@ export default function ChatPanel({
 
   useEffect(() => {
     if (!queuedPromptNonce || queuedPromptNonce === lastQueuedNonceRef.current) return;
-    if (!queuedPrompt?.trim()) return;
+    if (!queuedPrompt?.trim() && queuedAttachments.length === 0) return;
     lastQueuedNonceRef.current = queuedPromptNonce;
 
     void (async () => {
       setCurrentToolChoice("auto");
       pendingDataRef.current = {
-        rawAttachments: [],
+        rawAttachments: queuedAttachments,
         contextCustomerIds: contextCustomerId ? [contextCustomerId] : contextCustomers.map((c) => c.id),
         toolChoice: "auto",
       };
-      await sendMessage({ role: "user", parts: [{ type: "text", text: queuedPrompt } as TextUIPart] });
+
+      const validFiles = queuedAttachments.filter((file) => file.url);
+      const queuedMessageParts: Array<FileUIPart | TextUIPart> = validFiles.map((file) => ({
+        type: "file",
+        url: file.url!,
+        mediaType: file.type,
+        filename: file.name,
+      } as FileUIPart));
+
+      if (queuedPrompt?.trim()) {
+        queuedMessageParts.push({
+          type: "text",
+          text: queuedPrompt.trim(),
+        } as TextUIPart);
+      }
+
+      if (queuedMessageParts.length === 0) return;
+      await sendMessage({ role: "user", parts: queuedMessageParts });
     })();
-  }, [contextCustomerId, contextCustomers, queuedPrompt, queuedPromptNonce, sendMessage]);
+  }, [contextCustomerId, contextCustomers, queuedAttachments, queuedPrompt, queuedPromptNonce, sendMessage]);
 
   const chatLoading = status === "streaming" || status === "submitted" || isLoading || isConversationLoading;
 
@@ -188,6 +211,7 @@ export default function ChatPanel({
           placeholder={inputPlaceholder}
           loading={chatLoading}
           onStop={status === "streaming" ? stop : undefined}
+          workspaceSessionId={threadId}
         />
       </div>
     </div>

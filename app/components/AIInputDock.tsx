@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   type ChangeEvent,
+  type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
 } from "react";
@@ -32,6 +33,10 @@ export interface UploadedFile {
   isUploading?: boolean;
   abortController?: AbortController;
   file?: File;
+  workspacePath?: string;
+  savedAt?: string;
+  hash?: string;
+  uploadSource?: "click" | "paste" | "drag";
 }
 
 export interface Attachment {
@@ -39,6 +44,10 @@ export interface Attachment {
   type: string;
   size: number;
   url?: string;
+  workspacePath?: string;
+  savedAt?: string;
+  hash?: string;
+  uploadSource?: "click" | "paste" | "drag";
 }
 
 export function toAttachment(file: UploadedFile): Attachment {
@@ -47,6 +56,10 @@ export function toAttachment(file: UploadedFile): Attachment {
     type: file.mimeType,
     size: file.size,
     url: file.url,
+    workspacePath: file.workspacePath,
+    savedAt: file.savedAt,
+    hash: file.hash,
+    uploadSource: file.uploadSource,
   };
 }
 
@@ -75,6 +88,7 @@ interface AIInputDockProps {
   openFileDialogSignal?: number;
   onStop?: () => void;
   mode?: AIInputDockMode;
+  workspaceSessionId?: string;
 }
 
 let fileDialogOpenLocked = false;
@@ -130,6 +144,7 @@ export default function AIInputDock({
   openFileDialogSignal,
   onStop,
   mode = "simple",
+  workspaceSessionId,
 }: AIInputDockProps) {
   const [query, setQuery] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -158,9 +173,57 @@ export default function AIInputDock({
     openAttachmentDialog();
   }, [openAttachmentDialog, openFileDialogSignal]);
 
+  const syncFileToWorkspace = useCallback(
+    async (file: File) => {
+      if (!workspaceSessionId) return undefined;
+
+      const formData = new FormData();
+      formData.set("sessionId", workspaceSessionId);
+      formData.set("path", "files");
+      formData.append("file", file);
+
+      const response = await fetch("/api/workspace/files", {
+        method: "POST",
+        body: formData,
+      });
+      const responseBody = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+        uploaded?: string[];
+        files?: Array<{
+          workspacePath: string;
+          savedAt: string;
+          hash?: string;
+        }>;
+      };
+
+      if (!response.ok) {
+        const message = responseBody.error || "工作空间文件同步失败";
+        throw new Error(responseBody.code ? `${message} (${responseBody.code})` : message);
+      }
+
+      const metadata = responseBody.files?.[0];
+      if (metadata?.workspacePath) {
+        return metadata;
+      }
+
+      const fallbackPath = responseBody.uploaded?.[0];
+      if (!fallbackPath) {
+        throw new Error("工作空间文件同步成功但未返回文件路径");
+      }
+
+      return {
+        workspacePath: fallbackPath,
+        savedAt: new Date().toISOString(),
+      };
+    },
+    [workspaceSessionId],
+  );
+
   const uploadFileToStorage = useCallback(
     async (fileId: string, file: File) => {
       try {
+        const workspaceMetadata = await syncFileToWorkspace(file);
         const result = await upload(file, {
           filename: file.name,
           contentType: file.type || "application/octet-stream",
@@ -182,7 +245,17 @@ export default function AIInputDock({
 
         setUploadedFiles((prev) =>
           prev.map((f) =>
-            f.id === fileId ? { ...f, url: result.url, progress: 100, isUploading: false } : f,
+            f.id === fileId
+              ? {
+                  ...f,
+                  url: result.url,
+                  progress: 100,
+                  isUploading: false,
+                  workspacePath: workspaceMetadata?.workspacePath,
+                  savedAt: workspaceMetadata?.savedAt,
+                  hash: workspaceMetadata?.hash,
+                }
+              : f,
           ),
         );
       } catch (err) {
@@ -198,11 +271,11 @@ export default function AIInputDock({
         setTimeout(() => setUploadError(null), 5000);
       }
     },
-    [upload],
+    [syncFileToWorkspace, upload],
   );
 
   const handleFiles = useCallback(
-    (files: FileList | null) => {
+    (files: FileList | null, uploadSource: "click" | "paste" | "drag") => {
       if (!files || files.length === 0) return;
 
       const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -229,6 +302,7 @@ export default function AIInputDock({
           isUploading: true,
           abortController: new AbortController(),
           file,
+          uploadSource,
         });
         filesToUpload.push({ id: fileId, file });
       }
@@ -257,7 +331,7 @@ export default function AIInputDock({
 
   const handleFileInputChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      handleFiles(event.target.files);
+      handleFiles(event.target.files, "click");
       event.target.value = "";
     },
     [handleFiles],
@@ -280,7 +354,19 @@ export default function AIInputDock({
       event.preventDefault();
       event.stopPropagation();
       setIsDragOver(false);
-      handleFiles(event.dataTransfer.files);
+      handleFiles(event.dataTransfer.files, "drag");
+    },
+    [handleFiles],
+  );
+
+  const handlePaste = useCallback(
+    (event: ClipboardEvent<HTMLDivElement>) => {
+      const clipboardFiles = event.clipboardData?.files;
+      if (!clipboardFiles || clipboardFiles.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      handleFiles(clipboardFiles, "paste");
     },
     [handleFiles],
   );
@@ -333,6 +419,7 @@ export default function AIInputDock({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      onPaste={handlePaste}
     >
       <input
         ref={fileInputRef}
@@ -408,11 +495,10 @@ export default function AIInputDock({
         </div>
       )}
 
-      {mode === "full" && (
-        <div className="mb-2 flex items-center">
-          <span className="ml-auto text-xs text-text-tertiary">⌘/Ctrl + Enter 发送</span>
-        </div>
-      )}
+      <div className="mb-2 flex items-center justify-between gap-3 text-xs text-text-tertiary">
+        <span>上传方式：粘贴 (Ctrl/Cmd + V) · 拖拽 · 点击选择</span>
+        {mode === "full" && <span>⌘/Ctrl + Enter 发送</span>}
+      </div>
 
       <input
         id="chat-input"
