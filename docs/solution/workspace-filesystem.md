@@ -53,9 +53,10 @@
 |------|------|
 | **用途** | 存放对话专属的 Claude Code skills 文件 |
 | **写入者** | 用户手动放置、Agent 在对话中动态生成 |
-| **读取者** | Claude Code（通过 `.claude/skills/` 软链接间接读取） |
-| **同步机制** | `syncSkillsSymlinks()` 自动创建软链接到项目级 `.claude/skills/` |
-| **命名约定** | 软链接格式：`{sessionId}--{filename}` |
+| **读取者** | Claude SDK（通过 `{workspace}/.claude/skills/` 软链接间接读取） |
+| **同步机制** | `syncSkillsSymlinks()` 自动创建软链接到工作空间 `.claude/skills/` |
+| **命名约定** | 软链接名称与源文件/文件夹同名（工作空间隔离，无需前缀） |
+| **支持类型** | 文件和文件夹均可软链接 |
 | **生命周期** | 随对话存在；过期链接自动清理 |
 
 ### 3.4 `.claude/` — Claude 配置区
@@ -73,38 +74,45 @@
 
 ### 4.1 背景
 
-Claude Code 只从以下两个**固定位置**读取 skills：
-- 项目级：`{project_root}/.claude/skills/`
-- 用户级：`~/.claude/skills/`
+Claude SDK 被调用时设置 `cwd = workspacePath` 且 `settingSources: ["project"]`，
+因此它从 `{workspacePath}/.claude/skills/` 读取 skills。
 
-官方没有提供修改 skills 搜索路径的配置。
+每个对话工作空间在初始化时已将项目根的 `.claude/` 复制到 `{workspace}/.claude/`，
+所以我们只需将 skills 链接到 **工作空间内部** 的 `.claude/skills/` 即可。
 
 ### 4.2 方案
 
-我们在每个对话工作空间创建 `skills/` 目录，允许用户和 Agent 自由放入 skill 文件（`.md` 格式）。然后通过 `syncSkillsSymlinks()` 函数，将这些文件**软链接**到项目级 `.claude/skills/` 目录。
+在每个工作空间创建 `skills/` 目录（用户友好的顶层位置），然后通过 `syncSkillsSymlinks()`
+将其中的**文件和文件夹**软链接到同一工作空间的 `.claude/skills/`。
 
 ```
-工作空间:   agent-workspaces/{sessionId}/skills/research.md
+工作空间:   {workspace}/skills/research.md
                           ↓ symlink
-项目级:     .claude/skills/{sessionId}--research.md
+Claude读取:  {workspace}/.claude/skills/research.md
+
+工作空间:   {workspace}/skills/analysis-tools/
+                          ↓ symlink
+Claude读取:  {workspace}/.claude/skills/analysis-tools/
 ```
 
-### 4.3 命名空间隔离
+### 4.3 隔离机制
 
-多个对话可能有同名 skill 文件。为避免冲突，软链接名称以 `{sessionId}--` 为前缀：
+每个对话工作空间是完全独立的目录，无需 sessionId 前缀区分：
 
 ```
-会话 A:  chat_abc123/skills/analysis.md  → .claude/skills/chat_abc123--analysis.md
-会话 B:  chat_def456/skills/analysis.md  → .claude/skills/chat_def456--analysis.md
+会话 A:  chat_abc123/skills/analysis.md  → chat_abc123/.claude/skills/analysis.md
+会话 B:  chat_def456/skills/analysis.md  → chat_def456/.claude/skills/analysis.md
 ```
+
+两者互不影响。
 
 ### 4.4 生命周期管理
 
 | 事件 | 行为 |
 |------|------|
 | 工作空间初始化 | 扫描 `skills/` 并创建软链接 |
-| Skill 文件新增 | 下次 `syncSkillsSymlinks()` 调用时自动链接 |
-| Skill 文件删除 | `cleanStaleSkillSymlinks()` 自动清理失效链接 |
+| Skill 文件新增 | 下次 `syncSkillsSymlinks()` 调用时自动链接（写入 skills/ 自动触发） |
+| Skill 文件删除 | `cleanStaleSkillSymlinks()` 自动清理失效链接（删除 skills/ 自动触发） |
 | 对话删除 | 工作空间目录被删除后，源文件消失，下次同步时清理链接 |
 
 ### 4.5 API 导出
@@ -139,9 +147,10 @@ if (!resolvedPath.startsWith(resolvedWorkspace)) {
 
 ### 软链接安全
 
-- 软链接只指向工作空间 `skills/` 目录内的文件
-- 仅创建到项目级 `.claude/skills/` 的链接，不触碰用户级 `~/.claude/`
-- 跳过 dotfiles（`.` 开头的文件）和子目录
+- 软链接只指向同一工作空间 `skills/` 目录内的文件和文件夹
+- 链接目标始终在工作空间 `.claude/skills/` 内，不触碰项目根或用户级 `~/.claude/`
+- 跳过 dotfiles/dotfolders（`.` 开头的条目）
+- 支持文件和文件夹两种类型的软链接
 
 ---
 

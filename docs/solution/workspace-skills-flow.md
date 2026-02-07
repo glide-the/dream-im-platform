@@ -26,9 +26,9 @@ flowchart TD
     H --> H4["复制 .claude/ 到工作空间"]
     H --> H5["复制 .mcp.json 到工作空间"]
     H3 --> H6["syncSkillsSymlinks()"]
-    H6 --> H7["扫描 skills/ 中的文件"]
-    H7 --> H8["为每个 skill 文件创建软链接"]
-    H8 --> H9[".claude/skills/{sessionId}--{filename}"]
+    H6 --> H7["扫描 skills/ 中的文件和文件夹"]
+    H7 --> H8["为每个条目创建软链接"]
+    H8 --> H9["{workspace}/.claude/skills/{name}"]
     H6 --> H10["清理过期软链接"]
 
     H --> I
@@ -58,16 +58,16 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    subgraph 工作空间
-        WS["workspace/{sessionId}/skills/"]
+    subgraph "workspace/{sessionId}/"
+        WS["skills/"]
         S1["my-skill.md"]
-        S2["research.md"]
+        S2["research-tools/"]
     end
 
-    subgraph 项目级 Claude Skills
-        PS[".claude/skills/"]
-        L1["{sessionId}--my-skill.md → symlink"]
-        L2["{sessionId}--research.md → symlink"]
+    subgraph "workspace/{sessionId}/.claude/"
+        PS["skills/"]
+        L1["my-skill.md → symlink"]
+        L2["research-tools/ → symlink"]
     end
 
     WS --> S1
@@ -81,23 +81,27 @@ flowchart LR
 
 ### 为什么用软链接？
 
-Claude Code 官方只认两个固定位置的 skills：
-- **项目级**：`{project}/.claude/skills/`
-- **用户级**：`~/.claude/skills/`
+Claude SDK 被调用时设置 `cwd = workspacePath` 且 `settingSources: ["project"]`，
+因此 Claude 从 `{workspacePath}/.claude/skills/` 读取 skills。
 
-官方 **没有** 提供修改 skills 根目录的配置开关。因此我们采用软链接策略：
+我们让用户/Agent 在更直观的 `{workspace}/skills/` 目录操作，然后自动软链接到
+`{workspace}/.claude/skills/` 供 Claude 发现。
 
-1. 每个对话工作空间自带 `skills/` 目录，用户/Agent 可自由写入
-2. `syncSkillsSymlinks()` 自动将这些文件软链接到项目级 `.claude/skills/`
-3. 链接命名为 `{sessionId}--{filename}`，避免多对话间冲突
-4. 每次同步时清理已失效的过期链接
+**关键优势**：
+1. 每个对话工作空间完全隔离，无命名冲突
+2. 同时支持**文件和文件夹**软链接
+3. 无需 sessionId 前缀 — 工作空间本身就是隔离边界
+4. 每次同步自动清理失效的链接
 
 ### 同步触发时机
 
 | 时机 | 触发函数 | 说明 |
 |------|----------|------|
 | 工作空间初始化 | `initWorkspace()` → `syncSkillsSymlinks()` | 首次创建时自动同步 |
-| 手动调用 | `syncSkillsSymlinks(workspacePath)` | 可在文件上传后主动触发 |
+| 访问已有工作空间 | `getOrCreateWorkspace()` → `syncSkillsSymlinks()` | 每次访问重新同步 |
+| 写入 skills/ | `writeWorkspaceFile()` → `syncSkillsSymlinks()` | 上传 skill 文件后自动同步 |
+| 删除 skills/ | `deleteWorkspaceFile()` → `syncSkillsSymlinks()` | 删除后清理链接 |
+| 移动涉及 skills/ | `moveWorkspaceFile()` → `syncSkillsSymlinks()` | 移动后更新链接 |
 
 ---
 
@@ -145,11 +149,16 @@ sequenceDiagram
 
 ```
 AGENT_CWD=/data/workspaces (生产环境)
-  └── {conversationId}/
-      ├── .claude/          ← 从项目根复制
-      ├── .mcp.json         ← 从项目根复制
-      ├── files/            ← 用户上传 + Agent 生成
-      ├── logs/             ← Agent 日志
-      └── skills/           ← 对话级 skills
-            └── *.md        → symlink 到 .claude/skills/{sessionId}--*.md
+  └── {conversationId}/            ← Claude SDK cwd
+      ├── .claude/                 ← 从项目根复制
+      │   └── skills/              ← 软链接目标目录
+      │       ├── my-skill.md      → symlink → skills/my-skill.md
+      │       └── research-tools/  → symlink → skills/research-tools/
+      ├── .mcp.json                ← 从项目根复制
+      ├── files/                   ← 用户上传 + Agent 生成
+      ├── logs/                    ← Agent 日志
+      └── skills/                  ← 对话级 skills（用户操作此目录）
+            ├── my-skill.md
+            └── research-tools/    ← 支持文件夹
+                └── web-search.md
 ```

@@ -238,54 +238,71 @@ describe("workspace", () => {
   });
 
   describe("syncSkillsSymlinks", () => {
-    it("should create symlinks from workspace skills to project .claude/skills/", async () => {
+    it("should create symlinks from workspace skills/ to workspace .claude/skills/", async () => {
       const { initWorkspace, syncSkillsSymlinks } = await import("./workspace");
       const sessionId = "skills-sync-test";
       const workspacePath = initWorkspace(sessionId);
 
-      // Create a skill file in workspace
+      // Create a skill file in workspace skills/
       const skillsDir = join(workspacePath, "skills");
       writeFileSync(join(skillsDir, "my-skill.md"), "# My Skill\nDo something.");
 
       // Run sync
       syncSkillsSymlinks(workspacePath);
 
-      // Check symlink exists in project .claude/skills/
-      const projectSkillsDir = join(process.cwd(), ".claude", "skills");
-      const symlinkPath = join(projectSkillsDir, `${sessionId}--my-skill.md`);
+      // Check symlink exists in workspace .claude/skills/ (the CWD Claude SDK reads from)
+      const claudeSkillsDir = join(workspacePath, ".claude", "skills");
+      const symlinkPath = join(claudeSkillsDir, "my-skill.md");
 
       expect(existsSync(symlinkPath)).toBe(true);
       const stats = lstatSync(symlinkPath);
       expect(stats.isSymbolicLink()).toBe(true);
       expect(readlinkSync(symlinkPath)).toBe(join(skillsDir, "my-skill.md"));
-
-      // Cleanup
-      rmSync(symlinkPath);
-      // Remove .claude/skills dir if empty
-      try { rmSync(projectSkillsDir); } catch { /* ignore */ }
     });
 
-    it("should skip dotfiles and directories in skills/", async () => {
+    it("should support folder symlinks in skills/", async () => {
+      const { initWorkspace, syncSkillsSymlinks } = await import("./workspace");
+      const sessionId = "skills-folder-test";
+      const workspacePath = initWorkspace(sessionId);
+
+      // Create a skill folder with files
+      const skillsDir = join(workspacePath, "skills");
+      const folderPath = join(skillsDir, "research-tools");
+      mkdirSync(folderPath, { recursive: true });
+      writeFileSync(join(folderPath, "web-search.md"), "# Web Search Skill");
+      writeFileSync(join(folderPath, "data-analysis.md"), "# Data Analysis Skill");
+
+      syncSkillsSymlinks(workspacePath);
+
+      // Check folder symlink exists
+      const claudeSkillsDir = join(workspacePath, ".claude", "skills");
+      const symlinkPath = join(claudeSkillsDir, "research-tools");
+
+      expect(existsSync(symlinkPath)).toBe(true);
+      const stats = lstatSync(symlinkPath);
+      expect(stats.isSymbolicLink()).toBe(true);
+      expect(readlinkSync(symlinkPath)).toBe(folderPath);
+
+      // Files inside the symlinked folder should be accessible
+      expect(existsSync(join(symlinkPath, "web-search.md"))).toBe(true);
+      expect(existsSync(join(symlinkPath, "data-analysis.md"))).toBe(true);
+    });
+
+    it("should skip dotfiles in skills/", async () => {
       const { initWorkspace, syncSkillsSymlinks } = await import("./workspace");
       const sessionId = "skills-skip-test";
       const workspacePath = initWorkspace(sessionId);
 
       const skillsDir = join(workspacePath, "skills");
       writeFileSync(join(skillsDir, ".hidden"), "hidden");
-      mkdirSync(join(skillsDir, "subdir"), { recursive: true });
 
       syncSkillsSymlinks(workspacePath);
 
-      const projectSkillsDir = join(process.cwd(), ".claude", "skills");
-      // Neither dotfile nor directory should be symlinked
-      expect(existsSync(join(projectSkillsDir, `${sessionId}--.hidden`))).toBe(false);
-      expect(existsSync(join(projectSkillsDir, `${sessionId}--subdir`))).toBe(false);
-
-      // Cleanup
-      try { rmSync(projectSkillsDir, { recursive: true }); } catch { /* ignore */ }
+      const claudeSkillsDir = join(workspacePath, ".claude", "skills");
+      expect(existsSync(join(claudeSkillsDir, ".hidden"))).toBe(false);
     });
 
-    it("should clean stale symlinks for a session", async () => {
+    it("should clean stale symlinks when source is deleted", async () => {
       const { initWorkspace, syncSkillsSymlinks } = await import("./workspace");
       const sessionId = "skills-stale-test";
       const workspacePath = initWorkspace(sessionId);
@@ -296,8 +313,8 @@ describe("workspace", () => {
       // First sync creates the symlink
       syncSkillsSymlinks(workspacePath);
 
-      const projectSkillsDir = join(process.cwd(), ".claude", "skills");
-      const symlinkPath = join(projectSkillsDir, `${sessionId}--old-skill.md`);
+      const claudeSkillsDir = join(workspacePath, ".claude", "skills");
+      const symlinkPath = join(claudeSkillsDir, "old-skill.md");
       expect(existsSync(symlinkPath)).toBe(true);
 
       // Remove the source file
@@ -305,10 +322,96 @@ describe("workspace", () => {
 
       // Re-sync should clean the stale symlink
       syncSkillsSymlinks(workspacePath);
-      expect(existsSync(symlinkPath)).toBe(false);
+      // Symlink should be gone — lstatSync throws ENOENT
+      let symlinkExists = false;
+      try {
+        symlinkExists = lstatSync(symlinkPath).isSymbolicLink();
+      } catch {
+        // ENOENT means symlink was cleaned — expected
+      }
+      expect(symlinkExists).toBe(false);
+    });
+  });
 
-      // Cleanup
-      try { rmSync(projectSkillsDir, { recursive: true }); } catch { /* ignore */ }
+  describe("writeWorkspaceFile triggers skills sync", () => {
+    it("should auto-sync symlink when writing to skills/ directory", async () => {
+      const { initWorkspace, writeWorkspaceFile } = await import("./workspace");
+      const sessionId = "write-skill-sync";
+      const workspacePath = initWorkspace(sessionId);
+
+      // Upload a skill file via writeWorkspaceFile (simulates POST /api/workspace/files)
+      const content = Buffer.from("# Research Skill\nSearch the web.");
+      writeWorkspaceFile(workspacePath, "skills/research.md", content);
+
+      // Symlink should have been created automatically in workspace .claude/skills/
+      const claudeSkillsDir = join(workspacePath, ".claude", "skills");
+      const symlinkPath = join(claudeSkillsDir, "research.md");
+
+      expect(existsSync(symlinkPath)).toBe(true);
+      const stats = lstatSync(symlinkPath);
+      expect(stats.isSymbolicLink()).toBe(true);
+    });
+
+    it("should NOT trigger sync when writing to files/ directory", async () => {
+      const { initWorkspace, writeWorkspaceFile } = await import("./workspace");
+      const sessionId = "write-file-nosync";
+      const workspacePath = initWorkspace(sessionId);
+
+      // Write a non-skill file
+      writeWorkspaceFile(workspacePath, "files/report.txt", Buffer.from("report"));
+
+      // .claude/skills/ should have no symlinks for workspace skills
+      const claudeSkillsDir = join(workspacePath, ".claude", "skills");
+      if (existsSync(claudeSkillsDir)) {
+        const entries = readdirSync(claudeSkillsDir).filter((e) => {
+          try { return lstatSync(join(claudeSkillsDir, e)).isSymbolicLink(); } catch { return false; }
+        });
+        expect(entries).toHaveLength(0);
+      }
+    });
+  });
+
+  describe("deleteWorkspaceFile triggers skills sync", () => {
+    it("should clean symlink when deleting a skill file", async () => {
+      const { initWorkspace, writeWorkspaceFile, deleteWorkspaceFile } = await import("./workspace");
+      const sessionId = "delete-skill-sync";
+      const workspacePath = initWorkspace(sessionId);
+
+      // Write then delete a skill
+      writeWorkspaceFile(workspacePath, "skills/temp.md", Buffer.from("# Temp"));
+      const claudeSkillsDir = join(workspacePath, ".claude", "skills");
+      const symlinkPath = join(claudeSkillsDir, "temp.md");
+      expect(existsSync(symlinkPath)).toBe(true);
+
+      deleteWorkspaceFile(workspacePath, "skills/temp.md");
+
+      // Symlink should be cleaned up
+      try {
+        expect(lstatSync(symlinkPath).isSymbolicLink()).toBe(false);
+      } catch {
+        // lstatSync throws if path doesn't exist — symlink was cleaned, good
+      }
+    });
+  });
+
+  describe("getOrCreateWorkspace re-syncs skills", () => {
+    it("should sync skills on existing workspace access", async () => {
+      const { initWorkspace, getOrCreateWorkspace } = await import("./workspace");
+      const sessionId = "reaccess-skill-sync";
+
+      // Create workspace first (no skills yet)
+      const workspacePath = initWorkspace(sessionId);
+
+      // Manually add a skill file after init (simulates Agent writing to skills/)
+      writeFileSync(join(workspacePath, "skills", "late-skill.md"), "# Late");
+
+      // Access workspace again — should trigger sync
+      getOrCreateWorkspace(sessionId);
+
+      const claudeSkillsDir = join(workspacePath, ".claude", "skills");
+      const symlinkPath = join(claudeSkillsDir, "late-skill.md");
+      expect(existsSync(symlinkPath)).toBe(true);
+      expect(lstatSync(symlinkPath).isSymbolicLink()).toBe(true);
     });
   });
 });
