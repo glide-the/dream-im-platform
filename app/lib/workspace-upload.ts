@@ -55,11 +55,7 @@ interface FileSystemDirectoryEntryLike extends FileSystemEntryLike {
 }
 
 interface DataTransferItemWithEntry extends DataTransferItem {
-  webkitGetAsEntry?: () => FileSystemEntryLike | null;
-}
-
-interface FileWithWebkitRelativePath extends File {
-  webkitRelativePath?: string;
+  webkitGetAsEntry: () => FileSystemEntry | null;
 }
 
 const DEFAULT_YIELD_EVERY = 40;
@@ -112,8 +108,7 @@ export function normalizeUploadRelativePath(rawPath: string): string {
 }
 
 function getFileRelativePath(file: File, fallbackPath: string): string {
-  const webkitRelativePath = (file as FileWithWebkitRelativePath)
-    .webkitRelativePath;
+  const webkitRelativePath = file.webkitRelativePath;
   if (typeof webkitRelativePath === "string" && webkitRelativePath.trim()) {
     const normalized = normalizeUploadRelativePath(webkitRelativePath);
     if (normalized) {
@@ -243,7 +238,7 @@ export async function collectUploadItemsFromFileSelection(
 function hasWebkitEntrySupport(
   item: DataTransferItem,
 ): item is DataTransferItemWithEntry {
-  return typeof (item as DataTransferItemWithEntry).webkitGetAsEntry === "function";
+  return typeof (item as Partial<DataTransferItemWithEntry>).webkitGetAsEntry === "function";
 }
 
 function readFileEntry(entry: FileSystemFileEntryLike): Promise<File> {

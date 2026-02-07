@@ -12,6 +12,7 @@ import {
   type ChatApiSchemaRequestBody,
   type ChatAttachment,
   type ChatMetadata,
+  type WorkspaceFilePathPart,
   DEFAULT_CHAT_MODEL,
   ManualToolConfirmTag,
   MANUAL_REJECT_RESPONSE_PROMPT,
@@ -40,6 +41,8 @@ import { extractTextFromParts } from "../../lib/message-parts";
 export const runtime = "nodejs";
 
 const DEFAULT_MAX_TURNS = Number(process.env.MAX_TURNS) || 10;
+type UIMessagePart = NonNullable<UIMessage["parts"]>[number];
+type PersistableUIMessagePart = UIMessagePart | WorkspaceFilePathPart;
 
 // Check if a part type is a tool type (starts with "tool-" or is "dynamic-tool")
 function isToolPartType(type: string): boolean {
@@ -58,7 +61,7 @@ function isToolPartType(type: string): boolean {
  * Reference: cgoinglove/better-chatbot src/app/api/chat/shared.chat.ts - convertToSavePart
  */
 function convertToStorageParts(
-  parts: UIMessage["parts"] | undefined
+  parts: ReadonlyArray<PersistableUIMessagePart> | undefined
 ): MessagePart[] {
   if (!parts || !Array.isArray(parts)) return [];
 
