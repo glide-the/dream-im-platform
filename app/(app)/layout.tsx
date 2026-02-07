@@ -34,7 +34,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [fileSidebarOpen]);
 
   return (
-    <div className="flex h-screen bg-bg-primary">
+    <div className="flex h-[100dvh] min-h-screen overflow-hidden bg-bg-primary">
       <VerticalNav
         onToggleSidebar={handleToggleSidebar}
         onToggleFileSidebar={handleToggleFileSidebar}

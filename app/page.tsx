@@ -40,13 +40,15 @@ export default function HomePage() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === "i") {
+      const key = typeof event.key === "string" ? event.key : "";
+
+      if (key.toLowerCase() === "i") {
         if (isTypingTarget(document.activeElement) || isTypingTarget(event.target)) return;
         event.preventDefault();
         const chatInput = document.getElementById("chat-input") as HTMLInputElement | null;
         chatInput?.focus();
       }
-      if (event.key === "Escape") {
+      if (key === "Escape") {
         setSidebarOpen(false);
       }
     };
@@ -102,7 +104,7 @@ export default function HomePage() {
   }, [fileSidebarOpen]);
 
   return (
-    <div className="flex h-screen bg-bg-primary">
+    <div className="flex h-[100dvh] min-h-screen overflow-hidden bg-bg-primary">
       <VerticalNav
         onToggleSidebar={handleToggleSidebar}
         onToggleFileSidebar={handleToggleFileSidebar}
@@ -114,7 +116,14 @@ export default function HomePage() {
         onClose={() => setFileSidebarOpen(false)}
       />
 
-      <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden px-4 py-6 md:px-12">
+      <main
+        className={[
+          "flex h-full min-w-0 flex-1 flex-col overflow-hidden px-4 pt-6 md:px-12",
+          chatOpen
+            ? "pb-[env(safe-area-inset-bottom)]"
+            : "pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-6",
+        ].join(" ")}
+      >
         <div className="mb-4 flex items-center justify-between">
           <button className="rounded-lg border border-border bg-bg-surface px-3 py-2 text-text-primary md:hidden" onClick={() => setSidebarOpen(true)}>
             ☰ Menu
@@ -164,7 +173,7 @@ export default function HomePage() {
             </section>
           </div>
         ) : (
-          <section className="flex min-h-0 flex-1 animate-fadeUp">
+          <section className="flex min-h-0 flex-1 overflow-hidden animate-fadeUp">
             <ChatPanel
               key={threadId}
               threadId={threadId}

@@ -24,6 +24,8 @@ interface ChatPanelProps {
   openFileDialogSignal?: number;
 }
 
+const CHAT_DOCK_SAFE_AREA_CLASS_NAME = "pb-[calc(env(safe-area-inset-bottom)+0.5rem)]";
+
 function mapConversationToUiMessages(conversationMessages: ConversationMessage[]): UIMessage[] {
   return conversationMessages.map((msg) => ({
     id: msg.id,
@@ -179,13 +181,13 @@ export default function ChatPanel({
   }, [messages, status]);
 
   return (
-    <div className={`flex min-h-0 flex-col ${className ?? ""}`}>
-      <div ref={chatContainerRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-border bg-bg-surface p-4">
+    <div className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
+      <div ref={chatContainerRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-bg-surface p-4 pb-6">
         <ChatMessageList messages={messages} isLoading={chatLoading} error={error} addToolResult={addToolResult} shouldShowLoadingIndicator={shouldShowLoadingIndicator} />
         <div ref={bottomRef} aria-hidden="true" />
       </div>
 
-      <div className="sticky bottom-0 mx-auto mt-3 w-full max-w-3xl">
+      <div className={`relative z-10 mx-auto mt-3 w-full max-w-3xl shrink-0 ${CHAT_DOCK_SAFE_AREA_CLASS_NAME}`}>
         <AIInputDock
           contextCustomerId={contextCustomerId}
           contextCustomers={contextCustomers}
