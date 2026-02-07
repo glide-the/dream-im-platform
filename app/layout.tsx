@@ -1,25 +1,31 @@
 import React from "react";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { Noto_Sans_SC, Noto_Serif_SC, IBM_Plex_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { Providers } from "./app/providers";
 
-const notoSans = Noto_Sans_SC({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-body"
+const notoSans = localFont({
+  src: [
+    { path: "./fonts/NotoSansSC-400.ttf", weight: "400", style: "normal" },
+    { path: "./fonts/NotoSansSC-500.ttf", weight: "500", style: "normal" }
+  ],
+  variable: "--font-body",
+  display: "swap"
 });
 
-const notoSerif = Noto_Serif_SC({
-  subsets: ["latin"],
-  weight: ["600"],
-  variable: "--font-display"
+const notoSerif = localFont({
+  src: [{ path: "./fonts/NotoSerifSC-600.ttf", weight: "600", style: "normal" }],
+  variable: "--font-display",
+  display: "swap"
 });
 
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-mono"
+const plexMono = localFont({
+  src: [
+    { path: "./fonts/IBMPlexMono-400.ttf", weight: "400", style: "normal" },
+    { path: "./fonts/IBMPlexMono-500.ttf", weight: "500", style: "normal" }
+  ],
+  variable: "--font-mono",
+  display: "swap"
 });
 
 const themeColor = [
