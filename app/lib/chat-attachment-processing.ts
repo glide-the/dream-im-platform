@@ -4,7 +4,11 @@ import {
   buildDocumentIngestionPreviewParts,
   type DocumentProcessingResult,
 } from "./weknora";
-import { syncAttachmentsToWorkspaceFiles } from "./workspace-file-sync";
+import {
+  normalizeWorkspaceFileSyncError,
+  syncAttachmentsToWorkspaceFiles,
+  type WorkspaceFileSyncError,
+} from "./workspace-file-sync";
 
 export type AttachmentDerivedMessagePart =
   | { type: "text"; text: string }
@@ -24,6 +28,7 @@ export interface ProcessChatAttachmentsForMessageResult {
   ingestionPreviewParts: DocumentProcessingResult[];
   workspaceFilePathParts: WorkspaceFilePathPart[];
   messageParts: AttachmentDerivedMessagePart[];
+  workspaceSyncError?: WorkspaceFileSyncError;
 }
 
 function createCachedDownloader(downloadFile: (url: string) => Promise<Blob>) {
@@ -53,14 +58,21 @@ export async function processChatAttachmentsForMessage({
 
   const cachedDownloader = createCachedDownloader(downloadFile);
 
-  const [workspaceFilePathParts, ingestionPreviewParts] = await Promise.all([
-    syncAttachmentsToWorkspaceFiles({
+  // Keep preview-building call explicit to avoid accidental regression of the
+  // WeKnora ingestion path during refactors.
+  const ingestionPreviewParts = await buildPreviewParts(attachments, cachedDownloader);
+
+  let workspaceSyncError: WorkspaceFileSyncError | undefined;
+  let workspaceFilePathParts: WorkspaceFilePathPart[] = [];
+  try {
+    workspaceFilePathParts = await syncAttachmentsToWorkspaceFiles({
       workspacePath,
       attachments,
       downloadFile: cachedDownloader,
-    }),
-    buildPreviewParts(attachments, cachedDownloader),
-  ]);
+    });
+  } catch (error) {
+    workspaceSyncError = normalizeWorkspaceFileSyncError(error);
+  }
 
   const messageParts: AttachmentDerivedMessagePart[] = [
     ...ingestionPreviewParts.map((result) => ({
@@ -74,6 +86,7 @@ export async function processChatAttachmentsForMessage({
     ingestionPreviewParts,
     workspaceFilePathParts,
     messageParts,
+    workspaceSyncError,
   };
 }
 

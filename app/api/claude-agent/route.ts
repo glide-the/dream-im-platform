@@ -35,7 +35,6 @@ import {
   processChatAttachmentsForMessage,
 } from "../../lib/chat-attachment-processing";
 import { getOrCreateWorkspace } from "../../lib/workspace";
-import { normalizeWorkspaceFileSyncError } from "../../lib/workspace-file-sync";
 import { extractTextFromParts } from "../../lib/message-parts";
 
 export const runtime = "nodejs";
@@ -229,14 +228,6 @@ function internalServerError(message: string, code?: string, details?: unknown) 
   });
 }
 
-function serviceError(status: number, message: string, code?: string, details?: unknown) {
-  return errorResponse(status, {
-    error: message,
-    code,
-    details,
-  });
-}
-
 export async function POST(req: NextRequest) {
   // Parse and validate request body using Zod
   let body: ChatApiSchemaRequestBody;
@@ -273,36 +264,32 @@ export async function POST(req: NextRequest) {
     return internalServerError("Failed to initialize workspace");
   }
 
-  try {
-    const attachmentProcessingResult = await processChatAttachmentsForMessage({
-      attachments,
-      workspacePath: workspaceCwd,
-      downloadFile: async (url: string) => {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Failed to download file: ${response.status}`);
-        }
-        return response.blob();
-      },
-    });
+  const attachmentProcessingResult = await processChatAttachmentsForMessage({
+    attachments,
+    workspacePath: workspaceCwd,
+    downloadFile: async (url: string) => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.status}`);
+      }
+      return response.blob();
+    },
+  });
 
-    if (attachmentProcessingResult.messageParts.length > 0) {
-      uiMessage.parts = injectAttachmentMessageParts(
-        uiMessage.parts,
-        attachmentProcessingResult.messageParts
-      );
-      console.log(
-        `[Claude Agent API] Injected ${attachmentProcessingResult.ingestionPreviewParts.length} document previews and ${attachmentProcessingResult.workspaceFilePathParts.length} workspace file parts into message`
-      );
-    }
-  } catch (error) {
-    const normalizedError = normalizeWorkspaceFileSyncError(error);
-    console.error("[Claude Agent API] Attachment processing failed:", normalizedError);
-    return serviceError(
-      normalizedError.status,
-      normalizedError.message,
-      normalizedError.code,
-      normalizedError.details
+  if (attachmentProcessingResult.workspaceSyncError) {
+    console.warn(
+      "[Claude Agent API] Workspace file sync degraded; continuing with WeKnora context:",
+      attachmentProcessingResult.workspaceSyncError
+    );
+  }
+
+  if (attachmentProcessingResult.messageParts.length > 0) {
+    uiMessage.parts = injectAttachmentMessageParts(
+      uiMessage.parts,
+      attachmentProcessingResult.messageParts
+    );
+    console.log(
+      `[Claude Agent API] Injected ${attachmentProcessingResult.ingestionPreviewParts.length} document previews and ${attachmentProcessingResult.workspaceFilePathParts.length} workspace file parts into message`
     );
   }
 

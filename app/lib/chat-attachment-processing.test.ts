@@ -78,7 +78,7 @@ describe("chat attachment processing", () => {
     expect(injected[2]).toMatchObject({ type: "text", text: "用户消息" });
   });
 
-  it("throws clear error when attachment mime type is not allowed", async () => {
+  it("returns workspace sync error but keeps message flow when attachment mime type is not allowed", async () => {
     const workspacePath = initWorkspace("sync-fail");
     const attachments: ChatAttachment[] = [
       {
@@ -89,15 +89,18 @@ describe("chat attachment processing", () => {
       },
     ];
 
-    await expect(
-      processChatAttachmentsForMessage({
-        attachments,
-        workspacePath,
-        downloadFile: async () =>
-          new Blob(["binary"], { type: "application/x-msdownload" }),
-        buildPreviewParts: async () => [],
-      })
-    ).rejects.toMatchObject<Partial<WorkspaceFileSyncError>>({
+    const result = await processChatAttachmentsForMessage({
+      attachments,
+      workspacePath,
+      downloadFile: async () =>
+        new Blob(["binary"], { type: "application/x-msdownload" }),
+      buildPreviewParts: async () => [],
+    });
+
+    expect(result.ingestionPreviewParts).toEqual([]);
+    expect(result.workspaceFilePathParts).toEqual([]);
+    expect(result.messageParts).toEqual([]);
+    expect(result.workspaceSyncError).toMatchObject<Partial<WorkspaceFileSyncError>>({
       code: "MIME_TYPE_NOT_ALLOWED",
       status: 400,
     });
