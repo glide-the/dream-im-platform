@@ -184,7 +184,7 @@ export class ClaudeAgentRunner {
       toolChoice = "auto",
       abortController,
     } = opts;
-
+    const includePartialMessages = true;
     const messages: SDKMessage[] = [];
     let fullText = "";
     // In Claude Agent SDK, session_id and threadId are the same thing
@@ -311,7 +311,7 @@ export class ClaudeAgentRunner {
       ...(abortController ? { abortController } : {}),
       // Add canUseTool callback for manual confirmation mode
       ...(canUseTool ? { canUseTool } : {}),
-      includePartialMessages: true,
+      includePartialMessages: includePartialMessages,
     };
 
     try {
@@ -334,7 +334,7 @@ export class ClaudeAgentRunner {
         // Process message based on type
         await this.processMessage(message, callbacks, toolChoice, pendingToolCalls, (delta) => {
           fullText += delta;
-        }, true /* includePartialMessages: assistant 文本由 stream_event 输出，避免重复 */);
+        }, includePartialMessages);
       }
 
       // Call onTextDone if we accumulated any text
