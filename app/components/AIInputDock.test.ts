@@ -5,6 +5,7 @@ import AIInputDock from "./AIInputDock";
 import {
   runWithFileDialogTaskLock,
   shouldHandleOpenFileDialogSignal,
+  shouldShowUploadHint,
 } from "./AIInputDock";
 
 describe("shouldHandleOpenFileDialogSignal", () => {
@@ -37,6 +38,15 @@ describe("runWithFileDialogTaskLock", () => {
   });
 });
 
+describe("shouldShowUploadHint", () => {
+  it("shows upload hint only when query is empty and input is not focused", () => {
+    expect(shouldShowUploadHint("", false)).toBe(true);
+    expect(shouldShowUploadHint("", true)).toBe(false);
+    expect(shouldShowUploadHint(" ", false)).toBe(false);
+    expect(shouldShowUploadHint("hello", false)).toBe(false);
+  });
+});
+
 describe("AIInputDock mode rendering", () => {
   it("does not render legacy attachment submenu entries in simple mode", () => {
     const html = renderToStaticMarkup(
@@ -50,5 +60,17 @@ describe("AIInputDock mode rendering", () => {
     expect(html).not.toContain("上传图片");
     expect(html).not.toContain("拍照上传");
     expect(html).toContain("上传方式：粘贴 (Ctrl/Cmd + V) · 拖拽 · 点击选择");
+  });
+
+  it("renders textarea input without length cap", () => {
+    const html = renderToStaticMarkup(
+      createElement(AIInputDock, {
+        mode: "simple",
+        onSendMessage: () => undefined,
+      }),
+    );
+
+    expect(html).toContain("<textarea");
+    expect(html).not.toContain("maxlength=");
   });
 });

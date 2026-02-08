@@ -132,7 +132,17 @@ function revokeObjectPreviewUrl(url?: string): void {
   }
 }
 
-function shouldSendWithKeyboard(mode: AIInputDockMode, event: KeyboardEvent<HTMLInputElement>): boolean {
+const QUERY_INPUT_MAX_HEIGHT = 320;
+const QUERY_INPUT_MIN_HEIGHT = 72;
+
+export function shouldShowUploadHint(query: string, isInputFocused: boolean): boolean {
+  return query.length === 0 && !isInputFocused;
+}
+
+function shouldSendWithKeyboard(
+  mode: AIInputDockMode,
+  event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+): boolean {
   if (event.nativeEvent.isComposing) return false;
   if (mode === "full") {
     return shouldSendMessageOnKeyDown({
@@ -161,8 +171,10 @@ export default function AIInputDock({
   const [query, setQuery] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const queryInputRef = useRef<HTMLTextAreaElement>(null);
   const lastHandledOpenFileDialogSignalRef = useRef(0);
   const { upload, error: uploadHookError } = useFileUpload();
 
@@ -424,11 +436,25 @@ export default function AIInputDock({
   ]);
 
   const hasUploadingFiles = uploadedFiles.some((file) => file.isUploading);
+  const showUploadHint = shouldShowUploadHint(query, isInputFocused);
+
+  const updateQueryInputHeight = useCallback(() => {
+    const input = queryInputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    const nextHeight = Math.min(Math.max(input.scrollHeight, QUERY_INPUT_MIN_HEIGHT), QUERY_INPUT_MAX_HEIGHT);
+    input.style.height = `${nextHeight}px`;
+    input.style.overflowY = input.scrollHeight > QUERY_INPUT_MAX_HEIGHT ? "auto" : "hidden";
+  }, []);
+
+  useEffect(() => {
+    updateQueryInputHeight();
+  }, [query, updateQueryInputHeight]);
 
   return (
     <div
       data-mode={mode}
-      className={`${QUICK_INPUT_SHELL_CLASS_NAME} ${isDragOver ? "border-accent-orange bg-accent-orange-light" : ""}`}
+      className={`${QUICK_INPUT_SHELL_CLASS_NAME} w-full min-w-0 ${isDragOver ? "border-accent-orange bg-accent-orange-light" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -508,19 +534,31 @@ export default function AIInputDock({
         </div>
       )}
 
-      <div className="mb-2 flex items-center justify-between gap-3 text-xs text-text-tertiary">
-        <span>上传方式：粘贴 (Ctrl/Cmd + V) · 拖拽 · 点击选择</span>
-        {mode === "full" && <span>⌘/Ctrl + Enter 发送</span>}
-      </div>
+      {(showUploadHint || mode === "full") && (
+        <div className="mb-2 flex items-center gap-3 text-xs text-text-tertiary">
+          {showUploadHint && (
+            <span id="chat-upload-hint">上传方式：粘贴 (Ctrl/Cmd + V) · 拖拽 · 点击选择</span>
+          )}
+          {mode === "full" && <span className="ml-auto">⌘/Ctrl + Enter 发送</span>}
+        </div>
+      )}
 
-      <input
+      <textarea
         id="chat-input"
+        ref={queryInputRef}
         aria-label="聊天输入"
+        aria-describedby={showUploadHint ? "chat-upload-hint" : undefined}
         className={QUICK_INPUT_FIELD_CLASS_NAME}
-        maxLength={2000}
+        style={{ boxShadow: "none" }}
         placeholder={placeholder}
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        rows={1}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          updateQueryInputHeight();
+        }}
+        onFocus={() => setIsInputFocused(true)}
+        onBlur={() => setIsInputFocused(false)}
         disabled={disabled}
         onKeyDown={(event) => {
           if (!shouldSendWithKeyboard(mode, event)) return;
