@@ -71,7 +71,7 @@ services:
     networks:
       - ai4sales-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
       interval: 5s
       timeout: 5s
       retries: 10
