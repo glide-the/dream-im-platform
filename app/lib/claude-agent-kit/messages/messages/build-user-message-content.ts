@@ -98,7 +98,7 @@ export function buildUserMessageContent(
   const now = new Date();
   const effectiveCwd = runtimeContext?.cwd ?? process.cwd();
   const envLines = [
-    `Working directory: ${effectiveCwd}`,
+    `Working directory (workspace): ${effectiveCwd}`,
     `Date: ${now.toISOString()} (${now.toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})`,
     `Platform: ${process.platform} ${process.arch}`,
     `Node.js: ${process.version}`,
@@ -107,9 +107,25 @@ export function buildUserMessageContent(
     ...(runtimeContext?.threadId ? [`Thread ID: ${runtimeContext.threadId}`] : []),
     ...(runtimeContext?.resume ? ['Resumed conversation: yes'] : []),
   ];
+
+  const workspaceGuide = [
+    '',
+    'Workspace layout:',
+    '  files/   — User-uploaded files and working documents. Read/write freely.',
+    '  logs/    — Execution logs. Write logs here for traceability.',
+    '  skills/  — Reusable skill/prompt files. Files placed here are auto-synced',
+    '             to .claude/skills/ for discovery by the SDK.',
+    '',
+    'Rules:',
+    '- All file operations (read/write/create) MUST stay within the workspace directory.',
+    '- Do NOT access paths outside the workspace root.',
+    '- When creating output files, place them under files/ by default.',
+    '- Use relative paths from the workspace root when possible.',
+  ];
+
   blocks.push({
     type: 'text',
-    text: `<system_environment>\n${envLines.join('\n')}\n</system_environment>`,
+    text: `<system_environment>\n${envLines.join('\n')}\n${workspaceGuide.join('\n')}\n</system_environment>`,
   });
 
   // Always append the raw prompt text at the end.

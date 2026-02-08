@@ -130,6 +130,41 @@ describe("workspace", () => {
     });
   });
 
+  describe("readWorkspaceFileContent", () => {
+    it("reads a workspace file for download", async () => {
+      const { initWorkspace, readWorkspaceFileContent } = await import("./workspace");
+      const sessionId = "read-file";
+      const workspacePath = initWorkspace(sessionId);
+
+      writeFileSync(join(workspacePath, "files", "note.txt"), "hello");
+
+      const result = readWorkspaceFileContent(workspacePath, "files/note.txt");
+      expect(result.fileName).toBe("note.txt");
+      expect(result.size).toBe(5);
+      expect(result.content.toString("utf8")).toBe("hello");
+    });
+
+    it("throws for directory input", async () => {
+      const { initWorkspace, readWorkspaceFileContent } = await import("./workspace");
+      const sessionId = "read-dir";
+      const workspacePath = initWorkspace(sessionId);
+
+      expect(() => {
+        readWorkspaceFileContent(workspacePath, "files");
+      }).toThrow("Directory download is not supported");
+    });
+
+    it("throws for path traversal", async () => {
+      const { initWorkspace, readWorkspaceFileContent } = await import("./workspace");
+      const sessionId = "read-traversal";
+      const workspacePath = initWorkspace(sessionId);
+
+      expect(() => {
+        readWorkspaceFileContent(workspacePath, "../../etc/passwd");
+      }).toThrow("Path traversal not allowed");
+    });
+  });
+
   describe("deleteWorkspaceFile", () => {
     it("should delete a file", async () => {
       const { initWorkspace, deleteWorkspaceFile } = await import("./workspace");

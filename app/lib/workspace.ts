@@ -5,8 +5,30 @@
  * Creates isolated workspace directories for each agent session,
  * following the _init_workspace scaffolding from research_agent_processor.py.
  */
-import { mkdirSync, existsSync, copyFileSync, cpSync, readdirSync, statSync, rmSync, renameSync, writeFileSync, symlinkSync, lstatSync, readlinkSync, unlinkSync } from "node:fs";
-import { join, resolve, isAbsolute, dirname } from "node:path";
+import {
+  mkdirSync,
+  existsSync,
+  copyFileSync,
+  cpSync,
+  readdirSync,
+  statSync,
+  rmSync,
+  renameSync,
+  writeFileSync,
+  symlinkSync,
+  lstatSync,
+  readlinkSync,
+  unlinkSync,
+  readFileSync,
+} from "node:fs";
+import {
+  join,
+  resolve,
+  isAbsolute,
+  dirname,
+  basename,
+  relative,
+} from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import logger from "./logger";
@@ -227,6 +249,58 @@ export interface WorkspaceFileInfo {
   modifiedAt: string;
 }
 
+const WORKSPACE_FILE_ACCESS_ERROR_CODES = [
+  "PATH_TRAVERSAL",
+  "NOT_FOUND",
+  "IS_DIRECTORY",
+] as const;
+
+export type WorkspaceFileAccessErrorCode =
+  (typeof WORKSPACE_FILE_ACCESS_ERROR_CODES)[number];
+
+export class WorkspaceFileAccessError extends Error {
+  status: number;
+  code: WorkspaceFileAccessErrorCode;
+
+  constructor(
+    code: WorkspaceFileAccessErrorCode,
+    message: string,
+    status: number,
+  ) {
+    super(message);
+    this.name = "WorkspaceFileAccessError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export interface WorkspaceFileContent {
+  content: Buffer;
+  fileName: string;
+  size: number;
+  modifiedAt: string;
+}
+
+function ensureWorkspaceSafePath(
+  workspacePath: string,
+  filePath: string,
+): string {
+  const fullPath = join(workspacePath, filePath);
+  const resolvedPath = resolve(fullPath);
+  const resolvedWorkspace = resolve(workspacePath);
+  const pathRelative = relative(resolvedWorkspace, resolvedPath);
+
+  if (pathRelative.startsWith("..")) {
+    throw new WorkspaceFileAccessError(
+      "PATH_TRAVERSAL",
+      "Path traversal not allowed",
+      400,
+    );
+  }
+
+  return fullPath;
+}
+
 export function listWorkspaceFiles(
   workspacePath: string,
   subPath: string = ""
@@ -263,6 +337,33 @@ export function listWorkspaceFiles(
   }
 }
 
+export function readWorkspaceFileContent(
+  workspacePath: string,
+  filePath: string,
+): WorkspaceFileContent {
+  const fullPath = ensureWorkspaceSafePath(workspacePath, filePath);
+
+  if (!existsSync(fullPath)) {
+    throw new WorkspaceFileAccessError("NOT_FOUND", "File not found", 404);
+  }
+
+  const stats = statSync(fullPath);
+  if (stats.isDirectory()) {
+    throw new WorkspaceFileAccessError(
+      "IS_DIRECTORY",
+      "Directory download is not supported",
+      400,
+    );
+  }
+
+  return {
+    content: readFileSync(fullPath),
+    fileName: basename(fullPath),
+    size: stats.size,
+    modifiedAt: stats.mtime.toISOString(),
+  };
+}
+
 /**
  * Delete a file or directory in a workspace.
  * If the deleted path is in the skills/ directory, automatically cleans up symlinks.
@@ -271,14 +372,7 @@ export function deleteWorkspaceFile(
   workspacePath: string,
   filePath: string
 ): boolean {
-  const fullPath = join(workspacePath, filePath);
-
-  // Security: ensure the path is within the workspace
-  const resolvedPath = resolve(fullPath);
-  const resolvedWorkspace = resolve(workspacePath);
-  if (!resolvedPath.startsWith(resolvedWorkspace)) {
-    throw new Error("Path traversal not allowed");
-  }
+  const fullPath = ensureWorkspaceSafePath(workspacePath, filePath);
 
   if (!existsSync(fullPath)) {
     return false;
@@ -304,16 +398,8 @@ export function moveWorkspaceFile(
   fromPath: string,
   toPath: string
 ): boolean {
-  const fullFromPath = join(workspacePath, fromPath);
-  const fullToPath = join(workspacePath, toPath);
-
-  // Security: ensure both paths are within the workspace
-  const resolvedFrom = resolve(fullFromPath);
-  const resolvedTo = resolve(fullToPath);
-  const resolvedWorkspace = resolve(workspacePath);
-  if (!resolvedFrom.startsWith(resolvedWorkspace) || !resolvedTo.startsWith(resolvedWorkspace)) {
-    throw new Error("Path traversal not allowed");
-  }
+  const fullFromPath = ensureWorkspaceSafePath(workspacePath, fromPath);
+  const fullToPath = ensureWorkspaceSafePath(workspacePath, toPath);
 
   if (!existsSync(fullFromPath)) {
     return false;
@@ -343,14 +429,7 @@ export function writeWorkspaceFile(
   filePath: string,
   content: Buffer
 ): string {
-  const fullPath = join(workspacePath, filePath);
-
-  // Security: ensure the path is within the workspace
-  const resolvedPath = resolve(fullPath);
-  const resolvedWorkspace = resolve(workspacePath);
-  if (!resolvedPath.startsWith(resolvedWorkspace)) {
-    throw new Error("Path traversal not allowed");
-  }
+  const fullPath = ensureWorkspaceSafePath(workspacePath, filePath);
 
   // Ensure parent directory exists
   const parentDir = dirname(fullPath);

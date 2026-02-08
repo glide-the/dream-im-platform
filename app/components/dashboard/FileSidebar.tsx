@@ -34,6 +34,22 @@ interface FileSidebarProps {
 }
 
 type UploadQueueUpdater = (prev: WorkspaceUploadItem[]) => WorkspaceUploadItem[];
+type DownloadNoticeType = "info" | "error" | "success";
+
+interface DownloadNotice {
+  type: DownloadNoticeType;
+  message: string;
+}
+
+interface FileContextMenuState {
+  x: number;
+  y: number;
+  file: FileInfo;
+}
+
+interface DownloadErrorResponse {
+  error?: string;
+}
 
 const MAX_UPLOAD_FILES = 2000;
 const MAX_UPLOAD_TOTAL_BYTES = 1024 * 1024 * 1024; // 1 GB
@@ -47,6 +63,73 @@ const folderPickerAttributes = {
   webkitdirectory: "",
   directory: "",
 } as Record<string, string>;
+
+export function buildWorkspaceFileDownloadUrl(
+  sessionId: string,
+  filePath: string,
+): string {
+  const params = new URLSearchParams({
+    sessionId,
+    path: filePath,
+  });
+  return `/api/workspace/files/download?${params.toString()}`;
+}
+
+export function extractFilenameFromContentDisposition(
+  contentDisposition: string | null,
+): string | null {
+  if (!contentDisposition) {
+    return null;
+  }
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+
+  const quotedMatch = contentDisposition.match(/filename=\"([^\"]+)\"/i);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1];
+  }
+
+  const plainMatch = contentDisposition.match(/filename=([^;]+)/i);
+  if (plainMatch?.[1]) {
+    return plainMatch[1].trim();
+  }
+
+  return null;
+}
+
+export function getWorkspaceFileDownloadErrorMessage(
+  responseStatus: number,
+  fallbackMessage?: string,
+): string {
+  if (fallbackMessage) {
+    return fallbackMessage;
+  }
+
+  if (responseStatus === 404) {
+    return "文件不存在或已被删除。";
+  }
+
+  if (responseStatus === 401 || responseStatus === 403) {
+    return "没有权限下载该文件，请检查会话或权限配置。";
+  }
+
+  if (responseStatus === 400) {
+    return "下载参数无效，可能是目录或路径错误。";
+  }
+
+  if (responseStatus >= 500) {
+    return "下载失败：服务暂时不可用，请稍后重试。";
+  }
+
+  return `下载失败 (${responseStatus})`;
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -102,6 +185,9 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [uploadQueue, setUploadQueue] = useState<WorkspaceUploadItem[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [downloadNotice, setDownloadNotice] = useState<DownloadNotice | null>(null);
+  const [contextMenu, setContextMenu] = useState<FileContextMenuState | null>(null);
+  const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -381,6 +467,9 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
     setCurrentPath("");
     setExpandedDirs(new Set());
     setUploadError(null);
+    setDownloadNotice(null);
+    setContextMenu(null);
+    setDownloadingPath(null);
     pendingUploadIdsRef.current = [];
     uploadQueueRef.current = [];
     setUploadQueue([]);
@@ -416,6 +505,23 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
     folderInput.setAttribute("directory", "");
   }, []);
 
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [contextMenu]);
+
   const handleDelete = async (filePath: string) => {
     if (!sessionId) return;
     try {
@@ -431,6 +537,101 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
       console.error("Delete failed:", error);
     }
   };
+
+  const handleItemContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>, file: FileInfo) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        file,
+      });
+      if (file.isDirectory) {
+        setDownloadNotice({
+          type: "info",
+          message: "目录暂不支持直接下载。",
+        });
+      } else {
+        setDownloadNotice(null);
+      }
+    },
+    [],
+  );
+
+  const handleDownloadFile = useCallback(
+    async (file: FileInfo) => {
+      if (!sessionId) {
+        setDownloadNotice({
+          type: "error",
+          message: "下载失败：缺少会话信息。",
+        });
+        return;
+      }
+
+      if (file.isDirectory) {
+        setDownloadNotice({
+          type: "info",
+          message: "目录暂不支持直接下载。",
+        });
+        return;
+      }
+
+      if (downloadingPath === file.path) {
+        return;
+      }
+
+      setDownloadingPath(file.path);
+      setDownloadNotice(null);
+
+      try {
+        const response = await fetch(
+          buildWorkspaceFileDownloadUrl(sessionId, file.path),
+          { method: "GET" },
+        );
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => ({}))) as DownloadErrorResponse;
+          setDownloadNotice({
+            type: "error",
+            message: getWorkspaceFileDownloadErrorMessage(
+              response.status,
+              payload.error,
+            ),
+          });
+          return;
+        }
+
+        const blob = await response.blob();
+        const contentDisposition = response.headers.get("Content-Disposition");
+        const preferredName = extractFilenameFromContentDisposition(contentDisposition);
+        const downloadName = preferredName || file.name;
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+
+        link.href = blobUrl;
+        link.download = downloadName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(blobUrl);
+
+        setDownloadNotice({
+          type: "success",
+          message: `已开始下载：${downloadName}`,
+        });
+      } catch (error) {
+        const fallbackMessage = error instanceof Error ? error.message : "";
+        setDownloadNotice({
+          type: "error",
+          message: getWorkspaceFileDownloadErrorMessage(500, fallbackMessage),
+        });
+      } finally {
+        setDownloadingPath(null);
+      }
+    },
+    [downloadingPath, sessionId],
+  );
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -609,11 +810,16 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
               )}
               {files.map((file) => (
                 <li key={file.path} className="group">
-                  <div className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-bg-secondary">
+                  <div
+                    className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-bg-secondary"
+                    onContextMenu={(event) => handleItemContextMenu(event, file)}
+                    data-file-path={file.path}
+                  >
                     {file.isDirectory ? (
                       <button
                         onClick={() => toggleDir(file.path)}
                         className="flex flex-1 items-center gap-2"
+                        data-testid={`workspace-dir-${file.path}`}
                       >
                         {expandedDirs.has(file.path) ? (
                           <IconChevronDown className="h-3 w-3 text-text-tertiary" />
@@ -624,7 +830,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
                         <span className="truncate">{file.name}</span>
                       </button>
                     ) : (
-                      <div className="flex flex-1 items-center gap-2">
+                      <div className="flex flex-1 items-center gap-2" data-testid={`workspace-file-${file.path}`}>
                         <span className="w-3" />
                         <IconFile className="h-4 w-4 text-text-tertiary" />
                         <span className="flex-1 truncate">{file.name}</span>
@@ -660,24 +866,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
             <p className="mt-1 text-xs">或点击选择文件（支持目录递归上传）</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded-lg border border-border bg-bg-secondary/40 px-3 py-2 text-xs text-text-secondary transition-colors hover:border-accent-orange hover:text-accent-orange"
-              disabled={uploading}
-            >
-              选择文件
-            </button>
-            <button
-              onClick={() => folderInputRef.current?.click()}
-              className="rounded-lg border border-border bg-bg-secondary/40 px-3 py-2 text-xs text-text-secondary transition-colors hover:border-accent-orange hover:text-accent-orange"
-              disabled={uploading}
-            >
-              选择文件夹
-            </button>
-          </div>
-
-          <div className="mt-3 flex items-center justify-between text-[11px] text-text-tertiary">
+          <div className="mt-1 flex items-center justify-between text-[11px] text-text-tertiary">
             <span>
               pending {uploadSummary.pending} · uploading {uploadSummary.uploading} · success {uploadSummary.success} · error {uploadSummary.error}
             </span>
@@ -698,6 +887,20 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
               </button>
             </div>
           </div>
+
+          {downloadNotice && (
+            <div
+              className={`mt-2 rounded-md px-2 py-1 text-xs ${
+                downloadNotice.type === "error"
+                  ? "border border-danger/40 bg-danger/10 text-danger"
+                  : downloadNotice.type === "success"
+                    ? "border border-success/40 bg-success/10 text-success"
+                    : "border border-border bg-bg-secondary/40 text-text-secondary"
+              }`}
+            >
+              {downloadNotice.message}
+            </div>
+          )}
 
           {uploadError && (
             <div className="mt-2 rounded-md border border-danger/40 bg-danger/10 px-2 py-1 text-xs text-danger">
@@ -768,6 +971,46 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
           }}
         />
       </aside>
+
+      {contextMenu && (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setContextMenu(null)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setContextMenu(null);
+          }}
+        >
+          <div
+            className="absolute min-w-44 rounded-md border border-border bg-bg-surface p-1 shadow-lg"
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+            }}
+            onClick={(event) => event.stopPropagation()}
+            role="menu"
+            aria-label="文件操作菜单"
+            data-testid="file-sidebar-context-menu"
+          >
+            <button
+              type="button"
+              className="flex w-full items-center rounded px-2 py-1.5 text-left text-sm text-text-primary transition-colors hover:bg-bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => {
+                void handleDownloadFile(contextMenu.file);
+                setContextMenu(null);
+              }}
+              disabled={contextMenu.file.isDirectory || downloadingPath === contextMenu.file.path}
+            >
+              {downloadingPath === contextMenu.file.path ? "下载中..." : "下载文件"}
+            </button>
+            {contextMenu.file.isDirectory && (
+              <p className="px-2 py-1 text-xs text-text-tertiary">
+                目录暂不支持直接下载。
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }
