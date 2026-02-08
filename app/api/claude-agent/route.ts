@@ -915,6 +915,7 @@ export async function POST(req: NextRequest) {
       // Stream errors (e.g., AI_UIMessageStreamError from missing tool registrations)
       // should degrade gracefully rather than crashing the entire response.
       console.error("[Claude Agent API] Stream error (non-fatal):", error);
+      return "Stream error occurred";
     },
 
     // Pass original message for context
