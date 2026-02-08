@@ -585,7 +585,7 @@ function formatChunksAsPreview(source: string, chunks: WeKnoraChunk[]): string {
  */
 export async function buildDocumentIngestionPreviewParts(
   attachments: ChatAttachment[],
-  downloadFile?: (url: string) => Promise<Blob>
+  downloadFile?: (url: string, storageKey?: string) => Promise<Blob>
 ): Promise<DocumentProcessingResult[]> {
   if (!attachments?.length) return [];
 
@@ -608,9 +608,9 @@ export async function buildDocumentIngestionPreviewParts(
         if (attachment.type === "source-url" && attachment.url) {
           // 对于 source-url 类型，使用 URL 处理
           return await processUrl(attachment.url, { client });
-        } else if (attachment.type === "file" && attachment.url && downloadFile) {
+        } else if (attachment.type === "file" && (attachment.url || attachment.storageKey) && downloadFile) {
           // 对于 file 类型，需要下载后处理
-          const blob = await downloadFile(attachment.url);
+          const blob = await downloadFile(attachment.url, attachment.storageKey);
           return await processDocument(blob, {
             fileName: attachment.filename,
             client,

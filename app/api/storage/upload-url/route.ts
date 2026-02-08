@@ -99,13 +99,9 @@ async function handleGenericUpload(request: GenericUploadRequest) {
     return NextResponse.json(createFallbackResponse());
   }
 
-  // Provide a public source URL for clients to reference after successful PUT
-  const sourceUrl = await serverFileStorage.getSourceUrl(uploadUrl.key);
-
   return NextResponse.json({
     directUploadSupported: true,
     ...uploadUrl,
-    sourceUrl,
   });
 }
 

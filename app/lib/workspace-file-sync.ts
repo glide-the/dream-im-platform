@@ -80,7 +80,7 @@ export interface SaveBufferToWorkspaceFilesInput {
 export interface SyncAttachmentsToWorkspaceFilesInput {
   workspacePath: string;
   attachments: ChatAttachment[];
-  downloadFile: (url: string) => Promise<Blob>;
+  downloadFile: (url: string, storageKey?: string) => Promise<Blob>;
 }
 
 function normalizeMimeType(mimeType?: string): string {
@@ -260,7 +260,7 @@ export async function syncAttachmentsToWorkspaceFiles({
 
     let downloadedBlob: Blob;
     try {
-      downloadedBlob = await downloadFile(attachment.url);
+      downloadedBlob = await downloadFile(attachment.url, attachment.storageKey);
     } catch (error) {
       throw new WorkspaceFileSyncError(
         "DOWNLOAD_FAILED",

@@ -10,6 +10,8 @@ import { tag } from "./tag";
 export const ChatAttachmentSchema = z.object({
   type: z.enum(["file", "source-url"]),
   url: z.string(),
+  /** Object storage key returned by the upload API; preferred over url for downloads. */
+  storageKey: z.string().optional(),
   mediaType: z.string().optional(),
   filename: z.string().optional(),
   size: z.number().int().nonnegative().optional(),
@@ -148,14 +150,14 @@ export function createManualToolConfirmValue(confirm: boolean) {
 /**
  * Prompt returned to AI when user rejects a manual tool invocation
  */
-export const MANUAL_REJECT_RESPONSE_PROMPT = 
+export const MANUAL_REJECT_RESPONSE_PROMPT =
   "The user has rejected this tool execution. Please acknowledge and ask if they would like to try a different approach.";
 
 /**
  * Tool invocation state - indicates the current state of a tool call
  * Reference: Vercel AI SDK ToolUIPart states
  */
-export type ToolInvocationState = 
+export type ToolInvocationState =
   | "input-available"    // Tool call proposed, waiting for confirmation
   | "output-available"   // Tool executed, result available
   | "error";             // Tool execution failed

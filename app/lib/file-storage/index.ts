@@ -68,3 +68,13 @@ export {
   toBuffer,
   getBase64Data,
 } from "./storage-utils";
+
+export {
+  StorageKeySchema,
+  StorageKeySegmentSchema,
+  decodeStorageKeySegments,
+  decodeStorageKeyFromBase64Segment,
+  encodeStorageKeyForPath,
+  encodeStorageKeyToBase64Segment,
+  STORAGE_KEY_BASE64_PREFIX,
+} from "./storage-key";

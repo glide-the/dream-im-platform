@@ -17,10 +17,10 @@ export type AttachmentDerivedMessagePart =
 export interface ProcessChatAttachmentsForMessageInput {
   attachments: ChatAttachment[];
   workspacePath: string;
-  downloadFile: (url: string) => Promise<Blob>;
+  downloadFile: (url: string, storageKey?: string) => Promise<Blob>;
   buildPreviewParts?: (
     attachments: ChatAttachment[],
-    downloadFile?: (url: string) => Promise<Blob>
+    downloadFile?: (url: string, storageKey?: string) => Promise<Blob>
   ) => Promise<DocumentProcessingResult[]>;
 }
 
@@ -31,14 +31,15 @@ export interface ProcessChatAttachmentsForMessageResult {
   workspaceSyncError?: WorkspaceFileSyncError;
 }
 
-function createCachedDownloader(downloadFile: (url: string) => Promise<Blob>) {
+function createCachedDownloader(downloadFile: (url: string, storageKey?: string) => Promise<Blob>) {
   const cache = new Map<string, Promise<Blob>>();
 
-  return (url: string): Promise<Blob> => {
-    if (!cache.has(url)) {
-      cache.set(url, downloadFile(url));
+  return (url: string, storageKey?: string): Promise<Blob> => {
+    const cacheKey = storageKey || url;
+    if (!cache.has(cacheKey)) {
+      cache.set(cacheKey, downloadFile(url, storageKey));
     }
-    return cache.get(url)!;
+    return cache.get(cacheKey)!;
   };
 }
 

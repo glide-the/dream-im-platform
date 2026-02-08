@@ -29,6 +29,8 @@ export interface UploadedFile {
   size: number;
   previewUrl?: string;
   url?: string;
+  /** Object storage key returned by the upload API; preferred for proxy URLs. */
+  storageKey?: string;
   dataUrl?: string;
   progress?: number;
   isUploading?: boolean;
@@ -45,6 +47,8 @@ export interface Attachment {
   type: string;
   size: number;
   url?: string;
+  /** Object storage key returned by the upload API. */
+  storageKey?: string;
   workspacePath?: string;
   savedAt?: string;
   hash?: string;
@@ -56,7 +60,8 @@ export function toAttachment(file: UploadedFile): Attachment {
     name: file.name,
     type: file.mimeType,
     size: file.size,
-    url: file.url,
+    url: file.storageKey ? toFileProxyUrl(file.storageKey) : file.url,
+    storageKey: file.storageKey,
     workspacePath: file.workspacePath,
     savedAt: file.savedAt,
     hash: file.hash,
@@ -254,14 +259,15 @@ export default function AIInputDock({
           prev.map((f) =>
             f.id === fileId
               ? {
-                  ...f,
-                  url: result.url,
-                  progress: 100,
-                  isUploading: false,
-                  workspacePath: workspaceMetadata?.workspacePath,
-                  savedAt: workspaceMetadata?.savedAt,
-                  hash: workspaceMetadata?.hash,
-                }
+                ...f,
+                url: result.url,
+                storageKey: result.key,
+                progress: 100,
+                isUploading: false,
+                workspacePath: workspaceMetadata?.workspacePath,
+                savedAt: workspaceMetadata?.savedAt,
+                hash: workspaceMetadata?.hash,
+              }
               : f,
           ),
         );
@@ -448,7 +454,7 @@ export default function AIInputDock({
         <div className="mb-3 flex flex-wrap gap-2">
           {uploadedFiles.map((file) => {
             const isImage = file.mimeType.startsWith("image/");
-            const previewUrl = file.url ? toFileProxyUrl(file.url) : file.previewUrl;
+            const previewUrl = file.storageKey ? toFileProxyUrl(file.storageKey) : file.previewUrl;
             const displayExt = file.name.split(".").pop()?.toUpperCase() || "FILE";
             return (
               <div
@@ -483,9 +489,8 @@ export default function AIInputDock({
                   </div>
                 )}
                 <div
-                  className={`absolute inset-0 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm transition-opacity ${
-                    file.isUploading ? "opacity-0" : "opacity-0 group-hover:opacity-100"
-                  }`}
+                  className={`absolute inset-0 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm transition-opacity ${file.isUploading ? "opacity-0" : "opacity-0 group-hover:opacity-100"
+                    }`}
                 >
                   <button
                     type="button"

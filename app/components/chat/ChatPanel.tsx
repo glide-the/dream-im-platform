@@ -74,9 +74,12 @@ export default function ChatPanel({
         const lastMessage = outgoingMessages.at(-1) as UIMessage | undefined;
         if (!lastMessage) return { body };
 
-        const attachments: ChatAttachment[] = (getPendingData()?.rawAttachments ?? []).filter((file) => file.url).map((file) => ({
+        const attachments: ChatAttachment[] = (getPendingData()?.rawAttachments ?? [])
+          .filter((file) => file.storageKey)
+          .map((file) => ({
           type: "file",
-          url: file.url!,
+          url: toFileProxyUrl(file.storageKey!),
+          storageKey: file.storageKey!,
           mediaType: file.type,
           filename: file.name,
           size: file.size,
@@ -134,10 +137,10 @@ export default function ChatPanel({
         toolChoice: "auto",
       };
 
-      const validFiles = queuedAttachments.filter((file) => file.url);
+      const validFiles = queuedAttachments.filter((file) => file.storageKey);
       const queuedMessageParts: Array<FileUIPart | TextUIPart> = validFiles.map((file) => ({
         type: "file",
-        url: toFileProxyUrl(file.url!),
+        url: toFileProxyUrl(file.storageKey!),
         mediaType: file.type,
         filename: file.name,
       } as FileUIPart));
@@ -201,10 +204,10 @@ export default function ChatPanel({
               toolChoice,
             };
 
-            const validFiles = uploadedFiles.filter((f) => f.url);
+            const validFiles = uploadedFiles.filter((f) => f.storageKey);
             const parts: Array<FileUIPart | TextUIPart> = validFiles.map((file) => ({
               type: "file",
-              url: toFileProxyUrl(file.url!),
+              url: toFileProxyUrl(file.storageKey!),
               mediaType: file.mimeType,
               filename: file.name,
             } as FileUIPart));

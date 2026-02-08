@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
 
-function encodeProxyKey(key: string): string {
+function encodeKeySegment(key: string): string {
   const base64 = Buffer.from(key, "utf8").toString("base64");
   const base64url = base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-  return `b64_${base64url}`;
+  return `k64_${base64url}`;
 }
 
 test.describe("File Proxy in Chat Flow", () => {
@@ -64,7 +64,6 @@ test.describe("File Proxy in Chat Flow", () => {
         contentType: "application/json",
         body: JSON.stringify({
           key: "uploads/test.txt",
-          url: "http://minio:9000/mybucket/uploads/test.txt",
           metadata: {
             contentType: "text/plain",
             size: 11,
@@ -117,14 +116,14 @@ test.describe("File Proxy in Chat Flow", () => {
 
     expect(message?.parts?.[0]?.type).toBe("file");
     expect(message?.parts?.[0]?.url).toBe(
-      `/api/storage/file/${encodeProxyKey("http://minio:9000/mybucket/uploads/test.txt")}`,
+      `/api/storage/file/${encodeKeySegment("uploads/test.txt")}`,
     );
 
     const downloadLink = page.getByRole("link", { name: "下载 test.txt" }).first();
     await expect(downloadLink).toBeVisible();
     await expect(downloadLink).toHaveAttribute(
       "href",
-      `/api/storage/file/${encodeProxyKey("http://minio:9000/mybucket/uploads/test.txt")}?download=1`,
+      `/api/storage/file/${encodeKeySegment("uploads/test.txt")}?download=1`,
     );
   });
 });

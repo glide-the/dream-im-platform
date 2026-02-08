@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useEffect } from "react";
 import { upload as uploadToVercelBlob } from "@vercel/blob/client";
+import { toFileProxyUrl } from "@/lib/file-proxy";
 
 // Types
 interface StorageInfo {
@@ -126,7 +127,7 @@ export function useFileUpload() {
 
           return {
             key: blob.pathname,
-            url: blob.url,
+            url: toFileProxyUrl(blob.pathname),
             contentType: blob.contentType,
             size: file.size,
           };
@@ -155,29 +156,32 @@ export function useFileUpload() {
             return await serverUpload(file, filename, contentType, options.onProgress);
           }
 
-          // Upload to presigned URL
-          // Note: Progress tracking for presigned URL uploads uses estimated values
-          // as fetch API doesn't support upload progress. For accurate progress,
-          // XMLHttpRequest would be needed.
-          await uploadWithProgress(
-            uploadUrlData.url,
-            file,
-            {
-              method: uploadUrlData.method || "PUT",
-              headers: uploadUrlData.headers || { "Content-Type": contentType },
-            },
-            options.onProgress
-          );
+          if (!uploadUrlData.key) {
+            throw new Error("服务器未返回文件 key");
+          }
 
-          // Validate that we have a URL for the uploaded file
-          const resultUrl = uploadUrlData.sourceUrl || uploadUrlData.url;
-          if (!resultUrl) {
-            throw new Error("服务器未返回文件 URL");
+          if (!uploadUrlData.url) {
+            return await serverUpload(file, filename, contentType, options.onProgress);
+          }
+
+          try {
+            await uploadWithProgress(
+              uploadUrlData.url,
+              file,
+              {
+                method: uploadUrlData.method || "PUT",
+                headers: uploadUrlData.headers || { "Content-Type": contentType },
+              },
+              options.onProgress
+            );
+          } catch (directUploadError) {
+            console.warn("Direct upload failed, falling back to server upload", directUploadError);
+            return await serverUpload(file, filename, contentType, options.onProgress);
           }
 
           return {
             key: uploadUrlData.key,
-            url: resultUrl,
+            url: toFileProxyUrl(uploadUrlData.key),
             contentType,
             size: file.size,
           };
@@ -237,7 +241,7 @@ async function serverUpload(
 
   return {
     key: result.key,
-    url: result.url,
+    url: result.url || toFileProxyUrl(result.key),
     contentType: result.metadata?.contentType,
     size: result.metadata?.size,
   };
@@ -245,10 +249,9 @@ async function serverUpload(
 
 /**
  * Upload with progress tracking using fetch.
- * 
+ *
  * Note: The fetch API doesn't support upload progress tracking.
  * This function reports estimated progress (50% at start, 100% at end).
- * For accurate progress tracking, use XMLHttpRequest via uploadWithXHR.
  */
 async function uploadWithProgress(
   url: string,
@@ -256,21 +259,21 @@ async function uploadWithProgress(
   options: { method: string; headers?: Record<string, string> },
   onProgress?: (progress: number) => void
 ): Promise<void> {
-  // Report estimated progress since fetch doesn't support upload progress
   onProgress?.(50);
 
-  // const response = await fetch(url, {
-  //   method: options.method,
-  //   headers: options.headers,
-  //   body: file,
-  // });
+  const response = await fetch(url, {
+    method: options.method,
+    headers: options.headers,
+    body: file,
+  });
 
-  // if (!response.ok) {
-  //   throw new Error(`上传失败: ${response.status}`);
-  // }
+  if (!response.ok) {
+    throw new Error(`上传失败: ${response.status}`);
+  }
 
   onProgress?.(100);
 }
+
 
 /**
  * Upload with progress tracking using XMLHttpRequest
@@ -296,7 +299,7 @@ function uploadWithXHR(
           const result = JSON.parse(xhr.responseText);
           resolve({
             key: result.key,
-            url: result.url,
+            url: result.url || toFileProxyUrl(result.key),
             contentType: result.metadata?.contentType,
             size: result.metadata?.size,
           });

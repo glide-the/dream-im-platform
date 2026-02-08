@@ -1,61 +1,61 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-function encodeProxyKey(key: string): string {
-    const base64 = Buffer.from(key, "utf8").toString("base64");
-    const base64url = base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-    return `b64_${base64url}`;
+function encodeKeySegment(key: string): string {
+  const base64 = Buffer.from(key, "utf8").toString("base64");
+  const base64url = base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return `k64_${base64url}`;
 }
 
 describe("file-proxy", () => {
-    beforeEach(() => {
-        vi.resetModules();
-    });
+  beforeEach(() => {
+    vi.resetModules();
+  });
 
-    it("converts S3 URL to proxy URL", async () => {
-        const { toFileProxyUrl } = await import("./file-proxy");
-        const url = "https://mybucket.s3.us-east-1.amazonaws.com/uploads/abc-photo.png";
-        expect(toFileProxyUrl(url)).toBe(
-            `/api/storage/file/${encodeProxyKey(url)}`,
-        );
-    });
+  it("converts storage key to proxy URL", async () => {
+    const { toFileProxyUrl } = await import("./file-proxy");
+    const key = "uploads/abc-photo.png";
+    expect(toFileProxyUrl(key)).toBe(
+      `/api/storage/file/${encodeKeySegment(key)}`,
+    );
+  });
 
-    it("converts MinIO URL to proxy URL", async () => {
-        const { toFileProxyUrl } = await import("./file-proxy");
-        const url = "http://minio:9000/mybucket/uploads/abc-photo.png";
-        expect(toFileProxyUrl(url)).toBe(
-            `/api/storage/file/${encodeProxyKey(url)}`,
-        );
-    });
+  it("encodes key as base64url segment", async () => {
+    const { toFileProxyUrl } = await import("./file-proxy");
+    const key = "uploads/report 2026#.pdf";
+    expect(toFileProxyUrl(key)).toBe(
+      `/api/storage/file/${encodeKeySegment(key)}`,
+    );
+  });
 
-    it("appends download=1 for download URL", async () => {
-        const { toFileDownloadUrl } = await import("./file-proxy");
-        const url = "https://mybucket.s3.us-east-1.amazonaws.com/uploads/report.pdf";
-        expect(toFileDownloadUrl(url)).toBe(
-            `/api/storage/file/${encodeProxyKey(url)}?download=1`,
-        );
-    });
+  it("builds download URL from storage key", async () => {
+    const { toFileDownloadUrl } = await import("./file-proxy");
+    const key = "uploads/abc-photo.png";
+    expect(toFileDownloadUrl(key)).toBe(
+      `/api/storage/file/${encodeKeySegment(key)}?download=1`,
+    );
+  });
 
-    it("does not double-wrap already proxied URLs", async () => {
-        const { toFileProxyUrl } = await import("./file-proxy");
-        const proxyUrl = `/api/storage/file/${encodeProxyKey("https://example.com/uploads/photo.png")}`;
-        expect(toFileProxyUrl(proxyUrl)).toBe(proxyUrl);
-    });
+  it("does not double-wrap already proxied URLs", async () => {
+    const { toFileProxyUrl } = await import("./file-proxy");
+    const proxyUrl = `/api/storage/file/${encodeKeySegment("uploads/abc-photo.png")}`;
+    expect(toFileProxyUrl(proxyUrl)).toBe(proxyUrl);
+  });
 
-    it("returns empty string for empty input", async () => {
-        const { toFileProxyUrl } = await import("./file-proxy");
-        expect(toFileProxyUrl("")).toBe("");
-    });
+  it("appends download=1 to already proxied URLs", async () => {
+    const { toFileDownloadUrl } = await import("./file-proxy");
+    const proxyUrl = `/api/storage/file/${encodeKeySegment("uploads/abc-photo.png")}`;
+    expect(toFileDownloadUrl(proxyUrl)).toBe(
+      `${proxyUrl}?download=1`,
+    );
+  });
 
-    it("returns non-URL strings as-is", async () => {
-        const { toFileProxyUrl } = await import("./file-proxy");
-        expect(toFileProxyUrl("not-a-url")).toBe("not-a-url");
-    });
+  it("returns empty string for empty input", async () => {
+    const { toFileProxyUrl } = await import("./file-proxy");
+    expect(toFileProxyUrl("")).toBe("");
+  });
 
-    it("converts Vercel Blob URL to proxy URL", async () => {
-        const { toFileProxyUrl } = await import("./file-proxy");
-        const url = "https://store.public.blob.vercel-storage.com/uploads/file.pdf";
-        expect(toFileProxyUrl(url)).toBe(
-            `/api/storage/file/${encodeProxyKey(url)}`,
-        );
-    });
+  it("returns empty string for invalid key", async () => {
+    const { toFileProxyUrl } = await import("./file-proxy");
+    expect(toFileProxyUrl("../etc/passwd")).toBe("");
+  });
 });

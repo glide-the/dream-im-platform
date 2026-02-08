@@ -352,12 +352,18 @@ export async function POST(req: NextRequest) {
   const attachmentProcessingResult = await processChatAttachmentsForMessage({
     attachments,
     workspacePath: workspaceCwd,
-    downloadFile: async (url: string) => {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to download file: ${response.status}`);
+    downloadFile: async (url: string, storageKey?: string) => {
+      if (!storageKey) {
+        throw new Error(`Attachment storage key is required for file download: ${url}`);
       }
-      return response.blob();
+
+      const { serverFileStorage } = await import("@/lib/file-storage");
+      const buffer = await serverFileStorage.download(storageKey);
+      const metadata = await serverFileStorage.getMetadata(storageKey);
+
+      return new Blob([buffer], {
+        type: metadata?.contentType || "application/octet-stream",
+      });
     },
   });
 

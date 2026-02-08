@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { serverFileStorage, storageDriver, getContentTypeFromFilename } from "@/lib/file-storage";
+import { toFileProxyUrl } from "@/lib/file-proxy";
 import { checkStorageConfiguration } from "../route";
 
 export const runtime = "nodejs";
@@ -52,7 +53,7 @@ function validateContentType(providedType: string, filename: string): string {
  * Returns:
  * - success: true
  * - key: Storage key for the uploaded file
- * - url: Public URL to access the file
+ * - url: API proxy URL for preview/download
  * - metadata: File metadata (filename, contentType, size, uploadedAt)
  */
 export async function POST(request: Request) {
@@ -99,7 +100,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       key: result.key,
-      url: result.sourceUrl,
+      url: toFileProxyUrl(result.key),
       metadata: result.metadata,
     });
   } catch (error) {
