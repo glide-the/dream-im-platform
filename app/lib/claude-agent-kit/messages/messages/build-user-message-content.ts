@@ -17,6 +17,23 @@ const INLINE_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/
 
 
 /**
+ * Runtime context injected from the agent runner so the model
+ * is aware of the execution environment.
+ */
+export interface RuntimeContext {
+  /** Agent working directory (from AgentRunOptions.cwd) */
+  cwd?: string;
+  /** Model being used */
+  model?: string;
+  /** Maximum conversation turns */
+  maxTurns?: number;
+  /** Thread / session ID */
+  threadId?: string;
+  /** Whether this is a resumed conversation */
+  resume?: boolean;
+}
+
+/**
  * Construct the content blocks for a user message.
  *
  * Combines the prompt text with any attachments into the order expected by Claude:
@@ -25,6 +42,7 @@ const INLINE_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/
 export function buildUserMessageContent(
   prompt: string,
   attachments: AttachmentPayload[] | undefined,
+  runtimeContext?: RuntimeContext,
 ): UserContentBlock[] {
   const blocks: UserContentBlock[] = [];
 
@@ -75,6 +93,24 @@ export function buildUserMessageContent(
       }
     }
   }
+
+  // Inject system environment context so the model is aware of the runtime.
+  const now = new Date();
+  const effectiveCwd = runtimeContext?.cwd ?? process.cwd();
+  const envLines = [
+    `Working directory: ${effectiveCwd}`,
+    `Date: ${now.toISOString()} (${now.toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})`,
+    `Platform: ${process.platform} ${process.arch}`,
+    `Node.js: ${process.version}`,
+    ...(runtimeContext?.model ? [`Model: ${runtimeContext.model}`] : []),
+    ...(runtimeContext?.maxTurns != null ? [`Max turns: ${runtimeContext.maxTurns}`] : []),
+    ...(runtimeContext?.threadId ? [`Thread ID: ${runtimeContext.threadId}`] : []),
+    ...(runtimeContext?.resume ? ['Resumed conversation: yes'] : []),
+  ];
+  blocks.push({
+    type: 'text',
+    text: `<system_environment>\n${envLines.join('\n')}\n</system_environment>`,
+  });
 
   // Always append the raw prompt text at the end.
   blocks.push({

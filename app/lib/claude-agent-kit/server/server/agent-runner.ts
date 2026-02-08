@@ -204,7 +204,13 @@ export class ClaudeAgentRunner {
       parent_tool_use_id: null,
       message: {
         role: "user",
-        content: buildUserMessageContent(userMessage, undefined),
+        content: buildUserMessageContent(userMessage, undefined, {
+          cwd,
+          model,
+          maxTurns,
+          threadId,
+          resume,
+        }),
       },
     };
 
