@@ -404,6 +404,11 @@ export async function POST(req: NextRequest) {
   // Track tool calls for metadata
   let toolCallCount = 0;
 
+  // Track toolCallIds that have been registered with tool-input-start in the AI SDK stream.
+  // The AI SDK's processUIMessageStream throws AI_UIMessageStreamError when
+  // tool-output-available arrives for a toolCallId without a prior tool-input-start.
+  const registeredToolCallIds = new Set<string>();
+
   // Track ALL streamed parts EXACTLY as they are written to the stream
   // This preserves the exact order and format of stream events
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -608,36 +613,37 @@ export async function POST(req: NextRequest) {
           //   and sends the complete sequence: tool-input-start → tool-input-available → tool-approval-request
           // - Auto mode: onToolEvent handles all tool events and sends tool-input-start → tool-input-available
           //
-          // This design avoids duplicate events since both handlers fire for the same tool call
-          // in manual mode (see agent-runner.ts lines 297-328).
-          if (event.toolCallId && event.toolName) {
+          // Only send tool-input-start for actual tool start events (tool_use / tool_use_start),
+          // NOT for progress, summary, or other non-start events.
+          const isToolStartEvent = event.type === "tool_use" || event.type === "tool_use_start";
+
+          if (isToolStartEvent && event.toolCallId && event.toolName) {
             // Manual mode: Skip tool_use events here - they're handled by onToolConfirmationRequest
             // to ensure the correct event sequence for frontend approval UI
-            if (toolChoice === "manual" && (event.type === "tool_use" || event.type === "tool_use_start")) {
+            if (toolChoice === "manual") {
               return;
             }
 
-            // Auto mode: Send tool-input-start (AI SDK strictObject: type, toolCallId, toolName, providerExecuted?, providerMetadata?, dynamic?, title?)
-            // NOTE: AI SDK's tool-input-start does NOT allow 'input' field - input goes in tool-input-available
-            writeAndTrack({
-              type: "tool-input-start",
-              toolCallId: event.toolCallId,
-              toolName: event.toolName,
-              // Extended parameters allowed by AI SDK
-              title: event.title,
-              providerExecuted: event.providerExecuted,
-            });
+            // Avoid sending duplicate tool-input-start for already-registered tool calls
+            // (e.g., when includePartialMessages causes both stream_event and assistant message)
+            if (!registeredToolCallIds.has(event.toolCallId)) {
+              registeredToolCallIds.add(event.toolCallId);
+              writeAndTrack({
+                type: "tool-input-start",
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                title: event.title,
+                providerExecuted: event.providerExecuted,
+              });
+            }
 
-            // For non-manual mode with available input, also send input-available
-            // AI SDK's tool-input-available DOES include 'input' field
-            // Note: In auto mode, event.state may be undefined but input is still available
+            // Send tool-input-available with input data
             if (event.input !== undefined) {
               writeAndTrack({
                 type: "tool-input-available",
                 toolCallId: event.toolCallId,
                 toolName: event.toolName,
                 input: event.input as Record<string, unknown>,
-                // Extended parameters
                 title: event.title,
                 providerExecuted: event.providerExecuted,
               });
@@ -646,11 +652,34 @@ export async function POST(req: NextRequest) {
 
           // Forward tool results with extended parameters
           if (event.type === "tool_result" && event.toolCallId) {
+            // Defensive: ensure tool-input-start was sent before tool-output-available.
+            // The AI SDK throws AI_UIMessageStreamError if tool-output-available arrives
+            // for a toolCallId without a prior tool-input-start registration.
+            // This can happen when tool results arrive from sub-agents, multi-turn
+            // tool chains, or when tool_use events are skipped/missed.
+            if (!registeredToolCallIds.has(event.toolCallId)) {
+              const fallbackToolName = event.toolName ?? "unknown";
+              console.warn(
+                `[Claude Agent API] Tool result for unregistered toolCallId "${event.toolCallId}" (toolName: ${fallbackToolName}). Auto-registering to prevent stream error.`
+              );
+              registeredToolCallIds.add(event.toolCallId);
+              writeAndTrack({
+                type: "tool-input-start",
+                toolCallId: event.toolCallId,
+                toolName: fallbackToolName,
+              });
+              writeAndTrack({
+                type: "tool-input-available",
+                toolCallId: event.toolCallId,
+                toolName: fallbackToolName,
+                input: {},
+              });
+            }
+
             writeAndTrack({
               type: "tool-output-available",
               toolCallId: event.toolCallId,
               output: event.output,
-              // Extended parameters - Note: toolName not supported in AI SDK's tool-output-available type
               providerExecuted: event.providerExecuted,
             });
           }
@@ -665,6 +694,8 @@ export async function POST(req: NextRequest) {
           // Backend creates Promise → blocks with await → frontend POSTs to confirm endpoint → Promise resolves
 
           // First: Send tool-input-start (AI SDK expects this before input-available)
+          // Track registration to prevent duplicate tool-input-start from onToolEvent
+          registeredToolCallIds.add(event.toolCallId);
           writeAndTrack({
             type: "tool-input-start",
             toolCallId: event.toolCallId,
@@ -879,9 +910,11 @@ export async function POST(req: NextRequest) {
     },
 
     onError: (error) => {
-      console.error("[Claude Agent API] Stream error:", error);
-      // Re-throw the error to let the stream handle it and notify the client
-      throw error;
+      // Log but do NOT re-throw. Re-throwing causes the stream to fail with
+      // "failed to pipe response" and returns a 500 to the client.
+      // Stream errors (e.g., AI_UIMessageStreamError from missing tool registrations)
+      // should degrade gracefully rather than crashing the entire response.
+      console.error("[Claude Agent API] Stream error (non-fatal):", error);
     },
 
     // Pass original message for context
