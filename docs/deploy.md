@@ -15,6 +15,7 @@
   - [仅构建镜像](#仅构建镜像)
   - [手动 Docker 构建](#手动-docker-构建)
 - [服务说明](#服务说明)
+- [更新部署（Redeploy）](#更新部署redeploy)
 - [常用运维命令](#常用运维命令)
 - [数据持久化](#数据持久化)
 - [健康检查](#健康检查)
@@ -183,6 +184,113 @@ docker compose up -d --build
 | `postgres` | `postgres:16-alpine` | 数据持久化，支持健康检查 |
 | `minio` | `minio/minio:latest` | S3 兼容对象存储，用于文件上传 |
 | `minio-init` | `minio/mc:latest` | 一次性容器，自动创建存储桶后退出 |
+
+---
+
+## 更新部署（Redeploy）
+
+当代码有更新需要重新部署时，按照以下流程操作。此流程确保旧容器完全清理、代码同步到最新、镜像全量重建。
+
+### 标准更新流程
+
+```bash
+# 1. 进入 docker 目录
+cd ~/claude-agent-next-kit/docker
+
+# 2. 停止并移除所有容器和网络
+docker compose down
+
+# 预期输出：
+# [+] down 5/5
+#  ✔ Container docker-ai4sales-app-1 Removed
+#  ✔ Container ai4sales-minio-init   Removed
+#  ✔ Container docker-minio-1        Removed
+#  ✔ Container docker-postgres-1     Removed
+#  ✔ Network docker_ai4sales-network Removed
+
+# 3. 拉取最新代码（回到项目根目录）
+cd ~/claude-agent-next-kit
+git pull
+# 如果需要使用指定 SSH 密钥：
+# GIT_SSH_COMMAND="ssh -i ~/.ssh/id_your_key" git pull
+
+# 4. 回到 docker 目录，无缓存重新构建镜像
+cd docker
+docker compose build --no-cache
+
+# 5. 启动所有服务
+docker compose up -d
+
+# 6. 检查服务状态
+docker compose ps
+
+# 7. 跟踪应用日志，确认启动正常
+docker compose logs -f ai4sales-app
+```
+
+### 快速更新（使用缓存构建）
+
+如果改动较小且无依赖变化，可使用缓存构建以加速：
+
+```bash
+cd ~/claude-agent-next-kit/docker
+docker compose down
+cd .. && git pull && cd docker
+docker compose up -d --build
+docker compose logs -f ai4sales-app
+```
+
+### 仅更新应用（不影响数据库和存储）
+
+如果仅需重建应用镜像而不重启 Postgres/MinIO：
+
+```bash
+cd ~/claude-agent-next-kit
+git pull
+cd docker
+docker compose build --no-cache ai4sales-app
+docker compose up -d ai4sales-app
+docker compose logs -f ai4sales-app
+```
+
+### 一行命令快速部署
+
+适合写进 cron 或 CI 脚本的单行命令：
+
+```bash
+cd ~/claude-agent-next-kit/docker && docker compose down && cd .. && git pull && cd docker && docker compose build --no-cache && docker compose up -d
+```
+
+### 更新后验证
+
+部署完成后，执行以下检查确认服务正常：
+
+```bash
+# 检查所有容器运行状态（State 应为 running / healthy）
+docker compose ps
+
+# 确认应用可访问
+curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/
+# 应返回 200
+
+# 确认数据库连接正常
+docker compose exec postgres pg_isready -U ai4sales
+# 应返回 "accepting connections"
+
+# 确认 MinIO 健康
+curl -s http://localhost:9000/minio/health/ready
+# 应返回 200
+```
+
+### 注意事项
+
+| 场景 | 建议 |
+|------|------|
+| 数据库 schema 有变更 | `entrypoint.sh` 会在启动时自动执行迁移，无需手动操作 |
+| 依赖包有变更 | 务必使用 `--no-cache` 构建以确保依赖更新 |
+| `.env` 配置有变更 | 先编辑 `docker/.env`，再执行构建流程 |
+| 需要保留数据 | `docker compose down` 不会删除数据卷，数据安全 |
+| 需要完全重置 | 使用 `docker compose down -v` 删除数据卷（⚠️ 不可恢复） |
 
 ---
 
