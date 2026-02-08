@@ -3,7 +3,6 @@
 import { NextRequest } from "next/server";
 import {
   createUIMessageStream,
-  createUIMessageStreamResponse,
   UIMessage,
   isToolUIPart,
 } from "ai";
@@ -41,8 +40,17 @@ import { extractTextFromParts } from "../../lib/message-parts";
 export const runtime = "nodejs";
 
 const DEFAULT_MAX_TURNS = Number(process.env.MAX_TURNS) || 10;
+const DEFAULT_SSE_HEARTBEAT_INTERVAL_MS = 15000;
+const SSE_HEARTBEAT_CHUNK_TYPE = "data-sse-heartbeat";
+const SSE_HEARTBEAT_MODE_EVENT = "event";
 type UIMessagePart = NonNullable<UIMessage["parts"]>[number];
 type PersistableUIMessagePart = UIMessagePart | WorkspaceFilePathPart;
+type HeartbeatFrameMode = "comment" | "event";
+type HeartbeatChunk = {
+  type: typeof SSE_HEARTBEAT_CHUNK_TYPE;
+  data: { frame: string };
+  transient: true;
+};
 
 // Check if a part type is a tool type (starts with "tool-" or is "dynamic-tool")
 function isToolPartType(type: string): boolean {
@@ -231,6 +239,80 @@ function internalServerError(message: string, code?: string, details?: unknown) 
   });
 }
 
+function resolveHeartbeatIntervalMs(): number {
+  const configured = Number(process.env.SSE_HEARTBEAT_INTERVAL_MS);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_SSE_HEARTBEAT_INTERVAL_MS;
+  }
+  return configured;
+}
+
+function resolveHeartbeatFrameMode(): HeartbeatFrameMode {
+  return process.env.SSE_HEARTBEAT_MODE === SSE_HEARTBEAT_MODE_EVENT
+    ? "event"
+    : "comment";
+}
+
+function isHeartbeatChunk(part: unknown): part is HeartbeatChunk {
+  if (!part || typeof part !== "object") {
+    return false;
+  }
+  const candidate = part as {
+    type?: unknown;
+    data?: { frame?: unknown };
+    transient?: unknown;
+  };
+  return (
+    candidate.type === SSE_HEARTBEAT_CHUNK_TYPE &&
+    typeof candidate.data?.frame === "string" &&
+    candidate.transient === true
+  );
+}
+
+function createClaudeAgentSSEStreamResponse({
+  stream,
+  headers,
+}: {
+  stream: ReadableStream<unknown>;
+  headers?: HeadersInit;
+}) {
+  const sseStream = stream.pipeThrough(
+    new TransformStream<unknown, string>({
+      transform(part, controller) {
+        if (isHeartbeatChunk(part)) {
+          controller.enqueue(
+            part.data.frame.endsWith("\n\n")
+              ? part.data.frame
+              : `${part.data.frame}\n\n`
+          );
+          return;
+        }
+        controller.enqueue(`data: ${JSON.stringify(part)}\n\n`);
+      },
+      flush(controller) {
+        controller.enqueue("data: [DONE]\n\n");
+      },
+    })
+  );
+
+  const responseHeaders = new Headers({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Vercel-AI-UI-Message-Stream": "v1",
+    "X-Accel-Buffering": "no",
+  });
+
+  const extraHeaders = new Headers(headers);
+  extraHeaders.forEach((value, key) => {
+    responseHeaders.set(key, value);
+  });
+
+  return new Response(sseStream.pipeThrough(new TextEncoderStream()), {
+    headers: responseHeaders,
+  });
+}
+
 export async function POST(req: NextRequest) {
   // Parse and validate request body using Zod
   let body: ChatApiSchemaRequestBody;
@@ -330,15 +412,103 @@ export async function POST(req: NextRequest) {
 
       // Create AbortController and wire it to the client disconnect signal
       const abortController = new AbortController();
-      req.signal.addEventListener("abort", () => {
+      type StreamWritePart = Parameters<typeof writer.write>[0];
+      const heartbeatIntervalMs = resolveHeartbeatIntervalMs();
+      const heartbeatFrameMode = resolveHeartbeatFrameMode();
+
+      let isClosed = false;
+      let isAborted = req.signal.aborted;
+      let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+      const isAbortError = (error: unknown): boolean => {
+        return error instanceof Error && error.name === "AbortError";
+      };
+
+      const stopHeartbeat = (): void => {
+        if (heartbeatTimer !== null) {
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
+      };
+
+      const safeWritePart = (part: StreamWritePart): boolean => {
+        if (isClosed || isAborted) {
+          return false;
+        }
+
+        try {
+          writer.write(part);
+          return true;
+        } catch (error) {
+          stopHeartbeat();
+          if (isAbortError(error) || req.signal.aborted || abortController.signal.aborted) {
+            isAborted = true;
+            console.info("[Claude Agent API] Stream write aborted by client.");
+          } else {
+            isClosed = true;
+            console.error("[Claude Agent API] Stream write failed:", error);
+          }
+          return false;
+        }
+      };
+
+      const safeWriteSSE = (partOrFrame: StreamWritePart | string): boolean => {
+        if (typeof partOrFrame === "string") {
+          const normalizedFrame = partOrFrame.endsWith("\n\n")
+            ? partOrFrame
+            : `${partOrFrame}\n\n`;
+          const heartbeatChunk: HeartbeatChunk = {
+            type: SSE_HEARTBEAT_CHUNK_TYPE,
+            data: { frame: normalizedFrame },
+            transient: true,
+          };
+          return safeWritePart(heartbeatChunk as StreamWritePart);
+        }
+        return safeWritePart(partOrFrame);
+      };
+
+      const writeAndTrack = (part: StreamWritePart): boolean => {
+        const writeOk = safeWriteSSE(part);
+        if (!writeOk) {
+          return false;
+        }
+
+        // Store exact copy of stream event (excluding 'finish' and 'error' types)
+        if (part.type !== "finish" && part.type !== "error") {
+          streamedParts.push({ ...part });
+        }
+        return true;
+      };
+
+      const buildHeartbeatFrame = (): string => {
+        if (heartbeatFrameMode === "event") {
+          return `event: ping\ndata: ${Date.now()}`;
+        }
+        return `: heartbeat ${Date.now()}`;
+      };
+
+      const onRequestAbort = (): void => {
+        if (isAborted) {
+          return;
+        }
+        isAborted = true;
+        stopHeartbeat();
         abortController.abort();
-      });
+      };
+
+      req.signal.addEventListener("abort", onRequestAbort, { once: true });
 
       let fullText = "";
       const assistantMessageId = uiMessage.id
         ? `${uiMessage.id}-response`
         : createId("msg");
       let hasStarted = false;
+
+      heartbeatTimer = setInterval(() => {
+        if (!safeWriteSSE(buildHeartbeatFrame())) {
+          stopHeartbeat();
+        }
+      }, heartbeatIntervalMs);
 
       // Send message-metadata at the START of the stream
       // This allows the frontend to have access to toolChoice BEFORE any tool events arrive
@@ -351,19 +521,10 @@ export async function POST(req: NextRequest) {
         workspacePath: workspaceCwd,
         workspaceSessionId: conversationId,
       };
-      writer.write({
+      safeWriteSSE({
         type: "message-metadata",
         messageMetadata: initialMetadata,
       });
-
-      // Helper to write to stream AND track the part
-      const writeAndTrack = (part: Parameters<typeof writer.write>[0]) => {
-        writer.write(part);
-        // Store exact copy of stream event (excluding 'finish' and 'error' types)
-        if (part.type !== 'finish' && part.type !== 'error') {
-          streamedParts.push({ ...part });
-        }
-      };
 
       // Set up callbacks to stream to UI
       const callbacks: AgentStreamingCallbacks = {
@@ -533,7 +694,7 @@ export async function POST(req: NextRequest) {
           return confirmationResult;
         },
         onError: async (error: Error) => {
-          writer.write({
+          safeWriteSSE({
             type: "error",
             errorText: error.message,
           });
@@ -541,17 +702,14 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-
         // For new conversations, do not resume
         let shouldResume = false;
         let threadIdForAgent = conversationId;
         if (resume) {
-
           // Determine if we should resume an existing conversation
           // Use the stored claude_session_id if available
           shouldResume = !!existingConversation?.claude_session_id;
           threadIdForAgent = existingConversation?.claude_session_id ?? conversationId;
-
         }
         // Run the agent
         const result = await agentRunner.runStreaming(
@@ -582,23 +740,34 @@ export async function POST(req: NextRequest) {
           workspacePath: workspaceCwd,
           workspaceSessionId: conversationId,
         };
-        writer.write({
+        safeWriteSSE({
           type: "message-metadata",
           messageMetadata: finalMetadata,
         });
 
         // Finish the message
-        writer.write({
+        safeWriteSSE({
           type: "finish",
           finishReason: "stop",
         });
       } catch (error) {
+        stopHeartbeat();
+        if (isAbortError(error) || isAborted || req.signal.aborted || abortController.signal.aborted) {
+          isAborted = true;
+          console.info("[Claude Agent API] Stream aborted by client.");
+          return;
+        }
+
         console.error("Agent run error:", error);
-        writer.write({
+        safeWriteSSE({
           type: "error",
           errorText:
             error instanceof Error ? error.message : "Unknown error occurred",
         });
+      } finally {
+        stopHeartbeat();
+        isClosed = true;
+        req.signal.removeEventListener("abort", onRequestAbort);
       }
     },
 
@@ -714,7 +883,7 @@ export async function POST(req: NextRequest) {
   });
 
   // Return streaming response
-  return createUIMessageStreamResponse({
+  return createClaudeAgentSSEStreamResponse({
     stream,
     headers: {
       "X-Conversation-Id": conversationId,
