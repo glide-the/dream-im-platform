@@ -71,29 +71,27 @@ services:
     networks:
       - ai4sales-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   # ---- MinIO Bucket Initialization ----
+  
+  # MinIO client to create bucket on startup
   minio-init:
     image: minio/mc:latest
+    container_name: ai4sales-minio-init
     depends_on:
       minio:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      echo 'Waiting for MinIO to be ready...';
-      for i in 1 2 3 4 5 6 7 8 9 10; do
-        mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin} && break;
-        echo \"Attempt $$i failed, retrying in 3s...\";
-        sleep 3;
-      done;
+      mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin};
       mc mb myminio/$${MINIO_BUCKET:-vibesales} --ignore-existing;
-      mc anonymous set public myminio/$${MINIO_BUCKET:-vibesales};
-      echo 'MinIO bucket initialized successfully';
+      mc anonymous set public myminio/$${MINIO_BUCKET:-vibesales}; 
+      echo 'MinIO bucket vibesales created and set to public';
       exit 0;
       "
     environment:
