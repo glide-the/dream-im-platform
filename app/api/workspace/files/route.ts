@@ -1,8 +1,12 @@
 // app/api/workspace/files/route.ts
 // Workspace file management API - list, upload, delete, move files in cwd workspace
 import { NextRequest, NextResponse } from "next/server";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { hostname } from "node:os";
 import {
   getOrCreateWorkspace,
+  getWorkspaceRoot,
   listWorkspaceFiles,
   deleteWorkspaceFile,
   moveWorkspaceFile,
@@ -18,6 +22,12 @@ export const runtime = "nodejs";
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
+}
+
+function withWorkspaceDebugHeaders(response: NextResponse): NextResponse {
+  response.headers.set("x-workspace-instance-host", hostname());
+  response.headers.set("x-workspace-instance-pid", String(process.pid));
+  return response;
 }
 
 function normalizeIncomingRelativePath(rawPath: string): string {
@@ -55,14 +65,29 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const workspaceRoot = getWorkspaceRoot();
+    const workspaceFullPath = join(workspaceRoot, sessionId);
+    const workspaceExistedBefore = existsSync(workspaceFullPath);
     const workspacePath = getOrCreateWorkspace(sessionId);
     const files = listWorkspaceFiles(workspacePath, subPath);
-    return NextResponse.json({ files, workspacePath });
+    const workspaceCreated = !workspaceExistedBefore;
+
+    const response = NextResponse.json({
+      files,
+      workspacePath,
+      workspaceCreated,
+      warning:
+        workspaceCreated && subPath
+          ? "Workspace was created on this instance while listing a sub-path. This usually indicates non-shared storage or requests hitting different instances."
+          : undefined,
+    });
+    return withWorkspaceDebugHeaders(response);
   } catch (error) {
-    return NextResponse.json(
+    const response = NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to list files" },
       { status: 500 }
     );
+    return withWorkspaceDebugHeaders(response);
   }
 }
 
@@ -83,7 +108,11 @@ export async function POST(req: NextRequest) {
       return badRequest("sessionId is required");
     }
 
+    const workspaceRoot = getWorkspaceRoot();
+    const workspaceFullPath = join(workspaceRoot, sessionId);
+    const workspaceExistedBefore = existsSync(workspaceFullPath);
     const workspacePath = getOrCreateWorkspace(sessionId);
+    const workspaceCreated = !workspaceExistedBefore;
     const files = formData
       .getAll("file")
       .filter((value): value is File => value instanceof File);
@@ -138,13 +167,16 @@ export async function POST(req: NextRequest) {
       return badRequest("No files uploaded");
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       uploaded: uploadedFiles,
       files: uploadedMetadata,
+      workspacePath,
+      workspaceCreated,
     });
+    return withWorkspaceDebugHeaders(response);
   } catch (error) {
     const normalizedError = normalizeWorkspaceFileSyncError(error);
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         error: normalizedError.message,
         code: normalizedError.code,
@@ -152,6 +184,7 @@ export async function POST(req: NextRequest) {
       },
       { status: normalizedError.status }
     );
+    return withWorkspaceDebugHeaders(response);
   }
 }
 
@@ -176,12 +209,13 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ deleted: true });
+    return withWorkspaceDebugHeaders(NextResponse.json({ deleted: true }));
   } catch (error) {
-    return NextResponse.json(
+    const response = NextResponse.json(
       { error: error instanceof Error ? error.message : "Delete failed" },
       { status: 500 }
     );
+    return withWorkspaceDebugHeaders(response);
   }
 }
 
@@ -206,11 +240,12 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ moved: true });
+    return withWorkspaceDebugHeaders(NextResponse.json({ moved: true }));
   } catch (error) {
-    return NextResponse.json(
+    const response = NextResponse.json(
       { error: error instanceof Error ? error.message : "Move failed" },
       { status: 500 }
     );
+    return withWorkspaceDebugHeaders(response);
   }
 }
