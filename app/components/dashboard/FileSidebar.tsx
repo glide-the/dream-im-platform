@@ -40,6 +40,8 @@ const MAX_UPLOAD_TOTAL_BYTES = 1024 * 1024 * 1024; // 1 GB
 const MAX_UPLOAD_BATCH_FILES = 20;
 const MAX_UPLOAD_BATCH_TOTAL_BYTES = 64 * 1024 * 1024; // 64 MB
 const UPLOAD_REQUEST_TIMEOUT_MS = 90_000;
+const UPLOAD_FORCE_REFRESH_RETRY_COUNT = 4;
+const UPLOAD_FORCE_REFRESH_INTERVAL_MS = 500;
 
 const folderPickerAttributes = {
   webkitdirectory: "",
@@ -85,6 +87,12 @@ async function yieldToMainThread(): Promise<void> {
   });
 }
 
+async function waitMs(milliseconds: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
 export default function FileSidebar({ sessionId, open, onClose }: FileSidebarProps) {
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [currentPath, setCurrentPath] = useState("");
@@ -110,13 +118,26 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
   }, []);
 
   const fetchFiles = useCallback(
-    async (subPath: string = "") => {
+    async (
+      subPath: string = "",
+      options?: { force?: boolean; silent?: boolean },
+    ) => {
       if (!sessionId) return;
-      setLoading(true);
+      const shouldShowLoading = !options?.silent;
+      if (shouldShowLoading) {
+        setLoading(true);
+      }
+
       try {
         const params = new URLSearchParams({ sessionId });
         if (subPath) params.set("path", subPath);
-        const res = await fetch(`/api/workspace/files?${params}`);
+        if (options?.force) {
+          params.set("_ts", String(Date.now()));
+        }
+
+        const res = await fetch(`/api/workspace/files?${params}`, {
+          cache: options?.force ? "no-store" : "default",
+        });
         if (res.ok) {
           const data = await res.json();
           setFiles(data.files || []);
@@ -124,10 +145,31 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
       } catch (error) {
         console.error("Failed to fetch files:", error);
       } finally {
-        setLoading(false);
+        if (shouldShowLoading) {
+          setLoading(false);
+        }
       }
     },
     [sessionId],
+  );
+
+  const forceRefreshAfterUpload = useCallback(
+    async (subPath: string) => {
+      for (
+        let attempt = 0;
+        attempt < UPLOAD_FORCE_REFRESH_RETRY_COUNT;
+        attempt += 1
+      ) {
+        await fetchFiles(subPath, {
+          force: true,
+          silent: attempt > 0,
+        });
+        if (attempt < UPLOAD_FORCE_REFRESH_RETRY_COUNT - 1) {
+          await waitMs(UPLOAD_FORCE_REFRESH_INTERVAL_MS);
+        }
+      }
+    },
+    [fetchFiles],
   );
 
   const markBatchStatus = useCallback(
@@ -260,10 +302,10 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
       processingUploadsRef.current = false;
       setUploading(false);
       if (shouldRefreshFiles) {
-        await fetchFiles(currentPath);
+        await forceRefreshAfterUpload(currentPath);
       }
     }
-  }, [currentPath, fetchFiles, markBatchStatus, sessionId]);
+  }, [currentPath, forceRefreshAfterUpload, markBatchStatus, sessionId]);
 
   const enqueueUploads = useCallback(
     (items: WorkspaceUploadItem[]) => {
