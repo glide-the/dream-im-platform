@@ -334,7 +334,7 @@ export class ClaudeAgentRunner {
         // Process message based on type
         await this.processMessage(message, callbacks, toolChoice, pendingToolCalls, (delta) => {
           fullText += delta;
-        });
+        }, true /* includePartialMessages: assistant 文本由 stream_event 输出，避免重复 */);
       }
 
       // Call onTextDone if we accumulated any text
@@ -367,7 +367,9 @@ export class ClaudeAgentRunner {
     callbacks: AgentStreamingCallbacks,
     toolChoice: ToolChoiceMode,
     pendingToolCalls: Map<string, { toolName: string; input: Record<string, unknown> }>,
-    onTextAccumulate: (delta: string) => void
+    onTextAccumulate: (delta: string) => void,
+    /** 开启时 assistant 消息的文本已通过 stream_event 增量输出，跳过以避免重复 */
+    includePartialMessages = false
   ): Promise<void> {
     switch (message.type) {
       case "assistant": {
@@ -376,8 +378,12 @@ export class ClaudeAgentRunner {
         if (Array.isArray(content)) {
           for (const block of content) {
             if (block.type === "text" && typeof block.text === "string") {
-              onTextAccumulate(block.text);
-              await callbacks.onTextDelta(block.text);
+              // includePartialMessages 开启时，文本已通过 stream_event (text_delta) 增量输出，
+              // assistant 消息只是累积的 partial message，跳过以避免重复
+              if (!includePartialMessages) {
+                onTextAccumulate(block.text);
+                await callbacks.onTextDelta(block.text);
+              }
             } else if (block.type === "thinking" && callbacks.onToolEvent) {
               // Handle thinking content blocks
               const thinkingBlock = block as { type: "thinking"; thinking: string };
@@ -425,8 +431,11 @@ export class ClaudeAgentRunner {
             }
           }
         } else if (typeof content === "string") {
-          onTextAccumulate(content);
-          await callbacks.onTextDelta(content);
+          // 同上：includePartialMessages 时跳过 assistant 文本
+          if (!includePartialMessages) {
+            onTextAccumulate(content);
+            await callbacks.onTextDelta(content);
+          }
         }
         break;
       }
