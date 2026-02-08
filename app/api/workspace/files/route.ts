@@ -8,6 +8,7 @@ import {
   getOrCreateWorkspace,
   getWorkspaceRoot,
   listWorkspaceFiles,
+  listWorkspaceFileTree,
   deleteWorkspaceFile,
   moveWorkspaceFile,
   WORKSPACE_DIRS,
@@ -59,6 +60,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const sessionId = searchParams.get("sessionId");
   const subPath = searchParams.get("path") || "";
+  const recursiveParam = searchParams.get("recursive") || "";
+  const recursive = recursiveParam === "1" || recursiveParam === "true";
 
   if (!sessionId) {
     return badRequest("sessionId is required");
@@ -70,10 +73,13 @@ export async function GET(req: NextRequest) {
     const workspaceExistedBefore = existsSync(workspaceFullPath);
     const workspacePath = getOrCreateWorkspace(sessionId);
     const files = listWorkspaceFiles(workspacePath, subPath);
+    const tree = recursive ? listWorkspaceFileTree(workspacePath, subPath) : undefined;
     const workspaceCreated = !workspaceExistedBefore;
 
     const response = NextResponse.json({
       files,
+      tree,
+      recursive,
       workspacePath,
       workspaceCreated,
       warning:

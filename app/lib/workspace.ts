@@ -249,6 +249,10 @@ export interface WorkspaceFileInfo {
   modifiedAt: string;
 }
 
+export interface WorkspaceFileTreeNode extends WorkspaceFileInfo {
+  children?: WorkspaceFileTreeNode[];
+}
+
 const WORKSPACE_FILE_ACCESS_ERROR_CODES = [
   "PATH_TRAVERSAL",
   "NOT_FOUND",
@@ -301,11 +305,20 @@ function ensureWorkspaceSafePath(
   return fullPath;
 }
 
+function normalizeWorkspaceSubPath(subPath: string): string {
+  return subPath
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+}
+
 export function listWorkspaceFiles(
   workspacePath: string,
   subPath: string = ""
 ): WorkspaceFileInfo[] {
-  const targetDir = subPath ? join(workspacePath, subPath) : workspacePath;
+  const normalizedSubPath = normalizeWorkspaceSubPath(subPath);
+  const targetDir = normalizedSubPath
+    ? ensureWorkspaceSafePath(workspacePath, normalizedSubPath)
+    : workspacePath;
 
   if (!existsSync(targetDir)) {
     return [];
@@ -317,7 +330,9 @@ export function listWorkspaceFiles(
       .filter((entry) => !entry.name.startsWith("."))
       .map((entry) => {
         const fullPath = join(targetDir, entry.name);
-        const relativePath = subPath ? join(subPath, entry.name) : entry.name;
+        const relativePath = normalizedSubPath
+          ? `${normalizedSubPath}/${entry.name}`
+          : entry.name;
         const stats = statSync(fullPath);
         return {
           name: entry.name,
@@ -335,6 +350,24 @@ export function listWorkspaceFiles(
   } catch {
     return [];
   }
+}
+
+export function listWorkspaceFileTree(
+  workspacePath: string,
+  subPath: string = "",
+): WorkspaceFileTreeNode[] {
+  const currentLevel = listWorkspaceFiles(workspacePath, subPath);
+
+  return currentLevel.map((entry) => {
+    if (!entry.isDirectory) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      children: listWorkspaceFileTree(workspacePath, entry.path),
+    };
+  });
 }
 
 export function readWorkspaceFileContent(

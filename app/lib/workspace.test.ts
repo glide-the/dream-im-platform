@@ -130,6 +130,36 @@ describe("workspace", () => {
     });
   });
 
+  describe("listWorkspaceFileTree", () => {
+    it("should recursively list nested directory structure", async () => {
+      const { initWorkspace, listWorkspaceFileTree } = await import("./workspace");
+      const sessionId = "tree-test";
+      const workspacePath = initWorkspace(sessionId);
+
+      mkdirSync(join(workspacePath, "skills", "nested"), { recursive: true });
+      writeFileSync(join(workspacePath, "skills", "guide.md"), "# guide");
+      writeFileSync(join(workspacePath, "skills", "nested", "agent.md"), "# agent");
+      writeFileSync(join(workspacePath, ".hidden"), "ignore");
+
+      const tree = listWorkspaceFileTree(workspacePath);
+      const skillsDir = tree.find((node) => node.path === "skills");
+
+      expect(skillsDir?.isDirectory).toBe(true);
+      expect(skillsDir?.children?.some((node) => node.path === "skills/guide.md")).toBe(
+        true,
+      );
+
+      const nestedDir = skillsDir?.children?.find(
+        (node) => node.path === "skills/nested",
+      );
+      expect(nestedDir?.children?.some((node) => node.path === "skills/nested/agent.md")).toBe(
+        true,
+      );
+
+      expect(tree.some((node) => node.name === ".hidden")).toBe(false);
+    });
+  });
+
   describe("readWorkspaceFileContent", () => {
     it("reads a workspace file for download", async () => {
       const { initWorkspace, readWorkspaceFileContent } = await import("./workspace");

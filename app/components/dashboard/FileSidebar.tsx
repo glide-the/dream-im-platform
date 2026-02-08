@@ -27,6 +27,10 @@ export interface FileInfo {
   modifiedAt: string;
 }
 
+interface FileTreeNode extends FileInfo {
+  children?: FileTreeNode[];
+}
+
 interface FileSidebarProps {
   sessionId: string;
   open: boolean;
@@ -51,6 +55,11 @@ interface DownloadErrorResponse {
   error?: string;
 }
 
+interface WorkspaceFilesResponse {
+  files?: FileInfo[];
+  tree?: FileTreeNode[];
+}
+
 const MAX_UPLOAD_FILES = 2000;
 const MAX_UPLOAD_TOTAL_BYTES = 1024 * 1024 * 1024; // 1 GB
 const MAX_UPLOAD_BATCH_FILES = 20;
@@ -58,6 +67,7 @@ const MAX_UPLOAD_BATCH_TOTAL_BYTES = 64 * 1024 * 1024; // 64 MB
 const UPLOAD_REQUEST_TIMEOUT_MS = 90_000;
 const UPLOAD_FORCE_REFRESH_RETRY_COUNT = 4;
 const UPLOAD_FORCE_REFRESH_INTERVAL_MS = 500;
+const WORKSPACE_FILES_POLL_INTERVAL_MS = 60_000;
 
 const folderPickerAttributes = {
   webkitdirectory: "",
@@ -164,6 +174,68 @@ function statusIcon(item: WorkspaceUploadItem) {
   return <IconClock className="h-3.5 w-3.5 text-text-tertiary" />;
 }
 
+function normalizeWorkspacePath(pathValue: string): string {
+  return pathValue
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+}
+
+function normalizeTreeNode(node: FileTreeNode): FileTreeNode {
+  return {
+    ...node,
+    path: normalizeWorkspacePath(node.path),
+    children: Array.isArray(node.children)
+      ? node.children.map((child) => normalizeTreeNode(child))
+      : undefined,
+  };
+}
+
+function normalizeTree(nodes: FileTreeNode[]): FileTreeNode[] {
+  return nodes.map((node) => normalizeTreeNode(node));
+}
+
+function mapFlatFilesToRootTree(files: FileInfo[]): FileTreeNode[] {
+  return files.map((file) => {
+    if (!file.isDirectory) {
+      return {
+        ...file,
+        path: normalizeWorkspacePath(file.path),
+      };
+    }
+
+    return {
+      ...file,
+      path: normalizeWorkspacePath(file.path),
+      children: [],
+    };
+  });
+}
+
+function findTreeNodeByPath(
+  nodes: FileTreeNode[],
+  targetPath: string,
+): FileTreeNode | null {
+  const normalizedTargetPath = normalizeWorkspacePath(targetPath);
+  if (!normalizedTargetPath) {
+    return null;
+  }
+
+  for (const node of nodes) {
+    if (normalizeWorkspacePath(node.path) === normalizedTargetPath) {
+      return node;
+    }
+
+    if (node.children && node.children.length > 0) {
+      const nested = findTreeNodeByPath(node.children, normalizedTargetPath);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
+}
+
 async function yieldToMainThread(): Promise<void> {
   await new Promise<void>((resolve) => {
     setTimeout(resolve, 0);
@@ -177,7 +249,7 @@ async function waitMs(milliseconds: number): Promise<void> {
 }
 
 export default function FileSidebar({ sessionId, open, onClose }: FileSidebarProps) {
-  const [files, setFiles] = useState<FileInfo[]>([]);
+  const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
   const [currentPath, setCurrentPath] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -204,10 +276,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
   }, []);
 
   const fetchFiles = useCallback(
-    async (
-      subPath: string = "",
-      options?: { force?: boolean; silent?: boolean },
-    ) => {
+    async (options?: { force?: boolean; silent?: boolean }) => {
       if (!sessionId) return;
       const shouldShowLoading = !options?.silent;
       if (shouldShowLoading) {
@@ -215,8 +284,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
       }
 
       try {
-        const params = new URLSearchParams({ sessionId });
-        if (subPath) params.set("path", subPath);
+        const params = new URLSearchParams({ sessionId, recursive: "1" });
         if (options?.force) {
           params.set("_ts", String(Date.now()));
         }
@@ -225,8 +293,15 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
           cache: options?.force ? "no-store" : "default",
         });
         if (res.ok) {
-          const data = await res.json();
-          setFiles(data.files || []);
+          const data = (await res.json()) as WorkspaceFilesResponse;
+          if (Array.isArray(data.tree)) {
+            setFileTree(normalizeTree(data.tree));
+          } else if (Array.isArray(data.files)) {
+            // Backward compatibility: older responses may only include root files.
+            setFileTree(mapFlatFilesToRootTree(data.files));
+          } else {
+            setFileTree([]);
+          }
         }
       } catch (error) {
         console.error("Failed to fetch files:", error);
@@ -240,13 +315,13 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
   );
 
   const forceRefreshAfterUpload = useCallback(
-    async (subPath: string) => {
+    async () => {
       for (
         let attempt = 0;
         attempt < UPLOAD_FORCE_REFRESH_RETRY_COUNT;
         attempt += 1
       ) {
-        await fetchFiles(subPath, {
+        await fetchFiles({
           force: true,
           silent: attempt > 0,
         });
@@ -388,7 +463,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
       processingUploadsRef.current = false;
       setUploading(false);
       if (shouldRefreshFiles) {
-        await forceRefreshAfterUpload(currentPath);
+        await forceRefreshAfterUpload();
       }
     }
   }, [currentPath, forceRefreshAfterUpload, markBatchStatus, sessionId]);
@@ -464,6 +539,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
   );
 
   useEffect(() => {
+    setFileTree([]);
     setCurrentPath("");
     setExpandedDirs(new Set());
     setUploadError(null);
@@ -479,19 +555,19 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
     if (!open || !sessionId) return;
 
     const intervalId = window.setInterval(() => {
-      void fetchFiles(currentPath);
-    }, 3000);
+      void fetchFiles();
+    }, WORKSPACE_FILES_POLL_INTERVAL_MS);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [open, sessionId, currentPath, fetchFiles]);
+  }, [open, sessionId, fetchFiles]);
 
   useEffect(() => {
     if (open && sessionId) {
-      void fetchFiles(currentPath);
+      void fetchFiles();
     }
-  }, [open, sessionId, currentPath, fetchFiles]);
+  }, [open, sessionId, fetchFiles]);
 
   useEffect(() => {
     const folderInput = folderInputRef.current;
@@ -531,7 +607,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
         body: JSON.stringify({ sessionId, path: filePath }),
       });
       if (res.ok) {
-        await fetchFiles(currentPath);
+        await fetchFiles();
       }
     } catch (error) {
       console.error("Delete failed:", error);
@@ -696,6 +772,30 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
     setUploadError(null);
   }, [updateUploadQueue, uploading]);
 
+  const visibleFiles = useMemo(() => {
+    if (!currentPath) {
+      return fileTree;
+    }
+
+    const currentNode = findTreeNodeByPath(fileTree, currentPath);
+    if (!currentNode || !currentNode.isDirectory) {
+      return [];
+    }
+
+    return currentNode.children || [];
+  }, [currentPath, fileTree]);
+
+  useEffect(() => {
+    if (!currentPath) {
+      return;
+    }
+
+    const currentNode = findTreeNodeByPath(fileTree, currentPath);
+    if (!currentNode || !currentNode.isDirectory) {
+      setCurrentPath("");
+    }
+  }, [currentPath, fileTree]);
+
   const breadcrumbs = ["workspace", ...currentPath.split("/").filter(Boolean)];
 
   const uploadSummary = useMemo(() => {
@@ -790,7 +890,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
             <div className="flex items-center justify-center py-12">
               <IconLoader className="h-6 w-6 animate-spin text-text-tertiary" />
             </div>
-          ) : files.length === 0 ? (
+          ) : visibleFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center text-sm text-text-tertiary">
               <IconFolder className="mb-3 h-10 w-10 opacity-30" />
               <p>No files yet</p>
@@ -808,7 +908,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
                   </button>
                 </li>
               )}
-              {files.map((file) => (
+              {visibleFiles.map((file) => (
                 <li key={file.path} className="group">
                   <div
                     className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-bg-secondary"

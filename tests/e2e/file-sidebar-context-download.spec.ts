@@ -75,6 +75,8 @@ test.describe("FileSidebar context menu download", () => {
     await expect(page.getByText("已开始下载：report.txt")).toBeVisible();
 
     await dirRow.click({ button: "right" });
-    await expect(page.getByText("目录暂不支持直接下载。")).toBeVisible();
+    await expect(
+      page.getByTestId("file-sidebar-context-menu").getByText("目录暂不支持直接下载。"),
+    ).toBeVisible();
   });
 });
