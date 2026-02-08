@@ -4,6 +4,7 @@ import {
   decodeStorageKeyFromBase64Segment,
   serverFileStorage,
 } from "@/lib/file-storage";
+import { buildContentDispositionHeader } from "@/lib/content-disposition";
 import { FileNotFoundError } from "@/lib/errors";
 import logger from "@/lib/logger";
 
@@ -27,15 +28,6 @@ function extractFilenameFromKey(key: string): string {
 
 function resolveStorageKey(keySegments: string[]): string | null {
   return decodeStorageKeyFromBase64Segment(keySegments[0]);
-}
-
-function buildContentDisposition(filename: string, forceDownload: boolean): string {
-  const safeFilename = filename.replace(/["\r\n]/g, "_");
-  const encodedFilename = encodeURIComponent(safeFilename);
-
-  return forceDownload
-    ? `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`
-    : `inline; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`;
 }
 
 /**
@@ -75,7 +67,10 @@ export async function GET(
     const headers = new Headers();
     headers.set("Content-Type", metadata.contentType || "application/octet-stream");
     headers.set("Content-Length", String(file.byteLength));
-    headers.set("Content-Disposition", buildContentDisposition(filename, forceDownload));
+    headers.set(
+      "Content-Disposition",
+      buildContentDispositionHeader(filename, forceDownload ? "attachment" : "inline"),
+    );
     headers.set("Cache-Control", CACHE_CONTROL);
     headers.set("X-Content-Type-Options", "nosniff");
 

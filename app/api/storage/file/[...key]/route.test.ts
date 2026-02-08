@@ -97,6 +97,33 @@ describe("GET /api/storage/file/[...key]", () => {
     expect(response.headers.get("Content-Disposition")).toContain("attachment");
   });
 
+  it("serves unicode filenames with RFC5987-compatible header", async () => {
+    const key = "uploads/纯粹理性批判.epub";
+    mockGetMetadata.mockResolvedValue({
+      key,
+      filename: "纯粹理性批判.epub",
+      contentType: "application/epub+zip",
+      size: 8,
+      uploadedAt: new Date("2026-02-08T00:00:00.000Z"),
+    });
+    mockDownload.mockResolvedValue(Buffer.from("epubdata", "utf8"));
+
+    const { GET } = await importRoute();
+    const encodedKey = encodeKeySegment(key);
+    const response = await GET(
+      new NextRequest(`http://localhost/api/storage/file/${encodedKey}?download=1`),
+      { params: Promise.resolve({ key: [encodedKey] }) },
+    );
+
+    expect(response.status).toBe(200);
+    const contentDisposition = response.headers.get("Content-Disposition");
+    expect(contentDisposition).toContain("attachment");
+    expect(contentDisposition).toContain(
+      "filename*=UTF-8''%E7%BA%AF%E7%B2%B9%E7%90%86%E6%80%A7%E6%89%B9%E5%88%A4.epub",
+    );
+    expect(contentDisposition).not.toContain("纯粹理性批判.epub");
+  });
+
   it("returns 400 when key is invalid", async () => {
     const { GET } = await importRoute();
     const response = await GET(

@@ -59,6 +59,29 @@ describe("GET /api/workspace/files/download", () => {
     );
   });
 
+  it("downloads a workspace file with unicode filename", async () => {
+    mockGetOrCreateWorkspace.mockReturnValue("/tmp/workspace/session-1");
+    mockReadWorkspaceFileContent.mockReturnValue({
+      content: Buffer.from("unicode file", "utf8"),
+      fileName: "纯粹理性批判.epub",
+      size: 12,
+      modifiedAt: new Date("2026-02-08T00:00:00.000Z").toISOString(),
+    });
+
+    const { GET } = await importRoute();
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/workspace/files/download?sessionId=session-1&path=skills/%E7%BA%AF%E7%B2%B9%E7%90%86%E6%80%A7%E6%89%B9%E5%88%A4.epub",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const contentDisposition = response.headers.get("Content-Disposition");
+    expect(contentDisposition).toContain("attachment");
+    expect(contentDisposition).toContain("filename*=UTF-8''%E7%BA%AF%E7%B2%B9%E7%90%86%E6%80%A7%E6%89%B9%E5%88%A4.epub");
+    expect(contentDisposition).not.toContain("纯粹理性批判.epub");
+  });
+
   it("returns 400 when query is invalid", async () => {
     const { GET } = await importRoute();
     const response = await GET(

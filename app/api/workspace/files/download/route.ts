@@ -5,6 +5,7 @@ import {
   readWorkspaceFileContent,
   WorkspaceFileAccessError,
 } from "@/lib/workspace";
+import { buildContentDispositionHeader } from "@/lib/content-disposition";
 import { getContentTypeFromFilename } from "@/lib/file-storage/storage-utils";
 
 export const runtime = "nodejs";
@@ -13,13 +14,6 @@ const DownloadWorkspaceFileQuerySchema = z.object({
   sessionId: z.string().trim().min(1),
   path: z.string().trim().min(1),
 });
-
-function buildContentDisposition(fileName: string): string {
-  const safeFileName = fileName.replace(/["\r\n]/g, "_");
-  const encodedFileName = encodeURIComponent(safeFileName);
-
-  return `attachment; filename="${safeFileName}"; filename*=UTF-8''${encodedFileName}`;
-}
 
 function badRequest(error: string): NextResponse {
   return NextResponse.json({ error }, { status: 400 });
@@ -47,7 +41,7 @@ export async function GET(request: NextRequest) {
     const headers = new Headers();
     headers.set("Content-Type", getContentTypeFromFilename(file.fileName));
     headers.set("Content-Length", String(file.size));
-    headers.set("Content-Disposition", buildContentDisposition(file.fileName));
+    headers.set("Content-Disposition", buildContentDispositionHeader(file.fileName));
     headers.set("Cache-Control", "private, no-store");
     headers.set("X-Content-Type-Options", "nosniff");
 
