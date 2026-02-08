@@ -58,6 +58,7 @@ interface DownloadErrorResponse {
 interface WorkspaceFilesResponse {
   files?: FileInfo[];
   tree?: FileTreeNode[];
+  error?: string;
 }
 
 const MAX_UPLOAD_FILES = 2000;
@@ -139,6 +140,33 @@ export function getWorkspaceFileDownloadErrorMessage(
   }
 
   return `下载失败 (${responseStatus})`;
+}
+
+function getWorkspaceFilesLoadErrorMessage(
+  responseStatus: number,
+  fallbackMessage?: string,
+): string {
+  if (fallbackMessage) {
+    return fallbackMessage;
+  }
+
+  if (responseStatus === 404) {
+    return "目录不存在或已被删除。";
+  }
+
+  if (responseStatus === 401 || responseStatus === 403) {
+    return "没有权限读取该目录。";
+  }
+
+  if (responseStatus === 400) {
+    return "目录请求参数无效。";
+  }
+
+  if (responseStatus >= 500) {
+    return "目录刷新失败：服务暂时不可用，请稍后重试。";
+  }
+
+  return `目录刷新失败 (${responseStatus})`;
 }
 
 function formatFileSize(bytes: number): string {
@@ -252,6 +280,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
   const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
   const [currentPath, setCurrentPath] = useState("");
   const [loading, setLoading] = useState(false);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
@@ -266,6 +295,8 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
   const uploadQueueRef = useRef<WorkspaceUploadItem[]>([]);
   const pendingUploadIdsRef = useRef<string[]>([]);
   const processingUploadsRef = useRef(false);
+  const directoryRequestSeqRef = useRef(0);
+  const directoryAbortRef = useRef<AbortController | null>(null);
 
   const updateUploadQueue = useCallback((updater: UploadQueueUpdater) => {
     setUploadQueue((prev) => {
@@ -275,13 +306,21 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
     });
   }, []);
 
-  const fetchFiles = useCallback(
+  const loadDirectoryData = useCallback(
     async (options?: { force?: boolean; silent?: boolean }) => {
       if (!sessionId) return;
+
+      directoryAbortRef.current?.abort();
+      const abortController = new AbortController();
+      directoryAbortRef.current = abortController;
+      const requestSeq = directoryRequestSeqRef.current + 1;
+      directoryRequestSeqRef.current = requestSeq;
+
       const shouldShowLoading = !options?.silent;
       if (shouldShowLoading) {
         setLoading(true);
       }
+      setDirectoryError(null);
 
       try {
         const params = new URLSearchParams({ sessionId, recursive: "1" });
@@ -291,22 +330,43 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
 
         const res = await fetch(`/api/workspace/files?${params}`, {
           cache: options?.force ? "no-store" : "default",
+          signal: abortController.signal,
         });
-        if (res.ok) {
-          const data = (await res.json()) as WorkspaceFilesResponse;
-          if (Array.isArray(data.tree)) {
-            setFileTree(normalizeTree(data.tree));
-          } else if (Array.isArray(data.files)) {
-            // Backward compatibility: older responses may only include root files.
-            setFileTree(mapFlatFilesToRootTree(data.files));
-          } else {
-            setFileTree([]);
-          }
+
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => ({}))) as WorkspaceFilesResponse;
+          throw new Error(
+            getWorkspaceFilesLoadErrorMessage(res.status, payload.error),
+          );
+        }
+
+        const data = (await res.json()) as WorkspaceFilesResponse;
+
+        if (requestSeq !== directoryRequestSeqRef.current) {
+          return;
+        }
+
+        if (Array.isArray(data.tree)) {
+          setFileTree(normalizeTree(data.tree));
+        } else if (Array.isArray(data.files)) {
+          // Backward compatibility: older responses may only include root files.
+          setFileTree(mapFlatFilesToRootTree(data.files));
+        } else {
+          setFileTree([]);
         }
       } catch (error) {
-        console.error("Failed to fetch files:", error);
+        const isAbortError =
+          error instanceof Error && error.name === "AbortError";
+        if (isAbortError || requestSeq !== directoryRequestSeqRef.current) {
+          return;
+        }
+
+        console.error("Failed to load directory data:", error);
+        setDirectoryError(
+          error instanceof Error ? error.message : "目录刷新失败，请稍后重试。",
+        );
       } finally {
-        if (shouldShowLoading) {
+        if (requestSeq === directoryRequestSeqRef.current && shouldShowLoading) {
           setLoading(false);
         }
       }
@@ -321,7 +381,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
         attempt < UPLOAD_FORCE_REFRESH_RETRY_COUNT;
         attempt += 1
       ) {
-        await fetchFiles({
+        await loadDirectoryData({
           force: true,
           silent: attempt > 0,
         });
@@ -330,7 +390,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
         }
       }
     },
-    [fetchFiles],
+    [loadDirectoryData],
   );
 
   const markBatchStatus = useCallback(
@@ -542,6 +602,7 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
     setFileTree([]);
     setCurrentPath("");
     setExpandedDirs(new Set());
+    setDirectoryError(null);
     setUploadError(null);
     setDownloadNotice(null);
     setContextMenu(null);
@@ -555,19 +616,25 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
     if (!open || !sessionId) return;
 
     const intervalId = window.setInterval(() => {
-      void fetchFiles();
+      void loadDirectoryData({ silent: true });
     }, WORKSPACE_FILES_POLL_INTERVAL_MS);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [open, sessionId, fetchFiles]);
+  }, [open, sessionId, loadDirectoryData]);
 
   useEffect(() => {
     if (open && sessionId) {
-      void fetchFiles();
+      void loadDirectoryData({ force: true });
     }
-  }, [open, sessionId, fetchFiles]);
+  }, [open, sessionId, currentPath, loadDirectoryData]);
+
+  useEffect(() => {
+    return () => {
+      directoryAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     const folderInput = folderInputRef.current;
@@ -607,12 +674,16 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
         body: JSON.stringify({ sessionId, path: filePath }),
       });
       if (res.ok) {
-        await fetchFiles();
+        await loadDirectoryData({ force: true });
       }
     } catch (error) {
       console.error("Delete failed:", error);
     }
   };
+
+  const handleRefreshDirectory = useCallback(() => {
+    void loadDirectoryData({ force: true });
+  }, [loadDirectoryData]);
 
   const handleItemContextMenu = useCallback(
     (event: React.MouseEvent<HTMLDivElement>, file: FileInfo) => {
@@ -827,6 +898,23 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
           </div>
           <div className="flex items-center gap-1">
             <button
+              type="button"
+              onClick={handleRefreshDirectory}
+              className="rounded-md p-1.5 text-text-tertiary transition-colors hover:bg-bg-secondary hover:text-accent-orange disabled:cursor-not-allowed disabled:opacity-50"
+              title="刷新目录"
+              aria-label="刷新目录"
+              data-testid="refresh-directory-button"
+              disabled={loading}
+            >
+              {loading ? (
+                <span data-testid="directory-refresh-spinner" className="inline-flex">
+                  <IconLoader className="h-4 w-4 animate-spin" />
+                </span>
+              ) : (
+                <span className="text-sm leading-none">↻</span>
+              )}
+            </button>
+            <button
               onClick={() => fileInputRef.current?.click()}
               className="rounded-md p-1.5 text-text-tertiary transition-colors hover:bg-bg-secondary hover:text-accent-orange"
               title="Upload files"
@@ -886,6 +974,11 @@ export default function FileSidebar({ sessionId, open, onClose }: FileSidebarPro
           }}
           onDrop={handleDrop}
         >
+          {directoryError && (
+            <div className="mx-3 mt-3 rounded-md border border-danger/40 bg-danger/10 px-2 py-1 text-xs text-danger">
+              {directoryError}
+            </div>
+          )}
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <IconLoader className="h-6 w-6 animate-spin text-text-tertiary" />
