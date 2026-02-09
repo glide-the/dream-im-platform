@@ -44,8 +44,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Use Alibaba Cloud mirror for apk
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
-# Install curl for healthcheck
-RUN apk add --no-cache curl
+# Install curl for healthcheck and bash for Claude CLI (requires Posix shell: bash or zsh)
+RUN apk add --no-cache curl bash
+
+ENV SHELL="/bin/bash"
 
 # Copy standalone output (includes server.js and node_modules)
 COPY --from=builder /app/.next/standalone ./
