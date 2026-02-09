@@ -13,6 +13,8 @@ import {
 } from "ai";
 import { ToolMessagePart } from "../ToolMessagePart";
 import { FileMessagePart } from "../FileMessagePart";
+import SessionResultCard, { type SessionResultData } from "./SessionResultCard";
+import type { ChatMetadata } from "../../lib/chat-schema";
 
 interface ChatMessageListProps {
   messages: UIMessage[];
@@ -61,12 +63,14 @@ function getIdentityInfo(role: UIMessage["role"], isToolMessage: boolean): Ident
   return { icon: "🤖", label: "System" };
 }
 
-function getToolStatus(part: ToolUIPart | DynamicToolUIPart, isLoading: boolean, isLast: boolean): ToolStatus {
+function getToolStatus(part: ToolUIPart | DynamicToolUIPart, isLoading: boolean, _isLast: boolean): ToolStatus {
   const state = part.state;
   if (state === "output-error") return "error";
   if (TOOL_COMPLETED_STATES.has(state ?? "")) return "completed";
-  if (isLast && isLoading) return "executing";
-  return "executing";
+  // No explicit completion state and still loading → executing
+  if (isLoading) return "executing";
+  // Neither completed nor loading → historical message, treat as completed
+  return "completed";
 }
 
 function getToolOutputText(part: ToolUIPart | DynamicToolUIPart): string | null {
@@ -118,6 +122,11 @@ export default function ChatMessageList({
           .filter((partIndex): partIndex is number => partIndex !== null);
         const totalSteps = stepStartIndices.length;
         const stepIndexMap = new Map(stepStartIndices.map((partIndex, stepIndex) => [partIndex, stepIndex + 1]));
+
+        const metadata = msg.metadata as ChatMetadata | undefined;
+        const sessionResult = metadata?.unstable_data?.type === "session_result"
+          ? (metadata.unstable_data as SessionResultData)
+          : null;
 
         return (
           <div key={msg.id} className="space-y-4">
@@ -190,28 +199,12 @@ export default function ChatMessageList({
                 const stepIndex = stepIndexMap.get(partIndex) ?? 1;
 
                 return (
-                  <div key={partKey} className="flex justify-start">
-                    <div className="group w-full max-w-2xl">
-                      <div className="mb-1 flex items-center justify-between text-xs text-text-secondary">
-                        <div className="flex items-center gap-2">
-                          <span className="text-accent-orange">📌</span>
-                          <span className="font-semibold text-accent-orange">System</span>
-                        </div>
-                        {timeLabel && (
-                          <span
-                            className="cursor-pointer text-xs text-gray-400 transition-colors group-hover:text-accent-orange"
-                            title={fullTimeLabel}
-                          >
-                            {timeLabel}
-                          </span>
-                        )}
-                      </div>
-                      <div className="rounded-lg border border-border/60 bg-bg-secondary/40 p-3 text-sm text-text-primary">
-                        <p className="leading-relaxed">
-                          接下来要做：步骤推进 <span className="text-sky-400">【{stepIndex}/{totalSteps || 1}】</span>
-                        </p>
-                      </div>
-                    </div>
+                  <div key={partKey} className="flex items-center gap-3 py-2">
+                    <div className="h-px flex-1 bg-border/60" />
+                    <span className="whitespace-nowrap text-xs text-text-tertiary">
+                      第 {stepIndex} 轮
+                    </span>
+                    <div className="h-px flex-1 bg-border/60" />
                   </div>
                 );
               }
@@ -396,6 +389,7 @@ export default function ChatMessageList({
 
               return null;
             })}
+            {sessionResult && <SessionResultCard data={sessionResult} />}
           </div>
         );
       })}

@@ -6,12 +6,16 @@
 
 ### 1. 消息类型
 
-| 消息类型     | 对齐 | 内容规则 |
-|-------------|------|----------|
-| 🧠 思考消息 | 左   | 前缀 `"我在想："` + 思考内容，关键名词蓝色高亮 |
-| 📌 任务消息 | 左   | 前缀 `"接下来要做："` + 任务描述，步骤编号 `【1/3】` |
-| ▶️ 执行消息 | 左   | 前缀 `"正在执行："` + 命令/步骤，执行中显示加载动画 |
-| 💻 终端结果 | 右   | 代码块等宽字体，成功绿色 / 失败红色 |
+| 消息类型     | 对齐 | 内容规则 | 数据来源 |
+|-------------|------|----------|----------|
+| 🧠 思考消息 | 左   | 流式渲染思考过程 | `thinking_delta` / `thinking` 事件 → `reasoning` part |
+| 💬 AI 回复  | 左   | Markdown 渲染，长文本可折叠 | `text_delta` → `text` part |
+| 👤 用户消息 | 右   | 纯文本 + 附件 | 用户输入 → `text` / `file` part |
+| ▶️ 执行消息 | 左   | 显示工具名 + 参数 + 进度时间 | `tool_use_start` → `isToolUIPart` |
+| 💻 终端结果 | 右   | 代码块等宽字体，成功绿色 / 失败红色 | `tool_result` → `isToolUIPart` (completed) |
+| 📋 执行摘要 | 左   | 多工具链人可读汇总 | `tool_use_summary` → `text` part |
+| 📊 会话统计 | 居中 | Token/耗时/费用/轮次 | `result` → `SessionResultCard` |
+| ── 分隔线 ── | 居中 | 多轮分隔 | `step-start` part |
 
 ### 2. 交互规则
 
@@ -25,10 +29,14 @@
 ```
 ChatPanel (flex flex-col min-h-0)
 ├── ChatMessageList (flex-1 overflow-y-auto)
-│   ├── 思考气泡 (左对齐)
-│   ├── 任务气泡 (左对齐)
-│   ├── 执行气泡 (左对齐)
-│   └── 终端气泡 (右对齐)
+│   ├── 🧠 思考气泡 (reasoning, 左对齐, 可折叠)
+│   ├── 💬 AI回复气泡 (text, 左对齐, Markdown)
+│   ├── 👤 用户气泡 (text, 右对齐)
+│   ├── ▶️ 工具执行气泡 (tool, 左对齐, 含进度)
+│   ├── 💻 工具结果气泡 (tool completed, 右对齐, 代码块)
+│   ├── 📋 执行摘要气泡 (text, 左对齐)
+│   ├── ── 轮次分隔线 ── (step-start, 居中)
+│   └── 📊 会话统计卡片 (SessionResultCard, 居中)
 └── AIInputDock (sticky bottom-0)
 ```
 

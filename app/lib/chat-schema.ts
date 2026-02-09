@@ -117,6 +117,8 @@ export type ChatMetadata = {
   agentId?: string;
   workspacePath?: string;
   workspaceSessionId?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  unstable_data?: Record<string, any>;
 };
 
 /**

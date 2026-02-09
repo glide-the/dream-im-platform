@@ -404,6 +404,12 @@ export async function POST(req: NextRequest) {
   // Track tool calls for metadata
   let toolCallCount = 0;
 
+  // Coordinate thinking / thinking_delta deduplication.
+  // When thinking_delta arrives first, we open a reasoning stream and set this ID.
+  // When the full thinking block arrives later, we skip duplicate output.
+  let currentReasoningId: string | null = null;
+  let hasThinkingDelta = false;
+
   // Track toolCallIds that have been registered with tool-input-start in the AI SDK stream.
   // The AI SDK's processUIMessageStream throws AI_UIMessageStreamError when
   // tool-output-available arrives for a toolCallId without a prior tool-input-start.
@@ -583,27 +589,38 @@ export async function POST(req: NextRequest) {
             toolCallCount++;
           }
 
-          // Handle thinking/reasoning events - stream them as reasoning parts
-          // Use the correct AI SDK stream chunk types: reasoning-start, reasoning-delta, reasoning-end
-          if (event.type === "thinking" && event.output) {
-            const reasoningId = createId("reasoning");
-            const reasoningText = String(event.output);
-
-            // Write and track reasoning stream chunks
-            writeAndTrack({
-              type: "reasoning-start",
-              id: reasoningId,
-            });
+          // Handle thinking_delta events - stream incremental reasoning in real-time
+          if (event.type === "thinking_delta" && event.output) {
+            if (!currentReasoningId) {
+              currentReasoningId = createId("reasoning");
+              writeAndTrack({ type: "reasoning-start", id: currentReasoningId });
+            }
+            hasThinkingDelta = true;
             writeAndTrack({
               type: "reasoning-delta",
-              id: reasoningId,
-              delta: reasoningText,
+              id: currentReasoningId,
+              delta: String(event.output),
             });
-            writeAndTrack({
-              type: "reasoning-end",
-              id: reasoningId,
-            });
-            return; // Don't process as tool event
+            return;
+          }
+
+          // Handle complete thinking blocks - stream as reasoning parts
+          // Skip if thinking_delta already streamed this content (dedup)
+          if (event.type === "thinking" && event.output) {
+            if (hasThinkingDelta && currentReasoningId) {
+              // thinking_delta already streamed content; close the stream
+              writeAndTrack({ type: "reasoning-end", id: currentReasoningId });
+              currentReasoningId = null;
+              hasThinkingDelta = false;
+              return;
+            }
+            // No thinking_delta preceded this → emit full block
+            const reasoningId = createId("reasoning");
+            const reasoningText = String(event.output);
+            writeAndTrack({ type: "reasoning-start", id: reasoningId });
+            writeAndTrack({ type: "reasoning-delta", id: reasoningId, delta: reasoningText });
+            writeAndTrack({ type: "reasoning-end", id: reasoningId });
+            return;
           }
 
           // Stream tool events to frontend using Vercel AI SDK types
@@ -681,6 +698,52 @@ export async function POST(req: NextRequest) {
               toolCallId: event.toolCallId,
               output: event.output,
               providerExecuted: event.providerExecuted,
+            });
+          }
+
+          // Forward tool_progress events - show elapsed time for long-running tools
+          if (event.type === "tool_progress" && event.toolCallId) {
+            safeWriteSSE({
+              type: "message-metadata",
+              messageMetadata: {
+                unstable_data: {
+                  type: "tool_progress",
+                  toolCallId: event.toolCallId,
+                  toolName: event.toolName,
+                  elapsedTimeSeconds: (event.output as { elapsedTimeSeconds?: number })?.elapsedTimeSeconds,
+                },
+              },
+            });
+          }
+
+          // Forward tool_use_summary events - human-readable multi-tool execution summary
+          if (event.type === "tool_use_summary" && event.output) {
+            const summaryOutput = event.output as { summary: string; precedingToolUseIds: string[] };
+            const summaryId = createId("summary");
+            writeAndTrack({ type: "text-start", id: summaryId });
+            writeAndTrack({ type: "text-delta", id: summaryId, delta: summaryOutput.summary });
+            writeAndTrack({ type: "text-end", id: summaryId });
+          }
+
+          // Forward result events - session completion statistics
+          if (event.type === "result" && event.output) {
+            const resultData = event.output as {
+              subtype?: string;
+              result?: string;
+              isError?: boolean;
+              durationMs?: number;
+              numTurns?: number;
+              totalCostUsd?: number;
+              usage?: { input_tokens?: number; output_tokens?: number };
+            };
+            safeWriteSSE({
+              type: "message-metadata",
+              messageMetadata: {
+                unstable_data: {
+                  type: "session_result",
+                  ...resultData,
+                },
+              },
             });
           }
         },
