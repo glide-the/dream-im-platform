@@ -16,7 +16,6 @@ import { randomUUID } from "node:crypto";
 import { buildUserMessageContent } from "../../messages/messages/build-user-message-content";
 import type { IClaudeAgentSDKClient, SessionSDKOptions } from "../types";
 import { SimpleClaudeAgentSDKClient } from "./simple-cas-client";
-import type { ToolStreamEvent } from "../../messages/types/tool-invocation";
 
 /**
  * Tool event payload for streaming
@@ -33,6 +32,8 @@ export interface ToolEventPayload {
   // Extended parameters
   title?: string;
   providerExecuted?: boolean;
+  /** Stop reason from message_delta events (e.g. "end_turn", "tool_use") */
+  stopReason?: string;
 }
 
 /**
@@ -191,6 +192,8 @@ export class ClaudeAgentRunner {
     let currentSessionId: string | null = threadId;
     let success = true;
     let runError: Error | undefined;
+    // Accumulate token usage from stream events and result
+    const usage: { inputTokens?: number; outputTokens?: number } = {};
 
     // Track pending tool calls for manual confirmation mode
     const pendingToolCalls: Map<string, { toolName: string; input: Record<string, unknown> }> = new Map();
@@ -334,7 +337,7 @@ export class ClaudeAgentRunner {
         // Process message based on type
         await this.processMessage(message, callbacks, toolChoice, pendingToolCalls, (delta) => {
           fullText += delta;
-        }, includePartialMessages);
+        }, includePartialMessages, usage);
       }
 
       // Call onTextDone if we accumulated any text
@@ -356,6 +359,7 @@ export class ClaudeAgentRunner {
       success,
       error: runError,
       messages,
+      usage: (usage.inputTokens || usage.outputTokens) ? usage : undefined,
     };
   }
 
@@ -369,7 +373,8 @@ export class ClaudeAgentRunner {
     pendingToolCalls: Map<string, { toolName: string; input: Record<string, unknown> }>,
     onTextAccumulate: (delta: string) => void,
     /** 开启时 assistant 消息的文本已通过 stream_event 增量输出，跳过以避免重复 */
-    includePartialMessages = false
+    includePartialMessages = false,
+    usageAccumulator: { inputTokens?: number; outputTokens?: number } = {}
   ): Promise<void> {
     switch (message.type) {
       case "assistant": {
@@ -411,24 +416,9 @@ export class ClaudeAgentRunner {
                   input,
                 });
               }
-            } else if (block.type === "tool_result" && callbacks.onToolEvent) {
-              // Handle tool_result content blocks
-              const toolResultBlock = block as {
-                type: "tool_result";
-                tool_use_id: string;
-                content?: unknown;
-              };
-
-              // Remove from pending if it was there
-              pendingToolCalls.delete(toolResultBlock.tool_use_id);
-
-              await callbacks.onToolEvent({
-                type: "tool_result",
-                toolCallId: toolResultBlock.tool_use_id,
-                output: toolResultBlock.content,
-                state: "output-available",
-              });
             }
+            // Note: tool_result blocks appear in "user" messages, NOT in "assistant" messages.
+            // See the "user" case below for tool_result handling.
           }
         } else if (typeof content === "string") {
           // 同上：includePartialMessages 时跳过 assistant 文本
@@ -441,15 +431,41 @@ export class ClaudeAgentRunner {
       }
 
       case "stream_event": {
-        // Handle streaming events (SDKPartialAssistantMessage)
+        // Handle streaming events — see docs/design/Claude SDK Message 事件类型层级.md
+        // stream_event contains 6 inner event types:
+        //   message_start, content_block_start, content_block_delta,
+        //   content_block_stop, message_delta, message_stop
         const streamMsg = message as unknown as {
           type: "stream_event";
           event: {
             type: string;
-            delta?: { type: string; text?: string; partial_json?: string };
+            // content_block_delta fields
+            delta?: {
+              type: string;
+              text?: string;
+              partial_json?: string;
+              // message_delta fields
+              stop_reason?: string;
+              stop_sequence?: string | null;
+            };
             index?: number;
-            content_block?: { type: string; id?: string; name?: string; input?: unknown };
-          }
+            // content_block_start fields
+            content_block?: { type: string; id?: string; name?: string; input?: unknown; text?: string };
+            // message_start fields
+            message?: {
+              type?: string;
+              role?: string;
+              model?: string;
+              id?: string;
+              usage?: { input_tokens?: number; output_tokens?: number };
+            };
+            // message_delta usage fields
+            usage?: {
+              input_tokens?: number;
+              output_tokens?: number;
+              cache_read_input_tokens?: number;
+            };
+          };
         };
         const event = streamMsg.event;
 
@@ -476,8 +492,8 @@ export class ClaudeAgentRunner {
             });
           }
         } else if (event.type === "content_block_start" && event.content_block) {
-          // Handle content block start events for tool use
           if (event.content_block.type === "tool_use") {
+            // Tool use block start
             const toolCallId = event.content_block.id;
             const toolName = event.content_block.name;
             const input = event.content_block.input as Record<string, unknown> | undefined;
@@ -499,18 +515,103 @@ export class ClaudeAgentRunner {
                 state: toolChoice === "manual" ? "input-available" : undefined,
               });
             }
+          } else if (event.content_block.type === "text" && callbacks.onToolEvent) {
+            // Text block start
+            await callbacks.onToolEvent({
+              type: "text_block_start",
+              output: { index: event.index },
+            });
+          }
+        } else if (event.type === "content_block_stop") {
+          // Content block end — signals tool_use input JSON is complete or text block finished
+          if (callbacks.onToolEvent) {
+            await callbacks.onToolEvent({
+              type: "content_block_stop",
+              output: { index: event.index },
+            });
+          }
+        } else if (event.type === "message_start") {
+          // Message start — carries model & initial usage (input_tokens)
+          if (event.message?.usage?.input_tokens) {
+            usageAccumulator.inputTokens = (usageAccumulator.inputTokens ?? 0) + event.message.usage.input_tokens;
+          }
+          if (callbacks.onToolEvent) {
+            await callbacks.onToolEvent({
+              type: "message_start",
+              output: {
+                model: event.message?.model,
+                usage: event.message?.usage,
+              },
+            });
+          }
+        } else if (event.type === "message_delta") {
+          // Message-level delta — carries stop_reason and cumulative output_tokens
+          if (event.usage?.output_tokens) {
+            usageAccumulator.outputTokens = (usageAccumulator.outputTokens ?? 0) + event.usage.output_tokens;
+          }
+          if (callbacks.onToolEvent) {
+            await callbacks.onToolEvent({
+              type: "message_delta",
+              output: {
+                stopReason: event.delta?.stop_reason,
+                usage: event.usage,
+              },
+              stopReason: event.delta?.stop_reason,
+            });
+          }
+        } else if (event.type === "message_stop") {
+          // Message end marker
+          if (callbacks.onToolEvent) {
+            await callbacks.onToolEvent({
+              type: "message_stop",
+            });
           }
         }
         break;
       }
 
       case "result": {
-        // Tool result
+        // Session result (subtype: success/error), NOT a tool result.
+        // Tool results come in "user" messages with tool_result content blocks.
+        const resultMsg = message as unknown as {
+          type: "result";
+          subtype?: string;
+          is_error?: boolean;
+          duration_ms?: number;
+          num_turns?: number;
+          result?: string;
+          total_cost_usd?: number;
+          usage?: {
+            input_tokens?: number;
+            output_tokens?: number;
+            cache_read_input_tokens?: number;
+          };
+        };
+
+        // Populate usage from the cumulative result event (overrides stream-level values)
+        if (resultMsg.usage) {
+          if (resultMsg.usage.input_tokens) {
+            usageAccumulator.inputTokens = resultMsg.usage.input_tokens;
+          }
+          if (resultMsg.usage.output_tokens) {
+            usageAccumulator.outputTokens = resultMsg.usage.output_tokens;
+          }
+        }
+
         if (callbacks.onToolEvent) {
           await callbacks.onToolEvent({
-            type: "tool_result",
-            output: (message as unknown as { result?: unknown }).result,
-            state: "output-available",
+            type: "result",
+            output: {
+              subtype: resultMsg.subtype,
+              result: resultMsg.result,
+              isError: resultMsg.is_error,
+              durationMs: resultMsg.duration_ms,
+              numTurns: resultMsg.num_turns,
+              totalCostUsd: resultMsg.total_cost_usd,
+              usage: resultMsg.usage,
+            },
+            state: resultMsg.is_error ? "output-error" : "output-available",
+            isError: resultMsg.is_error,
           });
         }
         break;
@@ -560,7 +661,43 @@ export class ClaudeAgentRunner {
       }
 
       case "user": {
-        // User messages - typically not processed for output callbacks
+        // User messages contain tool_result content blocks (tool execution results)
+        // Per SDK docs: user messages have tool_result type content with tool_use_id and output
+        const userMsg = message as unknown as {
+          type: "user";
+          message?: {
+            role: string;
+            content?: Array<{
+              type: string;
+              tool_use_id?: string;
+              content?: unknown;
+              is_error?: boolean;
+            }>;
+          };
+          tool_use_result?: {
+            stdout?: string;
+            stderr?: string;
+            interrupted?: boolean;
+          };
+        };
+
+        const userContent = userMsg.message?.content;
+        if (Array.isArray(userContent)) {
+          for (const block of userContent) {
+            if (block.type === "tool_result" && block.tool_use_id && callbacks.onToolEvent) {
+              // Remove from pending if it was there
+              pendingToolCalls.delete(block.tool_use_id);
+
+              await callbacks.onToolEvent({
+                type: "tool_result",
+                toolCallId: block.tool_use_id,
+                output: block.content,
+                isError: block.is_error ?? false,
+                state: block.is_error ? "output-error" : "output-available",
+              });
+            }
+          }
+        }
         break;
       }
 
