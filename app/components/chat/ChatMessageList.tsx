@@ -27,6 +27,7 @@ interface ChatMessageListProps {
 type ToolStatus = "executing" | "completed" | "error";
 
 const TOOL_COMPLETED_STATES = new Set(["output-available", "output-error"]);
+const REASONING_PREVIEW_LENGTH = 80;
 
 export function getToolStatus(part: ToolUIPart | DynamicToolUIPart, isLoading: boolean, _isLast: boolean): ToolStatus {
   const state = part.state;
@@ -129,11 +130,11 @@ export default function ChatMessageList({
                       onClick={toggleExpanded}
                       className="flex w-full items-center gap-2 text-sm italic text-text-tertiary hover:text-text-secondary"
                     >
-                      <span className="flex-1 truncate text-left">{reasoningText.slice(0, 80) || "思考中…"}</span>
+                      <span className="flex-1 truncate text-left">{reasoningText.slice(0, REASONING_PREVIEW_LENGTH) || "思考中…"}</span>
                       <span className="shrink-0 text-xs">{isExpanded ? "‹" : "›"}</span>
                     </button>
                     {isExpanded && (
-                      <div className="mt-2 text-sm leading-relaxed text-text-secondary whitespace-pre-wrap">
+                      <div className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-text-secondary">
                         {reasoningText}
                       </div>
                     )}
