@@ -34,7 +34,7 @@ export default function SessionResultCard({ data }: { data: SessionResultData })
         {usage && (
           <div className="flex items-center gap-1">
             <span className="text-text-tertiary">Token 消耗：</span>
-            <span>
+            <span aria-label={`输入 ${formatTokens(usage.input_tokens ?? 0)}，输出 ${formatTokens(usage.output_tokens ?? 0)}`}>
               {formatTokens(usage.input_tokens ?? 0)} 入 / {formatTokens(usage.output_tokens ?? 0)} 出
             </span>
           </div>
