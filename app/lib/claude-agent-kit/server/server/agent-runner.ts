@@ -17,6 +17,11 @@ import { buildUserMessageContent } from "../../messages/messages/build-user-mess
 import type { IClaudeAgentSDKClient, SessionSDKOptions } from "../types";
 import { SimpleClaudeAgentSDKClient } from "./simple-cas-client";
 import type { ToolStreamEvent } from "../../messages/types/tool-invocation";
+import type {
+  AuditLogEntry,
+  SecurityAuditConfig,
+} from "../security";
+import { SecurityAuditEngine } from "../security";
 
 /**
  * Tool event payload for streaming
@@ -61,6 +66,8 @@ export interface AgentStreamingCallbacks {
     toolName: string;
     input: Record<string, unknown>;
   }) => Promise<{ approved: boolean; reason?: string; answers?: Record<string, unknown> } | void> | { approved: boolean; reason?: string; answers?: Record<string, unknown> } | void;
+  /** Called when a security audit log entry is generated */
+  onAuditLog?: (entry: AuditLogEntry) => Promise<void> | void;
   /** Called when an error occurs */
   onError?: (error: Error) => Promise<void> | void;
   /** Called when any message is received (for logging) */
@@ -106,6 +113,10 @@ export interface AgentRunOptions {
   toolChoice?: ToolChoiceMode;
   /** Abort controller for cancellation */
   abortController?: AbortController;
+  /** Optional security audit configuration */
+  securityAudit?: {
+    config: SecurityAuditConfig;
+  };
 }
 
 /**
@@ -191,6 +202,10 @@ export class ClaudeAgentRunner {
     let currentSessionId: string | null = threadId;
     let success = true;
     let runError: Error | undefined;
+    const auditEngine = opts.securityAudit?.config
+      ? new SecurityAuditEngine(opts.securityAudit.config)
+      : undefined;
+    const auditSessionId = threadId;
 
     // Track pending tool calls for manual confirmation mode
     const pendingToolCalls: Map<string, { toolName: string; input: Record<string, unknown> }> = new Map();
@@ -238,14 +253,43 @@ export class ClaudeAgentRunner {
       }
     ): Promise<PermissionResult> => {
       const toolCallId = options.toolUseID;
+      const auditContext = auditEngine
+        ? {
+            event: "pre_tool_use" as const,
+            toolName,
+            toolInput,
+            sessionId: auditSessionId,
+            timestamp: new Date().toISOString(),
+            cwd,
+            toolUseId: toolCallId,
+          }
+        : undefined;
+      const auditResult = auditContext && auditEngine ? auditEngine.evaluate(auditContext) : undefined;
+
+      if (auditResult && callbacks.onAuditLog) {
+        for (const logEntry of auditResult.logs) {
+          await callbacks.onAuditLog(logEntry);
+        }
+      }
 
       // Store pending tool call
       pendingToolCalls.set(toolCallId, { toolName, input: toolInput });
 
+      if (auditResult?.decision.action === "deny") {
+        pendingToolCalls.delete(toolCallId);
+        return {
+          behavior: "deny",
+          message: auditResult.decision.reason ?? "Blocked by security audit",
+          toolUseID: toolCallId,
+        };
+      }
 
       // Call the confirmation callback and WAIT for user response
       // This blocks until the user approves or rejects
-      if (callbacks.onToolConfirmationRequest) {
+      const requiresConfirmation =
+        toolChoice === "manual" || auditResult?.decision.action === "ask";
+
+      if (requiresConfirmation && callbacks.onToolConfirmationRequest) {
         const confirmationResult = await callbacks.onToolConfirmationRequest({
           toolCallId,
           toolName,
@@ -262,7 +306,7 @@ export class ClaudeAgentRunner {
             // updatedInput = { questions: [...], answers: { "question text": "selected label" } }
             const hasAnswers = confirmationResult.answers && Object.keys(confirmationResult.answers).length > 0;
 
-            let updatedInput = toolInput;
+            let updatedInput = auditResult?.decision.updatedInput ?? toolInput;
             if (hasAnswers && (toolName === 'AskUserQuestion' || toolName === 'mcp__user__ask_user')) {
               // Per Claude Agent SDK: answers keys must be the question text, values are selected option labels
               updatedInput = {
@@ -289,12 +333,30 @@ export class ClaudeAgentRunner {
         }
       }
 
-      // No confirmation callback or no result - default to deny
+      if (requiresConfirmation) {
+        // No confirmation callback or no result - default to deny
+        pendingToolCalls.delete(toolCallId);
+        return {
+          behavior: 'deny',
+          message: '需要用户确认但未收到响应',
+          toolUseID: toolCallId,
+        };
+      }
+
+      if (auditResult?.decision.action === "allow" || auditResult?.decision.action === "log") {
+        return {
+          behavior: "allow",
+          toolUseID: toolCallId,
+          updatedInput: auditResult.decision.updatedInput ?? toolInput,
+        };
+      }
+
+      // Default to allow if no audit result and no manual confirmation
       pendingToolCalls.delete(toolCallId);
       return {
-        behavior: 'deny',
-        message: '需要用户确认但未收到响应',
+        behavior: "allow",
         toolUseID: toolCallId,
+        updatedInput: toolInput,
       };
     }
 
@@ -332,9 +394,19 @@ export class ClaudeAgentRunner {
         }
 
         // Process message based on type
-        await this.processMessage(message, callbacks, toolChoice, pendingToolCalls, (delta) => {
-          fullText += delta;
-        }, includePartialMessages);
+        await this.processMessage(
+          message,
+          callbacks,
+          toolChoice,
+          pendingToolCalls,
+          (delta) => {
+            fullText += delta;
+          },
+          includePartialMessages,
+          auditEngine,
+          auditSessionId,
+          cwd
+        );
       }
 
       // Call onTextDone if we accumulated any text
@@ -369,7 +441,10 @@ export class ClaudeAgentRunner {
     pendingToolCalls: Map<string, { toolName: string; input: Record<string, unknown> }>,
     onTextAccumulate: (delta: string) => void,
     /** 开启时 assistant 消息的文本已通过 stream_event 增量输出，跳过以避免重复 */
-    includePartialMessages = false
+    includePartialMessages = false,
+    auditEngine?: SecurityAuditEngine,
+    auditSessionId?: string,
+    cwd?: string
   ): Promise<void> {
     switch (message.type) {
       case "assistant": {
@@ -419,8 +494,25 @@ export class ClaudeAgentRunner {
                 content?: unknown;
               };
 
-              // Remove from pending if it was there
+              const pendingTool = pendingToolCalls.get(toolResultBlock.tool_use_id);
               pendingToolCalls.delete(toolResultBlock.tool_use_id);
+
+              if (auditEngine && pendingTool) {
+                const auditResult = auditEngine.evaluate({
+                  event: "post_tool_use",
+                  toolName: pendingTool.toolName,
+                  toolInput: pendingTool.input,
+                  sessionId: auditSessionId,
+                  timestamp: new Date().toISOString(),
+                  cwd,
+                  toolUseId: toolResultBlock.tool_use_id,
+                });
+                if (callbacks.onAuditLog) {
+                  for (const logEntry of auditResult.logs) {
+                    await callbacks.onAuditLog(logEntry);
+                  }
+                }
+              }
 
               await callbacks.onToolEvent({
                 type: "tool_result",
