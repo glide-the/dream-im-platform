@@ -44,8 +44,21 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Use Alibaba Cloud mirror for apk
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
-# Install curl for healthcheck and bash for Claude CLI (requires Posix shell: bash or zsh)
-RUN apk add --no-cache curl bash
+# Install tools required by Claude Agent SDK and common agent operations:
+#   Shell:   bash (SDK requires bash/zsh, Alpine only has busybox sh)
+#   File:    coreutils findutils grep sed gawk tar gzip unzip xz patch diffutils file tree jq yq
+#   Network: curl wget bind-tools openssh-client socat
+#   Process: procps-ng (ps/top/pgrep/pkill) shadow (useradd etc.)
+#   VCS:     git
+#   Editor:  vim
+RUN apk add --no-cache \
+    bash coreutils findutils \
+    grep sed gawk \
+    tar gzip unzip xz patch diffutils file tree \
+    jq yq \
+    curl wget bind-tools openssh-client socat \
+    procps-ng shadow \
+    git vim
 
 ENV SHELL="/bin/bash"
 

@@ -1,11 +1,60 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { join } from "node:path";
-import { existsSync, mkdirSync, writeFileSync, rmSync, readdirSync, lstatSync, readlinkSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  readdirSync,
+  lstatSync,
+  readlinkSync,
+  readFileSync,
+  mkdtempSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import * as tar from "tar";
 
 // Set AGENT_CWD to a temp directory for tests
 const TEST_WORKSPACE_ROOT = join(tmpdir(), `workspace-test-${randomUUID()}`);
+const ARCHIVE_EXTRACTION_TIMEOUT_MS = 4000;
+const ZIP_SKILL_ARCHIVE_BASE64 =
+  "UEsDBBQAAAAIABCnSVxznciuFQAAABMAAAAMAAAAemlwLXNraWxsLm1kU1aIyixQCM7OzMnhCi1OVcgs0QMAUEsDBBQAAAAIABCnSVxlXD/sCgAAAAgAAAAUAAAAbmVzdGVkL3ppcC1oZWxwZXIubWRTVvBIzSlILQIAUEsBAhQDFAAAAAgAEKdJXHOdyK4VAAAAEwAAAAwAAAAAAAAAAAAAAIABAAAAAHppcC1za2lsbC5tZFBLAQIUAxQAAAAIABCnSVxlXD/sCgAAAAgAAAAUAAAAAAAAAAAAAACAAT8AAABuZXN0ZWQvemlwLWhlbHBlci5tZFBLBQYAAAAAAgACAHwAAAB7AAAAAAA=";
+
+function createZipSkillArchiveBuffer(): Buffer {
+  return Buffer.from(ZIP_SKILL_ARCHIVE_BASE64, "base64");
+}
+
+async function createTarSkillArchiveBuffer(gzip: boolean): Promise<Buffer> {
+  const stagingRoot = mkdtempSync(join(tmpdir(), "workspace-archive-test-"));
+  const payloadDir = join(stagingRoot, "payload");
+  mkdirSync(join(payloadDir, "nested"), { recursive: true });
+  writeFileSync(join(payloadDir, "tar-skill.md"), "# Tar Skill\nUse it.");
+  writeFileSync(join(payloadDir, "nested", "tool.md"), "# Nested tool");
+
+  const archivePath = join(stagingRoot, gzip ? "bundle.tar.gz" : "bundle.tar");
+
+  try {
+    await tar.c({ cwd: payloadDir, file: archivePath, gzip }, ["."]);
+    return readFileSync(archivePath);
+  } finally {
+    rmSync(stagingRoot, { recursive: true, force: true });
+  }
+}
+
+async function waitForArchiveExtraction(
+  workspacePath: string,
+  archiveRelPath: string,
+  extractedRelPath: string,
+): Promise<void> {
+  await vi.waitFor(
+    () => {
+      expect(existsSync(join(workspacePath, extractedRelPath))).toBe(true);
+      expect(existsSync(join(workspacePath, archiveRelPath))).toBe(false);
+    },
+    { timeout: ARCHIVE_EXTRACTION_TIMEOUT_MS, interval: 50 },
+  );
+}
 
 describe("workspace", () => {
   beforeEach(() => {
@@ -433,6 +482,107 @@ describe("workspace", () => {
         });
         expect(entries).toHaveLength(0);
       }
+    });
+  });
+
+  describe("writeWorkspaceFile triggers skills archive extraction", () => {
+    it("should auto-extract .zip in skills/, delete archive, and refresh symlinks", async () => {
+      const { initWorkspace, writeWorkspaceFile } = await import("./workspace");
+      const sessionId = "extract-zip";
+      const workspacePath = initWorkspace(sessionId);
+
+      writeWorkspaceFile(
+        workspacePath,
+        "skills/zip-skill.zip",
+        createZipSkillArchiveBuffer(),
+      );
+
+      await waitForArchiveExtraction(
+        workspacePath,
+        "skills/zip-skill.zip",
+        "skills/zip-skill/zip-skill.md",
+      );
+
+      const symlinkPath = join(workspacePath, ".claude", "skills", "zip-skill");
+      expect(existsSync(symlinkPath)).toBe(true);
+      expect(lstatSync(symlinkPath).isSymbolicLink()).toBe(true);
+    });
+
+    it("should auto-extract .tar.gz in skills/, delete archive, and refresh symlinks", async () => {
+      const { initWorkspace, writeWorkspaceFile } = await import("./workspace");
+      const sessionId = "extract-targz";
+      const workspacePath = initWorkspace(sessionId);
+      const tarGzBuffer = await createTarSkillArchiveBuffer(true);
+
+      writeWorkspaceFile(workspacePath, "skills/tar-skill.tar.gz", tarGzBuffer);
+
+      await waitForArchiveExtraction(
+        workspacePath,
+        "skills/tar-skill.tar.gz",
+        "skills/tar-skill/tar-skill.md",
+      );
+
+      const symlinkPath = join(workspacePath, ".claude", "skills", "tar-skill");
+      expect(existsSync(symlinkPath)).toBe(true);
+      expect(lstatSync(symlinkPath).isSymbolicLink()).toBe(true);
+    });
+
+    it("should auto-extract .skill in skills/, delete archive, and refresh symlinks", async () => {
+      const { initWorkspace, writeWorkspaceFile } = await import("./workspace");
+      const sessionId = "extract-skill";
+      const workspacePath = initWorkspace(sessionId);
+
+      writeWorkspaceFile(
+        workspacePath,
+        "skills/custom-skill.skill",
+        createZipSkillArchiveBuffer(),
+      );
+
+      await waitForArchiveExtraction(
+        workspacePath,
+        "skills/custom-skill.skill",
+        "skills/custom-skill/zip-skill.md",
+      );
+
+      const symlinkPath = join(workspacePath, ".claude", "skills", "custom-skill");
+      expect(existsSync(symlinkPath)).toBe(true);
+      expect(lstatSync(symlinkPath).isSymbolicLink()).toBe(true);
+    });
+
+    it("should keep damaged archive file and not crash upload flow", async () => {
+      const { initWorkspace, writeWorkspaceFile } = await import("./workspace");
+      const sessionId = "extract-broken";
+      const workspacePath = initWorkspace(sessionId);
+
+      expect(() => {
+        writeWorkspaceFile(
+          workspacePath,
+          "skills/broken.zip",
+          Buffer.from("not-a-real-archive"),
+        );
+      }).not.toThrow();
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      expect(existsSync(join(workspacePath, "skills", "broken.zip"))).toBe(true);
+      expect(existsSync(join(workspacePath, "skills", "zip-skill.md"))).toBe(false);
+    });
+
+    it("should not trigger extraction for non-archive files in skills/", async () => {
+      const { initWorkspace, writeWorkspaceFile } = await import("./workspace");
+      const sessionId = "extract-ignore-non-archive";
+      const workspacePath = initWorkspace(sessionId);
+
+      writeWorkspaceFile(workspacePath, "skills/plain-skill.md", Buffer.from("# Plain skill"));
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      expect(existsSync(join(workspacePath, "skills", "plain-skill.md"))).toBe(true);
+      expect(existsSync(join(workspacePath, "skills", "zip-skill.md"))).toBe(false);
+
+      const symlinkPath = join(workspacePath, ".claude", "skills", "plain-skill.md");
+      expect(existsSync(symlinkPath)).toBe(true);
+      expect(lstatSync(symlinkPath).isSymbolicLink()).toBe(true);
     });
   });
 

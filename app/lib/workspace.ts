@@ -20,7 +20,10 @@ import {
   readlinkSync,
   unlinkSync,
   readFileSync,
+  createReadStream,
+  createWriteStream,
 } from "node:fs";
+import { mkdir as mkdirAsync, unlink as unlinkAsync } from "node:fs/promises";
 import {
   join,
   resolve,
@@ -31,6 +34,10 @@ import {
 } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { pipeline } from "node:stream/promises";
+import { createGunzip } from "node:zlib";
+import * as tar from "tar";
+import unzipper from "unzipper";
 import logger from "./logger";
 
 /**
@@ -49,6 +56,139 @@ function isSkillsPath(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, "/");
   return normalized === WORKSPACE_DIRS.SKILLS
     || normalized.startsWith(`${WORKSPACE_DIRS.SKILLS}/`);
+}
+
+type SkillsArchiveType = "zip" | "tar.gz" | "tgz" | "tar" | "skill";
+
+function getSkillsArchiveType(filePath: string): SkillsArchiveType | null {
+  const normalized = filePath.toLowerCase();
+  if (normalized.endsWith(".tar.gz")) {
+    return "tar.gz";
+  }
+  if (normalized.endsWith(".tgz")) {
+    return "tgz";
+  }
+  if (normalized.endsWith(".tar")) {
+    return "tar";
+  }
+  if (normalized.endsWith(".zip")) {
+    return "zip";
+  }
+  if (normalized.endsWith(".skill")) {
+    return "skill";
+  }
+  return null;
+}
+
+function isSupportedSkillsArchivePath(filePath: string): boolean {
+  return getSkillsArchiveType(filePath) !== null;
+}
+
+function stripArchiveExtension(fileName: string, archiveType: SkillsArchiveType): string {
+  if (archiveType === "tar.gz") {
+    return fileName.replace(/\.tar\.gz$/i, "");
+  }
+  if (archiveType === "tgz") {
+    return fileName.replace(/\.tgz$/i, "");
+  }
+  if (archiveType === "tar") {
+    return fileName.replace(/\.tar$/i, "");
+  }
+  if (archiveType === "zip") {
+    return fileName.replace(/\.zip$/i, "");
+  }
+  return fileName.replace(/\.skill$/i, "");
+}
+
+function getArchiveExtractionRoot(
+  workspacePath: string,
+  archiveRelPath: string,
+  archiveType: SkillsArchiveType,
+): string {
+  const skillsDir = join(workspacePath, WORKSPACE_DIRS.SKILLS);
+  const archiveRelativeName = basename(archiveRelPath);
+  const extractionDirName =
+    stripArchiveExtension(archiveRelativeName, archiveType) || archiveRelativeName;
+  const extractionRoot = join(skillsDir, extractionDirName);
+
+  assertArchiveEntryPathIsSafe(skillsDir, extractionRoot, archiveRelPath);
+  return extractionRoot;
+}
+
+function normalizeArchiveEntryPath(entryPath: string): string {
+  return entryPath.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function assertArchiveEntryPathIsSafe(
+  skillsDir: string,
+  candidatePath: string,
+  entryPath: string,
+): void {
+  const resolvedSkillsDir = resolve(skillsDir);
+  const resolvedCandidatePath = resolve(candidatePath);
+  const relativePath = relative(resolvedSkillsDir, resolvedCandidatePath);
+
+  if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    throw new Error(`Unsafe archive entry path: ${entryPath}`);
+  }
+}
+
+async function extractZipArchive(
+  archivePath: string,
+  skillsDir: string,
+): Promise<void> {
+  const zipDirectory = await unzipper.Open.file(archivePath);
+
+  for (const entry of zipDirectory.files) {
+    const normalizedEntryPath = normalizeArchiveEntryPath(entry.path);
+    if (!normalizedEntryPath) {
+      continue;
+    }
+
+    const outputPath = resolve(skillsDir, normalizedEntryPath);
+    assertArchiveEntryPathIsSafe(skillsDir, outputPath, entry.path);
+
+    if (entry.type === "Directory") {
+      await mkdirAsync(outputPath, { recursive: true });
+      continue;
+    }
+
+    await mkdirAsync(dirname(outputPath), { recursive: true });
+    await pipeline(entry.stream(), createWriteStream(outputPath));
+  }
+}
+
+function validateTarEntryPath(skillsDir: string, entry: tar.ReadEntry): void {
+  const normalizedEntryPath = normalizeArchiveEntryPath(entry.path);
+  const outputPath = resolve(skillsDir, normalizedEntryPath);
+  assertArchiveEntryPathIsSafe(skillsDir, outputPath, entry.path);
+
+  if (entry.type === "SymbolicLink" || entry.type === "Link") {
+    throw new Error(`Tar link entry is not allowed: ${entry.path}`);
+  }
+}
+
+async function extractTarArchive(
+  archivePath: string,
+  skillsDir: string,
+): Promise<void> {
+  await tar.x({
+    file: archivePath,
+    cwd: skillsDir,
+    onentry: (entry) => validateTarEntryPath(skillsDir, entry),
+  });
+}
+
+async function extractTarGzArchive(
+  archivePath: string,
+  skillsDir: string,
+): Promise<void> {
+  const tarExtractor = tar.x({
+    cwd: skillsDir,
+    onentry: (entry) => validateTarEntryPath(skillsDir, entry),
+  });
+
+  await pipeline(createReadStream(archivePath), createGunzip(), tarExtractor);
 }
 
 /**
@@ -454,8 +594,55 @@ export function moveWorkspaceFile(
 }
 
 /**
+ * Extract an uploaded archive already saved under skills/.
+ * On success, removes the original archive and refreshes skill symlinks.
+ * On failure, logs and returns without throwing so upload flow is not blocked.
+ */
+export async function extractArchiveInSkills(
+  workspacePath: string,
+  archiveRelPath: string,
+): Promise<void> {
+  try {
+    if (!isSkillsPath(archiveRelPath)) {
+      return;
+    }
+
+    const archiveType = getSkillsArchiveType(archiveRelPath);
+    if (!archiveType) {
+      return;
+    }
+
+    const archivePath = ensureWorkspaceSafePath(workspacePath, archiveRelPath);
+    const extractionRoot = getArchiveExtractionRoot(
+      workspacePath,
+      archiveRelPath,
+      archiveType,
+    );
+    await mkdirAsync(extractionRoot, { recursive: true });
+
+    if (!existsSync(archivePath)) {
+      return;
+    }
+
+    if (archiveType === "zip" || archiveType === "skill") {
+      await extractZipArchive(archivePath, extractionRoot);
+    } else if (archiveType === "tar.gz" || archiveType === "tgz") {
+      await extractTarGzArchive(archivePath, extractionRoot);
+    } else {
+      await extractTarArchive(archivePath, extractionRoot);
+    }
+
+    await unlinkAsync(archivePath);
+    syncSkillsSymlinks(workspacePath);
+  } catch (err) {
+    logger.warn(`Failed to extract archive in skills (${archiveRelPath}): ${err}`);
+  }
+}
+
+/**
  * Write uploaded file content to workspace.
  * If the file is written to the skills/ directory, automatically syncs symlinks.
+ * Archive uploads are extracted asynchronously in the background.
  */
 export function writeWorkspaceFile(
   workspacePath: string,
@@ -473,6 +660,9 @@ export function writeWorkspaceFile(
   // Auto-sync skills symlinks when writing to skills/ directory
   if (isSkillsPath(filePath)) {
     syncSkillsSymlinks(workspacePath);
+    if (isSupportedSkillsArchivePath(filePath)) {
+      void extractArchiveInSkills(workspacePath, filePath);
+    }
   }
 
   return filePath;
