@@ -38,7 +38,34 @@ function processToolEvent(
   toolChoice: "auto" | "manual" | "none",
   registeredToolCallIds: Set<string>,
   chunks: StreamChunk[],
+  state?: { currentReasoningId: string | null; hasThinkingDelta: boolean },
 ): void {
+  // Handle thinking_delta events - stream incremental reasoning
+  if (event.type === "thinking_delta" && event.output && state) {
+    if (!state.currentReasoningId) {
+      state.currentReasoningId = `reasoning-${Date.now()}`;
+      chunks.push({ type: "reasoning-start", id: state.currentReasoningId });
+    }
+    state.hasThinkingDelta = true;
+    chunks.push({ type: "reasoning-delta", id: state.currentReasoningId, delta: String(event.output) });
+    return;
+  }
+
+  // Handle complete thinking blocks with dedup against thinking_delta
+  if (event.type === "thinking" && event.output && state) {
+    if (state.hasThinkingDelta && state.currentReasoningId) {
+      chunks.push({ type: "reasoning-end", id: state.currentReasoningId });
+      state.currentReasoningId = null;
+      state.hasThinkingDelta = false;
+      return;
+    }
+    const reasoningId = `reasoning-${Date.now()}`;
+    chunks.push({ type: "reasoning-start", id: reasoningId });
+    chunks.push({ type: "reasoning-delta", id: reasoningId, delta: String(event.output) });
+    chunks.push({ type: "reasoning-end", id: reasoningId });
+    return;
+  }
+
   const isToolStartEvent = event.type === "tool_use" || event.type === "tool_use_start";
 
   if (isToolStartEvent && event.toolCallId && event.toolName) {
@@ -87,6 +114,29 @@ function processToolEvent(
       toolCallId: event.toolCallId,
       output: event.output,
     });
+  }
+
+  // Forward tool_progress as metadata
+  if (event.type === "tool_progress" && event.toolCallId) {
+    chunks.push({
+      type: "message-metadata",
+      toolCallId: event.toolCallId,
+      toolName: event.toolName,
+      elapsedTimeSeconds: (event.output as { elapsedTimeSeconds?: number })?.elapsedTimeSeconds,
+    });
+  }
+
+  // Forward tool_use_summary as text blocks
+  if (event.type === "tool_use_summary" && event.output) {
+    const summaryOutput = event.output as { summary: string };
+    chunks.push({ type: "text-start", id: "summary" });
+    chunks.push({ type: "text-delta", id: "summary", delta: summaryOutput.summary });
+    chunks.push({ type: "text-end", id: "summary" });
+  }
+
+  // Forward result as metadata
+  if (event.type === "result" && event.output) {
+    chunks.push({ type: "message-metadata", ...event.output as Record<string, unknown> });
   }
 }
 
@@ -210,8 +260,11 @@ describe("stream tool call registration tracking", () => {
         chunks,
       );
 
-      expect(chunks).toHaveLength(0);
+      // tool_progress now forwards as message-metadata, but does NOT register the tool
+      expect(chunks.some((c) => c.type === "tool-input-start")).toBe(false);
       expect(registered.has("call_prog")).toBe(false);
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({ type: "message-metadata", toolCallId: "call_prog", elapsedTimeSeconds: 5 });
     });
 
     it("should not send tool-input-start for tool_input_delta events", () => {
@@ -239,7 +292,12 @@ describe("stream tool call registration tracking", () => {
         chunks,
       );
 
-      expect(chunks).toHaveLength(0);
+      // tool_use_summary now forwards as text blocks, but does NOT register tools
+      expect(chunks.some((c) => c.type === "tool-input-start")).toBe(false);
+      expect(chunks).toHaveLength(3);
+      expect(chunks[0]).toMatchObject({ type: "text-start" });
+      expect(chunks[1]).toMatchObject({ type: "text-delta", delta: "searched web" });
+      expect(chunks[2]).toMatchObject({ type: "text-end" });
     });
   });
 
@@ -337,6 +395,119 @@ describe("stream tool call registration tracking", () => {
 
       expect(aStart).toBeLessThan(aOutput);
       expect(bStart).toBeLessThan(bOutput);
+    });
+  });
+
+  describe("thinking_delta / thinking deduplication", () => {
+    it("should stream thinking_delta as incremental reasoning chunks", () => {
+      const registered = new Set<string>();
+      const chunks: StreamChunk[] = [];
+      const state = { currentReasoningId: null as string | null, hasThinkingDelta: false };
+
+      processToolEvent(
+        { type: "thinking_delta", output: "Let me think about " },
+        "auto",
+        registered,
+        chunks,
+        state,
+      );
+      processToolEvent(
+        { type: "thinking_delta", output: "this problem..." },
+        "auto",
+        registered,
+        chunks,
+        state,
+      );
+
+      expect(chunks).toHaveLength(3);
+      expect(chunks[0]).toMatchObject({ type: "reasoning-start" });
+      expect(chunks[1]).toMatchObject({ type: "reasoning-delta", delta: "Let me think about " });
+      expect(chunks[2]).toMatchObject({ type: "reasoning-delta", delta: "this problem..." });
+      expect(state.hasThinkingDelta).toBe(true);
+      expect(state.currentReasoningId).not.toBeNull();
+    });
+
+    it("should close reasoning stream when thinking block arrives after thinking_delta", () => {
+      const registered = new Set<string>();
+      const chunks: StreamChunk[] = [];
+      const state = { currentReasoningId: null as string | null, hasThinkingDelta: false };
+
+      // First: thinking_delta events
+      processToolEvent(
+        { type: "thinking_delta", output: "partial thought" },
+        "auto",
+        registered,
+        chunks,
+        state,
+      );
+
+      // Then: complete thinking block (should just close, not duplicate)
+      processToolEvent(
+        { type: "thinking", output: "partial thought complete" },
+        "auto",
+        registered,
+        chunks,
+        state,
+      );
+
+      // Should have: reasoning-start, reasoning-delta, reasoning-end (no duplicate content)
+      expect(chunks).toHaveLength(3);
+      expect(chunks[0]).toMatchObject({ type: "reasoning-start" });
+      expect(chunks[1]).toMatchObject({ type: "reasoning-delta", delta: "partial thought" });
+      expect(chunks[2]).toMatchObject({ type: "reasoning-end" });
+      expect(state.hasThinkingDelta).toBe(false);
+      expect(state.currentReasoningId).toBeNull();
+    });
+
+    it("should emit full thinking block when no thinking_delta preceded it", () => {
+      const registered = new Set<string>();
+      const chunks: StreamChunk[] = [];
+      const state = { currentReasoningId: null as string | null, hasThinkingDelta: false };
+
+      processToolEvent(
+        { type: "thinking", output: "full thought" },
+        "auto",
+        registered,
+        chunks,
+        state,
+      );
+
+      expect(chunks).toHaveLength(3);
+      expect(chunks[0]).toMatchObject({ type: "reasoning-start" });
+      expect(chunks[1]).toMatchObject({ type: "reasoning-delta", delta: "full thought" });
+      expect(chunks[2]).toMatchObject({ type: "reasoning-end" });
+    });
+  });
+
+  describe("result event forwarding", () => {
+    it("should forward result events as metadata", () => {
+      const registered = new Set<string>();
+      const chunks: StreamChunk[] = [];
+
+      processToolEvent(
+        {
+          type: "result",
+          output: {
+            subtype: "success",
+            durationMs: 23400,
+            numTurns: 5,
+            totalCostUsd: 0.032,
+            usage: { input_tokens: 12345, output_tokens: 2678 },
+          },
+        },
+        "auto",
+        registered,
+        chunks,
+      );
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: "message-metadata",
+        subtype: "success",
+        durationMs: 23400,
+        numTurns: 5,
+        totalCostUsd: 0.032,
+      });
     });
   });
 });
