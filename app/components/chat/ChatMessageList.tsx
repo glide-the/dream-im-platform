@@ -24,52 +24,15 @@ interface ChatMessageListProps {
   shouldShowLoadingIndicator?: boolean;
 }
 
-type IdentityInfo = {
-  icon: string;
-  label: string;
-};
-
 type ToolStatus = "executing" | "completed" | "error";
 
 const TOOL_COMPLETED_STATES = new Set(["output-available", "output-error"]);
 
-function formatTime(date?: Date): string {
-  if (!date) return "";
-  return new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function formatFullTime(date?: Date): string {
-  if (!date) return "";
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(date);
-}
-
-function getIdentityInfo(role: UIMessage["role"], isToolMessage: boolean): IdentityInfo {
-  if (isToolMessage) {
-    return { icon: "🔧", label: "Plugin" };
-  }
-  if (role === "user") {
-    return { icon: "👤", label: "User" };
-  }
-  return { icon: "🤖", label: "System" };
-}
-
-function getToolStatus(part: ToolUIPart | DynamicToolUIPart, isLoading: boolean, _isLast: boolean): ToolStatus {
+export function getToolStatus(part: ToolUIPart | DynamicToolUIPart, isLoading: boolean, _isLast: boolean): ToolStatus {
   const state = part.state;
   if (state === "output-error") return "error";
   if (TOOL_COMPLETED_STATES.has(state ?? "")) return "completed";
-  // No explicit completion state and still loading → executing
   if (isLoading) return "executing";
-  // Neither completed nor loading → historical message, treat as completed
   return "completed";
 }
 
@@ -83,12 +46,38 @@ function getToolOutputText(part: ToolUIPart | DynamicToolUIPart): string | null 
   return null;
 }
 
-function shouldCollapseText(text: string): boolean {
-  return text.length > 140;
+/**
+ * Parse terminal output to extract command, output text, and exit code.
+ */
+function parseTerminalOutput(raw: string): { command: string | null; output: string; exitCode: string | null } {
+  const lines = raw.split("\n");
+  let command: string | null = null;
+  let exitCode: string | null = null;
+  const outputLines: string[] = [];
+
+  for (const line of lines) {
+    const cmdMatch = line.match(/^\$\s+(.+)/);
+    const exitMatch = line.match(/^Exit code:\s*(\d+)/i);
+    if (cmdMatch && !command) {
+      command = cmdMatch[1];
+    } else if (exitMatch) {
+      exitCode = exitMatch[1];
+    } else {
+      outputLines.push(line);
+    }
+  }
+
+  return { command, output: outputLines.join("\n").trim(), exitCode };
 }
 
-function highlightKeywords(text: string): string {
-  return text.replace(/「([^」]+)」/g, "**$1**");
+/** Copy icon SVG */
+function IconCopy({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
 }
 
 export default function ChatMessageList({
@@ -110,18 +99,9 @@ export default function ChatMessageList({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-3xl space-y-5">
       {messages.map((msg, index) => {
         const isLastMessage = index === messages.length - 1;
-        const createdAt = msg.createdAt ? new Date(msg.createdAt) : undefined;
-        const timeLabel = formatTime(createdAt);
-        const fullTimeLabel = formatFullTime(createdAt);
-
-        const stepStartIndices = (msg.parts ?? [])
-          .map((part, partIndex) => (part.type === "step-start" ? partIndex : null))
-          .filter((partIndex): partIndex is number => partIndex !== null);
-        const totalSteps = stepStartIndices.length;
-        const stepIndexMap = new Map(stepStartIndices.map((partIndex, stepIndex) => [partIndex, stepIndex + 1]));
 
         const metadata = msg.metadata as ChatMetadata | undefined;
         const sessionResult = metadata?.unstable_data?.type === "session_result"
@@ -139,249 +119,174 @@ export default function ChatMessageList({
                   [partKey]: !isExpanded,
                 }));
 
+              {/* ── Reasoning (collapsible, subtle) ── */}
               if (part.type === "reasoning") {
                 const reasoningText = (part as { text?: string }).text ?? "";
-                const shouldClamp = shouldCollapseText(reasoningText);
-                const highlighted = highlightKeywords(reasoningText);
-
                 return (
-                  <div key={partKey} className="flex justify-start">
-                    <div className="group w-full max-w-2xl">
-                      <div className="mb-1 flex items-center justify-between text-xs text-text-secondary">
-                        <div className="flex items-center gap-2">
-                          <span className="text-accent-orange">🧠</span>
-                          <span className="font-semibold text-accent-orange">System</span>
-                        </div>
-                        {timeLabel && (
-                          <span
-                            className="cursor-pointer text-xs text-gray-400 transition-colors group-hover:text-accent-orange"
-                            title={fullTimeLabel}
-                          >
-                            {timeLabel}
-                          </span>
-                        )}
+                  <div key={partKey} className="border-l-2 border-accent-orange/40 pl-3">
+                    <button
+                      type="button"
+                      onClick={toggleExpanded}
+                      className="flex w-full items-center gap-2 text-sm italic text-text-tertiary hover:text-text-secondary"
+                    >
+                      <span className="flex-1 truncate text-left">{reasoningText.slice(0, 80) || "思考中…"}</span>
+                      <span className="shrink-0 text-xs">{isExpanded ? "‹" : "›"}</span>
+                    </button>
+                    {isExpanded && (
+                      <div className="mt-2 text-sm leading-relaxed text-text-secondary whitespace-pre-wrap">
+                        {reasoningText}
                       </div>
-                      <div className="relative rounded-lg border border-border/60 bg-bg-secondary/40 p-3 text-sm text-text-primary">
-                        <div
-                          className={[
-                            "leading-relaxed",
-                            !isExpanded && shouldClamp ? "line-clamp-2" : "",
-                          ].join(" ")}
-                        >
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            components={{
-                              strong: ({ children }) => (
-                                <strong className="text-sky-400">{children}</strong>
-                              ),
-                            }}
-                          >
-                            {`我在想：${highlighted}`}
-                          </ReactMarkdown>
-                        </div>
-                        {shouldClamp && (
-                          <button
-                            type="button"
-                            onClick={toggleExpanded}
-                            className="mt-2 inline-flex items-center gap-1 text-xs text-gray-400 transition-colors hover:text-accent-orange"
-                          >
-                            {isExpanded ? "收起" : "展开"}
-                            <span aria-hidden="true">{isExpanded ? "▴" : "▾"}</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
+                    )}
                   </div>
                 );
               }
 
+              {/* ── Step divider ── */}
               if (part.type === "step-start") {
-                const stepIndex = stepIndexMap.get(partIndex) ?? 1;
-
-                return (
-                  <div key={partKey} className="flex items-center gap-3 py-2">
-                    <div className="h-px flex-1 bg-border/60" />
-                    <span className="whitespace-nowrap text-xs text-text-tertiary">
-                      第 {stepIndex} 轮
-                    </span>
-                    <div className="h-px flex-1 bg-border/60" />
-                  </div>
-                );
+                return null; // Suppress step-start dividers for cleaner UI per PRD
               }
 
+              {/* ── Text: user (right card) / assistant (plain text) ── */}
               if (part.type === "text" && part.text) {
                 const isUser = msg.role === "user";
-                const identity = getIdentityInfo(msg.role, false);
-                const shouldClamp = shouldCollapseText(part.text);
 
+                if (isUser) {
+                  // User message: right-aligned light card
+                  return (
+                    <div key={partKey} className="flex justify-end">
+                      <div className="max-w-[85%] rounded-2xl bg-bg-surface px-4 py-3 shadow-subtle">
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-text-primary [&_a]:text-accent-orange [&_a]:underline">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Assistant text: left-aligned, no container
                 return (
-                  <div key={partKey} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-                    <div className="group w-full max-w-2xl">
-                      <div className="mb-1 flex items-center justify-between text-xs text-text-secondary">
-                        <div className="flex items-center gap-2">
-                          <span className="text-accent-orange text-lg">{identity.icon}</span>
-                          <span className="font-semibold text-accent-orange">{identity.label}</span>
-                        </div>
-                        {timeLabel && (
-                          <span
-                            className="cursor-pointer text-xs text-gray-400 transition-colors group-hover:text-accent-orange"
-                            title={fullTimeLabel}
-                          >
-                            {timeLabel}
-                          </span>
-                        )}
-                      </div>
-                      <div
-                        className={[
-                          "relative rounded-lg border border-border/60 bg-bg-surface px-4 py-3 text-sm text-text-primary",
-                          isUser ? "bg-accent-orange text-white" : "bg-bg-secondary/40",
-                        ].join(" ")}
-                      >
-                        {isUser ? (
-                          <p className={"whitespace-pre-wrap leading-relaxed"}>{part.text}</p>
-                        ) : (
-                          <div
-                            className={[
-                              "prose prose-sm max-w-none font-body text-[14px] leading-[1.6] text-text-primary",
-                              "[&_a]:text-accent-orange [&_a]:underline",
-                              "[&_li::marker]:text-accent-orange",
-                              "[&_strong]:text-sky-400 [&_strong]:font-semibold",
-                              !isExpanded && shouldClamp ? "line-clamp-2" : "",
-                            ].join(" ")}
-                          >
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
-                          </div>
-                        )}
-                        {shouldClamp && !isUser && (
-                          <button
-                            type="button"
-                            onClick={toggleExpanded}
-                            className="mt-2 inline-flex items-center gap-1 text-xs text-gray-400 transition-colors hover:text-accent-orange"
-                          >
-                            {isExpanded ? "收起" : "展开"}
-                            <span aria-hidden="true">{isExpanded ? "▴" : "▾"}</span>
-                          </button>
-                        )}
-                      </div>
+                  <div key={partKey} className="max-w-3xl">
+                    <div
+                      className={[
+                        "prose prose-sm max-w-none text-[14px] leading-[1.7] text-text-primary",
+                        "[&_a]:text-accent-orange [&_a]:underline",
+                        "[&_li::marker]:text-accent-orange",
+                        "[&_strong]:font-semibold",
+                        "[&_h1]:text-lg [&_h1]:font-semibold [&_h1]:mt-4 [&_h1]:mb-2",
+                        "[&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1",
+                        "[&_p]:my-1.5",
+                      ].join(" ")}
+                    >
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
                     </div>
                   </div>
                 );
               }
 
+              {/* ── Tool: collapsible step OR terminal output ── */}
               if (isToolUIPart(part)) {
                 const toolPart = part as ToolUIPart | DynamicToolUIPart;
                 const toolName = getToolName(toolPart);
                 const toolStatus = getToolStatus(toolPart, isLoading, isLastMessage);
                 const isCompleted = toolStatus !== "executing";
                 const isError = toolStatus === "error";
-                const alignment = isCompleted ? "justify-end" : "justify-start";
                 const outputText = getToolOutputText(toolPart);
-                const canCopy = Boolean(outputText);
-                const identity = getIdentityInfo(msg.role, true);
+                const title = "title" in toolPart ? (toolPart as { title?: string }).title : undefined;
+                const displayTitle = title || toolName;
 
-                return (
-                  <div key={partKey} className={`flex ${alignment}`}>
-                    <div className="group w-full max-w-2xl">
-                      <div className="mb-1 flex items-center justify-between text-xs text-text-secondary">
-                        <div className="flex items-center gap-2">
-                          <span className="text-accent-orange text-lg">{identity.icon}</span>
-                          <span className="font-semibold text-accent-orange">{identity.label}</span>
-                        </div>
-                        {timeLabel && (
-                          <span
-                            className="cursor-pointer text-xs text-gray-400 transition-colors group-hover:text-accent-orange"
-                            title={fullTimeLabel}
-                          >
-                            {timeLabel}
+                // If completed with output → render as terminal code block
+                if (isCompleted && outputText) {
+                  const { command, output: termOutput, exitCode } = parseTerminalOutput(outputText);
+                  const exitCodeNum = exitCode != null ? Number(exitCode) : null;
+
+                  return (
+                    <div key={partKey} className="group rounded-lg bg-[#1a1a1a] text-sm overflow-hidden">
+                      {/* Terminal header */}
+                      <div className="flex items-center justify-between px-4 py-2 text-xs text-gray-400">
+                        <span className="font-medium text-gray-500">‹ Terminal</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(partKey, outputText)}
+                          className="p-1 rounded transition-colors hover:text-white"
+                          title="复制"
+                        >
+                          {copiedPartId === partKey ? (
+                            <span className="text-xs text-emerald-400">Copied!</span>
+                          ) : (
+                            <IconCopy className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                      {/* Terminal body */}
+                      <div className="px-4 pb-3 font-mono text-[13px] leading-relaxed">
+                        {command && (
+                          <p className="mb-1">
+                            <span className="text-accent-orange">$</span>{" "}
+                            <span className="text-white">{command}</span>
+                          </p>
+                        )}
+                        {termOutput && (
+                          <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-gray-400">{termOutput}</pre>
+                        )}
+                        {/* If no parsed command/output, show raw */}
+                        {!command && !termOutput && (
+                          <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-gray-400">{outputText}</pre>
+                        )}
+                      </div>
+                      {/* Exit code footer */}
+                      {exitCodeNum != null && (
+                        <div className="border-t border-white/10 px-4 py-2 font-mono text-xs text-gray-500">
+                          Exit code:{" "}
+                          <span className={exitCodeNum === 0 ? "text-emerald-400" : "text-red-400"}>
+                            {exitCode}
                           </span>
-                        )}
-                      </div>
-                      <div
-                        className={[
-                          "relative rounded-lg border border-border/60 p-3 text-sm",
-                          isCompleted ? "bg-black/70" : "bg-bg-secondary/50",
-                          isError ? "text-red-400" : "text-emerald-300",
-                        ].join(" ")}
-                      >
-                        <div className="mb-2 flex items-center justify-between text-xs text-text-secondary">
-                          <div className="flex items-center gap-2 text-text-primary">
-                            <span className="text-accent-orange">{isCompleted ? "💻" : "▶️"}</span>
-                            <span className="font-semibold">
-                              {isCompleted ? "终端结果" : "正在执行"}：{toolName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 text-xs">
-                            {toolStatus === "executing" && (
-                              <span className="flex items-center gap-1 text-accent-orange">
-                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent-orange border-t-transparent" />
-                                执行中
-                              </span>
-                            )}
-                            {toolStatus === "completed" && <span className="text-emerald-400">✅</span>}
-                            {toolStatus === "error" && <span className="text-red-400">⚠️</span>}
-                          </div>
                         </div>
-
-                        {isCompleted && outputText ? (
-                          <pre className="max-h-80 overflow-auto rounded-md bg-black/60 p-3 font-mono text-sm leading-relaxed text-inherit">
-                            {outputText}
-                          </pre>
-                        ) : (
-                          <div className="rounded-md bg-bg-surface/60 p-2">
-                            <ToolMessagePart
-                              part={toolPart}
-                              isLast={isLastMessage}
-                              isLoading={isLoading}
-                              isManualToolInvocation={false}
-                              addToolResult={addToolResult}
-                            />
-                          </div>
-                        )}
-
-                        {isCompleted && canCopy && (
-                          <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-                            <button
-                              type="button"
-                              onClick={() => handleCopy(partKey, outputText ?? "")}
-                              className="text-xs text-gray-400 transition-colors hover:text-accent-orange"
-                            >
-                              📋 复制
-                            </button>
-                            {copiedPartId === partKey && (
-                              <span className="rounded bg-emerald-500 px-2 py-0.5 text-xs text-white">Copied!</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      )}
+                      {isError && exitCodeNum == null && (
+                        <div className="border-t border-white/10 px-4 py-2 font-mono text-xs text-red-400">
+                          Error
+                        </div>
+                      )}
                     </div>
+                  );
+                }
+
+                // Executing or no output → collapsible tool step with orange left border
+                return (
+                  <div key={partKey} className="border-l-2 border-accent-orange pl-3">
+                    <button
+                      type="button"
+                      onClick={toggleExpanded}
+                      className="flex w-full items-center gap-2 text-sm text-text-secondary hover:text-text-primary"
+                    >
+                      {toolStatus === "executing" && (
+                        <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent-orange border-t-transparent" />
+                      )}
+                      <span className="flex-1 truncate text-left italic">{displayTitle}</span>
+                      <span className="shrink-0 text-xs text-text-tertiary">{isExpanded ? "‹" : "›"}</span>
+                    </button>
+                    {isExpanded && (
+                      <div className="mt-2 rounded-md bg-bg-secondary/60 p-2">
+                        <ToolMessagePart
+                          part={toolPart}
+                          isLast={isLastMessage}
+                          isLoading={isLoading}
+                          isManualToolInvocation={false}
+                          addToolResult={addToolResult}
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               }
 
+              {/* ── File attachment ── */}
               if (part.type === "file") {
                 const isUser = msg.role === "user";
-                const identity = getIdentityInfo(msg.role, false);
-
                 return (
                   <div key={partKey} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-                    <div className="group w-full max-w-2xl">
-                      <div className="mb-1 flex items-center justify-between text-xs text-text-secondary">
-                        <div className="flex items-center gap-2">
-                          <span className="text-accent-orange text-lg">{identity.icon}</span>
-                          <span className="font-semibold text-accent-orange">{identity.label}</span>
-                        </div>
-                        {timeLabel && (
-                          <span
-                            className="cursor-pointer text-xs text-gray-400 transition-colors group-hover:text-accent-orange"
-                            title={fullTimeLabel}
-                          >
-                            {timeLabel}
-                          </span>
-                        )}
-                      </div>
-                      <div className="max-w-[80%]">
-                        <FileMessagePart part={part as FileUIPart} isUserMessage={isUser} />
-                      </div>
+                    <div className="max-w-[80%]">
+                      <FileMessagePart part={part as FileUIPart} isUserMessage={isUser} />
                     </div>
                   </div>
                 );
