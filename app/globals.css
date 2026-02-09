@@ -193,6 +193,19 @@
   }
 }
 
+@keyframes orangeBreath {
+  0%,
+  100% {
+    opacity: 0.4;
+    box-shadow: 0 0 6px var(--color-accent-orange);
+  }
+
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 12px var(--color-accent-orange);
+  }
+}
+
 @keyframes spinSoft {
   from {
     transform: rotate(0deg);
@@ -225,6 +238,10 @@ body {
 
 .animate-orange-progress {
   animation: orangeProgress 0.5s linear infinite;
+}
+
+.animate-orange-breath {
+  animation: orangeBreath 1s ease-in-out infinite;
 }
 
 .animate-spin-soft {
