@@ -51,6 +51,8 @@ RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 #   Process: procps-ng (ps/top/pgrep/pkill) shadow (useradd etc.)
 #   VCS:     git
 #   Editor:  vim
+#   Runtime: python3 + pip (for agent code-execution tasks)
+#   Build:   make gcc musl-dev (for native Python packages)
 RUN apk add --no-cache \
     bash coreutils findutils \
     grep sed gawk \
@@ -58,7 +60,10 @@ RUN apk add --no-cache \
     jq yq \
     curl wget bind-tools openssh-client socat \
     procps-ng shadow \
-    git vim
+    git vim \
+    python3 py3-pip python3-dev \
+    make gcc musl-dev \
+  && ln -sf /usr/bin/python3 /usr/bin/python
 
 ENV SHELL="/bin/bash"
 
