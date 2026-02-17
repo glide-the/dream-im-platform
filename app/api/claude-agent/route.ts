@@ -334,7 +334,7 @@ export async function POST(req: NextRequest) {
   const {
     id: conversationId,
     message: uiMessage,
-    resume = false,
+    resume = true,
     toolChoice = "auto",
     chatModel,
     attachments = [],
