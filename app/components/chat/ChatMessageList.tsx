@@ -163,9 +163,9 @@ export default function ChatMessageList({
                   return (
                     <div key={partKey} className="flex justify-end">
                       <div className="max-w-[85%] rounded-2xl bg-bg-surface px-4 py-3 shadow-subtle">
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-text-primary [&_a]:text-accent-orange [&_a]:underline">
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed text-text-primary [&_a]:text-accent-orange [&_a]:underline">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
-                        </p>
+                        </div>
                       </div>
                     </div>
                   );
