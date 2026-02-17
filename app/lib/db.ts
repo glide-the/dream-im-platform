@@ -10,9 +10,9 @@
 import { Pool, PoolClient } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
-import { DbShape, Conversation, Customer, Todo } from "./types";
+import { DbShape, Conversation, Customer, Todo, SystemConfig } from "./types";
 import { seedData } from "./seed";
-import { conversations, customers, todos } from "./db/schema";
+import { conversations, customers, todos, systemConfigs } from "./db/schema";
 
 type DbQueue = Promise<void>;
 
@@ -229,6 +229,21 @@ async function ensureInitialized() {
       await pool.query(
         "CREATE INDEX IF NOT EXISTS idx_conversations_linked_customer ON conversations(linked_customer_id);"
       );
+
+      // System configs table (singleton, id = 'default')
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS system_configs (
+          id TEXT PRIMARY KEY DEFAULT 'default',
+          system_prompt TEXT,
+          model TEXT,
+          provider TEXT,
+          theme TEXT,
+          workspace_enabled BOOLEAN DEFAULT true,
+          extras JSONB,
+          created_at TIMESTAMPTZ,
+          updated_at TIMESTAMPTZ
+        );
+      `);
 
       const { rows } = await pool.query(
         "SELECT (SELECT COUNT(*) FROM customers) AS customers, (SELECT COUNT(*) FROM todos) AS todos, (SELECT COUNT(*) FROM conversations) AS conversations;"
@@ -936,5 +951,87 @@ export async function createCustomerWithConversationLink(
     }
 
     return inserted ? mapCustomerRow(inserted) : null;
+  });
+}
+
+// ==================== System Configs ====================
+
+const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
+  id: "default",
+  system_prompt: "You are a concise and practical AI sales assistant.",
+  model: "claude-sonnet-4-20250514",
+  provider: "anthropic",
+  theme: "system",
+  workspace_enabled: true,
+  extras: {},
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
+
+function mapSystemConfigRow(row: typeof systemConfigs.$inferSelect): SystemConfig {
+  return {
+    id: row.id,
+    system_prompt: row.system_prompt ?? DEFAULT_SYSTEM_CONFIG.system_prompt,
+    model: row.model ?? DEFAULT_SYSTEM_CONFIG.model,
+    provider: row.provider ?? DEFAULT_SYSTEM_CONFIG.provider,
+    theme: (row.theme ?? DEFAULT_SYSTEM_CONFIG.theme) as SystemConfig["theme"],
+    workspace_enabled: row.workspace_enabled ?? true,
+    extras: parseJson<Record<string, unknown>>(row.extras),
+    created_at: toIso(row.created_at),
+    updated_at: toIso(row.updated_at),
+  };
+}
+
+/**
+ * Get the singleton system config. Returns defaults if none exists.
+ */
+export async function getSystemConfig(): Promise<SystemConfig> {
+  await ensureInitialized();
+  return await withClient(async (client) => {
+    const db = drizzle(client);
+    const rows = await db.select().from(systemConfigs).where(eq(systemConfigs.id, "default"));
+    if (rows.length === 0) return { ...DEFAULT_SYSTEM_CONFIG };
+    return mapSystemConfigRow(rows[0]);
+  });
+}
+
+/**
+ * Upsert the singleton system config.
+ */
+export async function upsertSystemConfig(config: Partial<SystemConfig>): Promise<SystemConfig> {
+  await ensureInitialized();
+  return await withClient(async (client) => {
+    const db = drizzle(client);
+    const now = new Date();
+    const values = {
+      id: "default",
+      system_prompt: config.system_prompt ?? DEFAULT_SYSTEM_CONFIG.system_prompt,
+      model: config.model ?? DEFAULT_SYSTEM_CONFIG.model,
+      provider: config.provider ?? DEFAULT_SYSTEM_CONFIG.provider,
+      theme: config.theme ?? DEFAULT_SYSTEM_CONFIG.theme,
+      workspace_enabled: config.workspace_enabled ?? true,
+      extras: config.extras ?? {},
+      created_at: now,
+      updated_at: now,
+    } as any;
+
+    const [row] = await db
+      .insert(systemConfigs)
+      .values(values)
+      .onConflictDoUpdate({
+        target: systemConfigs.id,
+        set: {
+          system_prompt: config.system_prompt,
+          model: config.model,
+          provider: config.provider,
+          theme: config.theme,
+          workspace_enabled: config.workspace_enabled,
+          extras: config.extras,
+          updated_at: now,
+        } as any,
+      })
+      .returning();
+
+    return row ? mapSystemConfigRow(row) : { ...DEFAULT_SYSTEM_CONFIG };
   });
 }

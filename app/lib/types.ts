@@ -120,11 +120,11 @@ export type GenericMessagePart = {
 };
 
 // Union type for all supported message parts
-export type MessagePart = 
-  | TextMessagePart 
-  | ReasoningMessagePart 
+export type MessagePart =
+  | TextMessagePart
+  | ReasoningMessagePart
   | StepStartMessagePart
-  | ToolMessagePart 
+  | ToolMessagePart
   | FileMessagePart
   | SourceUrlMessagePart
   | WorkspaceFilePathMessagePart
@@ -170,6 +170,26 @@ export type Conversation = {
   linked_customer_id?: string;
   /** Claude SDK session_id for resuming conversations */
   claude_session_id?: string;
+};
+
+export type ThemeMode = "light" | "dark" | "system";
+
+export type SystemConfig = {
+  id: string;
+  /** System prompt sent to the agent */
+  system_prompt: string;
+  /** Model identifier, e.g. "claude-sonnet-4-20250514" */
+  model: string;
+  /** Model provider, e.g. "anthropic" */
+  provider: string;
+  /** Theme preference */
+  theme: ThemeMode;
+  /** Whether workspace file access is enabled */
+  workspace_enabled: boolean;
+  /** Extra settings (future-proof) */
+  extras?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 };
 
 export type DbShape = {

@@ -91,6 +91,12 @@ export const chatApiSchemaRequestBodySchema = z.object({
 
   // ai4sales 扩展字段
   contextCustomerIds: z.array(z.string()).optional(),
+
+  /**
+   * System prompt override from system config.
+   * When set, passed to the agent SDK as systemPrompt.
+   */
+  systemPrompt: z.string().optional(),
 });
 
 export type ChatApiSchemaRequestBody = z.infer<

@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isToolUIPart, type FileUIPart, type TextUIPart, type UIMessage } from "ai";
 import AIInputDock, { type Attachment, type ContextCustomer, type ToolChoice, toAttachment } from "../AIInputDock";
-import { type ChatApiSchemaRequestBody, type ChatAttachment, DEFAULT_CHAT_MODEL } from "../../lib/chat-schema";
-import { useConversationByCustomer } from "../../lib/queries";
+import { type ChatApiSchemaRequestBody, type ChatAttachment, type ChatModel, DEFAULT_CHAT_MODEL } from "../../lib/chat-schema";
+import { useConversationByCustomer, useSystemConfig } from "../../lib/queries";
 import type { ConversationMessage } from "../../lib/types";
 import ChatMessageList from "./ChatMessageList";
 import { useWorkspaceSession } from "../../app/workspace-context";
@@ -63,6 +63,11 @@ export default function ChatPanel({
   const lastQueuedNonceRef = useRef<number | undefined>(undefined);
   const { setActiveSessionId } = useWorkspaceSession();
 
+  // ── System config (model + system prompt) ──
+  const { data: sysConfigData } = useSystemConfig();
+  const sysConfigRef = useRef(sysConfigData?.data);
+  useEffect(() => { sysConfigRef.current = sysConfigData?.data; }, [sysConfigData]);
+
   const { data: conversationData, isLoading: isConversationLoading } = useConversationByCustomer(contextCustomerId ?? threadId);
 
   /* eslint-disable react-hooks/refs */
@@ -77,26 +82,31 @@ export default function ChatPanel({
         const attachments: ChatAttachment[] = (getPendingData()?.rawAttachments ?? [])
           .filter((file) => file.storageKey)
           .map((file) => ({
-          type: "file",
-          url: toFileProxyUrl(file.storageKey!),
-          storageKey: file.storageKey!,
-          mediaType: file.type,
-          filename: file.name,
-          size: file.size,
-          workspacePath: file.workspacePath,
-          savedAt: file.savedAt,
-          hash: file.hash,
-        }));
+            type: "file",
+            url: toFileProxyUrl(file.storageKey!),
+            storageKey: file.storageKey!,
+            mediaType: file.type,
+            filename: file.name,
+            size: file.size,
+            workspacePath: file.workspacePath,
+            savedAt: file.savedAt,
+            hash: file.hash,
+          }));
+
+        const resolvedChatModel: ChatModel = sysConfigRef.current
+          ? { provider: sysConfigRef.current.provider, model: sysConfigRef.current.model }
+          : DEFAULT_CHAT_MODEL;
 
         const requestBody: ChatApiSchemaRequestBody = {
           id,
           message: lastMessage,
-          chatModel: DEFAULT_CHAT_MODEL,
+          chatModel: resolvedChatModel,
           toolChoice: getPendingData()?.toolChoice ?? currentToolChoice,
           allowedAppDefaultToolkit: [],
           allowedMcpServers: {},
           attachments,
           contextCustomerIds: getPendingData()?.contextCustomerIds ?? (contextCustomerId ? [contextCustomerId] : contextCustomers.map((c) => c.id)),
+          systemPrompt: sysConfigRef.current?.system_prompt,
         };
 
         setTimeout(() => { pendingDataRef.current = null; }, 0);

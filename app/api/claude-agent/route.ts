@@ -339,6 +339,7 @@ export async function POST(req: NextRequest) {
     chatModel,
     attachments = [],
     contextCustomerIds = [],
+    systemPrompt,
   } = body;
 
   let workspaceCwd: string;
@@ -821,6 +822,8 @@ export async function POST(req: NextRequest) {
             toolChoice: toolChoice as ToolChoiceMode,
             cwd: workspaceCwd,
             abortController,
+            systemPrompt: systemPrompt || undefined,
+            model: chatModel?.model,
             // Use default allowed tools from agent-runner (includes AskUserQuestion)
             // Don't pass allowedTools to use the defaults
           },

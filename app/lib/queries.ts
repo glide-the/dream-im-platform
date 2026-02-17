@@ -7,7 +7,7 @@
 
 import { useMutation, useQuery, useQueryClient, UseQueryOptions } from "@tanstack/react-query";
 import { apiRequest } from "./client";
-import type { Customer, Todo, Conversation } from "./types";
+import type { Customer, Todo, Conversation, SystemConfig } from "./types";
 
 // Query keys
 export const queryKeys = {
@@ -19,6 +19,7 @@ export const queryKeys = {
   conversation: (id: string) => ["conversation", id] as const,
   searchCustomer: (query: string, contextCustomerIds: string[] = []) =>
     ["searchCustomer", query, contextCustomerIds] as const,
+  systemConfig: () => ["systemConfig"] as const,
 } as const;
 
 // API Response types
@@ -253,6 +254,32 @@ export function useSearchCustomer() {
     onSuccess: async () => {
       // Refresh conversations after search
       // Will be handled by the component
+    },
+  });
+}
+
+// ==================== System Config ====================
+
+export function useSystemConfig(options?: Omit<UseQueryOptions<any>, 'queryKey' | 'queryFn'>) {
+  return useQuery({
+    queryKey: queryKeys.systemConfig(),
+    queryFn: () => apiRequest<{ data: SystemConfig }>("/api/system-config"),
+    staleTime: 1000 * 60 * 10, // 10 minutes — config changes rarely
+    ...options,
+  });
+}
+
+export function useUpdateSystemConfig() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: Partial<SystemConfig>) =>
+      apiRequest<{ data: SystemConfig }>("/api/system-config", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.systemConfig() });
     },
   });
 }

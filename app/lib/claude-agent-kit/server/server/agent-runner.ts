@@ -107,6 +107,8 @@ export interface AgentRunOptions {
   toolChoice?: ToolChoiceMode;
   /** Abort controller for cancellation */
   abortController?: AbortController;
+  /** System prompt override — passed to the SDK as `systemPrompt` */
+  systemPrompt?: string;
 }
 
 /**
@@ -184,6 +186,7 @@ export class ClaudeAgentRunner {
       allowedTools = [...DEFAULT_ALLOWED_TOOLS],
       toolChoice = "auto",
       abortController,
+      systemPrompt,
     } = opts;
     const includePartialMessages = true;
     const messages: SDKMessage[] = [];
@@ -315,6 +318,9 @@ export class ClaudeAgentRunner {
       // Add canUseTool callback for manual confirmation mode
       ...(canUseTool ? { canUseTool } : {}),
       includePartialMessages: includePartialMessages,
+      // System config: model & system prompt
+      ...(model ? { model } : {}),
+      ...(systemPrompt ? { systemPrompt } : {}),
     };
 
     try {
