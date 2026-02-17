@@ -11,9 +11,11 @@ import {
   type ToolUIPart,
   type UIMessage,
 } from "ai";
+import type { UseChatHelpers } from "@ai-sdk/react";
 import { ToolMessagePart } from "../ToolMessagePart";
 import { FileMessagePart } from "../FileMessagePart";
-import SessionResultCard, { type SessionResultData } from "./SessionResultCard";
+import { AssistMessagePart } from "./AssistMessagePart";
+import { type SessionResultData } from "./SessionResultCard";
 import type { ChatMetadata } from "../../lib/chat-schema";
 
 interface ChatMessageListProps {
@@ -22,6 +24,12 @@ interface ChatMessageListProps {
   error?: Error | null;
   addToolResult: (args: { tool: string; toolCallId: string; output: unknown }) => void;
   shouldShowLoadingIndicator?: boolean;
+  /** Whether the view is read-only (disables destructive actions) */
+  readonly?: boolean;
+  /** Setter for updating the messages array */
+  setMessages?: UseChatHelpers<UIMessage>["setMessages"];
+  /** Send message function (used for retry/regenerate) */
+  sendMessage?: UseChatHelpers<UIMessage>["sendMessage"];
 }
 
 type ToolStatus = "executing" | "completed" | "error";
@@ -87,6 +95,9 @@ export default function ChatMessageList({
   error,
   addToolResult,
   shouldShowLoadingIndicator = false,
+  readonly = false,
+  setMessages,
+  sendMessage,
 }: ChatMessageListProps) {
   const [expandedParts, setExpandedParts] = useState<Record<string, boolean>>({});
   const [copiedPartId, setCopiedPartId] = useState<string | null>(null);
@@ -120,7 +131,7 @@ export default function ChatMessageList({
                   [partKey]: !isExpanded,
                 }));
 
-              {/* ── Reasoning (collapsible, subtle) ── */}
+              {/* ── Reasoning (collapsible, subtle) ── */ }
               if (part.type === "reasoning") {
                 const reasoningText = (part as { text?: string }).text ?? "";
                 return (
@@ -142,12 +153,12 @@ export default function ChatMessageList({
                 );
               }
 
-              {/* ── Step divider ── */}
+              {/* ── Step divider ── */ }
               if (part.type === "step-start") {
                 return null; // Suppress step-start dividers for cleaner UI per PRD
               }
 
-              {/* ── Text: user (right card) / assistant (plain text) ── */}
+              {/* ── Text: user (right card) / assistant (plain text) ── */ }
               if (part.type === "text" && part.text) {
                 const isUser = msg.role === "user";
 
@@ -164,27 +175,33 @@ export default function ChatMessageList({
                   );
                 }
 
-                // Assistant text: left-aligned, no container
-                return (
-                  <div key={partKey} className="max-w-3xl">
-                    <div
-                      className={[
-                        "prose prose-sm max-w-none text-[14px] leading-[1.7] text-text-primary",
-                        "[&_a]:text-accent-orange [&_a]:underline",
-                        "[&_li::marker]:text-accent-orange",
-                        "[&_strong]:font-semibold",
-                        "[&_h1]:text-lg [&_h1]:font-semibold [&_h1]:mt-4 [&_h1]:mb-2",
-                        "[&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1",
-                        "[&_p]:my-1.5",
-                      ].join(" ")}
-                    >
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
+                // Assistant text: left-aligned, with action bar
+                {
+                  const isLastPart = partIndex === (msg.parts?.length ?? 0) - 1;
+                  const prevMsg = index > 0 ? messages[index - 1] : undefined;
+
+                  return (
+                    <div key={partKey} className="max-w-3xl">
+                      <AssistMessagePart
+                        part={part}
+                        isLast={isLastMessage && isLastPart}
+                        isLoading={isLoading}
+                        message={msg}
+                        prevMessage={prevMsg}
+                        showActions={
+                          isLastMessage ? isLastPart && !isLoading : isLastPart
+                        }
+                        readonly={readonly}
+                        setMessages={setMessages}
+                        sendMessage={sendMessage}
+                        sessionResult={isLastPart ? sessionResult : undefined}
+                      />
                     </div>
-                  </div>
-                );
+                  );
+                }
               }
 
-              {/* ── Tool: collapsible step OR terminal output ── */}
+              {/* ── Tool: collapsible step OR terminal output ── */ }
               if (isToolUIPart(part)) {
                 const toolPart = part as ToolUIPart | DynamicToolUIPart;
                 const toolName = getToolName(toolPart);
@@ -281,7 +298,7 @@ export default function ChatMessageList({
                 );
               }
 
-              {/* ── File attachment ── */}
+              {/* ── File attachment ── */ }
               if (part.type === "file") {
                 const isUser = msg.role === "user";
                 return (
@@ -295,7 +312,6 @@ export default function ChatMessageList({
 
               return null;
             })}
-            {sessionResult && <SessionResultCard data={sessionResult} />}
           </div>
         );
       })}

@@ -197,7 +197,7 @@ export default function ChatPanel({
   return (
     <div className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <div ref={chatContainerRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-bg-surface p-4 pb-6">
-        <ChatMessageList messages={messages} isLoading={chatLoading} error={error} addToolResult={addToolResult} shouldShowLoadingIndicator={shouldShowLoadingIndicator} />
+        <ChatMessageList messages={messages} isLoading={chatLoading} error={error} addToolResult={addToolResult} shouldShowLoadingIndicator={shouldShowLoadingIndicator} setMessages={setMessages} sendMessage={sendMessage} />
         <div ref={bottomRef} aria-hidden="true" />
       </div>
 
