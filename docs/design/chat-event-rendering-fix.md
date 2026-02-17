@@ -121,7 +121,7 @@ PRD（Chat His.md）定义了4种消息类型：
 
 | 缺失的 UI 元素 | 事件来源 | 建议 |
 |---|---|---|
-| 📊 会话统计卡片 | `result` 事件 | 显示 token 消耗、耗时、费用 |
+| 📊 会话统计 | `result` 事件 | 数据写入 metadata.unstable_data，通过 AssistMessagePart MetadataTooltip 按需展示 |
 | ⏱️ 工具执行进度 | `tool_progress` 事件 | 在执行中气泡显示已耗时 |
 | 📋 工具执行摘要 | `tool_use_summary` 事件 | 多工具链完成后显示汇总 |
 
@@ -228,24 +228,12 @@ if (event.type === "thinking_delta" && event.output) {
 
 **涉及文件**：
 - `app/components/chat/ChatMessageList.tsx`
+- `app/components/chat/AssistMessagePart.tsx`
 - `app/components/ToolMessagePart.tsx`（微调）
-- `app/components/chat/SessionResultCard.tsx`（新增）
 
-#### 3.5 新增 SessionResultCard 组件
+#### 3.5 AssistMessagePart MetadataTooltip
 
-在工具执行全部完成、收到 `result` 事件后，在消息列表底部渲染一个会话统计卡片：
-
-```
-┌──────────────────────────────────────┐
-│  📊 会话完成                          │
-│  ├─ Token 消耗：12,345 入 / 2,678 出 │
-│  ├─ 耗时：23.4 秒                    │
-│  ├─ 轮次：5                          │
-│  └─ 费用：$0.032                     │
-└──────────────────────────────────────┘
-```
-
-数据来源：`result` 事件通过 `message-metadata` 传递的 `session_result` 对象。
+助手消息的操作栏（hover `···`）已集成 Model 信息与 Token Usage 统计。`result` 事件数据通过 `message-metadata` 传递至 `metadata.unstable_data`（`type: "session_result"`），可按需在 MetadataTooltip 中扩展显示会话级统计（耗时/轮次/费用）。
 
 #### 3.6 工具气泡增加进度信息
 
@@ -300,7 +288,7 @@ function getToolStatus(part, isLoading, isLast): ToolStatus {
 | ▶️ 工具执行 | 左 | 显示工具名 + 参数 + 进度时间 | `tool_use_start` → `isToolUIPart` |
 | 💻 工具结果 | 右 | 代码块输出，成功绿/失败红 | `tool_result` → `isToolUIPart` (completed) |
 | 📋 执行摘要 | 左 | 多工具链人可读汇总 | `tool_use_summary` → `text` part |
-| 📊 会话统计 | 居中 | Token/耗时/费用/轮次 | `result` → `SessionResultCard` |
+| 📊 会话统计 | — | Token/耗时/费用/轮次（数据存于 metadata.unstable_data） | `result` → `message-metadata` |
 | ── 分隔线 ── | 居中 | 多轮分隔 | `step-start` part |
 
 #### 3.10 修订布局结构
@@ -314,8 +302,7 @@ ChatPanel (flex flex-col min-h-0)
 │   ├── ▶️ 工具执行气泡 (tool, 左对齐, 含进度)
 │   ├── 💻 工具结果气泡 (tool completed, 右对齐, 代码块)
 │   ├── 📋 执行摘要气泡 (text, 左对齐)
-│   ├── ── 轮次分隔线 ── (step-start, 居中)
-│   └── 📊 会话统计卡片 (SessionResultCard, 居中)
+│   └── ── 轮次分隔线 ── (step-start, 居中)
 └── AIInputDock (sticky bottom-0)
 ```
 
@@ -327,9 +314,9 @@ ChatPanel (flex flex-col min-h-0)
 |---|---|---|
 | `app/api/claude-agent/route.ts` | `onToolEvent` 增加 `tool_progress` / `tool_use_summary` / `result` / `thinking_delta` 转发 | 第一期 |
 | `app/lib/claude-agent-kit/server/server/agent-runner.ts` | 无修改（事件已全部正确输出） | — |
-| `app/components/chat/ChatMessageList.tsx` | ① 修正 `getToolStatus` 去掉 isLast 依赖 ② `step-start` 改为分隔线 ③ 预留 `session_result` 卡片位 | 第二期 |
+| `app/components/chat/ChatMessageList.tsx` | ① 修正 `getToolStatus` 去掉 isLast 依赖 ② `step-start` 改为分隔线 | 第二期 |
+| `app/components/chat/AssistMessagePart.tsx` | **新增**：助手消息组件（Markdown + 操作栏 + MetadataTooltip） | 第二期 |
 | `app/components/ToolMessagePart.tsx` | 增加 `elapsedTime` prop 显示进度 | 第二期 |
-| `app/components/chat/SessionResultCard.tsx` | **新增**：会话统计卡片组件 | 第二期 |
 | `docs/prd/Chat His.md` | 重写消息类型表 + 布局结构 | 第三期 |
 
 ---
@@ -339,7 +326,7 @@ ChatPanel (flex flex-col min-h-0)
 - [ ] `thinking_delta` 事件 → 前端实时流式显示思考过程（非一次性出现）
 - [ ] `tool_progress` 事件 → 工具执行气泡显示 "⏱️ 已执行 N 秒"
 - [ ] `tool_use_summary` 事件 → 多工具调用后显示人可读摘要文本
-- [ ] `result` 事件 → 会话结束后底部显示统计卡片（token/耗时/费用）
+- [ ] `result` 事件 → 会话结束数据写入 metadata.unstable_data，MetadataTooltip 可展示
 - [ ] `step-start` → 渲染为轻量分隔线而非内容气泡
 - [ ] 工具状态：非最后一条消息中的已完成工具不再错误显示为"执行中"
 - [ ] 无回归：现有 `text` / `reasoning` / `tool_use` / `tool_result` 渲染不受影响

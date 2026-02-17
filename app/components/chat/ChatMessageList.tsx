@@ -15,7 +15,6 @@ import type { UseChatHelpers } from "@ai-sdk/react";
 import { ToolMessagePart } from "../ToolMessagePart";
 import { FileMessagePart } from "../FileMessagePart";
 import { AssistMessagePart } from "./AssistMessagePart";
-import { type SessionResultData } from "./SessionResultCard";
 import type { ChatMetadata } from "../../lib/chat-schema";
 
 interface ChatMessageListProps {
@@ -116,9 +115,6 @@ export default function ChatMessageList({
         const isLastMessage = index === messages.length - 1;
 
         const metadata = msg.metadata as ChatMetadata | undefined;
-        const sessionResult = metadata?.unstable_data?.type === "session_result"
-          ? (metadata.unstable_data as SessionResultData)
-          : null;
 
         return (
           <div key={msg.id} className="space-y-4">
@@ -194,7 +190,6 @@ export default function ChatMessageList({
                         readonly={readonly}
                         setMessages={setMessages}
                         sendMessage={sendMessage}
-                        sessionResult={isLastPart ? sessionResult : undefined}
                       />
                     </div>
                   );

@@ -7,7 +7,6 @@ import type { UIMessage } from "ai";
 import type { UseChatHelpers } from "@ai-sdk/react";
 import { useCopy } from "../../hooks/useCopy";
 import type { ChatMetadata } from "../../lib/chat-schema";
-import type { SessionResultData } from "./SessionResultCard";
 
 // ── Inline SVG Icons ─────────────────────────────────────────────
 function IconCopy({ className }: { className?: string }) {
@@ -96,8 +95,6 @@ interface AssistMessagePartProps {
     setMessages?: UseChatHelpers<UIMessage>["setMessages"];
     /** Send a message (used for retry/regenerate) */
     sendMessage?: UseChatHelpers<UIMessage>["sendMessage"];
-    /** Session result data (duration, turns, cost, etc.) */
-    sessionResult?: SessionResultData | null;
 }
 
 // ── Component ─────────────────────────────────────────────────────
@@ -112,7 +109,6 @@ export const AssistMessagePart = memo(function AssistMessagePart({
     readonly,
     sendMessage,
     isLoading: isStreamLoading,
-    sessionResult,
 }: AssistMessagePartProps) {
     const { copied, copy } = useCopy();
     const [isRetrying, setIsRetrying] = useState(false);
@@ -261,12 +257,11 @@ export const AssistMessagePart = memo(function AssistMessagePart({
                     )}
 
                     {/* Metadata info */}
-                    {(metadataSummary || sessionResult) && (
+                    {metadataSummary && (
                         <MetadataTooltip
                             metadata={metadata!}
                             metadataSummary={metadataSummary}
                             stepsCount={stepsCount}
-                            sessionResult={sessionResult}
                         />
                     )}
                 </div>
@@ -324,17 +319,15 @@ function ActionButton({
     );
 }
 
-/** Metadata hover tooltip showing model, usage, steps, session result */
+/** Metadata hover tooltip showing model, usage, steps */
 function MetadataTooltip({
     metadata,
     metadataSummary,
     stepsCount,
-    sessionResult,
 }: {
     metadata: ChatMetadata;
-    metadataSummary: string[] | null;
+    metadataSummary: string[];
     stepsCount: number;
-    sessionResult?: SessionResultData | null;
 }) {
     const [isOpen, setIsOpen] = useState(false);
 
@@ -420,39 +413,6 @@ function MetadataTooltip({
                             </>
                         )}
 
-                        {/* Session result */}
-                        {sessionResult && (
-                            <>
-                                <hr className="border-border" />
-                                <div className="space-y-2">
-                                    <h4 className="flex items-center gap-2 text-xs font-semibold text-text-primary">
-                                        {sessionResult.isError ? "⚠️" : "📊"}
-                                        <span>{sessionResult.isError ? "会话异常结束" : "会话统计"}</span>
-                                    </h4>
-                                    <div className="space-y-1.5">
-                                        {sessionResult.usage && (
-                                            <>
-                                                <TokenRow label="Session Input" value={sessionResult.usage.input_tokens} />
-                                                <TokenRow label="Session Output" value={sessionResult.usage.output_tokens} />
-                                            </>
-                                        )}
-                                        {sessionResult.durationMs != null && (
-                                            <MetricRow label="耗时" value={formatDuration(sessionResult.durationMs)} />
-                                        )}
-                                        {sessionResult.numTurns != null && (
-                                            <MetricRow label="轮次" value={String(sessionResult.numTurns)} />
-                                        )}
-                                        {sessionResult.totalCostUsd != null && (
-                                            <MetricRow
-                                                label="费用"
-                                                value={`$${sessionResult.totalCostUsd.toFixed(4)}`}
-                                                highlight
-                                            />
-                                        )}
-                                    </div>
-                                </div>
-                            </>
-                        )}
                     </div>
                 </div>
             )}
@@ -496,51 +456,6 @@ function TokenRow({
                 ].join(" ")}
             >
                 {value.toLocaleString()}
-            </span>
-        </div>
-    );
-}
-
-/** Format duration from ms to human-readable */
-function formatDuration(ms: number): string {
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(1)} 秒`;
-}
-
-/** Single metric row (non-token, e.g. duration/turns/cost) */
-function MetricRow({
-    label,
-    value,
-    highlight,
-}: {
-    label: string;
-    value: string;
-    highlight?: boolean;
-}) {
-    return (
-        <div
-            className={[
-                "flex items-center justify-between rounded-md px-2 py-1",
-                highlight
-                    ? "border border-accent-orange/20 bg-accent-orange-light"
-                    : "bg-bg-secondary",
-            ].join(" ")}
-        >
-            <span
-                className={[
-                    "text-xs",
-                    highlight ? "font-medium text-accent-orange" : "text-text-tertiary",
-                ].join(" ")}
-            >
-                {label}
-            </span>
-            <span
-                className={[
-                    "text-xs",
-                    highlight ? "font-bold text-accent-orange" : "font-medium text-text-primary",
-                ].join(" ")}
-            >
-                {value}
             </span>
         </div>
     );
