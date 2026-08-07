@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ink-Dream Playwright QA"
+  short_description: "Run reliable end-to-end and visual QA for Ink-Dream"
+  default_prompt: "Use $ink-dream-playwright-qa to run a reliable browser QA pass for this Ink-Dream change."
