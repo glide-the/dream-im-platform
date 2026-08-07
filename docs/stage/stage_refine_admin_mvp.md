@@ -5,6 +5,7 @@
 > Task 输入：`TASK-REFINE-ADM-000` 至 `TASK-REFINE-ADM-008`，及其 9 份 requirement
 > 编排范围：当前 `ink-admin-memory` checkout；仅规划，不创建 execute Issue、不实现代码
 > 交付姿态：默认 `internal-only`；`public-ready` 不是本计划可自动达成的结果
+> 本轮增量：`SUO-347` 消费 `SUO-345` Issue 合同与 `SUO-346` task/requirement 同步；仅追加本节所列执行约束，不重排稳定 Stage。
 
 ## 编排结论
 
@@ -24,6 +25,34 @@
 | 模板 | [TASK-REQUIREMENT-FORMAT.md](../task/TASK-REQUIREMENT-FORMAT.md) | 核验任务输入字段与标准章节。 |
 
 不可改变的边界：不得修改 `ink-admin-memory-output.xml`、`ink-dream-memory`、`story-workspace`；不得把用户中心、Story、模型注册、密钥轮换、计费、额度、网关或 conversations 纳入 MVP。API Route Handler 只解析、zod 校验、server session/RBAC、`app/lib` 调用、审计编排与统一响应；不得在 route 堆叠 DB 逻辑。
+
+## 本轮增量修订（`SUO-346` → `SUO-347`）
+
+本节是相对于既有 Stage 基线的唯一新增记录；其余阶段、任务表、DAG 与 checklist
+保持不变。`000/001/002/003/004/007/008` 已消费本轮 task/requirement 增量；`005/006`
+确认仍为稳定合同，不因本轮同步重写。
+
+| 增量 | 影响的 Task / Stage | 本轮执行编排结论 |
+| --- | --- | --- |
+| 运行时证据替代推定兼容 | 001 / `S0`，008 / `S4` | `next: "*"` 或 peer 无冲突均不构成 Next 16 兼容结论；001 的 build、SSR、client navigation、动态路由与 PWA 回归证据是后续 Refine 实现的硬输入。失败即停止 Admin 发布并回流设计。 |
+| 身份与迁移的加法发布门 | 000、002 / `S0`–`S1`，008 / `S4` | 002 仅在消费 IdP/session、stable subject、callback allowlist、exposure、fail-closed 五项决定后，才可完成生产身份路径；只可新增两张 admin 表，且必须验证 flag-off schema-forward、staging backup/apply/snapshot 与非破坏恢复。 |
+| Provider/API 与审计可追踪性 | 003、004 / `S1`–`S2`，008 / `S4` | 003 冻结 `{ data, meta.total } → { data, total }`、白名单、`HttpError` 及 401/403/404/409/422/429/5xx 映射；004 冻结脱敏 `requestId → request_id` 关联和“审计失败则 mutation 失败”。 |
+| 高风险 settings 的受控开启 | 007 / `S3`，008 / `S4` | 只读 canary 先于任何 mutation；customers/todos mutation 稳定后，007 才能以独立 feature gate 最后启用。`theme`、`extras`、secret、Registry/计费/网关仍不进入范围。 |
+| 发布结论与失败回流 | 000、001、002、003、004、007、008 / 全链路 | 发布结论固定为 `internal-only`，除非独立的全服务安全 blocker 已完成。资源或 canary 失败先关闭对应入口/mutation；共享 seam 缺失回流其唯一 owner，设计边界冲突回流 DesignArchitect。 |
+
+### 新增冻结点与 execute 锁
+
+下表补充“逐 Task Execute Readiness Handoff”中的锁/owner 预期；创建任何 execute
+Issue 时必须连同该 task 的来源、关联 Issue/Stage、允许/禁止范围、验收条件与测试方式
+一并带入，不能以父子层级或本文件文字顺序代替 blocker。
+
+| 冻结点 | 唯一 owner | 锁定完成信号 | 下游约束与失败回流 |
+| --- | --- | --- | --- |
+| Auth / RBAC / schema-migration | 002 | server-only identity、`can()`、401/403 guard、protected layout、仅 `admin_members`/`admin_audit_logs` 的 reviewed additive migration。 | 003 只消费 server guard/policy seam；004–007 不得写 schema、`drizzle/**` 或 runtime DDL。IdP/schema 冲突停止 migration/auth 发布，回流 000 决策或 DesignArchitect。 |
+| Provider / API contracts | 003 | resource allowlist、strict zod、`{data, meta.total}` 映射、统一错误与单一 QueryClient/`AdminProviders` 生命周期。 | 002 不改 provider；004–007 只消费冻结导出，不能分叉 contracts/helper。类型或接口不足回流 003；受保护 API 的正式验收仍被 002 guard 阻塞。 |
+| Audit / transaction | 004 | 脱敏 writer、`requestId → request_id`、只读 audit list/show，且 audit-insert failure 已证明回滚 mutation。 | 005–007 只能调用冻结 transaction seam；不得各自补 audit。任何原子性缺口回流 004，并保持受影响 mutation 关闭。 |
+| Resource enablement | 005 / 006 / 007 各自独占 | 各自 route/page/component、资源级 integration/E2E、direct-call deny、mutation-to-audit 证据。 | 三者可并行但文件面隔离。canary 失败只回滚该资源的入口/mutation，保留 additive schema/audit 与旧 PWA/API；007 mutation 额外等待 005/006 mutation canary 成功。 |
+| Final release evidence | 008 | `AC-001`–`AC-016` 证据矩阵、internal-only 发布说明、迁移/rollback/canary 与 E2E 环境结果。 | 008 只修测试/fixture 缺口；资源功能回流对应 resource task，协议/设计冲突回流 002/003 或 DesignArchitect。public-ready 必须新增并完成一等安全 blocker。 |
 
 ## 阶段任务表
 
