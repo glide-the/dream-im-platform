@@ -22,6 +22,20 @@
       "when": 1771332596001,
       "tag": "0002_gorgeous_catseye",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786121374216,
+      "tag": "0003_last_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786121613310,
+      "tag": "0004_concerned_garia",
+      "breakpoints": true
     }
   ]
 }

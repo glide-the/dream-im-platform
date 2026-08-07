@@ -7,6 +7,11 @@
 > 状态：S0 路由壳可实施；S1–S4 交互已定义但受各自 Task gate 约束  
 > 产品姿态：`internal-only`，不构成 public-ready 声明
 
+> 2026-08-08 扩展说明：本文保留最初 Refine S0 路由壳与基础资源交互基线；后续用户明确要求
+> 增加 Story 运营观察、模型配置、Token 计费和代理网关。该扩展范围以
+> [`ai-platform-admin-billing-gateway-design.md`](./ai-platform-admin-billing-gateway-design.md)
+> 为实施依据，本文中“延期/不进入菜单”的相关描述仅代表旧 MVP gate，不再限制新阶段。
+
 ## 1. 问题裁决
 
 ### 1.1 当前事实

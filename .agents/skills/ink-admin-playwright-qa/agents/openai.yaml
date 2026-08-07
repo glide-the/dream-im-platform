@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ink Admin Playwright QA"
+  short_description: "Run reliable E2E and visual QA for ink-admin-memory"
+  default_prompt: "Use $ink-admin-playwright-qa to verify this ink-admin-memory change with focused browser assertions and diagnostics."

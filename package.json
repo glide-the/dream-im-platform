@@ -28,6 +28,7 @@
   "dependencies": {
     "@ai-sdk/react": "^3.0.64",
     "@anthropic-ai/claude-agent-sdk": "^0.2.20",
+    "@anthropic-ai/sdk": "0.115.0",
     "@aws-sdk/client-s3": "^3.981.0",
     "@aws-sdk/s3-request-presigner": "^3.981.0",
     "@refinedev/core": "5.0.12",
@@ -37,6 +38,7 @@
     "ai": "^6.0.62",
     "drizzle-orm": "^0.45.1",
     "next": "16.1.6",
+    "openai": "7.4.0",
     "pg": "^8.13.3",
     "react": "19.0.0",
     "react-dom": "19.0.0",

@@ -22,7 +22,7 @@ type GlobalPool = typeof globalThis & {
   __ai4sales_write_queue__?: DbQueue;
 };
 
-function getPool() {
+export function getPool() {
   const globalPool = globalThis as GlobalPool;
   if (!globalPool.__ai4sales_pg_pool__) {
     const connectionString = process.env.DATABASE_URL;
