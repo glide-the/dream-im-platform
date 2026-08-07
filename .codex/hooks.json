@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write|View",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/dmeck/project/ink-admin-memory/.codex/hooks/protect-files.sh'"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/dmeck/project/ink-admin-memory/.codex/hooks/protect-files-bash.sh'"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+ANTHROPIC_AUTH_TOKEN = "644a9c059a6448f8aafdc42acb8b5cb9.tuWjtTZNgHBcDknE"
+ANTHROPIC_BASE_URL = "https://open.bigmodel.cn/api/anthropic"
+API_TIMEOUT_MS = "3000000"
+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
