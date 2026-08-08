@@ -11,6 +11,11 @@ import {
 
 const resources = [
   {
+    name: "users",
+    list: "/admin/resources/users",
+    meta: { label: "平台用户" },
+  },
+  {
     name: "source-users",
     list: "/admin/resources/users",
     meta: { label: "业务用户" },
@@ -34,6 +39,11 @@ const resources = [
     name: "story-stories",
     list: "/admin/story/stories",
     meta: { label: "剧本数据" },
+  },
+  {
+    name: "stories",
+    list: "/admin/story/stories",
+    meta: { label: "剧本" },
   },
   {
     name: "story-characters",
@@ -111,9 +121,24 @@ const resources = [
     meta: { label: "管理员角色" },
   },
   {
+    name: "roles",
+    list: "/admin/access/roles",
+    meta: { label: "角色" },
+  },
+  {
     name: "admin-permissions",
     list: "/admin/access/permissions",
     meta: { label: "权限代码" },
+  },
+  {
+    name: "permissions",
+    list: "/admin/access/permissions",
+    meta: { label: "权限" },
+  },
+  {
+    name: "storage-resources",
+    list: "/admin/resources/storage",
+    meta: { label: "文件存储" },
   },
   {
     name: "system-settings",

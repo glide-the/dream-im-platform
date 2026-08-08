@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { recordAdminAuditOnClient } from "../admin/audit";
@@ -26,6 +27,17 @@ const nonEmptyPatch = <T extends z.ZodRawShape>(shape: T) =>
 const workspacePatchSchema = nonEmptyPatch({
   name: z.string().trim().min(1).max(180).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
+  status: z.enum(["active", "archived"]).optional(),
+});
+const workspaceCreateSchema = z.strictObject({
+  name: z.string().trim().min(1).max(180),
+  ownerId: z.coerce.number().int().positive(),
+  settings: z.record(z.string(), z.unknown()).default({}),
+});
+const userPatchSchema = nonEmptyPatch({
+  displayName: z.string().trim().min(1).max(180).nullable().optional(),
+  avatarUrl: z.url().max(2_000).nullable().optional(),
+  status: z.enum(["active", "disabled"]).optional(),
 });
 const storyPatchSchema = nonEmptyPatch({
   title: z.string().trim().min(1).max(240).optional(),
@@ -53,21 +65,38 @@ const reviewActionSchema = z.strictObject({
 
 type PatchConfig = {
   table: string;
+  permission: string;
+  safeSelect?: string;
   schema: z.ZodType<Record<string, unknown>>;
   fields: Record<string, { column: string; json?: boolean }>;
 };
 
 const patchConfigs: Partial<Record<StorySourceResource, PatchConfig>> = {
+  users: {
+    table: "users",
+    permission: "users.write",
+    safeSelect:
+      "id, email, display_name, avatar_url, role, status, created_at, updated_at",
+    schema: userPatchSchema,
+    fields: {
+      displayName: { column: "display_name" },
+      avatarUrl: { column: "avatar_url" },
+      status: { column: "status" },
+    },
+  },
   "story-workspaces": {
     table: "story_workspace_workspaces",
+    permission: "story.write",
     schema: workspacePatchSchema,
     fields: {
       name: { column: "name" },
       settings: { column: "settings", json: true },
+      status: { column: "status" },
     },
   },
   "story-stories": {
     table: "story_workspace_stories",
+    permission: "story.write",
     schema: storyPatchSchema,
     fields: {
       title: { column: "title" },
@@ -75,8 +104,10 @@ const patchConfigs: Partial<Record<StorySourceResource, PatchConfig>> = {
       type: { column: "type" },
     },
   },
+  stories: undefined as never,
   "story-characters": {
     table: "story_workspace_characters",
+    permission: "story.write",
     schema: characterPatchSchema,
     fields: {
       name: { column: "name" },
@@ -90,6 +121,7 @@ const patchConfigs: Partial<Record<StorySourceResource, PatchConfig>> = {
   },
   "story-scenes": {
     table: "story_workspace_scenes",
+    permission: "story.write",
     schema: scenePatchSchema,
     fields: {
       name: { column: "name" },
@@ -99,6 +131,8 @@ const patchConfigs: Partial<Record<StorySourceResource, PatchConfig>> = {
     },
   },
 };
+
+patchConfigs.stories = patchConfigs["story-stories"];
 
 async function parseBody<T extends z.ZodTypeAny>(request: Request, schema: T) {
   let body: unknown;
@@ -123,9 +157,14 @@ async function parseBody<T extends z.ZodTypeAny>(request: Request, schema: T) {
   return parsed.data;
 }
 
-async function loadRowForUpdate(client: PoolClient, table: string, id: string) {
+async function loadRowForUpdate(
+  client: PoolClient,
+  table: string,
+  id: string,
+  safeSelect = "*",
+) {
   const result = await client.query<Record<string, unknown>>(
-    `SELECT * FROM ${table} WHERE id = $1 FOR UPDATE`,
+    `SELECT ${safeSelect} FROM ${table} WHERE id = $1 FOR UPDATE`,
     [id],
   );
   if (!result.rows[0]) {
@@ -144,7 +183,12 @@ async function updateSourceRow(
   input: Record<string, unknown>,
   config: PatchConfig,
 ) {
-  const before = await loadRowForUpdate(client, config.table, id);
+  const before = await loadRowForUpdate(
+    client,
+    config.table,
+    id,
+    config.safeSelect,
+  );
   if (config.table === "story_workspace_scenes" && input.storyId) {
     const parent = await client.query(
       `SELECT 1 FROM story_workspace_stories
@@ -173,15 +217,21 @@ async function updateSourceRow(
         400,
       );
     }
-    return `${field.column} = $${index + 2}`;
+    return `${field.column} = $${index + 2}${field.json ? "::jsonb" : ""}`;
   });
-  const result = await client.query<Record<string, unknown>>(
+  await client.query(
     `UPDATE ${config.table}
      SET ${assignments.join(", ")}, updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1 RETURNING *`,
+     WHERE id = $1`,
     [id, ...values],
   );
-  return { before, after: result.rows[0] };
+  const after = await loadRowForUpdate(
+    client,
+    config.table,
+    id,
+    config.safeSelect,
+  );
+  return { before, after };
 }
 
 async function auditSourceMutation(client: PoolClient, input: {
@@ -223,7 +273,7 @@ export async function handleStorySourceUpdate(
         405,
       );
     }
-    const identity = await requireAdminRequest(request, "story.write");
+    const identity = await requireAdminRequest(request, config.permission);
     const input = await parseBody(request, config.schema);
     await withStoryTransaction(async (client) => {
       const changed = await updateSourceRow(client, id, input, config);
@@ -254,11 +304,62 @@ export async function handleStorySourceCreate(
   const requestId = adminRequestId(request);
   try {
     assertAdminMutationOrigin(request);
-    await requireAdminRequest(request, storySourcePermission(resource));
-    throw new AdminError(
-      "STORY_SOURCE_CREATE_DENIED",
-      "Story entities are created by the source product workflow, not by Admin",
-      405,
+    if (resource !== "story-workspaces") {
+      await requireAdminRequest(request, storySourcePermission(resource));
+      throw new AdminError(
+        "STORY_SOURCE_CREATE_DENIED",
+        "This Story resource is created by the product workflow, not by Admin",
+        405,
+      );
+    }
+    const identity = await requireAdminRequest(request, "story.write");
+    const input = await parseBody(request, workspaceCreateSchema);
+    const id = randomUUID();
+    await withStoryTransaction(async (client) => {
+      const owner = await client.query<{ status: string }>(
+        "SELECT status FROM users WHERE id = $1 FOR SHARE",
+        [input.ownerId],
+      );
+      if (!owner.rows[0]) {
+        throw new AdminError(
+          "STORY_WORKSPACE_OWNER_NOT_FOUND",
+          "The selected Workspace owner does not exist",
+          409,
+        );
+      }
+      if (owner.rows[0].status !== "active") {
+        throw new AdminError(
+          "STORY_WORKSPACE_OWNER_DISABLED",
+          "A new Workspace requires an active owner",
+          409,
+        );
+      }
+      const created = await client.query<Record<string, unknown>>(
+        `INSERT INTO story_workspace_workspaces
+           (id, name, owner_id, settings, status)
+         VALUES ($1, $2, $3, $4::jsonb, 'active')
+         RETURNING id, name, owner_id::text AS owner_id, settings, status,
+                   created_at, updated_at`,
+        [id, input.name, input.ownerId, JSON.stringify(input.settings)],
+      );
+      await auditSourceMutation(client, {
+        request,
+        requestId,
+        identity,
+        action: "create",
+        resource,
+        id,
+        before: {},
+        after: created.rows[0],
+      });
+    });
+    const data = await queryStorySourceItem(resource, id);
+    return Response.json(
+      { data },
+      {
+        status: 201,
+        headers: { "cache-control": "no-store", "x-request-id": requestId },
+      },
     );
   } catch (error) {
     return adminErrorResponse(storySourceError(error), requestId);
@@ -286,6 +387,7 @@ export async function handleStorySourceDelete(
 function actionTable(resource: StorySourceResource) {
   const tables = {
     "story-stories": "story_workspace_stories",
+    stories: "story_workspace_stories",
     "story-characters": "story_workspace_characters",
     "story-scenes": "story_workspace_scenes",
   } as const;
@@ -327,7 +429,7 @@ async function transitionReview(
     await client.query(
       `UPDATE ${table}
        SET status = 'archived',
-           ${resource === "story-stories" ? "" : "archived_at = CURRENT_TIMESTAMP,"}
+           ${resource === "story-stories" || resource === "stories" ? "" : "archived_at = CURRENT_TIMESTAMP,"}
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
       [id],
@@ -342,7 +444,7 @@ async function transitionReview(
     }
     if (action === "confirm") {
       const storyPublishing =
-        resource === "story-stories"
+        resource === "story-stories" || resource === "stories"
           ? "status = 'published', published_at = CURRENT_TIMESTAMP,"
           : "";
       await client.query(
@@ -352,29 +454,6 @@ async function transitionReview(
          WHERE id = $1`,
         [id],
       );
-      if (resource === "story-stories") {
-        await client.query(
-          `UPDATE story_workspace_scenes
-           SET review_status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP,
-               updated_at = CURRENT_TIMESTAMP
-           WHERE story_id = $1 AND author_id = $2
-             AND agent_generated::text IN ('1', 'true')
-             AND review_status = 'pending' AND status != 'archived'`,
-          [id, before.author_id],
-        );
-        await client.query(
-          `UPDATE story_workspace_characters
-           SET review_status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP,
-               updated_at = CURRENT_TIMESTAMP
-           WHERE author_id = $1 AND agent_generated::text IN ('1', 'true')
-             AND review_status = 'pending' AND status != 'archived'
-             AND id IN (
-               SELECT character_id FROM story_workspace_story_characters
-               WHERE story_id = $2
-             )`,
-          [before.author_id, id],
-        );
-      }
     } else {
       await client.query(
         `UPDATE ${table}

@@ -58,6 +58,246 @@ export const platformUsers = pgTable(
   ],
 );
 
+/**
+ * Canonical ink-dream-memory business tables. These preserve the audited
+ * source names and relations; platformUsers remains a separate billing and
+ * gateway identity mapping rather than replacing these source users.
+ */
+export const storySourceUsers = pgTable(
+  "users",
+  {
+    id: bigint("id", { mode: "number" })
+      .primaryKey()
+      .generatedByDefaultAsIdentity(),
+    email: text("email").notNull(),
+    password_hash: text("password_hash").notNull(),
+    display_name: text("display_name"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow(),
+    avatar_url: text("avatar_url"),
+    role: text("role").default("user"),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [uniqueIndex("users_email_unique").on(table.email)],
+);
+
+export const storySourceWorkspaces = pgTable(
+  "story_workspace_workspaces",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    owner_id: bigint("owner_id", { mode: "number" })
+      .notNull()
+      .references(() => storySourceUsers.id, { onDelete: "restrict" }),
+    settings: text("settings").default("{}"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("idx_sw_workspaces_owner").on(table.owner_id)],
+);
+
+export const storySourceStories = pgTable(
+  "story_workspace_stories",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("draft"),
+    review_status: text("review_status").notNull().default("pending"),
+    type: text("type").notNull().default("short"),
+    content: text("content"),
+    author_id: bigint("author_id", { mode: "number" })
+      .notNull()
+      .references(() => storySourceUsers.id, { onDelete: "restrict" }),
+    workspace_id: text("workspace_id")
+      .notNull()
+      .references(() => storySourceWorkspaces.id, { onDelete: "restrict" }),
+    character_count: integer("character_count").notNull().default(0),
+    scene_count: integer("scene_count").notNull().default(0),
+    agent_generated: integer("agent_generated").notNull().default(1),
+    agent_session_id: text("agent_session_id"),
+    review_notes: text("review_notes"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    confirmed_at: timestamp("confirmed_at", { withTimezone: true, mode: "date" }),
+    published_at: timestamp("published_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    index("idx_sw_stories_author").on(table.author_id, table.updated_at.desc()),
+    index("idx_sw_stories_review_status").on(table.review_status, table.updated_at.desc()),
+    index("idx_sw_stories_status").on(table.status, table.updated_at.desc()),
+    index("idx_sw_stories_type").on(table.type, table.updated_at.desc()),
+    index("idx_sw_stories_search").on(table.title),
+    index("idx_sw_stories_agent").on(table.agent_session_id),
+    check("story_workspace_stories_status_check", sql`${table.status} IN ('draft', 'published', 'archived')`),
+    check("story_workspace_stories_review_status_check", sql`${table.review_status} IN ('pending', 'confirmed', 'rejected')`),
+    check("story_workspace_stories_type_check", sql`${table.type} IN ('short', 'long', 'script', 'outline')`),
+    check("story_workspace_stories_agent_generated_check", sql`${table.agent_generated} IN (0, 1)`),
+  ],
+);
+
+/**
+ * Canonical Story product identities and first-wave content tables.
+ *
+ * These tables live in the same PostgreSQL database as the Admin control
+ * plane. They intentionally do not replace `platform_users`, which remains a
+ * billing/gateway identity mapping, or the deprecated parallel `story_*`
+ * Admin tables retained for a later controlled retirement.
+ */
+export const users = pgTable(
+  "users",
+  {
+    id: bigint("id", { mode: "number" })
+      .primaryKey()
+      .generatedByDefaultAsIdentity(),
+    email: text("email").notNull(),
+    password_hash: text("password_hash").notNull(),
+    display_name: text("display_name"),
+    avatar_url: text("avatar_url"),
+    role: text("role").notNull().default("user"),
+    status: text("status").notNull().default("active"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("users_email_uidx").on(table.email),
+    index("users_status_updated_idx").on(table.status, table.updated_at),
+    check("users_status_check", sql`${table.status} IN ('active', 'disabled')`),
+  ],
+);
+
+export const storyWorkspaceWorkspaces = pgTable(
+  "story_workspace_workspaces",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    owner_id: bigint("owner_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    settings: jsonb("settings")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    status: text("status").notNull().default("active"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("story_workspace_workspaces_owner_idx").on(table.owner_id),
+    index("story_workspace_workspaces_status_updated_idx").on(
+      table.status,
+      table.updated_at,
+    ),
+    check(
+      "story_workspace_workspaces_status_check",
+      sql`${table.status} IN ('active', 'archived')`,
+    ),
+  ],
+);
+
+export const storyWorkspaceStories = pgTable(
+  "story_workspace_stories",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("draft"),
+    review_status: text("review_status").notNull().default("pending"),
+    type: text("type").notNull().default("short"),
+    content: text("content"),
+    author_id: bigint("author_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    workspace_id: text("workspace_id")
+      .notNull()
+      .references(() => storyWorkspaceWorkspaces.id, { onDelete: "restrict" }),
+    character_count: integer("character_count").notNull().default(0),
+    scene_count: integer("scene_count").notNull().default(0),
+    agent_generated: integer("agent_generated").notNull().default(1),
+    agent_session_id: text("agent_session_id"),
+    review_notes: text("review_notes"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    confirmed_at: timestamp("confirmed_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    published_at: timestamp("published_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+  },
+  (table) => [
+    index("story_workspace_stories_author_updated_idx").on(
+      table.author_id,
+      table.updated_at,
+    ),
+    index("story_workspace_stories_workspace_updated_idx").on(
+      table.workspace_id,
+      table.updated_at,
+    ),
+    index("story_workspace_stories_status_updated_idx").on(
+      table.status,
+      table.updated_at,
+    ),
+    index("story_workspace_stories_review_updated_idx").on(
+      table.review_status,
+      table.updated_at,
+    ),
+    index("story_workspace_stories_type_updated_idx").on(
+      table.type,
+      table.updated_at,
+    ),
+    index("story_workspace_stories_title_idx").on(table.title),
+    check(
+      "story_workspace_stories_status_check",
+      sql`${table.status} IN ('draft', 'published', 'archived')`,
+    ),
+    check(
+      "story_workspace_stories_review_status_check",
+      sql`${table.review_status} IN ('pending', 'confirmed', 'rejected')`,
+    ),
+    check(
+      "story_workspace_stories_type_check",
+      sql`${table.type} IN ('short', 'long', 'script', 'outline')`,
+    ),
+    check(
+      "story_workspace_stories_agent_generated_check",
+      sql`${table.agent_generated} IN (0, 1)`,
+    ),
+    check(
+      "story_workspace_stories_character_count_check",
+      sql`${table.character_count} >= 0`,
+    ),
+    check(
+      "story_workspace_stories_scene_count_check",
+      sql`${table.scene_count} >= 0`,
+    ),
+  ],
+);
+
 export const systemSettings = pgTable(
   "system_settings",
   {
@@ -188,6 +428,12 @@ export const aiPricingRules = pgTable(
     markup_bps: integer("markup_bps").notNull().default(0),
     discount_bps: integer("discount_bps").notNull().default(0),
     status: text("status").notNull().default("active"),
+    source: text("source").notNull().default("manual"),
+    source_ref: text("source_ref"),
+    source_version: text("source_version"),
+    source_metadata: jsonb("source_metadata")
+      .$type<Record<string, unknown>>()
+      .default({}),
     effective_from: timestamp("effective_from", {
       withTimezone: true,
       mode: "date",
@@ -239,6 +485,88 @@ export const aiPricingRules = pgTable(
     check(
       "ai_pricing_rules_effective_window_check",
       sql`${table.effective_to} IS NULL OR ${table.effective_to} > ${table.effective_from}`,
+    ),
+  ],
+);
+
+export const aiProviderDiscoverySnapshots = pgTable(
+  "ai_provider_discovery_snapshots",
+  {
+    id: text("id").primaryKey(),
+    provider_id: text("provider_id")
+      .notNull()
+      .references(() => aiProviders.id, { onDelete: "restrict" }),
+    provider_updated_at: timestamp("provider_updated_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    status: text("status").notNull().default("ready"),
+    endpoint: text("endpoint").notNull(),
+    catalog_hash: text("catalog_hash").notNull(),
+    models: jsonb("models").$type<Array<Record<string, unknown>>>().notNull(),
+    diff: jsonb("diff").$type<Array<Record<string, unknown>>>().notNull(),
+    created_by: text("created_by").notNull(),
+    expires_at: timestamp("expires_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    applied_at: timestamp("applied_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("ai_provider_discovery_provider_idx").on(
+      table.provider_id,
+      table.created_at,
+    ),
+    index("ai_provider_discovery_expiry_idx").on(table.expires_at),
+    check(
+      "ai_provider_discovery_status_check",
+      sql`${table.status} IN ('ready', 'applied', 'expired')`,
+    ),
+  ],
+);
+
+export const aiPricingSyncSnapshots = pgTable(
+  "ai_pricing_sync_snapshots",
+  {
+    id: text("id").primaryKey(),
+    provider_id: text("provider_id").references(() => aiProviders.id, {
+      onDelete: "restrict",
+    }),
+    catalog_ref: text("catalog_ref").notNull(),
+    catalog_version: text("catalog_version").notNull(),
+    catalog_hash: text("catalog_hash").notNull(),
+    status: text("status").notNull().default("ready"),
+    matches: jsonb("matches")
+      .$type<Array<Record<string, unknown>>>()
+      .notNull(),
+    created_by: text("created_by").notNull(),
+    expires_at: timestamp("expires_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    applied_at: timestamp("applied_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("ai_pricing_sync_provider_idx").on(
+      table.provider_id,
+      table.created_at,
+    ),
+    index("ai_pricing_sync_expiry_idx").on(table.expires_at),
+    check(
+      "ai_pricing_sync_status_check",
+      sql`${table.status} IN ('ready', 'applied', 'expired')`,
     ),
   ],
 );

@@ -37,13 +37,13 @@ Ink Memory Admin 是 Ink Memory 的运营控制台和 AI 控制面，服务于�
 - 不恢复 `app/(app)` 或任何业务前台页面。
 - 不修改 `ink-dream-memory` 的代码、Schema、迁移或运行逻辑。
 - 不把 Admin 的旧 `story_*` 表包装成“真实业务数据”。
-- 不安装 SQLite 驱动、读取 SQLite 文件、复制同步业务表或提供隐式内存/JSON 回退。
+- 不安装 SQLite 运行时驱动，不让 Admin 应用读取 SQLite，也不提供 SQLite/JSON/内存回退。经操作者显式执行的一次性迁移 CLI 可以用系统原生 `sqlite3 -readonly` 从业务源抽取并写入明确自有的 PostgreSQL；该 CLI 不是应用数据源。
 - 不保存/展示完整模型 Prompt、响应、Provider Secret 或已创建 Gateway Key 的明文。
 - 不使用虚构 KPI、随机数据或只有外观没有真实行为的 CRUD。
 
 ## 2. 经审计的数据前提
 
-业务源当前实际使用 SQLite，Admin 使用 PostgreSQL；这是迁移前的暂态，不是目标部署形态。目标实现只有一个 PostgreSQL 实例、一个名为 `ink-memory` 的数据库、一个 `DATABASE_URL` 和一个连接池。未来 `ink-dream-memory` PostgreSQL 迁移把真实业务表原名部署到同一数据库；Admin repository 维护领域边界，但不建立第二连接池或第二 Data Provider。
+业务源当前实际使用 SQLite，Admin 使用 PostgreSQL；这是迁移前的暂态，不是目标部署形态。目标实现只有一个 PostgreSQL 实例、一个名为 `ink-memory` 的数据库、一个 `DATABASE_URL` 和一个连接池。用户已授权 Admin 项目提供受控的一次性迁移工具，把业务源真实表原名迁入目标 PostgreSQL；迁移完成后 `ink-dream-memory` 与 Admin 统一使用该 PostgreSQL。Admin repository 维护领域边界，但不建立第二连接池或第二 Data Provider。
 
 ```mermaid
 flowchart LR
@@ -60,8 +60,20 @@ flowchart LR
 
 - `DATABASE_URL` 必须使用 PostgreSQL 且数据库名为 `ink-memory`；控制面表和真实 Story/User/Workflow 表均在 `public` schema。
 - `app/lib/db.ts` 提供唯一 Pool；Story repository 直接复用该 Pool。环境、代码和文档不得再出现 `STORY_DATABASE_URL`。
-- 当前开发源 `ink-dream-memory` 仍为 SQLite，不能声明已接通真实数据。工程用一个隔离 PostgreSQL 同时部署控制面迁移与真实表契约 fixture；生产切换依赖业务源所有者完成 SQLite → 同库 PostgreSQL 的受控迁移。
-- 迁移完成前，只有 Story/源用户模块显示“业务表尚未迁入”的可诊断 503；Provider、Model、Pricing、Gateway、Usage、Billing、RBAC 与 Storage 必须继续可用。
+- 当前业务源文件已通过只读证据确认：`users` 28 行、`story_workspace_workspaces` 12 行、`story_workspace_stories` 4 行，三表主键/唯一键无重复、必需外键无 orphan，Story author 与 Workspace owner 无不一致。文档、日志和截图不得输出邮箱、password hash 或 Story 正文。
+- 第一迁移批次只包含用户、Workspace、Story 三张权威表；源主键、时间、nullable、枚举、`settings` JSON 文本与外键原样映射。Character/Scene/Workflow 等后续表仍保持 503 fail-closed，不得读取旧平行表。
+- 一次性迁移 CLI 默认 dry-run，只接受显式 `INK_DREAM_SOURCE_DB_PATH` 与 `TEST_DATABASE_URL`/经确认的目标 URL；拒绝非 PostgreSQL、拒绝数据库名不是 `ink-memory`、拒绝未知共享目标。抽取使用源只读快照，写入目标在一个 PostgreSQL 事务内完成，冲突整体回滚。
+- 迁移完成前，只有尚缺真实表的 Story/源用户资源显示带缺表清单的 503；Provider、Model、Pricing、Gateway、Usage、Billing、RBAC 与 Storage 必须继续可用。
+
+### 2.1 第一批真实数据迁移验收
+
+| 表 | 源约束 | PostgreSQL 映射 | 迁移后证明 |
+|---|---|---|---|
+| `users` | integer PK；email unique；password_hash not null | `bigint` PK/identity；敏感字段完整迁移但 Admin API 永不选择 password_hash | 行数、PK 集合、email 不可逆摘要、sequence 大于最大 ID |
+| `story_workspace_workspaces` | text PK；owner_id → users；settings 为 JSON 文本 | text PK；bigint FK；settings 保持 text 且 `jsonb` 校验只用于验收 | 行数、PK、owner orphan=0、settings invalid=0 |
+| `story_workspace_stories` | text PK；author/workspace FK；status/review/type checks | text PK；相同 check 与 FK；时间转 `timestamptz` | 行数、PK、两类 orphan=0、枚举分布、author/owner 一致性 |
+
+迁移前后只记录表级计数、不可逆 fingerprint 和约束结果。目标验收默认使用一次性 PostgreSQL；测试结束删除精确命名容器，源 SQLite 和共享 PostgreSQL 保持未写入。
 
 ## 3. 数据域边界
 
@@ -224,17 +236,26 @@ Token 计费
 
 ### 6.3 AI 模型中心
 
-模型设置直接采用 `/Users/dmeck/project/cc-switch` 的页面结构和交互代码组织，而不是通用 Refine CRUD 换皮：Provider 列表对应 `ProviderList/ProviderCard`；新增/编辑对应 `AddProviderDialog/EditProviderDialog/FullScreenPanel/ProviderForm/ProviderPresetSelector/ApiKeySection/EndpointField/ModelDropdown`；Usage/监控对应 `UsageDashboard/UsageHero/UsageTrendChart/RequestLogTable/RequestDetailPanel/ProviderStatsTable/ModelStatsTable`；Pricing 对应 `PricingConfigPanel/PricingEditModal`。Tauri command/Rust 代理逻辑必须改写为 Next.js service + PostgreSQL，不复制本地配置文件和桌面接管行为。视觉使用 Ink Memory Token，但信息密度、页面顺序、卡片行为、筛选联动和反馈模式保持同构。字段级控件和差异以 `docs/design/cc-switch-model-billing-adaptation.md` 为准。
+模型设置直接采用 `/Users/dmeck/project/cc-switch` 的桌面页面结构、状态和操作顺序，而不是通用 Refine CRUD 换皮：Provider 列表对应 `ProviderList/ProviderCard`；新增/编辑对应 `AddProviderDialog/EditProviderDialog/FullScreenPanel/ProviderForm/ProviderPresetSelector/ApiKeySection/EndpointField/ModelInputWithFetch`；模型发现对应 `model_fetch.rs` 的 `/v1/models` 候选策略；Usage/监控对应 `UsageDashboard/UsageHero/UsageTrendChart/RequestLogTable/RequestDetailPanel/ProviderStatsTable/ModelStatsTable`；Pricing 和自动价格目录对应 `PricingConfigPanel/PricingEditModal/ModelsDevAutoSyncPanel/modelsDevAutoSync.ts`。Tauri command/Rust 代理逻辑必须改写为 Next.js service + PostgreSQL，不复制本地配置文件和桌面接管行为。视觉使用 Ink Memory Token，但桌面紧凑域切换、单列 Provider 卡片、全窗口配置层、固定 Header/Footer、局部滚动、筛选联动和反馈模式保持同构。字段级控件和差异以 `docs/design/cc-switch-model-billing-adaptation.md` 为准。
+
+cc-switch 权威行为拆为三条链，Admin 必须全部实现：
+
+1. **Provider 模型发现**：cc-switch 在表单中从兼容 `/v1/models` 获取候选；Admin 在首次保存 Provider 后自动发起服务端 discover，并支持卡片显式重试。
+2. **模型与差异应用**：discover 不直接静默改线上 alias。服务端产生不可变 snapshot，桌面全窗口层显示新增、能力更新、未变化、冲突、未定价五类差异；Apply 携带 snapshot version 与 idempotency key，在事务内写模型和审计。
+3. **定价目录自动同步**：cc-switch 可从 `models.dev` 导入并按最多每 6 小时自动更新选中模型。Admin 使用同一可信目录和选择交互，但不能覆盖历史计费事实；同步只能创建带 source ref/version/hash 的新价格版本，无法精确匹配时保持“未定价”。
 
 AI 模型中心同时是代理发布控制面：Provider Secret 只用于服务端连接上游；外部服务，主要是 `ink-dream-memory`，使用独立 Gateway Key 和稳定的 `ai_models.code` 调用 Ink Memory 代理。外部调用不得接触 Provider Secret、真实上游 Endpoint 或 `upstream_model`。
 
 #### Provider
 
-- 列表/筛选：code、name、protocol、status、base_url、updated_at；支持状态和协议筛选。
-- 创建/更新容器：独立路由页面 `/admin/models/providers/new`、`/admin/models/providers/[id]/edit`，固定 Header/Footer，中段独立滚动；不是嵌在列表中的通用 `<dialog>`。
+- 桌面列表采用 cc-switch 单列紧凑 Provider 卡片：左侧 name/code/protocol/base_url，中部显示 Credential、网络健康、最近 discover、模型数、定价覆盖和近期真实请求，右侧常显“同步模型 / 查看用量 / 编辑配置”；不依赖 hover 才能完成主任务，不显示装饰性 KPI 卡。
+- 列表工具行：name/code/base_url 联合关键词、protocol、status、同步状态；结果数和更新时间是 meta 文本。卡片 `查看用量` 使用真实 Provider ID 预填 Usage URL，切换 Provider 时清空不属于该 Provider 的 Model 筛选。
+- 创建/更新容器：独立路由 `/admin/models/providers/new`、`/admin/models/providers/[id]/edit` 渲染 fixed 全窗口层并覆盖 Admin 侧栏，固定 64px Header/72px Footer，只有中段滚动；不是嵌在列表中的通用 `<dialog>`，也不保留双重导航。
 - 创建/更新字段：code 为创建时文本、编辑只读；protocol 为预设/下拉选项且编辑只读；name 为文本；baseUrl 为 URL 输入；timeoutMs/maxRetries 为边界明确的整数输入；status 为 active/disabled 下拉；authMode/outputTokenParam 为下拉；只有未知扩展 config 使用 JSON Editor。
 - Secret：credential 仅提交时存在；列表/详情永不返回；更新空值表示不轮换而非清空。
 - Credential 使用 password 输入和本次草稿显隐；已配置凭据只显示状态与 fingerprint，不能载入或复制历史明文。
+- 新增默认开启“保存后发现模型”。Provider 事务与审计成功后再排队 discover；discover 失败不得回滚或伪装 Provider 保存失败，必须显示脱敏 endpoint、阶段、request/job ID、编辑配置和重试入口。
+- discover 仅由服务端读取已加密 Credential；OpenAI-compatible Provider 按 cc-switch 规则尝试显式 models URL、`{base}/models`、`{base}/v1/models` 及已审计兼容路径。Anthropic-only 上游不支持标准列表时返回“该端点未开放模型列表”，不得用内置假列表冒充实时发现。
 - 连通测试：卡片提供 `providers.write` 保护的显式按钮；按 cc-switch reachability 语义只 GET 经 SSRF 白名单校验的 `base_url`，8 秒超时、禁止自动重定向、不读取正文。任意 HTTP 状态表示网络可达；401/403 不等同于 Credential 正确，页面必须明确“可达 ≠ 模型可用”。结果显示 TTFB/HTTP 状态并写审计，不发送模型生成请求。
 - 停用：允许；硬删除禁止。确认 Modal 必须读取并说明关联启用模型和近期请求影响。
 - 对外代理：页面固定展示 `/v1/messages`、`/v1/messages/count_tokens`、`/v1/chat/completions`、`/v1/models`，分别说明 Header、Gateway Key Scope 和稳定模型别名；示例只能使用环境变量占位符。
@@ -244,6 +265,8 @@ AI 模型中心同时是代理发布控制面：Provider Secret 只用于服务�
 - 字段：code、provider、upstream_model、display_name、capabilities、context_window、max_output、enabled。
 - 创建/编辑容器：独立路由页面 `/admin/models/models/new`、`/admin/models/models/[id]/edit`；桌面和移动均采用 cc-switch 风格全屏设置面板。provider 使用受权、可搜索下拉，禁止手填 Provider ID；`upstream_model` 使用常用型号 Model Dropdown 并允许受控自定义；从 Provider 详情发起时预选，创建后 Provider 关系只读。
 - capabilities 使用已知能力复选组，不用 JSON；context_window/max_output 使用可空正整数控件；enabled 使用开关并校验 Provider active。
+- Model 列表同时展示发现来源、last_seen_at、定价覆盖和验证状态。`upstream_model` 优先从最近 discover snapshot 的可搜索候选选择；手工输入必须标为“未验证”。
+- Discover review 是独立全窗口层：新增安全模型默认选中；Provider/alias/价格冲突默认跳过；消失的上游模型只标记 stale，不自动删除或停用已有模型。Apply 前允许逐行确认稳定 alias、display name 与 enabled；snapshot 过期返回 409 并要求重新 discover。
 - “验证配置”是 `models.write` 保护的显式动作：服务端解密已保存 Provider Credential，向经 SSRF 白名单校验的上游发送一次非流式、最多 1 Token 的 `ping` 请求；超时上限 15 秒，不读取、返回或记录模型响应正文。2xx 才表示当前 Credential + 协议 + `upstream_model` 可用；401/403、模型/协议拒绝、429/5xx 和网络失败分别显示安全分类，并写入脱敏审计。它不产生平台 Usage/Ledger，不能替代外部 Gateway 端到端验收。
 - CRUD：创建、更新、启停；删除默认禁止，只有无 Pricing/Permission/Request 依赖且具备高风险权限时才可讨论，本版本不开放。
 - 筛选：Provider 下拉、名称/alias/upstream 联合关键词、enabled；排序 updated_at。列表按服务端总数分页。
@@ -256,6 +279,9 @@ AI 模型中心同时是代理发布控制面：Provider Secret 只用于服务�
 - 创建新生效规则；提交前必须显示旧/新价格、有效窗和真实可得的影响摘要；重叠窗口返回 409 并展示冲突规则链接且保留草稿。
 - 已被请求快照引用的历史规则不可破坏性更新/删除；调整价格创建新版本并关闭旧窗口。
 - 价格单位明确显示 micro-USD / million tokens，并同时给只读 USD 格式化值。
+- 提供 cc-switch 同构的 `models.dev` 同步入口：Provider 级联、模型搜索、目录版本/更新时间、exact/normalized/ambiguous/unmatched 匹配状态、四类目录价和来源链接。只有 exact 默认勾选；ambiguous/unmatched 不自动应用。
+- 自动同步开关遵循 cc-switch “最多每 6 小时一次”的节流语义，但由服务端持久化配置和执行；页面启动只触发受权命令，不允许 GET 隐式写库。目录不可用时保留历史价格可读，显示 503/request ID，不使用缓存假价。
+- Apply 只能 INSERT 新价格版本，并在同一事务按明确策略结束冲突旧窗口；价格未变化记为 no-op。任何 overwrite/delete 历史版本的交互均禁止。
 
 #### 模型权限
 
@@ -552,11 +578,12 @@ PDF v2.1（2026-07-25）晚于 `color_system` 子文档中的旧亮色值，并�
 
 1. 新代码先引入 story-source repository 和数据源健康检查，旧资源仍存在但不可见。
 2. Refine/API 切到真实表名并复用唯一 `DATABASE_URL` Pool；同库真实表未迁入时返回带缺表清单的 503。
-3. 隔离环境在一个 `ink-memory` 数据库中同时应用控制面迁移与真实表契约 fixture，完成读写/冲突验收。
-4. 生产部署前由业务源所有者迁移 SQLite → 同一个 PostgreSQL，完成行数、FK、JSON、UTC、哈希抽样和停写切换。
-5. Admin 只在明确连接目标后启用 Story 菜单；控制面功能不受 Story 503 影响。
-6. 回滚仅回滚 Admin 代码/配置到上一个不写 Story 的版本；不得回滚到旧平行表写入。
-7. 旧表清理为独立未来迁移，本版本不执行。
+3. 增加 canonical Story schema 迁移，只创建真实原名 `users`、`story_workspace_workspaces`、`story_workspace_stories` 及其 check/FK/index；不得把它们加入 Admin 平行领域命名或把旧表数据自动合并进去。
+4. 增加一次性迁移 CLI：源以系统 `sqlite3 -readonly` 创建一致性快照；目标只通过显式 PostgreSQL URL；默认 dry-run、`--apply` 才写；写入顺序 users → workspaces → stories；同一事务、conflict-fail、失败整体回滚。
+5. 首次验收只在一次性 PostgreSQL `ink-memory` 执行真实源同步；比较三表行数、PK 集合、不可逆字段摘要、sequence、枚举和 FK orphan。E2E 只在该复制目标做 Story 更新/审核，绝不回写源 SQLite。
+6. 生产切换前先停写/生成最终源快照，再对明确目标执行同一 CLI；切换 `ink-dream-memory` 到 PostgreSQL 属于业务源后续部署工作，本仓库不修改其运行代码。
+7. Admin 只在明确连接目标后启用已迁入资源；Character/Scene/Workflow 未迁入时单独 503，控制面功能不受影响。
+8. 回滚：数据写入失败自动事务回滚；切流前代码可回滚到不写 Story 的版本；切流后不得回写旧平行表或自动删除 canonical 表。旧表清理仍为独立未来迁移。
 
 本版本的 `drizzle/0007_curvy_sabretooth.sql` 仅添加 deprecated 表注释；不会删除、清空、重命名或搬运旧表数据。Drizzle 目标 Schema 已移除这些平行实体，以阻止后续功能继续依赖它们。
 
@@ -568,12 +595,16 @@ PDF v2.1（2026-07-25）晚于 `color_system` 子文档中的旧亮色值，并�
 - [ ] 全仓只有 `DATABASE_URL`；数据库名为 `ink-memory`，Story 与控制面复用一个 Pool。无 `STORY_DATABASE_URL`、SQLite/JSON/旧表回退。
 - [ ] Story ID、integer user ID、M:N 关系和可空 story_id 原样保留。
 - [ ] 受控更新成功；非法字段 400；FK/unique/state 冲突 409；create/delete 禁止。
+- [ ] 源只读同步把 `users=28`、`workspaces=12`、`stories=4` 迁入一次性 PostgreSQL；迁移后 PK/行数一致，三类 FK orphan 为 0，源文件 hash/mtime 未变化。
+- [ ] 迁移 CLI 默认 dry-run，拒绝非 PostgreSQL/非 `ink-memory`/未知共享目标；冲突时 0 行部分提交。
 
 ### Admin/安全
 
 - [ ] 无 Session 页面重定向登录，Admin API 401；权限不足 403。
 - [ ] Provider/system secret 永不回显；Gateway Key 仅创建时一次显示。
 - [ ] Pricing overlap 409；模型/Provider 启停关系明确。
+- [ ] Provider 首次保存后自动 discover；失败不回滚 Provider；diff 明确新增/更新/未变化/冲突/未定价，stale snapshot 返回 409。
+- [ ] models.dev 自动同步最多每 6 小时一次，只创建新价格版本；ambiguous/unmatched 不应用，历史 Pricing 与 Request snapshot 不被覆盖。
 - [ ] Usage/Ledger/Audit 无 update/delete UI/API；数据库 trigger 阻止破坏性 SQL。
 - [ ] Gateway failure 有人工核对入口并产生 ledger/audit。
 - [ ] Storage 现有 route/lib 单测继续通过。
@@ -584,7 +615,7 @@ PDF v2.1（2026-07-25）晚于 `color_system` 子文档中的旧亮色值，并�
 - [ ] 默认页面不再呈现 JSON-only CRUD 工作台或默认 Refine/Ant Design 模板。
 - [ ] Provider/Model/Pricing/Usage/Request Detail 按 cc-switch 对应源码组件建立同构页面，并完成 Ink Memory light/dark Token 换肤。
 - [ ] 每个表单字段与 `admin-resource-field-control-matrix.md` 一致；关系选择器只提交真实选中 ID，列表选择后能以服务器当前值预填。
-- [ ] Provider、Model 与 Pricing 使用独立路由全屏页面，不挂载在通用 Resource `<dialog>`；普通编辑在 Drawer/Modal；Request Detail 只读并保持筛选上下文。
+- [ ] Provider/Discover/Pricing 使用 fixed 全窗口层覆盖 Admin 侧栏，固定 Header/Footer、中段局部滚动；Model 复杂设置同构，Request Detail 只读并保持筛选上下文。
 - [ ] loading/empty/400/401/403/404/409/500/503/success 均有恢复动作。
 - [ ] 1440×1000 与 390×844 无页面级横向溢出；表格局部滚动。
 - [ ] 键盘导航、焦点、label、live region、对比度通过检查；light/dark token 一致。

@@ -222,6 +222,31 @@ export default function AdminResourceFormPage({
       await invalidate({ resource, invalidates: ["list", "detail"] });
       setInitialValues(values);
       const savedId = String(body.data.id ?? recordId ?? "");
+      if (mode === "create" && resource === "providers" && savedId) {
+        try {
+          const discoveryResponse = await fetch(
+            `/api/admin/providers/${encodeURIComponent(savedId)}/discover`,
+            { method: "POST", headers: { accept: "application/json" } },
+          );
+          const discoveryBody = (await discoveryResponse.json().catch(() => ({}))) as ApiResult;
+          const snapshotId = discoveryBody.data?.id;
+          if (discoveryResponse.ok && snapshotId) {
+            router.push(
+              `/admin/models/providers/${encodeURIComponent(savedId)}/discover/${encodeURIComponent(String(snapshotId))}`,
+            );
+            router.refresh();
+            return;
+          }
+        } catch {
+          // The Provider write is already committed. Continue to the registry
+          // with a visible retry action instead of resubmitting the record.
+        }
+        router.push(
+          `${backHref}${backHref.includes("?") ? "&" : "?"}saved=${encodeURIComponent(savedId)}&discovery=failed`,
+        );
+        router.refresh();
+        return;
+      }
       router.push(
         `${backHref}${backHref.includes("?") ? "&" : "?"}saved=${encodeURIComponent(savedId)}`,
       );
@@ -247,8 +272,8 @@ export default function AdminResourceFormPage({
   }
 
   return (
-    <section className="admin-ai-form-page -mx-4 -my-6 min-h-[100dvh] bg-bg-primary sm:-mx-6 lg:-mx-9 lg:-my-8">
-      <header className="sticky top-0 z-20 border-b border-border bg-bg-surface/95 backdrop-blur">
+    <section className="admin-ai-form-page fixed inset-0 z-[80] flex min-h-[100dvh] flex-col overflow-hidden bg-bg-primary">
+      <header className="z-20 shrink-0 border-b border-border bg-bg-surface/95 backdrop-blur">
         <div className="mx-auto flex min-h-20 max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-4">
             <button
@@ -274,7 +299,8 @@ export default function AdminResourceFormPage({
         </div>
       </header>
 
-      <form id={`${resource}-standalone-form`} onSubmit={submit}>
+      <form id={`${resource}-standalone-form`} onSubmit={submit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto grid max-w-[1180px] gap-6 px-4 py-7 sm:px-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:py-10">
           <div className="min-w-0 space-y-8">
             <section className="border-b border-border pb-6">
@@ -394,8 +420,9 @@ export default function AdminResourceFormPage({
             </section>
           </aside>
         </div>
+        </div>
 
-        <footer className="sticky bottom-0 z-20 border-t border-border bg-bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+        <footer className="z-20 shrink-0 border-t border-border bg-bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
           <div className="mx-auto flex min-h-20 max-w-[1180px] items-center justify-end gap-3 px-4 sm:px-6">
             <button
               type="button"

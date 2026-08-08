@@ -73,7 +73,14 @@ const resources: Record<AdminResource, ResourceConfig> = {
              (SELECT COUNT(*)::int FROM ai_models AS m WHERE m.provider_id = p.id AND m.enabled = TRUE) AS enabled_model_count,
              (SELECT COUNT(*)::int FROM gateway_requests AS r WHERE r.provider_id = p.id AND r.created_at >= NOW() - INTERVAL '24 hours') AS request_count_24h,
              (SELECT COUNT(*)::int FROM gateway_requests AS r WHERE r.provider_id = p.id AND r.created_at >= NOW() - INTERVAL '24 hours' AND r.outcome = 'success') AS success_count_24h,
-             (SELECT MAX(r.created_at) FROM gateway_requests AS r WHERE r.provider_id = p.id) AS last_request_at`,
+             (SELECT MAX(r.created_at) FROM gateway_requests AS r WHERE r.provider_id = p.id) AS last_request_at,
+             (SELECT CASE WHEN s.status = 'ready' AND s.expires_at <= NOW() THEN 'expired' ELSE s.status END
+                FROM ai_provider_discovery_snapshots AS s
+               WHERE s.provider_id = p.id ORDER BY s.created_at DESC LIMIT 1) AS discovery_status,
+             (SELECT s.created_at FROM ai_provider_discovery_snapshots AS s
+               WHERE s.provider_id = p.id ORDER BY s.created_at DESC LIMIT 1) AS discovery_at,
+             (SELECT jsonb_array_length(s.models) FROM ai_provider_discovery_snapshots AS s
+               WHERE s.provider_id = p.id ORDER BY s.created_at DESC LIMIT 1) AS discovered_model_count`,
     from: "FROM ai_providers AS p",
     columns: {
       id: "p.id",
@@ -93,7 +100,7 @@ const resources: Record<AdminResource, ResourceConfig> = {
     permission: "models.read",
     select: `m.id, m.provider_id, p.code AS provider_code,
              m.code, m.upstream_model, m.display_name, m.context_window,
-             m.max_output_tokens, m.capabilities, m.enabled,
+             m.max_output_tokens, m.capabilities, m.enabled, m.metadata,
              m.created_at, m.updated_at`,
     from: "FROM ai_models AS m JOIN ai_providers AS p ON p.id = m.provider_id",
     columns: {
@@ -118,6 +125,7 @@ const resources: Record<AdminResource, ResourceConfig> = {
              pr.cache_read_price_microusd_per_million,
              pr.cache_write_price_microusd_per_million,
              pr.markup_bps, pr.discount_bps, pr.status,
+             pr.source, pr.source_ref, pr.source_version, pr.source_metadata,
              pr.effective_from, pr.effective_to, pr.created_at, pr.updated_at`,
     from: "FROM ai_pricing_rules AS pr JOIN ai_models AS m ON m.id = pr.model_id",
     columns: {
@@ -126,12 +134,13 @@ const resources: Record<AdminResource, ResourceConfig> = {
       model_code: "m.code",
       user_tier: "pr.user_tier",
       status: "pr.status",
+      source: "pr.source",
       effective_from: "pr.effective_from",
       created_at: "pr.created_at",
       updated_at: "pr.updated_at",
     },
     defaultSort: "effective_from",
-    filterFields: ["model_id", "model_code", "user_tier", "status"],
+    filterFields: ["model_id", "model_code", "user_tier", "status", "source"],
   },
   "billing-accounts": {
     permission: "billing.read",

@@ -9,6 +9,11 @@ export const stateOptions = [
   { label: "停用", value: "disabled" },
 ];
 
+const workspaceStatusOptions = [
+  { label: "使用中", value: "active" },
+  { label: "已归档", value: "archived" },
+];
+
 export const providerFields: AdminFieldDefinition[] = [
   { key: "code", label: "Provider Code", control: "text", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true, placeholder: "anthropic-main", help: "稳定标识，创建后不可修改。" },
   { key: "protocol", label: "协议", control: "select", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true, options: [{ label: "Anthropic", value: "anthropic" }, { label: "OpenAI", value: "openai" }] },
@@ -133,13 +138,49 @@ export function PlatformUsersResourceView() {
   return <AdminResourceManager resource="platform-users" title="计费用户映射" description="把源 users 主键映射为 Gateway 与计费身份，不复制或改写业务用户。" container="drawer" createLabel="初始化计费身份" sections={[{ id: "source", title: "真实业务用户" }, { id: "profile", title: "计费资料" }, { id: "billing", title: "套餐与状态" }, { id: "limits", title: "默认限额" }, { id: "advanced", title: "扩展元数据" }]} fields={fields} createDefaults={{ source: "ink-dream", tier: "free", status: "active", dailyTokenLimit: null, monthlyTokenLimit: null, metadata: {} }} filters={[{ field: "email", label: "Email" }, { field: "source", label: "来源", operator: "eq" }, { field: "tier", label: "套餐", operator: "eq" }, { field: "status", label: "状态", operator: "eq" }]} columns={[{ key: "source", label: "来源" }, { key: "external_user_id", label: "源用户 ID" }, { key: "email", label: "Email" }, { key: "display_name", label: "显示名" }, { key: "tier", label: "套餐" }, { key: "status", label: "状态", format: "status" }]} />;
 }
 
+export function UsersResourceView() {
+  const fields: AdminFieldDefinition[] = [
+    { key: "displayName", sourceKey: "display_name", label: "显示名称", control: "text", section: "profile", nullable: true },
+    { key: "avatarUrl", sourceKey: "avatar_url", label: "头像 URL", control: "url", section: "profile", nullable: true },
+    { key: "status", label: "用户状态", control: "select", section: "status", required: true, options: stateOptions },
+  ];
+  return <AdminResourceManager
+    resource="users"
+    title="平台用户"
+    description="管理 ink-memory 中的真实业务用户状态并查看 Workspace、Story 关联；密码与会话字段不会返回到浏览器。"
+    container="drawer"
+    canCreate={false}
+    canDelete={false}
+    sections={[
+      { id: "profile", title: "公开资料", description: "只允许维护对运营可见的显示信息。" },
+      { id: "status", title: "账号状态", description: "停用会阻止后续业务访问，但不会删除历史内容。" },
+    ]}
+    fields={fields}
+    defaultSort="updated_at"
+    filters={[
+      { field: "email", label: "邮箱或显示名" },
+      { field: "status", label: "状态", operator: "eq", options: stateOptions },
+      { field: "role", label: "业务角色", operator: "eq" },
+    ]}
+    columns={[
+      { key: "email", label: "Email" },
+      { key: "display_name", label: "显示名" },
+      { key: "role", label: "业务角色", format: "status" },
+      { key: "status", label: "状态", format: "status" },
+      { key: "workspace_count", label: "Workspace" },
+      { key: "story_count", label: "Story" },
+      { key: "updated_at", label: "更新时间", format: "date" },
+    ]}
+  />;
+}
+
 export function AdminUsersResourceView() {
   const fields: AdminFieldDefinition[] = [
     { key: "email", label: "Email", control: "email", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true },
     { key: "displayName", sourceKey: "display_name", label: "显示名称", control: "text", section: "identity", nullable: true },
     { key: "password", label: "初始/新密码", control: "password", section: "security", requiredOnCreate: true, omitEmptyOnUpdate: true, help: "至少 14 字符；编辑留空表示不重置。" },
     { key: "status", label: "状态", control: "select", section: "security", updateOnly: true, options: stateOptions },
-    { key: "roleCodes", sourceKey: "roles", label: "角色", control: "relation-multi", section: "roles", required: true, relation: { resource: "admin-roles", labelKey: "name", secondaryKey: "code", searchField: "name", valueKey: "code" } },
+    { key: "roleCodes", sourceKey: "roles", label: "角色", control: "relation-multi", section: "roles", required: true, relation: { resource: "roles", labelKey: "name", secondaryKey: "code", searchField: "name", valueKey: "code" } },
   ];
   return <AdminResourceManager resource="admin-users" title="管理员清单" description="管理员从真实记录进入编辑；最后一名 active super_admin 由服务端并发保护。" container="drawer" createLabel="新增管理员" sections={[{ id: "identity", title: "管理员身份" }, { id: "security", title: "状态与密码" }, { id: "roles", title: "角色分配" }]} fields={fields} createDefaults={{ roleCodes: [], status: "active" }} filters={[{ field: "email", label: "Email" }, { field: "status", label: "状态", operator: "eq", options: stateOptions }]} columns={[{ key: "email", label: "Email" }, { key: "display_name", label: "显示名" }, { key: "roles", label: "角色", format: "json" }, { key: "status", label: "状态", format: "status" }, { key: "last_login_at", label: "最近登录", format: "date" }]} />;
 }
@@ -149,9 +190,9 @@ export function AdminRolesResourceView() {
     { key: "code", label: "Role Code", control: "text", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true },
     { key: "name", label: "名称", control: "text", section: "identity", required: true },
     { key: "description", label: "说明", control: "textarea", section: "identity", nullable: true },
-    { key: "permissionCodes", sourceKey: "permissions", label: "权限矩阵", control: "relation-multi", section: "permissions", required: true, relation: { resource: "admin-permissions", labelKey: "name", secondaryKey: "code", searchField: "name", valueKey: "code" } },
+    { key: "permissionCodes", sourceKey: "permissions", label: "权限矩阵", control: "relation-multi", section: "permissions", required: true, relation: { resource: "permissions", labelKey: "name", secondaryKey: "code", searchField: "name", valueKey: "code" } },
   ];
-  return <AdminResourceManager resource="admin-roles" title="角色—权限矩阵" description="权限来自真实 permission 资源；内置角色和仍在使用的角色由服务端保护。" container="fullscreen" createLabel="新增自定义角色" canDelete deleteLabel="删除自定义角色" sections={[{ id: "identity", title: "角色身份" }, { id: "permissions", title: "权限矩阵", description: "搜索并勾选最小权限集。" }]} fields={fields} createDefaults={{ permissionCodes: [] }} defaultSort="code" filters={[{ field: "code", label: "角色代码" }, { field: "name", label: "名称" }]} columns={[{ key: "code", label: "Role" }, { key: "name", label: "名称" }, { key: "description", label: "说明" }, { key: "permissions", label: "Permissions", format: "json" }]} />;
+  return <AdminResourceManager resource="roles" title="角色—权限矩阵" description="权限来自真实 permission 资源；内置角色和仍在使用的角色由服务端保护。" container="fullscreen" createLabel="新增自定义角色" canDelete deleteLabel="删除自定义角色" sections={[{ id: "identity", title: "角色身份" }, { id: "permissions", title: "权限矩阵", description: "搜索并勾选最小权限集。" }]} fields={fields} createDefaults={{ permissionCodes: [] }} defaultSort="code" filters={[{ field: "code", label: "角色代码" }, { field: "name", label: "名称" }]} columns={[{ key: "code", label: "Role" }, { key: "name", label: "名称" }, { key: "description", label: "说明" }, { key: "permissions", label: "Permissions", format: "json" }]} />;
 }
 
 export function SystemSettingsResourceView() {
@@ -179,8 +220,8 @@ export function GatewayKeysResourceView() {
 type StoryResourceViewProps = { kind: "workspaces" | "stories" | "characters" | "scenes" };
 
 export function StoryResourceView({ kind }: StoryResourceViewProps) {
-  if (kind === "workspaces") return <AdminResourceManager resource="story-workspaces" title="真实工作区" description="直接读取 story_workspace_workspaces；从真实行编辑名称或 settings。" canCreate={false} container="modal" fields={[{ key: "name", label: "工作区名称", control: "text", section: "main", required: true }, { key: "settings", label: "Workspace Settings", control: "json", section: "main", required: true }]} filters={[{ field: "name", label: "工作区" }, { field: "owner_email", label: "Owner Email" }]} columns={[{ key: "name", label: "工作区" }, { key: "owner_email", label: "Owner" }, { key: "owner_display_name", label: "显示名" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
-  if (kind === "stories") return <AdminResourceManager resource="story-stories" title="真实剧本项目" description="正文与关系只读；允许更新标题、说明和类型，并通过具名命令审核/归档。" canCreate={false} container="drawer" fields={[{ key: "title", label: "标题", control: "text", section: "main", required: true }, { key: "description", label: "说明", control: "textarea", section: "main", nullable: true }, { key: "type", label: "类型", control: "select", section: "main", options: [{ label: "短篇", value: "short" }, { label: "长篇", value: "long" }, { label: "剧本", value: "script" }, { label: "大纲", value: "outline" }] }]} commands={[{ action: "confirm", label: "确认", description: "仅 Agent 生成、pending 且未归档的剧本可确认；相关 pending 场景与角色会按源项目规则确认。", tone: "success" }, { action: "reject", label: "拒绝", description: "拒绝会保留记录并写入审核说明。", requiresNotes: true, tone: "danger" }, { action: "archive", label: "归档", description: "归档替代硬删除；历史关系与审计保留。", tone: "danger" }]} filters={[{ field: "title", label: "标题" }, { field: "workspace_name", label: "工作区" }, { field: "review_status", label: "审核", operator: "eq" }, { field: "status", label: "状态", operator: "eq" }]} columns={[{ key: "title", label: "剧本" }, { key: "workspace_name", label: "工作区" }, { key: "author_email", label: "作者" }, { key: "type", label: "类型" }, { key: "character_count", label: "角色" }, { key: "scene_count", label: "场景" }, { key: "review_status", label: "审核", format: "status" }, { key: "status", label: "状态", format: "status" }]} />;
+  if (kind === "workspaces") return <AdminResourceManager resource="story-workspaces" title="工作区" description="直接管理 ink-memory 的 story_workspace_workspaces；创建时必须选择真实用户，归档不会删除所属剧本。" container="drawer" createLabel="新增工作区" sections={[{ id: "owner", title: "所属用户" }, { id: "main", title: "工作区信息" }]} fields={[{ key: "ownerId", sourceKey: "owner_id", label: "所属用户", control: "relation", section: "owner", required: true, createOnly: true, readOnlyOnEdit: true, relation: { resource: "users", labelKey: "email", secondaryKey: "display_name", searchField: "email" } }, { key: "name", label: "工作区名称", control: "text", section: "main", required: true }, { key: "status", label: "状态", control: "select", section: "main", required: true, options: workspaceStatusOptions }, { key: "settings", label: "Workspace Settings", control: "json", section: "main", required: true }]} createDefaults={{ status: "active", settings: {} }} defaultSort="updated_at" filters={[{ field: "name", label: "名称或用户" }, { field: "owner_id", label: "用户 ID", operator: "eq" }, { field: "status", label: "状态", operator: "eq", options: workspaceStatusOptions }]} columns={[{ key: "name", label: "工作区" }, { key: "owner_email", label: "所属用户" }, { key: "status", label: "状态", format: "status" }, { key: "story_count", label: "Story 数量" }, { key: "created_at", label: "创建时间", format: "date" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
+  if (kind === "stories") return <AdminResourceManager resource="stories" title="剧本" description="正文与内部结构只读；运营人员仅可维护标题、说明、类型与审核/归档状态。" canCreate={false} canDelete={false} container="drawer" fields={[{ key: "title", label: "标题", control: "text", section: "main", required: true }, { key: "description", label: "说明", control: "textarea", section: "main", nullable: true }, { key: "type", label: "类型", control: "select", section: "main", options: [{ label: "短篇", value: "short" }, { label: "长篇", value: "long" }, { label: "剧本", value: "script" }, { label: "大纲", value: "outline" }] }]} commands={[{ action: "confirm", label: "确认", description: "仅确认当前剧本的审核状态，不改写正文或其他业务实体。", tone: "success" }, { action: "reject", label: "拒绝", description: "拒绝会保留记录并写入审核说明。", requiresNotes: true, tone: "danger" }, { action: "archive", label: "归档", description: "归档替代硬删除；内容与审计继续保留。", tone: "danger" }]} defaultSort="updated_at" filters={[{ field: "title", label: "标题、工作区或用户" }, { field: "workspace_id", label: "Workspace ID", operator: "eq" }, { field: "author_id", label: "用户 ID", operator: "eq" }, { field: "review_status", label: "审核", operator: "eq" }, { field: "status", label: "状态", operator: "eq" }, { field: "type", label: "类型", operator: "eq" }]} columns={[{ key: "title", label: "剧本" }, { key: "workspace_name", label: "工作区" }, { key: "author_email", label: "所属用户" }, { key: "type", label: "类型" }, { key: "review_status", label: "审核", format: "status" }, { key: "status", label: "状态", format: "status" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
   if (kind === "characters") return <AdminResourceManager resource="story-characters" title="真实角色" description="角色详情包含真实 Story role_type 与 Scene 关系；数组标签使用结构化逗号输入。" canCreate={false} container="drawer" fields={[{ key: "name", label: "名称", control: "text", section: "main", required: true }, { key: "identity", label: "身份", control: "textarea", section: "main", nullable: true }, { key: "personality", label: "性格", control: "textarea", section: "main", nullable: true }, { key: "background", label: "背景", control: "textarea", section: "main", nullable: true }, { key: "catchphrase", label: "口头禅", control: "textarea", section: "main", nullable: true }, { key: "tags", label: "标签", control: "tags", section: "main", help: "使用逗号分隔；提交为字符串数组。" }, { key: "avatarUrl", sourceKey: "avatar_url", label: "头像 URL", control: "url", section: "main", nullable: true }]} commands={[{ action: "confirm", label: "确认", description: "确认 pending Agent 角色。", tone: "success" }, { action: "reject", label: "拒绝", description: "拒绝并写入审核说明。", requiresNotes: true, tone: "danger" }, { action: "archive", label: "归档", description: "归档替代硬删除。", tone: "danger" }]} filters={[{ field: "name", label: "角色名" }, { field: "workspace_name", label: "工作区" }, { field: "review_status", label: "审核", operator: "eq" }, { field: "status", label: "状态", operator: "eq" }]} columns={[{ key: "name", label: "角色" }, { key: "workspace_name", label: "工作区" }, { key: "story_count", label: "剧本数" }, { key: "review_status", label: "审核", format: "status" }, { key: "status", label: "状态", format: "status" }]} />;
   return <AdminResourceManager resource="story-scenes" title="真实场景" description="场景可绑定同作者/工作区 Story；详情包含 Story、Characters 与相邻场景。" canCreate={false} container="drawer" fields={[{ key: "name", label: "场景名", control: "text", section: "main", required: true }, { key: "description", label: "说明", control: "textarea", section: "main", nullable: true }, { key: "storyId", sourceKey: "story_id", label: "所属 Story", control: "relation", section: "main", nullable: true, relation: { resource: "story-stories", labelKey: "title", secondaryKey: "workspace_name", searchField: "title" } }, { key: "orderIndex", sourceKey: "order_index", label: "顺序", control: "number", section: "main", min: 0, required: true }]} commands={[{ action: "confirm", label: "确认", description: "确认 pending Agent 场景。", tone: "success" }, { action: "reject", label: "拒绝", description: "拒绝并写入审核说明。", requiresNotes: true, tone: "danger" }, { action: "archive", label: "归档", description: "归档替代硬删除。", tone: "danger" }]} filters={[{ field: "name", label: "场景名" }, { field: "story_title", label: "剧本" }, { field: "workspace_name", label: "工作区" }, { field: "review_status", label: "审核", operator: "eq" }]} columns={[{ key: "name", label: "场景" }, { key: "story_title", label: "剧本" }, { key: "workspace_name", label: "工作区" }, { key: "order_index", label: "顺序" }, { key: "review_status", label: "审核", format: "status" }, { key: "status", label: "状态", format: "status" }]} />;
 }

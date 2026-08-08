@@ -27,10 +27,7 @@ export default function AdminModulePage({
 
 export const storyTabs = [
   { label: "工作区", href: "/admin/story/workspaces" },
-  { label: "剧本项目", href: "/admin/story/stories" },
-  { label: "角色", href: "/admin/story/characters" },
-  { label: "场景", href: "/admin/story/scenes" },
-  { label: "工作流运行", href: "/admin/story/workflow-runs" },
+  { label: "剧本", href: "/admin/story/stories" },
 ];
 
 export const modelTabs = [
@@ -56,7 +53,6 @@ export const gatewayTabs = [
 
 export const userResourceTabs = [
   { label: "平台用户", href: "/admin/resources/users" },
-  { label: "Storage / 资源", href: "/admin/resources/storage" },
 ];
 
 export const accessTabs = [

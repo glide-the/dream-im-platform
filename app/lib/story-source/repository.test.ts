@@ -46,6 +46,22 @@ describe("Story PostgreSQL repository", () => {
     expect(query.mock.calls[0][0]).not.toContain("password_hash");
   });
 
+  it("supports the canonical users resource with status and relation counts", async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: "7", email: "user@example.com", status: "active", workspace_count: 2, story_count: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ total: "1" }] });
+
+    const response = await queryStorySourceList(
+      new Request("http://localhost/api/admin/users?filter[status][eq]=active&sort=updated_at&order=desc"),
+      "users",
+    );
+
+    expect(response.data[0]).toMatchObject({ workspace_count: 2, story_count: 3 });
+    expect(query.mock.calls[0][0]).toContain("u.status");
+    expect(query.mock.calls[0][0]).not.toContain("password_hash");
+    expect(query.mock.calls[0][1]).toEqual(["active", 20, 0]);
+  });
+
   it("maps missing source schema to a recoverable 503", () => {
     const error = storySourceError({ code: "42P01" });
     expect(error.status).toBe(503);

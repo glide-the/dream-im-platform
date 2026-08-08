@@ -7,12 +7,20 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function canonicalResource(resource: string) {
+  return resource === "roles"
+    ? "admin-roles"
+    : resource === "permissions"
+      ? "admin-permissions"
+      : resource;
+}
+
 export async function GET(
   request: Request,
   context: { params: Promise<{ resource: string; id: string }> },
 ) {
   const { resource, id } = await context.params;
-  return await handleAdminResourceGetOne(request, resource, id);
+  return await handleAdminResourceGetOne(request, canonicalResource(resource), id);
 }
 
 export async function PATCH(
@@ -20,7 +28,7 @@ export async function PATCH(
   context: { params: Promise<{ resource: string; id: string }> },
 ) {
   const { resource, id } = await context.params;
-  return await handleAdminResourceUpdate(request, resource, id);
+  return await handleAdminResourceUpdate(request, canonicalResource(resource), id);
 }
 
 export async function DELETE(
@@ -28,5 +36,5 @@ export async function DELETE(
   context: { params: Promise<{ resource: string; id: string }> },
 ) {
   const { resource, id } = await context.params;
-  return await handleAdminResourceDelete(request, resource, id);
+  return await handleAdminResourceDelete(request, canonicalResource(resource), id);
 }

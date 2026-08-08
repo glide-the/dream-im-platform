@@ -9,6 +9,7 @@ import type {
 
 // Browser-side Refine adapters. Server authorization remains authoritative.
 const registeredResources = new Set([
+  "users",
   "source-users",
   "platform-users",
   "providers",
@@ -24,9 +25,13 @@ const registeredResources = new Set([
   "admin-users",
   "admin-roles",
   "admin-permissions",
+  "roles",
+  "permissions",
+  "storage-resources",
   "audit-logs",
   "story-workspaces",
   "story-stories",
+  "stories",
   "story-characters",
   "story-scenes",
   "story-workflow-runs",
@@ -35,8 +40,9 @@ const registeredResources = new Set([
 
 const resourcePermission: Record<
   string,
-  { read: string; write: string }
+  { read: string; write: string; delete?: string }
 > = {
+  users: { read: "users.read", write: "users.write" },
   "source-users": { read: "users.read", write: "users.read" },
   "platform-users": { read: "users.read", write: "users.write" },
   "user-model-permissions": { read: "users.read", write: "users.write" },
@@ -55,9 +61,13 @@ const resourcePermission: Record<
   "admin-users": { read: "access.read", write: "access.write" },
   "admin-roles": { read: "access.read", write: "access.write" },
   "admin-permissions": { read: "access.read", write: "access.write" },
+  roles: { read: "access.read", write: "access.write" },
+  permissions: { read: "access.read", write: "access.read" },
+  "storage-resources": { read: "storage.read", write: "storage.write", delete: "storage.delete" },
   "audit-logs": { read: "audit.read", write: "audit.read" },
   "story-workspaces": { read: "story.read", write: "story.write" },
   "story-stories": { read: "story.read", write: "story.write" },
+  stories: { read: "story.read", write: "story.write" },
   "story-characters": { read: "story.read", write: "story.write" },
   "story-scenes": { read: "story.read", write: "story.write" },
   "story-workflow-runs": { read: "story.read", write: "story.write" },
@@ -248,7 +258,9 @@ export const adminAccessControlProvider: AccessControlProvider = {
     const permissions = resourcePermission[resource];
     const required = ["list", "show"].includes(action)
       ? permissions.read
-      : permissions.write;
+      : action === "delete"
+        ? permissions.delete ?? permissions.write
+        : permissions.write;
     return {
       can: identity.permissions.includes(required),
       reason: `Permission ${required} is required`,

@@ -61,18 +61,52 @@ export async function handleAdminDashboard(request: Request) {
         const result = await client.query<Record<string, string>>(
           `SELECT
              (SELECT COUNT(*)::text FROM users) AS source_users,
+             (SELECT COUNT(*)::text FROM users WHERE status = 'active') AS active_users,
+             (SELECT COUNT(*)::text FROM users WHERE status = 'disabled') AS disabled_users,
              (SELECT COUNT(*)::text FROM story_workspace_workspaces) AS workspaces,
+             (SELECT COUNT(*)::text FROM story_workspace_workspaces WHERE status = 'active') AS active_workspaces,
+             (SELECT COUNT(*)::text FROM story_workspace_workspaces WHERE status = 'archived') AS archived_workspaces,
              (SELECT COUNT(*)::text FROM story_workspace_stories) AS stories,
+             (SELECT COUNT(*)::text FROM story_workspace_stories WHERE status = 'draft') AS draft_stories,
+             (SELECT COUNT(*)::text FROM story_workspace_stories WHERE status = 'published') AS published_stories,
+             (SELECT COUNT(*)::text FROM story_workspace_stories WHERE status = 'archived') AS archived_stories,
              (SELECT COUNT(*)::text FROM story_workspace_stories
                 WHERE review_status = 'pending') AS pending_story_reviews`,
         );
         const row = result.rows[0];
+        const [recentStories, recentOperations] = await Promise.all([
+          client.query<Record<string, unknown>>(
+            `SELECT s.id, s.title, s.status, s.review_status, s.updated_at,
+                    w.id AS workspace_id, w.name AS workspace_name,
+                    u.id::text AS author_id, u.email AS author_email
+             FROM story_workspace_stories s
+             JOIN story_workspace_workspaces w ON w.id = s.workspace_id
+             JOIN users u ON u.id = s.author_id
+             ORDER BY s.updated_at DESC, s.id ASC LIMIT 5`,
+          ),
+          client.query<Record<string, unknown>>(
+            `SELECT l.id, l.actor_id, au.email AS actor_email, l.action,
+                    l.resource_type, l.resource_id, l.created_at
+             FROM admin_audit_logs l
+             LEFT JOIN admin_users au ON au.id = l.actor_id
+             ORDER BY l.created_at DESC, l.id ASC LIMIT 5`,
+          ),
+        ]);
         return {
           ...controlData,
           sourceUsers: Number(row.source_users),
+          activeUsers: Number(row.active_users),
+          disabledUsers: Number(row.disabled_users),
           storyWorkspaces: Number(row.workspaces),
+          activeWorkspaces: Number(row.active_workspaces),
+          archivedWorkspaces: Number(row.archived_workspaces),
           storyStories: Number(row.stories),
+          draftStories: Number(row.draft_stories),
+          publishedStories: Number(row.published_stories),
+          archivedStories: Number(row.archived_stories),
           pendingStoryReviews: Number(row.pending_story_reviews),
+          recentStories: recentStories.rows,
+          recentOperations: recentOperations.rows,
           storySource: {
             state: "ready" as const,
             missingTables: [],

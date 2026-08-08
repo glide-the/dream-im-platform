@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { serverFileStorage, storageDriver, getContentTypeFromFilename } from "@/lib/file-storage";
 import { toFileProxyUrl } from "@/lib/file-proxy";
-import { checkStorageConfiguration } from "../route";
+import { checkStorageConfiguration } from "@/lib/file-storage/configuration";
 
 export const runtime = "nodejs";
 

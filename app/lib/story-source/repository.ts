@@ -9,8 +9,10 @@ import { withStoryClient } from "./db";
 
 export type StorySourceResource =
   | "source-users"
+  | "users"
   | "story-workspaces"
   | "story-stories"
+  | "stories"
   | "story-characters"
   | "story-scenes"
   | "story-workflow-runs";
@@ -28,35 +30,44 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
   "source-users": {
     permission: "users.read",
     select: `u.id::text AS id, u.email, u.display_name, u.avatar_url, u.role,
-             u.created_at, u.updated_at`,
+             u.status, u.created_at, u.updated_at,
+             (SELECT COUNT(*)::int FROM story_workspace_workspaces w WHERE w.owner_id = u.id) AS workspace_count,
+             (SELECT COUNT(*)::int FROM story_workspace_stories s WHERE s.author_id = u.id) AS story_count`,
     from: "FROM users AS u",
     columns: {
       id: "u.id::text",
       email: "u.email",
       display_name: "u.display_name",
       role: "u.role",
+      status: "u.status",
+      workspace_count: "(SELECT COUNT(*) FROM story_workspace_workspaces w WHERE w.owner_id = u.id)",
+      story_count: "(SELECT COUNT(*) FROM story_workspace_stories s WHERE s.author_id = u.id)",
       created_at: "u.created_at",
       updated_at: "u.updated_at",
     },
-    defaultSort: "created_at",
-    filterFields: ["email", "display_name", "role"],
+    defaultSort: "updated_at",
+    filterFields: ["email", "display_name", "role", "status"],
   },
+  users: undefined as never,
   "story-workspaces": {
     permission: "story.read",
     select: `w.id, w.name, w.owner_id::text AS owner_id,
              u.email AS owner_email, u.display_name AS owner_display_name,
-             w.settings, w.created_at, w.updated_at`,
+             w.settings, w.status, w.created_at, w.updated_at,
+             (SELECT COUNT(*)::int FROM story_workspace_stories s WHERE s.workspace_id = w.id) AS story_count`,
     from: "FROM story_workspace_workspaces AS w JOIN users AS u ON u.id = w.owner_id",
     columns: {
       id: "w.id",
       name: "w.name",
       owner_id: "w.owner_id::text",
       owner_email: "u.email",
+      status: "w.status",
+      story_count: "(SELECT COUNT(*) FROM story_workspace_stories s WHERE s.workspace_id = w.id)",
       created_at: "w.created_at",
       updated_at: "w.updated_at",
     },
     defaultSort: "updated_at",
-    filterFields: ["name", "owner_id", "owner_email"],
+    filterFields: ["name", "owner_id", "owner_email", "status"],
   },
   "story-stories": {
     permission: "story.read",
@@ -98,6 +109,7 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
       "agent_generated",
     ],
   },
+  stories: undefined as never,
   "story-characters": {
     permission: "story.read",
     select: `c.id, c.identifier, c.name, c.avatar_url, c.identity,
@@ -227,6 +239,9 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
   },
 };
 
+storyResources.users = storyResources["source-users"];
+storyResources.stories = storyResources["story-stories"];
+
 export function isStorySourceResource(
   resource: string,
 ): resource is StorySourceResource {
@@ -320,36 +335,14 @@ async function enrichStorySourceItem(
   if (resource === "story-workspaces") {
     const counts = await client.query<Record<string, unknown>>(
       `SELECT
-         (SELECT COUNT(*)::text FROM story_workspace_stories WHERE workspace_id = $1) AS stories,
-         (SELECT COUNT(*)::text FROM story_workspace_characters WHERE workspace_id = $1) AS characters,
-         (SELECT COUNT(*)::text FROM story_workspace_scenes WHERE workspace_id = $1) AS scenes,
-         (SELECT COUNT(*)::text FROM workflow_runs WHERE workspace_id = $1) AS workflow_runs`,
+         COUNT(*)::text AS stories,
+         MAX(updated_at) AS latest_story_at
+       FROM story_workspace_stories WHERE workspace_id = $1`,
       [id],
     );
     return { ...row, relation_counts: counts.rows[0] ?? {} };
   }
-  if (resource === "story-stories") {
-    const [characters, scenes] = await Promise.all([
-      client.query<Record<string, unknown>>(
-        `SELECT c.id, c.identifier, c.name, c.status, c.review_status,
-                sc.role_type, sc.created_at AS linked_at
-         FROM story_workspace_characters c
-         JOIN story_workspace_story_characters sc ON sc.character_id = c.id
-         WHERE sc.story_id = $1
-         ORDER BY c.name ASC, c.id ASC`,
-        [id],
-      ),
-      client.query<Record<string, unknown>>(
-        `SELECT id, identifier, name, order_index, status, review_status,
-                character_count, created_at, updated_at
-         FROM story_workspace_scenes
-         WHERE story_id = $1
-         ORDER BY order_index ASC, id ASC`,
-        [id],
-      ),
-    ]);
-    return { ...row, characters: characters.rows, scenes: scenes.rows };
-  }
+  if (resource === "story-stories" || resource === "stories") return row;
   if (resource === "story-characters") {
     const [stories, scenes] = await Promise.all([
       client.query<Record<string, unknown>>(

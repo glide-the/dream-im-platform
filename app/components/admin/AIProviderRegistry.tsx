@@ -2,7 +2,8 @@
 
 import { type CrudFilter, useCan, useList } from "@refinedev/core";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 type ReachabilityState = {
   pending?: boolean;
@@ -11,6 +12,12 @@ type ReachabilityState = {
   responseTimeMs?: number | null;
   httpStatus?: number | null;
   message?: string;
+};
+
+type DiscoveryState = {
+  pending?: boolean;
+  message?: string;
+  status?: "ready" | "failed";
 };
 
 function int(value: unknown) {
@@ -28,12 +35,15 @@ function providerHealth(provider: Record<string, unknown>) {
 }
 
 export default function AIProviderRegistry() {
+  const router = useRouter();
   const pageSize = 12;
   const [search, setSearch] = useState("");
   const [protocol, setProtocol] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [reachability, setReachability] = useState<Record<string, ReachabilityState>>({});
+  const [discovery, setDiscovery] = useState<Record<string, DiscoveryState>>({});
+  const [automaticDiscoveryFailed, setAutomaticDiscoveryFailed] = useState(false);
   const access = useCan({ resource: "providers", action: "create" });
   const filters = useMemo<CrudFilter[]>(
     () =>
@@ -50,6 +60,12 @@ export default function AIProviderRegistry() {
     sorters: [{ field: "updated_at", order: "desc" }],
     filters,
   });
+
+  useEffect(() => {
+    setAutomaticDiscoveryFailed(
+      new URLSearchParams(window.location.search).get("discovery") === "failed",
+    );
+  }, []);
 
   async function testReachability(providerId: string) {
     setReachability((current) => ({
@@ -84,6 +100,41 @@ export default function AIProviderRegistry() {
     }
   }
 
+  async function discoverModels(providerId: string) {
+    setDiscovery((current) => ({
+      ...current,
+      [providerId]: { pending: true, message: "正在读取上游模型目录…" },
+    }));
+    try {
+      const response = await fetch(
+        `/api/admin/providers/${encodeURIComponent(providerId)}/discover`,
+        { method: "POST", headers: { accept: "application/json" } },
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        data?: { id?: string };
+        error?: { message?: string };
+      };
+      if (!response.ok || !body.data?.id) {
+        throw new Error(body.error?.message ?? "模型同步失败");
+      }
+      setDiscovery((current) => ({
+        ...current,
+        [providerId]: { status: "ready", message: "目录已获取，正在打开差异确认…" },
+      }));
+      router.push(
+        `/admin/models/providers/${encodeURIComponent(providerId)}/discover/${encodeURIComponent(body.data.id)}`,
+      );
+    } catch (error) {
+      setDiscovery((current) => ({
+        ...current,
+        [providerId]: {
+          status: "failed",
+          message: error instanceof Error ? error.message : "模型同步失败",
+        },
+      }));
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section className="admin-panel overflow-hidden">
@@ -99,6 +150,12 @@ export default function AIProviderRegistry() {
             </Link>
           ) : null}
         </header>
+
+        {automaticDiscoveryFailed ? (
+          <div className="border-b border-warning/40 bg-accent-orange-light px-4 py-3 text-sm text-text-secondary" role="status">
+            Provider 已保存，但自动获取模型目录未完成。检查 Endpoint 与 Credential 后，在对应卡片点击“同步模型”重试。
+          </div>
+        ) : null}
 
         <div className="grid gap-3 border-b border-border bg-bg-secondary/35 p-4 lg:grid-cols-[minmax(220px,1fr)_auto_auto]">
           <label className="relative block">
@@ -131,6 +188,7 @@ export default function AIProviderRegistry() {
             const providerId = String(provider.id);
             const health = providerHealth(provider);
             const reachabilityResult = reachability[providerId];
+            const discoveryResult = discovery[providerId];
             const requests = Number(provider.request_count_24h ?? 0);
             const successes = Number(provider.success_count_24h ?? 0);
             return (
@@ -158,6 +216,15 @@ export default function AIProviderRegistry() {
                           {reachabilityResult.httpStatus ? ` · HTTP ${reachabilityResult.httpStatus}` : ""}
                         </p>
                       ) : null}
+                      {discoveryResult?.message ? (
+                        <p className={`mt-2 text-xs ${discoveryResult.status === "failed" ? "text-danger" : "text-accent"}`} role="status">
+                          {discoveryResult.message}
+                        </p>
+                      ) : provider.discovery_at ? (
+                        <p className="mt-2 font-mono text-[10px] text-text-tertiary">
+                          最近同步 {new Date(String(provider.discovery_at)).toLocaleString("zh-CN")} · {int(provider.discovered_model_count)} 项 · {String(provider.discovery_status ?? "—")}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
 
@@ -168,6 +235,17 @@ export default function AIProviderRegistry() {
                   </dl>
 
                   <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+                    {access.data?.can ? (
+                      <button
+                        type="button"
+                        disabled={discoveryResult?.pending || !provider.credential_configured}
+                        onClick={() => discoverModels(providerId)}
+                        className="min-h-10 rounded-xl border border-accent/35 bg-accent-light px-3 text-xs font-semibold text-accent hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+                        title={provider.credential_configured ? "读取上游模型目录并生成差异快照" : "先配置 Provider Credential"}
+                      >
+                        {discoveryResult?.pending ? "同步中…" : "同步模型"}
+                      </button>
+                    ) : null}
                     {access.data?.can ? (
                       <button
                         type="button"

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import pg from "pg";
 
 const bootstrapToken = process.env.ADMIN_BOOTSTRAP_E2E_TOKEN;
 const superEmail = "super-admin@example.test";
@@ -31,6 +32,7 @@ function collectDiagnostics(page: Page) {
 }
 
 test.describe("Refine Admin with owned isolated PostgreSQL", () => {
+  test.setTimeout(120_000);
   test.skip(!bootstrapToken, "Set ADMIN_BOOTSTRAP_E2E_TOKEN only for an owned isolated PostgreSQL lane");
 
   test.beforeAll(async () => {
@@ -41,6 +43,14 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
       request.on("data", (chunk) => { body += String(chunk).slice(0, 8_192); });
       request.on("end", () => {
         mockValidationRequests.push({ authorization: request.headers.authorization, body });
+        if (request.method === "GET" && request.url?.includes("/models")) {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ data: [
+            { id: "deepseek-v4-pro", owned_by: "deepseek" },
+            { id: "discovery-new-model", owned_by: "deepseek", display_name: "Discovery New" },
+          ] }));
+          return;
+        }
         response.writeHead(200, { "content-type": "application/json" });
         response.end('{"id":"mock-response","content":[]}');
       });
@@ -86,9 +96,32 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(sourceUsersBody.data[0]).toMatchObject({ id: "101", email: "creator@example.test" });
     expect(JSON.stringify(sourceUsersBody)).not.toContain("password_hash");
 
+    const canonicalUsers = await api.get(`${baseURL}/api/admin/users?filter[status][eq]=active&sort=updated_at&order=desc`);
+    expect(canonicalUsers.status()).toBe(200);
+    await expect(canonicalUsers.json()).resolves.toMatchObject({ data: expect.arrayContaining([expect.objectContaining({ id: "101", workspace_count: 1, story_count: 1 })]) });
+    expect((await api.patch(`${baseURL}/api/admin/users/101`, { headers, data: { status: "disabled" } })).status()).toBe(200);
+    expect((await api.patch(`${baseURL}/api/admin/users/101`, { headers, data: { status: "active" } })).status()).toBe(200);
+
+    const workspaceCreate = await api.post(`${baseURL}/api/admin/story-workspaces`, {
+      headers,
+      data: { ownerId: 101, name: "E2E 运营工作区", settings: { language: "zh-CN" } },
+    });
+    expect(workspaceCreate.status()).toBe(201);
+    const workspaceCreateBody = await workspaceCreate.json();
+    expect((await api.patch(`${baseURL}/api/admin/story-workspaces/${workspaceCreateBody.data.id}`, { headers, data: { status: "archived" } })).status()).toBe(200);
+    expect((await api.post(`${baseURL}/api/admin/story-workspaces`, { headers, data: { ownerId: 999999, name: "孤儿工作区", settings: {} } })).status()).toBe(409);
+
     const stories = await api.get(`${baseURL}/api/admin/story-stories?filter[title][contains]=真实源`);
     expect(stories.status()).toBe(200);
     await expect(stories.json()).resolves.toMatchObject({ data: [{ id: "story-e2e", title: "真实源剧本" }], meta: { total: 1 } });
+    expect((await api.get(`${baseURL}/api/admin/stories?filter[workspace_id][eq]=workspace-e2e&sort=updated_at&order=desc`)).status()).toBe(200);
+
+    const businessDashboard = await api.get(`${baseURL}/api/admin/dashboard`);
+    expect(businessDashboard.status()).toBe(200);
+    await expect(businessDashboard.json()).resolves.toMatchObject({ data: { sourceUsers: 2, activeUsers: 2, storyStories: 2 } });
+    expect((await api.get(`${baseURL}/api/admin/roles`)).status()).toBe(200);
+    expect((await api.get(`${baseURL}/api/admin/permissions`)).status()).toBe(200);
+    expect((await api.get(`${baseURL}/api/admin/storage-resources`)).status()).toBe(200);
 
     const invalidStoryPatch = await api.patch(`${baseURL}/api/admin/story-stories/story-e2e`, { headers, data: { unknownField: true } });
     expect(invalidStoryPatch.status()).toBe(400);
@@ -140,6 +173,18 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(mockValidationRequests[0].authorization).toBe("Bearer fixture-model-validation-secret");
     expect(JSON.parse(mockValidationRequests[0].body)).toMatchObject({ model: "deepseek-v4-pro", max_tokens: 1, stream: false });
 
+    const discovery = await api.post(
+      `${baseURL}/api/admin/providers/${validationProviderBody.data.id}/discover`,
+      { headers },
+    );
+    expect(discovery.status()).toBe(200);
+    const discoveryBody = await discovery.json();
+    expect(JSON.stringify(discoveryBody)).not.toContain("fixture-model-validation-secret");
+    expect(discoveryBody.data.diff).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "deepseek-v4-pro", state: "existing" }),
+      expect.objectContaining({ id: "discovery-new-model", state: "new" }),
+    ]));
+
     const pricingVersionStart = new Date(Date.now() + 60_000).toISOString();
     const pricingVersion = await api.post(`${baseURL}/api/admin/pricing-rules`, {
       headers,
@@ -186,6 +231,54 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
       },
     });
     expect(overlappingPricing.status()).toBe(409);
+
+    const pricingSyncSnapshotId = "pricing-sync-real-e2e";
+    const pricingSyncClient = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await pricingSyncClient.connect();
+    try {
+      await pricingSyncClient.query(
+        `INSERT INTO ai_pricing_sync_snapshots (
+           id, provider_id, catalog_ref, catalog_version, catalog_hash,
+           matches, created_by, expires_at
+         ) VALUES ($1, $2, 'https://models.dev/api.json', 'fixture-catalog-v1',
+                   'fixture-catalog-hash', $3::jsonb, 'e2e', now() + interval '10 minutes')`,
+        [pricingSyncSnapshotId, validationProviderBody.data.id, JSON.stringify([{
+          localModelId: validationModelBody.data.id,
+          localModelCode: "mock-validation-model",
+          upstreamModel: "deepseek-v4-pro",
+          providerCode: "mock-validation-e2e",
+          match: "exact",
+          key: "deepseek/deepseek-v4-pro",
+          providerId: "deepseek",
+          providerName: "DeepSeek",
+          modelId: "deepseek-v4-pro",
+          normalizedId: "deepseek-v4-pro",
+          modelName: "DeepSeek V4 Pro",
+          releaseDate: "2026-08-01",
+          inputMicrousd: "300000",
+          outputMicrousd: "1200000",
+          cacheReadMicrousd: "60000",
+          cacheWriteMicrousd: "375000",
+        }])],
+      );
+    } finally {
+      await pricingSyncClient.end();
+    }
+    const applyPricingSync = await api.post(
+      `${baseURL}/api/admin/pricing-sync/${pricingSyncSnapshotId}/apply`,
+      {
+        headers,
+        data: {
+          modelIds: [validationModelBody.data.id],
+          effectiveFrom: new Date(Date.now() + 180_000).toISOString(),
+        },
+      },
+    );
+    expect(applyPricingSync.status()).toBe(200);
+    await expect(applyPricingSync.json()).resolves.toMatchObject({ data: { selectedCount: 1 } });
+    const syncedPricing = await api.get(`${baseURL}/api/admin/pricing-rules?filter[model_id][eq]=${encodeURIComponent(validationModelBody.data.id)}`);
+    expect(syncedPricing.status()).toBe(200);
+    await expect(syncedPricing.json()).resolves.toMatchObject({ data: [expect.objectContaining({ source: "models.dev", source_version: "fixture-catalog-v1" })] });
 
     const secretSetting = await api.post(`${baseURL}/api/admin/system-settings`, {
       headers,
@@ -306,6 +399,19 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-model-page-desktop-1440x1000.png"), fullPage: true });
 
+    await page.goto(`/admin/models/providers/${encodeURIComponent(validationProviderBody.data.id)}/discover/${encodeURIComponent(discoveryBody.data.id)}`);
+    await expect(page.getByRole("heading", { name: "模型目录差异确认" })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "discovery-new-model", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /应用 1 个模型/ })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-provider-discovery-desktop-1440x1000.png"), fullPage: true });
+    const applyDiscovery = await api.post(
+      `${baseURL}/api/admin/providers/${validationProviderBody.data.id}/apply-discovery`,
+      { headers, data: { snapshotId: discoveryBody.data.id, modelIds: ["deepseek-v4-pro", "discovery-new-model"] } },
+    );
+    expect(applyDiscovery.status()).toBe(200);
+    await expect(applyDiscovery.json()).resolves.toMatchObject({ data: { selectedCount: 2 } });
+
     await page.goto(`/admin/models/models?provider_id=${encodeURIComponent(validationProviderBody.data.id)}`);
     const validationCard = page.locator("article").filter({ hasText: "Mock Validation Model" });
     await expect(validationCard).toBeVisible();
@@ -333,12 +439,64 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-pricing-page-desktop-1440x1000.png"), fullPage: true });
 
+    let pricingSyncApplied = false;
+    await page.route("**/api/admin/pricing-sync/pricing_sync_ui_e2e**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/apply") && route.request().method() === "POST") {
+        pricingSyncApplied = true;
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { snapshotId: "pricing_sync_ui_e2e", selectedCount: 1, created: ["pricing_ui_e2e"], unchanged: [] } }) });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: {
+          id: "pricing_sync_ui_e2e", catalog_ref: "https://models.dev/api.json", catalog_version: "fixture-v1", catalog_hash: "fixture-hash", status: "ready",
+          expires_at: new Date(Date.now() + 600_000).toISOString(), created_at: new Date().toISOString(),
+          matches: [
+            { localModelId: "model-e2e", localModelCode: "claude-e2e", upstreamModel: "claude-e2e", providerCode: "provider-e2e", match: "exact", key: "anthropic/claude-e2e", providerName: "Anthropic", modelName: "Claude E2E", inputMicrousd: "3000000", outputMicrousd: "15000000", cacheReadMicrousd: "300000", cacheWriteMicrousd: "3750000" },
+            { localModelId: "model-ambiguous-e2e", localModelCode: "ambiguous", upstreamModel: "ambiguous", providerCode: "custom", match: "ambiguous", key: "one/ambiguous", providerName: "One", modelName: "Ambiguous", inputMicrousd: "1000000", outputMicrousd: "2000000", cacheReadMicrousd: "0", cacheWriteMicrousd: "0", candidates: ["one/ambiguous", "two/ambiguous"] },
+          ],
+        } }),
+      });
+    });
+    await page.goto("/admin/models/pricing/sync/pricing_sync_ui_e2e");
+    await expect(page.getByRole("heading", { name: "价格目录差异确认" })).toBeVisible();
+    await expect(page.getByText("claude-e2e", { exact: true })).toBeVisible();
+    await expect(page.getByText("2 个候选，需人工配置")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-pricing-sync-desktop-1440x1000.png"), fullPage: true });
+    await page.getByRole("button", { name: /应用 1 个价格版本/ }).click();
+    await expect(page).toHaveURL(/\/admin\/models\/pricing\?synced=/);
+    expect(pricingSyncApplied).toBe(true);
+
     await page.goto("/admin/story/stories");
-    await expect(page.getByRole("heading", { name: "剧本项目", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "剧本", exact: true }).first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-story-desktop-1440x1000.png"), fullPage: true });
 
+    await page.goto("/admin/resources/users");
+    await expect(page.getByRole("heading", { name: "平台用户", exact: true }).first()).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-users-desktop-1440x1000.png"), fullPage: true });
+
+    await page.goto("/admin/story/workspaces");
+    await expect(page.getByRole("heading", { name: "工作区", exact: true }).first()).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-workspaces-desktop-1440x1000.png"), fullPage: true });
+
+    await page.goto("/admin/resources/storage");
+    await expect(page.getByRole("heading", { name: "文件存储", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "文件列表", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-storage-desktop-1440x1000.png"), fullPage: true });
+
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/admin/story/stories");
+    await expect(page.getByRole("heading", { name: "剧本", exact: true }).first()).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-story-mobile-390x844.png") });
+
     await page.goto("/admin/models/providers");
     await page.getByRole("link", { name: "添加 Provider" }).click();
     await expect(page.getByRole("heading", { name: "添加 Provider", exact: true })).toBeVisible();
@@ -358,6 +516,11 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-pricing-page-mobile-390x844.png") });
 
+    await page.goto("/admin/models/pricing/sync/pricing_sync_ui_e2e");
+    await expect(page.getByRole("heading", { name: "价格目录差异确认" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-pricing-sync-mobile-390x844.png") });
+
     await page.goto(`/admin/billing/usage?modelId=${encodeURIComponent(validationModelBody.data.id)}`);
     await expect(page.getByRole("combobox", { name: "模型" })).toHaveValue(validationModelBody.data.id);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
@@ -371,6 +534,8 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     await expect(page).toHaveURL(/\/admin$/);
     const forbidden = await context.request.patch(`${baseURL}/api/admin/story-stories/story-e2e`, { headers, data: { title: "Auditor must not write" } });
     expect(forbidden.status()).toBe(403);
+    const forbiddenStorageDelete = await context.request.delete(`${baseURL}/api/admin/storage-resources/ZG9jcy9hLnBkZg`, { headers, data: { confirmKey: "docs/a.pdf" } });
+    expect(forbiddenStorageDelete.status()).toBe(403);
     const forbiddenProviderProbe = await context.request.post(
       `${baseURL}/api/admin/providers/${providerBody.data.id}/reachability`,
       { headers },

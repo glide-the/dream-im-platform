@@ -249,14 +249,49 @@ flowchart LR
   PS --> U["Usage"]
 ```
 
+```mermaid
+stateDiagram-v2
+  [*] --> ProviderDraft
+  ProviderDraft --> ProviderSaved: Zod + RBAC + encrypt + audit
+  ProviderSaved --> DiscoverQueued: auto-discover / manual sync
+  DiscoverQueued --> Discovering
+  Discovering --> DiscoverFailed: auth / endpoint / timeout / unsupported
+  Discovering --> DiffReady: immutable snapshot
+  DiscoverFailed --> DiscoverQueued: retry
+  DiffReady --> ApplyChecking: selected rows + aliases + snapshot version
+  ApplyChecking --> RediscoverRequired: 409 stale/conflict
+  ApplyChecking --> Applied: PostgreSQL transaction + audit receipt
+  RediscoverRequired --> DiscoverQueued
+  Applied --> [*]
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> PricingCatalog
+  PricingCatalog --> Loading: manual / authorized 6h sync
+  Loading --> CatalogUnavailable: models.dev 503
+  Loading --> MatchReview: exact / normalized / ambiguous / unmatched
+  MatchReview --> Applying: exact selected + effective window
+  Applying --> Conflict: overlap or stale snapshot 409
+  Applying --> VersionCreated: INSERT new price versions
+  Conflict --> Loading
+  VersionCreated --> [*]
+```
+
+- 桌面 AI 模型中心以 cc-switch 主窗口为交互骨架：56px sticky 域切换（Provider / Models / Pricing / 模型权限 / Usage）、紧凑工具行、单列 Provider 条目、同一行可见状态与常用动作。不得用默认 Refine 表格主页面或装饰性 KPI 卡替代。
 - Provider 可创建/更新/停用，不硬删；停用前展示关联 enabled Model 数和影响链接。
 - Provider 注册表是代理供应链配置，不是向外分发上游密钥。页面展示四个真实兼容端点、Header/Scope 和 `ink-dream-memory` 接入链；外部只使用 Gateway Key 与 Model alias。
-- Provider 直接采用 cc-switch 卡片列表和独立全屏配置页：预设/协议 → 基础信息 → Credential → Endpoint → Model 摘要 → 高级配置 → 影响/错误；Header/Footer 固定，只有中段滚动。Secret 留空表示不轮换，历史值永不回填。列表、新增、编辑分别为 `/admin/models/providers`、`/new`、`/[id]/edit`。
+- Provider 直接采用 cc-switch 卡片列表和 fixed 全窗口配置层：预设/协议 → 基础信息 → Credential/Endpoint → discover 设置 → 高级配置 → 影响/错误；该层覆盖 Admin 侧栏，Header/Footer 固定，只有中段滚动。Secret 留空表示不轮换，历史值永不回填。列表、新增、编辑分别为 `/admin/models/providers`、`/new`、`/[id]/edit`。
+- Provider 卡片 P2/P3/P4 三段：身份区显示 name/code/protocol/截断 URL；状态区显示 Credential、网络健康、最近模型同步、模型数、Pricing 覆盖和近期真实请求；操作区常显“同步模型 / 查看用量 / 编辑配置”，更多菜单只放停用等次操作。主动作不依赖 hover。
 - Provider 卡片提供 cc-switch 语义的“连通测试”：pending 禁用重复点击；operational/degraded/failed 以状态色、TTFB、HTTP 状态和文字共同表达。它只确认 Endpoint 网络可达，不确认 Credential/Model，不得发送生成请求；403 保留在卡片并说明所需权限。
+- 首次保存 Provider 后自动进入 discover 进度层：Provider 保存与 discover 是两个可区分结果；发现失败不回滚 Provider。进度只显示阶段、脱敏 endpoint、job/request ID，并允许后台继续、编辑配置或重试。
+- Discover 完成进入独立 diff 层：五类固定为新增、能力更新、未变化、冲突、未定价。新增安全项可默认选；Provider/alias/Pricing 冲突默认跳过；上游消失只标 stale，不自动删除/停用。Apply 携带 snapshot version/idempotency key；409 只能重新 discover，不提供强制覆盖。
 - Model 可创建/更新/启停，本版本不开放删除。
 - Model 与 Provider 均使用 cc-switch 风格独立路由全屏设置页；Provider 为真实可搜索 Combobox，upstream model 为常用型号 Dropdown + 受控自定义输入，capabilities 为复选组。列表页不得以内嵌 Dialog 代替独立页。
+- 模型候选优先来自 Provider 最近 discover snapshot，并显示 owned_by/source/last seen。手工 upstream_model 明确标为“未验证”；Model 验证仍是独立 1-token 安全请求，不与列表 discover 混为一谈。
 - Pricing 新价格创建版本并关闭旧窗口；重叠窗口返回 409 与冲突规则链接。
 - Pricing 直接采用 cc-switch 全屏编辑结构，但动作语义改为版本化：Model/Tier → 四类 Token 价格 → markup/discount → 生效窗口 → 旧/新 diff → 冲突/影响 → 创建价格版本。不得出现通用编辑或删除入口。
+- Pricing 增加 cc-switch `ModelsDevAutoSyncPanel` 同构入口：Provider/Model 搜索、目录版本/更新时间、四类目录价、exact/normalized/ambiguous/unmatched 证据。只有 exact 默认选，Apply 只 INSERT 新版本；自动同步最多每 6 小时一次，不能覆盖历史价格或把 unmatched 当 0。
 - 已被 Request snapshot 引用的 Pricing 不可破坏性更新/删除。
 - 四类单价清楚标注 `micro-USD / million tokens`，USD 仅为只读格式化展示。
 - Model Permission 管理 enabled、RPM、daily/monthly token limit；删除 override 表示恢复默认。
@@ -412,7 +447,7 @@ Role 硬删除仅允许自定义 Role，并要求输入 resource code；账本�
 |---|---|
 | 总览 | `/admin` |
 | Story | `/admin/story/workspaces`、`/stories`、`/characters`、`/scenes`、`/workflow-runs` |
-| Models | `/admin/models/providers`、`/models`、`/pricing`、`/permissions` |
+| Models | `/admin/models/providers`、`/providers/new`、`/providers/[id]/edit`、`/providers/[id]/discover/[jobId]`、`/models`、`/pricing`、`/pricing/sync`、`/permissions` |
 | Billing | `/admin/billing/usage`、`/accounts`、`/ledger`、`/reports` |
 | Gateway | `/admin/gateway/requests`、`/reconciliation`、`/keys`、`/rate-limits` |
 | Resources | `/admin/resources/users`、`/storage` |
@@ -438,6 +473,8 @@ Role 硬删除仅允许自定义 Role，并要求输入 resource code；账本�
 - [ ] Story 只使用 PostgreSQL 权威表；503 fail-closed；无旧表/SQLite/JSON fallback。
 - [ ] Story/Character/Scene 不提供通用 create/硬删；Workflow 仅命令式 retry/cancel。
 - [ ] Provider/System Secret 永不回显；Gateway Key 只在创建成功显示一次。
+- [ ] Provider fixed 全窗口层覆盖 Admin 侧栏；保存成功与 discover 成功分别反馈；五类 diff、后台继续、重试和 stale 409 可完成。
+- [ ] models.dev 目录显示 source/version/hash，最多 6 小时节流；only exact 默认选；同步只创建新价格版本，不覆盖历史。
 - [ ] Pricing overlap 返回 409；历史 snapshot 不破坏更新。
 - [ ] Usage/Ledger/Audit 无 update/delete；调账和纠错只追加记录。
 - [ ] micro-USD 始终为整数事实值；未知 Usage 不按 0 结算。

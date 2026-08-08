@@ -52,6 +52,7 @@ export { serverFileStorage, storageDriver };
 export type {
   FileStorage,
   FileMetadata,
+  FileListResult,
   UploadContent,
   UploadOptions,
   UploadResult,

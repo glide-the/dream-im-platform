@@ -18,8 +18,8 @@
 
 1. Admin 立即停止读取和写入错误的 `story_*` 平行表，但不删除旧表。
 2. Admin 只有一个 PostgreSQL 数据源 `DATABASE_URL`、一个连接池和一个数据库 `ink-memory`；Story repository 复用该连接池并按业务源真实表名查询。
-3. Admin 不迁移、不创建业务源表；这些表必须由 `ink-dream-memory` 的正式 PostgreSQL 化部署或受控 DBA 迁移原名放入同一个 `ink-memory`。当前业务源代码仍是 SQLite，因此真实线上接通需要业务源所有者完成独立迁移/兼容工作；本项目不得通过复制同步、第二数据库或 SQLite 驱动绕过这个边界。
-4. 在同库真实业务表具备之前，Story 资源显式返回“业务表尚未迁入”，不得回退到 Admin 平行表或假数据；其他控制面模块保持可用。
+3. 用户已明确授权 Admin 项目主动只读访问源数据库并提供受控的一次性迁移。Admin 运行时仍不连接 SQLite；迁移 CLI 只使用系统原生 `sqlite3 -readonly` 生成一致性快照，再把 canonical 原名表写入明确目标 PostgreSQL `ink-memory`。这不是第二运行数据源、复制同步服务或回退。
+4. 第一批迁移范围固定为 `users`、`story_workspace_workspaces`、`story_workspace_stories`；其他 Character/Scene/Workflow 表继续按缺表 503 fail-closed。在已迁表具备之前不得读取 Admin 平行表或假数据；其他控制面模块保持可用。
 
 ## 2. 工作区与证据边界
 
@@ -30,9 +30,9 @@
 
 ### 2.2 数据安全
 
-- 仅检查源码、迁移、文档和已配置环境变量的键名；没有输出环境变量值。
-- 没有连接、迁移、清空、写入或删除 Admin/PostgreSQL、业务源 SQLite 或 Storage 中的任何真实数据。
-- 没有执行 `db:migrate`、fixture seed 或破坏性 SQL。
+- 已以 `/usr/bin/sqlite3 -readonly` 和 `PRAGMA query_only=ON` 访问实际源文件 `backend/data/ink-and-memory.db`；没有连接两个 0-byte 候选文件，也未把任何邮箱、password hash、Story content 或 Secret 输出到报告。
+- 源数据库只执行 schema、计数、枚举分布、JSON/FK/orphan 检查；未执行 INSERT/UPDATE/DELETE/DDL/PRAGMA 写操作，未修改业务源代码或 Storage。
+- 共享 `localhost:5433/ink-memory` 只做进程归属检查，没有迁移、seed、清空或写入。后续同步与写验收只允许一次性 PostgreSQL。
 
 ## 3. 数据连接审计
 
@@ -41,6 +41,18 @@
 | ink-admin-memory | `pg.Pool` + Drizzle PostgreSQL | `DATABASE_URL`，`drizzle.config.ts` | PostgreSQL，目标库名规范为 `ink-memory` | Admin 控制面数据库 |
 | ink-dream-memory | `sqlite3.connect(DB_PATH)` | `INK_DATABASE_PATH`，默认 `backend/data/ink-and-memory.db` | SQLite 文件 | 当前真实业务数据源 |
 | 统一 Story/控制面数据源 | 当前 Admin 已有 `DATABASE_URL` | `DATABASE_URL` | PostgreSQL，库名 `ink-memory` | 唯一 Admin 业务与控制面读写入口 |
+
+### 3.1 真实源文件与首批数据证据
+
+权威源由 `backend/database.py` 的 `_DEFAULT_DB_PATH` 和 `INK_DATABASE_PATH` 解析确定为 `/Users/dmeck/project/ink-dream-memory/backend/data/ink-and-memory.db`（约 74 MB）；`backend/data/ink-memory.db` 与 `backend/data/ink_dream.db` 均为 0 byte，不是数据源。
+
+| 表 | 行数 | 主键/唯一 | nullable/JSON | 外键证据 |
+|---|---:|---|---|---|
+| `users` | 28 | 28 个不同 ID，28 个不同 email；ID 1–29 | created/updated 均非空；password_hash 不抽样/不输出 | 作为 owner/author 父表 |
+| `story_workspace_workspaces` | 12 | 12 个不同 text ID | owner 非空；settings 无 invalid JSON；时间非空 | owner → users orphan=0 |
+| `story_workspace_stories` | 4 | 4 个不同 text ID；4 个不同 identifier | author/workspace/时间均非空 | author → users=0、workspace → workspaces=0、author/owner mismatch=0 |
+
+Story 枚举实值：status 为 draft 3/published 1；review_status 为 pending 3/confirmed 1；type 为 long 1/outline 2/script 1；agent_generated 全部为 1。全库 `pragma_foreign_key_check` 结果为 0。
 
 不得增加 `STORY_DATABASE_URL`，也不能在 Admin 安装 `better-sqlite3`、SQLite fixture、JSON/内存回退。真实业务表和 Admin 控制面表必须位于同一个 `DATABASE_URL` 指向的 `ink-memory`，由一个 `pg.Pool` 访问；repository 分层只表达领域边界，不表达物理数据源边界。
 
@@ -126,7 +138,7 @@ flowchart LR
 
 - `app/lib/db.ts` 是唯一连接来源；`app/lib/story-source/**` 直接复用 `getPool()`。
 - Refine 不直接持有数据库连接，只调用统一 Admin API；repository 分层保留真实字段和写边界。
-- 当前实际：业务源尚无 PostgreSQL，不能声称已接通真实数据。代码应只让 Story/源用户模块 fail-closed，并把“业务源迁移至同库 PostgreSQL”列为部署前置条件。
+- 当前实际：业务源仍是 SQLite，但首批真实表已完成只读 schema/数据审计。Admin 项目负责提供一次性迁移和隔离验收；迁移完成后的应用只读写同库 PostgreSQL。没有执行同步前仍不能声称生产已接通。
 
 ## 8. 旧表处置与迁移兼容策略
 
@@ -137,7 +149,7 @@ flowchart LR
 3. **阶段 C - 归档**：如确有历史数据，导出到受控归档 schema，并记录映射决策；不把它写回源业务表。
 4. **阶段 D - 可选删除**：只在业务负责人签字、备份验证、回滚演练完成后新增独立 destructive migration；本次不创建该迁移。
 
-`drizzle/0006_smart_hedge_knight.sql` 已经发布过，不能重写历史迁移。后续迁移只应增加必要的控制面交叉引用/审计字段，不应创建真实 Story 业务表。
+`drizzle/0006_smart_hedge_knight.sql` 已经发布过，不能重写历史迁移。允许新增一个独立、可回滚的 canonical schema migration，为首批真实原名表 `users`、`story_workspace_workspaces`、`story_workspace_stories` 建表；它不得从旧平行表搬数据，也不得把这些表加入 Admin 语义命名。数据导入由单独显式 CLI 完成，不在 `db:migrate` 时隐式连接源文件。
 
 ## 9. 需要修改的代码
 
@@ -155,6 +167,13 @@ flowchart LR
 - `drizzle/meta/0007_snapshot.json` 与当前 Drizzle Schema 不再包含平行表，确保以后生成控制面迁移时不会继续扩展这些错误模型。
 - 最终删除仍保留为需要数据核对、备份和负责人批准的独立未来阶段，本轮不执行。
 
+### 首批 canonical 数据迁移决策
+
+- PostgreSQL DDL 精确映射源三表主键、email unique、status/review/type/agent checks、owner/author/workspace FK 与查询索引；时间统一为 `timestamptz`，源文本按明确 UTC/offset 规则解析。
+- CLI 默认只输出迁移计划和计数；`--apply` 需要显式源路径和目标 PostgreSQL URL，并拒绝目标数据库名不是 `ink-memory`。源通过只读一致性快照抽取，目标单事务写入 users → workspaces → stories。
+- 首次导入采用 conflict-fail；目标已有任一同 PK/email 但内容不同即 409/退出，不做 `ON CONFLICT DO UPDATE`。成功后设置 users identity sequence，执行行数、PK、JSON、枚举、FK orphan 与 fingerprint 校验。
+- 真实数据只同步到一次性 PostgreSQL 做本轮测试；生产目标需要停写窗口、备份、操作者再次确认和独立运行记录，不能复用测试授权静默写入。
+
 ### API 与 Refine
 
 - 保持 `app/api/admin/[resource]/**` 仅编排；Story 自定义动作增加轻量 Route Handler。
@@ -165,7 +184,7 @@ flowchart LR
 ### 测试
 
 - 单元测试：真实字段白名单、分页排序筛选、冲突映射、禁止 create/delete、无配置 fail-closed。
-- PostgreSQL 集成：使用一个明确 disposable `ink-memory` 数据库；同库应用控制面迁移和真实 Story 表 fixture，不使用 SQLite。
+- PostgreSQL 集成：使用一个明确 disposable `ink-memory` 数据库；同库应用控制面/canonical schema migration，并通过系统原生只读提取器同步真实源三表。应用测试过程不使用 SQLite driver，其他关系仍可使用 PostgreSQL-only 合成 fixture 单独覆盖。
 - Playwright：无 Session、RBAC、源数据查询/受控更新、FK/状态冲突、数据库不可用、移动/桌面视觉。
 
 ## 10. 验收判断
@@ -176,5 +195,32 @@ flowchart LR
 - [x] 已划分真实业务域和 Admin 控制面边界。
 - [x] 已纠正为唯一 PostgreSQL/唯一 `DATABASE_URL`/唯一 Pool，并定义 Story 缺表 fail-closed 行为。
 - [x] 已定义 Story 写边界、审计、FK/unique/state 冲突和无破坏旧表退役策略。
-- [x] 未修改业务源代码、未操作真实数据库、未删除旧表。
-- [ ] 真实数据接通仍依赖业务源提供 PostgreSQL 版真实表；在该外部条件完成前，Admin 只能交付正确映射代码与隔离 PostgreSQL 验收，不能宣称读取了现有 SQLite 真实数据。
+- [x] 未修改业务源代码、未写业务源数据库、未写共享 PostgreSQL、未删除旧表。
+- [x] 已主动只读访问实际业务源并证明首批真实数据为 users 28 / workspaces 12 / stories 4，外键检查为 0。
+- [x] 已实现迁移 CLI，将真实三表同步到一次性 PostgreSQL，并完成 Admin 查询、受控写、冲突、审计和 E2E；生产库仍需独立变更窗口与操作者确认，未在本轮写入。
+## 隔离 PostgreSQL 实迁验收（2026-08-08）
+
+在明确拥有的临时 PostgreSQL 16 容器 `127.0.0.1:55432/ink-memory` 上完成了第一批真实迁移验收；共享 `localhost:5433/ink-memory` 未连接、未迁移、未清理。
+
+- 最终迁移链 `0000` 至 `0010` 全部成功：`0009_provider_model_sync.sql` 只承载 Provider/Pricing 同步控制面，`0010_story_source_canonical.sql` 从唯一 Drizzle schema source 生成 canonical `users`、`story_workspace_workspaces`、`story_workspace_stories`。拆分后在全新容器再次验证，避免未来 `db:generate` 重复建表。
+- dry-run 读取原生只读快照成功：`users=28`、`workspaces=12`、`stories=4`，目标三表均为 0。
+- 显式 `--apply` 在单个 serializable 事务中完成，导入后数量与三组主键 SHA-256 指纹均与源快照一致。
+- `workspace_owner_orphans=0`、`story_author_orphans=0`、`story_workspace_orphans=0`。
+- 第二次 dry-run 因目标非空被拒绝；工具没有 merge、truncate、delete 或 overwrite 分支。
+- 源文件在快照前后保持相同 SHA-256 和文件状态；操作回执不包含邮箱、密码哈希、正文或其他行级业务数据。
+
+## 发布验证汇总（2026-08-08）
+
+| 验证项 | 结果 |
+|---|---|
+| `pnpm env:check` | 通过 |
+| `pnpm exec tsc --noEmit` | 通过 |
+| `pnpm lint` | 通过，0 error / 0 warning |
+| `pnpm test:run` | 30 files / 169 tests 全部通过 |
+| `pnpm build` | Next.js production build 通过；新 discover/pricing sync 页面和 API 均在 route manifest |
+| PostgreSQL migration | 全新 PostgreSQL 16 `ink-memory` 应用 `0000–0010` 通过 |
+| 真实源实迁 | 28 users / 12 workspaces / 4 stories；三组 PK fingerprint 一致；orphans=0 |
+| Focused Playwright | 隔离 PostgreSQL主场景 1/1；Session/Bootstrap 6/6 |
+| 视觉 | 14 张截图；1440×1000 与 390×844；根节点横向溢出断言通过 |
+
+主 E2E 还验证了真实 Session、401/403、canonical Story 查询和受控更新、跨 Workspace 409、Provider Secret 不回显、Provider discover/diff/apply、models.dev 价格快照 apply 后新增 `source=models.dev` 价格版本、不可变历史价格、余额/账本、Gateway Key、失败结算、Storage GET、移动导航及旧 PWA 路由 404。外部 Provider 与 models.dev 实网未调用：Provider 使用本机 mock，models.dev fetch/parser/matcher 使用 unit contract，价格 apply 使用隔离 PostgreSQL真实事务。一次性容器与 55432 监听已删除；共享 5433 未操作。

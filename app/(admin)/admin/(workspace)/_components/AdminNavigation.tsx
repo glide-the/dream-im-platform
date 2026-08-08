@@ -12,7 +12,7 @@ type NavItem = {
 };
 
 const dashboard: NavItem = {
-  label: "总览",
+  label: "运营总览",
   href: "/admin",
   permission: "dashboard.read",
   mark: "OV",
@@ -20,13 +20,10 @@ const dashboard: NavItem = {
 
 const groups: Array<{ label: string; items: NavItem[] }> = [
   {
-    label: "剧本数据运营",
+    label: "剧本数据",
     items: [
       { label: "工作区", href: "/admin/story/workspaces", permission: "story.read", mark: "WS" },
-      { label: "剧本项目", href: "/admin/story/stories", permission: "story.read", mark: "ST" },
-      { label: "角色", href: "/admin/story/characters", permission: "story.read", mark: "CH" },
-      { label: "场景", href: "/admin/story/scenes", permission: "story.read", mark: "SC" },
-      { label: "工作流运行", href: "/admin/story/workflow-runs", permission: "story.read", mark: "WF" },
+      { label: "剧本", href: "/admin/story/stories", permission: "story.read", mark: "ST" },
     ],
   },
   {
@@ -57,14 +54,13 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
     ],
   },
   {
-    label: "用户与资源",
+    label: "用户中心",
     items: [
       { label: "平台用户", href: "/admin/resources/users", permission: "users.read", mark: "UR" },
-      { label: "Storage / 资源", href: "/admin/resources/storage", permission: "users.read", mark: "FS" },
     ],
   },
   {
-    label: "权限治理",
+    label: "权限管理",
     items: [
       { label: "管理员", href: "/admin/access/admins", permission: "access.read", mark: "AD" },
       { label: "角色", href: "/admin/access/roles", permission: "access.read", mark: "RO" },
@@ -72,9 +68,14 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
     ],
   },
   {
-    label: "系统与审计",
+    label: "资源管理",
     items: [
-      { label: "系统设置", href: "/admin/system/settings", permission: "system.read", mark: "SY" },
+      { label: "文件存储", href: "/admin/resources/storage", permission: "storage.read", mark: "FS" },
+    ],
+  },
+  {
+    label: "系统治理",
+    items: [
       { label: "审计日志", href: "/admin/system/audit", permission: "audit.read", mark: "AU" },
     ],
   },

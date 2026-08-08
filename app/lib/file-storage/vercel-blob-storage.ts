@@ -1,5 +1,5 @@
 import path from "node:path";
-import { del, head, put } from "@vercel/blob";
+import { del, head, list as listBlobs, put } from "@vercel/blob";
 import { FileNotFoundError } from "@/lib/errors";
 import type {
   FileMetadata,
@@ -7,6 +7,7 @@ import type {
   UploadOptions,
 } from "./file-storage.interface";
 import {
+  getContentTypeFromFilename,
   resolveStoragePrefix,
   sanitizeFilename,
   toBuffer,
@@ -59,6 +60,24 @@ const fetchSourceBuffer = async (url: string) => {
 
 export const createVercelBlobStorage = (): FileStorage => {
   return {
+    async list(options = {}) {
+      const limit = Math.max(1, Math.min(1_000, options.limit ?? 1_000));
+      const result = await listBlobs({
+        limit,
+        prefix: (options.prefix ?? STORAGE_PREFIX) || undefined,
+      });
+      return {
+        files: result.blobs.map((blob) =>
+          mapMetadata(blob.pathname, {
+            contentType: getContentTypeFromFilename(blob.pathname),
+            size: blob.size,
+            uploadedAt: blob.uploadedAt,
+          }),
+        ),
+        truncated: result.hasMore,
+      };
+    },
+
     async upload(content, options: UploadOptions = {}) {
       const buffer = await toBuffer(content);
       const filename = options.filename ?? "file";

@@ -15,6 +15,11 @@ export interface FileMetadata {
   uploadedAt?: Date;
 }
 
+export interface FileListResult {
+  files: FileMetadata[];
+  truncated: boolean;
+}
+
 export interface UploadOptions {
   filename?: string;
   contentType?: string;
@@ -44,6 +49,9 @@ export interface UploadUrl {
 }
 
 export interface FileStorage {
+  /** List a bounded set of object metadata for the protected Admin facade. */
+  list?(options?: { prefix?: string; limit?: number }): Promise<FileListResult>;
+
   /** Upload file content directly from the server (e.g. AI generated image). */
   upload(
     content: UploadContent,

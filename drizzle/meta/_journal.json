@@ -64,6 +64,34 @@
       "when": 1786175928206,
       "tag": "0008_single_database_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786181384763,
+      "tag": "0009_provider_model_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786182550850,
+      "tag": "0010_story_source_canonical",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786183913858,
+      "tag": "0011_nappy_prodigy",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786184600000,
+      "tag": "0012_storage_admin_permissions",
+      "breakpoints": true
     }
   ]
 }

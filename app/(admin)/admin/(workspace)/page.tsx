@@ -3,10 +3,10 @@ import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import DashboardMetrics from "@/components/admin/DashboardMetrics";
 
 const queues = [
-  { label: "审核真实剧本数据", detail: "工作区 → 剧本 → 角色 / 场景", href: "/admin/story/stories" },
-  { label: "核对失败结算", detail: "请求 → 用量 → 账本 → 人工核对", href: "/admin/gateway/reconciliation" },
-  { label: "检查模型供应链", detail: "Provider → Model → Pricing", href: "/admin/models/providers" },
-  { label: "治理用户与资源", detail: "业务用户 → 计费映射 → Storage", href: "/admin/resources/users" },
+  { label: "审核真实剧本数据", detail: "用户 → 工作区 → 剧本", href: "/admin/story/stories" },
+  { label: "维护平台用户状态", detail: "用户状态 → 关联工作区 → 关联剧本", href: "/admin/resources/users" },
+  { label: "治理文件资源", detail: "Storage 配置 → 文件 → 审计", href: "/admin/resources/storage" },
+  { label: "检查权限与审计", detail: "管理员 → 角色 → 权限 → 操作记录", href: "/admin/access/admins" },
 ];
 
 export default function AdminOverviewPage() {
@@ -32,7 +32,7 @@ export default function AdminOverviewPage() {
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">Data boundaries</p>
           <h2 className="mt-2 font-display text-xl font-semibold">数据源边界</h2>
           <dl className="mt-5 divide-y divide-border border-y border-border text-sm">
-            <div className="py-4"><dt className="font-semibold">业务数据</dt><dd className="mt-1 leading-6 text-text-secondary">真实 `users` 与 `story_workspace_*` 表，经 PostgreSQL Story 数据源读取。</dd></div>
+            <div className="py-4"><dt className="font-semibold">业务数据</dt><dd className="mt-1 leading-6 text-text-secondary">真实 `users` 与 `story_workspace_*` 表，经同一个 PostgreSQL 连接读取。</dd></div>
             <div className="py-4"><dt className="font-semibold">控制面数据</dt><dd className="mt-1 leading-6 text-text-secondary">RBAC、Provider、Pricing、Billing、Gateway 与审计由 Admin PostgreSQL 管理。</dd></div>
             <div className="py-4"><dt className="font-semibold">不可变数据</dt><dd className="mt-1 leading-6 text-text-secondary">Token 账本、用量与审计禁止覆盖或硬删除。</dd></div>
           </dl>

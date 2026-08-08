@@ -5,8 +5,15 @@ import { useQuery } from "@tanstack/react-query";
 type Metrics = {
   platformUsers: number;
   sourceUsers: number | null;
+  activeUsers?: number;
+  disabledUsers?: number;
   storyWorkspaces: number | null;
+  activeWorkspaces?: number;
+  archivedWorkspaces?: number;
   storyStories: number | null;
+  draftStories?: number;
+  publishedStories?: number;
+  archivedStories?: number;
   pendingStoryReviews: number | null;
   activeModels: number;
   requestsToday: number;
@@ -17,14 +24,9 @@ type Metrics = {
     state: "ready" | "migration_required";
     missingTables: string[];
   };
+  recentStories?: Array<Record<string, unknown>>;
+  recentOperations?: Array<Record<string, unknown>>;
 };
-
-function money(microusd: string) {
-  const value = BigInt(microusd || "0");
-  const sign = value < 0n ? "-" : "";
-  const absolute = value < 0n ? -value : value;
-  return `${sign}$${(absolute / 1_000_000n).toString()}.${(absolute % 1_000_000n).toString().padStart(6, "0")}`;
-}
 
 export default function DashboardMetrics() {
   const query = useQuery({
@@ -44,13 +46,10 @@ export default function DashboardMetrics() {
 
   const metrics = query.data;
   const rows = [
-    { group: "业务源", label: "真实业务用户", value: metrics?.sourceUsers, note: "users" },
-    { group: "业务源", label: "工作区 / 剧本", value: metrics?.storyWorkspaces === null || metrics?.storyStories === null ? null : metrics ? `${metrics.storyWorkspaces} / ${metrics.storyStories}` : undefined, note: "同库 PostgreSQL" },
+    { group: "业务源", label: "用户 / 活跃 / 停用", value: metrics?.sourceUsers === null ? null : metrics ? `${metrics.sourceUsers} / ${metrics.activeUsers ?? "—"} / ${metrics.disabledUsers ?? "—"}` : undefined, note: "users" },
+    { group: "业务源", label: "工作区 / 活跃 / 归档", value: metrics?.storyWorkspaces === null ? null : metrics ? `${metrics.storyWorkspaces} / ${metrics.activeWorkspaces ?? "—"} / ${metrics.archivedWorkspaces ?? "—"}` : undefined, note: "story_workspace_workspaces" },
+    { group: "业务源", label: "剧本 / 草稿 / 发布 / 归档", value: metrics?.storyStories === null ? null : metrics ? `${metrics.storyStories} / ${metrics.draftStories ?? "—"} / ${metrics.publishedStories ?? "—"} / ${metrics.archivedStories ?? "—"}` : undefined, note: "story_workspace_stories" },
     { group: "待处理", label: "待审核剧本", value: metrics?.pendingStoryReviews, note: "review_status=pending" },
-    { group: "模型", label: "启用模型", value: metrics?.activeModels, note: "ai_models.enabled" },
-    { group: "今日网关", label: "请求 / Token", value: metrics ? `${metrics.requestsToday} / ${metrics.tokensToday}` : undefined, note: "自今日 00:00" },
-    { group: "今日计费", label: "已计费金额", value: metrics ? money(metrics.chargedTodayMicrousd) : undefined, note: "micro-USD 汇总" },
-    { group: "待处理", label: "异常结算", value: metrics?.settlementFailures, note: "settlement_failed" },
   ];
 
   return (
@@ -67,6 +66,34 @@ export default function DashboardMetrics() {
           <div key={`${row.group}-${row.label}`} className="border-b border-border p-5 sm:border-r xl:[&:nth-child(4n)]:border-r-0"><dt><span className="font-mono text-[9px] uppercase tracking-[0.14em] text-text-tertiary">{row.group}</span><span className="mt-2 block text-xs text-text-secondary">{row.label}</span></dt><dd className="mt-2 font-mono text-xl font-semibold text-text-primary">{row.value ?? "—"}</dd><p className="mt-2 font-mono text-[9px] text-text-tertiary">{row.note}</p></div>
         ))}
       </dl>
+      {metrics ? (
+        <div className="grid border-t border-border lg:grid-cols-2">
+          <section className="p-5 lg:border-r lg:border-border">
+            <h3 className="font-display text-lg font-semibold">最近更新 Story</h3>
+            <div className="mt-3 divide-y divide-border">
+              {(metrics.recentStories ?? []).map((item) => (
+                <a key={String(item.id)} href={`/admin/story/stories?story=${encodeURIComponent(String(item.id))}`} className="block py-3 text-sm hover:underline">
+                  <span className="font-semibold">{String(item.title)}</span>
+                  <span className="mt-1 block text-xs text-text-tertiary">{String(item.workspace_name)} · {new Date(String(item.updated_at)).toLocaleString()}</span>
+                </a>
+              ))}
+              {(metrics.recentStories ?? []).length === 0 ? <p className="py-3 text-sm text-text-tertiary">尚无 Story。</p> : null}
+            </div>
+          </section>
+          <section className="p-5">
+            <h3 className="font-display text-lg font-semibold">最近管理操作</h3>
+            <div className="mt-3 divide-y divide-border">
+              {(metrics.recentOperations ?? []).map((item) => (
+                <a key={String(item.id)} href={`/admin/system/audit?filter[resource_id][eq]=${encodeURIComponent(String(item.resource_id ?? ""))}`} className="block py-3 text-sm hover:underline">
+                  <span className="font-semibold">{String(item.action)} · {String(item.resource_type)}</span>
+                  <span className="mt-1 block text-xs text-text-tertiary">{String(item.actor_email ?? item.actor_id ?? "system")} · {new Date(String(item.created_at)).toLocaleString()}</span>
+                </a>
+              ))}
+              {(metrics.recentOperations ?? []).length === 0 ? <p className="py-3 text-sm text-text-tertiary">尚无管理操作。</p> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

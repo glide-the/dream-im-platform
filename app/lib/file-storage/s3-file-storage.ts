@@ -5,6 +5,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type {
@@ -87,6 +88,30 @@ export const createS3FileStorage = (): FileStorage => {
   });
 
   return {
+    async list(options = {}) {
+      const limit = Math.max(1, Math.min(1_000, options.limit ?? 1_000));
+      const prefix = (options.prefix ?? STORAGE_PREFIX) || undefined;
+      const result = await s3.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          MaxKeys: limit,
+        }),
+      );
+      return {
+        files: (result.Contents ?? [])
+          .filter((item): item is typeof item & { Key: string } => Boolean(item.Key))
+          .map((item) => ({
+            key: item.Key,
+            filename: path.posix.basename(item.Key),
+            contentType: "application/octet-stream",
+            size: Number(item.Size ?? 0),
+            uploadedAt: item.LastModified,
+          })),
+        truncated: result.IsTruncated === true,
+      };
+    },
+
     async upload(content, options: UploadOptions = {}) {
       const buffer = await toBuffer(content);
       const filename = options.filename ?? "file";

@@ -2,7 +2,7 @@ import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { serverFileStorage, storageDriver } from "@/lib/file-storage";
 import logger from "@/lib/logger";
-import { checkStorageConfiguration } from "../route";
+import { checkStorageConfiguration } from "@/lib/file-storage/configuration";
 
 export const runtime = "nodejs";
 

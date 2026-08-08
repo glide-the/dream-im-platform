@@ -23,6 +23,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.mjs",
     "db:push": "drizzle-kit push",
+    "story:import": "node scripts/import-ink-dream-story-source.mjs",
     "docker:build": "cd docker && docker compose build",
     "docker:up": "cd docker && docker compose up -d --build",
     "docker:down": "cd docker && docker compose down",

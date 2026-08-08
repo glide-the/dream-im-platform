@@ -1,82 +1,122 @@
-# Ink Memory Admin 字段级 UI Art Direction（Stage 4）
+# Ink Memory Admin：剧本、用户、权限与资源后台高保真 UI 规范
 
-> HTML Design Workflow / Stage 4 · UI Art Director
-> 技术：Next.js 16 + React 19 + Refine 5 + Tailwind CSS 4
-> 基准视口：Desktop 1440×1000；Mobile 390×844
-> 风格：Warm-paper Quiet Workbench × Ultra-sensory Minimalism
-> 功能依据：Stage 1–3；模型与计费骨架：`cc-switch-model-billing-adaptation.md`
+> HTML Design Workflow / Stage 4 — UI Art Director
+>
+> 技术基线：Next.js 16、React 19、Refine 5、Tailwind CSS 4
+>
+> 视觉输入：`files/inputs/target_image.png`（1440×1000）
+>
+> 结构输入：`files/workspace/1_prd_draft.md`、`files/workspace/3_hierarchy_logic.md`
+>
+> 主题基线：`docs/prd/color_system/light-theme.md`、`dark-theme.md`、`docs/design/admin-ui-visual-specification.md`
+>
+> 目标视口：Desktop `1440×1000`；Mobile `390×844`
 
-## 0. 设计裁决
+## 0. 视觉裁决
 
-PDF 是品牌 Landing 视觉提案，本后台只继承其 v2.1 暖纸色板、安静工具台、少面板、多留白、单一虚线纸边、平直列表与小面积 accent；不继承 Hero、角色、装饰贴纸、胶囊 CTA 或营销卡片。
+本轮风格定义为 **Warm-paper Quiet Operations Desk（暖纸张安静运营台）× Ultra-sensory Minimalism（超感官极简）**。
 
-`color_system` 的亮色基础值早于 PDF v2.1：核心亮色以 PDF v2.1 为准，状态/浮层语义补齐自 color system；暗色沿用 color system 的“暖夜纸张”映射。暗色主按钮为暖白底，前景必须改用深暖画布，不能使用白字。
+目标图提供了正确的品牌骨架：248px 左侧栏、暖米色画布、衬线中文标题、等宽英文事实、小面积深棕 active 标记与低饱和数据表。实现时保留这些识别点，但作以下纠偏：
 
-cc-switch 只提供四个交互骨架：Provider 全屏、Pricing 新版本全屏、Usage 全局筛选/趋势/三页签、Request Detail 分区 Drawer。全部视觉换为本文 token，数据仍来自 Ink Memory PostgreSQL、RBAC、严格 Zod、事务和审计。
+1. 主内容只允许一个虚线 Paper Boundary；筛选区、表格和分页用留白与 1px 实线分隔，不再套多层圆角卡片。
+2. 列表从“技术 ID 优先”改为“名称/标题/邮箱优先，ID 次行 mono + Copy”。关系字段必须是具名链接。
+3. 标题由截图约 46–48px 收敛为桌面 32px、移动 28px，让 1000px 高视口首屏至少看到筛选、表头和 6 行数据。
+4. 蓝色只用于链接/焦点等小面积语义；主按钮用深棕与纸面反差。无蓝紫 AI 渐变、glow、玻璃态或 KPI 卡片海。
+5. 常驻内容无阴影；仅 Drawer、Dialog、Popover 使用浮层阴影。状态不以整行高饱和底色表达。
+6. 视觉范围仅覆盖 Dashboard、User → Workspace → Story、Admin → Role → Permission、Storage、Audit。模型、计费、网关保留现状，不新增、不改造。
 
-不可改变：字段、状态机、关系、权限、Secret 语义、整数 micro-USD、Pricing 版本化、Ledger/Audit append-only、Story PostgreSQL fail-closed。不存在手填关系 ID、模板 ID、默认 JSON CRUD 或通用永久删除。
+---
 
 ## 1. Aesthetic Style
 
-| 维度 | 高保真决定 | 禁止项 |
+| 维度 | 高保真规格 | 禁止项 |
 |---|---|---|
-| 画布 | 暖纸/暖夜画布包围一张主纸面 | 冷蓝灰全屏背景、纯黑暗色 |
-| 分区 | 留白、字重、细实线；主纸面仅一圈 dashed | 多层卡片、每节套框 |
-| 数据 | flat rows、稳定列基线、数字右对齐 | 大 KPI 卡、虚构指标 |
-| 色彩 | 棕色承载阅读，黄/绿/蓝仅小面积语义 | 蓝灰照搬 cc-switch、渐变、glow |
-| 排版 | Serif 定标题、Sans 定任务、Mono 定事实 | 营销大标题、伪造字重 |
-| 形状 | 4/6/8/12px；按钮 6px | 泛滥的 24px 圆角与胶囊 |
-| 层次 | 常驻内容无阴影，浮层才有轻阴影 | 阴影卡片海、玻璃拟态 |
-| 动效 | 160–240ms 状态解释 | 弹跳、视差、持续旋转/脉冲 |
+| 气质 | 暖纸、安静、可信、像经过编排的编辑部运营台 | 默认 Refine/Ant 蓝后台、赛博控制台、营销页 |
+| 构图 | 画布包围一张主纸面；留白、字重、细线建立层级 | 嵌套卡片、每节套框、页面底部无意义空白 |
+| 数据 | flat rows、稳定基线、事实数字 tabular、关系可跳转 | 虚构趋势、装饰图表、整卡状态色 |
+| 排版 | Serif 定页面与区段，Sans 定任务，Mono 定事实 | 伪造 700/800 字重、远程字体、全站等宽字 |
+| 色彩 | 深棕负责阅读；蓝/绿/黄/红仅表达动作和状态 | 渐变、霓虹、glow、冷灰暗色、纯黑画布 |
+| 形状 | 4/6/8/12px；状态胶囊仅限短标签 | 万能 16–24px 大圆角、每行卡片化 |
+| 深度 | 常驻区域无 shadow；浮层才有暖棕阴影 | 多层投影、hover 抬升缩放 |
+| 动效 | 140–240ms，单轴、解释状态与层级 | 弹跳、视差、持续旋转、扫光 skeleton、stagger |
+| 信息密度 | 52px 标准行、44px 表头/控件、双行识别 60px | 过宽空行、低于 44px 的操作命中区 |
+| 可访问性 | 可见 Label、文字+形状状态、2px focus、完整键盘路径 | placeholder 代 Label、hover-only 操作、仅颜色状态 |
 
-## 2. 精确色彩 Token
+### 1.1 图像到界面的视觉映射
 
-颜色只能出现在 token 定义；组件只使用 `var()` 或 Tailwind 语义类。`--color-action-link` 只作下划线、图标和大号链接 accent；普通字号链接正文使用 `text-primary` + 蓝色下划线，确保对比度。
+| 目标图特征 | 目标实现 |
+|---|---|
+| 248px 品牌侧栏 | Desktop 固定 248px；Mobile 切换为 `min(320px, 88vw)` Drawer |
+| 左侧 2 字符代码 | 保留 12px Mono 辅助码；中文名称是主要 accessible name |
+| 暖白大画布 | Light `#F6EFE5`；Dark 为深暖棕，不做简单反色 |
+| 衬线大标题 | 本地 Noto Serif SC 600，Desktop 32/40，Mobile 28/35 |
+| active 米色块 + 深色竖线 | 低对比 hover/active 面 + 2px 左线 + 500 字重 + `aria-current` |
+| 容器式数据区 | 收敛为唯一 1px dashed Paper；内部 flat row |
+| 等宽表头和 ID | 仅 ID/code/object key/request ID 使用 IBM Plex Mono |
+| skeleton 横条 | 改为按真实列宽保形，不用完全等长的装饰条 |
+
+---
+
+## 2. 集中式 Light / Dark CSS Variables 与 Tailwind CSS 4 映射
+
+颜色只在下列 token 区定义。组件使用 `var()` 或 Tailwind 语义类，不出现孤立十六进制。为了兼容仓库当前 `app/globals.css`，保留 `--color-paper`、`--color-ink-primary` 等 alias；新增组件优先使用完整语义名。
 
 ```css
 @import "tailwindcss";
 
 @theme inline {
   --color-app: var(--color-bg-app);
+  --color-app-muted: var(--color-bg-muted);
   --color-paper: var(--color-bg-paper);
   --color-surface: var(--color-bg-surface-solid);
   --color-soft-surface: var(--color-bg-surface);
+  --color-overlay: var(--color-bg-overlay);
   --color-hover: var(--color-bg-hover);
   --color-active: var(--color-bg-active);
+
   --color-ink: var(--color-text-primary);
   --color-body: var(--color-text-body);
   --color-secondary: var(--color-text-secondary);
   --color-muted: var(--color-text-muted);
-  --color-action: var(--color-action-primary);
   --color-on-action: var(--color-text-on-action);
+
+  --color-action: var(--color-action-primary);
+  --color-action-soft: var(--color-action-soft);
+  --color-link: var(--color-action-link);
+  --color-link-hover: var(--color-action-link-hover);
   --color-paper-border: var(--color-border-paper);
   --color-control-border: var(--color-border-neutral);
   --color-focus: var(--color-border-focus);
-  --color-link: var(--color-action-link);
-  --color-link-hover: var(--color-action-link-hover);
+
   --color-success: var(--color-state-success);
+  --color-success-soft: var(--color-state-success-soft);
   --color-warning: var(--color-state-warning);
+  --color-warning-soft: var(--color-state-warning-soft);
   --color-error: var(--color-state-error);
+  --color-error-soft: var(--color-state-error-soft);
   --color-danger: var(--color-state-danger);
-  --color-memory: var(--color-voice-yellow);
-  --color-spark: var(--color-voice-green);
-  --font-sans: var(--font-local-sans), "Noto Sans SC", ui-sans-serif, sans-serif;
-  --font-serif: var(--font-local-serif), "Noto Serif SC", ui-serif, serif;
-  --font-mono: var(--font-local-mono), "IBM Plex Mono", ui-monospace, monospace;
-  --shadow-soft: var(--shadow-soft-value);
-  --shadow-float: var(--shadow-medium-value);
+  --color-danger-soft: var(--color-state-danger-soft);
+  --color-disabled: var(--color-disabled-bg);
+
+  --font-display: var(--font-display), "Noto Serif SC", ui-serif, Georgia, serif;
+  --font-body: var(--font-body), "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
+  --shadow-paper-hover: var(--shadow-soft-value);
+  --shadow-overlay: var(--shadow-medium-value);
 }
 
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
   --color-bg-app: #F6EFE5;
+  --color-bg-muted: #EEE3D5;
   --color-bg-paper: #FFFAF2;
   --color-bg-surface: color-mix(in srgb, #FFFAF2 82%, transparent);
   --color-bg-surface-solid: #FFFDF8;
   --color-bg-overlay: rgb(63 52 41 / 0.46);
   --color-bg-hover: color-mix(in srgb, #5F4A36 5%, transparent);
   --color-bg-active: color-mix(in srgb, #4A90E2 12%, transparent);
+
   --color-border-paper: #D8C7B3;
   --color-border-neutral: #E0D6C8;
   --color-border-focus: #3F3429;
@@ -85,36 +125,56 @@ cc-switch 只提供四个交互骨架：Provider 全屏、Pricing 新版本全�
   --color-text-secondary: #7A6A59;
   --color-text-muted: #9A8A78;
   --color-text-on-action: #FFFFFF;
+
   --color-action-primary: #5F4A36;
+  --color-action-soft: #EADFCE;
   --color-action-link: #4A90E2;
   --color-action-link-hover: #357ABD;
-  --color-state-success: #4CAF50;
-  --color-state-success-hover: #45A049;
-  --color-state-warning: #F39C12;
-  --color-state-error: #F44336;
-  --color-state-danger: #DD4444;
-  --color-state-danger-hover: #BB3333;
-  --color-disabled-bg: #CCCCCC;
-  --color-voice-yellow: #F39C12;
-  --color-voice-green: #27AE60;
+
+  --color-state-success: #277B50;
+  --color-state-success-soft: #E5F4EA;
+  --color-state-warning: #8B5D05;
+  --color-state-warning-soft: #FFF0CF;
+  --color-state-error: #B54B3B;
+  --color-state-error-soft: #F9E5DF;
+  --color-state-danger: #B23B32;
+  --color-state-danger-soft: #F9E5DF;
+  --color-disabled-bg: #D8D0C6;
+
   --color-code-bg: #3F3429;
   --color-code-text: #F6EFE5;
   --color-code-inline-bg: rgb(63 52 41 / 0.08);
-  --color-scrollbar-thumb: #CCCCCC;
-  --color-scrollbar-thumb-hover: #999999;
+  --color-scrollbar-thumb: #C7BAAA;
+  --color-scrollbar-thumb-hover: #9A8A78;
   --shadow-soft-value: 0 2px 8px rgb(91 69 44 / 0.08);
-  --shadow-medium-value: 0 12px 30px rgb(91 69 44 / 0.16);
+  --shadow-medium-value: 0 14px 34px rgb(91 69 44 / 0.18);
+
+  /* 当前 globals.css 兼容 alias；后续集中迁移，不在页面重复定义。 */
+  --color-paper: var(--color-bg-paper);
+  --color-surface-solid: var(--color-bg-surface-solid);
+  --color-ink-primary: var(--color-text-primary);
+  --color-ink-body: var(--color-text-body);
+  --color-ink-secondary: var(--color-text-secondary);
+  --color-ink-muted: var(--color-text-muted);
+  --color-action: var(--color-action-primary);
+  --color-link: var(--color-action-link);
+  --color-warning: var(--color-state-warning);
+  --color-positive: var(--color-state-success);
+  --color-negative: var(--color-state-error);
+  --color-focus: var(--color-border-focus);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
   --color-bg-app: #1F1B16;
+  --color-bg-muted: #241F1B;
   --color-bg-paper: #2A251E;
   --color-bg-surface: rgb(42 37 30 / 0.82);
   --color-bg-surface-solid: #332D25;
   --color-bg-overlay: rgb(0 0 0 / 0.72);
   --color-bg-hover: rgb(255 255 255 / 0.08);
   --color-bg-active: rgb(129 183 210 / 0.18);
+
   --color-border-paper: #5A4D3D;
   --color-border-neutral: #4A4238;
   --color-border-focus: #F3EEE6;
@@ -123,18 +183,22 @@ cc-switch 只提供四个交互骨架：Provider 全屏、Pricing 新版本全�
   --color-text-secondary: #C8BCAE;
   --color-text-muted: #9F9283;
   --color-text-on-action: #1F1B16;
+
   --color-action-primary: #F3EEE6;
+  --color-action-soft: #453B32;
   --color-action-link: #81B7D2;
-  --color-action-link-hover: #6AA3BF;
+  --color-action-link-hover: #A3CEE2;
+
   --color-state-success: #7BCF8F;
-  --color-state-success-hover: #5ABD72;
+  --color-state-success-soft: #253F31;
   --color-state-warning: #F7C96A;
-  --color-state-error: #FF7A70;
+  --color-state-warning-soft: #493B22;
+  --color-state-error: #FF8D82;
+  --color-state-error-soft: #4A2E29;
   --color-state-danger: #FF8A7F;
-  --color-state-danger-hover: #E06060;
+  --color-state-danger-soft: #4A2E29;
   --color-disabled-bg: #58504A;
-  --color-voice-yellow: #F7C96A;
-  --color-voice-green: #7BDBA0;
+
   --color-code-bg: #0D1117;
   --color-code-text: #E6EDF3;
   --color-code-inline-bg: rgb(0 0 0 / 0.18);
@@ -142,391 +206,566 @@ cc-switch 只提供四个交互骨架：Provider 全屏、Pricing 新版本全�
   --color-scrollbar-thumb-hover: #6A5E52;
   --shadow-soft-value: 0 2px 8px rgb(0 0 0 / 0.32);
   --shadow-medium-value: 0 14px 34px rgb(0 0 0 / 0.45);
+
+  --color-paper: var(--color-bg-paper);
+  --color-surface-solid: var(--color-bg-surface-solid);
+  --color-ink-primary: var(--color-text-primary);
+  --color-ink-body: var(--color-text-body);
+  --color-ink-secondary: var(--color-text-secondary);
+  --color-ink-muted: var(--color-text-muted);
+  --color-action: var(--color-action-primary);
+  --color-link: var(--color-action-link);
+  --color-warning: var(--color-state-warning);
+  --color-positive: var(--color-state-success);
+  --color-negative: var(--color-state-error);
+  --color-focus: var(--color-border-focus);
 }
 ```
 
-系统主题回退仅在没有显式 `data-theme` 时生效；已有首屏脚本应在 React hydrate 前解析 system/light/dark。Popover、Select、Tooltip 必须用不透明 `surface`，禁止背景透读。
+### 2.1 Token 使用规则
 
-## 3. 字体、密度与几何
+- Light 核心色使用 UI Design v2.1 的 `#F6EFE5 / #FFFAF2 / #3F3429 / #5F4A36`；Dark 使用 `#1F1B16 / #2A251E / #F3EEE6` 的暖夜映射。
+- 普通 14px 链接使用 `text-ink underline decoration-link`，蓝色只在下划线和图标上；较大或加粗链接可使用 `text-link`。
+- success/warning/error/danger 必须与文字、图标或形状同时出现；soft token 只用于小面积状态背景/错误摘要。
+- Dark 主按钮为暖白 `action`，文字必须是深暖 `on-action`，禁止白底白字。
+- Popover、Combobox、Tooltip 使用不透明 `surface`；不允许背后文字透读。
+- 主题脚本须在 hydrate 前解析 system/light/dark；显式 `data-theme` 优先于系统偏好。
 
-### 3.1 本地字体
+---
 
-| 用途 | 文件 | 字重 |
-|---|---|---:|
-| 页面/区段标题 | `NotoSerifSC-600.ttf` | 600 |
-| 正文/控件 | `NotoSansSC-400.ttf` / `NotoSansSC-500.ttf` | 400 / 500 |
-| ID、code、金额、Token、时间 | `IBMPlexMono-400.ttf` / `IBMPlexMono-500.ttf` | 400 / 500 |
+## 3. 本地字体、字号、间距与几何
 
-不请求 Google Fonts；不伪造仓库不存在的 700 字重。图标使用本地 SVG/React SVG，`stroke="currentColor"`，不使用 Font Awesome。
+### 3.1 仓库内字体
+
+| 语义 | 本地文件 | 可用字重 | Next Font 变量 |
+|---|---|---:|---|
+| 页面/区段标题 | `app/fonts/NotoSerifSC-600.ttf` | 600 | `--font-display` |
+| 正文/控件 | `app/fonts/NotoSansSC-400.ttf`、`NotoSansSC-500.ttf` | 400/500 | `--font-body` |
+| ID/code/key/时间 | `app/fonts/IBMPlexMono-400.ttf`、`IBMPlexMono-500.ttf` | 400/500 | `--font-mono` |
+
+不加载 Google Fonts，不使用 Font Awesome。图标使用仓库内 React SVG / inline SVG，统一 `20×20`、`stroke="currentColor"`、`strokeWidth={1.75}`；装饰图标 `aria-hidden`，图标按钮必须有 `aria-label`。
 
 ### 3.2 字号与行高
 
-| 语义 | Desktop | Mobile | 行高 |
-|---|---:|---:|---:|
-| Page H1 | 32px Serif 600 | 28px | 1.25 |
-| Section H2 | 20px Serif 600 | 19px | 1.4 |
-| Component H3 | 16px Sans 500 | 16px | 1.5 |
-| Body | 15px Sans 400 | 15px | 1.7 |
-| Table/Form | 14px Sans | 14px | 1.5 |
-| Meta | 12px Sans 500 | 12px | 1.6 |
-| Mono facts | 12px Mono | 12px | 1.55 |
+| 语义 | Desktop | Mobile | Tailwind 建议 |
+|---|---:|---:|---|
+| Page H1 | 32px / 40px / Serif 600 | 28px / 35px | `font-display text-[28px] leading-[1.25] lg:text-[32px]` |
+| Section H2 | 20px / 28px / Serif 600 | 19px / 27px | `font-display text-xl leading-7` |
+| Component H3 | 16px / 24px / Sans 500 | 同左 | `text-base font-medium` |
+| Body | 15px / 25.5px / Sans 400 | 同左 | `text-[15px] leading-[1.7]` |
+| Table/Form | 14px / 21px | 同左 | `text-sm leading-[1.5]` |
+| Meta/Label | 12px / 19px / 500 | 同左 | `text-xs font-medium leading-[1.6]` |
+| Mono fact | 12px / 18.5px | 同左 | `font-mono text-xs tabular-nums` |
 
-Mono facts 使用 `font-variant-numeric: tabular-nums`。说明文字不能小于 12px；关键说明至少 14px。
+不得请求不存在的 700/800 字重；“强调”通过 500/600、颜色与空间层级实现。说明文字不低于 12px，关键错误/帮助文字至少 14px。
 
-### 3.3 间距、边框、圆角、阴影
+### 3.3 间距、尺寸、圆角、边框、阴影
 
-- 基础单位 4px；常用 8/12/16/20/24/32/40/48。
-- 纸面内距 Desktop 32px，复杂全屏内容 40px；Mobile 16px。
-- Section 32px；Field group 20px；label→control 8px；control→help/error 6px。
-- 纸面外边 1px dashed；内部分隔、输入和表格 1px solid。只有一处 dashed。
-- radius：4px code/status；6px input/button/table shell；8px popover/toast；12px paper/modal/drawer。
-- 常驻 section、表格和普通行无 shadow；hover row 可用 `shadow-soft`；Popover/Dialog/Drawer 可用 `shadow-float`。
+| 类别 | 规格 |
+|---|---|
+| 基础间距 | 4px；常用 `8 / 12 / 16 / 20 / 24 / 32 / 40 / 48` |
+| Main Canvas | Desktop `32px 36px 48px`；Mobile 8px canvas + 16px Paper padding |
+| Paper 内距 | Desktop 28–32px；Mobile 16px |
+| Section gap | 32px；Field group 20px；Label→control 8px；control→help/error 6px |
+| 控件高度 | input/select/button 44px；textarea min 112px；search 44px |
+| 圆角 | code/status 4px；input/button/table shell 6px；popover/toast 8px；paper/modal/drawer 12px |
+| 外边界 | 每页仅 1 处 `1px dashed paper-border` |
+| 内分隔 | `1px solid paper-border/control-border`；普通 section 不另套框 |
+| 阴影 | 常驻内容无阴影；hover row 可选 `shadow-paper-hover`；浮层 `shadow-overlay` |
+| Focus | 2px `focus` outline + 2px offset；不得被 overflow 裁剪 |
 
 ### 3.4 表格密度
 
 | 部件 | Desktop | Mobile |
 |---|---:|---:|
 | 表头 | 44px；12px/500 | 44px |
-| 正常行 | 52px；cell x=16/y=12 | 56px；x=14/y=12 |
+| 标准行 | 52px；cell x=16/y=12 | 56px；x=14/y=12 |
 | 双行识别单元 | 60px | 64px |
-| 行操作 | 44×44 命中区 | 44×44 |
-| sticky 主列 | 最小 220px，实色 paper | 最小 180px |
+| 行动作 | 44×44 命中区 | 44×44 |
+| sticky 主列 | min 220px，实色 paper | min 180px，实色 paper |
 
-静止行透明；hover 使用 `bg-hover`；selected 同时用右侧 check、2px 左线和 `aria-selected`，不整行深色填充。
+表格静止行透明；hover 只用 `bg-hover`。selected 同时使用 2px 左线、右侧 check 与 `aria-selected`，不整行深色填充。数值右对齐，状态/时间不强制居中，避免扫描断裂。
 
-## 4. 按钮与控件层级
+---
+
+## 4. 按钮、表单控件与状态标记
+
+### 4.1 按钮层级
 
 | 层级 | 视觉 | 用途 |
 |---|---|---|
-| Primary | action 底 + on-action 字，44px 高，6px radius | 每个 Header/Footer 最多一个主提交 |
-| Secondary | surface 底 + neutral border + body 字 | 取消、预览、刷新影响 |
-| Tertiary | 透明底 + ink/link 文本 | 返回、清筛、行内跳转 |
-| Danger | 透明/soft danger 底 + danger 字；确认页才可实底 | 停用、撤销、拒绝、删除自定义 Role |
-| Icon | 44×44，18–20px SVG，透明底 | Copy、More、Close、Menu |
+| Primary | `bg-action text-on-action`，44px，6px radius | 每个 Header/Footer 最多一个主提交 |
+| Secondary | `bg-surface border-control-border text-body` | 取消、刷新、预览、下载 |
+| Tertiary | 透明底，`text-ink`，hover `bg-hover` | 返回、清筛、行内通用动作 |
+| Link | `text-ink underline decoration-link` | User/Workspace/Story/Audit 关系跳转 |
+| Danger | 平时透明/soft danger；最终确认才允许 danger 实底 | 停用、归档、拒绝、删除 Storage/自定义 Role |
+| Icon | 44×44、20px SVG、透明底 | Menu、Close、Copy、More、Theme |
 
-Disabled 同时降低对比并保留原因 Tooltip/description；不能只把 opacity 降到不可读。Loading 按钮保留原宽，写“保存中…”等动词，不只显示 spinner。
+Disabled 不只降 opacity：保留可读文案、真实 `disabled`，并在相邻帮助文字说明原因。Loading 按钮保持原宽，显示“保存中…”“上传中…”，spinner 仅为辅助。
 
-输入统一 44px 高、6px radius、surface 实底、neutral border；textarea 最小 112px；JSON Editor 最小 240px；Combobox menu 最大 320px 高并分页加载。
+### 4.2 控件规格
 
-## 5. 全局 Shell（S01–S06）
+- 输入/Select/Combobox：44px、6px radius、solid surface、1px neutral border；hover 加深边框，focus 2px outline。
+- 所有输入有可见 Label；placeholder 只给示例，不代替字段名。
+- 关系字段使用分页 searchable Combobox：主行名称/邮箱，次行 mono ID；不可手填不存在的 ID。
+- Checkbox/Switch 命中区至少 44px；文字是 label 的一部分。Permission matrix 的 code、名称、描述不能只藏在 Tooltip。
+- Textarea min 112px。Story content、metadata、内部 version/provenance 只读，不渲染可编辑控件。
+- JSON Viewer：13px Mono/1.65，默认展开两层，长行 wrap，局部最大高 480px；Copy 结果由 live region 播报。
+- Date/Time：UI 明示时区；本地时间旁可查看 ISO 值。
 
-### 5.1 Desktop 1440×1000
+### 4.3 StatusMark
+
+视觉形式为 `6px dot + 12px/500 文本 + 可选短边框`，例如“正常”“已停用”“待审核”“配置缺失”。icon/dot 标记 `aria-hidden`，完整状态由文本提供。状态色不可用于整行背景。
+
+---
+
+## 5. 1440×1000 Desktop 组件结构
 
 ```text
-S01 Canvas: 100dvh / overflow hidden
-├─ S02 Sidebar: 248px / fixed column / own vertical scroll
-└─ AdminPaper: x≈280 / w≈1124 / single dashed / main vertical scroll
-   ├─ S03 Topbar: 56px sticky
-   ├─ S04 Page Heading: 32px title + source/time + one primary action
-   ├─ S05 Module Tabs: 44px / own horizontal scroll only when needed
-   └─ S06 live region: paper bottom-right, never steals focus
+┌─ G0 App Canvas: 1440×1000 / bg-app / overflow-x clip ──────────────────────────┐
+│ G1 Sidebar 248px                 │ G2 Main minmax(0,1fr)                        │
+│ ├ Brand 76px                     │ ├ G3 Breadcrumb + source/time               │
+│ ├ Scrollable nav groups          │ ├ G4 H1 + purpose + one primary action       │
+│ └ G10 identity/theme 116px       │ └ G5 one dashed Paper Boundary              │
+│                                  │   ├ G6 summary/context/capability            │
+│                                  │   ├ G7 search/filter/chips                   │
+│                                  │   ├ G8 flat table/detail body ↔ local scroll│
+│                                  │   └ G9 total/pageSize/pagination             │
+└──────────────────────────────────┴──────────────────────────────────────────────┘
 ```
 
-Canvas 左右最少 24px；Sidebar 与 Paper 间 24px。Sidebar 与 app 同底，不另做卡片。当前项用 3×18px Memory Yellow 短线 + 500 字重 + `aria-current="page"`。
+### 5.1 精确尺寸
 
-### 5.2 Mobile 390×844
+- Sidebar：`248px` 固定；自身 `overflow-y:auto`。品牌 76px；导航组之间 24px；条目 40px；底部身份区至少 112px。
+- Main：`min-width:0`；水平内距 36px（最少 24px），上 28px，下 48px；可用内容宽约 1120px。
+- Page Heading：breadcrumb 20px 高；H1 与说明区约 94px；主按钮只在有真实写权限时出现。
+- Paper：`width:100%`、12px radius、1px dashed；Desktop padding 28–32px。其本身不制造第二个页面滚动条。
+- 首屏预算：顶部导航/标题约 174px，Paper 筛选约 154px，表头 44px + 6×52px 行 + 分页 56px，可在 1000px 高度内形成有效数据密度。
+- Table 横滚由唯一 `G8/L06` 容器拥有；Sidebar、Heading、Pagination 不随表格横向移动。
 
-- Canvas 8px，Paper 内距 16px，根 `scrollWidth <= clientWidth`。
-- S03 为 52px；菜单触发器 44×44；标题/面包屑截断并配 Copy。
-- S02 变 `min(320px,88vw)` 左 Drawer，实底、inert 背景、锁焦、Escape/遮罩关闭、归焦菜单按钮。
-- S05 只在自身横滚；不做横向页面导航条。
-- 标题→说明→数据源/更新时间→主动作单列；Footer 避让 `env(safe-area-inset-bottom)`。
+### 5.2 页面模块在 Paper 中的构图
 
-## 6. List、Filter、Table（L01–L10）
+| 页面 | G6 | G7 | G8 |
+|---|---|---|---|
+| Dashboard | 数据源/刷新事实 | 无通用筛选 | 三组 flat metric band；最近 Story / 最近操作两列 |
+| Workspace | 总数/当前筛选摘要 | 搜索、owner/status、时间排序 | name+ID、owner、status、Story count、时间、动作 |
+| Story | 总数/关系上下文 | 搜索、Workspace/User/status/review/type | title+ID、关系、type/status/count、时间、动作 |
+| User | 总数/active-disabled | 搜索、role/status、时间排序 | name/email、status、Workspace/Story count、时间、动作 |
+| Admin | active/disabled 与角色摘要 | email/status/role | email/name、roles、status、last login、动作 |
+| Role | 内置/自定义摘要 | name/code/type | name/code、type、permission/admin count、时间、动作 |
+| Permission | “系统发布，只读”说明 | code/name 搜索 | 按 domain 分组的 flat rows / role count |
+| Storage | driver/capability strip | key/MIME/date | filename/key、MIME、size、time、driver、动作 |
+| Audit | append-only/脱敏说明 | actor/action/resource/date | time、actor、action、resource、request、result |
 
-- L01 名称/code/允许的精确 ID 搜索常显；L02 关系筛选必须是具名分页 Combobox。
-- L03 状态/枚举/日期使用固定 select、segmented radio、Date Range；服务端 UTC，UI 标时区。
-- L04 提供刷新、清筛和领域允许的创建/导出；自动刷新不覆盖选择或 Drawer。
-- L05 显示结果范围、筛选摘要、来源、时间窗和更新时间；查询失败写“暂不可用”。
-- L06 是唯一表格横滚壳，`tabIndex=0` 且有“可横向滚动”名称。
-- L07 是主识别/具名关系；L08 是状态/数值/时间；L09 行动作由 permission + record state 决定。
-- L10 在 L06 外，20/50/100、页码和范围写 URL；完成后聚焦 L05。
-- URL 是 q/page/pageSize/sort/order/tab/from/to/资源白名单筛选的真相源。
-- 只在真实批量命令存在时显示 checkbox；不为视觉完整添加选择列。
+Dashboard 的数字是可解释链接而非大号装饰卡：32px Serif 数字，12px Label，单行 3 组，组间以 1px 竖线分隔。查询失败时该组显示“暂不可用”，绝不显示 0。
 
-Mobile：L01 常显；L02/L03 进入 bottom Filter Sheet；L06 保留表语义，优先 L07、状态、关键数值/时间、L09，不转卡片。
+### 5.3 Desktop 详情与表单层
 
-## 7. Detail、Typed Form 与高风险确认
+| 层 | 宽度 | 结构 |
+|---|---:|---|
+| User/Workspace Detail | 780px | sticky 64px Header / scroll Content / optional 64px Footer |
+| Story Detail | 840px | Identity → Relations → Content → Metadata → Timeline → Audit |
+| Admin Form | 680px | Identity → Password（永不回填）→ Roles → Diff |
+| Role Edit | 840px | Basics → Impact → Permission Matrix → Diff |
+| Storage Upload/Preview | 680/760px | capability/context → form/preview → receipt/action |
+| Audit Detail | 760px | Header → redacted before/after → metadata |
+| Sensitive Confirm | 600px Modal | object → impact → before/after → reason/key → named action |
 
-### 7.1 Detail Drawer（D01–D07）
+打开层时背景 `inert`，焦点落到标题；关闭回到触发行。详情 URL 可刷新恢复，不使用无法恢复的临时 Modal 代替 Resource route。
 
-- D01 720–840px；Mobile 全屏；Header sticky，初焦标题。
-- D02 Identity/Base：名称、code、ID、类型、说明。
-- D03 Relations：具名链接，不复制关系、不手填 ID。
-- D04 State/Timeline：状态解释、version、完整本地/ISO 时间。
-- D05 Domain Projection：Story 层级、Workflow、Ledger、只读 JSON 等真实投影。
-- D06 Risk/Audit：脱敏状态、before/after、Request ID、Audit link。
-- D07 Footer：关闭、编辑、允许的领域命令；只读域不出现 edit/delete。
+---
 
-关闭后回到 L09 原行；行消失则聚焦 L05。自动刷新详情只原子替换只读响应，已开表单只提示“有较新版本”。
+## 6. 390×844 Mobile 组件结构
 
-### 7.2 Typed Form（E01–E07）
+```text
+┌─ 390px viewport / 8px canvas / no root horizontal overflow ────────────┐
+│ M1 sticky header 56px: [Menu] Ink Memory             [Theme][Account] │
+│ G3 breadcrumb/back                                                     │
+│ G4 H1 28px + max 3-line purpose                                       │
+│ primary action on its own row, min-height 44px                         │
+│ ┌┈ G5 Paper / full width / 16px padding ┈────────────────────────────┐ │
+│ ┋ G6 summary/context: vertical stack or wrap                        ┋ │
+│ ┋ G7 search always visible                       [筛选 n]           ┋ │
+│ ┋ active chips / clear all                                           ┋ │
+│ ┋ G8 table semantics / local focusable horizontal scroll            ┋ │
+│ ┋ G9 total                              [上一页] [下一页]            ┋ │
+│ └┈───────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────┘
+```
 
-| 数据类型 | 控件 | 禁止退化 |
+### 6.1 Mobile 行为
+
+- Sidebar 变为左 Drawer `width:min(320px,88vw)`；实色 surface、锁焦、Escape/遮罩关闭，归焦菜单按钮。
+- Search 始终可见；关系/状态/日期筛选放入 Bottom Sheet。筛选按钮显示 active 数量，Sheet 固定 Header/Footer，底部含 `env(safe-area-inset-bottom)`。
+- 主操作不与 H1 同行挤压；创建/上传按钮单独一行，可按内容宽或全宽。
+- 列表保留 `<table>` 语义，不强制改卡片。优先主实体、状态、关键时间和常显动作；其余列通过局部横滚查看。
+- 横滚壳 `tabIndex={0}`，accessible name 为“剧本列表，可横向滚动”等资源化文案；首次出现时给可见提示。
+- Detail/创建/编辑层全部全屏。Header 56px sticky；中段独立纵滚；Footer 64px + safe-area；最后字段后至少留 96px。
+- 关系矩阵、JSON、长 key 只在自身容器滚动/换行；根节点 `scrollWidth <= clientWidth`，不能靠全局 `overflow:hidden` 掩盖错误宽度。
+
+### 6.2 Mobile 信息优先级
+
+| 页面 | 首屏必须可见 | 延后/横滚可见 |
 |---|---|---|
-| 名称/code/URL | text / url；code 编辑只读 | 用 ID 代替名称 |
-| enum | select / segmented radio | 自由文本 |
-| boolean | switch / checkbox + 文字 | 原始 true/false |
-| datetime | DateTime Picker + timezone | 假默认日期 |
-| integer/Token | step=1 number + unit | 空值转 0 |
-| micro-USD | USD decimal + 精确整数 preview | JS 浮点入账 |
-| array/tags | MultiSelect / chip input | JSON textarea |
-| capability/scope | 白名单 checkbox group | 自由 JSON |
-| relation | 真实分页 searchable Combobox | 裸 ID 输入 |
-| real JSON | JSON Editor + schema/diff/restore | 用于普通字段 |
-| Secret | password + 本次显隐 | 回填历史值 |
+| Workspace | name、status、Story count、动作 | owner ID、created time |
+| Story | title、review/status、updated、动作 | type、计数、完整关系列 |
+| User | name/email、status、Workspace count、动作 | role、Story count、created |
+| Admin | email、status、roles、动作 | last login、ID |
+| Role | name/code、type、权限数、动作 | admin count、updated |
+| Storage | filename/key、size、动作 | MIME、driver、完整时间 |
+| Audit | time、action、result、resource | actor ID、request ID |
 
-E01：Modal 560–620px 或 Drawer 640–720px；Mobile 全屏。E02 类型化字段；E03 关系选择；E04 特殊控件；E05 错误摘要；E06 sticky Footer；E07 Dirty Guard。
+---
 
-每字段有可见 label、必填/可选、description、error，使用稳定 ID/`aria-describedby`。400 聚焦首错；409 同屏保存草稿与服务器最新值；503 保留草稿重试；404 关闭失效容器。
+## 7. 核心组件视觉规格
 
-### 7.3 JSON Editor
+### 7.1 Sidebar / Navigation
 
-- 仅 Workspace settings、Provider 未知扩展 config、Platform metadata、System value。
-- Mono 13px/1.65；行号、格式化、schema 行列错误、Copy、Restore、before/after diff。
-- 长行默认 wrap；编辑器可独立纵滚，不成为根横滚 owner。
-- Provider 受管键从扩展 JSON 剥离，Secret 风险键服务端拒绝。
+- 背景与 app 同色，右侧 1px paper border；不做独立浮卡。
+- 分组 Label：12px Sans 500、secondary；条目代码 11px Mono、muted，固定 28px 宽。
+- active：2px action 左线 + `bg-hover` + 500 字重 + `aria-current="page"`；不得仅靠米色底。
+- 无 read permission 不显示入口；直接路由仍由服务端 403。保留现有模型/计费/网关入口，但本稿不改变其分组与页面。
 
-### 7.4 Confirmation（K01–K06）
+### 7.2 Page Header
 
-K01 实底 Modal 600px；Mobile 全屏或不裁剪说明的 Sheet。K02 当前资源/status/version/time；K03 真实影响或“暂不可计算”；K04 before→after；K05 reason/ticket/idempotency/code；K06 具名命令。
+- breadcrumb 12px Mono/Sans，名称可换行，ID 可 Copy。
+- 每页唯一 H1。说明用 15px body，最多一句解释目标；“可追溯”“真实数据”等事实不可伪装成按钮。
+- 右侧最多一个 Primary。无写权限时不留空按钮占位。
 
-提交前重取 status/version/impact。409 保留输入并聚焦冲突摘要。余额/结算按 idempotency key 查询未知网络结果。Role 删除要求 code；Story reject 必填说明；Provider/Model 停用显示依赖；Key revoke 显示 prefix/last used。
+### 7.3 Filter Bar
 
-## 8. Provider 全屏（P01–P11）
+- Desktop 搜索 320px；Select/Combobox 180–220px；最多两行，不压缩表格。
+- 搜索 300ms debounce；筛选/排序/page/pageSize 是 URL 真相源；改变筛选后 page 归 1。
+- 已应用筛选用小型 chip，但“清除全部”是文字按钮而非无 label 的 ×。
+- 关系项显示 `name/email` + 次行 ID；不存在/403/加载失败分别有明确文案。
 
-保留 cc-switch 的全屏与分区骨架，但全页是 paper/solid rules，不是蓝灰卡片。
+### 7.4 Data Table / Relation List
 
-| ID | 分区 | UI 规格 |
+- 首列为真实 `<a>`，主文案 14px/500，ID 次行 12px Mono + Copy。
+- sticky header；排序按钮与列名一体，维护 `aria-sort`。
+- 整行可进入详情时仍保留真实链接；行内按钮点击不得触发行导航。
+- 行尾主动作“查看”常显，低频动作进入 Menu；禁止 hover-only。
+- 无真实批量命令时不显示 checkbox，避免假能力。
+
+### 7.5 Detail Layer
+
+- Header 固定：返回/关闭、实体名、只读 ID/Copy。Content 独立滚动。仅有合法写动作时显示 Footer。
+- Section 之间用 32px 空间和细分隔线，不把每个 section 做成卡片。
+- Story Content：安全 Markdown/长文本只读；最大 480px 局部滚动。JSON 默认展开两层；解析失败显示原文与错误说明。
+- 关联异常用 warning strip 呈现真实 ID，不自动创建替代实体。
+
+### 7.6 Sensitive Confirm
+
+- 标题直接命名动作：“停用用户”“归档工作区”“拒绝剧本”“删除文件”。
+- 固定顺序：对象 → 当前状态/版本 → 真实影响 → before→after → reason/key → 最终按钮。
+- Storage 删除必须输入完整 object key；Role 变更显示 permission diff；最后 active super admin 阻止并解释。
+- Cancel 后归焦触发器；409 保留输入并聚焦冲突摘要。
+
+---
+
+## 8. 可编码 React / Tailwind CSS 4 片段
+
+以下片段只展示视觉与语义骨架；数据仍由 Refine hooks 和现有服务端 permission/API 提供。
+
+### 8.1 `AdminPaper`
+
+```tsx
+export function AdminPaper({
+  labelledBy,
+  children,
+}: {
+  labelledBy: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      aria-labelledby={labelledBy}
+      className="motion-paper-enter overflow-clip rounded-xl border border-dashed border-paper-border bg-paper text-body"
+    >
+      {children}
+    </section>
+  );
+}
+```
+
+### 8.2 `StatusMark`
+
+```tsx
+const toneClass = {
+  success: "text-success",
+  warning: "text-warning",
+  error: "text-error",
+  neutral: "text-secondary",
+} as const;
+
+export function StatusMark({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: keyof typeof toneClass;
+}) {
+  return (
+    <span className={`inline-flex min-h-7 items-center gap-2 text-xs font-medium ${toneClass[tone]}`}>
+      <span aria-hidden className="size-1.5 rounded-full bg-current" />
+      <span>{label}</span>
+    </span>
+  );
+}
+```
+
+### 8.3 具名实体单元格与局部横滚表格
+
+```tsx
+export function EntityCell({ href, name, id }: { href: string; name: string; id: string }) {
+  return (
+    <div className="min-w-0 py-1">
+      <a
+        href={href}
+        className="block truncate font-medium text-ink underline decoration-link decoration-1 underline-offset-4 hover:decoration-link-hover"
+      >
+        {name}
+      </a>
+      <div className="mt-1 flex items-center gap-2 text-xs text-muted">
+        <code className="min-w-0 truncate font-mono tabular-nums">{id}</code>
+        <button type="button" aria-label={`复制 ${name} 的 ID`} className="min-h-11 shrink-0 px-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+          <CopyIcon aria-hidden />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ScrollTable({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      role="region"
+      aria-label="剧本列表，可横向滚动"
+      tabIndex={0}
+      className="min-w-0 overflow-x-auto border-y border-paper-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+    >
+      <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+        <caption className="sr-only">剧本列表</caption>
+        {children}
+      </table>
+    </div>
+  );
+}
+```
+
+实际 Next.js 页面使用 `Link` 代替示例中的 `<a>`。Copy 按钮可缩小视觉图形，但命中区始终 44px。
+
+### 8.4 Detail Drawer / Mobile Full-screen
+
+```tsx
+export function DetailLayer({
+  title,
+  resourceId,
+  children,
+  footer,
+}: {
+  title: string;
+  resourceId: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  return (
+    <section
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="detail-title"
+      className="fixed inset-0 z-50 grid min-w-0 grid-rows-[56px_minmax(0,1fr)_auto] bg-paper text-body shadow-overlay md:left-auto md:w-[min(840px,calc(100vw-248px))] md:grid-rows-[64px_minmax(0,1fr)_auto]"
+    >
+      <header className="flex min-w-0 items-center gap-3 border-b border-paper-border px-4 md:px-6">
+        <button type="button" aria-label="关闭详情" className="grid size-11 place-items-center rounded-md hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+          <CloseIcon aria-hidden />
+        </button>
+        <div className="min-w-0">
+          <h1 id="detail-title" tabIndex={-1} className="truncate font-display text-xl font-semibold text-ink">{title}</h1>
+          <p className="truncate font-mono text-xs text-muted">{resourceId}</p>
+        </div>
+      </header>
+      <div className="min-h-0 overflow-y-auto overflow-x-clip px-4 py-6 md:px-8 md:py-8">
+        <div className="space-y-8">{children}</div>
+      </div>
+      {footer ? (
+        <footer className="border-t border-paper-border bg-paper px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3 md:px-8">
+          <div className="flex min-h-12 items-center justify-end gap-3">{footer}</div>
+        </footer>
+      ) : null}
+    </section>
+  );
+}
+```
+
+### 8.5 可见 Label 的字段
+
+```tsx
+export function Field({
+  id,
+  label,
+  description,
+  error,
+  children,
+}: {
+  id: string;
+  label: string;
+  description?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2" data-invalid={Boolean(error)}>
+      <label htmlFor={id} className="block text-sm font-medium text-ink">{label}</label>
+      {description ? <p id={`${id}-help`} className="text-sm leading-6 text-secondary">{description}</p> : null}
+      {children}
+      {error ? <p id={`${id}-error`} role="alert" className="text-sm leading-6 text-error">{error}</p> : null}
+    </div>
+  );
+}
+```
+
+实际 control 必须接收相同 `id`，并组合 `aria-describedby`、`aria-invalid`；wrapper 不能代替原生关联。
+
+---
+
+## 9. Loading、Empty、Error、权限与回执
+
+| 状态 | 视觉与文案 | 恢复与焦点 |
 |---|---|---|
-| P01 | Full-screen | 100dvh；背景锁滚；内容 max 1120px |
-| P02 | Header | sticky 64px；返回、标题、权限、dirty 状态 |
-| P03 | Preset/Protocol | preset 只预填；Anthropic/OpenAI segmented；编辑协议只读 |
-| P04 | Base | code 创建可填/编辑只读；name；status；ID 只读 |
-| P05 | Credential | configured/fingerprint；新 password；空=不轮换；轮换确认 |
-| P06 | Endpoint | URL + 标准化最终 Endpoint 预览 |
-| P07 | Model Summary | 具名关联 Model flat rows；打开 M01，不手填 model ID |
-| P08 | Managed Runtime | timeout 1000–900000；retries 0–5；authMode；outputTokenParam |
-| P09 | Extension Config | 只编辑未知扩展 JSON；受管/Secret 键拒绝 |
-| P10 | Impact/Error | enabled Models、近期请求、400/403/409/503 |
-| P11 | Footer | sticky 64px；取消 + 保存 Provider；safe area |
+| Loading | 保留 Shell/Header/Filter/表头；按真实列宽画 quiet skeleton | 不跳焦；完成后 polite 播报“已加载 N 条” |
+| System Empty | “尚无工作区/剧本/文件”等真实事实 | 仅在有写权限时显示创建动作 |
+| Filter Empty | 显示已生效筛选摘要，不说“系统无数据” | 移除单个 chip / 清除全部；焦点回结果摘要 |
+| Relation Empty | “该用户尚无工作区”等父子语义 | 返回父实体或进入允许的创建路径 |
+| 400 | Paper 顶部 error summary + 字段错误，保留输入 | 聚焦首错；summary 链接回字段 |
+| 401 | 清除保护数据后转登录 | 安全 return URL；登录后恢复 route |
+| 403 | 写明所需 permission；不残留敏感内容 | 聚焦错误标题；返回可访问模块 |
+| 404 | 实体可能不存在或已归档 | 关闭失效 overlay，回保留 query 的列表 |
+| 409 | 同屏显示草稿、服务器最新值、diff/阻塞关系 | 聚焦冲突摘要；用户确认后加载最新 |
+| 500/503 | 说明失败范围、Request ID；不切数据源 | 区域重试，保留 filter/draft |
+| Storage 未配置 | capability strip + 缺失配置类别，不显示 credential | 禁用依赖动作；修复后“重新检查” |
+| Success Receipt | action/resource/request/audit/time | 聚焦回执标题；刷新列表/详情 |
+| Dirty Guard | “继续编辑 / 放弃更改” | 最高层锁焦；取消回原字段 |
 
-Mobile 严格 P03→P10 单列，末字段下 96px。P02/P11 固定；只有中段纵滚。Provider 内打开 Model Drawer 后只刷新 P07，不覆盖 Provider 草稿。
+Skeleton 使用纸面相邻色块，透明度 0.48→0.72 缓慢呼吸；禁止亮色扫光。Toast 不是唯一错误载体，错误必须在相应区域常驻可读。
 
-## 9. Model 与 Pricing（M01–M08 / R01–R09）
+---
 
-Model 使用 Desktop 680px Drawer / Mobile 全屏：M02 Header；M03 Provider Combobox 或锁定；M04 code/upstream/display name；M05 nullable token limits；M06 capability checkbox；M07 enabled/Provider impact；M08 Footer。
+## 10. 微交互与 Motion
 
-Pricing 使用 cc-switch 全屏骨架，但动作永远叫“创建价格版本”：
-
-| ID | 分区 | UI 规格 |
+| 交互 | 时长/曲线 | 视觉反馈 |
 |---|---|---|
-| R01/R02 | Full-screen/Header | 100dvh、max 1120px、旧版本只读引用 |
-| R03 | Model/Tier | searchable Combobox；从 Model 发起可锁定 |
-| R04 | Four Prices | Fresh input/Output/Cache read/Cache write；USD/1M + micro preview |
-| R05 | Formula | markup %/bps、discount %/bps、精确顺序 |
-| R06 | Window | from、nullable to、status；时区常显 |
-| R07 | Diff | 四价/公式/生效窗 old→new |
-| R08 | Conflict/Impact | overlap 版本链接、真实引用/差额；409 保留草稿 |
-| R09 | Footer | 取消、预览影响、创建价格版本 |
-
-已开始或被 Request snapshot 引用的旧金额/from 不可编辑，无 DELETE。服务端事务结束旧 `effective_to` 并插入新版本；成功回执列新/旧窗、Request ID、Audit。
-
-## 10. Usage Dashboard（U01–U09）
-
-保留 cc-switch 的“全局筛选→事实摘要→趋势→三页签”，但去掉 Hero KPI cards：
-
-- U01 单一主滚动容器。
-- U02 Date Range/timezone、protocol、Provider、Model、Platform User、outcome、refresh frequency；同时驱动全部区域并写 URL。
-- U03 单一 flat summary band：request count、success rate、四类 Token、provider cost、charged、时间窗/来源/更新时间。
-- U04 Token/成本真实趋势；图例键盘可达；图内 pan/tooltip 不扩大根宽。
-- U05 请求日志/Provider 统计/模型统计 tabs，只在自身横滚。
-- U06 Request rows；U07 Provider aggregate；U08 Model aggregate；三者表格各自局部横滚。
-- U09 结果 meta 与分页在表格壳外。
-
-真实聚合 API 不可用时写“暂不可用”，不从当前页推算全量。只有请求成功且真实零记录才显示 `0 + empty explanation`。自动刷新不改 U02、U05、page 或已开 Q01；只提示“有较新版本”。
-
-Mobile：Date Range 常显，其余进 Filter Sheet；U03 可换行但仍为一条事实带；U04 图内交互；Q01 为全屏。
-
-## 11. Request Detail（Q01–Q09）
-
-Desktop 760–840px read-only Drawer；Mobile 全屏；Header sticky、中段纵滚、无保存 Footer。
-
-| ID | 分区 | Skeleton / 正常内容 |
-|---|---|---|
-| Q02 | Header | Request ID、Copy、outcome、Close |
-| Q03 | Identity/User/Key | upstream ID、Platform User、Key prefix；无 hash/plaintext |
-| Q04 | Routing | protocol、requested→resolved Model、Provider、Pricing Rule |
-| Q05 | Token Semantics | estimated + Fresh/Output/Cache R/W；unknown 不为 0 |
-| Q06 | Snapshot/Cost | 四价格、markup/discount、reserved/provider cost/charged/diff |
-| Q07 | Settlement/Ledger | settlement 状态与 append-only Ledger timeline |
-| Q08 | Performance/Timeline | streaming、first token、latency、created→settled |
-| Q09 | Error/Safe Summary | http/error、脱敏 message、只读 response_summary JSON；无正文 |
-
-Loading skeleton 按 Q03–Q09 每段保留标题、2–4 条 16px 高事实线，不能用一个大灰块。`settlement_failed` + `billing.adjust` 仅显示“前往 Reconciliation”。
-
-## 12. Reconciliation、Role、Storage（C/X/T）
-
-### 12.1 C01–C09 Reconciliation
-
-独立路由，不手填 Request ID。C02 sticky Header；C03 冻结 User/Provider/Model/status/version/reserved/tokens/snapshot/error；503 只能重试；C04 settle/release；C05 settle 四类非负整数且 unknown 不预填 0；C06 release evidence/ticket；C07 reason/idempotency；C08 server before→after；C09 sticky submit。
-
-version 变化进入 Z07，刷新 preview 后再次确认。成功进入不可编辑 Z09，列 Request、Ledger、Audit、金额、时间。
-
-### 12.2 X01–X07 Role
-
-独立权限页：X02 sticky Header；X03 code/name/description；X04 domain navigator；X05 Permission matrix（code/name/description/check）；X06 permission diff + 受影响管理员；X07 Footer。Mobile 域导航局部横滚、矩阵按当前域逐行，不隐藏 permission 描述。
-
-内置 Role 受保护。只允许无关联自定义 Role 进入 K01 删除并输入 code；最后 active super_admin 保护由 409 表达。
-
-### 12.3 T01–T07 Storage
-
-T02 Driver/config health；T03 direct-upload capability/prefix；T04 keyboard-accessible upload；T05 progress/真实 receipt；T06 known-key exists/metadata/download；T07 只读 metadata。
-
-这是能力与诊断页，不存在 list/count/delete、目录树或假资源表。失败保留选中文件信息并给安全 Request ID。
-
-## 13. 资源容器决策
-
-| 资源/动作 | 容器 |
-|---|---|
-| Workspace edit | 560px Modal / Mobile full-screen |
-| Story/Character/Scene edit | 720px Drawer / Mobile full-screen |
-| Story review/archive | K01 confirm |
-| Workflow detail | 760px read-only Drawer；无适配器则无 retry/cancel |
-| Provider create/edit/rotate | P01 full-screen |
-| Model create/edit | M01 680px Drawer |
-| Pricing new version | R01 full-screen |
-| Model Permission | 640px Drawer；删除 override 用 K01 |
-| Billing adjustment | 600px K01 |
-| Usage/Gateway Request | Q01 read-only Drawer |
-| Reconciliation | C01 independent page |
-| Gateway Key create | 640px Modal → one-time Z09；revoke 用 K01 |
-| Platform Identity | 680px Drawer |
-| Admin User | 640px Drawer；disable/reset 独立确认 |
-| Role | X01 independent page |
-| System Setting | 640px Drawer；Secret overwrite 再确认 |
-| Storage upload/check | 560px Drawer / inline capability page |
-
-## 14. 状态与回执（Z01–Z10）
-
-| ID | 视觉与恢复 | 焦点 |
-|---|---|---|
-| Z01 Loading | 保留 title/filter/header；等高 skeleton；超时提示 | 不跳焦；完成 polite 播报 |
-| Z02 Filter Empty | 筛选摘要 + 清筛 | 清筛后 L05 |
-| Z03 System/Relation Empty | 区分系统空/关系无选项，只在允许域给创建 | 返回父资源/选择器输入 |
-| Z04 400 | 顶部 summary + 字段 error，草稿保留 | 首错；summary link 可回字段 |
-| Z05 401/403 | 清保护值；403 写 permission | 错误标题；登录后安全 return URL |
-| Z06 404 | 关闭失效 overlay、返回列表 | 原行或 L05 |
-| Z07 409 | 当前草稿 + latest/diff/related record | conflict heading；载入最新需确认 |
-| Z08 500/503 | 安全文案 + Request ID + retry；503 标源 | 保留 filter/draft；无回退 |
-| Z09 Receipt | action/resource/Request/Audit/Ledger/time | receipt heading；刷新 list/detail |
-| Z10 Dirty Confirm | Continue / Discard，覆盖 Escape/back/refresh/route | 最高层锁焦；取消回原字段 |
-
-Gateway Key plaintext 只在本次创建 Z09 出现，关闭即不可恢复；Provider/System Secret 回执不含本次或历史明文。
-
-## 15. 焦点、键盘与浮层
-
-焦点层级：Base(1) → Route overlay/full-screen(2) → Combobox/Date/Popover/Filter Sheet(3) → K01(4) → Z10(5)。最内层先处理 Escape。
-
-- 首个 Tab 是 skip link；之后 Sidebar→Topbar→Heading→Filter→Table→Pagination→overlay。
-- Drawer/Modal/full-screen 锁 Tab；背景 `inert`；初焦标题，400 初焦首错。
-- 每次保存 `returnFocusKey={route,recordId,action}`；触发行消失则归 L05。
-- Combobox 用 Arrow keys/Enter/Escape，加载/空/403 有文字；不退化为 ID text input。
-- 图标按钮有 accessible name；装饰 SVG `aria-hidden`；状态含文字+图标/形状。
-- table 有 caption、scope、aria-sort；横滚壳可聚焦；selected 有 `aria-selected`。
-- Form label/description/error/required 完整关联；错误摘要 `role=alert`；S06 `aria-live=polite`。
-- 200% 文字缩放仍可完成任务；所有 target 至少 44×44；不能 hover-only。
-
-## 16. Overflow 与响应规则
-
-| Owner | Desktop | Mobile |
-|---|---|---|
-| S02 | 248px 固定 | `min(320px,88vw)` Drawer |
-| S05/U05/X04 | 紧凑 tabs | 自身横滚 |
-| L06/U06–U08/X05 | table shell 横滚 | 保留主字段与行详情 |
-| U04 | 正常图宽 | 图内 pan/reflow |
-| D/E/M/Q | 560–840px Modal/Drawer | full-screen |
-| P/R/C/X | full-screen，content 1120px | full-screen single column |
-
-长 ID/code/URL 在自身 cell 截断/换行+Copy；JSON wrap；关系链换行。根不能依赖 `overflow:hidden` 掩盖错误宽度。
-
-## 17. Motion 与 reduced motion
+| Row hover | 140ms ease-out | `bg-hover`，不位移、不缩放 |
+| Button/field | 160ms ease-out | 背景/边框/文字颜色过渡 |
+| Popover | 160ms ease-out | opacity + translateY(2px→0) |
+| Drawer | 240ms cubic-bezier(.2,.8,.2,1) | 单轴 x 12px→0 + opacity |
+| Bottom Sheet | 240ms 同上 | 单轴 y 16px→0 + opacity |
+| Paper enter | 220ms ease-out | y 4px→0 + opacity；仅首次路由进入 |
+| 状态替换 | 180ms ease-out | opacity；不改变容器高度 |
+| Save/Copy success | 180ms | 图标/文字替换并由 live region 播报 |
 
 ```css
-@keyframes paper-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-@keyframes quiet-pulse { 0%,100% { opacity: .48; } 50% { opacity: .72; } }
+@keyframes paper-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes quiet-pulse {
+  0%, 100% { opacity: 0.48; }
+  50% { opacity: 0.72; }
+}
+
 .motion-paper-enter { animation: paper-enter 220ms ease-out both; }
 .motion-skeleton { animation: quiet-pulse 1200ms ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
-  *,*::before,*::after { scroll-behavior:auto!important; animation-duration:1ms!important; animation-iteration-count:1!important; transition-duration:1ms!important; }
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }
 ```
 
-Drawer/Sheet 240ms 单轴；Popover 160ms；row hover 140ms；状态替换 180ms。Skeleton 不扫光；没有 stagger、glow 或无限装饰旋转。
+reduced motion 下 Drawer/Sheet 直接显隐，不做位移；焦点、live region、loading 文案保持工作。不可用 `transition-all`，只声明实际变化属性。
 
-## 18. 可编码 React / Tailwind 4 片段
+---
 
-```tsx
-export function AdminFullScreenForm({ title, children, footer }:{
-  title:string; children:React.ReactNode; footer:React.ReactNode;
-}) {
-  return <section role="dialog" aria-modal="true" aria-labelledby="panel-title" className="fixed inset-0 z-50 grid grid-rows-[64px_minmax(0,1fr)_64px] bg-paper text-body">
-    <header className="flex items-center border-b border-paper-border bg-paper px-4 lg:px-10">
-      <button className="min-h-11 rounded-sm px-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">返回</button>
-      <h1 id="panel-title" tabIndex={-1} className="ml-3 font-serif text-[28px] font-semibold text-ink lg:text-[32px]">{title}</h1>
-    </header>
-    <div className="min-h-0 overflow-y-auto overflow-x-clip px-4 py-6 lg:px-10 lg:py-8"><div className="mx-auto max-w-[1120px] space-y-8">{children}</div></div>
-    <footer className="border-t border-paper-border bg-paper px-4 pb-[env(safe-area-inset-bottom)] lg:px-10"><div className="mx-auto flex h-16 max-w-[1120px] items-center justify-end gap-3">{footer}</div></footer>
-  </section>;
-}
-```
+## 11. 键盘、焦点与 Overlay 层级
 
-```tsx
-export function Field({ id,label,description,error,children }:{
-  id:string; label:string; description?:string; error?:string; children:React.ReactNode;
-}) {
-  const describedBy=[description&&`${id}-description`,error&&`${id}-error`].filter(Boolean).join(" ")||undefined;
-  return <div className="space-y-2" data-invalid={Boolean(error)}>
-    <label htmlFor={id} className="block text-sm font-medium text-ink">{label}</label>
-    {description&&<p id={`${id}-description`} className="text-xs leading-5 text-secondary">{description}</p>}
-    <div data-control-id={id} data-describedby={describedBy}>{children}</div>
-    {error&&<p id={`${id}-error`} role="alert" className="text-sm text-error">{error}</p>}
-  </div>;
-}
-```
+焦点层级：Base（1）→ Route Detail/Full-screen（2）→ Combobox/Popover/Filter Sheet（3）→ Sensitive Confirm（4）→ Dirty Guard（5）。最内层先响应 Escape。
 
-实际 control 必须把 `id/aria-describedby/aria-invalid` 传给 input；上例的 wrapper 不代替原生关联。Refine hooks 负责 getOne/list/invalidate/useCan，不引入默认 CRUD DOM。
+- 首个可聚焦元素是 Skip Link；顺序为 Sidebar → Header → Filter → Table → Pagination → Overlay。
+- Drawer/Dialog/Sheet 锁 Tab，背景 `inert`；初焦标题，400 初焦首错，409 初焦冲突摘要。
+- 保存 `returnFocusKey={route, recordId, action}`；原行消失则回结果摘要。
+- Combobox 支持 Arrow/Enter/Escape，loading/empty/403 均有文字。
+- 表格有 caption、`scope="col"`、`aria-sort`；横滚壳可聚焦。
+- 所有 target 至少 44×44；200% 文字缩放不遮挡主操作；不能存在 hover-only 功能。
+- Modal 遮罩可关闭仅适用于无脏数据、无进行中提交的安全场景；否则先进入 Dirty Guard。
 
-## 19. 编号覆盖与实现门槛
+---
 
-编号全集：
+## 12. 页面级高保真验收要点
 
-- Shell：S01, S02, S03, S04, S05, S06。
-- List：L01, L02, L03, L04, L05, L06, L07, L08, L09, L10。
-- Detail：D01, D02, D03, D04, D05, D06, D07。
-- Typed Form：E01, E02, E03, E04, E05, E06, E07。
-- Confirmation：K01, K02, K03, K04, K05, K06。
-- Provider：P01, P02, P03, P04, P05, P06, P07, P08, P09, P10, P11。
-- Model：M01, M02, M03, M04, M05, M06, M07, M08。
-- Pricing：R01, R02, R03, R04, R05, R06, R07, R08, R09。
-- Usage：U01, U02, U03, U04, U05, U06, U07, U08, U09。
-- Request：Q01, Q02, Q03, Q04, Q05, Q06, Q07, Q08, Q09。
-- Reconciliation：C01, C02, C03, C04, C05, C06, C07, C08, C09。
-- Role：X01, X02, X03, X04, X05, X06, X07。
-- Storage：T01, T02, T03, T04, T05, T06, T07。
-- State：Z01, Z02, Z03, Z04, Z05, Z06, Z07, Z08, Z09, Z10。
+### 12.1 Dashboard
 
-### Acceptance checklist
+- 只显示真实 User、Workspace、Story 数量/状态与最近 Story/操作；失败不伪装为 0。
+- 指标为 flat band 而非卡片海；条目可跳转到带筛选的 canonical Resource。
 
-- [ ] Light/Dark 完整映射本文 token；组件无孤立色值、cc-switch 蓝灰、渐变或 glow。
-- [ ] 1440×1000 的 248px Sidebar、1120px 复杂内容、单一 dashed paper、局部 table 横滚成立。
-- [ ] 390×844 的 Drawer/Filter Sheet/full-screen/safe-area/96px 末字段余量成立，根无横溢。
-- [ ] 列表真实行→getOne→详情→预填表单→回执；无手填关系 ID、模板 ID 或通用 JSON CRUD。
-- [ ] Typed Form 按 string/enum/bool/date/int/money/array/relation/JSON/Secret 显式选控件。
-- [ ] Provider P01–P11、Pricing R01–R09、Usage U01–U09、Request Q01–Q09 保留 cc-switch 骨架并完成暖纸换肤。
-- [ ] Usage 摘要/趋势/统计来自真实聚合；失败为“暂不可用”，unknown Token 不为 0。
-- [ ] Provider/System Secret 不回显；Gateway Key 只在 Z09 显示一次；Audit 脱敏。
-- [ ] micro-USD 只以安全整数提交；Pricing 新版本；Ledger/Audit/Usage/Request 无修改/删除入口。
-- [ ] Story 关系和 Workflow provenance 是具名只读投影；503 无 SQLite/JSON/旧表回退。
-- [ ] 400/401/403/404/409/500/503/Success/Dirty 均有恢复与焦点策略。
-- [ ] 键盘、focus trap/return、Escape nesting、labels、caption、aria-sort、live region、200% zoom、reduced motion 通过。
+### 12.2 Workspace / Story / User
+
+- User → Workspace → Story 双向具名跳转；返回保留 query、页码、滚动和焦点。
+- Workspace owner 只读，Story author/workspace/content/version/provenance/计数只读。
+- 停用/归档不以“删除”文案出现；所有高风险动作二次确认并可进入 Audit。
+
+### 12.3 Admin / Role / Permission
+
+- Admin password 永不回填；角色变更显示 diff 和影响。
+- 内置 Role 明确保护；Permission 页面显示“由系统发布管理”且无 CRUD。
+- Permission matrix 在移动端只让矩阵容器横滚，首列 sticky，checkbox 有完整 Label。
+
+### 12.4 Storage / Audit
+
+- Storage capability、object key、MIME、size、time 清晰可读；不显示 endpoint secret/bucket credential。
+- 删除要求完整 key；Preview 仅安全图片/文本/PDF，不执行 HTML/script。
+- Audit append-only、before/after 脱敏、长 JSON 局部滚动；无 Password/Token/Session/file content。
+
+---
+
+## 13. 双视口与 Token 验收清单
+
+### 13.1 Token
+
+- [ ] Light/Dark 每个语义 token 均有映射；Dark 主按钮是暖白底 + 深暖字。
+- [ ] 页面组件无孤立 hex、渐变、glow、远程字体、Font Awesome 或 Tailwind 2 写法。
+- [ ] 当前本地字体仅使用真实存在的 400/500/600 字重。
+- [ ] 普通行无 shadow；仅浮层使用 `shadow-overlay`。
+- [ ] 状态均为文字 + dot/icon/shape，不只靠颜色。
+
+### 13.2 Desktop 1440×1000
+
+- [ ] Sidebar 精确 248px；Main `min-width:0`；页面无根级横滚。
+- [ ] 页面仅一个 dashed Paper；Filter 最多两行；首屏至少 6 个 52px 行。
+- [ ] Table 只在自身横滚；sticky header/主列使用实色 paper。
+- [ ] Detail 780–840px；背景 inert；关闭归焦。
+
+### 13.3 Mobile 390×844
+
+- [ ] 56px Header；8px canvas；16px Paper padding；触控目标 ≥44px。
+- [ ] Sidebar→Drawer、次筛选→Bottom Sheet、详情/表单→Full-screen。
+- [ ] Footer 包含 safe-area；末字段后 ≥96px；主操作不挤压 H1。
+- [ ] 根 `scrollWidth <= clientWidth`；Table/Matrix/JSON 仅局部滚动。
+- [ ] Drawer/Sheet/Dialog 有锁焦、Escape、遮罩规则与 return focus。
+
+### 13.4 范围
+
+- [ ] 只覆盖运营总览、Workspace、Story、User、Admin、Role、Permission、Storage、Audit。
+- [ ] 不新增、不重构 AI 模型、Token 计费、Gateway 页面；仅保证原入口不受导航影响。
+- [ ] 不暗示第二数据源、迁移/同步/ETL、SQLite、JSON DB、内存回退或 `app/(app)`。
+
+## 14. 交付结论
+
+本稿把目标截图的品牌资产转译为可编码的 Tailwind CSS 4 视觉系统：以暖纸画布、单一虚线 Paper、Serif/Sans/Mono 三层排版和 flat rows 建立稳定运营密度；以 780–840px Desktop Drawer 与 Mobile Full-screen 保持父列表上下文；以集中 Light/Dark token、44px 命中区、明确焦点层级和 reduced-motion 保证跨主题、跨视口与键盘使用的一致性。
+
+实现阶段应直接复用这里的语义 token 和组件结构，不应回退到默认 Refine DOM、通用 JSON CRUD、远程 CDN 或散落颜色。

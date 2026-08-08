@@ -44,6 +44,7 @@ describe("Story source mutations", () => {
       .mockResolvedValueOnce({
         rows: [{ id: "workspace-1", name: "旧名称", owner_id: 7 }],
       })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({
         rows: [{ id: "workspace-1", name: "新名称", owner_id: 7 }],
       })
@@ -52,7 +53,7 @@ describe("Story source mutations", () => {
         rows: [{ id: "workspace-1", name: "新名称", owner_id: "7" }],
       })
       .mockResolvedValueOnce({
-        rows: [{ stories: "2", characters: "3", scenes: "4", workflow_runs: "1" }],
+        rows: [{ stories: "2", latest_story_at: "2026-08-08T00:00:00Z" }],
       });
 
     const response = await handleStorySourceUpdate(
@@ -71,10 +72,10 @@ describe("Story source mutations", () => {
     );
     expect(storyQuery.mock.calls[1][0]).toContain("SET name = $2");
     expect(storyQuery.mock.calls[1][0]).not.toContain("story_workspaces");
-    expect(storyQuery.mock.calls[2][0]).toBe("INSERT AUDIT");
+    expect(storyQuery.mock.calls[3][0]).toBe("INSERT AUDIT");
   });
 
-  it("confirms a source story and cascades through the real bridge relation", async () => {
+  it("confirms only the canonical story and records an audit", async () => {
     storyQuery
       .mockResolvedValueOnce({
         rows: [
@@ -88,20 +89,12 @@ describe("Story source mutations", () => {
         ],
       })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({
         rows: [{ id: "story-1", review_status: "confirmed", status: "published" }],
       })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({
         rows: [{ id: "story-1", review_status: "confirmed", status: "published" }],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ id: "character-1", name: "角色" }],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ id: "scene-1", name: "场景" }],
       });
 
     const response = await handleStorySourceAction(
@@ -116,10 +109,76 @@ describe("Story source mutations", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(storyQuery.mock.calls[2][0]).toContain("story_workspace_scenes");
-    expect(storyQuery.mock.calls[3][0]).toContain(
+    expect(storyQuery.mock.calls[1][0]).toContain("story_workspace_stories");
+    expect(storyQuery.mock.calls[3][0]).toBe("INSERT AUDIT");
+    expect(storyQuery.mock.calls.flatMap((call) => call[0])).not.toContain(
       "story_workspace_story_characters",
     );
+  });
+
+  it("creates a workspace only for an active canonical user", async () => {
+    storyQuery
+      .mockResolvedValueOnce({ rows: [{ status: "active" }] })
+      .mockResolvedValueOnce({
+        rows: [{ id: "workspace-new", name: "运营工作区", owner_id: "7", status: "active" }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [{ id: "workspace-new", name: "运营工作区", owner_id: "7", status: "active" }],
+      })
+      .mockResolvedValueOnce({ rows: [{ stories: "0", latest_story_at: null }] });
+
+    const response = await handleStorySourceCreate(
+      new Request("http://localhost/api/admin/story-workspaces", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ownerId: 7, name: "运营工作区", settings: {} }),
+      }),
+      "story-workspaces",
+    );
+
+    expect(response.status).toBe(201);
+    expect(storyQuery.mock.calls[0][0]).toContain("FROM users");
+    expect(storyQuery.mock.calls[1][0]).toContain("story_workspace_workspaces");
+    expect(storyQuery.mock.calls[2][0]).toBe("INSERT AUDIT");
+  });
+
+  it("rejects workspace creation when the canonical owner is missing", async () => {
+    storyQuery.mockResolvedValueOnce({ rows: [] });
+    const response = await handleStorySourceCreate(
+      new Request("http://localhost/api/admin/story-workspaces", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ownerId: 999, name: "孤儿工作区", settings: {} }),
+      }),
+      "story-workspaces",
+    );
+    expect(response.status).toBe(409);
+    expect((await response.json()).error.code).toBe("STORY_WORKSPACE_OWNER_NOT_FOUND");
+  });
+
+  it("updates a user status without selecting password credentials", async () => {
+    storyQuery
+      .mockResolvedValueOnce({ rows: [{ id: "7", email: "user@example.com", status: "active" }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: "7", email: "user@example.com", status: "disabled" }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: "7", email: "user@example.com", status: "disabled" }] });
+
+    const response = await handleStorySourceUpdate(
+      new Request("http://localhost/api/admin/users/7", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "disabled" }),
+      }),
+      "users",
+      "7",
+    );
+
+    expect(response.status).toBe(200);
+    expect(storyQuery.mock.calls[0][0]).not.toContain("password_hash");
+    expect(storyQuery.mock.calls[1][0]).toContain("SET status = $2");
+    expect(storyQuery.mock.calls[3][0]).toBe("INSERT AUDIT");
   });
 
   it("rejects parallel CRUD creation with 405", async () => {

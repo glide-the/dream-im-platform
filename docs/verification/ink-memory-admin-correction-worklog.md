@@ -153,3 +153,57 @@ Optional Enhancers:
 
 - 为 cc-switch 当前桌面页建立“源组件/命令 → Admin 页面/服务/API → 测试”追踪矩阵，并保留对比截图。
 - 将模型同步拆成 `discover → preview diff → apply` 三段，Provider 首次注册可自动执行 discover，已有 Provider 的批量变化要求人工确认 apply。
+
+## Round 10：真实三表迁移、模型发现与定价同步实现
+
+Optimized Prompt:
+
+在 PRD 与交互设计已更新的前提下，为 `ink-admin-memory` 实现两个可独立验证、共同使用单一 PostgreSQL `ink-memory` 的生产级能力。
+
+第一，实现 `ink-dream-memory` 首批真实数据单向迁移。新增 canonical PostgreSQL DDL，只创建源原名 `users`、`story_workspace_workspaces`、`story_workspace_stories` 及精确 PK/unique/check/FK/index，不读取或合并 Admin 旧平行 Story 表。新增一次性 Node CLI，源只通过系统 `/usr/bin/sqlite3 -readonly` 的一致性临时快照抽取，Admin 运行时与依赖不得引入 SQLite；目标只接受显式 PostgreSQL `TEST_DATABASE_URL` 或经确认参数，拒绝数据库名不是 `ink-memory`、拒绝与配置的共享目标相同、默认 dry-run、`--apply` 才写。迁移顺序 users→workspaces→stories，保留 ID、nullable、枚举、时间、settings JSON 文本和敏感 password_hash 但绝不输出；单事务 conflict-fail，迁移后验证行数、PK fingerprint、sequence、枚举和 orphan，失败整体回滚。
+
+第二，实现 cc-switch 桌面交互的 Provider 模型发现与 models.dev 定价同步。服务端使用已保存加密 Credential 和 SSRF 白名单，按 cc-switch 候选规则请求受限 `/models`/`/v1/models`，限制超时、重定向、响应字节、模型数量和字段长度；生成带 version/expiry 的不可变 discover snapshot，分类新增、更新、未变化、冲突、未定价。Apply 重新校验 RBAC、Origin、Provider/snapshot 版本和 alias，事务写 `ai_models` 与审计；不自动删除消失模型，失败不回滚 Provider。models.dev 服务读取可信目录，做 exact/normalized/ambiguous/unmatched 匹配，配置最多 6 小时节流；Apply 只插入带 source metadata 的新 `ai_pricing_rules` 版本，禁止覆盖历史或将未匹配价格设为 0。
+
+UI 必须采用 cc-switch 桌面工作台：Provider 单列卡片常显同步/Usage/编辑；新增编辑为 fixed 全窗口层覆盖 Admin 侧栏、固定 Header/Footer、中段滚动；Provider 保存成功后自动 discover，并把“已保存”和“发现结果”分别反馈；discover 与 Pricing sync 使用全窗口 diff/apply；Usage 保持 Provider→Model URL 级联和 Request Drawer 上下文。所有 Route Handler 只做 Session/RBAC/Zod/Origin 和 service 编排；Secret 永不回显。补充 unit/mock contract、一次性 PostgreSQL真实源同步、Admin Story 查询/受控写、Provider discover/pricing 版本、1440×1000 与 390×844 Playwright。不得使用用户真实 Token、不得修改源项目、不得写共享 5433。
+
+Optional Enhancers:
+
+- 迁移 CLI 把 schema/count/fingerprint 结果以无 PII JSON receipt 输出，便于审计和 CI 保存。
+- Provider discover 首版可同步完成后立即返回 snapshot，不必引入队列基础设施；UI 仍用阶段状态和可重试语义，未来可无缝替换后台 job。
+## Round 11 — isolated PostgreSQL verification and desktop QA
+
+Optimized Prompt:
+
+Act as the release-verification owner for the Ink Memory Admin correction. Verify the completed one-database PostgreSQL integration, cc-switch-derived Provider/model discovery, versioned models.dev pricing sync, and fixed full-window desktop interaction without touching the shared PostgreSQL instance on port 5433. First preserve the successful source-read-only import evidence from the disposable PostgreSQL target on port 55432: migration 0000–0009 applied, dry-run passed, explicit apply imported 28 users, 12 workspaces, and 4 Stories, primary-key fingerprints matched, all three orphan counts were zero, and a repeat import was rejected because the target was non-empty. Then run the repository-prescribed environment check, TypeScript compiler, ESLint, unit tests, production build, focused Playwright tests, isolated PostgreSQL integration checks, and visual checks at 1440×1000 and 390×844. Use real server sessions for authenticated flows, mock only external Provider/models.dev network calls in ordinary UI tests, capture loading/empty/error/conflict/success and document-level overflow behavior, and verify Provider secrets never render. Verify `/admin` redirects without a Session, RBAC remains enforced by the server, Story repositories operate against canonical `users`, `story_workspace_workspaces`, and `story_workspace_stories`, Storage remains healthy, and removed PWA routes remain 404. Fix regressions found within the requested scope, rerun the narrow failing lane, then rerun the complete required command matrix. Record exact commands, test counts, viewport results, skipped external scenarios, and cleanup of the exact disposable database container. Never print credentials, never write the source SQLite database, never operate on port 5433, and never weaken immutable Usage/Ledger/Audit behavior.
+
+Optional Enhancers:
+
+- Add focused unit coverage for snapshot expiry, ambiguous price matching, import target refusal, and secret-free API payloads.
+- Save Playwright screenshots only under the repository’s ignored test artifact directory and inspect both target viewports before cleanup.
+- Treat any environment check failure caused by operator-owned missing external credentials separately from source-code regressions, with exact evidence.
+
+Implementation note: Round 11 开始后的 schema-source 复核将 canonical 三表从手写的 `0009` 尾部拆到由 `app/lib/db/schema.ts` 生成的 `0010_story_source_canonical.sql`；最终隔离验收使用 `0000–0010`。此前 `0000–0009` 实迁的表语义与数据指纹证据仍有效，但不再是最终迁移文件布局。
+
+## Round 11 执行证据
+
+- 真实源导入：系统原生 SQLite 以 `mode=ro` 生成一致性临时快照；dry-run 与 `--apply` 均通过，28 users / 12 workspaces / 4 stories 的数量和 PK fingerprints 一致，三类 orphan 均为 0；重复导入按 non-empty conflict-fail 拒绝。
+- Schema：`app/lib/db/schema.ts` 是 canonical 三表与同步快照表的唯一来源；全新 PostgreSQL 16 `ink-memory` 从 `0000` 到 `0010` 迁移通过。
+- 代码门禁：`pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm build`、`git diff --check` 全部通过；Vitest 30 files / 169 tests 全部通过。
+- Playwright：隔离 PostgreSQL主场景 1/1、Session/Bootstrap 6/6；14 张截图覆盖 1440×1000 和 390×844，所有目标页根节点横向溢出 ≤ 1px。
+- 数据后置证据：2 admins、23 audits、1 provider discovery snapshot、1 pricing sync snapshot、1 条 `source=models.dev` 价格版本；目标 Story 为 published/confirmed。
+- 发现并修复 Provider `updated_at` PostgreSQL 微秒与 Node `Date` 毫秒精度导致的误报 409；改为数据库内精确版本比较，并从空库重跑成功。
+- 安全：Provider Secret 未进入 API、截图、文档或审计；外部上游只用本机 mock，models.dev 未走实网；Storage、Ledger、Usage 和 Audit 保持原有约束。
+- 清理：精确命名的一次性容器已停止并因 `--rm` 删除，55432/3010 无监听；共享 5433 仅保留原有 Docker 监听，未连接、迁移、清理或写入。
+
+## Round 12 — Pricing 版本窗口与同步后列表一致性修复
+
+Optimized Prompt:
+
+修复 Ink Memory Admin Pricing 的两个可复现生产交互缺陷。第一，创建价格版本时如果相同 Model + User Tier 已有 `active` 且 `effective_to IS NULL` 的当前版本，独立创建页必须明确加载并展示它，将本次操作识别为“替换当前版本”，要求新 `effectiveFrom` 晚于当前版本开始时间，在同一 PostgreSQL 事务中把旧版本 `effective_to` 设置为新版本开始时间并插入新版本；不得依赖用户从列表的“新版本”入口携带隐藏参数，也不得出现未说明的窗口重叠 409。若存在未来窗口、并发更新或真正无法安全衔接的窗口，继续返回 409，同时在表单保留输入并显示冲突版本与恢复动作。第二，models.dev 差异应用成功后，必须主动失效 Refine/React Query 的 `pricing-rules` list/detail cache，等待失效完成后再导航回 Pricing 列表，并确保服务端排序和响应包含新 `source=models.dev` 版本，使新增行无需手工刷新即可出现。
+
+保持价格历史只追加、micro-USD 整数、审计、RBAC、Origin、Secret 和单 PostgreSQL 约束。补充单元测试与隔离 PostgreSQL/Playwright 回归：覆盖直接创建页自动替换当前版本、显式 replaces 参数、真实重叠仍为 409、models.dev apply 后立即显示新增版本，以及 1440×1000/390×844 无回归。不得触碰共享 5433 或真实生产数据。
+
+Optional Enhancers:
+
+- 在创建页增加“将结束的当前版本”摘要，显示 Model、Tier、四类价格和当前生效时间。
+- 成功返回中统一携带 `replaced_pricing_rule_id`，供列表 success receipt 和审计定位。

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   type CrudFilter,
   useCan,
@@ -561,6 +563,25 @@ function statusClass(value: unknown) {
   return "border-border bg-bg-secondary text-text-secondary";
 }
 
+function relatedCellHref(resource: string, key: string, row: Record<string, unknown>) {
+  if (resource === "users" && key === "workspace_count") {
+    return `/admin/story/workspaces?owner_id=${encodeURIComponent(String(row.id))}`;
+  }
+  if (resource === "users" && key === "story_count") {
+    return `/admin/story/stories?author_id=${encodeURIComponent(String(row.id))}`;
+  }
+  if (resource === "story-workspaces" && ["owner_id", "owner_email"].includes(key)) {
+    return `/admin/resources/users?email=${encodeURIComponent(String(row.owner_email ?? ""))}`;
+  }
+  if (["stories", "story-stories"].includes(resource) && ["workspace_id", "workspace_name"].includes(key)) {
+    return `/admin/story/workspaces?name=${encodeURIComponent(String(row.workspace_name ?? ""))}`;
+  }
+  if (["stories", "story-stories"].includes(resource) && ["author_id", "author_email"].includes(key)) {
+    return `/admin/resources/users?email=${encodeURIComponent(String(row.author_email ?? ""))}`;
+  }
+  return undefined;
+}
+
 function renderCell(value: unknown, format?: AdminTableColumn["format"]) {
   if (value === null || value === undefined || value === "") return "—";
   if (format === "money") return `$${microUsdToUsd(value)}`;
@@ -597,13 +618,22 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
     versionedCreate = false,
     commands = [],
   } = props;
+  const searchParams = useSearchParams();
   const access = useCan({ resource, action: "create" });
   const invalidate = useInvalidate();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const [page, setPage] = useState(1);
-  const [draftFilters, setDraftFilters] = useState<Record<string, string>>({});
-  const [appliedFilters, setAppliedFilters] = useState<CrudFilter[]>([]);
+  const [draftFilters, setDraftFilters] = useState<Record<string, string>>(() => Object.fromEntries(
+    filterDefinitions.flatMap((filter) => {
+      const value = searchParams.get(filter.field)?.trim();
+      return value ? [[filter.field, value]] : [];
+    }),
+  ));
+  const [appliedFilters, setAppliedFilters] = useState<CrudFilter[]>(() => filterDefinitions.flatMap((filter) => {
+    const value = searchParams.get(filter.field)?.trim();
+    return value ? [{ field: filter.field, operator: filter.operator ?? "contains", value } as CrudFilter] : [];
+  }));
   const [mode, setMode] = useState<OverlayMode | null>(null);
   const [record, setRecord] = useState<Record<string, unknown> | null>(null);
   const [values, setValues] = useState<FormValues>(() => valuesFromRecord(fields, undefined, createDefaults, "create"));
@@ -807,7 +837,11 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
       {success ? <p className="m-4 border border-success/35 bg-success-light p-3 text-sm text-success" role="status">{success}</p> : null}
       <div className="max-w-full overflow-x-auto" tabIndex={0} aria-label={`${title}数据表，可横向滚动`}>
         <table className="min-w-full border-collapse text-left text-sm"><caption className="sr-only">{title}；{description}</caption><thead><tr className="border-b border-border bg-bg-secondary/45">{columns.map((column) => <th key={column.key} scope="col" className="whitespace-nowrap px-4 py-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">{column.label}</th>)}<th scope="col" className="whitespace-nowrap px-4 py-3 text-right font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">操作</th></tr></thead>
-          <tbody>{query.isLoading ? Array.from({ length: 5 }).map((_, index) => <tr key={index} className="border-b border-border" aria-hidden="true"><td colSpan={columns.length + 1} className="px-4 py-4"><span className="block h-4 max-w-3xl animate-pulse bg-bg-secondary" /></td></tr>) : null}{result.data.map((row, index) => <tr key={String(row.id ?? index)} className="border-b border-border last:border-0 hover:bg-bg-secondary/35">{columns.map((column) => <td key={column.key} className={`max-w-[300px] px-4 py-3.5 text-text-secondary ${column.key === "id" ? "font-mono text-[11px]" : ""}`}><span className={column.format === "status" ? `inline-flex whitespace-nowrap border px-2 py-1 text-xs font-semibold ${statusClass(row[column.key])}` : "block truncate"} title={renderCell(row[column.key], column.format)}>{renderCell(row[column.key], column.format)}</span></td>)}<td className="whitespace-nowrap px-4 py-3 text-right"><button type="button" onClick={(event) => loadRecord(String(row.id), "detail", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold underline">查看</button>{canEdit && access.data?.can ? <button type="button" onClick={(event) => loadRecord(String(row.id), "edit", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold underline">{versionedCreate ? "关闭/停用" : "编辑"}</button> : null}{versionedCreate && access.data?.can ? <button type="button" onClick={(event) => openVersion(event, row)} className="min-h-10 px-2 text-xs font-semibold underline">创建新版本</button> : null}{commands.map((command) => <button key={command.action} type="button" onClick={(event) => openCommand(event, row, command)} className={`min-h-10 px-2 text-xs font-semibold underline ${command.tone === "danger" ? "text-danger" : command.tone === "success" ? "text-success" : ""}`}>{command.label}</button>)}{canDelete && access.data?.can ? <button type="button" onClick={(event) => loadRecord(String(row.id), "delete", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold text-danger underline">{deleteLabel}</button> : null}</td></tr>)}{!query.isLoading && !query.error && result.data.length === 0 ? <tr><td colSpan={columns.length + 1} className="px-5 py-14 text-center"><p className="font-display text-lg font-semibold">暂无匹配记录</p><p className="mt-2 text-sm text-text-tertiary">保留当前筛选；可清除筛选或等待真实数据产生。</p></td></tr> : null}</tbody>
+          <tbody>{query.isLoading ? Array.from({ length: 5 }).map((_, index) => <tr key={index} className="border-b border-border" aria-hidden="true"><td colSpan={columns.length + 1} className="px-4 py-4"><span className="block h-4 max-w-3xl animate-pulse bg-bg-secondary" /></td></tr>) : null}{result.data.map((row, index) => <tr key={String(row.id ?? index)} className="border-b border-border last:border-0 hover:bg-bg-secondary/35">{columns.map((column) => {
+            const content = <span className={column.format === "status" ? `inline-flex whitespace-nowrap border px-2 py-1 text-xs font-semibold ${statusClass(row[column.key])}` : "block truncate"} title={renderCell(row[column.key], column.format)}>{renderCell(row[column.key], column.format)}</span>;
+            const href = relatedCellHref(resource, column.key, row);
+            return <td key={column.key} className={`max-w-[300px] px-4 py-3.5 text-text-secondary ${column.key === "id" ? "font-mono text-[11px]" : ""}`}>{href ? <Link href={href} className="underline decoration-border hover:text-text-primary">{content}</Link> : content}</td>;
+          })}<td className="whitespace-nowrap px-4 py-3 text-right"><button type="button" onClick={(event) => loadRecord(String(row.id), "detail", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold underline">查看</button>{canEdit && access.data?.can ? <button type="button" onClick={(event) => loadRecord(String(row.id), "edit", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold underline">{versionedCreate ? "关闭/停用" : "编辑"}</button> : null}{versionedCreate && access.data?.can ? <button type="button" onClick={(event) => openVersion(event, row)} className="min-h-10 px-2 text-xs font-semibold underline">创建新版本</button> : null}{commands.map((command) => <button key={command.action} type="button" onClick={(event) => openCommand(event, row, command)} className={`min-h-10 px-2 text-xs font-semibold underline ${command.tone === "danger" ? "text-danger" : command.tone === "success" ? "text-success" : ""}`}>{command.label}</button>)}{canDelete && access.data?.can ? <button type="button" onClick={(event) => loadRecord(String(row.id), "delete", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold text-danger underline">{deleteLabel}</button> : null}</td></tr>)}{!query.isLoading && !query.error && result.data.length === 0 ? <tr><td colSpan={columns.length + 1} className="px-5 py-14 text-center"><p className="font-display text-lg font-semibold">暂无匹配记录</p><p className="mt-2 text-sm text-text-tertiary">保留当前筛选；可清除筛选或等待真实数据产生。</p></td></tr> : null}</tbody>
         </table>
       </div>
       <footer className="flex items-center justify-between border-t border-border px-4 py-4"><button type="button" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="min-h-10 border border-border px-4 text-xs font-semibold disabled:opacity-40">上一页</button><span className="font-mono text-[10px] text-text-tertiary">第 {page} / {pages} 页</span><button type="button" disabled={page >= pages} onClick={() => setPage((current) => Math.min(pages, current + 1))} className="min-h-10 border border-border px-4 text-xs font-semibold disabled:opacity-40">下一页</button></footer>

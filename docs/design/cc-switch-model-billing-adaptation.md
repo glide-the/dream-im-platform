@@ -16,11 +16,21 @@
 | `AddProviderDialog.tsx` / `EditProviderDialog.tsx` / `src/components/providers/forms/ProviderForm.tsx` | Provider 表单按预设、基础信息、协议字段、高级配置组织；编辑初值与用户草稿隔离 | `/admin/models/providers/new`、`/[id]/edit` 独立页面；服务端值只在进入时装载一次，重新获取不得覆盖脏表单 |
 | `BasicFormFields.tsx` / `ApiKeyInput.tsx` | 名称/备注网格、图标选择、密钥 password 输入与显隐 | 名称/Code/协议/Endpoint/凭据分区；已配置凭据仅显示指纹与“已配置”，不回填 Secret |
 | `EndpointField.tsx` / `ModelDropdown.tsx` | Endpoint 与模型不是自由 JSON，而是具名控件与可选项 | Endpoint 使用 URL 输入；模型使用真实 Provider 关系选择与常用型号 Dropdown，并允许受控自定义型号 |
+| `ModelInputWithFetch.tsx` / `src/lib/api/model-fetch.ts` / `src-tauri/src/services/model_fetch.rs` | 在 Provider 表单点击“获取模型”后，使用 Credential 从 OpenAI-compatible `/v1/models` 候选端点读取、按 owned_by 分组并回填模型字段 | Admin 首次保存 Provider 后自动执行同一 discover，并保留卡片显式“同步模型”；服务端解密已保存 Credential，前端只接收脱敏候选与 diff |
+| `modelsDevPricing.ts` / `ModelsDevAutoSyncPanel.tsx` / `modelsDevAutoSync.ts` / `main.tsx` | 从 `https://models.dev/api.json` 选择价格；开启后应用启动时同步，跨 WebView 重建最多每 6 小时一次 | Admin 提供 models.dev 目录、选择和 6h 节流；价格语义改为创建新版本，不覆盖已生效/历史规则 |
 | `docs/user-manual/assets/image-20260108011730105.png` | Usage 顶部时间范围和四类事实指标，趋势图承接概览 | `/admin/billing/usage` 顶部筛选 + 事实摘要 + 趋势；无数据时显示 0 与空态说明，不生成指标 |
 | `docs/user-manual/assets/image-20260108011859974.png` | 请求日志、Provider 统计、模型统计页签；应用/Provider/模型/时间筛选 | 使用记录按相同结构组织；筛选映射真实白名单 SQL 字段 |
 | `UsageDashboard.tsx` / `UsageHero.tsx` / `UsageTrendChart.tsx` | 全局筛选驱动 Hero、趋势和三个统计页签；刷新频率可控 | 相同联动；管理员可关闭自动刷新，刷新时保持选择与表格页码规则 |
 | `RequestLogTable.tsx` / `RequestDetailPanel.tsx` / `ProviderStatsTable.tsx` / `ModelStatsTable.tsx` | 请求、Provider、Model 三页签和请求详情分区 | Gateway/Usage 共享只读详情 Drawer，增加价格快照、结算与账本关联 |
 | `PricingConfigPanel.tsx` / `PricingEditModal.tsx` | 定价列表内新增/编辑入口，定价使用全屏表单并按 Token 类型录入 | `/admin/models/pricing` 使用全屏“创建价格版本”；已生效版本只允许结束/停用，不允许改价或删除 |
+
+### 1.1 自动同步事实纠偏
+
+cc-switch 的当前代码存在两种不同的“同步”，不能混为一句泛化描述：
+
+1. **模型发现**：`ModelInputWithFetch` 暴露明确的下载按钮，调用 Tauri `fetch_models_for_config`。Rust `model_fetch.rs` 要求 API Key，根据 `modelsUrl override`、base path 与兼容后缀生成 `/models`/`/v1/models` 候选，成功后返回排序模型。cc-switch 本身不是对所有 Provider 在保存后无条件后台创建模型记录。
+2. **价格自动同步**：`syncModelsDevPricingOnStartup` 是真实自动流程；启用后从 models.dev 拉取所选/常用模型，最多每 6 小时一次，并调用本地 batch pricing update。cc-switch 本地工具允许同模型 ID 价格被覆盖。
+3. **Ink Memory 产品要求**：为满足服务端 Provider 注册表的可用性，首次保存后把 cc-switch 的“获取模型”自动触发一次，仍生成可审查 diff；价格继续使用 cc-switch 自动目录体验，但 PostgreSQL 财务历史只能创建版本，不能照搬覆盖行为。
 
 ## 2. 不直接复制的差异
 
@@ -42,6 +52,8 @@ cc-switch 是本地代理配置工具，Ink Memory 是 PostgreSQL 多用户运�
 |---|---|---|
 | `ProviderList` / `ProviderCard` / `ProviderActions` / `ProviderHealthBadge` | Provider 注册表、行内启停、测试、编辑、监控入口 | 复用组件分层和交互顺序；数据改由 Refine/API 获取，拖拽排序在没有持久化优先级前不呈现 |
 | `ProviderPresetSelector` / `ProviderForm` / `ApiKeySection` / `EndpointField` / `ModelDropdown` | Provider/Model 独立配置页 | 复用预设驱动和具名控件；Secret 只写加密，模型下拉来自当前 Provider/受控内置 catalog |
+| `ModelInputWithFetch` / Rust `model_fetch` | Provider model discover service、snapshot/diff | 复用 endpoint 候选和 owned_by 分组语义；改为服务端 stored-secret 调用、SSRF/response limit、job/snapshot、事务 apply |
+| `ModelsDevAutoSyncPanel` / `modelsDevAutoSync` / `modelsDevPricing` | Pricing catalog sync service 与全窗口 review | 复用 models.dev flatten/filter/common-model/6h throttle；覆盖式本地保存改成不可变价格版本 |
 | `ProxyPanel` / `ProxyToggle` / `FailoverToggle` | Gateway 运行状态与路由健康 | 不复制桌面代理开关；改为展示 Next.js 兼容端点、Provider active 状态、最近请求和可审计的启停命令 |
 | Rust `proxy/providers/*`、`model_mapper`、`usage/parser`、`error_mapper` | `app/lib/gateway/**`、`app/lib/billing/**` | 按现有 Anthropic/OpenAI handler 逐项对齐协议、流式事件、Token、错误和模型 alias；不得引入 Rust/Tauri runtime |
 | `UsageDashboard` 及其 Hero/Trend/Table/Detail | `/admin/billing/usage` | 复用筛选联动、三页签、Drawer 详情和刷新规则；SQL 聚合只读取 `gateway_requests` |
@@ -51,15 +63,28 @@ cc-switch 是本地代理配置工具，Ink Memory 是 PostgreSQL 多用户运�
 
 | 操作 | 容器 | 原因与行为 |
 |---|---|---|
-| Provider 创建/编辑/凭据轮换 | 独立路由全屏页 `/admin/models/providers/new`、`/[id]/edit` | 字段跨基础、连接、凭据和运行策略多个分区；固定底部操作；关闭脏表单需确认 |
+| Provider 创建/编辑/凭据轮换 | 独立路由 + fixed 全窗口层 `/admin/models/providers/new`、`/[id]/edit` | 覆盖 Admin 侧栏，字段跨基础、连接、凭据、discover 和运行策略多个分区；固定头尾；关闭脏表单需确认 |
+| Provider 模型发现与差异应用 | 全窗口层 `/admin/models/providers/[id]/discover/[jobId]` | 保存后自动进入或由卡片打开；显示 job 进度、五类 diff、alias/财务确认和 snapshot 409 恢复 |
 | Model 创建/编辑 | 独立路由全屏页 `/admin/models/models/new`、`/[id]/edit` | 与 cc-switch Provider 设置保持同一配置语言；包含 Provider 关系、Model Dropdown、Token 上限、能力与启用影响 |
 | Pricing 新版本 | 独立路由全屏页 `/admin/models/pricing/new` | 财务高风险；必须展示旧版本、重叠检测、金额换算和影响摘要 |
+| models.dev 定价同步 | 全窗口层 `/admin/models/pricing/sync` | Provider/Model 选择、目录版本、匹配证据、四类价格和新版本 diff；only exact 默认选 |
 | Provider 停用、Model 停用、Pricing 结束生效 | 确认 Modal | 展示关联对象数量、影响范围、权限要求和不可逆/可恢复说明 |
 | Usage/Gateway Request 详情 | 右侧 Drawer；390px 变全屏 | 只读核对，在列表筛选上下文中快速返回；支持复制请求 ID 与跳转账本 |
 | Provider/Model 统计详情 | Drawer | 保持 Usage 仪表盘筛选与时间范围，不重置上下文 |
 | 定价删除 | 不提供 | 历史安全边界；仅未生效且未被引用的错误记录可走受控后台兼容流程，不开放通用 UI |
 
 Provider 卡片的 Endpoint Speed Test 被适配为纯 reachability；Model 卡片另提供 Credential/Model validation。前者不带 Secret，后者使用服务端加密 Secret 发送 1 Token 上限请求且不读取响应内容。cc-switch 的桌面“接管本机配置”ProxyToggle 不复制：Ink Memory Gateway 是部署后始终提供 `/v1/*` 的服务端代理，是否开放由部署环境、Gateway Key 与路由健康决定，而不是浏览器内开关。cc-switch 的本地 failover queue 也不能直接套用到当前唯一 alias→Provider 结算快照；若未来引入多上游候选，必须先新增版本化路由策略、逐尝试请求审计与费用归属，而不能在客户端静默切换。
+
+### 3.1 桌面交互定稿（1440×1000）
+
+- AI 模型中心顶部使用 56px sticky 域切换：Provider / Models / Pricing / 模型权限 / Usage；当前项用纸面实底/下划线和文字共同表达，不用默认 Tabs 胶囊海。
+- Provider 主区单列：工具行高度约 52px；卡片最小 112px，身份/事实/操作约 34%/44%/22%。身份显示 name/code/protocol/base URL；事实显示 Credential、health、discover、pricing coverage、recent requests；操作常显 sync/usage/edit。
+- 新增/编辑、discover review、Pricing sync 都使用 `position: fixed; inset: 0` 的全窗口层并覆盖 Admin 侧栏。Header 64px、Footer 72px；body 锁滚，只有中间内容滚动。该结构直接对应 cc-switch `FullScreenPanel`，但使用 URL 路由以支持刷新/后退和 RBAC 403。
+- Provider 保存后先呈现不可混淆的“Provider 已保存”receipt，再进入 discover。Discover progress 显示 queued/endpoint/auth/parse/diff 阶段，可后台继续；失败不回滚 Provider。
+- Discover diff 表展示新增、更新、未变化、冲突、未定价。Apply Footer 固定显示选中数、将创建/更新/跳过数、alias/价格风险与唯一主按钮；snapshot 过期只允许重新发现。
+- Usage 使用同一工作台上下文。Provider 卡片“查看用量”预填 Provider selector；Request Detail 为右侧 600px Drawer，关闭恢复筛选、页签、分页、滚动与焦点。
+
+390×844 下域切换自身横滚，Provider 卡片按身份→两列事实→常显动作垂直排列；所有全窗口层保持真全屏并使用 safe-area Footer；Request Drawer 变全屏。页面根不得横向溢出。
 
 ## 4. Provider 字段与控件
 
@@ -77,6 +102,8 @@ Provider 卡片的 Endpoint Speed Test 被适配为纯 reachability；Model 卡�
 | `config.authMode` | 详情键值 | 下拉 | `x-api-key` / `bearer` | 非 JSON 自由编辑 |
 | `config.outputTokenParam` | 详情键值 | 下拉 | `max_tokens` / `max_completion_tokens` | 只在适用协议显示 |
 | `config` 其他键 | 折叠 JSON 预览 | “高级配置”JSON 编辑器 | 必须为 object；保留受管键 | 只有未知扩展键使用 JSON；Secret 键拒绝提交 |
+| 保存后自动 discover | 卡片显示最近同步/从未同步 | Checkbox/Switch；新增默认开 | 只控制保存后是否排队；不进入 Provider 持久字段 payload 时由命令参数传递 | discover 失败不回滚 Provider；可后台继续/重试 |
+| discover 状态 | success/partial/failed + 时间/差异数 | 只读 job progress | 服务端 job/snapshot/audit | 只显示脱敏 endpoint 与 request/job ID |
 | `created_at` / `updated_at` | 本地化日期时间 | 不可编辑 | 服务端 | 详情审计区 |
 
 ## 5. Model 字段与控件
@@ -86,6 +113,7 @@ Provider 卡片的 Endpoint Speed Test 被适配为纯 reachability；Model 卡�
 | `provider_id` / `provider_code` | Provider 链接 + 协议标签 | 可搜索 Provider 下拉；编辑只读 | 真实 `/api/admin/providers`；只显示可读且非删除对象；FK 409 |
 | `code` | 主标识等宽文本 | 创建文本；编辑只读 | 2–80、code regex、全局唯一 |
 | `upstream_model` | 等宽文本 | 常用型号 Dropdown + 可自定义单行输入 | 1–200；实际可用性以上游 Provider 为准 |
+| discovery source | source/owned_by/last seen 标签 | Discover review 中只读证据 | Provider 最近 snapshot；手工值标“未验证” |
 | `display_name` | 主标题 | 单行文本 | 1–160 |
 | `context_window` | 千分位整数 + tokens | 数字输入 | 正整数或空 |
 | `max_output_tokens` | 千分位整数 + tokens | 数字输入 | 正整数或空；不得明显高于 context window，客户端提示、服务端为准 |
@@ -108,6 +136,8 @@ Model 卡片的“验证配置”不是表单字段：按钮需 `models.write`�
 | `effective_to` | 日期时间/“持续有效” | 可清空日期时间 | 必须晚于 from；重叠返回 409 并高亮冲突版本 |
 | `status` | active/disabled/expired 语义状态 | 新版本单选；旧版本只允许结束/停用 | 已生效价格不可原地编辑金额 |
 | 影响摘要 | 关联请求数、旧/新价格差、时间窗 | 只读确认区 | 仅展示真实查询；未知显示“暂不可计算”，不虚构 |
+
+models.dev 同步层额外字段：目录 provider/model ID（文本）、source ref/version/hash（只读）、match kind（exact/normalized/ambiguous/unmatched 选项徽标）、release date（日期）、四类 USD/1M 目录价（等宽金额）、目标 Model（真实 Combobox）、目标 Tier（选项）和 effective_from（带时区日期时间）。只有 exact 可默认勾选；Apply 对每个选中项插入新版本并返回 created/no-op/conflict receipt。
 
 ## 7. Usage 与 Gateway Request 展示规范
 
