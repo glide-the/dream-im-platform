@@ -256,3 +256,38 @@ Optional Enhancers:
 - 数据后置：fixture Request 仍为 `settlement_failed / UPSTREAM_STREAM_INTERRUPTED / reserved=1000000`；关联 Ledger 仍只有原 reserve 1 条；Gateway Request reconcile Audit 为 0；Gateway Key Audit 中带 `plaintextKey` 或 `gatewayBaseUrl` 的记录为 0。
 - 视觉：1440×1000 与 390×844 的 Gateway Key 页面根节点横向溢出 ≤ 1px；仅在一次性 Secret 回执关闭后保存截图到 `test-results/gateway-key-record-only/`。
 - 清理与边界：精确命名容器停止并因 `--rm` 删除，临时副本与诊断文件移入系统废纸篓；3012/55432 无监听。共享 3000/5433 保持原监听且未复用、迁移、清理或写入；`ink-dream-memory` 业务代码未修改，其既有未跟踪 `.claude/worktrees/` 保持原状。
+
+## Round 15 — 真实业务接入复核与订阅计费控制面
+
+Optimized Prompt:
+
+在 `/Users/dmeck/project/ink-admin-memory` 内完成一套可发布、可回滚、可证据化验收的真实业务运营与订阅计费控制面；`/Users/dmeck/project/ink-dream-memory` 全程只读。先逐项复核 Dream 的 ORM/schema、迁移、查询、API、类型、主外键、枚举与真实源数据库元数据，并复核 Admin 当前 schema、迁移、Repository、API、Refine Resource、Gateway、Billing、Storage、RBAC、Session 与审计实现，禁止依据表名推断。更新 `docs/verification/ink-dream-memory-data-integration-audit.md`，明确重复实体、缺表根因、canonical 映射、读写边界、外键冲突、分阶段迁移与回滚；不得删除旧表或运行破坏性迁移。
+
+在任何业务代码修改前，读取 `docs/prd/Ink & Memory UI Design v2.pdf`、`docs/prd/color_system/**` 和现有 PRD，先创建 `docs/prd/ink-memory-admin-prd-v3.md` 与 `docs/design/refine-admin-ui-v3-interaction-design.md`。PRD 必须定义 Subscription Plan、不可覆盖 Plan Version、Subscription 生命周期、Entitlement、周期 Allowance、Overage、Billing Account、append-only Ledger、可插拔支付边界，以及 `User → Subscription → Entitlement → Model Permission → Balance/Allowance → Gateway Request → Usage → Ledger` 资格链；交互稿必须用 PDF/颜色系统的精确设计 Token，覆盖所有指定页面、字段控件、状态、风险确认、1440×1000/390×844、可访问性和 Mermaid 流程，不得退化为默认 Refine CRUD 外观。
+
+实现阶段只修改 Admin：canonical Dream 业务资源继续直连源原名 PostgreSQL 表；新增 Admin 控制面专属订阅 schema、Drizzle 迁移、严格 Zod contract、Repository/Service、RBAC/审计 API、Refine 页面和集中设计 Token。金额使用整数 micro-USD；Plan Version、Usage、Ledger、Audit 只追加；Secret 只保存加密/哈希且永不回显。订阅开通、续费、升级、降级、暂停、取消、宽限与恢复必须经过事务化状态机和幂等边界。Gateway 调用前解析用户订阅、权益、模型 scope、RPM、Token/金额 allowance、overage 与余额；调用后保留价格/权益快照并通过现有预授权、Usage 与 Ledger 自动结算。Route Handler 只做 Session/RBAC、解析、Zod 和 service 编排；分页、排序和筛选使用服务端白名单。
+
+完成后创建 `docs/architecture/ink-dream-subscription-integration-change-list.md`，只描述 Dream 后续的 API、Billing Identity、Gateway/Key、Model Alias、套餐/额度/Usage 页面、错误码、环境变量、部署、类型、测试、监控、灰度和回滚，不修改 Dream。使用 `ink-admin-playwright-qa` 在明确命名、可删除的 PostgreSQL 16 `ink-memory` 上验证；绝不连接、迁移、清空或写入共享数据库。运行 env check、TypeScript、lint、unit、build、focused Playwright、隔离 PostgreSQL集成，以及 1440×1000/390×844 视觉和键盘检查。测试覆盖 401/403、真实 Dream 三表、FK/unique/state conflict、Plan/Version、全订阅生命周期、Entitlement/Allowance/Overage、Gateway/Usage/Ledger、Secret 脱敏、Storage 与已移除 PWA 404。最终报告给出精确路径、实现清单、迁移、测试数量、视口、未执行外部场景和风险，并明确确认 Dream 未修改、无 SQLite/内存回退、无 PWA 恢复、Storage 未删除、共享数据库未操作。
+
+Optional Enhancers:
+
+- 增加月度账单预览与 CSV 导出，但不得伪造支付成功或外部账单事实。
+- 为未来 Stripe、支付宝、微信支付预留 provider adapter 与幂等 webhook contract；默认不调用真实支付渠道。
+- 对订阅状态机、重复续费、并发升级和 webhook 幂等增加属性/并发测试。
+
+## Round 16 — PRD v3 与订阅运营交互设计
+
+Optimized Prompt:
+
+基于已经复核的 Dream canonical 数据边界、Admin 控制面能力和订阅缺口，先从 `docs/prd/Ink & Memory UI Design v2.pdf`、`docs/prd/color_system/**`、现有 PRD v2、交互设计 v2 与字段控件矩阵提取精确视觉和交互约束，再完成设计技能的 PRD → 结构草图 → 层级逻辑 → UI 规范四阶段。输入视觉必须来自 PDF 实际渲染，不使用虚构参考图；每个阶段都以此前输出为依赖并保存证据文件。
+
+最终创建 `docs/prd/ink-memory-admin-prd-v3.md`：明确产品定位、角色、真实 Dream 表/控制面边界、菜单路由、Resource/API/Repository/PostgreSQL 映射、RBAC、全状态、Secret/账务/可访问性/响应式、迁移灰度回滚和可自动测试验收。订阅域必须包含 Plan、不可覆盖 Plan Version、Subscription、Entitlement、周期 Allowance、Overage、Billing Account、append-only Ledger、trial/active/past_due/paused/cancel_at_period_end/cancelled/expired 生命周期、升级/降级/续费/暂停/取消/宽限/恢复，以及 `User → Subscription → Entitlement → Model Permission → Allowance/Balance → Gateway → Usage → Ledger`。支付保持可插拔边界，不声称已接第三方。
+
+同时创建 `docs/design/refine-admin-ui-v3-interaction-design.md`：使用 PDF/颜色系统中的精确颜色、字体、间距、圆角、阴影与状态 Token，覆盖 Admin Shell、Dream 用户/Workspace/Story 层级、Plan/Version/Subscription/Entitlement、用户订阅和周期额度、Provider/Model/Pricing、Gateway Key 一次性回执、Gateway Request/Usage/Billing/Ledger、Storage/RBAC/Audit/Settings。每页给出目的、操作者、列表字段、筛选排序分页批量动作、详情分区、Modal/Drawer/独立页决策、逐字段控件与校验、错误恢复、高风险确认、1440×1000/390×844 和键盘/焦点/label/读屏要求。必须包含五组 Mermaid 流程，且不得回退为默认 Ant Design CRUD 或装饰性假指标。
+
+验收：两份正式文档之间的路由、状态、RBAC、字段名、表名和金额单位一致；设计技能中与本项目技术栈冲突的 Tailwind 2/Font Awesome/远程字体示例只作为结构分析证据，不覆盖项目现有 Tailwind 4、本地字体和本地图标约束。
+
+Optional Enhancers:
+
+- 在订阅详情加入月度账单预览与 CSV 导出交互，明确数据来源、时区和舍入规则。
+- 为并发生命周期操作设计 409 最新状态恢复和幂等请求回执。

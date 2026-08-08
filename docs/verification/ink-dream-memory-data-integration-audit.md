@@ -224,3 +224,76 @@ flowchart LR
 | 视觉 | 14 张截图；1440×1000 与 390×844；根节点横向溢出断言通过 |
 
 主 E2E 还验证了真实 Session、401/403、canonical Story 查询和受控更新、跨 Workspace 409、Provider Secret 不回显、Provider discover/diff/apply、models.dev 价格快照 apply 后新增 `source=models.dev` 价格版本、不可变历史价格、余额/账本、Gateway Key、失败结算、Storage GET、移动导航及旧 PWA 路由 404。外部 Provider 与 models.dev 实网未调用：Provider 使用本机 mock，models.dev fetch/parser/matcher 使用 unit contract，价格 apply 使用隔离 PostgreSQL真实事务。一次性容器与 55432 监听已删除；共享 5433 未操作。
+
+## 11. Round 15 当前源码复核与纠偏判断
+
+### 11.1 权威源结构复核
+
+2026-08-08 再次使用 `/usr/bin/sqlite3 -readonly` 和 `PRAGMA query_only=ON` 读取 `backend/database.py` 实际解析的 `backend/data/ink-and-memory.db`。源文件仍为约 74 MiB，Dream Git 工作区除既有 `.claude/worktrees/` 外无本轮改动；真实行数仍为 28 users / 12 workspaces / 4 stories。本次没有读取或输出 email、password hash、Story content 或 Secret。
+
+| 表 | 当前权威字段 | PK / FK / Unique | 枚举与状态 |
+|---|---|---|---|
+| `users` | `id,email,password_hash,display_name,created_at,avatar_url,role,updated_at` | PK `id`；Unique `email` | `role` 是普通文本，默认 `user`；**没有 `status`** |
+| `story_workspace_workspaces` | `id,name,owner_id,settings,created_at,updated_at` | PK `id`；`owner_id → users.id` | `settings` 是保存 JSON 文本的 `TEXT`；**没有 `status`** |
+| `story_workspace_stories` | `id,identifier,title,description,status,review_status,type,content,author_id,workspace_id,character_count,scene_count,agent_generated,agent_session_id,review_notes,created_at,updated_at,confirmed_at,published_at` | PK `id`；`author_id → users.id`；`workspace_id → workspaces.id` | status `draft/published/archived`；review `pending/confirmed/rejected`；type `short/long/script/outline`；agent `0/1` |
+| `story_workspace_characters` | `id,identifier,name,avatar_url,identity,personality,background,catchphrase,tags,notes,author_id,workspace_id,story_count,review_status,agent_generated,created_at,updated_at,status,review_notes,confirmed_at,archived_at` | PK `id`；author/workspace FK | review 同上；status `active/archived`；agent `0/1` |
+| `story_workspace_scenes` | `id,identifier,name,description,story_id,author_id,workspace_id,character_count,order_index,review_status,agent_generated,created_at,updated_at,status,review_notes,confirmed_at,archived_at` | PK `id`；story 可空 FK；author/workspace FK | review 同上；status `active/archived`；agent `0/1` |
+| `story_workspace_story_characters` | `story_id,character_id,role_type,created_at` | 复合 PK；Story/Character FK | 关系事实，不是独立 CRUD 实体 |
+| `story_workspace_scene_characters` | `scene_id,character_id,created_at` | 复合 PK；Scene/Character FK | 关系事实，不是独立 CRUD 实体 |
+| `workflow_runs` | run provenance、status、error、retry、runtime/preflight、source message、idempotency、hash、version 与时间 | PK `id`；retry/binding/runtime/preflight FK；三列 idempotency unique | `preflight/queued/running/output_validating/pending_review/confirmed/rejected/continuing/completed/failed/cancelled` |
+| `workflow_run_token_consumptions` / `workflow_run_transitions` | Token digest/消费来源；状态转换序列与 actor/reason/error | PK/unique/FK；Dream trigger 禁止 UPDATE/DELETE | append-only |
+
+Dream REST 的实际写边界没有变化：Workspace 仅 PATCH name/settings；Story/Character/Scene 仅白名单 PATCH 与显式 confirm/reject/archive（按资源支持情况）；Workflow 使用命令式 preflight/start/retry/cancel，而不是通用 CRUD。Admin 不得自行扩充业务状态或删除能力。
+
+### 11.2 Admin canonical 定义漂移
+
+当前迁移链存在两层事实：
+
+1. `0010_story_source_canonical.sql` 精确创建源三表，字段类型和约束与只读审计一致。
+2. `0011_nappy_prodigy.sql` 随后向真实 `users` 和 `story_workspace_workspaces` 增加 Dream 不存在的 `status`，并把 `settings` 从源 `TEXT(JSON)` 改为 `jsonb`。`app/lib/db/schema.ts` 同时导出了两套指向相同物理表名的 Drizzle 定义；`app/lib/story-source/**` 又读取/写入扩展状态并允许创建 Workspace。
+
+这是“同表扩展漂移”，不是第二数据源或平行表，但仍不符合直接使用 Dream 真实结构的约束。本轮采用非破坏纠偏：
+
+- Drizzle 只保留一套 canonical 三表定义，字段与 Dream 权威源一致；停止 schema 生成继续扩展源表。
+- Repository、Zod、API 和页面停止读取/写入 `users.status`、`workspace.status`，移除源 User patch 与 Workspace create；Workspace 只保留 Dream 已有 name/settings PATCH。
+- `0011` 已发布，不能改写。物理扩展列先保留并通过新 migration comment 标记为 deprecated，应用不依赖它们；未来只有在备份、兼容观察和负责人批准后才可单独 DROP。
+- `settings` 对外仍使用 JSON 控件，但 Repository 显式以 JSON 文本语义读写，并同时兼容历史 `jsonb` 目标；迁移工具保留源文本的 JSON 值，不改变业务含义。
+- `0010` 的真实三表数据迁移能力继续保留；Character/Scene/Workflow 仍只在明确迁移闭包或隔离 fixture 中可用，缺表返回 503，不回退旧表。
+
+### 11.3 订阅计费缺口与复用判断
+
+当前控制面已经具备 `platform_users` 计费身份、`billing_accounts` available/reserved、`billing_ledger_entries` append-only、Gateway Key 哈希、Model Permission、Rate Limit、Gateway Request 四类 Token 与价格快照、预授权和自动结算。这些能力继续复用，但它们不等同于订阅系统。
+
+| 订阅能力 | 当前事实 | 处理判断 |
+|---|---|---|
+| Plan / Plan Version | 不存在 | 新建 Admin 控制面表；Version 只追加，Plan 只保存稳定 code/name/status |
+| Entitlement | 只有用户级 `user_model_permissions` 和 rate limit | 新建 version-owned entitlement snapshot；用户 override 继续作为更严格交集，不替代套餐权益 |
+| Subscription 生命周期 | 不存在 | 新建事务化状态机、周期、cancel-at-period-end、宽限/暂停/恢复与版本锁定 |
+| Period Allowance | 不存在 | 新建按 subscription period 的金额/Token 额度账户；消费只追加，余额通过聚合/锁定快照维护 |
+| Overage | 只有余额不足 402 | 在 Plan Version 定义允许/拒绝超额及计费来源；超额允许时才动用 available balance |
+| Billing Account | available/reserved/lifetime debited 已存在 | 增加 subscription allowance 的独立视图/账户，不混进 cash available；保持现有列语义兼容 |
+| Ledger | reserve/capture/release/credit 已存在 | 扩展 entry type 支持 subscription_charge/renewal/refund/reversal/allowance_capture；仍只追加且幂等 |
+| Gateway eligibility | Key → Model Permission → Balance/limits | 插入 Subscription → Entitlement → Allowance/Overage；User override 作为最终更严格限制 |
+| Payment | 未接 Stripe 等 | 只定义 adapter/webhook idempotency boundary；不创建虚假支付成功数据，不调用真实渠道 |
+
+### 11.4 最终映射补充
+
+| 业务实体 | Dream 真实表 | 当前 Admin 表/Resource | 是否重复 | 最终数据源 | 读写策略 | 修改位置 |
+|---|---|---|---|---|---|---|
+| Subscription Plan | 无 | 无 | 否 | `subscription_plans` | 控制面 CRUD；code 不变；停用不删除历史 | `schema/migration`、subscription service/API/UI |
+| Plan Version | 无 | 无 | 否 | `subscription_plan_versions` | 发布后只读；价格/周期/权益形成不可覆盖快照 | 同上 |
+| Entitlement | 无 | `user_model_permissions` 仅是 override | 否，语义互补 | `subscription_plan_entitlements` | 属于 Plan Version；允许模型/scope/RPM/配额；只追加版本内容 | 同上 + Gateway policy |
+| Subscription | 无 | 无 | 否 | `subscriptions` | 事务状态机；关联 `platform_users` 而非复制 Dream User | 同上 |
+| Period Allowance | 无 | 无 | 否 | `subscription_usage_allowances` | 每周期一行；保留 granted/reserved/consumed，事务更新并留 Ledger/Usage 证据 | billing/subscription repository |
+| Billing Account | 无 | `billing_accounts` | 否 | 现表保留 | cash available/reserved 不与赠送额度混写 | billing repository/UI |
+| Ledger | 无 | `billing_ledger_entries` | 否 | 现表保留并扩展类型/引用 | append-only、reversal 不改原记录 | migration/billing repository |
+| Gateway资格快照 | 无 | `gateway_requests` | 否 | 现表扩展 subscription/version/allowance snapshot FK | 请求创建时冻结资格来源；结算后不可重算历史 | Gateway repository/lifecycle |
+
+## 12. 当前验收判断（Round 15 起点）
+
+- [x] Dream 仍全程只读；真实三表 schema、行数和 API 写边界已再次核实。
+- [x] “看不到真实表”的根因仍是 Dream SQLite 与 Admin PostgreSQL 的物理分离；不是 PostgreSQL search path 问题。
+- [x] 首批真实三表一次性迁移工具和隔离证据仍可复用；生产共享库仍未迁入。
+- [x] 旧 `story_*` 平行表继续只保留、不使用、不删除。
+- [ ] `0011` 的同表扩展漂移需在本轮应用层停止使用并非破坏标记弃用。
+- [ ] Subscription、Plan Version、Entitlement、Allowance、生命周期和 Gateway 资格链需在本轮实现并验证。

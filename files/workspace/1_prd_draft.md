@@ -1,569 +1,499 @@
-# Ink Memory Admin：剧本数据运营与用户、权限、资源管理 PRD 草案
+# Ink Memory Admin v3：真实剧本运营与 Gateway 订阅计费 PRD 结构草稿
 
 > 阶段：HTML Design Workflow / Stage 1 — PRD Architect  
-> 输入基线：`files/inputs/target_image.png`（1440×1000 Admin）  
-> 产品基线：`docs/prd/story-user-resource-admin-prd.md`  
-> 视觉基线：`docs/prd/color_system/README.md`、`light-theme.md`、`dark-theme.md`  
-> 本文件用途：为后续结构草图、层级逻辑和 UI 设计提供可编码约束；不是新的数据迁移或系统重构方案。
+> 输入主题：`Ink Memory Admin v3：基于真实 Dream 业务数据的剧本运营控制台与 Gateway 订阅计费系统`  
+> 图像输入：`files/inputs/target_image.png`，1489×2105；该图是《Ink & Memory UI Design v2.1》封面，不是 Admin 页面截图  
+> 数据证据：`docs/verification/ink-dream-memory-data-integration-audit.md`  
+> 产品基线：`docs/prd/ink-memory-admin-prd-v2.md`  
+> 视觉基线：`docs/prd/Ink & Memory UI Design v2.pdf`、`docs/prd/color_system/**`  
+> 用途：作为后续结构草图、层级逻辑、UI 设计与正式 PRD v3 的可执行输入；不表示对应功能已经上线
 
-## 1. 产品结论
+## 0. 产品结论
 
-本轮把当前“可进入但偏技术工作台”的 Admin 外壳，收敛成面向运营人员的专用后台。完成后，管理员应能沿着 **User → Workspace → Story** 的真实业务链查看、筛选、维护合法状态并追溯审计；同时在同一视觉语言下完成管理员/RBAC 与 Storage 资源治理。
+Ink Memory Admin v3 是一套面向内容运营、模型运营、订阅运营、财务支持、安全审计和系统管理员的控制台。它必须同时完成两件彼此关联但数据边界清晰的工作：
 
-本轮仅使用当前项目单一 PostgreSQL `DATABASE_URL → ink-memory`。业务事实表固定为：
+1. 直接运营迁入同一 PostgreSQL `ink-memory` 的 Dream 真实业务表，不再把 Admin 自建的 `story_*` 平行表包装成业务事实。
+2. 维护 Admin 控制面的套餐、不可变套餐版本、权益、订阅、周期额度、余额、Gateway Key、用量和只追加账本，并以这套数据实时决定用户能否调用模型网关。
+
+核心资格链固定为：
 
 ```text
-users.id BIGINT
-  ├──< story_workspace_workspaces.owner_id BIGINT NOT NULL
-  └──< story_workspace_stories.author_id BIGINT NOT NULL
-
-story_workspace_workspaces.id TEXT
-  └──< story_workspace_stories.workspace_id TEXT NOT NULL
+Dream User
+  → Platform Billing Identity
+  → Subscription
+  → Published Plan Version
+  → Entitlement
+  → Model Permission Override
+  → Period Allowance / Overage Balance
+  → Gateway Request
+  → Token Usage + Price Snapshot
+  → Append-only Ledger
 ```
 
-关键产品边界：
+本产品不是 Landing Page、剧本创作前台、支付收银台或通用数据库工作台。所有统计必须来自真实查询；不可用时明确显示“暂不可用”，不得以 0、模拟数据或随机趋势代替。
 
-- Workspace 必须有真实 User owner；Story 必须有真实 Workspace 与 author。
-- Story author 与 Workspace owner 必须一致，写入时在 PostgreSQL transaction 内校验。
-- User 停用、Workspace/Story 归档保留历史关联，不提供业务数据硬删除。
-- Story 正文、内部版本、provenance、计数字段只读；Admin 不能借“编辑”破坏内容结构。
-- Password、Token、Session、Provider Key、Storage credential 永不查询、回显或写入审计差异。
-- AI 模型、Token 计费、Gateway 保留现状与菜单入口，但不进入本轮页面重构。
+---
 
-## 2. 当前 1440×1000 基线的具象判断
+## 1. 输入图像的具象解析与 Admin 转译
 
-### 2.1 页面模块结构（自上而下、自左至右）
+### 1.1 图像中可验证的视觉信息
 
-| 区块 | 截图中的实际形态 | 可保留的设计资产 | 本轮必须修正的问题 |
-|---|---|---|---|
-| A0 全局画布 | 1440×1000 暖米色底，无冷灰渐变 | 暖纸张画布与低饱和氛围 | 主内容底部留有大片无意义空区，页面边界感不完整 |
-| A1 左侧品牌区 | 左 248px；约 76px 高；36px 方形 INK 标识、衬线品牌名、等宽小字副标题 | 品牌识别清晰、尺度克制 | 移动端没有对应折叠入口与 Drawer 规则 |
-| A2 分组导航 | 248px 固定侧栏；两字符等宽代码 + 中文条目；active 行有米色底和左侧深色竖线 | 分组、代码标、当前项识别可延续 | 菜单混有旧角色/场景/工作流入口；Story/User/RBAC/Storage/Audit 信息架构不完整 |
-| A3 账户区 | 侧栏底部固定身份、角色和圆形主题控制 | 管理员身份始终可见 | 控件语义不清；需给主题、账户菜单可见文字/Tooltip 和键盘状态 |
-| B0 主区页头 | 左距约 38px；小型等宽面包屑、约 46–48px 中文标题、正文说明、右侧次按钮 | 标题层级强、内容起点稳定 | 标题占高偏大；右侧按钮“审核可追溯”更像说明而非动作 |
-| B1 域页签 | 横排“工作区 / 剧本项目 / 角色 / 场景 / 工作流运行”，active 下划线 | 同域切换路径明确 | 页签与本轮三表边界冲突；需改为工作区/剧本，用户与治理模块留在全局导航 |
-| B2 数据容器 | 大圆角实线容器；头部、筛选、表头、行、分页层层分隔 | 数据区结构完整，运营扫描路径明确 | 与页面边界形成多重卡片；应改为页面级单一虚线 paper boundary，内部以留白/行线分区 |
-| B3 筛选区 | 标题、Workspace ID 手填、审核状态、内容状态；“应用/清除”独立一行 | 服务端筛选意图明确 | 技术 ID 对运营人员不友好；应使用可搜索 User/Workspace 选择器并同步 URL |
-| B4 表格区 | 表头含 Story ID、标题、工作区、作者、类型、状态、审核、更新时间、详情；行高约 49px | 字段密度接近后台需要 | ID 过度占据首列；关联字段需成为文本链接；横滚与键盘规则缺失 |
-| B5 Loading | 5 条等高横向 skeleton；页头与筛选不抖动 | 保留尺寸的加载思路正确 | skeleton 宽度完全一致，不能表达真实列；缺少完成后的 live region 播报 |
-| B6 分页 | 上一页 / 第 1/1 页 / 下一页，位于容器底部 | 位置稳定，易理解 | 未显示总数与 page size；disabled 对比度和移动端布局需定义 |
+目标图是纵向封面页：主体位于页面中部，四周保留大面积空白；主标题使用深炭棕粗体，副标题和版本说明使用较浅暖棕；背景接近纸张白而非冷灰；页面没有渐变卡片、玻璃拟态、霓虹色或密集装饰。封面文字还直接给出了 v2.1 的分区规则：**减少面板、增加留白、视觉收敛、轻纸面分区、单一虚线边界、无卡片设计**。
 
-### 2.2 基线纠偏原则
+这张图没有侧栏、表格、表单、数据卡或移动界面，因此不能据此虚构 Admin 的具体控件位置。Admin 的结构应由真实任务链和 v2 PRD 决定，只继承图像可证明的品牌气质与空间关系。
 
-1. 保留 248px 桌面侧栏、暖纸画布、衬线大标题、等宽 ID/代码、细行分隔和低饱和状态表达。
-2. 页面只保留 **一个** 由 `--color-border-paper` 派生的虚线 paper boundary；内部区域不再叠加圆角卡片海。
-3. 将“技术主键优先”改为“运营名称优先、主键可复制”：列表首先显示标题/邮箱/名称，ID 放在次行 mono 文本。
-4. 将“手填 Workspace ID”改为“输入名称/邮箱搜索后选择真实实体”，仍允许粘贴完整 ID 精确命中。
-5. 将散落的详情按钮改为整行明确链接 + 行尾操作菜单；所有高风险动作必须始终可发现，不仅依赖 hover。
-6. 将旧 `角色 / 场景 / 工作流运行` 页签从本轮 IA 隐藏；不删除相应代码或数据。
+### 1.2 Admin v3 视觉转译规则
 
-## 3. 目标、角色与成功定义
-
-### 3.1 P0 产品目标
-
-1. 运营人员能在 60 秒内确认用户、Workspace、Story 的真实总量、状态分布和近期变化。
-2. 任意 User、Workspace、Story 可沿父子关系双向跳转，并在返回时恢复筛选、页码、滚动和触发行焦点。
-3. User、Workspace、Story 的合法写操作形成 Session、permission、Origin、Zod、transaction、audit 完整闭环。
-4. 权限管理员能看懂“管理员拥有什么角色、角色拥有什么权限”，并安全维护自定义角色。
-5. 资源管理员能确认 Storage 配置能力并完成受保护的列举、上传、预览、下载和删除。
-6. 所有页面在 1440×1000 和 390×844 下无根节点横向溢出，键盘可完成主路径。
-
-### 3.2 使用者与权限
-
-| 角色 | 核心任务 | 典型 permission |
+| 图像/规范证据 | Admin 设计决策 | 禁止做法 |
 |---|---|---|
-| 运营查看者 | 查看 Dashboard、User、Workspace、Story | `dashboard.read`、`users.read`、`story.read` |
-| 业务运营 | 维护 User 状态、Workspace 与 Story 合法字段 | 查看权限 + `users.write`、`story.write` |
-| 资源管理员 | 管理 Storage 文件 | `storage.read`、`storage.write`、`storage.delete` |
-| 权限管理员 | 管理管理员、自定义角色和角色分配 | `access.read`、`access.write` |
-| 审计员 | 查询不可变审计与权限矩阵 | `audit.read`、`access.read` |
-| 超级管理员 | 执行全部后台任务 | 全 permission；仍受所有写入安全链约束 |
+| 大面积留白、居中标题、弱装饰 | 页面标题区保持 24–32px 垂直呼吸，主要信息块按任务顺序展开 | KPI 卡片墙、每个字段套卡片 |
+| 深炭棕标题、暖棕正文 | 标题、正文、辅助文本分别映射语义 Token | 纯黑正文、冷灰大底、蓝紫主视觉 |
+| 暖纸背景 | App 使用 Warm Canvas，主内容使用 Paper Cream/透明纸面 | 纯白全屏、冷色渐变 |
+| 单一虚线边界 | 每个页面最多一个 page-level paper boundary；内部靠留白和行分隔 | 多层圆角面板、普通行阴影 |
+| 小面积黄/绿强调 | Memory Yellow 用于当前项、告警重点；Spark Green 用于成功/启用辅助 | 彩色整行、整卡铺色、只用颜色表达状态 |
+| 安静、手写、工具台 | 展示标题可有温暖书写感；业务控件保持清晰无衬线 | 把手写字体用于密集表格和金额 |
 
-### 3.3 成功指标
+### 1.3 颜色与字体优先级
 
-- 所有列表数字、状态、最近记录来自成功的真实查询；失败不得显示为 0。
-- User → Workspace → Story 跳转携带稳定 query 参数，浏览器前进/后退可恢复。
-- 无 Session 返回 401；无权限返回 403；外键、版本或受保护规则冲突返回 409。
-- API 响应与审计记录中不出现 `password_hash`、secret、Token、Session 或文件内容。
-- 模型、计费、Gateway 现有路由 smoke 通过，且未被本轮导航重排破坏。
+PDF v2.1 明确晚于 `color_system` 旧亮色值，Admin v3 采用 PDF/最新 Token 的亮色值；暗色、状态色和浮层语义沿用 `color_system` 的体系。实现只引用集中 Token，不在组件内新增孤立 hex。
 
-## 4. 严格范围
+| Token | Light | 主要用途 |
+|---|---:|---|
+| `--color-bg-app` | `#F6EFE5` | 页面暖纸画布 |
+| `--color-bg-paper` | `#FFFAF2` | 主内容纸面 |
+| `--color-bg-surface-solid` | `#FFFDF8` | Dropdown、Popover、Tooltip |
+| `--color-text-primary` | `#3F3429` | 标题、图标、焦点主信息 |
+| `--color-text-body` | `#4B3F33` | 正文、表格主值 |
+| `--color-text-secondary` | `#7A6A59` | 描述、元信息 |
+| `--color-text-muted` | `#9A8A78` | 时间、占位、次级 ID |
+| `--color-action-primary` | `#5F4A36` | 主按钮、当前导航 |
+| `--color-border-paper` | `#D8C7B3` | 页面纸边、行分隔 |
+| `--color-action-link` | `#4A90E2` | 文本链接 |
+| `--color-voice-yellow` | `#F39C12` | 小面积重点、提醒 |
+| `--color-voice-green` | `#27AE60` | 小面积成功/启用辅助 |
 
-### 4.1 本轮页面
+字体必须使用项目本地资产：展示标题优先本地 Noto Serif SC；正文和控件优先本地 Noto Sans SC；ID、Token、金额和请求编号使用本地等宽字体。图标使用项目本地图标方案，不增加远程字体、远程图标或 CDN 依赖。
+
+---
+
+## 2. 产品角色、目标与风险边界
+
+| 操作者 | 主要任务 | 明确风险边界 |
+|---|---|---|
+| 内容运营 | 查用户、Workspace、Story、Character、Scene；执行源契约允许的修订与审阅 | 不创建 Agent 产物，不硬删除，不扩充 Dream 不存在的状态 |
+| 订阅运营 | 建套餐、发布不可变版本、配置权益、开通/变更/暂停/取消订阅 | 已发布版本不可覆盖；所有生命周期命令必须幂等、事务化、可审计 |
+| 模型运营 | 管 Provider、Model Alias、Pricing、模型发现与验证 | Provider Secret 只写不读；历史价格只保留新版本 |
+| 财务支持 | 查周期额度、余额、用量、账本、账单预览；有授权时执行调账/reversal | 金额只用整数 micro-USD；账本只追加；禁止直接改余额列 |
+| 客服支持 | 从用户订阅详情定位资格、额度、请求和错误 | 默认只读；不看 Secret、完整 Prompt、完整响应 |
+| 安全审计 | 查 Session、RBAC、Key、系统设置和审计证据 | 审计只读；敏感值始终脱敏 |
+| Super Admin | 管角色、系统配置及高风险处置 | 仍受双重确认、并发冲突、审计和不可变规则约束 |
+
+P0 成功定义：
+
+- 运营人员可以沿 `User → Workspace → Story → Character/Scene` 真实关系双向查看数据，不落入旧平行表。
+- 订阅运营可以从 Plan 到 Published Version，再到 Entitlement 和 Subscription 完成完整配置；任何已发布快照不被覆盖。
+- 用户详情能解释“为什么可调用/不可调用某模型”，并展示当前周期额度、已用、预留、剩余和预计超额。
+- Gateway 每次请求都冻结订阅版本、权益、模型、价格和额度来源，历史请求不因后续改价/换套餐而重算。
+- 所有写操作均通过服务端 Session、permission、严格 Zod、transaction 和 audit；Route Handler 不承载 SQL 与状态机。
+
+---
+
+## 3. 数据事实、边界与迁移前提
+
+### 3.1 单一数据源
+
+目标运行态只有一个 `DATABASE_URL`、一个 PostgreSQL Pool 和一个数据库 `ink-memory`。Dream 当前真实数据位于 SQLite 是迁移前事实，不是 Admin 的运行时兼容目标。Admin 不连接 SQLite，不增加 `STORY_DATABASE_URL`，不提供 JSON/内存/旧表回退。
+
+第一批已审计的 canonical 表为：
+
+| 表 | 已审计结构与事实 | Admin v3 边界 |
+|---|---|---|
+| `users` | integer PK；email unique；含 password_hash；没有 status | API 永不选择 password_hash；业务字段默认只读；通过 `(source, external_user_id)` 绑定计费身份 |
+| `story_workspace_workspaces` | text PK；owner_id → users；settings 是 JSON 文本；没有 status | 允许白名单 PATCH name/settings；不创建、不删除 |
+| `story_workspace_stories` | text PK；author/workspace FK；真实 status/review/type 枚举 | 允许白名单更新和源契约动作；不通用创建、不硬删除 |
+
+源报告确认的当前真实计数仅用于迁移验收证据，不作为 UI 固定文案或产品 KPI。Character、Scene、Workflow 等尚未迁入时必须分别返回 503 和缺表清单，不得读取 Admin 旧表。
+
+### 3.2 Dream 业务事实与 Admin 控制面映射
+
+| 业务实体 | Dream 真实表 | 当前 Admin 表/Resource | 是否重复 | 最终数据源 | 读写策略 | v3 修改位置 |
+|---|---|---|:---:|---|---|---|
+| 业务用户 | `users` | `platform_users` / `platform-users` | 部分 | Dream `users` + 控制面 crosswalk | 源字段只读；计费身份单独绑定/停用 | source-user repository、组合用户页 |
+| 工作区 | `story_workspace_workspaces` | `story_workspaces` | 是 | Dream 原名表 | list/get；仅 name/settings PATCH；不创建/删除 | story-source repository/service/API |
+| 剧本 | `story_workspace_stories` | `story_projects` | 是 | Dream 原名表 | list/get；白名单更新与命令式审阅；不创建/硬删除 | `story-stories` Resource |
+| 角色 | `story_workspace_characters` | `story_characters` | 是 | Dream 原名表 | 白名单维护；关系来自中间表 | Character repository/detail |
+| 场景 | `story_workspace_scenes` | `story_scenes` | 是 | Dream 原名表 | 白名单维护；story_id 可空且需同 workspace 校验 | Scene repository/detail |
+| Story-角色 | `story_workspace_story_characters` | 无 | 缺失 | Dream 原名表 | 关系事实；事务校验后受控调整 | Story/Character relation service |
+| Scene-角色 | `story_workspace_scene_characters` | 无 | 缺失 | Dream 原名表 | 关系事实；事务校验后受控调整 | Scene relation service |
+| 工作流 | `workflow_runs` + transition/consumption | `story_workflow_runs` | 是 | Dream 原名表 | 默认只读；retry/cancel 只能是显式命令 | 后续迁移闭包与只读详情 |
+| 套餐/版本/权益 | 无 | 无 | 否 | Admin 控制面 PostgreSQL | 版本发布后不可变 | subscription schema/service/UI |
+| 订阅/周期额度 | 无 | 无 | 否 | Admin 控制面 PostgreSQL | 状态机 + 周期额度事务 | subscription/billing service |
+| Provider/Model/Pricing | 无 | 现有控制面表 | 否 | Admin 控制面 PostgreSQL | 保留并版本化价格 | model center |
+| Usage/Balance/Ledger | 无同义业务事实 | 现有计费表 | 否 | Admin 控制面 PostgreSQL | Usage/Ledger 只读；账本 append-only | billing/gateway integration |
+| Gateway Key/Request | 无 | 现有网关表 | 否 | Admin 控制面 PostgreSQL | Key 一次明文；请求只读追踪 | gateway service/UI |
+| Storage/RBAC/Session/Audit | 无同义控制面实体 | 现有实现 | 否 | Admin 控制面 PostgreSQL/Storage | 保留并防回归 | 既有 service/API/UI |
+
+旧 `story_workspaces`、`story_projects`、`story_characters`、`story_scenes`、`story_workflow_runs` 只做 deprecated 保留：v3 UI/API 不再绑定，不删除、不清空、不自动合并。最终删除必须是独立、可回滚且经备份核验的未来变更。
+
+---
+
+## 4. 订阅领域模型
+
+### 4.1 核心表与不变量
+
+| 表/聚合 | 必需字段 | 不变量与写规则 |
+|---|---|---|
+| `subscription_plans` | id、code、name、status、currency、created_at、updated_at | code 永不复用；currency 首版固定 USD；有历史版本时不可硬删除 |
+| `subscription_plan_versions` | id、plan_id、version_no、status、billing_interval、base_price_micro_usd、trial_days、grace_period_seconds、effective_from、published_at | `(plan_id, version_no)` unique；published 后禁止 update/delete；价格是整数 micro-USD |
+| `subscription_plan_entitlements` | id、plan_version_id、model_id/alias、gateway_scopes、rpm_limit、period_token_limit、period_micro_usd_limit、storage_bytes_limit、overage_policy | 归属于版本快照；发布后随版本冻结；模型与 scope 均使用白名单 |
+| `subscriptions` | id、platform_user_id、plan_version_id、status、current_period_start/end、trial_end、grace_end、cancel_at_period_end、scheduled_version_id、renewal_anchor、version | 同一用户同时最多一个可执行主订阅；乐观版本/行锁防并发；始终锁定具体 plan_version |
+| `subscription_usage_allowances` | id、subscription_id、period_start/end、granted、reserved、consumed、unit、version | 周期唯一；预留和结算用事务锁；不与 cash available 混写 |
+| `billing_accounts` | available_micro_usd、reserved_micro_usd、lifetime_debited | 继续表示现金/充值余额，不混入赠送额度 |
+| `billing_ledger_entries` | account、type、amount、before/after、request/subscription refs、idempotency_key、reason、created_at | 只追加；退款/纠错新增 reversal，不修改原记录 |
+| `gateway_requests` 扩展快照 | subscription_id、plan_version_id、entitlement snapshot/ref、allowance_id、pricing snapshot、reservation refs | 请求创建时冻结；结算后禁止重算历史 |
+| 支付边界 | adapter、external_reference、webhook_event_id、idempotency_key、status | 只定义接口与幂等存根；未确认前不接 Stripe/支付宝/微信，不生成虚假支付成功 |
+
+### 4.2 套餐版本发布规则
+
+1. Plan 保存稳定 code/name/status，不直接保存会变化的价格和权益。
+2. Draft Version 可编辑；发布时在单事务中验证价格、周期、至少一个可调用模型、Scope、RPM、额度和 overage 组合。
+3. Published Version 只读；改价、改权益、改限额必须创建 `version_no + 1`。
+4. 现有 Subscription 继续锁定原版本，除非执行明确升级/降级/续费命令；不可静默漂移。
+5. 版本被订阅、Request 或 Ledger 引用后永久保留。
+
+### 4.3 生命周期与命令语义
+
+| 当前状态 | 命令/条件 | 目标状态 | 账务与权益行为 |
+|---|---|---|---|
+| 无订阅 | start trial | `trial` | 创建周期与 trial allowance；不伪造支付 |
+| 无订阅 | activate | `active` | 通过已充值 Billing Account 或未来 adapter 完成幂等订阅扣费后授予额度 |
+| `trial` | trial 到期且续费成功 | `active` | 新周期、新 allowance、renewal ledger |
+| `trial/active` | renewal 成功 | `active` | 原周期关闭，新周期授予额度；同一周期幂等键不可重复扣费 |
+| `trial/active` | renewal 失败 | `past_due` | 设置 grace_end；宽限期内是否允许调用由版本策略决定 |
+| `past_due` | 补款/恢复成功 | `active` | 追加补款/恢复账本；不改写失败记录 |
+| `past_due` | grace 到期 | `paused` 或 `expired` | 停止新 Gateway 预留；历史 Usage/Ledger 保留 |
+| `trial/active` | pause now | `paused` | 立即阻止新请求；未用 allowance 默认不退款、不转现金 |
+| `paused` | resume | `active` | 校验版本有效、计费与周期；恢复动作幂等并审计 |
+| `trial/active` | cancel at period end | 保持原状态 + `cancel_at_period_end=true` | 周期内继续按原权益调用；到期转 `cancelled` |
+| 可执行状态 | cancel now（高权限） | `cancelled` | 立即停止资格；退款只能新增明确 refund/reversal ledger |
+| `cancelled` | 重新订阅 | 新 Subscription | 不复活旧周期或覆盖历史 |
+| 任意终止周期 | 自然失效 | `expired` | 只读保留，不能继续调用 |
+
+升级默认立即生效：锁定当前订阅，按剩余周期用整数 micro-USD 计算旧版本未使用价值和新版本差额，分别写 credit/charge ledger；周期不重置，Allowance 只补发新旧权益的正差，禁止重复赠送已消费部分。降级默认排到下一续费锚点，通过 `scheduled_version_id` 表达，当前周期权益不缩水。任何 proration、续费、Webhook 或状态命令都必须有幂等键；重复提交返回同一结果而不重复扣费。
+
+### 4.4 Gateway 资格判断
+
+```mermaid
+flowchart LR
+  U[Dream User] --> I[Platform Billing Identity]
+  I --> K[Gateway Key + Scope]
+  K --> S[Subscription State]
+  S --> V[Locked Plan Version]
+  V --> E[Entitlement]
+  E --> M[Model Alias + User Override]
+  M --> L[RPM / Token Limit]
+  L --> A[Allowance]
+  A --> O{Allowance enough?}
+  O -- yes --> R[Reserve allowance]
+  O -- no, overage allowed --> B[Reserve cash balance]
+  O -- no, overage denied --> X[402 quota/balance error]
+  R --> G[Gateway Request]
+  B --> G
+  G --> P[Usage + Pricing Snapshot]
+  P --> C[Capture / Release]
+  C --> LE[Append-only Ledger]
+```
+
+错误语义：无/失效 Key 为 401；缺 Scope、套餐无模型权益或用户 override 禁止为 403；余额/Allowance 不足为 402；生命周期/并发版本冲突为 409；RPM 或 Token 窗口超限为 429；控制面或资格数据不可用为 503，禁止降级放行。
+
+---
+
+## 5. 全局信息架构与路由
 
 ```text
-运营总览
+总览
 
-剧本数据
+剧本运营
+├── 业务用户
 ├── 工作区
-└── 剧本
-
-用户中心
-└── 平台用户
-
-权限管理
-├── 管理员
+├── 剧本
 ├── 角色
-└── 权限
+└── 场景
 
-资源管理
-└── 文件存储
+订阅中心
+├── 套餐
+├── 套餐版本
+├── 权益
+└── 用户订阅
 
-系统治理
-└── 审计日志
+模型中心
+├── Provider
+├── Models
+├── Pricing
+└── 用户模型限制
+
+网关与计费
+├── Gateway Keys
+├── 请求日志
+├── Token Usage
+├── Billing Accounts
+├── Ledger
+└── 账单预览 / CSV
+
+资源与治理
+├── Storage
+├── 管理员
+├── 角色与权限
+├── Session
+├── 审计日志
+└── 系统设置
 ```
 
-### 4.2 明确排除
-
-- 不创建任何 `ink-dream-memory → ink-memory` 迁移、导入、ETL、同步或定时任务。
-- 不接入第二数据库，不做双 Data Provider、跨库实时查询或本地数据回退。
-- 不引入 SQLite、JSON DB、内存数据库。
-- 不修改 `/Users/dmeck/project/ink-dream-memory`。
-- 不重构 AI 模型、Token 计费、Gateway 页面或领域代码。
-- 不删除旧平行表、模型、计费、Gateway、权限或 Storage 底层驱动。
-- 不创建或恢复 `app/(app)`。
-
-## 5. Resource、API、数据与权限唯一映射
-
-| 页面 | Refine Resource | API | PostgreSQL 表/驱动 | Read | Write/Delete |
-|---|---|---|---|---|---|
-| 运营总览 | dashboard virtual | `GET /api/admin/dashboard` | 三张业务表 + `admin_audit_logs` | `dashboard.read` | 无 |
-| 平台用户 | `users` | `/api/admin/users` | `users` | `users.read` | `users.write` |
-| 工作区 | `story-workspaces` | `/api/admin/story-workspaces` | `story_workspace_workspaces` | `story.read` | `story.write` |
-| 剧本 | `stories` | `/api/admin/stories` | `story_workspace_stories` | `story.read` | `story.write` |
-| 管理员 | `admin-users` | `/api/admin/admin-users` | `admin_users`、`admin_user_roles` | `access.read` | `access.write` |
-| 角色 | `roles` | `/api/admin/roles` | `admin_roles`、`admin_role_permissions` | `access.read` | `access.write` |
-| 权限 | `permissions` | `/api/admin/permissions` | `admin_permissions` | `access.read` | 无；migration/bootstrap 管理 |
-| 文件存储 | `storage-resources` | `/api/admin/storage-resources` | 现有 S3/Vercel Blob 驱动 | `storage.read` | `storage.write` / `storage.delete` |
-| 审计日志 | `audit-logs` | `/api/admin/audit-logs` | `admin_audit_logs` | `audit.read` | 无；append-only |
-
-新页面不得以 `source-users`、`story-stories`、`admin-roles`、`admin-permissions` 等旧别名为主 Resource。兼容别名可暂存，但不出现在用户可见 URL 和导航中。
-
-## 6. 全局页面骨架
-
-### 6.1 1440×1000 桌面结构草图
-
-```text
-┌──────────── 248px Sidebar ────────────┬──────────────── 1192px Main Canvas ────────────────┐
-│ [INK] Ink Memory                      │ breadcrumb / data updated / theme                  │
-│       OPERATIONS CONSOLE              │                                                    │
-│───────────────────────────────────────│ Page title + one-sentence goal       [Primary]      │
-│ OV  运营总览                          │ Context links / selected filters / permission note  │
-│ 剧本数据                              │                                                    │
-│ WS  工作区                            │ ┌ · · · one dashed Paper Boundary · · · · · · · ┐ │
-│ ST  剧本                              │ │ section heading + secondary action             │ │
-│ 用户中心                              │ │ search + visible filters + filter summary       │ │
-│ US  平台用户                          │ │────────────────────────────────────────────────│ │
-│ 权限管理                              │ │ table/list; flat rows; local horizontal scroll  │ │
-│ AU  管理员                            │ │                                                │ │
-│ RL  角色                              │ │ empty / error replaces rows, not page shell     │ │
-│ PM  权限                              │ │────────────────────────────────────────────────│ │
-│ 资源管理                              │ │ total + page size    pagination                 │ │
-│ FS  文件存储                          │ └ · · · · · · · · · · · · · · · · · · · · · · ┘ │
-│ 系统治理                              │                                                    │
-│ AL  审计日志                          │                                                    │
-│───────────────────────────────────────│                                                    │
-│ Admin identity / role / theme         │                                                    │
-└───────────────────────────────────────┴────────────────────────────────────────────────────┘
-```
-
-尺寸规则：
-
-- Sidebar 固定 248px；主画布 `min-width: 0`；内容左右内距 32px，顶部 28–32px。
-- 页面内容最大宽度不做窄营销页限制；数据表占满可用宽度。
-- H1 桌面 40px/1.2，避免当前约 48px 继续挤压首屏；说明正文 14px/1.7。
-- 页面级 paper boundary 圆角 12px、虚线 1px；内部 section 只用 1px 行线和 24px 留白。
-- 表格默认 52px 行高，密集数据允许 48px，但交互点击目标不得低于 44px。
-
-### 6.2 390×844 移动结构草图
-
-```text
-┌────────────────────── 390px ──────────────────────┐
-│ [☰] Ink Memory          [theme] [account]          │ 56px sticky header
-│ breadcrumb / back                                  │
-│ Page title                                         │
-│ one-line goal; wraps to max 3 lines                │
-│ [Primary action: full or fit-content]              │
-│ ┌ · · · · · Paper · · · · · · · · · · · · · · ┐ │
-│ │ [Search always visible]      [筛选 3]           │ │
-│ │ applied filter chips / clear                    │ │
-│ │────────────────────────────────────────────────│ │
-│ │ key column / status / updated / row action     │ │
-│ │ < local table horizontal scroll >              │ │
-│ │ or relation rows for detail                    │ │
-│ │────────────────────────────────────────────────│ │
-│ │ total                       [上一页] [下一页]   │ │
-│ └ · · · · · · · · · · · · · · · · · · · · · · ┘ │
-│ [sticky bottom form actions + safe-area inset]     │
-└────────────────────────────────────────────────────┘
-```
-
-- App canvas 8px；Paper 全宽；根节点 `overflow-x: clip`。
-- Sidebar 变为宽 `min(320px, 88vw)` 的左 Drawer，锁焦，Escape/遮罩关闭并归焦到菜单按钮。
-- 搜索框常显，其他筛选进入底部 Sheet；Sheet 顶部显示结果计数，底部“应用/清除”。
-- Detail Drawer 和创建/编辑表单改为全屏层；最后一个字段后预留至少 96px。
-- 表格仅允许标记为“横向滚动区域”的容器滚动，容器 `tabindex=0` 并提供可见提示。
-
-## 7. 全局组件与交互契约
-
-### 7.1 Sidebar / Mobile Navigation
-
-- 组序固定为运营总览、剧本数据、用户中心、权限管理、资源管理、系统治理；保留的模型/计费/Gateway 项置于原有后续分组，不插入本轮业务链。
-- 当前项使用左 2px 主文本色竖线、`--color-bg-hover` 轻底和粗体文字共同表达；不得只用颜色。
-- 无 `*.read` 权限的页面不展示入口；直接访问仍由服务端返回 403。
-- 分组标题、两字符代码为辅助识别，不代替完整中文名称和 `aria-label`。
-
-### 7.2 Page Header
-
-- 第一行：面包屑；列表返回详情时保留 query string。
-- 第二行：唯一 H1；右侧最多一个主操作，如“新建工作区”“上传文件”“新建管理员”。
-- 第三行：一句具体页面目的；需要时显示“数据更新时间”或 permission 提示。
-- “可追溯”“真实数据”等说明不伪装成按钮。
-
-### 7.3 Filter Bar
-
-- 桌面：关键词占 280–360px；其余 Select/Date Range 180–220px；允许换行但不挤压表格。
-- 每个控件有可见 Label；不能仅用 placeholder。
-- 搜索输入 300ms debounce；Select/日期改变后可立即提交，也可统一由“应用”提交，但全站保持一致。
-- 筛选、排序、页码、pageSize 写入 URL；修改筛选时页码回到 1。
-- 已生效筛选显示可移除 chip；“清除全部”恢复 Resource 默认排序。
-- User/Workspace 关系筛选使用服务端搜索选择器：显示名称/邮箱，次行显示 ID；不可自由输入不存在的值。
-
-### 7.4 Data Table / Relation List
-
-- 首列为人类可读主实体；ID 置于次行 mono，可复制；关联实体使用带文字的链接。
-- 桌面 sticky 表头；排序按钮与列名一体，并维护 `aria-sort`。
-- 整行可进入详情时仍保留真实链接；行内复选/菜单点击不得触发行跳转。
-- 行尾菜单只承载低频动作；查看详情、唯一主动作不得藏在 hover。
-- 状态由“图标/短文本/小面积色点”共同表达；禁止整行高饱和填色。
-- 本轮不做批量硬删。若以后增加批量操作，必须单独定义权限、最大条数与审计策略。
-
-### 7.5 Drawer / Full-screen Layer
-
-- User、Workspace、Story 详情桌面宽 720–840px 右 Drawer；复杂角色权限编辑采用独立页或 840px Drawer。
-- Header 固定：返回/关闭、实体名称、只读 ID；Content 独立滚动；Footer 仅在有写动作时固定。
-- 打开后焦点到标题；关闭后焦点回触发行；未保存变更需确认。
-- URL 使用 Resource 详情路由，而不是纯临时 Modal，确保刷新可恢复。
-
-### 7.6 Confirmation
-
-- User 停用、Workspace/Story 归档、管理员停用、角色权限变化、Storage 删除均需二次确认。
-- 弹层必须说明对象、影响、可否恢复和审计事实；危险动作按钮使用 `--color-state-danger`。
-- Storage 删除要求输入完整对象 key；角色权限变更展示增删 diff；最后 active super admin 操作直接阻止并解释。
-
-## 8. 页面功能需求
-
-### 8.1 运营总览
-
-**目标**：一分钟内确认真实规模、停用风险与近期变化。  
-**角色**：拥有 `dashboard.read` 的管理员。  
-**API**：`GET /api/admin/dashboard`。
-
-页面结构：
-
-1. 页头显示“运营总览”、数据来源“ink-memory”和最近成功刷新时间。
-2. Paper 顶部为三组平铺指标行，不做卡片海：User 总数/active/disabled；Workspace 总数/active/archived；Story 总数/status 分布。
-3. 中部左右两列：最近更新 Story（最多 5）与最近管理操作（最多 5）；窄屏纵向堆叠。
-4. 每个数字和条目是可解释链接，例如 disabled User → `/admin/users?status=disabled`。
-
-禁止：虚构趋势、增长百分比、健康分、随机图表、失败后显示 0。单组查询失败仅替换该组为“暂不可用 + 重试 + Request ID”。
-
-验收：空库显示“尚无用户/Workspace/Story”的系统空状态；缺表显示 schema readiness 错误；成功时数字与服务端聚合一致。
-
-### 8.2 Workspace 列表、创建与详情
-
-**Resource / API / Table**：`story-workspaces` / `/api/admin/story-workspaces` / `story_workspace_workspaces`。  
-**默认排序**：`updated_at desc`。
-
-列表：
-
-| 类别 | 字段/规则 |
-|---|---|
-| 主列 | `name`；次行 `id` mono + 复制 |
-| 关联列 | owner display name/email，点击进入 User 详情 |
-| 业务列 | `status`、Story count、`created_at`、`updated_at` |
-| 筛选 | name contains、owner_id eq、owner_email contains、status eq |
-| 排序 | name、story_count、created_at、updated_at |
-| 行动作 | 查看、编辑合法字段、归档；无硬删、无 owner 转移 |
-
-创建表单：
-
-- `name` 必填，1–120 字符；自动 trim，空白名拒绝。
-- `owner_id` 必填，通过真实 User 搜索选择；User 不存在或已不允许创建关系时返回 409。
-- `settings` 可选，默认使用安全的结构化字段表单；未知但合法 JSON 在“高级设置”只读预览，不用通用 JSON Workbench 代替业务字段。
-- 新建默认 `status=active`；创建成功进入详情并显示审计事件。
-
-详情顺序：基本信息 → 所属 User → Story 子列表 → Settings → 时间事实 → 相关审计。Story count 点击进入 `stories?workspace_id=...`；子列表最多展示 10 条并提供“查看全部”。
-
-合法编辑：`name`、受白名单保护的 settings、`status` 具名命令。归档说明 Story 不会被删除；若业务规则不允许带 active Story 归档，服务端返回 409 并列出阻塞数量。
-
-### 8.3 Story 列表、详情、审核与归档
-
-**Resource / API / Table**：`stories` / `/api/admin/stories` / `story_workspace_stories`。  
-**默认排序**：`updated_at desc`。
-
-列表：
-
-| 类别 | 字段/规则 |
-|---|---|
-| 主列 | `title`，无标题时显示“未命名剧本”；次行 identifier/id mono |
-| 关联列 | Workspace 名称、author 用户；均为文字链接 |
-| 业务列 | type、status、review_status、character_count、scene_count、updated_at |
-| 筛选 | title/identifier、workspace_id、author_id、status、review_status、type |
-| 排序 | title、created_at、updated_at |
-| 行动作 | 查看、编辑合法字段、confirm/reject、archive |
-
-详情结构：
-
-1. 身份：title、identifier/id、type。
-2. 归属：Workspace 与 User；若关系异常显示“关系异常”警告和只读技术信息，不制造替代实体。
-3. 内容：description、content、结构化 metadata。
-4. 状态时间线：status、review_status、created/updated/reviewed/archived 时间事实。
-5. 关联审计：仅显示本 Story 的最近管理动作。
-
-内容展示：
-
-- Markdown：使用安全 sanitizer 的只读排版；外链标识目标，不执行 HTML/script。
-- JSON：先验证可解析；树形折叠默认展开前两层，提供“复制 JSON”；不允许行内修改。
-- 未知长文本：保留换行，`overflow-wrap:anywhere`，单区最大高度 480px 后局部滚动。
-- 空内容：显示“该剧本尚无正文”，不显示空白卡片；解析失败显示原始只读文本和错误说明。
-
-合法编辑仅限 `title`、`description`、`type`；confirm/reject/archive 使用具名命令。`content`、author/workspace、计数、内部版本、agent/provenance、ID、时间事实只读。Reject 必填原因；操作成功写入 before/after audit。
-
-### 8.4 平台用户
-
-**Resource / API / Table**：`users` / `/api/admin/users` / `users`。  
-**默认排序**：`updated_at desc`。
-
-| 类别 | 字段/规则 |
-|---|---|
-| 列表 | display_name/email、role、status、Workspace count、Story count、created_at、updated_at |
-| 筛选 | email/display_name contains、role eq、status eq |
-| 排序 | email、created_at、updated_at、Workspace count、Story count |
-| 合法编辑 | display_name、avatar_url、status |
-| 禁止 | 从 Admin 创建密码、重置业务用户密码、硬删、回显任何凭据 |
-
-详情顺序：安全资料 → 状态 → Workspace 关联列表 → Story 关联列表 → 管理审计。Workspace/Story 数量均可进入带 `owner_id`/`author_id` 的过滤列表。
-
-停用确认明确说明：用户不能继续使用业务能力，但历史 Workspace、Story 和审计不删除。并发状态变化返回 409 时，显示“你看到的值 / 服务器最新值”，提供刷新后重试，不静默覆盖。
-
-### 8.5 管理员
-
-**Resource / API / Table**：`admin-users` / `/api/admin/admin-users` / Admin RBAC 表。  
-**列表**：email、display_name、roles、status、last_login_at；筛选 email/status/role。
-
-允许：创建管理员、编辑显示名、设置新密码、分配角色、停用。email 创建后不可改；不硬删。密码输入至少 14 字符，不提供当前密码回填或“显示已保存密码”。
-
-角色分配以当前服务器值为起点；保存前展示新增/移除角色 diff 与受影响权限摘要。最后 active super admin 不可停用，也不可移除其 super_admin 角色；错误应为可理解的 409，而非通用 500。
-
-### 8.6 角色
-
-**Resource / API / Table**：`roles` / `/api/admin/roles` / `admin_roles` + `admin_role_permissions`。
-
-- 列表显示 name、code、type（内置/自定义）、permission count、admin count、updated_at。
-- 筛选 name/code、type；排序 name、updated_at。
-- 自定义角色允许创建、改名称/描述/权限集合、删除；code 创建后只读。
-- `super_admin`、`operator`、`auditor` 等内置角色禁止删除；受保护字段不可改。
-- 权限矩阵按 `dashboard/users/story/access/storage/audit` 域分组，行是 permission，列是 read/write/delete 等能力；每个 checkbox 有完整 label。
-- 保存前显示权限增删 diff、受影响管理员数量与高风险权限警告。
-
-### 8.7 权限
-
-**Resource / API / Table**：`permissions` / `/api/admin/permissions` / `admin_permissions`。  
-该页面只读，不提供新建、编辑、删除按钮。permission 由 migration/bootstrap 管理。
-
-页面按业务域分组，显示 code、name、description、拥有该权限的角色数量。支持 code/name 搜索；点击角色数量进入 `roles?permission=...`。页面顶部明确“权限定义由系统发布管理”，避免运营人员误认为是缺失功能。
-
-### 8.8 Storage 文件资源
-
-**Resource / API / Driver**：`storage-resources` / `/api/admin/storage-resources` / 现有 S3 或 Vercel Blob 驱动。
-
-页面结构：
-
-1. 顶部 capability strip：driver 类型、list/upload/preview/download/delete 可用性、最近刷新时间；不得显示 endpoint secret、bucket credential。
-2. 筛选：key/filename contains、MIME prefix/eq、时间范围；排序 key、size、uploaded/modified time。
-3. 列表：filename、object key（mono + copy）、MIME、格式化 size、时间、driver、可用动作。
-4. 上传 Drawer：可见文件 Label、单文件大小上限、允许 MIME、prefix；校验失败保留文件名/大小信息，要求重新选文件时明确说明。
-5. Preview：仅安全支持的图片/文本/PDF 类型；不支持类型显示元信息和下载，不尝试内联执行。
-6. Delete：必须输入完整 object key；只删除严格 Zod 校验后的精确 key，成功审计 actor/key/metadata。
-
-状态：
-
-- 未配置：显示缺失“驱动/端点/授权类别”，不给出 credential 值；禁用依赖动作并提供安全修复路径。
-- 驱动不支持 list：显示 capability error，不制造假列表。
-- 上传/删除失败：保留筛选和对象上下文，显示 Request ID、重试或返回动作。
-- 文件内容不写 PostgreSQL；底层 Storage 驱动不得删除或替换。
-
-### 8.9 审计日志
-
-**Resource / API / Table**：`audit-logs` / `/api/admin/audit-logs` / `admin_audit_logs`。  
-只读且 append-only。
-
-- 列表字段：created_at、actor、action、resource_type、resource_id、request_id、结果。
-- 筛选：actor、action、resource_type/id、时间范围；默认 `created_at desc`。
-- 详情：脱敏 before/after、metadata、请求关联；JSON 采用安全只读 viewer。
-- resource 能映射到 User/Workspace/Story/Storage/RBAC 时提供文字链接；无法映射时保留原 ID，不创建占位实体。
-- Password、secret、Token、Session、Storage 文件内容不得出现在 before/after 或 metadata。
-
-## 9. 列表、API 与写操作契约
-
-### 9.1 列表查询
-
-- `page >= 1`；`pageSize ∈ {20, 50, 100}`，默认 20。
-- 单字段白名单排序；筛选仅支持资源定义的 `eq`、`contains`、`in`、时间范围。
-- API 响应统一为 `{ data, meta: { total, page, pageSize, totalPages } }`。
-- 仅在查询成功且 `total=0` 时显示 Empty；失败不得伪装成空数据。
-- Repository/Query 层执行参数化 SQL、关联计数和敏感字段白名单；Route Handler 不承载复杂业务逻辑。
-
-### 9.2 所有写操作
-
-执行顺序必须包含：
-
-1. 验证管理员 Session；
-2. 服务端验证对应 permission；
-3. 验证 Origin；
-4. 严格 Zod Schema 拒绝未知字段；
-5. 调用 `app/lib/**` Repository/Mutation；
-6. 在 PostgreSQL transaction 内校验关系并更新；
-7. 写入脱敏 before/after audit；
-8. 返回统一成功或错误结构。
-
-Refine 按钮隐藏只是 UX，不是授权边界。
-
-## 10. 状态与恢复
-
-| 状态 | 页面行为 | 恢复动作 |
+| 页面 | 建议路由 | Refine Resource / 数据来源 |
 |---|---|---|
-| Loading | 保留 Sidebar、Page Header、Filter 与表头高度；按真实列宽绘制 skeleton | 完成后 `aria-live=polite` 播报“已加载 N 条” |
-| 系统 Empty | 解释尚无业务数据；只显示该角色允许的创建动作 | 创建 Workspace/上传文件，或返回父实体 |
-| 筛选 Empty | 显示当前筛选摘要，不暗示系统无数据 | 移除单个筛选或清除全部 |
-| 关系 Empty | 在 User/Workspace 详情说明“尚无关联 Story/Workspace” | 返回父实体或进入允许的创建路径 |
-| 400 | 表单保留输入；顶部错误摘要聚焦首个错误字段 | 修改后重试 |
-| 401 | 不显示残留保护数据；转登录且只携带安全 return URL | 登录后恢复目标路由 |
-| 403 | 显示所需 permission；受限写控件不渲染 | 返回可访问模块 |
-| 404 | 说明实体可能已归档/不存在 | 返回保留 query 的列表并恢复焦点 |
-| 409 | 展示服务器最新值、冲突关系/受保护规则；保留草稿 | 刷新比较后重试，不强制覆盖 |
-| 500/503 | 说明失败范围、Request ID；不切换数据源 | 重试该区域或返回安全页面 |
-| Storage 未配置 | 显示 capability 和缺失配置类别，不泄密 | 按部署说明修复后重新检查 |
+| 业务用户 | `/admin/story/users` | `source-users` / Dream `users` + platform crosswalk |
+| 工作区 | `/admin/story/workspaces` | `story-workspaces` / canonical workspace |
+| 剧本/角色/场景 | `/admin/story/stories`、`characters`、`scenes` | 对应 canonical Dream tables |
+| 套餐 | `/admin/subscriptions/plans` | `subscription-plans` |
+| 套餐版本 | `/admin/subscriptions/plan-versions` | `subscription-plan-versions` |
+| 权益 | `/admin/subscriptions/entitlements` | `subscription-entitlements` |
+| 用户订阅 | `/admin/subscriptions/users`、`/[id]` | `subscriptions` + allowance + usage projection |
+| Provider/Model/Pricing | `/admin/models/providers`、`models`、`pricing` | 现有控制面 Resources |
+| Gateway | `/admin/gateway/keys`、`requests` | 现有 gateway resources + subscription snapshot |
+| Usage/Account/Ledger | `/admin/billing/usage`、`accounts`、`ledger` | 现有计费事实表 |
+| 账单预览 | `/admin/billing/invoices/preview` | Usage/Ledger 只读聚合；CSV 仅当前筛选 |
+| Storage/RBAC/Session/Audit/Settings | `/admin/resources/storage`、`/admin/access/**`、`/admin/system/**` | 保留现有能力 |
 
-## 11. 视觉系统与 Token
+---
 
-### 11.1 视觉语言
+## 6. Admin Shell 页面模块结构（自上而下、自左至右）
 
-关键词是 **“暖纸张、手写笔记、安静工具台”**。不得套用默认 Refine/Ant Design 蓝色后台、蓝紫 AI 渐变、冷灰企业面板、霓虹、高饱和整卡状态或多层 shadow 卡片海。
-
-### 11.2 Token 约束
-
-| 语义 | Light | Dark | 使用 |
+| 区块 | 桌面 1440×1000 | 移动 390×844 | 功能要求 |
 |---|---|---|---|
-| App canvas | `--color-bg-app` / `#f8f0e6` | `#1f1b16` | 页面大面积背景 |
-| Paper | `--color-bg-paper` / `#fffef9` | `#2a251e` | 主阅读/数据面 |
-| Solid popover | `--color-bg-surface-solid` / `#ffffff` | `#332d25` | Menu/Tooltip/Popover |
-| Paper border | `--color-border-paper` / `#d0c4b0` | `#5a4d3d` | 单一虚线页边界、行分隔 |
-| Primary text | `--color-text-primary` / `#2c2c2c` | `#f3eee6` | 标题、主操作 |
-| Body / secondary | `--color-text-body`、`--color-text-secondary` | 对称暖白/暖灰 token | 正文、元信息 |
-| Primary action | `--color-action-primary` | 暗色需用深色前景保证对比 | 唯一主按钮 |
-| Link | `--color-action-link` | 暗色 muted blue | 关联实体和恢复动作 |
-| Success/warning/danger | `--color-state-*` | 对称暖色 token | 小面积状态点、图标、短标记 |
+| A1 左侧品牌与主导航 | 248px 固定侧栏；品牌区、分组导航、底部账户 | 收入左侧 Drawer；默认关闭 | 当前项用细线、字重和小面积黄标识；不使用整行深色 |
+| A2 顶部上下文栏 | 64px；面包屑、页面名、数据源健康、主题、账户 | 56px；菜单、短标题、一个最高优先动作 | Drawer 打开锁焦点；Escape 关闭并归还焦点 |
+| B1 页面标题区 | 标题、目的说明、刷新时间、1–2 个主动作 | 标题与说明折行；次动作进 overflow | 不放装饰性 KPI；数据不可用不显示 0 |
+| B2 查询工具条 | 搜索、关系筛选、状态、日期、排序、清除 | 搜索常显，其余进 Filter Sheet | 条件同步 URL；服务端白名单筛选；显示已启用条件数 |
+| B3 主数据区 | 页面级单一虚线边界；内部平面表格/分区 | 关键字段列表；详情全屏 | 真实分页、总数、page size；根节点不横向滚动 |
+| B4 行级动作 | 行尾常显主动作 + overflow | 44×44 行尾菜单 | 高风险动作不能只在 hover 出现 |
+| B5 详情容器 | 只读核对用右 Drawer；复杂编辑用独立路由 | 全屏页面 | 关闭后恢复列表筛选、滚动和触发行焦点 |
+| B6 反馈层 | Toast、字段错误、409 冲突面板、503 状态 | 同语义，宽度适配 | Success 用 polite live region；Error 用 role=alert |
 
-- 新组件只引用集中 CSS variables / Tailwind 4 theme 映射，不散落孤立十六进制。
-- 普通列表静止态无 shadow；真正浮层才用 `--color-shadow-medium`。
-- Dark 不是简单反色：保持深暖棕画布、深纸面与暖白文字，不使用纯黑冷蓝后台。
-- 状态不可只用颜色；必须搭配文字和图标。
+---
 
-### 11.3 字体、密度与形状
+## 7. 核心页面功能需求
 
-- Admin 标题：本地 Noto Serif SC/可用中文衬线，40/32/24px 层级；不加载远程字体。
-- 正文与控件：Noto Sans SC/系统无衬线，14–16px；表头 12px，适度 letter spacing。
-- ID、permission code、object key、request ID：IBM Plex Mono/系统等宽，11–13px。
-- 间距基线 4px；常用 8/12/16/24/32px。
-- 圆角：输入 6px，Paper/Drawer 12px，状态 badge 999px；不把每行做成圆角卡片。
-- Focus：2px `--color-border-focus` outline + 2px offset；不可被 overflow 裁剪。
-- Hover/focus 过渡 160–240ms；`prefers-reduced-motion` 下移除位移、缩放和非必要过渡。
+### 7.1 运营总览
 
-## 12. 响应式与无障碍验收
+- 页面目的：发现真实待处理事项和系统异常，不承担创建。
+- 内容顺序：数据源健康 → pending review 内容 → 即将续费/past_due/paused 订阅 → Allowance/余额不足 → settlement_failed → Provider/Model/Pricing 异常 → 最近高风险审计。
+- 每个数字必须标注时间窗、更新时间和来源；聚合 API 失败显示“暂不可用 + request ID”。
+- 数字和队列均可跳转到对应已筛选列表，不复制记录。
 
-### 12.1 1440×1000
+### 7.2 Dream 业务用户
 
-- Sidebar 248px 稳定；主内容无页面级横滚；首屏至少显示筛选、表头和 6 条 52px 数据行或等高 loading。
-- Filter 最多两行；不会因为 4–6 个筛选压缩首列至不可读。
-- Detail 720–840px；主内容保留上下文但不可接受焦点。
-- Paper 内横滚时 Sidebar 与 Page Header 不移动。
+- 列表主字段：display_name/email；次行显示 source user ID；列包含 role、Workspace 数、Story 数、计费身份绑定、订阅状态、当前周期剩余额度、更新时间。
+- 筛选：name/email、source ID、是否绑定、订阅状态；排序：created_at、updated_at、display_name。
+- 详情分区：源用户只读资料、Workspace/Story、Billing Identity、Subscription、Usage、Gateway Keys、Audit。
+- 操作：绑定/初始化计费身份；不得编辑 password_hash、创建/删除源用户或伪造 Dream status。
 
-### 12.2 390×844
+### 7.3 Workspace → Story → Character/Scene
 
-- 页面顶栏 56px；导航 Drawer、筛选 Sheet、详情全屏层均有焦点锁定、Escape、遮罩关闭和归焦。
-- 搜索常显；筛选按钮显示已生效数量；主操作不会与标题同排挤压。
-- 触控目标至少 44×44；底部操作含 `env(safe-area-inset-bottom)`。
-- 表格关键列可读；横滚只发生在容器；页面根节点宽度不超过 viewport。
+- Workspace 列表：name、owner、Story/Character/Scene 数、更新时间；Owner 使用可搜索关系选择器，不手填 ID。
+- Workspace 编辑：右 Drawer；name 为文本，settings 为 JSON Editor；提交前严格 object schema；不提供 create/delete/status。
+- Story 列表：title/identifier、workspace、author、type、status、review_status、关联数量、updated_at。
+- Story 详情：基本信息、正文只读预览、角色关系、按 order_index 的 Scene、审阅信息、Agent provenance；允许字段依 Dream API 白名单。
+- Character 详情：基础设定、所属 Workspace、关联 Story + role_type、关联 Scene。
+- Scene 详情：name/description、可空 story_id、Workspace、order_index、出场角色；更换 Story 前校验同 owner/workspace。
+- 创建和硬删除均禁止；审阅/归档只暴露 Dream 真实命令，并在不支持时不显示按钮。
 
-### 12.3 通用无障碍
+### 7.4 Subscription Plan
 
-- 所有输入有可见 Label、稳定 ID、错误描述与 `aria-describedby`。
-- Dialog/Drawer 有语义标题；打开/关闭焦点顺序可预测。
-- 排序维护 `aria-sort`；分页 disabled 使用真实 `disabled`。
-- Toast 不承载唯一错误信息；错误同时显示在相关区域。
-- 加载完成、保存成功、冲突发生由合适的 live region 播报。
+- 列表字段：name/code、status、currency、已发布最新版本、订阅数量、updated_at；不显示虚构收入。
+- 筛选：name/code、status；排序：updated_at、name。
+- 创建/编辑：右 Drawer；name 文本、code 规范化文本（创建后只读）、status 下拉、currency 只读 USD。
+- 停用确认必须说明：不影响已锁定版本和现有订阅，只阻止新订阅选择。
 
-## 13. 技术实现建议
+### 7.5 Plan Version 与 Entitlement
 
-1. `app/lib/db/schema.ts` 是唯一 Drizzle schema 来源；缺表/字段通过 PostgreSQL migration 修正，不建平行模型。
-2. User、Workspace、Story、Storage Admin 通过 `app/lib/**` Repository/Query/Mutation 访问；Route Handler 只编排鉴权、解析、Zod 和调用。
-3. Refine Data Provider 把 server pagination/sort/filter 映射为统一查询参数；Resource URL 使用本 PRD 的 canonical 名称。
-4. 页面专用组件建议：`AdminPageHeader`、`AdminPaper`、`ServerFilterBar`、`EntityLink`、`StatusMark`、`AdminDataTable`、`DetailDrawer`、`ConflictPanel`、`SensitiveConfirmDialog`、`JsonReadOnlyViewer`、`StorageCapabilityStrip`。
-5. 页面状态组件共享，但文案与恢复动作按 Resource 定制；不得回退成通用 JSON CRUD Workbench。
-6. Markdown/JSON/文件预览必须采用安全 renderer；未经信任的 HTML 不执行。
-7. 列表查询使用白名单排序和参数化 SQL；常用 `owner_id/workspace_id/author_id/status/updated_at` 筛选排序建立索引。
-8. 所有更新携带版本或最新 `updated_at` 条件以检测并发；0 行更新转 409。
+- Version 列表字段：Plan、version_no、draft/published、周期、基础价格、trial、grace、有效时间、订阅引用数。
+- 创建使用独立页面，分为“价格与周期 → 权益 → 超额策略 → 发布核对”四段；底部固定保存草稿/发布按钮。
+- 控件：价格用 USD/周期输入并只读显示 micro-USD；周期用单选；trial/grace 用带单位整数；模型用可搜索多选；Gateway Scope 用复选；RPM/Token/金额/Storage quota 用可空整数；overage 用 `deny / cash_balance` 单选。
+- 发布前展示不可变快照 Diff；确认后 Version 和 Entitlement 控件全部只读。
+- 发布冲突、版本号冲突或引用过期返回 409，保留草稿并提供刷新比较。
 
-## 14. 端到端主路径
+### 7.6 用户订阅详情（v3 核心页）
 
-### 14.1 User → Workspace → Story
+- 顶部身份带：Dream 用户、Billing Identity、Subscription 状态、Plan + Version、周期起止、续费/取消标签。
+- 资格解释区：允许的 Model Alias、Gateway Scope、RPM、周期 Token/金额额度、Storage quota、overage policy；显示用户 override 后的最终交集。
+- 额度区：granted、reserved、consumed、remaining；金额同时显示格式化 USD 和精确 micro-USD；不得用浮点计算。
+- 使用区：当前周期 Token 趋势、费用、请求数、预计超额。预计值只能基于明示方法和当前周期真实 Usage；数据不足显示“暂不预测”。
+- 时间线：开通、续费、升级、降级排期、past_due、暂停、恢复、取消与对应 Ledger/Audit。
+- 操作：开通、升级、安排降级、续费、暂停、恢复、周期末取消、立即取消。每个动作使用影响摘要 Modal；升级/续费展示账务预览和幂等键。
+- 用户、Subscription、Usage、Ledger、Request 均支持上下文链接，返回保持原筛选。
 
-1. 运营人员在平台用户按邮箱搜索并进入详情。
-2. 点击 Workspace count，进入带 `owner_id` 的 Workspace 列表。
-3. 点击 Workspace 名称进入详情；返回时恢复 User 上下文。
-4. 点击 Story count，进入带 `workspace_id` 的 Story 列表。
-5. 点击 Story，查看内容、状态时间线与审计；可跳转 author User 或父 Workspace。
-6. 返回列表后恢复筛选、页码、滚动和触发行焦点。
+### 7.7 Provider → Model → Pricing
 
-### 14.2 RBAC 变更
+- Provider 列表沿用紧凑单列运营卡/条目：name/code/protocol/base_url、Credential 配置状态、健康、discover、模型数、定价覆盖、近期真实请求；Secret 永不返回。
+- Provider 创建/编辑使用覆盖侧栏的全屏面板；Secret 为 Password 控件，空值表示不轮换；保存后 discover 失败不回滚 Provider。
+- Model 使用稳定 `code` 对外，`upstream_model` 只在控制面；Provider 为可搜索关系选择器；模型能力用复选，不用默认 JSON。
+- Pricing 只能创建新版本；四类 Token 单价输入明确 USD/1M Token，并同步显示整数 micro-USD；历史价格不可覆盖。
+- 页面联动：Provider → Models → Pricing → Gateway Request，所有跳转携带白名单筛选参数。
 
-1. 权限管理员进入管理员详情查看当前角色。
-2. 打开角色选择器；候选项显示角色名称、code、权限数量。
-3. 保存前确认新增/移除角色 diff 与受影响权限。
-4. 服务端检查最后 active super admin 保护并在 transaction 内更新、审计。
-5. 成功后详情显示服务器新状态；失败保留选择并给出可恢复说明。
+### 7.8 Gateway Key 创建与配置回执
 
-### 14.3 Storage 删除
+- 创建 Modal 字段：Billing Identity、name、scopes 多选、expires_at 日期时间。
+- 成功回执只显示一次明文 Token；固定展示 Gateway Base URL、Anthropic `/v1/messages`、OpenAI `/v1/chat/completions`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN` 和完整 env 片段。
+- 提供“复制地址 / 复制 Token / 复制完整配置”；复制结果通过 polite live region 播报。
+- 离开回执后不可恢复；列表仅显示 prefix、status、scopes、last_used、expires_at；可 revoke，不可取回/更新明文。
 
-1. 资源管理员在 Storage 列表搜索并打开文件详情/预览。
-2. 选择删除；对话框显示 key、MIME、size、不可恢复说明。
-3. 输入完整 object key；服务端验证 `storage.delete`、Origin、Zod exact key。
-4. 驱动删除成功后写审计并返回列表；失败保留对象上下文和 Request ID。
+### 7.9 Gateway Request、Usage、Billing Account、Ledger
 
-## 15. 验收矩阵
+- Request/Usage 共用 URL 驱动筛选：日期/时区、protocol、Provider、Model、User、Subscription、outcome、error code。
+- 请求详情使用桌面宽 Drawer、移动全屏，依次展示 Key/User、订阅资格快照、路由解析、四类 Token、价格快照、Allowance/现金预留、结算、Ledger、性能、脱敏错误。
+- Billing Account 只显示 available/reserved/lifetime debited；周期 Allowance 是独立区块，禁止混成一个“总余额”。
+- 调账只能是 credit/debit/reversal 命令，必须 reason、idempotency key 和可选工单号；提交前显示 before/after。
+- Ledger 只读、append-only；支持 account/user/subscription/request/type/time/idempotency 筛选。
+- 月度账单预览按筛选聚合订阅基础费、Allowance 消耗、Overage、退款/reversal；CSV 仅导出当前筛选及安全字段。
 
-| 能力 | 成功路径 | 必测失败/安全路径 |
+### 7.10 Storage、RBAC、Session、Audit、System Settings
+
+- Storage 复用现有 driver/API，只展示真实支持的配置健康、direct upload、prefix、metadata/exists/download；没有 list 能力时不虚构文件总量。
+- Admin User 可创建、启停、分配角色；禁止停用最后一个 active super_admin。
+- Role 权限矩阵按域/读写/高风险分组；内置角色不可删除，自定义角色有关联时删除返回 409。
+- Session 列表只显示安全元信息，可执行 revoke；不得显示 Session Token。
+- Audit append-only；before/after/metadata 必须递归脱敏 Secret、password、Key、Token、Prompt/response。
+- System Secret 只写不读；详情仅返回 masked 状态；普通设置使用真实控件，未知结构才使用 JSON Editor。
+
+---
+
+## 8. 控件、容器与高风险交互规则
+
+| 数据类型/任务 | 控件或容器 | 关键规则 |
 |---|---|---|
-| Dashboard | 真实数量、状态分布、最近 Story/操作 | 单查询失败显示不可用；空库与缺表区分 |
-| User | 搜索、排序、分页、状态 active↔disabled、关联跳转 | 401/403、严格 Zod、敏感字段不回显、并发 409 |
-| Workspace | 创建、详情、合法编辑、归档、Story 计数 | User FK 409、owner 不可转移、禁止硬删 |
-| Story | 列表/详情、长内容读取、合法编辑、审核、归档 | Workspace/User 冲突、只读字段拒绝、reject reason 必填 |
-| Admin | 创建、停用、设置新密码、角色分配 | 最后 active super admin 保护、密码不回填 |
-| Role/Permission | 自定义角色、权限矩阵、只读 permission | 内置角色保护、diff 确认、无 permission CRUD |
-| Storage | capability、列表、筛选、上传、预览、下载、删除 | 未配置、非法 key/MIME/size、权限/Origin、删除审计 |
-| Audit | 筛选、详情、关联跳转 | append-only、脱敏、无文件内容/secret |
-| UI | Light/Dark、loading/empty/error、返回恢复 | 1440×1000、390×844、键盘、焦点、无根横滚 |
-| 回归 | 模型、计费、Gateway 路由可访问 | 未重构其页面、未泄漏 Secret、未恢复业务前台 |
+| 文本/Code | Text Input | code 创建后只读；显示格式和长度错误 |
+| 整数/RPM/Token/Storage | Number Input + 单位 | 不接受小数；空值与 0 语义必须区分 |
+| 金额 | Decimal USD 输入 + micro-USD 只读镜像 | 提交前转换并校验整数；禁止 JS 浮点进入 service |
+| 枚举 | Select / Segmented Radio | 选项来自 Zod 白名单，不自由输入 |
+| 多模型/Scope | Searchable Multi-select / Checkbox Group | 只提交真实 ID/code；显示选中数量 |
+| 关系 | Searchable Relation Combobox | 服务端分页；支持名称搜索和精确 ID 粘贴 |
+| 日期时间 | DateTime Picker | 明示时区；API 使用 ISO 时间 |
+| 布尔 | Switch | label 说明“开启后影响”，不只显示开关 |
+| JSON | JSON Editor | 仅真实 JSON 字段；schema、行列错误、恢复服务器值 |
+| Secret | Password Input | 默认隐藏、仅本次草稿可显隐；已保存值绝不预填 |
+| 状态/ID/快照 | Tag + Read-only Code | 状态配文字和图标；ID 可复制 |
+| 简单编辑 | Modal 或右 Drawer | 移动端全屏；离开未保存提醒 |
+| 多分区/财务/版本发布 | 独立路由 + 固定 Footer | 中段局部滚动；提交前 review |
+| 只读链路核对 | 右 Drawer | 保持列表查询上下文 |
+| 停用/撤销/取消/调账 | 影响摘要确认 Modal | 二次确认、理由、幂等键、冲突恢复 |
 
-发布前至少执行：`pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm test:run`、`pnpm build`，以及使用明确隔离 PostgreSQL 的 focused Playwright。禁止迁移或清理未知数据库。
+---
 
-## 16. 完成定义
+## 9. RBAC 需求
 
-- 本 PRD 中每个页面都有目标、角色、Resource、API、表/驱动、字段、筛选、排序、动作、permission、状态、关联跳转与双视口行为。
-- 核心页面是运营专用列表、详情和表单，不是通用 JSON CRUD Workbench。
-- 三张业务表关系、只读字段、软状态、外键与冲突处理在 UI 和 API 中一致。
-- Light/Dark 使用集中语义 Token；页面仅一条虚线 paper boundary；普通列表无多层卡片与 shadow。
-- 所有敏感和高风险操作均有服务端权限、Origin、Zod、transaction、审计和二次确认。
-- 未创建数据迁移/同步程序；运行时只有一个 PostgreSQL；未引入 SQLite；未修改 `ink-dream-memory`；未删除或重构模型、网关、计费、权限或 Storage；未恢复 `app/(app)`。
+| 权限域 | 读 | 写/高风险动作 |
+|---|---|---|
+| Story | `story.read` | `story.write`：白名单更新和真实命令 |
+| Source User | `users.read` | `users.write`：仅计费身份绑定/停用 |
+| Subscription | `subscriptions.read` | `subscriptions.write`：Plan/Version/Entitlement/Lifecycle |
+| Provider/Model/Pricing | 各域 `.read` | 各域 `.write`；Secret 轮换与版本发布 |
+| Billing | `billing.read` | `billing.adjust`：credit/debit/reversal |
+| Gateway | `gateway.read` | `gateway.keys.write`：create/revoke Key |
+| Storage | `storage.read` | `storage.write`；删除若未来开放需独立权限 |
+| Access | `access.read` | `access.write`：Admin/Role/Session revoke |
+| System | `system.read` | `system.write`：设置/Secret 覆盖 |
+| Audit | `audit.read` | 无 update/delete |
+
+客户端仅负责隐藏或禁用控件；每个 API 必须再次验证 Session 与 permission。403 页面说明所需权限但不泄露记录内容。
+
+---
+
+## 10. 状态、错误与恢复
+
+| 状态 | 页面表现 | 恢复动作 |
+|---|---|---|
+| Loading | 保留表头/筛选和最终行高的 skeleton | 超时后显示仍在加载；不清空现有数据 |
+| Empty | 区分“无数据”和“筛选无结果” | 清除筛选；只读域不诱导创建 |
+| 400 | 字段级错误，保留草稿 | 聚焦首个错误并允许修正 |
+| 401 | Session 已过期 | 登录后返回原 URL |
+| 402 | Allowance/Overage 余额不足 | 跳转订阅/余额详情；不建议重试消耗请求 |
+| 403 | 权益、Scope、模型或 Admin permission 不足 | 显示安全原因和申请路径 |
+| 404 | 记录不存在/不可见 | 返回对应列表 |
+| 409 | 状态机、唯一键、版本、FK 或并发冲突 | 展示服务器最新状态、Diff；禁止盲目覆盖 |
+| 429 | RPM/Token 窗口超限 | 显示重置时间和生效限制来源 |
+| 500 | 安全错误摘要 + request ID | 重试/复制 request ID；不泄露 SQL/Secret |
+| 503 | Dream 表、数据库或依赖不可用 | 显示缺失依赖和运维提示；绝不旧表/假数据回退 |
+| Success | Toast/行内确认真实动作和资源 ID | 失效对应 list/detail cache，焦点回归合理位置 |
+
+---
+
+## 11. 响应式与可访问性
+
+- 桌面 1440×1000：固定侧栏 + 顶栏 + 单一主滚动；列表占满可用宽度，只有数据表内部允许横向滚动。
+- 移动 390×844：侧栏 Drawer；筛选收进 Sheet；列表仅保留主字段、状态、时间和动作；详情/编辑全屏；根节点宽度不得超过 viewport。
+- 触控目标至少 44×44；正文不小于 14px；可见 label 与 required/optional 标识齐全。
+- focus ring 使用语义 Token；不得全局移除 outline；Modal/Drawer 锁焦点并在关闭后还原。
+- 状态不只用颜色，必须有文字或图标；图标按钮有 accessible name。
+- 表格提供 caption/column header；异步成功使用 polite live region，错误使用 `role=alert`。
+- 所有动效 0.2–0.3s，并尊重 `prefers-reduced-motion`；两主题均达到 WCAG AA。
+
+---
+
+## 12. 技术落地建议
+
+1. 保持 Next.js Route Handler 轻量：解析请求、Session/RBAC、Zod、调用 service、映射错误；SQL、行锁、状态机、Ledger 和 Audit 放在 `app/lib/**`。
+2. Dream 资源使用 `app/lib/story-source/**` repository/service 并复用 `app/lib/db.ts` 的唯一 PostgreSQL Pool；旧 `story_*` 不再出现在新查询。
+3. Subscription 建独立 domain repository/service/state machine；所有生命周期命令使用 transaction、row lock/乐观 version 与 idempotency key。
+4. Plan Version/Entitlement published 后由 service 和数据库约束双重禁止更新/删除；Ledger、Token Usage、Audit 继续用 trigger/API 双重保护。
+5. Gateway 在上游调用前完成资格与预留，在响应后 capture/release；流式中断、未知 usage 和结算失败保留安全状态，不按 0 结算。
+6. Refine Data Provider 统一实现服务端 page/pageSize、单字段 sorter、白名单 filter 和 meta.total；关系选择器复用受权分页端点。
+7. 使用项目现有 Tailwind 4、本地字体和本地图标；把颜色、间距、圆角、阴影、z-index、表格密度集中为 Admin Design Tokens。
+8. 支付仅保留 Adapter/Webhook 幂等接口和审计边界；没有渠道配置时 UI 明确显示“未接入支付渠道”，不得生成支付成功数据。
+
+---
+
+## 13. 可自动验证的验收标准
+
+### 数据与安全
+
+- Story/source-user repository 只查询 Dream canonical 原名表；旧平行表仍保留但无 Resource/API 绑定。
+- 全仓运行态仅 `DATABASE_URL`，仅 PostgreSQL `ink-memory`；无 SQLite、JSON DB、内存或旧表回退。
+- Source User API 不选择/返回 password_hash；Provider Secret、Gateway Key、System Secret 永不回显或进入日志/截图。
+- 未迁入 Character/Scene/Workflow 表时返回 503，控制面模块继续可用。
+- 无 Session API 返回 401；无权限返回 403；FK/unique/state/version 冲突返回 409。
+
+### 订阅与计费
+
+- Plan code 唯一且不可复用；Published Version/Entitlement 不可 update/delete。
+- 覆盖 trial、activate、renew、past_due、pause、resume、cancel_at_period_end、cancel now、expired。
+- 覆盖立即升级、下周期降级、重复续费、并发升级和重复 Webhook；重复幂等键不重复扣费/赠额。
+- Gateway 验证 Subscription → Entitlement → Model override → Allowance/Overage → Request → Usage → Ledger 全链路。
+- Allowance 预留/消费/释放守恒；cash available/reserved 与赠送额度分离；所有金额是整数 micro-USD。
+- Ledger/Usage/Audit 的 update/delete 被 API 与数据库拒绝；退款/纠错使用新 reversal 记录。
+
+### 页面与交互
+
+- Plan、Version、Entitlement、Subscription 和用户订阅详情均使用真实 API，不是静态外壳。
+- 用户订阅详情能解释最终模型权限、额度来源、当前用量和不可调用原因。
+- Gateway Key 明文只在创建回执出现一次，刷新/详情不可取回；Anthropic/OpenAI 配置均可复制。
+- loading、empty、400、401、402、403、404、409、429、500、503 和 success 有明确恢复路径。
+- 1440×1000 与 390×844 无根节点横向溢出；键盘、焦点、label、live region 和触控目标通过。
+- 页面遵循暖纸 Token、少面板、单一虚线边界、普通行无静态阴影；不出现默认 Refine/Ant Design CRUD 外观。
+
+### 回归与发布
+
+- `pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm test:run`、`pnpm build` 通过。
+- 聚焦 Playwright 覆盖 Dream 查询/受控写、订阅生命周期、Gateway 资格、账本、Secret 脱敏、Storage、RBAC、移动布局和 PWA 404。
+- PostgreSQL 集成只连接明确临时数据库或 `TEST_DATABASE_URL`；不迁移、清空或删除共享 `ink-memory` 数据。
+- 明确证明没有修改 `ink-dream-memory` 代码/Schema/迁移/运行逻辑，没有恢复 PWA，没有删除 Storage。
+
+---
+
+## 14. 本阶段交付给后续设计 Agent 的硬约束
+
+1. 结构草图必须以 Admin Shell 和真实运营任务为中心，不画品牌 Landing Page、Hero 或毛绒角色展示区。
+2. 用户订阅详情是首要核心屏；其次是 Plan Version 发布、Dream 业务层级详情和 Gateway Request 资格链。
+3. 所有页面最多一个 page-level 虚线纸边界；普通内容靠留白、字体层级和细分隔线组织。
+4. 桌面和移动必须同时画出筛选、列表、详情、编辑和错误恢复结构，不能只给桌面静态图。
+5. 所有金额、用量、状态和总数均使用“真实 API 占位语义”，不得填入虚构数字或增长率。
+6. 所有 Secret 仅使用“已配置 / 未配置 / 一次性回执”状态，不在任何设计稿中放真实或示例明文 Key。
