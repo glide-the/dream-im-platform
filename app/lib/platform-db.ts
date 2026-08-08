@@ -22,7 +22,6 @@ export async function assertPlatformSchema() {
         requests: string | null;
         ledger: string | null;
         admin_users: string | null;
-        story_projects: string | null;
         system_settings: string | null;
         estimated_tokens: string | null;
       }>(
@@ -31,7 +30,6 @@ export async function assertPlatformSchema() {
           to_regclass('public.gateway_requests')::text AS requests,
           to_regclass('public.billing_ledger_entries')::text AS ledger,
           to_regclass('public.admin_users')::text AS admin_users,
-          to_regclass('public.story_projects')::text AS story_projects,
           to_regclass('public.system_settings')::text AS system_settings,
           (
             SELECT column_name
@@ -48,7 +46,6 @@ export async function assertPlatformSchema() {
           !row.requests ||
           !row.ledger ||
           !row.admin_users ||
-          !row.story_projects ||
           !row.system_settings ||
           !row.estimated_tokens
         ) {

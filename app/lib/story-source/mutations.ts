@@ -1,0 +1,467 @@
+import type { PoolClient } from "pg";
+import { z } from "zod";
+import { recordAdminAuditOnClient } from "../admin/audit";
+import { AdminError, adminErrorResponse } from "../admin/errors";
+import {
+  adminRequestId,
+  assertAdminMutationOrigin,
+  requireAdminRequest,
+} from "../admin/guard";
+import { withPlatformTransaction } from "../platform-db";
+import { withStoryTransaction } from "./db";
+import {
+  isStorySourceResource,
+  queryStorySourceItem,
+  storySourceError,
+  storySourcePermission,
+  type StorySourceResource,
+} from "./repository";
+
+const nonEmptyPatch = <T extends z.ZodRawShape>(shape: T) =>
+  z
+    .strictObject(shape)
+    .refine((value) => Object.keys(value).length > 0, {
+      message: "At least one field must be provided",
+    });
+
+const workspacePatchSchema = nonEmptyPatch({
+  name: z.string().trim().min(1).max(180).optional(),
+  settings: z.record(z.string(), z.unknown()).optional(),
+});
+const storyPatchSchema = nonEmptyPatch({
+  title: z.string().trim().min(1).max(240).optional(),
+  description: z.string().trim().max(20_000).nullable().optional(),
+  content: z.string().max(2_000_000).nullable().optional(),
+  type: z.enum(["short", "long", "script", "outline"]).optional(),
+});
+const characterPatchSchema = nonEmptyPatch({
+  name: z.string().trim().min(1).max(180).optional(),
+  identity: z.string().trim().max(20_000).nullable().optional(),
+  personality: z.string().trim().max(20_000).nullable().optional(),
+  background: z.string().trim().max(20_000).nullable().optional(),
+  catchphrase: z.string().trim().max(4_000).nullable().optional(),
+  tags: z.array(z.string().trim().min(1).max(120)).max(100).optional(),
+  avatarUrl: z.url().max(2_000).nullable().optional(),
+});
+const scenePatchSchema = nonEmptyPatch({
+  name: z.string().trim().min(1).max(240).optional(),
+  description: z.string().trim().max(20_000).nullable().optional(),
+  storyId: z.string().trim().min(1).max(200).nullable().optional(),
+  orderIndex: z.number().int().nonnegative().optional(),
+});
+const reviewActionSchema = z.strictObject({
+  reviewNotes: z.string().trim().min(1).max(2_000).optional(),
+});
+
+type PatchConfig = {
+  table: string;
+  schema: z.ZodType<Record<string, unknown>>;
+  fields: Record<string, { column: string; json?: boolean }>;
+};
+
+const patchConfigs: Partial<Record<StorySourceResource, PatchConfig>> = {
+  "story-workspaces": {
+    table: "story_workspace_workspaces",
+    schema: workspacePatchSchema,
+    fields: {
+      name: { column: "name" },
+      settings: { column: "settings", json: true },
+    },
+  },
+  "story-stories": {
+    table: "story_workspace_stories",
+    schema: storyPatchSchema,
+    fields: {
+      title: { column: "title" },
+      description: { column: "description" },
+      content: { column: "content" },
+      type: { column: "type" },
+    },
+  },
+  "story-characters": {
+    table: "story_workspace_characters",
+    schema: characterPatchSchema,
+    fields: {
+      name: { column: "name" },
+      identity: { column: "identity" },
+      personality: { column: "personality" },
+      background: { column: "background" },
+      catchphrase: { column: "catchphrase" },
+      tags: { column: "tags", json: true },
+      avatarUrl: { column: "avatar_url" },
+    },
+  },
+  "story-scenes": {
+    table: "story_workspace_scenes",
+    schema: scenePatchSchema,
+    fields: {
+      name: { column: "name" },
+      description: { column: "description" },
+      storyId: { column: "story_id" },
+      orderIndex: { column: "order_index" },
+    },
+  },
+};
+
+async function parseBody<T extends z.ZodTypeAny>(request: Request, schema: T) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    throw new AdminError(
+      "STORY_SOURCE_JSON_INVALID",
+      "The request body must contain valid JSON",
+      400,
+    );
+  }
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    throw new AdminError(
+      "STORY_SOURCE_INPUT_INVALID",
+      "The Story resource input is invalid",
+      400,
+      parsed.error.issues.slice(0, 5),
+    );
+  }
+  return parsed.data;
+}
+
+async function loadRowForUpdate(client: PoolClient, table: string, id: string) {
+  const result = await client.query<Record<string, unknown>>(
+    `SELECT * FROM ${table} WHERE id = $1 FOR UPDATE`,
+    [id],
+  );
+  if (!result.rows[0]) {
+    throw new AdminError(
+      "STORY_SOURCE_ITEM_NOT_FOUND",
+      "The requested Story item does not exist",
+      404,
+    );
+  }
+  return result.rows[0];
+}
+
+async function updateSourceRow(
+  client: PoolClient,
+  id: string,
+  input: Record<string, unknown>,
+  config: PatchConfig,
+) {
+  const before = await loadRowForUpdate(client, config.table, id);
+  if (config.table === "story_workspace_scenes" && input.storyId) {
+    const parent = await client.query(
+      `SELECT 1 FROM story_workspace_stories
+       WHERE id = $1 AND author_id = $2 AND workspace_id = $3 LIMIT 1`,
+      [input.storyId, before.author_id, before.workspace_id],
+    );
+    if (!parent.rows[0]) {
+      throw new AdminError(
+        "STORY_SOURCE_PARENT_CONFLICT",
+        "The target story must belong to the same author and workspace",
+        409,
+      );
+    }
+  }
+
+  const entries = Object.entries(input);
+  const values = entries.map(([key, value]) =>
+    config.fields[key]?.json ? JSON.stringify(value) : value,
+  );
+  const assignments = entries.map(([key], index) => {
+    const field = config.fields[key];
+    if (!field) {
+      throw new AdminError(
+        "STORY_SOURCE_FIELD_INVALID",
+        `Field ${key} is not writable`,
+        400,
+      );
+    }
+    return `${field.column} = $${index + 2}`;
+  });
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE ${config.table}
+     SET ${assignments.join(", ")}, updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1 RETURNING *`,
+    [id, ...values],
+  );
+  return { before, after: result.rows[0] };
+}
+
+async function auditSourceMutation(input: {
+  request: Request;
+  requestId: string;
+  identity: Awaited<ReturnType<typeof requireAdminRequest>>;
+  action: string;
+  resource: string;
+  id: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+}) {
+  await withPlatformTransaction(async (client) => {
+    await recordAdminAuditOnClient(client, {
+      identity: input.identity,
+      action: input.action,
+      resourceType: input.resource,
+      resourceId: input.id,
+      requestId: input.requestId,
+      request: input.request,
+      before: input.before,
+      after: input.after,
+      metadata: { dataSource: "story-postgresql" },
+    });
+  });
+}
+
+export async function handleStorySourceUpdate(
+  request: Request,
+  resource: StorySourceResource,
+  id: string,
+) {
+  const requestId = adminRequestId(request);
+  try {
+    assertAdminMutationOrigin(request);
+    const config = patchConfigs[resource];
+    if (!config) {
+      throw new AdminError(
+        "STORY_SOURCE_UPDATE_DENIED",
+        "This Story source resource is read-only in the control plane",
+        405,
+      );
+    }
+    const identity = await requireAdminRequest(request, "story.write");
+    const input = await parseBody(request, config.schema);
+    const changed = await withStoryTransaction(
+      async (client) => await updateSourceRow(client, id, input, config),
+    );
+    try {
+      await auditSourceMutation({
+        request,
+        requestId,
+        identity,
+        action: "update",
+        resource,
+        id,
+        ...changed,
+      });
+    } catch {
+      throw new AdminError(
+        "STORY_SOURCE_AUDIT_FAILED",
+        "The Story change committed, but its control-plane audit requires manual reconciliation",
+        500,
+        { sourceMutationCommitted: true, requestId },
+      );
+    }
+    const data = await queryStorySourceItem(resource, id);
+    return Response.json(
+      { data },
+      { headers: { "cache-control": "no-store", "x-request-id": requestId } },
+    );
+  } catch (error) {
+    return adminErrorResponse(storySourceError(error), requestId);
+  }
+}
+
+export async function handleStorySourceCreate(
+  request: Request,
+  resource: StorySourceResource,
+) {
+  const requestId = adminRequestId(request);
+  try {
+    assertAdminMutationOrigin(request);
+    await requireAdminRequest(request, storySourcePermission(resource));
+    throw new AdminError(
+      "STORY_SOURCE_CREATE_DENIED",
+      "Story entities are created by the source product workflow, not by Admin",
+      405,
+    );
+  } catch (error) {
+    return adminErrorResponse(storySourceError(error), requestId);
+  }
+}
+
+export async function handleStorySourceDelete(
+  request: Request,
+  resource: StorySourceResource,
+) {
+  const requestId = adminRequestId(request);
+  try {
+    assertAdminMutationOrigin(request);
+    await requireAdminRequest(request, storySourcePermission(resource));
+    throw new AdminError(
+      "STORY_SOURCE_DELETE_DENIED",
+      "Story source records cannot be hard-deleted from Admin",
+      405,
+    );
+  } catch (error) {
+    return adminErrorResponse(storySourceError(error), requestId);
+  }
+}
+
+function actionTable(resource: StorySourceResource) {
+  const tables = {
+    "story-stories": "story_workspace_stories",
+    "story-characters": "story_workspace_characters",
+    "story-scenes": "story_workspace_scenes",
+  } as const;
+  return tables[resource as keyof typeof tables];
+}
+
+async function transitionReview(
+  client: PoolClient,
+  resource: StorySourceResource,
+  id: string,
+  action: "confirm" | "reject" | "archive",
+  reviewNotes?: string,
+) {
+  const table = actionTable(resource);
+  if (!table) {
+    throw new AdminError(
+      "STORY_SOURCE_ACTION_DENIED",
+      "This Story source resource does not support review transitions",
+      405,
+    );
+  }
+  const before = await loadRowForUpdate(client, table, id);
+  if (!["1", "true"].includes(String(before.agent_generated))) {
+    throw new AdminError(
+      "STORY_SOURCE_ACTION_DENIED",
+      "Only Agent-generated Story assets use Admin review transitions",
+      409,
+    );
+  }
+
+  if (action === "archive") {
+    if (before.status === "archived") {
+      throw new AdminError(
+        "STORY_SOURCE_ALREADY_ARCHIVED",
+        "The Story item is already archived",
+        409,
+      );
+    }
+    await client.query(
+      `UPDATE ${table}
+       SET status = 'archived',
+           ${resource === "story-stories" ? "" : "archived_at = CURRENT_TIMESTAMP,"}
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [id],
+    );
+  } else {
+    if (before.review_status !== "pending" || before.status === "archived") {
+      throw new AdminError(
+        "STORY_SOURCE_REVIEW_CONFLICT",
+        "Only pending, non-archived Story items can be reviewed",
+        409,
+      );
+    }
+    if (action === "confirm") {
+      const storyPublishing =
+        resource === "story-stories"
+          ? "status = 'published', published_at = CURRENT_TIMESTAMP,"
+          : "";
+      await client.query(
+        `UPDATE ${table}
+         SET review_status = 'confirmed', ${storyPublishing}
+             confirmed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [id],
+      );
+      if (resource === "story-stories") {
+        await client.query(
+          `UPDATE story_workspace_scenes
+           SET review_status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE story_id = $1 AND author_id = $2
+             AND agent_generated::text IN ('1', 'true')
+             AND review_status = 'pending' AND status != 'archived'`,
+          [id, before.author_id],
+        );
+        await client.query(
+          `UPDATE story_workspace_characters
+           SET review_status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE author_id = $1 AND agent_generated::text IN ('1', 'true')
+             AND review_status = 'pending' AND status != 'archived'
+             AND id IN (
+               SELECT character_id FROM story_workspace_story_characters
+               WHERE story_id = $2
+             )`,
+          [before.author_id, id],
+        );
+      }
+    } else {
+      await client.query(
+        `UPDATE ${table}
+         SET review_status = 'rejected', review_notes = $2,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [id, reviewNotes ?? null],
+      );
+    }
+  }
+  const after = await loadRowForUpdate(client, table, id);
+  return { before, after };
+}
+
+export async function handleStorySourceAction(
+  request: Request,
+  resource: string,
+  id: string,
+  action: string,
+) {
+  const requestId = adminRequestId(request);
+  try {
+    assertAdminMutationOrigin(request);
+    if (!isStorySourceResource(resource)) {
+      throw new AdminError(
+        "STORY_SOURCE_RESOURCE_NOT_FOUND",
+        "The requested Story source resource does not exist",
+        404,
+      );
+    }
+    if (!(["confirm", "reject", "archive"] as const).includes(action as never)) {
+      throw new AdminError(
+        "STORY_SOURCE_ACTION_NOT_FOUND",
+        "The requested Story action does not exist",
+        404,
+      );
+    }
+    const identity = await requireAdminRequest(request, "story.write");
+    const body = await parseBody(request, reviewActionSchema);
+    const changed = await withStoryTransaction(
+      async (client) =>
+        await transitionReview(
+          client,
+          resource,
+          id,
+          action as "confirm" | "reject" | "archive",
+          body.reviewNotes,
+        ),
+    );
+    try {
+      await auditSourceMutation({
+        request,
+        requestId,
+        identity,
+        action,
+        resource,
+        id,
+        ...changed,
+      });
+    } catch {
+      throw new AdminError(
+        "STORY_SOURCE_AUDIT_FAILED",
+        "The Story transition committed, but its control-plane audit requires manual reconciliation",
+        500,
+        { sourceMutationCommitted: true, requestId },
+      );
+    }
+    const data = await queryStorySourceItem(resource, id);
+    return Response.json(
+      { data },
+      { headers: { "cache-control": "no-store", "x-request-id": requestId } },
+    );
+  } catch (error) {
+    return adminErrorResponse(storySourceError(error), requestId);
+  }
+}

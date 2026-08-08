@@ -10,6 +10,12 @@ import {
   buildAdminListClauses,
   parseAdminListQuery,
 } from "./list-query";
+import {
+  isStorySourceResource,
+  queryStorySourceItem,
+  queryStorySourceList,
+  storySourcePermission,
+} from "../story-source/repository";
 
 export type AdminResource =
   | "platform-users"
@@ -26,11 +32,6 @@ export type AdminResource =
   | "admin-users"
   | "admin-roles"
   | "admin-permissions"
-  | "story-workspaces"
-  | "story-projects"
-  | "story-characters"
-  | "story-scenes"
-  | "story-workflow-runs"
   | "system-settings"
   | "audit-logs";
 
@@ -354,121 +355,6 @@ const resources: Record<AdminResource, ResourceConfig> = {
     defaultSort: "code",
     filterFields: ["code", "name"],
   },
-  "story-workspaces": {
-    permission: "story.read",
-    select: `w.id, w.owner_user_id, u.email AS owner_email, w.name, w.slug,
-             w.description, w.status, w.metadata, w.created_at, w.updated_at`,
-    from: "FROM story_workspaces AS w JOIN platform_users AS u ON u.id = w.owner_user_id",
-    columns: {
-      id: "w.id",
-      owner_user_id: "w.owner_user_id",
-      owner_email: "u.email",
-      name: "w.name",
-      slug: "w.slug",
-      status: "w.status",
-      created_at: "w.created_at",
-      updated_at: "w.updated_at",
-    },
-    defaultSort: "updated_at",
-    filterFields: ["owner_user_id", "owner_email", "name", "slug", "status"],
-  },
-  "story-projects": {
-    permission: "story.read",
-    select: `p.id, p.workspace_id, w.name AS workspace_name,
-             p.owner_user_id, u.email AS owner_email, p.identifier, p.title,
-             p.synopsis, p.story_type, p.status, p.review_status,
-             p.character_count, p.scene_count, p.word_count, p.settings,
-             p.agent_generated, p.confirmed_at, p.published_at,
-             p.created_at, p.updated_at`,
-    from: `FROM story_projects AS p
-           JOIN story_workspaces AS w ON w.id = p.workspace_id
-           JOIN platform_users AS u ON u.id = p.owner_user_id`,
-    columns: {
-      id: "p.id",
-      workspace_id: "p.workspace_id",
-      workspace_name: "w.name",
-      owner_user_id: "p.owner_user_id",
-      owner_email: "u.email",
-      identifier: "p.identifier",
-      title: "p.title",
-      story_type: "p.story_type",
-      status: "p.status",
-      review_status: "p.review_status",
-      agent_generated: "p.agent_generated::text",
-      created_at: "p.created_at",
-      updated_at: "p.updated_at",
-    },
-    defaultSort: "updated_at",
-    filterFields: ["workspace_id", "workspace_name", "owner_user_id", "owner_email", "identifier", "title", "story_type", "status", "review_status", "agent_generated"],
-  },
-  "story-characters": {
-    permission: "story.read",
-    select: `c.id, c.project_id, p.title AS project_title, c.name,
-             c.role_type, c.description, c.profile, c.sort_order, c.status,
-             c.created_at, c.updated_at`,
-    from: "FROM story_characters AS c JOIN story_projects AS p ON p.id = c.project_id",
-    columns: {
-      id: "c.id",
-      project_id: "c.project_id",
-      project_title: "p.title",
-      name: "c.name",
-      role_type: "c.role_type",
-      status: "c.status",
-      sort_order: "c.sort_order",
-      created_at: "c.created_at",
-      updated_at: "c.updated_at",
-    },
-    defaultSort: "sort_order",
-    filterFields: ["project_id", "project_title", "name", "role_type", "status"],
-  },
-  "story-scenes": {
-    permission: "story.read",
-    select: `s.id, s.project_id, p.title AS project_title, s.title,
-             s.summary, s.content, s.status, s.sort_order, s.word_count,
-             s.metadata, s.created_at, s.updated_at`,
-    from: "FROM story_scenes AS s JOIN story_projects AS p ON p.id = s.project_id",
-    columns: {
-      id: "s.id",
-      project_id: "s.project_id",
-      project_title: "p.title",
-      title: "s.title",
-      status: "s.status",
-      sort_order: "s.sort_order",
-      created_at: "s.created_at",
-      updated_at: "s.updated_at",
-    },
-    defaultSort: "sort_order",
-    filterFields: ["project_id", "project_title", "title", "status"],
-  },
-  "story-workflow-runs": {
-    permission: "story.read",
-    select: `r.id, r.workspace_id, w.name AS workspace_name, r.project_id,
-             p.title AS project_title, r.created_by_user_id,
-             u.email AS created_by_email, r.workflow_code, r.workflow_version,
-             r.status, r.failed_step, r.error_code, r.error_message,
-             r.input, r.output, r.started_at, r.completed_at,
-             r.created_at, r.updated_at`,
-    from: `FROM story_workflow_runs AS r
-           JOIN story_workspaces AS w ON w.id = r.workspace_id
-           LEFT JOIN story_projects AS p ON p.id = r.project_id
-           JOIN platform_users AS u ON u.id = r.created_by_user_id`,
-    columns: {
-      id: "r.id",
-      workspace_id: "r.workspace_id",
-      workspace_name: "w.name",
-      project_id: "r.project_id",
-      project_title: "p.title",
-      created_by_user_id: "r.created_by_user_id",
-      created_by_email: "u.email",
-      workflow_code: "r.workflow_code",
-      status: "r.status",
-      error_code: "r.error_code",
-      created_at: "r.created_at",
-      updated_at: "r.updated_at",
-    },
-    defaultSort: "created_at",
-    filterFields: ["workspace_id", "workspace_name", "project_id", "project_title", "created_by_user_id", "created_by_email", "workflow_code", "status", "error_code"],
-  },
   "system-settings": {
     permission: "system.read",
     select: `s.id, s.category, s.key,
@@ -523,6 +409,9 @@ function resourceConfig(resource: string): ResourceConfig {
 }
 
 export function adminResourcePermission(resource: string) {
+  if (isStorySourceResource(resource)) {
+    return storySourcePermission(resource);
+  }
   return resourceConfig(resource).permission;
 }
 
@@ -560,6 +449,16 @@ export async function handleAdminResourceList(
 ) {
   const requestId = adminRequestId(request);
   try {
+    if (isStorySourceResource(resource)) {
+      await requireAdminRequest(request, storySourcePermission(resource));
+      const response = await queryStorySourceList(request, resource);
+      return Response.json(response, {
+        headers: {
+          "cache-control": "no-store",
+          "x-request-id": requestId,
+        },
+      });
+    }
     const config = resourceConfig(resource);
     await requireAdminRequest(request, config.permission);
     const response = await withPlatformClient(
@@ -583,6 +482,19 @@ export async function handleAdminResourceGetOne(
 ) {
   const requestId = adminRequestId(request);
   try {
+    if (isStorySourceResource(resource)) {
+      await requireAdminRequest(request, storySourcePermission(resource));
+      const data = await queryStorySourceItem(resource, id);
+      return Response.json(
+        { data },
+        {
+          headers: {
+            "cache-control": "no-store",
+            "x-request-id": requestId,
+          },
+        },
+      );
+    }
     const config = resourceConfig(resource);
     await requireAdminRequest(request, config.permission);
     const data = await withPlatformClient(async (client) => {

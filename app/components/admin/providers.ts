@@ -9,6 +9,7 @@ import type {
 
 // Browser-side Refine adapters. Server authorization remains authoritative.
 const registeredResources = new Set([
+  "source-users",
   "platform-users",
   "providers",
   "models",
@@ -25,7 +26,7 @@ const registeredResources = new Set([
   "admin-permissions",
   "audit-logs",
   "story-workspaces",
-  "story-projects",
+  "story-stories",
   "story-characters",
   "story-scenes",
   "story-workflow-runs",
@@ -36,6 +37,7 @@ const resourcePermission: Record<
   string,
   { read: string; write: string }
 > = {
+  "source-users": { read: "users.read", write: "users.read" },
   "platform-users": { read: "users.read", write: "users.write" },
   "user-model-permissions": { read: "users.read", write: "users.write" },
   providers: { read: "providers.read", write: "providers.write" },
@@ -55,7 +57,7 @@ const resourcePermission: Record<
   "admin-permissions": { read: "access.read", write: "access.write" },
   "audit-logs": { read: "audit.read", write: "audit.read" },
   "story-workspaces": { read: "story.read", write: "story.write" },
-  "story-projects": { read: "story.read", write: "story.write" },
+  "story-stories": { read: "story.read", write: "story.write" },
   "story-characters": { read: "story.read", write: "story.write" },
   "story-scenes": { read: "story.read", write: "story.write" },
   "story-workflow-runs": { read: "story.read", write: "story.write" },

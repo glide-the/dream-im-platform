@@ -23,7 +23,7 @@ export default async function AdminWorkspaceLayout({
   if (!identity) redirect("/admin/login");
 
   return (
-    <div className="min-h-[100dvh] bg-bg-primary text-text-primary lg:flex">
+    <div className="min-h-[100dvh] bg-bg-primary text-text-primary">
       <AdminNavigation
         identity={{
           name: identity.displayName ?? identity.email,
@@ -31,8 +31,8 @@ export default async function AdminWorkspaceLayout({
           permissions: identity.permissions,
         }}
       />
-      <main className="min-w-0 flex-1">
-        <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-10 lg:py-9">
+      <main className="min-w-0 lg:pl-[248px]">
+        <div className="admin-page-frame mx-auto w-full max-w-[1480px] px-4 py-6 sm:px-6 lg:px-9 lg:py-8">
           {children}
         </div>
       </main>

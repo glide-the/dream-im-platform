@@ -8,7 +8,7 @@ const N = 16_384;
 const R = 8;
 const P = 1;
 const MAX_MEMORY = 64 * 1024 * 1024;
-export const ADMIN_PASSWORD_MIN_LENGTH = 10;
+export const ADMIN_PASSWORD_MIN_LENGTH = 14;
 
 function derive(password: string, salt: Buffer) {
   return new Promise<Buffer>((resolve, reject) => {

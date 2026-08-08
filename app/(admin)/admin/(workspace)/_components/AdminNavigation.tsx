@@ -2,18 +2,163 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
-const resources = [
-  { label: "总览", href: "/admin", permission: "dashboard.read" },
-  { label: "剧本数据", href: "/admin/story", permission: "story.read" },
-  { label: "平台用户", href: "/admin/users", permission: "users.read" },
-  { label: "模型中心", href: "/admin/models", permission: "models.read" },
-  { label: "Token 计费", href: "/admin/billing", permission: "billing.read" },
-  { label: "代理网关", href: "/admin/gateway", permission: "gateway.read" },
-  { label: "权限管理", href: "/admin/access", permission: "access.read" },
-  { label: "系统设置", href: "/admin/system", permission: "system.read" },
-  { label: "审计日志", href: "/admin/audit", permission: "audit.read" },
-] as const;
+type NavItem = {
+  label: string;
+  href: string;
+  permission: string;
+  mark: string;
+};
+
+const dashboard: NavItem = {
+  label: "总览",
+  href: "/admin",
+  permission: "dashboard.read",
+  mark: "OV",
+};
+
+const groups: Array<{ label: string; items: NavItem[] }> = [
+  {
+    label: "剧本数据运营",
+    items: [
+      { label: "工作区", href: "/admin/story/workspaces", permission: "story.read", mark: "WS" },
+      { label: "剧本项目", href: "/admin/story/stories", permission: "story.read", mark: "ST" },
+      { label: "角色", href: "/admin/story/characters", permission: "story.read", mark: "CH" },
+      { label: "场景", href: "/admin/story/scenes", permission: "story.read", mark: "SC" },
+      { label: "工作流运行", href: "/admin/story/workflow-runs", permission: "story.read", mark: "WF" },
+    ],
+  },
+  {
+    label: "AI 模型中心",
+    items: [
+      { label: "Provider", href: "/admin/models/providers", permission: "providers.read", mark: "PV" },
+      { label: "Models", href: "/admin/models/models", permission: "models.read", mark: "MD" },
+      { label: "Pricing", href: "/admin/models/pricing", permission: "pricing.read", mark: "PR" },
+      { label: "模型权限", href: "/admin/models/permissions", permission: "users.read", mark: "MP" },
+    ],
+  },
+  {
+    label: "Token 计费",
+    items: [
+      { label: "使用记录", href: "/admin/billing/usage", permission: "billing.read", mark: "US" },
+      { label: "账户余额", href: "/admin/billing/accounts", permission: "billing.read", mark: "AC" },
+      { label: "交易账本", href: "/admin/billing/ledger", permission: "billing.read", mark: "LD" },
+      { label: "计费报表", href: "/admin/billing/reports", permission: "billing.read", mark: "RP" },
+    ],
+  },
+  {
+    label: "代理网关",
+    items: [
+      { label: "请求日志", href: "/admin/gateway/requests", permission: "gateway.read", mark: "RQ" },
+      { label: "异常结算", href: "/admin/gateway/reconciliation", permission: "gateway.read", mark: "RC" },
+      { label: "Gateway Key", href: "/admin/gateway/keys", permission: "gateway.read", mark: "KY" },
+      { label: "限流策略", href: "/admin/gateway/rate-limits", permission: "gateway.read", mark: "RL" },
+    ],
+  },
+  {
+    label: "用户与资源",
+    items: [
+      { label: "平台用户", href: "/admin/resources/users", permission: "users.read", mark: "UR" },
+      { label: "Storage / 资源", href: "/admin/resources/storage", permission: "users.read", mark: "FS" },
+    ],
+  },
+  {
+    label: "权限治理",
+    items: [
+      { label: "管理员", href: "/admin/access/admins", permission: "access.read", mark: "AD" },
+      { label: "角色", href: "/admin/access/roles", permission: "access.read", mark: "RO" },
+      { label: "权限", href: "/admin/access/permissions", permission: "access.read", mark: "PM" },
+    ],
+  },
+  {
+    label: "系统与审计",
+    items: [
+      { label: "系统设置", href: "/admin/system/settings", permission: "system.read", mark: "SY" },
+      { label: "审计日志", href: "/admin/system/audit", permission: "audit.read", mark: "AU" },
+    ],
+  },
+];
+
+function isActive(pathname: string, href: string) {
+  return href === "/admin" ? pathname === href : pathname.startsWith(href);
+}
+
+function NavContent({
+  identity,
+  pathname,
+  close,
+}: {
+  identity: { name: string; roles: string[]; permissions: string[] };
+  pathname: string;
+  close?: () => void;
+}) {
+  async function logout() {
+    await fetch("/api/admin/auth/logout", { method: "POST" });
+    window.location.assign("/admin/login");
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between border-b border-border px-5 py-5">
+        <Link href="/admin" onClick={close} className="flex min-w-0 items-center gap-3" aria-label="Ink Memory 运营控制台首页">
+          <span className="grid h-9 w-9 shrink-0 place-items-center border border-text-primary font-mono text-[10px] font-semibold tracking-[-0.08em]">INK</span>
+          <span className="min-w-0">
+            <span className="block truncate font-display text-sm font-semibold">Ink Memory</span>
+            <span className="block font-mono text-[9px] uppercase tracking-[0.18em] text-text-tertiary">Operations console</span>
+          </span>
+        </Link>
+        {close ? <button type="button" onClick={close} className="min-h-11 px-2 text-sm" aria-label="关闭导航">关闭</button> : null}
+      </div>
+
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4" aria-label="管理后台主导航">
+        {identity.permissions.includes(dashboard.permission) ? (
+          <Link
+            href={dashboard.href}
+            onClick={close}
+            aria-current={isActive(pathname, dashboard.href) ? "page" : undefined}
+            className={`mb-4 flex min-h-10 items-center gap-3 border-l-2 px-3 text-sm ${isActive(pathname, dashboard.href) ? "border-text-primary bg-accent-light font-semibold text-text-primary" : "border-transparent text-text-secondary hover:bg-bg-secondary"}`}
+          >
+            <span className="font-mono text-[9px] text-text-tertiary">{dashboard.mark}</span>{dashboard.label}
+          </Link>
+        ) : null}
+
+        {groups.map((group) => {
+          const items = group.items.filter((item) => identity.permissions.includes(item.permission));
+          if (!items.length) return null;
+          return (
+            <section key={group.label} className="mb-5">
+              <h2 className="px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-text-tertiary">{group.label}</h2>
+              <div className="mt-2 space-y-0.5">
+                {items.map((item) => {
+                  const active = isActive(pathname, item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={close}
+                      aria-current={active ? "page" : undefined}
+                      className={`flex min-h-10 items-center gap-3 border-l-2 px-3 text-sm transition-colors ${active ? "border-text-primary bg-accent-light font-semibold text-text-primary" : "border-transparent text-text-secondary hover:bg-bg-secondary hover:text-text-primary"}`}
+                    >
+                      <span className="w-5 font-mono text-[9px] text-text-tertiary">{item.mark}</span>
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+      </nav>
+
+      <div className="border-t border-border px-5 py-4">
+        <p className="truncate text-xs font-semibold">{identity.name}</p>
+        <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-[0.12em] text-text-tertiary">{identity.roles.join(" · ")}</p>
+        <button type="button" onClick={logout} className="mt-3 min-h-10 text-xs font-semibold text-text-secondary underline decoration-border">退出管理后台</button>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminNavigation({
   identity,
@@ -21,117 +166,30 @@ export default function AdminNavigation({
   identity: { name: string; roles: string[]; permissions: string[] };
 }) {
   const pathname = usePathname();
-  const visibleResources = resources.filter((resource) =>
-    identity.permissions.includes(resource.permission),
-  );
-
-  async function logout() {
-    await fetch("/api/admin/auth/logout", { method: "POST" });
-    window.location.assign("/admin/login");
-  }
+  const [open, setOpen] = useState(false);
 
   return (
     <>
-      <aside className="hidden w-64 shrink-0 border-r border-border bg-bg-surface px-5 py-6 lg:flex lg:flex-col">
-        <Link
-          href="/admin"
-          className="inline-flex w-fit items-center gap-3 rounded-xl focus-visible:ring-2 focus-visible:ring-accent"
-          aria-label="INK OPS 控制台首页"
-        >
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-text-primary font-mono text-sm font-semibold tracking-[-0.08em] text-bg-surface">
-            INK
-          </span>
-          <span>
-            <span className="block font-mono text-[10px] uppercase tracking-[0.28em] text-text-tertiary">
-              Control plane
-            </span>
-            <span className="block text-sm font-semibold text-text-primary">
-              Operations
-            </span>
-          </span>
-        </Link>
-
-        <nav className="mt-10" aria-label="管理后台主导航">
-          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-tertiary">
-            Control plane
-          </p>
-          <div className="mt-3 space-y-1">
-            {visibleResources.map((resource) => {
-              const active =
-                resource.href === "/admin"
-                  ? pathname === resource.href
-                  : pathname.startsWith(resource.href);
-              return (
-                <Link
-                  key={resource.href}
-                  href={resource.href}
-                  aria-current={active ? "page" : undefined}
-                  className={`flex min-h-11 items-center justify-between rounded-xl px-3 text-sm font-medium transition-colors ${
-                    active
-                      ? "bg-accent-light text-accent"
-                      : "text-text-secondary hover:bg-bg-secondary hover:text-text-primary"
-                  }`}
-                >
-                  <span>{resource.label}</span>
-                  {active ? (
-                    <span
-                      className="h-2 w-2 rounded-full bg-success"
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
-
-        <div className="mt-auto border-t border-border pt-5">
-          <p className="truncate text-xs font-semibold text-text-primary">
-            {identity.name}
-          </p>
-          <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-wider text-text-tertiary">
-            {identity.roles.join(" · ")}
-          </p>
-          <button
-            type="button"
-            onClick={logout}
-            className="mt-4 min-h-10 text-xs font-semibold text-accent"
-          >
-            退出管理后台
-          </button>
-        </div>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] border-r border-border bg-bg-surface lg:block">
+        <NavContent identity={identity} pathname={pathname} />
       </aside>
 
-      <header className="border-b border-border bg-bg-surface px-4 py-3 lg:hidden">
-        <div className="flex items-center justify-between gap-4">
-          <Link href="/admin" className="flex items-center gap-2" aria-label="INK OPS 控制台首页">
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-text-primary font-mono text-xs font-semibold tracking-[-0.08em] text-bg-surface">
-              INK
-            </span>
-            <span className="font-mono text-xs uppercase tracking-[0.18em] text-text-secondary">
-              / OPS
-            </span>
-          </Link>
-          <button
-            type="button"
-            onClick={logout}
-            className="rounded-full border border-border px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-text-secondary"
-          >
-            退出
-          </button>
-        </div>
-        <nav className="mt-3 flex gap-2 overflow-x-auto" aria-label="移动端管理后台导航">
-          {visibleResources.map((resource) => (
-            <Link
-              key={resource.href}
-              href={resource.href}
-              className="min-h-11 shrink-0 rounded-full border border-border px-4 py-3 text-xs font-semibold text-text-secondary"
-            >
-              {resource.label}
-            </Link>
-          ))}
-        </nav>
+      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-bg-surface px-4 lg:hidden">
+        <Link href="/admin" className="flex items-center gap-3" aria-label="Ink Memory 运营控制台首页">
+          <span className="grid h-8 w-8 place-items-center border border-text-primary font-mono text-[9px] font-semibold">INK</span>
+          <span className="font-display text-sm font-semibold">运营控制台</span>
+        </Link>
+        <button type="button" onClick={() => setOpen(true)} className="min-h-11 border border-border px-4 text-sm font-semibold" aria-expanded={open} aria-controls="admin-mobile-nav">菜单</button>
       </header>
+
+      {open ? (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="管理后台导航">
+          <button type="button" className="absolute inset-0 bg-black/35" onClick={() => setOpen(false)} aria-label="关闭导航遮罩" />
+          <aside id="admin-mobile-nav" className="absolute inset-y-0 left-0 w-[min(88vw,340px)] bg-bg-surface shadow-medium">
+            <NavContent identity={identity} pathname={pathname} close={() => setOpen(false)} />
+          </aside>
+        </div>
+      ) : null}
     </>
   );
 }

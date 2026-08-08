@@ -2,9 +2,7 @@
 
 import { useState } from "react";
 
-const DEFAULT_ADMIN_EMAIL = "dmeck@suoxya.com";
-const DEFAULT_ADMIN_PASSWORD = "test123456";
-const MIN_PASSWORD_LENGTH = 10;
+const MIN_PASSWORD_LENGTH = 14;
 
 const inputClass =
   "mt-2 min-h-12 w-full rounded-xl border border-border bg-bg-primary px-4 text-sm text-text-primary outline-none transition placeholder:text-text-tertiary focus:border-accent focus:ring-4 focus:ring-accent-light";
@@ -14,9 +12,9 @@ export default function AdminBootstrapForm({
 }: {
   onAlreadyInitialized: () => void;
 }) {
-  const [displayName, setDisplayName] = useState("Dmeck");
-  const [email, setEmail] = useState(DEFAULT_ADMIN_EMAIL);
-  const [password, setPassword] = useState(DEFAULT_ADMIN_PASSWORD);
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [bootstrapToken, setBootstrapToken] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -105,11 +103,8 @@ export default function AdminBootstrapForm({
           aria-describedby="initial-password-note"
         />
       </div>
-      <p
-        id="initial-password-note"
-        className="rounded-xl bg-accent-orange-light px-4 py-3 text-xs leading-5 text-accent-orange"
-      >
-        当前预填的是开发默认密码。生产环境请在创建管理员前改为独立强密码。
+      <p id="initial-password-note" className="border border-warning/40 bg-accent-orange-light px-4 py-3 text-xs leading-5 text-text-secondary">
+        使用至少 14 个字符的独立密码；页面没有开发默认账号或默认密码。
       </p>
 
       <label className="block">

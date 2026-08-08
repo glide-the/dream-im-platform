@@ -1,160 +1,42 @@
 import Link from "next/link";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import DashboardMetrics from "@/components/admin/DashboardMetrics";
 
-const releaseStages = [
-  {
-    id: "AUTH",
-    title: "身份与权限",
-    detail: "服务端 Session、RBAC、不可变审计",
-    state: "current",
-  },
-  {
-    id: "AI",
-    title: "模型供应链",
-    detail: "Provider、模型别名、分层定价",
-    state: "current",
-  },
-  {
-    id: "BILL",
-    title: "计费与代理",
-    detail: "预授权、Token 结算、Claude / OpenAI",
-    state: "current",
-  },
-  {
-    id: "STORY",
-    title: "Story 运营域",
-    detail: "PostgreSQL 工作区、项目、角色、场景与工作流 CRUD",
-    state: "current",
-  },
-] as const;
-
-const boundaries = [
-  {
-    label: "Identity",
-    title: "服务端权限是唯一边界",
-    detail: "Refine 只改善交互；所有 API 重新核验 Session 与 permission。",
-  },
-  {
-    label: "Billing",
-    title: "整数金额与不可变流水",
-    detail: "micro-USD、定价快照、reserve / capture / release 全链路可追踪。",
-  },
-  {
-    label: "Gateway",
-    title: "双协议代理与终态结算",
-    detail: "Anthropic 与 OpenAI 分离适配，流式中断不会静默释放成本。",
-  },
+const queues = [
+  { label: "审核真实剧本数据", detail: "工作区 → 剧本 → 角色 / 场景", href: "/admin/story/stories" },
+  { label: "核对失败结算", detail: "请求 → 用量 → 账本 → 人工核对", href: "/admin/gateway/reconciliation" },
+  { label: "检查模型供应链", detail: "Provider → Model → Pricing", href: "/admin/models/providers" },
+  { label: "治理用户与资源", detail: "业务用户 → 计费映射 → Storage", href: "/admin/resources/users" },
 ];
 
 export default function AdminOverviewPage() {
   return (
-    <div className="animate-fadeUp">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-text-tertiary">
-            AI creation platform / control plane
-          </p>
-          <p className="mt-2 text-sm text-text-secondary">
-            模型、Token、代理与用户运营控制台
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="rounded-full bg-success-light px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-success">
-            Protected · online
-          </span>
-          <Link
-            href="/admin/models"
-            className="rounded-full border border-border bg-bg-surface px-4 py-2 text-xs font-semibold text-text-secondary transition-colors hover:border-accent hover:text-accent"
-          >
-            管理模型
-          </Link>
-        </div>
-      </header>
-
+    <div className="space-y-7">
+      <AdminPageHeader eyebrow="Operations overview" title="运营总览" description="把需要处置的审核、结算、模型和资源问题放在同一工作台。这里不展示装饰性指标，所有数字均可追溯到真实资源。" status="PostgreSQL · protected" />
       <DashboardMetrics />
-
-      <section className="grid gap-8 border-b border-border py-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)] lg:py-14">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-bg-surface px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-text-secondary">
-            <span className="h-2 w-2 rounded-full bg-accent-orange" aria-hidden="true" />
-            OPERATIONS · BILLING · GATEWAY
-          </div>
-          <h1 className="mt-6 max-w-3xl font-display text-[clamp(2.35rem,6vw,5.4rem)] font-semibold leading-[0.98] tracking-[-0.04em] text-text-primary">
-            把模型成本，
-            <span className="text-accent">变成可运营资产。</span>
-          </h1>
-          <p className="mt-6 max-w-2xl text-base leading-8 text-text-secondary sm:text-lg">
-            Refine 负责清晰的运营交互；服务端负责身份、权限、Story 数据、计价、账本和代理执行。
-            全部控制面数据统一落在 Ink Memory PostgreSQL。
-          </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link href="/admin/users" className="rounded-full bg-text-primary px-5 py-3 text-sm font-semibold text-bg-surface">
-              进入用户中心
-            </Link>
-            <Link href="/admin/gateway" className="rounded-full border border-border px-5 py-3 text-sm font-semibold text-text-primary">
-              查看代理请求
-            </Link>
-          </div>
-        </div>
-
-        <aside className="rounded-[28px] border border-border bg-bg-surface p-5 shadow-subtle sm:p-6" aria-label="发布阶段">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-text-primary">Release rail</h2>
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary">
-              4 / 4 active
-            </span>
-          </div>
-          <ol className="mt-6 space-y-0">
-            {releaseStages.map((stage, index) => (
-              <li key={stage.id} className="relative grid grid-cols-[32px_1fr] gap-3 pb-6 last:pb-0">
-                {index < releaseStages.length - 1 ? (
-                  <span className="absolute left-[15px] top-8 h-[calc(100%-1rem)] w-px bg-border" aria-hidden="true" />
-                ) : null}
-                <span
-                  className={`relative z-10 grid h-8 w-8 place-items-center rounded-full border font-mono text-[9px] font-semibold ${
-                    stage.state === "current"
-                      ? "border-accent-orange bg-accent-orange-light text-accent-orange"
-                      : "border-border bg-bg-secondary text-text-tertiary"
-                  }`}
-                >
-                  {stage.id}
-                </span>
-                <div className="pt-1">
-                  <p className={`text-sm font-semibold ${stage.state === "current" ? "text-text-primary" : "text-text-tertiary"}`}>
-                    {stage.title}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-text-tertiary">{stage.detail}</p>
-                </div>
-              </li>
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+        <div className="admin-panel p-5 sm:p-6">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">Operational queues</p>
+          <h2 className="mt-2 font-display text-xl font-semibold">下一步运营动作</h2>
+          <div className="mt-5 divide-y divide-border border-y border-border">
+            {queues.map((queue, index) => (
+              <Link key={queue.href} href={queue.href} className="group grid min-h-20 grid-cols-[34px_1fr_auto] items-center gap-3 py-4">
+                <span className="font-mono text-[10px] text-text-tertiary">0{index + 1}</span>
+                <span><span className="block text-sm font-semibold group-hover:underline">{queue.label}</span><span className="mt-1 block text-xs text-text-tertiary">{queue.detail}</span></span>
+                <span aria-hidden="true" className="text-text-tertiary">→</span>
+              </Link>
             ))}
-          </ol>
-        </aside>
-      </section>
-
-      <section className="py-10 lg:py-12" aria-labelledby="boundary-heading">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-tertiary">
-              System boundaries
-            </p>
-            <h2 id="boundary-heading" className="mt-3 font-display text-2xl font-semibold text-text-primary sm:text-3xl">
-              控制面核心约束
-            </h2>
           </div>
-          <p className="max-w-xl text-sm leading-6 text-text-secondary">
-            不展示虚构指标；每个状态都来自受保护的资源 API。
-          </p>
         </div>
-
-        <div className="mt-7 grid gap-4 md:grid-cols-3">
-          {boundaries.map((boundary) => (
-            <article key={boundary.label} className="rounded-[24px] border border-border bg-bg-surface p-5 shadow-subtle">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">{boundary.label}</p>
-              <h3 className="mt-4 text-base font-semibold text-text-primary">{boundary.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-text-secondary">{boundary.detail}</p>
-            </article>
-          ))}
-        </div>
+        <aside className="admin-panel p-5 sm:p-6">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">Data boundaries</p>
+          <h2 className="mt-2 font-display text-xl font-semibold">数据源边界</h2>
+          <dl className="mt-5 divide-y divide-border border-y border-border text-sm">
+            <div className="py-4"><dt className="font-semibold">业务数据</dt><dd className="mt-1 leading-6 text-text-secondary">真实 `users` 与 `story_workspace_*` 表，经 PostgreSQL Story 数据源读取。</dd></div>
+            <div className="py-4"><dt className="font-semibold">控制面数据</dt><dd className="mt-1 leading-6 text-text-secondary">RBAC、Provider、Pricing、Billing、Gateway 与审计由 Admin PostgreSQL 管理。</dd></div>
+            <div className="py-4"><dt className="font-semibold">不可变数据</dt><dd className="mt-1 leading-6 text-text-secondary">Token 账本、用量与审计禁止覆盖或硬删除。</dd></div>
+          </dl>
+        </aside>
       </section>
     </div>
   );

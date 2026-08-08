@@ -9,6 +9,15 @@ import {
   encryptCredential,
   type EncryptedCredential,
 } from "../security/credential-encryption";
+import {
+  handleStorySourceCreate,
+  handleStorySourceDelete,
+  handleStorySourceUpdate,
+} from "../story-source/mutations";
+import {
+  isStorySourceResource,
+  queryStorySourceItem,
+} from "../story-source/repository";
 import { recordAdminAuditOnClient } from "./audit";
 import { AdminError, adminErrorResponse } from "./errors";
 import {
@@ -187,90 +196,6 @@ const adminRoleUpdateSchema = adminRoleCreateSchema
 
 const jsonObjectSchema = z.record(z.string(), z.unknown());
 const storyStatusSchema = z.string().trim().min(1).max(40);
-
-const storyWorkspaceCreateSchema = z.strictObject({
-  ownerUserId: z.string().trim().min(1).max(100),
-  name: z.string().trim().min(1).max(180),
-  slug: codeSchema,
-  description: z.string().trim().max(4_000).nullable().optional(),
-  status: storyStatusSchema.default("active"),
-  metadata: jsonObjectSchema.default({}),
-});
-const storyWorkspaceUpdateSchema = storyWorkspaceCreateSchema
-  .omit({ ownerUserId: true, slug: true })
-  .partial()
-  .strict();
-
-const storyProjectCreateSchema = z.strictObject({
-  workspaceId: z.string().trim().min(1).max(100),
-  ownerUserId: z.string().trim().min(1).max(100),
-  identifier: codeSchema,
-  title: z.string().trim().min(1).max(240),
-  synopsis: z.string().trim().max(20_000).nullable().optional(),
-  storyType: storyStatusSchema.default("screenplay"),
-  status: storyStatusSchema.default("draft"),
-  reviewStatus: storyStatusSchema.default("pending"),
-  characterCount: z.number().int().nonnegative().default(0),
-  sceneCount: z.number().int().nonnegative().default(0),
-  wordCount: z.number().int().nonnegative().default(0),
-  settings: jsonObjectSchema.default({}),
-  agentGenerated: z.boolean().default(false),
-  confirmedAt: z.iso.datetime().nullable().optional(),
-  publishedAt: z.iso.datetime().nullable().optional(),
-});
-const storyProjectUpdateSchema = storyProjectCreateSchema
-  .omit({ workspaceId: true, ownerUserId: true, identifier: true })
-  .partial()
-  .strict();
-
-const storyCharacterCreateSchema = z.strictObject({
-  projectId: z.string().trim().min(1).max(100),
-  name: z.string().trim().min(1).max(180),
-  roleType: storyStatusSchema.default("supporting"),
-  description: z.string().trim().max(20_000).nullable().optional(),
-  profile: jsonObjectSchema.default({}),
-  sortOrder: z.number().int().nonnegative().default(0),
-  status: storyStatusSchema.default("active"),
-});
-const storyCharacterUpdateSchema = storyCharacterCreateSchema
-  .omit({ projectId: true })
-  .partial()
-  .strict();
-
-const storySceneCreateSchema = z.strictObject({
-  projectId: z.string().trim().min(1).max(100),
-  title: z.string().trim().min(1).max(240),
-  summary: z.string().trim().max(20_000).nullable().optional(),
-  content: z.string().max(2_000_000).nullable().optional(),
-  status: storyStatusSchema.default("draft"),
-  sortOrder: z.number().int().nonnegative().default(0),
-  wordCount: z.number().int().nonnegative().default(0),
-  metadata: jsonObjectSchema.default({}),
-});
-const storySceneUpdateSchema = storySceneCreateSchema
-  .omit({ projectId: true })
-  .partial()
-  .strict();
-
-const storyWorkflowRunCreateSchema = z.strictObject({
-  workspaceId: z.string().trim().min(1).max(100),
-  projectId: z.string().trim().min(1).max(100).nullable().optional(),
-  createdByUserId: z.string().trim().min(1).max(100),
-  workflowCode: codeSchema,
-  workflowVersion: z.string().trim().min(1).max(80).default("1"),
-  status: storyStatusSchema.default("queued"),
-  failedStep: z.string().trim().max(160).nullable().optional(),
-  errorCode: z.string().trim().max(160).nullable().optional(),
-  errorMessage: z.string().trim().max(10_000).nullable().optional(),
-  input: jsonObjectSchema.default({}),
-  output: jsonObjectSchema.default({}),
-  startedAt: z.iso.datetime().nullable().optional(),
-  completedAt: z.iso.datetime().nullable().optional(),
-});
-const storyWorkflowRunUpdateSchema = storyWorkflowRunCreateSchema
-  .omit({ workspaceId: true, createdByUserId: true, workflowCode: true })
-  .partial()
-  .strict();
 
 const systemSettingCreateSchema = z.strictObject({
   category: codeSchema,
@@ -644,65 +569,6 @@ async function insertAdminRole(
 type CrudValue = Record<string, unknown>;
 type FieldMap = Readonly<Record<string, { column: string; json?: boolean }>>;
 
-const storyWorkspaceFields = {
-  ownerUserId: { column: "owner_user_id" },
-  name: { column: "name" },
-  slug: { column: "slug" },
-  description: { column: "description" },
-  status: { column: "status" },
-  metadata: { column: "metadata", json: true },
-} as const satisfies FieldMap;
-const storyProjectFields = {
-  workspaceId: { column: "workspace_id" },
-  ownerUserId: { column: "owner_user_id" },
-  identifier: { column: "identifier" },
-  title: { column: "title" },
-  synopsis: { column: "synopsis" },
-  storyType: { column: "story_type" },
-  status: { column: "status" },
-  reviewStatus: { column: "review_status" },
-  characterCount: { column: "character_count" },
-  sceneCount: { column: "scene_count" },
-  wordCount: { column: "word_count" },
-  settings: { column: "settings", json: true },
-  agentGenerated: { column: "agent_generated" },
-  confirmedAt: { column: "confirmed_at" },
-  publishedAt: { column: "published_at" },
-} as const satisfies FieldMap;
-const storyCharacterFields = {
-  projectId: { column: "project_id" },
-  name: { column: "name" },
-  roleType: { column: "role_type" },
-  description: { column: "description" },
-  profile: { column: "profile", json: true },
-  sortOrder: { column: "sort_order" },
-  status: { column: "status" },
-} as const satisfies FieldMap;
-const storySceneFields = {
-  projectId: { column: "project_id" },
-  title: { column: "title" },
-  summary: { column: "summary" },
-  content: { column: "content" },
-  status: { column: "status" },
-  sortOrder: { column: "sort_order" },
-  wordCount: { column: "word_count" },
-  metadata: { column: "metadata", json: true },
-} as const satisfies FieldMap;
-const storyWorkflowRunFields = {
-  workspaceId: { column: "workspace_id" },
-  projectId: { column: "project_id" },
-  createdByUserId: { column: "created_by_user_id" },
-  workflowCode: { column: "workflow_code" },
-  workflowVersion: { column: "workflow_version" },
-  status: { column: "status" },
-  failedStep: { column: "failed_step" },
-  errorCode: { column: "error_code" },
-  errorMessage: { column: "error_message" },
-  input: { column: "input", json: true },
-  output: { column: "output", json: true },
-  startedAt: { column: "started_at" },
-  completedAt: { column: "completed_at" },
-} as const satisfies FieldMap;
 const systemSettingFields = {
   category: { column: "category" },
   key: { column: "key" },
@@ -750,16 +616,6 @@ async function insertCrudRow(
   return result.rows[0];
 }
 
-const insertStoryWorkspace = (client: PoolClient, input: CrudValue) =>
-  insertCrudRow(client, "story_workspaces", "workspace", input, storyWorkspaceFields);
-const insertStoryProject = (client: PoolClient, input: CrudValue) =>
-  insertCrudRow(client, "story_projects", "story", input, storyProjectFields);
-const insertStoryCharacter = (client: PoolClient, input: CrudValue) =>
-  insertCrudRow(client, "story_characters", "character", input, storyCharacterFields);
-const insertStoryScene = (client: PoolClient, input: CrudValue) =>
-  insertCrudRow(client, "story_scenes", "scene", input, storySceneFields);
-const insertStoryWorkflowRun = (client: PoolClient, input: CrudValue) =>
-  insertCrudRow(client, "story_workflow_runs", "workflow", input, storyWorkflowRunFields);
 const insertUserModelPermission = (client: PoolClient, input: CrudValue) =>
   insertCrudRow(
     client,
@@ -787,15 +643,13 @@ const createConfig = {
   "gateway-api-keys": { permission: "gateway.keys.write", schema: keyCreateSchema, insert: insertGatewayKey },
   "admin-users": { permission: "access.write", schema: adminUserCreateSchema, insert: insertAdminUser },
   "admin-roles": { permission: "access.write", schema: adminRoleCreateSchema, insert: insertAdminRole },
-  "story-workspaces": { permission: "story.write", schema: storyWorkspaceCreateSchema, insert: insertStoryWorkspace },
-  "story-projects": { permission: "story.write", schema: storyProjectCreateSchema, insert: insertStoryProject },
-  "story-characters": { permission: "story.write", schema: storyCharacterCreateSchema, insert: insertStoryCharacter },
-  "story-scenes": { permission: "story.write", schema: storySceneCreateSchema, insert: insertStoryScene },
-  "story-workflow-runs": { permission: "story.write", schema: storyWorkflowRunCreateSchema, insert: insertStoryWorkflowRun },
   "system-settings": { permission: "system.write", schema: systemSettingCreateSchema, insert: insertSystemSetting },
 } as const;
 
 export async function handleAdminResourceCreate(request: Request, resource: string) {
+  if (isStorySourceResource(resource)) {
+    return await handleStorySourceCreate(request, resource);
+  }
   const requestId = adminRequestId(request);
   try {
     assertAdminMutationOrigin(request);
@@ -809,6 +663,17 @@ export async function handleAdminResourceCreate(request: Request, resource: stri
     }
     const identity = await requireAdminRequest(request, config.permission);
     const input = await parseBody(request, config.schema);
+    if (resource === "platform-users") {
+      const platformUserInput = input as z.infer<
+        typeof platformUserCreateSchema
+      >;
+      if (platformUserInput.source === "ink-dream") {
+        await queryStorySourceItem(
+          "source-users",
+          platformUserInput.externalUserId,
+        );
+      }
+    }
     const data = await withPlatformTransaction(async (client) => {
       const created = await config.insert(client, input as never);
       await recordAdminAuditOnClient(client, {
@@ -840,11 +705,6 @@ async function loadRowForUpdate(client: PoolClient, table: string, id: string) {
     "ai_pricing_rules",
     "platform_users",
     "user_model_permissions",
-    "story_workspaces",
-    "story_projects",
-    "story_characters",
-    "story_scenes",
-    "story_workflow_runs",
     "system_settings",
     "admin_users",
     "admin_roles",
@@ -1205,36 +1065,6 @@ const updateConfig = {
   },
   "admin-users": { permission: "access.write", schema: adminUserUpdateSchema, update: updateAdminUser },
   "admin-roles": { permission: "access.write", schema: adminRoleUpdateSchema, update: updateAdminRole },
-  "story-workspaces": {
-    permission: "story.write",
-    schema: storyWorkspaceUpdateSchema,
-    update: (client: PoolClient, id: string, input: CrudValue) =>
-      updateCrudRow(client, "story_workspaces", id, input, storyWorkspaceFields),
-  },
-  "story-projects": {
-    permission: "story.write",
-    schema: storyProjectUpdateSchema,
-    update: (client: PoolClient, id: string, input: CrudValue) =>
-      updateCrudRow(client, "story_projects", id, input, storyProjectFields),
-  },
-  "story-characters": {
-    permission: "story.write",
-    schema: storyCharacterUpdateSchema,
-    update: (client: PoolClient, id: string, input: CrudValue) =>
-      updateCrudRow(client, "story_characters", id, input, storyCharacterFields),
-  },
-  "story-scenes": {
-    permission: "story.write",
-    schema: storySceneUpdateSchema,
-    update: (client: PoolClient, id: string, input: CrudValue) =>
-      updateCrudRow(client, "story_scenes", id, input, storySceneFields),
-  },
-  "story-workflow-runs": {
-    permission: "story.write",
-    schema: storyWorkflowRunUpdateSchema,
-    update: (client: PoolClient, id: string, input: CrudValue) =>
-      updateCrudRow(client, "story_workflow_runs", id, input, storyWorkflowRunFields),
-  },
   "system-settings": {
     permission: "system.write",
     schema: systemSettingUpdateSchema,
@@ -1259,6 +1089,9 @@ export async function handleAdminResourceUpdate(
   resource: string,
   id: string,
 ) {
+  if (isStorySourceResource(resource)) {
+    return await handleStorySourceUpdate(request, resource, id);
+  }
   const requestId = adminRequestId(request);
   try {
     assertAdminMutationOrigin(request);
@@ -1305,16 +1138,14 @@ export async function handleAdminResourceDelete(
   resource: string,
   id: string,
 ) {
+  if (isStorySourceResource(resource)) {
+    return await handleStorySourceDelete(request, resource);
+  }
   const requestId = adminRequestId(request);
   try {
     assertAdminMutationOrigin(request);
     if (resource !== "gateway-api-keys") {
       const deletable = {
-        "story-workspaces": { table: "story_workspaces", permission: "story.write" },
-        "story-projects": { table: "story_projects", permission: "story.write" },
-        "story-characters": { table: "story_characters", permission: "story.write" },
-        "story-scenes": { table: "story_scenes", permission: "story.write" },
-        "story-workflow-runs": { table: "story_workflow_runs", permission: "story.write" },
         "system-settings": { table: "system_settings", permission: "system.write" },
         "user-model-permissions": { table: "user_model_permissions", permission: "users.write" },
         "admin-roles": { table: "admin_roles", permission: "access.write" },

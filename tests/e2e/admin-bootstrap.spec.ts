@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("Refine admin first-run setup", () => {
-  test("prefills the requested admin and submits through the bootstrap API", async ({ page }) => {
+  test("requires explicit admin credentials and submits through the bootstrap API", async ({ page }) => {
     const requests: Array<{ headers: Record<string, string>; body: unknown }> = [];
 
     await page.route("**/api/admin/auth/bootstrap", async (route) => {
@@ -23,7 +23,7 @@ test.describe("Refine admin first-run setup", () => {
         status: 201,
         contentType: "application/json",
         body: JSON.stringify({
-          data: { id: "admin_test", email: "dmeck@suoxya.com" },
+          data: { id: "admin_test", email: "operator@example.test" },
         }),
       });
     });
@@ -38,8 +38,11 @@ test.describe("Refine admin first-run setup", () => {
     await page.goto("/admin/login");
 
     await expect(page.getByRole("heading", { name: "设置首位管理员" })).toBeVisible();
-    await expect(page.getByLabel("管理员邮箱")).toHaveValue("dmeck@suoxya.com");
-    await expect(page.getByLabel("初始密码")).toHaveValue("test123456");
+    await expect(page.getByLabel("管理员邮箱")).toHaveValue("");
+    await expect(page.getByLabel("初始密码")).toHaveValue("");
+    await page.getByLabel("显示名称").fill("Operator");
+    await page.getByLabel("管理员邮箱").fill("operator@example.test");
+    await page.getByLabel("初始密码").fill("Test-operator-pass-2026!");
     await page.getByLabel("首次启动密钥").fill("bootstrap_secret_for_test");
     await page.getByRole("button", { name: "创建管理员并进入控制台" }).click();
 
@@ -49,9 +52,9 @@ test.describe("Refine admin first-run setup", () => {
       "bootstrap_secret_for_test",
     );
     expect(requests[0].body).toEqual({
-      email: "dmeck@suoxya.com",
-      displayName: "Dmeck",
-      password: "test123456",
+      email: "operator@example.test",
+      displayName: "Operator",
+      password: "Test-operator-pass-2026!",
     });
   });
 

@@ -50,7 +50,7 @@ describe("/api/admin/auth/bootstrap", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("accepts the requested ten-character first-run default", async () => {
+  it("accepts a password at the fourteen-character first-run minimum", async () => {
     const request = new Request("http://localhost/api/admin/auth/bootstrap", {
       method: "POST",
       headers: {
@@ -61,7 +61,7 @@ describe("/api/admin/auth/bootstrap", () => {
       body: JSON.stringify({
         email: "dmeck@suoxya.com",
         displayName: "Dmeck",
-        password: "test123456",
+        password: "test1234567890",
       }),
     });
 
@@ -75,7 +75,7 @@ describe("/api/admin/auth/bootstrap", () => {
       expect.objectContaining({
         email: "dmeck@suoxya.com",
         displayName: "Dmeck",
-        password: "test123456",
+        password: "test1234567890",
         requestId: "admin_request_test",
       }),
     );
@@ -107,7 +107,7 @@ describe("/api/admin/auth/bootstrap", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           email: "dmeck@suoxya.com",
-          password: "test123456",
+          password: "test1234567890",
         }),
       }),
     );
