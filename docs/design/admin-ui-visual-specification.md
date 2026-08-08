@@ -12,7 +12,7 @@ PDF 是品牌 Landing 视觉提案，本后台只继承其 v2.1 暖纸色板、�
 
 `color_system` 的亮色基础值早于 PDF v2.1：核心亮色以 PDF v2.1 为准，状态/浮层语义补齐自 color system；暗色沿用 color system 的“暖夜纸张”映射。暗色主按钮为暖白底，前景必须改用深暖画布，不能使用白字。
 
-cc-switch 只提供四个交互骨架：Provider 全屏、Pricing 新版本全屏、Usage 全局筛选/趋势/三页签、Request Detail 分区 Drawer。全部视觉换为本文 token，数据仍来自 Ink Memory PostgreSQL、RBAC、严格 Zod、事务和审计。
+cc-switch 提供五个强制交互骨架：Provider 卡片列表与全屏配置、Model 全屏配置、Pricing 新版本全屏、Usage 全局筛选/趋势/三页签、Request Detail 分区 Drawer。全部视觉换为本文 token，数据仍来自唯一 `DATABASE_URL` 指向的 Ink Memory PostgreSQL、RBAC、严格 Zod、事务和审计。
 
 不可改变：字段、状态机、关系、权限、Secret 语义、整数 micro-USD、Pricing 版本化、Ledger/Audit append-only、Story PostgreSQL fail-closed。不存在手填关系 ID、模板 ID、默认 JSON CRUD 或通用永久删除。
 
@@ -311,11 +311,11 @@ K01 实底 Modal 600px；Mobile 全屏或不裁剪说明的 Sheet。K02 当前�
 | P10 | Impact/Error | enabled Models、近期请求、400/403/409/503 |
 | P11 | Footer | sticky 64px；取消 + 保存 Provider；safe area |
 
-Mobile 严格 P03→P10 单列，末字段下 96px。P02/P11 固定；只有中段纵滚。Provider 内打开 Model Drawer 后只刷新 P07，不覆盖 Provider 草稿。
+Mobile 严格 P03→P10 单列，末字段下 96px。P02/P11 固定；只有中段纵滚。Provider 页中的“新增模型”会先执行脏状态检查，再跳转 Model 独立页；返回后只刷新 P07，不覆盖已经保存的 Provider 配置。
 
 ## 9. Model 与 Pricing（M01–M08 / R01–R09）
 
-Model 使用 Desktop 680px Drawer / Mobile 全屏：M02 Header；M03 Provider Combobox 或锁定；M04 code/upstream/display name；M05 nullable token limits；M06 capability checkbox；M07 enabled/Provider impact；M08 Footer。
+Model 使用独立路由全屏页：M02 Sticky Header/返回；M03 Provider Combobox 或锁定；M04 code/upstream Model Dropdown/display name；M05 nullable token limits；M06 capability checkbox；M07 enabled/Provider impact；M08 Sticky Footer。列表页不得挂载 Model Drawer 或通用 Resource 表单。
 
 Pricing 使用 cc-switch 全屏骨架，但动作永远叫“创建价格版本”：
 
@@ -394,7 +394,7 @@ T02 Driver/config health；T03 direct-upload capability/prefix；T04 keyboard-ac
 | Story review/archive | K01 confirm |
 | Workflow detail | 760px read-only Drawer；无适配器则无 retry/cancel |
 | Provider create/edit/rotate | P01 full-screen |
-| Model create/edit | M01 680px Drawer |
+| Model create/edit | M01 independent full-screen route |
 | Pricing new version | R01 full-screen |
 | Model Permission | 640px Drawer；删除 override 用 K01 |
 | Billing adjustment | 600px K01 |

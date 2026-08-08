@@ -4,15 +4,19 @@ import { useQuery } from "@tanstack/react-query";
 
 type Metrics = {
   platformUsers: number;
-  sourceUsers: number;
-  storyWorkspaces: number;
-  storyStories: number;
-  pendingStoryReviews: number;
+  sourceUsers: number | null;
+  storyWorkspaces: number | null;
+  storyStories: number | null;
+  pendingStoryReviews: number | null;
   activeModels: number;
   requestsToday: number;
   tokensToday: string;
   chargedTodayMicrousd: string;
   settlementFailures: number;
+  storySource: {
+    state: "ready" | "migration_required";
+    missingTables: string[];
+  };
 };
 
 function money(microusd: string) {
@@ -41,7 +45,7 @@ export default function DashboardMetrics() {
   const metrics = query.data;
   const rows = [
     { group: "业务源", label: "真实业务用户", value: metrics?.sourceUsers, note: "users" },
-    { group: "业务源", label: "工作区 / 剧本", value: metrics ? `${metrics.storyWorkspaces} / ${metrics.storyStories}` : undefined, note: "source PostgreSQL" },
+    { group: "业务源", label: "工作区 / 剧本", value: metrics?.storyWorkspaces === null || metrics?.storyStories === null ? null : metrics ? `${metrics.storyWorkspaces} / ${metrics.storyStories}` : undefined, note: "同库 PostgreSQL" },
     { group: "待处理", label: "待审核剧本", value: metrics?.pendingStoryReviews, note: "review_status=pending" },
     { group: "模型", label: "启用模型", value: metrics?.activeModels, note: "ai_models.enabled" },
     { group: "今日网关", label: "请求 / Token", value: metrics ? `${metrics.requestsToday} / ${metrics.tokensToday}` : undefined, note: "自今日 00:00" },
@@ -52,6 +56,12 @@ export default function DashboardMetrics() {
   return (
     <section className="admin-panel overflow-hidden" aria-labelledby="dashboard-metrics-title">
       <header className="border-b border-border px-5 py-4"><h2 id="dashboard-metrics-title" className="font-display text-lg font-semibold">实时运营快照</h2><p className="mt-1 text-xs text-text-tertiary">全部数值来自受保护 API，每 60 秒刷新。</p></header>
+      {metrics?.storySource.state === "migration_required" ? (
+        <div className="border-b border-accent-orange/35 bg-accent-orange-light px-5 py-4 text-sm text-text-secondary" role="status">
+          <p className="font-semibold text-text-primary">Story 业务表尚未迁入当前 ink-memory</p>
+          <p className="mt-1 leading-6">模型、网关、计费、权限和 Storage 可继续使用。待迁入：<span className="font-mono text-xs">{metrics.storySource.missingTables.join(", ")}</span></p>
+        </div>
+      ) : null}
       <dl className="grid sm:grid-cols-2 xl:grid-cols-4">
         {rows.map((row) => (
           <div key={`${row.group}-${row.label}`} className="border-b border-border p-5 sm:border-r xl:[&:nth-child(4n)]:border-r-0"><dt><span className="font-mono text-[9px] uppercase tracking-[0.14em] text-text-tertiary">{row.group}</span><span className="mt-2 block text-xs text-text-secondary">{row.label}</span></dt><dd className="mt-2 font-mono text-xl font-semibold text-text-primary">{row.value ?? "—"}</dd><p className="mt-2 font-mono text-[9px] text-text-tertiary">{row.note}</p></div>

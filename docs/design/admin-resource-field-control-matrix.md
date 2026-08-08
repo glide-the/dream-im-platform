@@ -11,7 +11,8 @@
 
 证据来源：
 
-- 当前参考截图 `files/inputs/target_image.png`：1440×1000，左侧 248px 导航、暖纸主画布、页头与标签层级已形成，但正常页面仍把列表与页面内嵌编辑器割裂。
+- Ink Memory 视觉参考 `files/inputs/target_image.png`：1440×1000，左侧 248px 导航、暖纸主画布、页头与标签层级已形成。
+- cc-switch 交互参考：`/Users/dmeck/project/cc-switch/assets/screenshots/main-zh.png`、`add-zh.png` 及对应 Provider/Usage/Pricing React 源码；AI 模型中心必须复刻其结构，不得保留列表内嵌通用编辑器。
 - 产品与数据边界：`docs/prd/ink-memory-admin-prd-v2.md`。
 - 视觉与交互基线：`docs/design/refine-admin-ui-v2-interaction-design.md`。
 - 模型与计费适配基线：`docs/design/cc-switch-model-billing-adaptation.md`。
@@ -26,7 +27,7 @@
 3. 详情先从服务器读取最新记录；编辑器打开时装载一次初值，后台刷新不得覆盖已经修改的草稿。
 4. Secret 不回填；Gateway Key 明文只在创建成功回执中显示一次；金额通过整数 micro-USD 提交。
 5. Pricing、Usage、Ledger、Gateway Request、Audit 的历史事实不得破坏性修改。
-6. Story 只操作真实源表；源 PostgreSQL 不可用时显示 503，不退回旧平行表、SQLite、JSON 或假数据。
+6. Story 只操作同一个 `DATABASE_URL` 下的真实源表；业务表尚未迁入时显示 503，不退回旧平行表、第二数据库、SQLite、JSON 或假数据。
 
 ## 2. 页面模块结构（自上而下、自左至右）
 
@@ -41,7 +42,7 @@
 | D1 | Data Table | 原生 table，主识别列常显，行操作在末列 | 关键列优先；表格壳局部横滚 | 查询、比较、选择真实记录 |
 | D2 | Detail | 右侧 Drawer 或独立详情，按身份/资料/关系/历史/风险区组织 | Drawer 变全屏 | 查看真实字段和跨资源链路 |
 | E1 | Simple Form | Modal 或 620–720px Drawer；从当前记录预填 | 全屏；底部操作固定在 safe area 上方 | 单实体、有限字段的创建/编辑 |
-| E2 | Complex Form | 全屏面板/独立页；固定 Header、独立滚动、固定 Footer | 全屏；逐节单列 | Provider、Pricing、Role、Reconciliation |
+| E2 | Complex Form | 独立路由全屏页；固定 Header、独立滚动、固定 Footer | 全屏；逐节单列 | Provider、Model、Pricing、Role、Reconciliation |
 | F1 | Confirmation | 实底 Modal；展示当前状态、影响、理由、before/after | 全屏或底部 Sheet；不裁剪说明 | 停用、撤销、审核、调账等高风险动作 |
 | G1 | Feedback | 字段错误、冲突摘要、一次性回执、审计 Request ID | Toast 位于固定操作区上方 | 400/403/404/409/503 与成功恢复 |
 
@@ -55,9 +56,9 @@
 | Story/Character/Scene 编辑 | 720px 右 Drawer；移动全屏 | 与详情共享上下文，正文/关系只读；成功刷新详情与列表 |
 | Story confirm/reject/archive | 确认 Modal | 重新取服务器状态和影响；reject 必填说明 |
 | Workflow Run 详情 | 760px 只读 Drawer；移动全屏 | 保持列表筛选；无直接状态编辑 |
-| Provider 新增/编辑/凭据轮换 | **直接采用 cc-switch 的全屏面板骨架** | 固定返回、Header/Footer、分区滚动；Secret 空值不轮换；脏状态确认 |
-| Model 新增/编辑 | **直接采用 cc-switch 的全屏模型设置骨架** | 与 Provider 配置保持同一信息架构；从 Provider 发起时预选并锁定 Provider；固定 Header/Footer，关闭脏表单需确认 |
-| Pricing 新版本 | **直接采用 cc-switch 的全屏 Pricing 编辑骨架** | 展示旧/新版本、金额转换、重叠和影响；提交只创建版本 |
+| Provider 新增/编辑/凭据轮换 | **cc-switch 同构独立页** `/admin/models/providers/new`、`/[id]/edit` | 固定返回、Header/Footer、分区滚动；Secret 空值不轮换；脏状态确认；列表页不挂载表单 Dialog |
+| Model 新增/编辑 | **cc-switch 同构独立页** `/admin/models/models/new`、`/[id]/edit` | 与 Provider 配置保持同一信息架构；从 Provider 发起时预选并锁定 Provider；固定 Header/Footer，关闭脏表单需确认 |
+| Pricing 新版本 | **cc-switch 同构独立页** `/admin/models/pricing/new` | 展示旧/新版本、金额转换、重叠和影响；提交只创建版本；历史版本无编辑表单 |
 | Model Permission 新增/编辑 | 640px Drawer；移动全屏 | User/Model 均用真实搜索选择；删除 override 使用 Modal |
 | Billing Account 调账 | 600px 高风险 Modal | 先取余额与版本，展示 before/after、reason、幂等键 |
 | Usage / Gateway Request 详情 | **直接采用 cc-switch Request Detail 的宽 Drawer 骨架** | 只读分区；保持 Usage 全局筛选与页签 |
@@ -196,10 +197,10 @@ Story 详情必须新增：`story_workspace_story_characters` 的角色与 `role
 | `id` | 详情 Mono + 复制 | 只读 | 服务端生成 | 不手填 |
 | `code` | 主标识徽标 | 创建 `text`；编辑只读 | regex，2–80，全局唯一 | 409 展示占用记录 |
 | `name` | 主标题 | `text` | 1–120 | 必填 |
-| `protocol` | Anthropic/OpenAI 文字标记 | 创建 segmented radio/预设；编辑只读 | 固定枚举 | 更换协议需新建 Provider |
+| `protocol` | Anthropic/OpenAI 文字标记 | 创建预设/下拉；编辑只读 | 固定枚举 | 更换协议需新建 Provider |
 | `base_url` | 截断 URL + 复制/外链 | `url` | 合法 URL≤2000；预设只预填 | 显示标准化后的最终 Endpoint |
 | credential | 已配置/未配置 + fingerprint | `password`、本次输入显隐、粘贴 | 8–8000；active 时必填/已有 | 历史 Secret 永不回填；空值=不轮换 |
-| `status` | active/disabled | 开关；停用另走确认 Modal | 固定枚举 | 启用校验 credential；停用展示 enabled Model 与近期请求影响 |
+| `status` | active/disabled | 下拉；active→disabled 提交前确认 Modal | 固定枚举 | 启用校验 credential；停用展示 enabled Model 与近期请求影响 |
 | `timeout_ms` | 秒格式 | 数字 + 单位说明 | 1000–900000 整数 | 默认 120000 |
 | `max_retries` | 整数 | Stepper | 0–5 | 默认 1 |
 | `config.authMode` | 定义项 | `select` | x-api-key/bearer | 不进自由 JSON |
@@ -207,13 +208,15 @@ Story 详情必须新增：`story_workspace_story_characters` 的角色与 `role
 | `config` 扩展键 | JSON 摘要 | 折叠 JSON Editor | object；受管键剥离 | Secret 风险键拒绝提交 |
 | 时间 | 详情时间线 | 只读 | 服务端 | — |
 
+Provider 卡片的“连通测试”不是表单字段：使用显式按钮调用 `POST /api/admin/providers/:id/reachability`。按钮需 `providers.write`，请求只探测经白名单校验的 `base_url`，不带 Provider Secret、不发送模型内容、不读响应正文、不跟随重定向；结果以 operational/degraded/failed 状态、TTFB 和 HTTP 状态展示。收到 401/403 仍表示网络可达，并必须提示这不证明 Credential 或 Model 正确。
+
 ### 6.2 Model（`models`）
 
 | 字段 | 列表/详情展示 | 创建/编辑控件 | 数据源与校验 | 权限/错误 |
 |---|---|---|---|---|
 | `provider_id`,`provider_code` | Provider 链接 + 协议 | 可搜索 Provider Combobox；编辑只读 | `/api/admin/providers`；只列有权可见项 | `models.write`；无选项解释 Provider 权限/空态 |
 | `code` | 主标识 Mono | 创建 `text`；编辑只读 | code regex，2–80，全局唯一 | 409 冲突 |
-| `upstream_model` | Mono | `Model Dropdown`（常用型号 datalist）+ 可自定义文本 | 1–200；实际可用性以上游为准 | 不联网伪探测；自定义值必须保留 |
+| `upstream_model` | Mono | `Model Dropdown`（常用型号 datalist）+ 可自定义文本 | 1–200；实际可用性以上游为准 | 自定义值必须保留；保存后可显式验证 |
 | `display_name` | 主标题 | `text` | 1–160 | 必填 |
 | `context_window` | 千分位 + tokens | nullable integer | 正整数或空 | 不把空转 0 |
 | `max_output_tokens` | 千分位 + tokens | nullable integer | 正整数或空；大于 context 时提示并服务端校验 | — |
@@ -228,7 +231,7 @@ Story 详情必须新增：`story_workspace_story_characters` 的角色与 `role
 | 字段 | 列表/详情展示 | 新版本控件 | 数据源与校验 | 财务边界 |
 |---|---|---|---|---|
 | `id` | Mono + 复制 | 只读 | 服务端生成 | — |
-| `model_id`,`model_code` | 模型链接 | 可搜索 Model Combobox；从 Model 发起时锁定 | 真实 models API | 不手填 ID |
+| `model_id`,`model_code` | 模型链接 | 可搜索 Model Combobox；从 Model 发起时预选 | 真实 models API | 不手填 ID；创建后不可改所属模型 |
 | `user_tier` | tier chip | 可搜索/可创建 code Combobox | 现存 tier options + code regex | 参与重叠维度 |
 | 四类 `*_price_microusd_per_million` | `$ / 1M` 主值 + micro-USD 辅助 | USD decimal 输入 + 精确整数预览 | 非负、最多 6 位 USD 小数；API 安全整数 | 不使用浮点执行计费 |
 | `markup_bps` | 百分比 + bps | 百分比输入 + bps 辅助 | 0–100000 bps | 显示计价公式 |
@@ -525,7 +528,7 @@ Modal、Drawer、全屏面板均锁定 Tab 焦点；初始焦点为标题或首�
 
 ## 14. 响应式、视觉与可访问性验收
 
-- Desktop 1440×1000：Sidebar 248px；主内容左右至少 36px；Provider/Pricing 全屏内容最大宽 1120px；普通表单阅读宽 760px；表格只有自身横向滚动。
+- Desktop 1440×1000：Sidebar 248px；主内容左右至少 36px；Provider/Model/Pricing 全屏内容最大宽 1120px；普通表单阅读宽 760px；表格只有自身横向滚动。
 - Mobile 390×844：导航、详情、表单全部在 viewport 内；全屏面板固定操作区使用 safe-area；最后字段下留至少 96px；根节点 `scrollWidth <= clientWidth`。
 - 使用暖纸 `#F6EFE5/#FFFAF2`、棕色正文、细实线和单一纸面虚线；暗色采用既定暖夜 Token。不得复制 cc-switch 的硬编码蓝灰，也不得呈现默认 Refine/Ant Design 外观。
 - 控件最小高 44px；所有 label 可见；状态不只靠颜色；原生 table 有 caption/th/scope/aria-sort；局部横滚壳可聚焦并有说明。
@@ -536,7 +539,7 @@ Modal、Drawer、全屏面板均锁定 Tab 焦点；初始焦点为标题或首�
 1. 建立资源字段定义层，分别声明 `listColumns`、`detailSections`、`createFields`、`editFields`、`relationOptions`、`actions`；组件不得依据 JavaScript 值类型猜控件。
 2. `AdminResourceTable` 的“查看/编辑”动作必须传真实 record；编辑前 `getOne`；删除能力按资源配置缺省为 false。
 3. 关系 Combobox 通过现有 Refine Data Provider 分页查询，并显示名称/code/辅助 ID；禁止接受不在 options 中的裸 ID。
-4. Provider/Pricing 全屏面板、Usage Dashboard、Request Detail 按 cc-switch 结构实现，视觉类名全部映射 Ink Memory Token。
+4. Provider 卡片列表、Provider/Model/Pricing 独立全屏页、Usage Dashboard、Request Detail 按 cc-switch 对应源码结构实现，视觉类名全部映射 Ink Memory Token。
 5. Route Handler 只解析/鉴权/编排；关系投影、价格版本、影响预览、最后 super_admin 保护、Setting 停用和结算仍在 `app/lib/**` 事务服务。
 6. 当前实现必须修复的契约差异：Story content 不可编辑；Story/Character/Scene/Workflow 详情补真实关系；Pricing 禁止历史原地改价；最后 active super_admin 保护；System Setting 不硬删；Gateway Key 提供 revoke UI；Reconciliation 不手填 Request ID。
 7. 自动化覆盖：无 Session、401/403、真实列表选中到预填表单、关系选择、400 首错、409 最新值、503 保留草稿、Secret 不回显、Key 一次性回执、Pricing 新版本、Ledger/Audit 无写入口、1440×1000 与 390×844、light/dark、键盘焦点锁定/归还和无页面级横溢出。

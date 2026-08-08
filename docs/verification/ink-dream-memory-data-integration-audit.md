@@ -17,9 +17,9 @@
 用户要求“业务源不修改、Admin 不引入 SQLite、最终只用 PostgreSQL”与业务源当前“真实数据只在 SQLite”之间存在客观前提冲突。可实施且不伪造数据的目标架构是：
 
 1. Admin 立即停止读取和写入错误的 `story_*` 平行表，但不删除旧表。
-2. Admin 增加显式的 PostgreSQL 第二数据源 `STORY_DATABASE_URL`，只映射业务源的真实表名和字段；同实例部署时允许它等于 `DATABASE_URL`，不同实例时指向另一个数据库名仍为 `ink-memory` 的 PostgreSQL。
-3. Admin 不迁移、不创建业务源表；这些表必须由业务源的正式 PostgreSQL 化部署或受控 DBA 迁移提供。当前业务源代码仍是 SQLite，因此真实线上接通需要业务源所有者完成独立迁移/兼容工作；本项目不得通过复制同步或 SQLite 驱动绕过这个边界。
-4. 在第二 PostgreSQL 数据源具备之前，Story 资源显式返回“业务数据源不可用”，不得回退到 Admin 平行表或假数据。
+2. Admin 只有一个 PostgreSQL 数据源 `DATABASE_URL`、一个连接池和一个数据库 `ink-memory`；Story repository 复用该连接池并按业务源真实表名查询。
+3. Admin 不迁移、不创建业务源表；这些表必须由 `ink-dream-memory` 的正式 PostgreSQL 化部署或受控 DBA 迁移原名放入同一个 `ink-memory`。当前业务源代码仍是 SQLite，因此真实线上接通需要业务源所有者完成独立迁移/兼容工作；本项目不得通过复制同步、第二数据库或 SQLite 驱动绕过这个边界。
+4. 在同库真实业务表具备之前，Story 资源显式返回“业务表尚未迁入”，不得回退到 Admin 平行表或假数据；其他控制面模块保持可用。
 
 ## 2. 工作区与证据边界
 
@@ -40,9 +40,9 @@
 |---|---|---|---|---|
 | ink-admin-memory | `pg.Pool` + Drizzle PostgreSQL | `DATABASE_URL`，`drizzle.config.ts` | PostgreSQL，目标库名规范为 `ink-memory` | Admin 控制面数据库 |
 | ink-dream-memory | `sqlite3.connect(DB_PATH)` | `INK_DATABASE_PATH`，默认 `backend/data/ink-and-memory.db` | SQLite 文件 | 当前真实业务数据源 |
-| Story 第二数据源 | 当前不存在 | 规划为 `STORY_DATABASE_URL` | 必须是 PostgreSQL，库名 `ink-memory` | 纠偏后的 Admin 业务读写入口 |
+| 统一 Story/控制面数据源 | 当前 Admin 已有 `DATABASE_URL` | `DATABASE_URL` | PostgreSQL，库名 `ink-memory` | 唯一 Admin 业务与控制面读写入口 |
 
-不能直接把 `STORY_DATABASE_URL` 指向 SQLite，也不能在 Admin 安装 `better-sqlite3`、SQLite fixture、JSON/内存回退。若未来源业务表与 Admin 控制面表同库，`STORY_DATABASE_URL` 可与 `DATABASE_URL` 相同；若分实例，则使用两个独立 `pg.Pool`，但不做表复制同步。
+不得增加 `STORY_DATABASE_URL`，也不能在 Admin 安装 `better-sqlite3`、SQLite fixture、JSON/内存回退。真实业务表和 Admin 控制面表必须位于同一个 `DATABASE_URL` 指向的 `ink-memory`，由一个 `pg.Pool` 访问；repository 分层只表达领域边界，不表达物理数据源边界。
 
 ## 4. 实体与表映射
 
@@ -72,9 +72,9 @@
 
 ### 5.1 主键与身份
 
-- 源业务用户 `users.id` 是自增整数；Admin `platform_users.id` 是文本 ID。所有跨库引用必须使用 `(source, external_user_id)`，不得伪造数据库外键。
+- 源业务用户 `users.id` 是自增整数；Admin `platform_users.id` 是文本 ID。跨领域身份映射使用 `(source, external_user_id)`；由于键类型和生命周期不同，不伪造直接数据库外键。
 - 源 Story/Workspace/Character/Scene/Workflow Run 主键是文本 ID。Admin 可以原样返回这些 ID，不生成替代 ID。
-- 跨数据库实例无法声明 PostgreSQL 外键。完整性由 Story 数据库自身外键和 Admin repository 的同 workspace/owner 校验共同保证；控制面审计保存源 ID 快照。
+- Story 内部关系继续使用迁入后原有 PostgreSQL 外键；业务身份到 `platform_users` 的 crosswalk 由同库 repository 在事务中校验 `(source, external_user_id)`，控制面审计保存源 ID 快照。
 
 ### 5.2 Story 聚合关系
 
@@ -107,12 +107,12 @@ Admin 写边界必须与此契约一致：
 4. confirm/reject/archive 使用条件更新，旧状态不满足时返回 409；批量操作要么全部成功，要么回滚。
 5. Workflow 运行与 transition、源 Token consumption 默认只读；retry/cancel 是显式命令而不是 PATCH status。
 6. 每个 Admin 成功或失败写入控制面审计，保存 actor、action、source resource ID、request ID、before/after 的安全字段和冲突原因；不记录密码、Token、密钥或完整敏感内容。
-7. 跨库操作不能做分布式事务。Story 源更新先提交，随后写 Admin 审计；若审计失败，操作返回明确的审计失败/需人工核对状态，不能假装整体回滚。
+7. Story 与 Admin 审计位于同一个 PostgreSQL；写操作必须在同一数据库事务中提交业务更新与审计，不再接受“跨库审计补写”语义。
 8. FK/unique/check 冲突映射为 409，业务数据源不可用映射为 503，未知异常为 500。
 
-## 7. 单数据源还是双 Data Provider
+## 7. 单数据源决策
 
-代码应支持一个统一的 Refine Data Provider，但服务端使用两个明确的 PostgreSQL Pool：
+代码使用一个 Refine Data Provider、一个服务端 PostgreSQL Pool 和一个 `DATABASE_URL`：
 
 ```mermaid
 flowchart LR
@@ -120,13 +120,13 @@ flowchart LR
   API --> Guard[Session + RBAC + Zod]
   Guard --> Control[Control-plane repositories]
   Guard --> Story[Story source repositories]
-  Control --> PG1[(DATABASE_URL / ink-memory)]
-  Story --> PG2[(STORY_DATABASE_URL / ink-memory)]
+  Control --> PG[(DATABASE_URL / ink-memory)]
+  Story --> PG
 ```
 
-- 同实例/同库：`STORY_DATABASE_URL` 等于 `DATABASE_URL`，两个 pool 可以在实现层复用；真实源表仍按其原名映射。
-- 不同实例：两个 pool 严格分离，Admin 不复制业务表。Refine 不直接持有数据库连接，只调用统一 Admin API。
-- 当前实际：业务源尚无 PostgreSQL，不能声称已接通真实数据。代码应 fail-closed，并把“业务源 PostgreSQL 化/受控迁移”列为部署前置条件。
+- `app/lib/db.ts` 是唯一连接来源；`app/lib/story-source/**` 直接复用 `getPool()`。
+- Refine 不直接持有数据库连接，只调用统一 Admin API；repository 分层保留真实字段和写边界。
+- 当前实际：业务源尚无 PostgreSQL，不能声称已接通真实数据。代码应只让 Story/源用户模块 fail-closed，并把“业务源迁移至同库 PostgreSQL”列为部署前置条件。
 
 ## 8. 旧表处置与迁移兼容策略
 
@@ -147,7 +147,7 @@ flowchart LR
 - 调整 `app/lib/admin/resources.ts`：Story 和 source-user 资源委托给 story-source service；控制面资源继续使用 `DATABASE_URL`。
 - 调整 `app/lib/admin/mutations.ts`：移除旧 Story 通用 create/delete 绑定；只保留明确的 patch/review/archive 命令。
 - `app/lib/db/schema.ts`：移除旧平行表导出，避免未来 `db:generate` 继续把错误模型当作目标 Schema；历史物理表由非破坏迁移保留并标记 deprecated。
-- `scripts/setup-env.mjs`、`.env.local.example`：增加可选/显式 `STORY_DATABASE_URL`，校验 URL 协议为 PostgreSQL、库名为 `ink-memory`；容器同库模式沿用 `DATABASE_URL` 回退，无需复制配置。
+- `scripts/setup-env.mjs`、`.env.local.example`：删除 `STORY_DATABASE_URL`，只校验 `DATABASE_URL` 使用 PostgreSQL 且库名为 `ink-memory`。
 
 ### 本轮非破坏迁移决策
 
@@ -165,7 +165,7 @@ flowchart LR
 ### 测试
 
 - 单元测试：真实字段白名单、分页排序筛选、冲突映射、禁止 create/delete、无配置 fail-closed。
-- PostgreSQL 集成：使用两个明确 disposable 数据库/两个 schema；Story fixture 使用真实表名和关系，但不使用 SQLite。
+- PostgreSQL 集成：使用一个明确 disposable `ink-memory` 数据库；同库应用控制面迁移和真实 Story 表 fixture，不使用 SQLite。
 - Playwright：无 Session、RBAC、源数据查询/受控更新、FK/状态冲突、数据库不可用、移动/桌面视觉。
 
 ## 10. 验收判断
@@ -174,7 +174,7 @@ flowchart LR
 - [x] 已证明“看不到源表”的根因是 PostgreSQL 与 SQLite 的数据源分离，而非 schema 名猜测。
 - [x] 已识别 Admin `0006` 的平行 Story 建模与字段/关系差异。
 - [x] 已划分真实业务域和 Admin 控制面边界。
-- [x] 已确定未来 PostgreSQL 单/双数据源模式及 fail-closed 行为。
+- [x] 已纠正为唯一 PostgreSQL/唯一 `DATABASE_URL`/唯一 Pool，并定义 Story 缺表 fail-closed 行为。
 - [x] 已定义 Story 写边界、审计、FK/unique/state 冲突和无破坏旧表退役策略。
 - [x] 未修改业务源代码、未操作真实数据库、未删除旧表。
 - [ ] 真实数据接通仍依赖业务源提供 PostgreSQL 版真实表；在该外部条件完成前，Admin 只能交付正确映射代码与隔离 PostgreSQL 验收，不能宣称读取了现有 SQLite 真实数据。

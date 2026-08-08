@@ -4,20 +4,35 @@ type GlobalPool = typeof globalThis & {
   __ink_memory_pg_pool__?: Pool;
 };
 
-function parsePort(value: string | undefined) {
-  if (!value) return undefined;
-  const port = Number(value);
-  if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
-    throw new Error("PGPORT must be an integer between 1 and 65535.");
+function validatedDatabaseUrl() {
+  const value = process.env.DATABASE_URL;
+  if (!value) {
+    throw new Error(
+      "DATABASE_URL is required and must point to the PostgreSQL ink-memory database.",
+    );
   }
-  return port;
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("DATABASE_URL must be a valid PostgreSQL URL.");
+  }
+  if (!["postgres:", "postgresql:"].includes(url.protocol)) {
+    throw new Error("DATABASE_URL must use PostgreSQL.");
+  }
+  if (url.pathname.replace(/^\//, "") !== "ink-memory") {
+    throw new Error("DATABASE_URL must use the ink-memory database.");
+  }
+  return value;
 }
 
 /**
  * Shared PostgreSQL connection pool for the Ink Memory control plane.
  *
  * The application intentionally has no embedded database fallback: operators
- * must configure DATABASE_URL or the standard PG* variables before startup.
+ * must configure the single DATABASE_URL before startup. Story and control-plane
+ * repositories intentionally share this pool and the same ink-memory database.
  */
 export function getPool() {
   const globalPool = globalThis as GlobalPool;
@@ -25,25 +40,10 @@ export function getPool() {
     return globalPool.__ink_memory_pg_pool__;
   }
 
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    const missing = ["PGHOST", "PGUSER", "PGDATABASE"].filter(
-      (name) => !process.env[name],
-    );
-    if (missing.length > 0) {
-      throw new Error(
-        `PostgreSQL configuration missing. Set DATABASE_URL or ${missing.join(", ")}. See .env.local.example.`,
-      );
-    }
-  }
+  const connectionString = validatedDatabaseUrl();
 
   globalPool.__ink_memory_pg_pool__ = new Pool({
     connectionString,
-    host: connectionString ? undefined : process.env.PGHOST,
-    port: connectionString ? undefined : parsePort(process.env.PGPORT),
-    user: connectionString ? undefined : process.env.PGUSER,
-    password: connectionString ? undefined : process.env.PGPASSWORD,
-    database: connectionString ? undefined : process.env.PGDATABASE,
     max: Number(process.env.PGPOOL_MAX ?? 10),
     idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS ?? 30_000),
     connectionTimeoutMillis: Number(

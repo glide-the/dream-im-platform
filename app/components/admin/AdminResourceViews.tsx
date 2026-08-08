@@ -4,12 +4,12 @@ import AdminResourceManager, {
   type AdminFieldDefinition,
 } from "./AdminResourceManager";
 
-const stateOptions = [
+export const stateOptions = [
   { label: "启用", value: "active" },
   { label: "停用", value: "disabled" },
 ];
 
-const providerFields: AdminFieldDefinition[] = [
+export const providerFields: AdminFieldDefinition[] = [
   { key: "code", label: "Provider Code", control: "text", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true, placeholder: "anthropic-main", help: "稳定标识，创建后不可修改。" },
   { key: "protocol", label: "协议", control: "select", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true, options: [{ label: "Anthropic", value: "anthropic" }, { label: "OpenAI", value: "openai" }] },
   { key: "name", label: "显示名称", control: "text", section: "identity", required: true },
@@ -23,7 +23,7 @@ const providerFields: AdminFieldDefinition[] = [
   { key: "config", label: "其他协议扩展配置", control: "json", section: "advanced", required: true, excludeKeys: ["authMode", "outputTokenParam"], help: "只有未被具名控件管理的真实扩展键放在这里；不得填写 Secret。" },
 ];
 
-function ProviderProxyContract() {
+export function ProviderProxyContract() {
   const endpoints = [
     { protocol: "Anthropic Messages", method: "POST", path: "/v1/messages", auth: "x-api-key: $INK_MEMORY_GATEWAY_KEY", scope: "messages:create" },
     { protocol: "Anthropic Token Count", method: "POST", path: "/v1/messages/count_tokens", auth: "x-api-key: $INK_MEMORY_GATEWAY_KEY", scope: "messages:create" },
@@ -61,7 +61,8 @@ export function ProvidersResourceView() {
   /></div>;
 }
 
-const upstreamModelOptions = [
+export const upstreamModelOptions = [
+  { label: "DeepSeek · V4 Pro", value: "deepseek-v4-pro" },
   { label: "Anthropic · Claude Sonnet 4", value: "claude-sonnet-4-20250514" },
   { label: "Anthropic · Claude Opus 4", value: "claude-opus-4-20250514" },
   { label: "Anthropic · Claude 3.7 Sonnet", value: "claude-3-7-sonnet-latest" },
@@ -70,7 +71,7 @@ const upstreamModelOptions = [
   { label: "OpenAI · o3", value: "o3" },
 ];
 
-const modelFields: AdminFieldDefinition[] = [
+export const modelFields: AdminFieldDefinition[] = [
   { key: "providerId", sourceKey: "provider_id", label: "Provider", control: "relation", section: "relation", required: true, createOnly: true, readOnlyOnEdit: true, relation: { resource: "providers", labelKey: "name", secondaryKey: "code", searchField: "name" } },
   { key: "code", label: "模型别名 Code", control: "text", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true, placeholder: "claude-sonnet" },
   { key: "upstreamModel", sourceKey: "upstream_model", label: "上游型号（Model Dropdown）", control: "model-picker", section: "identity", required: true, placeholder: "选择常用型号或输入自定义型号", options: upstreamModelOptions },
@@ -85,7 +86,7 @@ export function ModelsResourceView() {
   return <AdminResourceManager resource="models" title="模型注册表" description="按 cc-switch 的 Provider → Model Dropdown → 高级能力流程配置；外部调用只看到稳定模型别名。" container="fullscreen" createLabel="新增模型" sections={[{ id: "relation", title: "Provider 关系", description: "从真实 Provider 注册表选择上游供应商。" }, { id: "identity", title: "模型别名与上游型号", description: "使用常用 Model Dropdown 或输入兼容端点实际支持的型号。" }, { id: "limits", title: "Token 上限" }, { id: "capabilities", title: "高级能力" }, { id: "status", title: "启用与影响", description: "启用模型后仍需 Provider、Pricing、用户权限、余额与 Gateway Key Scope 同时满足。" }]} fields={modelFields} createDefaults={{ enabled: false, capabilities: { chat: true, streaming: true }, contextWindow: null, maxOutputTokens: null }} filters={[{ field: "code", label: "模型别名" }, { field: "provider_code", label: "Provider", operator: "eq" }, { field: "enabled", label: "状态", operator: "eq", options: [{ label: "启用", value: "true" }, { label: "停用", value: "false" }] }]} columns={[{ key: "code", label: "模型别名" }, { key: "provider_code", label: "Provider" }, { key: "upstream_model", label: "上游型号" }, { key: "display_name", label: "显示名" }, { key: "context_window", label: "Context" }, { key: "max_output_tokens", label: "Max output" }, { key: "enabled", label: "状态", format: "boolean" }]} />;
 }
 
-const pricingFields: AdminFieldDefinition[] = [
+export const pricingFields: AdminFieldDefinition[] = [
   { key: "replacesPricingRuleId", label: "替换规则", control: "hidden", createOnly: true },
   { key: "modelId", sourceKey: "model_id", label: "模型", control: "relation", section: "relation", required: true, createOnly: true, relation: { resource: "models", labelKey: "display_name", secondaryKey: "code", searchField: "display_name" } },
   { key: "userTier", sourceKey: "user_tier", label: "用户层级", control: "text", section: "relation", required: true, createOnly: true, placeholder: "default" },
@@ -93,8 +94,8 @@ const pricingFields: AdminFieldDefinition[] = [
   { key: "outputPriceMicrousdPerMillion", sourceKey: "output_price_microusd_per_million", label: "Output（USD / 1M tokens）", control: "money", section: "price", required: true, createOnly: true },
   { key: "cacheReadPriceMicrousdPerMillion", sourceKey: "cache_read_price_microusd_per_million", label: "Cache Read（USD / 1M tokens）", control: "money", section: "price", required: true, createOnly: true },
   { key: "cacheWritePriceMicrousdPerMillion", sourceKey: "cache_write_price_microusd_per_million", label: "Cache Write（USD / 1M tokens）", control: "money", section: "price", required: true, createOnly: true },
-  { key: "markupBps", sourceKey: "markup_bps", label: "Markup（bps）", control: "number", section: "formula", required: true, min: 0, max: 100000, createOnly: true },
-  { key: "discountBps", sourceKey: "discount_bps", label: "Discount（bps）", control: "number", section: "formula", required: true, min: 0, max: 10000, createOnly: true },
+  { key: "markupBps", sourceKey: "markup_bps", label: "Markup（%）", control: "percentage", section: "formula", required: true, min: 0, max: 1000, createOnly: true, help: "按百分比输入；下方实时显示精确 bps。" },
+  { key: "discountBps", sourceKey: "discount_bps", label: "Discount（%）", control: "percentage", section: "formula", required: true, min: 0, max: 100, createOnly: true, help: "按百分比输入；下方实时显示精确 bps。" },
   { key: "effectiveFrom", sourceKey: "effective_from", label: "生效时间", control: "datetime", section: "window", required: true, createOnly: true },
   { key: "effectiveTo", sourceKey: "effective_to", label: "结束时间", control: "datetime", section: "window", nullable: true },
   { key: "status", label: "状态", control: "select", section: "window", required: true, options: stateOptions },

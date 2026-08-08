@@ -53,16 +53,21 @@ const resources = [
   {
     name: "models",
     list: "/admin/models/models",
+    create: "/admin/models/models/new",
+    edit: "/admin/models/models/:id/edit",
     meta: { label: "模型中心" },
   },
   {
     name: "providers",
     list: "/admin/models/providers",
+    create: "/admin/models/providers/new",
+    edit: "/admin/models/providers/:id/edit",
     meta: { label: "模型供应商" },
   },
   {
     name: "pricing-rules",
     list: "/admin/models/pricing",
+    create: "/admin/models/pricing/new",
     meta: { label: "模型定价" },
   },
   {

@@ -7,7 +7,6 @@ import {
   assertAdminMutationOrigin,
   requireAdminRequest,
 } from "../admin/guard";
-import { withPlatformTransaction } from "../platform-db";
 import { withStoryTransaction } from "./db";
 import {
   isStorySourceResource,
@@ -185,7 +184,7 @@ async function updateSourceRow(
   return { before, after: result.rows[0] };
 }
 
-async function auditSourceMutation(input: {
+async function auditSourceMutation(client: PoolClient, input: {
   request: Request;
   requestId: string;
   identity: Awaited<ReturnType<typeof requireAdminRequest>>;
@@ -195,18 +194,16 @@ async function auditSourceMutation(input: {
   before: Record<string, unknown>;
   after: Record<string, unknown>;
 }) {
-  await withPlatformTransaction(async (client) => {
-    await recordAdminAuditOnClient(client, {
-      identity: input.identity,
-      action: input.action,
-      resourceType: input.resource,
-      resourceId: input.id,
-      requestId: input.requestId,
-      request: input.request,
-      before: input.before,
-      after: input.after,
-      metadata: { dataSource: "story-postgresql" },
-    });
+  await recordAdminAuditOnClient(client, {
+    identity: input.identity,
+    action: input.action,
+    resourceType: input.resource,
+    resourceId: input.id,
+    requestId: input.requestId,
+    request: input.request,
+    before: input.before,
+    after: input.after,
+    metadata: { dataSource: "single-postgresql" },
   });
 }
 
@@ -228,11 +225,9 @@ export async function handleStorySourceUpdate(
     }
     const identity = await requireAdminRequest(request, "story.write");
     const input = await parseBody(request, config.schema);
-    const changed = await withStoryTransaction(
-      async (client) => await updateSourceRow(client, id, input, config),
-    );
-    try {
-      await auditSourceMutation({
+    await withStoryTransaction(async (client) => {
+      const changed = await updateSourceRow(client, id, input, config);
+      await auditSourceMutation(client, {
         request,
         requestId,
         identity,
@@ -241,14 +236,7 @@ export async function handleStorySourceUpdate(
         id,
         ...changed,
       });
-    } catch {
-      throw new AdminError(
-        "STORY_SOURCE_AUDIT_FAILED",
-        "The Story change committed, but its control-plane audit requires manual reconciliation",
-        500,
-        { sourceMutationCommitted: true, requestId },
-      );
-    }
+    });
     const data = await queryStorySourceItem(resource, id);
     return Response.json(
       { data },
@@ -426,18 +414,15 @@ export async function handleStorySourceAction(
     }
     const identity = await requireAdminRequest(request, "story.write");
     const body = await parseBody(request, reviewActionSchema);
-    const changed = await withStoryTransaction(
-      async (client) =>
-        await transitionReview(
-          client,
-          resource,
-          id,
-          action as "confirm" | "reject" | "archive",
-          body.reviewNotes,
-        ),
-    );
-    try {
-      await auditSourceMutation({
+    await withStoryTransaction(async (client) => {
+      const changed = await transitionReview(
+        client,
+        resource,
+        id,
+        action as "confirm" | "reject" | "archive",
+        body.reviewNotes,
+      );
+      await auditSourceMutation(client, {
         request,
         requestId,
         identity,
@@ -446,14 +431,7 @@ export async function handleStorySourceAction(
         id,
         ...changed,
       });
-    } catch {
-      throw new AdminError(
-        "STORY_SOURCE_AUDIT_FAILED",
-        "The Story transition committed, but its control-plane audit requires manual reconciliation",
-        500,
-        { sourceMutationCommitted: true, requestId },
-      );
-    }
+    });
     const data = await queryStorySourceItem(resource, id);
     return Response.json(
       { data },

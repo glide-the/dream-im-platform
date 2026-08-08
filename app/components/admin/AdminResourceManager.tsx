@@ -29,6 +29,7 @@ export type AdminFieldControl =
   | "json"
   | "datetime"
   | "money"
+  | "percentage"
   | "model-picker"
   | "multiselect"
   | "relation-multi"
@@ -106,8 +107,8 @@ export type AdminResourceManagerProps = {
   }>;
 };
 
-type FormValue = string | boolean | string[];
-type FormValues = Record<string, FormValue>;
+export type FormValue = string | boolean | string[];
+export type FormValues = Record<string, FormValue>;
 type OverlayMode = "create" | "edit" | "detail" | "delete" | "command";
 type ResourceCommand = NonNullable<AdminResourceManagerProps["commands"]>[number];
 
@@ -167,6 +168,16 @@ function usdToMicroUsd(value: string) {
   return Number(micros);
 }
 
+function percentageToBps(value: string) {
+  const normalized = value.trim();
+  if (!/^\d+(?:\.\d{0,2})?$/.test(normalized)) {
+    throw new Error("百分比必须是非负数，且最多包含 2 位小数。");
+  }
+  const bps = Math.round(Number(normalized) * 100);
+  if (!Number.isSafeInteger(bps)) throw new Error("百分比超出安全范围。");
+  return bps;
+}
+
 function toLocalDateTime(value: unknown) {
   if (!value) return "";
   const date = new Date(String(value));
@@ -182,7 +193,7 @@ function formatDetailValue(value: unknown) {
   return String(value);
 }
 
-function valuesFromRecord(
+export function valuesFromRecord(
   fields: AdminFieldDefinition[],
   record: Record<string, unknown> | undefined,
   defaults: Record<string, unknown>,
@@ -190,7 +201,8 @@ function valuesFromRecord(
 ) {
   return Object.fromEntries(
     fields.map((field) => {
-      const raw = record ? sourceValue(record, field) : defaults[field.key];
+      const recordValue = record ? sourceValue(record, field) : undefined;
+      const raw = recordValue === undefined ? defaults[field.key] : recordValue;
       if (field.control === "switch") return [field.key, Boolean(raw)];
       if (field.control === "multiselect" || field.control === "relation-multi") {
         return [field.key, Array.isArray(raw) ? raw.map(String) : []];
@@ -223,6 +235,9 @@ function valuesFromRecord(
       if (field.control === "money") {
         return [field.key, microUsdToUsd(raw)];
       }
+      if (field.control === "percentage") {
+        return [field.key, raw === null || raw === undefined ? "" : String(Number(raw) / 100)];
+      }
       if (field.control === "password" && mode === "edit") {
         return [field.key, ""];
       }
@@ -231,7 +246,7 @@ function valuesFromRecord(
   ) as FormValues;
 }
 
-function buildPayload(
+export function buildPayload(
   fields: AdminFieldDefinition[],
   values: FormValues,
   mode: "create" | "edit",
@@ -270,6 +285,8 @@ function buildPayload(
       }
     } else if (field.control === "money") {
       assign(usdToMicroUsd(String(value ?? "")));
+    } else if (field.control === "percentage") {
+      assign(percentageToBps(String(value ?? "")));
     } else if (field.control === "json") {
       try {
         assign(JSON.parse(String(value || "{}")));
@@ -326,12 +343,14 @@ function useDialog(open: boolean, ref: RefObject<HTMLDialogElement | null>) {
 }
 
 function RelationSelect({
+  id,
   field,
   value,
   onChange,
   disabled,
   required,
 }: {
+  id: string;
   field: AdminFieldDefinition;
   value: string;
   onChange: (value: string) => void;
@@ -365,6 +384,7 @@ function RelationSelect({
         aria-label={`搜索${field.label}选项`}
       />
       <select
+        id={id}
         className="admin-field text-sm"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -394,11 +414,13 @@ function RelationSelect({
 }
 
 function MultiRelationSelect({
+  labelId,
   field,
   value,
   onChange,
   disabled,
 }: {
+  labelId: string;
   field: AdminFieldDefinition;
   value: string[];
   onChange: (value: string[]) => void;
@@ -415,7 +437,7 @@ function MultiRelationSelect({
       : [],
   });
   return (
-    <div className="mt-2 space-y-2">
+    <div className="mt-2 space-y-2" role="group" aria-labelledby={labelId}>
       <input className="admin-field text-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`搜索${field.label}`} disabled={disabled} />
       <div className="max-h-56 overflow-y-auto border border-border bg-bg-surface p-2">
         {query.isLoading ? <p className="p-2 text-xs text-text-tertiary">正在加载…</p> : result.data.map((option) => {
@@ -429,7 +451,7 @@ function MultiRelationSelect({
   );
 }
 
-function FieldControl({
+export function FieldControl({
   field,
   value,
   mode,
@@ -441,6 +463,7 @@ function FieldControl({
   onChange: (value: FormValue) => void;
 }) {
   const id = useId();
+  const labelId = `${id}-label`;
   const [revealed, setRevealed] = useState(false);
   const disabled = mode === "edit" && field.readOnlyOnEdit;
   const required = Boolean(field.required || (field.requiredOnCreate && mode === "create"));
@@ -451,11 +474,21 @@ function FieldControl({
     disabled,
     className: "admin-field mt-2 text-sm disabled:cursor-not-allowed disabled:opacity-60",
   };
+  const groupedControl = [
+    "multiselect",
+    "relation-multi",
+    "capabilities",
+  ].includes(field.control);
   return (
-    <label className={`block text-xs font-semibold text-text-secondary ${["textarea", "json", "multiselect", "relation-multi", "tags", "capabilities", "relation"].includes(field.control) ? "sm:col-span-2" : ""}`}>
-      <span>{field.label}{required ? " *" : ""}</span>
+    <div className={`block text-xs font-semibold text-text-secondary ${["textarea", "json", "multiselect", "relation-multi", "tags", "capabilities", "relation"].includes(field.control) ? "sm:col-span-2" : ""}`}>
+      {groupedControl ? (
+        <span id={labelId}>{field.label}{required ? " *" : ""}</span>
+      ) : (
+        <label id={labelId} htmlFor={id}>{field.label}{required ? " *" : ""}</label>
+      )}
       {field.control === "relation" ? (
         <RelationSelect
+          id={id}
           field={field}
           value={String(value ?? "")}
           onChange={onChange}
@@ -463,7 +496,7 @@ function FieldControl({
           required={required}
         />
       ) : field.control === "relation-multi" ? (
-        <MultiRelationSelect field={field} value={Array.isArray(value) ? value : []} onChange={onChange} disabled={disabled} />
+        <MultiRelationSelect labelId={labelId} field={field} value={Array.isArray(value) ? value : []} onChange={onChange} disabled={disabled} />
       ) : field.control === "select" ? (
         <select {...common} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)}>
           {field.nullable ? <option value="">未设置</option> : null}
@@ -488,20 +521,20 @@ function FieldControl({
           <span className="block text-[11px] font-normal leading-5 text-text-tertiary">从常用上游型号下拉选择，或输入 Provider 实际支持的自定义型号。</span>
         </span>
       ) : field.control === "multiselect" || field.control === "capabilities" ? (
-        <span className="mt-2 grid gap-2 border border-border bg-bg-surface p-3 sm:grid-cols-2">
+        <span className="mt-2 grid gap-2 border border-border bg-bg-surface p-3 sm:grid-cols-2" role="group" aria-labelledby={labelId}>
           {(field.options ?? []).map((option) => {
             const selected = Array.isArray(value) && value.includes(option.value);
-            return <label key={option.value} className="flex min-h-9 items-center gap-2 text-sm font-normal text-text-primary"><input type="checkbox" checked={selected} onChange={(event) => onChange(event.target.checked ? [...(Array.isArray(value) ? value : []), option.value] : (Array.isArray(value) ? value : []).filter((item) => item !== option.value))} />{option.label}</label>;
+            return <label key={option.value} className="flex min-h-9 items-center gap-2 text-sm font-normal text-text-primary"><input type="checkbox" checked={selected} disabled={disabled} onChange={(event) => onChange(event.target.checked ? [...(Array.isArray(value) ? value : []), option.value] : (Array.isArray(value) ? value : []).filter((item) => item !== option.value))} />{option.label}</label>;
           })}
         </span>
       ) : (
         <input
           {...common}
-          type={field.control === "money" || field.control === "number" ? "number" : field.control === "datetime" ? "datetime-local" : field.control}
+          type={field.control === "money" || field.control === "percentage" || field.control === "number" ? "number" : field.control === "datetime" ? "datetime-local" : field.control}
           value={String(value ?? "")}
           min={field.min}
           max={field.max}
-          step={field.control === "money" ? "0.000001" : field.step}
+          step={field.control === "money" ? "0.000001" : field.control === "percentage" ? "0.01" : field.step}
           placeholder={field.placeholder}
           onChange={(event) => onChange(event.target.value)}
         />
@@ -511,8 +544,13 @@ function FieldControl({
           {(() => { try { return `${usdToMicroUsd(String(value))} micro-USD / 1M tokens`; } catch { return "请输入最多 6 位小数的 USD 金额"; } })()}
         </span>
       ) : null}
+      {field.control === "percentage" && value !== "" ? (
+        <span className="mt-1 block font-mono text-[11px] font-normal text-text-tertiary">
+          {(() => { try { return `${percentageToBps(String(value))} bps`; } catch { return "请输入最多 2 位小数的百分比"; } })()}
+        </span>
+      ) : null}
       {field.help ? <span className="mt-1 block text-xs font-normal leading-5 text-text-tertiary">{field.help}</span> : null}
-    </label>
+    </div>
   );
 }
 
@@ -652,7 +690,7 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
       userTier: row.user_tier,
       effectiveFrom: new Date().toISOString(),
     };
-    for (const field of fields.filter((item) => item.control === "money" || ["markupBps", "discountBps"].includes(item.key))) {
+    for (const field of fields.filter((item) => item.control === "money" || item.control === "percentage")) {
       base[field.key] = row[field.sourceKey ?? field.key];
     }
     openCreate(event, base);

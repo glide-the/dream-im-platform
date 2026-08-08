@@ -57,6 +57,13 @@
       "when": 1786165913179,
       "tag": "0007_curvy_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786175928206,
+      "tag": "0008_single_database_comments",
+      "breakpoints": true
     }
   ]
 }

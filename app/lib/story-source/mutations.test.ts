@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const storyQuery = vi.fn();
-const auditQuery = vi.fn();
 
 vi.mock("../admin/guard", () => ({
   adminRequestId: () => "request-test",
@@ -16,14 +15,8 @@ vi.mock("../admin/guard", () => ({
 }));
 
 vi.mock("../admin/audit", () => ({
-  recordAdminAuditOnClient: async (client: { query: typeof auditQuery }) =>
+  recordAdminAuditOnClient: async (client: { query: typeof storyQuery }) =>
     await client.query("INSERT AUDIT"),
-}));
-
-vi.mock("../platform-db", () => ({
-  withPlatformTransaction: async (
-    handler: (client: { query: typeof auditQuery }) => Promise<unknown>,
-  ) => await handler({ query: auditQuery }),
 }));
 
 vi.mock("./db", () => ({
@@ -44,7 +37,6 @@ import {
 describe("Story source mutations", () => {
   beforeEach(() => {
     storyQuery.mockReset();
-    auditQuery.mockReset().mockResolvedValue({ rows: [] });
   });
 
   it("updates only source workspace fields and records control-plane audit", async () => {
@@ -55,6 +47,7 @@ describe("Story source mutations", () => {
       .mockResolvedValueOnce({
         rows: [{ id: "workspace-1", name: "新名称", owner_id: 7 }],
       })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({
         rows: [{ id: "workspace-1", name: "新名称", owner_id: "7" }],
       })
@@ -78,7 +71,7 @@ describe("Story source mutations", () => {
     );
     expect(storyQuery.mock.calls[1][0]).toContain("SET name = $2");
     expect(storyQuery.mock.calls[1][0]).not.toContain("story_workspaces");
-    expect(auditQuery).toHaveBeenCalledWith("INSERT AUDIT");
+    expect(storyQuery.mock.calls[2][0]).toBe("INSERT AUDIT");
   });
 
   it("confirms a source story and cascades through the real bridge relation", async () => {
@@ -100,6 +93,7 @@ describe("Story source mutations", () => {
       .mockResolvedValueOnce({
         rows: [{ id: "story-1", review_status: "confirmed", status: "published" }],
       })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({
         rows: [{ id: "story-1", review_status: "confirmed", status: "published" }],
       })

@@ -1,10 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 
 const bootstrapToken = process.env.ADMIN_BOOTSTRAP_E2E_TOKEN;
 const superEmail = "super-admin@example.test";
 const superPassword = "Test-super-admin-2026!";
 const auditorEmail = "auditor@example.test";
 const auditorPassword = "Test-auditor-pass-2026!";
+let mockUpstream: Server | undefined;
+let mockUpstreamUrl = "";
+let mockValidationRequests: Array<{ authorization?: string; body: string }> = [];
 
 function collectDiagnostics(page: Page) {
   const diagnostics: string[] = [];
@@ -27,6 +32,31 @@ function collectDiagnostics(page: Page) {
 
 test.describe("Refine Admin with owned isolated PostgreSQL", () => {
   test.skip(!bootstrapToken, "Set ADMIN_BOOTSTRAP_E2E_TOKEN only for an owned isolated PostgreSQL lane");
+
+  test.beforeAll(async () => {
+    mockValidationRequests = [];
+    mockUpstream = createServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += String(chunk).slice(0, 8_192); });
+      request.on("end", () => {
+        mockValidationRequests.push({ authorization: request.headers.authorization, body });
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end('{"id":"mock-response","content":[]}');
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      mockUpstream!.once("error", reject);
+      mockUpstream!.listen(0, "127.0.0.1", () => resolve());
+    });
+    const address = mockUpstream.address() as AddressInfo;
+    mockUpstreamUrl = `http://127.0.0.1:${address.port}`;
+  });
+
+  test.afterAll(async () => {
+    if (!mockUpstream) return;
+    await new Promise<void>((resolve, reject) => mockUpstream!.close((error) => error ? reject(error) : resolve()));
+  });
 
   test("validates source data, control plane, RBAC, billing and both viewports", async ({ context, page, request, baseURL }, testInfo) => {
     const diagnostics = collectDiagnostics(page);
@@ -90,6 +120,25 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     const providerDetailBody = await providerDetail.json();
     expect(providerDetailBody.data.credential_configured).toBe(true);
     expect(JSON.stringify(providerDetailBody)).not.toContain("api_key_ciphertext");
+
+    const validationProvider = await api.post(`${baseURL}/api/admin/providers`, {
+      headers,
+      data: { code: "mock-validation-e2e", name: "Mock Validation", protocol: "anthropic", baseUrl: mockUpstreamUrl, apiKey: "fixture-model-validation-secret", status: "active", timeoutMs: 5000, maxRetries: 0, config: { authMode: "bearer" } },
+    });
+    expect(validationProvider.status()).toBe(201);
+    const validationProviderBody = await validationProvider.json();
+    const validationModel = await api.post(`${baseURL}/api/admin/models`, {
+      headers,
+      data: { providerId: validationProviderBody.data.id, code: "mock-validation-model", upstreamModel: "deepseek-v4-pro", displayName: "Mock Validation Model", contextWindow: 128000, maxOutputTokens: 8192, capabilities: { chat: true }, enabled: true },
+    });
+    expect(validationModel.status()).toBe(201);
+    const validationModelBody = await validationModel.json();
+    const validation = await api.post(`${baseURL}/api/admin/models/${validationModelBody.data.id}/validate`, { headers });
+    expect(validation.status()).toBe(200);
+    await expect(validation.json()).resolves.toMatchObject({ data: { status: "operational", usable: true, httpStatus: 200 } });
+    expect(mockValidationRequests).toHaveLength(1);
+    expect(mockValidationRequests[0].authorization).toBe("Bearer fixture-model-validation-secret");
+    expect(JSON.parse(mockValidationRequests[0].body)).toMatchObject({ model: "deepseek-v4-pro", max_tokens: 1, stream: false });
 
     const pricingVersionStart = new Date(Date.now() + 60_000).toISOString();
     const pricingVersion = await api.post(`${baseURL}/api/admin/pricing-rules`, {
@@ -235,15 +284,54 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/admin/models/providers");
     await expect(page.getByRole("heading", { name: "Provider", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "新增 Provider" }).click();
-    const providerDialog = page.getByRole("dialog", { name: "新增 Provider" });
-    await expect(providerDialog).toBeVisible();
-    await expect(providerDialog.getByLabel("Provider Code")).toBeVisible();
-    await expect(providerDialog.getByLabel("API Endpoint")).toBeVisible();
-    await expect(providerDialog.getByLabel("API Key / Credential")).toBeVisible();
+    await page.getByRole("link", { name: "添加 Provider" }).click();
+    await expect(page).toHaveURL(/\/admin\/models\/providers\/new$/);
+    await expect(page.getByRole("heading", { name: "添加 Provider", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Provider Code")).toBeVisible();
+    await expect(page.getByLabel("API Endpoint")).toBeVisible();
+    await expect(page.getByLabel("API Key / Credential")).toBeVisible();
+    await page.getByRole("button", { name: "DeepSeek Anthropic" }).click();
+    await expect(page.getByLabel("API Endpoint")).toHaveValue("https://api.deepseek.com/anthropic");
+    await expect(page.getByLabel("Provider Code")).toHaveValue("deepseek-anthropic");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: testInfo.outputPath("admin-provider-dialog-desktop-1440x1000.png"), fullPage: true });
-    await providerDialog.getByRole("button", { name: "关闭" }).click();
+    await page.screenshot({ path: testInfo.outputPath("admin-provider-page-desktop-1440x1000.png"), fullPage: true });
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "返回列表" }).click();
+
+    await page.goto("/admin/models/models/new");
+    await expect(page.getByRole("heading", { name: "添加模型", exact: true })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: /^Provider \*/ })).toBeVisible();
+    await expect(page.getByLabel("上游型号（Model Dropdown）")).toHaveValue("deepseek-v4-pro");
+    await expect(page.getByRole("checkbox", { name: "对话", exact: true })).toBeChecked();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-model-page-desktop-1440x1000.png"), fullPage: true });
+
+    await page.goto(`/admin/models/models?provider_id=${encodeURIComponent(validationProviderBody.data.id)}`);
+    const validationCard = page.locator("article").filter({ hasText: "Mock Validation Model" });
+    await expect(validationCard).toBeVisible();
+    await validationCard.getByRole("button", { name: "验证配置" }).click();
+    await expect(validationCard.getByText(/凭据与上游模型验证通过/)).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("admin-model-validation-desktop-1440x1000.png"), fullPage: true });
+
+    await page.goto(`/admin/billing/usage?providerId=${encodeURIComponent(validationProviderBody.data.id)}`);
+    await expect(page.getByRole("combobox", { name: "Provider" })).toHaveValue(validationProviderBody.data.id);
+
+    await page.goto(`/admin/models/providers/${encodeURIComponent(validationProviderBody.data.id)}/edit`);
+    await page.getByLabel("运行状态").selectOption("disabled");
+    await page.getByRole("button", { name: "保存 Provider" }).click();
+    await expect(page.getByRole("heading", { name: "确认停用 Provider" })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("admin-provider-disable-confirm-desktop-1440x1000.png"), fullPage: true });
+    await page.getByRole("button", { name: "取消", exact: true }).last().click();
+
+    await page.goto("/admin/models/pricing/new?modelId=model-e2e");
+    await expect(page.getByRole("heading", { name: "创建价格版本", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Input（USD / 1M tokens）")).toBeVisible();
+    await expect(page.getByLabel("Output（USD / 1M tokens）")).toBeVisible();
+    await expect(page.getByLabel("Markup（%）")).toBeVisible();
+    await expect(page.getByText("0 bps", { exact: true }).first()).toBeVisible();
+    await expect(page.getByLabel("生效时间")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-pricing-page-desktop-1440x1000.png"), fullPage: true });
 
     await page.goto("/admin/story/stories");
     await expect(page.getByRole("heading", { name: "剧本项目", exact: true })).toBeVisible();
@@ -252,12 +340,28 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/admin/models/providers");
-    await page.getByRole("button", { name: "新增 Provider" }).click();
-    const mobileProviderDialog = page.getByRole("dialog", { name: "新增 Provider" });
-    await expect(mobileProviderDialog).toBeVisible();
+    await page.getByRole("link", { name: "添加 Provider" }).click();
+    await expect(page.getByRole("heading", { name: "添加 Provider", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: testInfo.outputPath("admin-provider-dialog-mobile-390x844.png") });
-    await mobileProviderDialog.getByRole("button", { name: "关闭" }).click();
+    await page.screenshot({ path: testInfo.outputPath("admin-provider-page-mobile-390x844.png") });
+    await page.getByRole("button", { name: "返回列表" }).click();
+
+    await page.goto("/admin/models/models/new");
+    await expect(page.getByRole("heading", { name: "添加模型", exact: true })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: /^Provider \*/ })).toContainText("E2E Provider");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-model-page-mobile-390x844.png") });
+
+    await page.goto("/admin/models/pricing/new?modelId=model-e2e");
+    await expect(page.getByRole("heading", { name: "创建价格版本", exact: true })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: /^模型 \*/ })).toHaveValue("model-e2e");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-pricing-page-mobile-390x844.png") });
+
+    await page.goto(`/admin/billing/usage?modelId=${encodeURIComponent(validationModelBody.data.id)}`);
+    await expect(page.getByRole("combobox", { name: "模型" })).toHaveValue(validationModelBody.data.id);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-usage-mobile-390x844.png") });
 
     await context.clearCookies();
     await page.goto("/admin/login");
@@ -267,9 +371,21 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     await expect(page).toHaveURL(/\/admin$/);
     const forbidden = await context.request.patch(`${baseURL}/api/admin/story-stories/story-e2e`, { headers, data: { title: "Auditor must not write" } });
     expect(forbidden.status()).toBe(403);
+    const forbiddenProviderProbe = await context.request.post(
+      `${baseURL}/api/admin/providers/${providerBody.data.id}/reachability`,
+      { headers },
+    );
+    expect(forbiddenProviderProbe.status()).toBe(403);
+    const forbiddenModelValidation = await context.request.post(
+      `${baseURL}/api/admin/models/${validationModelBody.data.id}/validate`,
+      { headers },
+    );
+    expect(forbiddenModelValidation.status()).toBe(403);
 
     await page.goto("/admin");
-    await page.getByRole("button", { name: "菜单" }).click();
+    const mobileMenuButton = page.getByRole("button", { name: "菜单" });
+    await mobileMenuButton.focus();
+    await mobileMenuButton.press("Enter");
     await expect(page.getByRole("dialog", { name: "管理后台导航" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-mobile-menu-390x844.png") });

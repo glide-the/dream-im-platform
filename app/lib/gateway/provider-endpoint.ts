@@ -3,8 +3,8 @@ import type { AiProviderProtocol } from "../billing/types";
 import { GatewayError } from "./errors";
 
 const DEFAULT_PROVIDER_HOSTS: Record<AiProviderProtocol, ReadonlySet<string>> = {
-  anthropic: new Set(["api.anthropic.com"]),
-  openai: new Set(["api.openai.com"]),
+  anthropic: new Set(["api.anthropic.com", "api.deepseek.com"]),
+  openai: new Set(["api.openai.com", "api.deepseek.com"]),
 };
 
 function configuredHosts() {

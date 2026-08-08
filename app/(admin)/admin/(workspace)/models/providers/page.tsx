@@ -1,6 +1,6 @@
 import AdminModulePage, { modelTabs } from "@/components/admin/AdminModulePage";
-import { ProvidersResourceView } from "@/components/admin/AdminResourceViews";
+import AIProviderRegistry from "@/components/admin/AIProviderRegistry";
 
 export default function ProvidersPage() {
-  return <AdminModulePage eyebrow="AI supply chain / providers" title="Provider" description="采用 cc-switch 的全屏预设与分区设置流程；Credential 仅写入加密列，读取永不回显。" status="凭据加密" tabs={modelTabs}><ProvidersResourceView /></AdminModulePage>;
+  return <AdminModulePage eyebrow="AI supply chain / providers" title="Provider" description="cc-switch 同构 Provider 卡片注册表；外部调用只使用 Gateway Key 与稳定模型 alias。" status="代理供应链" tabs={modelTabs}><AIProviderRegistry /></AdminModulePage>;
 }
