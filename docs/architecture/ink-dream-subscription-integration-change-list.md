@@ -7,20 +7,20 @@
 
 ## 1. 接入前提与责任边界
 
-Dream 继续拥有真实业务实体 `users`、`story_workspace_workspaces`、`story_workspace_stories` 及创作运行时。Admin 使用同一 PostgreSQL `ink-memory` 读取这些 canonical 表；Gateway 与订阅控制面拥有 `platform_users`、套餐、版本、权益、订阅、Allowance、Provider、Model、Pricing、Gateway Key、Usage 和 Ledger。
+Dream 继续拥有真实业务实体 `users`、`story_workspace_workspaces`、`story_workspace_stories` 及创作运行时。Admin 使用同一 PostgreSQL `ink-memory` 读取这些 canonical 表；Gateway 与订阅控制面拥有套餐、版本、权益、订阅、Allowance、Provider、Model、Pricing、Gateway Key、Usage 和 Ledger。产品层不存在另一类“计费用户”：`users` 中的每个平台用户天然是计费主体并自动拥有一个计费账户。
 
 Dream 不应复制订阅账本、价格版本或 Token Usage。Dream 展示的套餐、订阅、额度和 Usage 都应来自控制面只读 API；开通、续费、升级、降级、暂停和取消必须调用控制面命令，不能直接更新 PostgreSQL。真实支付尚未接入，UI 不得显示“支付成功”；当前开通由运营 Admin 执行，未来支付由可插拔 PaymentAdapter/Webhook 驱动同一幂等命令。
 
-## 2. Billing Identity 映射
+## 2. 唯一平台用户与内部兼容键
 
-| Dream 身份 | 控制面字段 | 规则 |
+| 平台用户真值 | 内部兼容字段 | 规则 |
 |---|---|---|
 | `users.id`（INTEGER） | `platform_users.external_user_id`（TEXT） | 使用十进制字符串，禁止生成第二套业务 User ID |
 | 来源 | `platform_users.source` | 固定 `ink-dream` |
-| 显示资料 | `platform_users.email/display_name` | 仅为计费投影；业务真值仍是 Dream `users` |
-| 控制面主键 | `platform_users.id` | 只在控制面/Gateway/Usage/Ledger 使用 |
+| 显示资料 | `platform_users.email/display_name` | 仅为自动同步的内部投影；页面和选择器必须读取 `users` |
+| 兼容主键 | `platform_users.id` | 仅供现有 Gateway/Usage/Ledger 文本外键使用；不是另一种用户 ID |
 
-首次接入应提供幂等的“确保 Billing Identity”服务端调用：以 `(source, external_user_id)` 唯一键查询或创建 `platform_users`，同时确保 `billing_accounts` 存在。不要把 Gateway Key、Provider Secret 或密码散列写入 Dream 表。
+`0015_platform_users_are_billable.sql` 会回填并通过 `users` trigger 幂等同步内部兼容行，同时为每个平台用户确保唯一的 `billing_accounts`。Dream 不需要、也不得调用“创建计费用户”接口；运营后台不得提供这种创建入口。该兼容表只为非破坏地保留既有余额、订阅、Key、Usage 和 Ledger 外键，后续可分阶段把控制面外键收敛到 canonical user key。不要把 Gateway Key、Provider Secret 或密码散列写入 Dream 表。
 
 ## 3. API 调用清单
 
@@ -37,7 +37,7 @@ Dream 不应复制订阅账本、价格版本或 Token Usage。Dream 展示的�
 | `POST /v1/billing/me/resume` | 恢复续费/恢复暂停 | reason、idempotency key |
 | `GET /v1/models` | 当前 Key 可见模型 alias | 使用既有 Gateway endpoint |
 
-所有写请求必须带用户 Session、CSRF/Origin 保护和客户端生成的幂等键。控制面应重新解析 Dream User → Billing Identity，禁止信任浏览器提交的 `platform_user_id`。409 响应应携带最新 subscription version/状态，Dream 刷新后允许用户重试。
+所有写请求必须带用户 Session、CSRF/Origin 保护和客户端生成的幂等键。控制面应从已认证 Session 解析 canonical `users.id`，再在服务端解析内部兼容键；禁止信任浏览器提交的 `platform_user_id`。409 响应应携带最新 subscription version/状态，Dream 刷新后允许用户重试。
 
 ## 4. Gateway 地址、Key 与模型 Alias
 
@@ -121,7 +121,7 @@ Gateway 返回的 request ID 应进入 Dream 的结构化日志与用户错误�
 
 1. 在隔离环境将 Dream canonical 三表迁入同一 PostgreSQL 并核对 PK/FK/fingerprint；生产迁移需另行审批。
 2. 部署 Admin 0014 订阅迁移及控制面代码，但保持“从未分配订阅的旧用户走余额兼容”；已存在订阅但无资格时不得放行。
-3. 幂等创建 Billing Identity，发放环境级 Gateway Key，配置模型 alias。
+3. 核对每个 canonical 用户已由 `0015` 自动生成唯一计费账户，发放环境级 Gateway Key，配置模型 alias；不得手工创建另一类用户。
 4. 影子读取套餐/订阅/Usage，Dream 仍不显示写入口；核对用户映射和金额。
 5. 让一小组测试用户走 Gateway，核对 Request → Allowance → cash → Usage → Ledger。
 6. 打开真实订阅页面和生命周期命令；先无支付/运营开通，再逐步接 PaymentAdapter。
@@ -135,7 +135,7 @@ Gateway 返回的 request ID 应进入 Dream 的结构化日志与用户错误�
 
 ## 10. 接入验收
 
-- 同一个 Dream `users.id` 只能映射一个 Billing Identity。
+- `users` 是唯一用户集合；每个 Dream `users.id` 必须自动且仅拥有一个内部兼容行和一个计费账户，页面不得出现单独的“计费用户”资源。
 - 页面无静态/假套餐，金额、周期、权益和 alias 与 published Plan Version 一致。
 - trial、active、past_due、paused、cancel_at_period_end、cancelled、expired 均有明确页面状态。
 - 升降级、续费、暂停、恢复、取消重复提交不重复扣费。

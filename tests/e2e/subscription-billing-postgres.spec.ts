@@ -82,6 +82,16 @@ test.describe("subscription billing on owned PostgreSQL", () => {
 
     const api = context.request;
     const headers = { origin, "content-type": "application/json" };
+    const platformUsers = await api.get(`${baseURL}/api/admin/platform-users?sort=email&order=asc`);
+    expect(platformUsers.status()).toBe(200);
+    const platformUsersBody = await platformUsers.json();
+    expect(platformUsersBody.meta.total).toBe(2);
+    expect(platformUsersBody.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ external_user_id: "101", email: "creator@example.test" }),
+      expect.objectContaining({ external_user_id: "102", email: "other@example.test" }),
+    ]));
+    const billingUserId = String(platformUsersBody.data.find((user: { external_user_id: string }) => user.external_user_id === "101")?.id);
+    expect(billingUserId).not.toBe("undefined");
     const provider = await api.post(`${baseURL}/api/admin/providers`, {
       headers,
       data: { code: "subscription-provider", name: "Subscription Provider", protocol: "anthropic", baseUrl: upstreamUrl, apiKey: "subscription-provider-test-secret", status: "active", timeoutMs: 5000, maxRetries: 0, config: { authMode: "x-api-key" } },
@@ -136,24 +146,24 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     const activationKey = "activate:user-e2e:dream-pro:e2e";
     const activate = await api.post(`${baseURL}/api/admin/subscriptions`, {
       headers,
-      data: { platformUserId: "user-e2e", planVersionId: versionOne, startInTrial: false, idempotencyKey: activationKey, reason: "E2E activation" },
+      data: { platformUserId: billingUserId, planVersionId: versionOne, startInTrial: false, idempotencyKey: activationKey, reason: "E2E activation" },
     });
     expect(activate.status()).toBe(201);
     const subscriptionId = (await activate.json()).data.id as string;
     const duplicate = await api.post(`${baseURL}/api/admin/subscriptions`, {
       headers,
-      data: { platformUserId: "user-e2e", planVersionId: versionOne, startInTrial: false, idempotencyKey: activationKey, reason: "E2E duplicate activation" },
+      data: { platformUserId: billingUserId, planVersionId: versionOne, startInTrial: false, idempotencyKey: activationKey, reason: "E2E duplicate activation" },
     });
     expect(duplicate.status()).toBe(201);
     expect((await duplicate.json()).data.id).toBe(subscriptionId);
     expect((await api.post(`${baseURL}/api/admin/subscriptions`, {
       headers,
-      data: { platformUserId: "user-e2e", planVersionId: versionOne, startInTrial: false, idempotencyKey: "activate:user-e2e:conflict:e2e", reason: "E2E conflict" },
+      data: { platformUserId: billingUserId, planVersionId: versionOne, startInTrial: false, idempotencyKey: "activate:user-e2e:conflict:e2e", reason: "E2E conflict" },
     })).status()).toBe(409);
 
     const gatewayKey = await api.post(`${baseURL}/api/admin/gateway-api-keys`, {
       headers,
-      data: { platformUserId: "user-e2e", name: "subscription-e2e", scopes: ["messages:create", "models:list"], expiresAt: null },
+      data: { platformUserId: billingUserId, name: "subscription-e2e", scopes: ["messages:create", "models:list"], expiresAt: null },
     });
     expect(gatewayKey.status()).toBe(201);
     const plaintextKey = (await gatewayKey.json()).data.plaintextKey as string;
@@ -214,6 +224,9 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/admin/subscriptions/users");
     await expect(page.getByRole("heading", { name: "用户订阅", exact: true })).toBeVisible();
+    const platformUserSelect = page.getByLabel("平台用户");
+    await expect(platformUserSelect).toContainText("creator@example.test");
+    await expect(platformUserSelect).toContainText("other@example.test");
     await expect(
       page
         .getByRole("region", { name: "用户订阅清单" })

@@ -150,15 +150,19 @@ const resources: Record<AdminResource, ResourceConfig> = {
   },
   "billing-accounts": {
     permission: "billing.read",
-    select: `a.id, a.platform_user_id, u.email, u.display_name, u.tier,
+    select: `a.id, a.platform_user_id, su.email, su.display_name, u.tier,
              a.currency, a.available_microusd, a.reserved_microusd,
              a.lifetime_debited_microusd, a.version,
              a.created_at, a.updated_at`,
-    from: "FROM billing_accounts AS a JOIN platform_users AS u ON u.id = a.platform_user_id",
+    from: `FROM users AS su
+           JOIN platform_users AS u
+             ON u.source = 'ink-dream'
+            AND u.external_user_id = su.id::text
+           JOIN billing_accounts AS a ON a.platform_user_id = u.id`,
     columns: {
       id: "a.id",
       platform_user_id: "a.platform_user_id",
-      email: "u.email",
+      email: "su.email",
       tier: "u.tier",
       available_microusd: "a.available_microusd",
       created_at: "a.created_at",

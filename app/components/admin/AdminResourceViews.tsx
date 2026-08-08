@@ -116,16 +116,15 @@ export function PricingResourceView() {
 }
 
 const permissionFields: AdminFieldDefinition[] = [
-  { key: "platformUserId", sourceKey: "platform_user_id", label: "计费用户", control: "relation", section: "relation", required: true, createOnly: true, readOnlyOnEdit: true, relation: { resource: "platform-users", labelKey: "email", secondaryKey: "display_name", searchField: "email" } },
+  { key: "platformUserId", sourceKey: "platform_user_id", label: "平台用户", control: "relation", section: "relation", required: true, createOnly: true, readOnlyOnEdit: true, relation: { resource: "platform-users", labelKey: "email", secondaryKey: "display_name", searchField: "email" } },
   { key: "modelId", sourceKey: "model_id", label: "模型", control: "relation", section: "relation", required: true, createOnly: true, readOnlyOnEdit: true, relation: { resource: "models", labelKey: "display_name", secondaryKey: "code", searchField: "display_name" } },
   { key: "enabled", label: "允许调用", control: "switch", section: "policy" },
-  { key: "requestsPerMinute", sourceKey: "requests_per_minute", label: "每分钟请求数", control: "number", section: "policy", nullable: true, min: 1 },
   { key: "dailyTokenLimit", sourceKey: "daily_token_limit", label: "每日 Token 限额", control: "number", section: "limits", nullable: true, min: 0 },
   { key: "monthlyTokenLimit", sourceKey: "monthly_token_limit", label: "每月 Token 限额", control: "number", section: "limits", nullable: true, min: 0 },
 ];
 
 export function ModelPermissionsResourceView() {
-  return <AdminResourceManager resource="user-model-permissions" title="用户—模型授权矩阵" description="关系从真实用户和模型选择；删除覆盖仅恢复默认策略，不影响历史窗口。" container="drawer" createLabel="新增模型授权" canDelete deleteLabel="删除覆盖" sections={[{ id: "relation", title: "用户与模型" }, { id: "policy", title: "调用策略" }, { id: "limits", title: "Token 限额" }]} fields={permissionFields} createDefaults={{ enabled: true, requestsPerMinute: null, dailyTokenLimit: null, monthlyTokenLimit: null }} defaultSort="updated_at" filters={[{ field: "email", label: "用户邮箱" }, { field: "model_code", label: "模型" }, { field: "enabled", label: "是否允许", operator: "eq", options: [{ label: "允许", value: "true" }, { label: "禁止", value: "false" }] }]} columns={[{ key: "email", label: "用户" }, { key: "model_code", label: "模型" }, { key: "enabled", label: "允许", format: "boolean" }, { key: "requests_per_minute", label: "RPM" }, { key: "daily_token_limit", label: "每日 Token" }, { key: "monthly_token_limit", label: "每月 Token" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
+  return <AdminResourceManager resource="user-model-permissions" title="用户—模型授权矩阵" description="配置特定用户对模型的调用权限和 Token 上限；删除覆盖仅恢复默认策略，不影响历史窗口。请求频率策略暂不在 Admin 开放。" container="drawer" createLabel="新增模型授权" canDelete deleteLabel="删除覆盖" sections={[{ id: "relation", title: "用户与模型" }, { id: "policy", title: "调用策略" }, { id: "limits", title: "Token 限额" }]} fields={permissionFields} createDefaults={{ enabled: true, dailyTokenLimit: null, monthlyTokenLimit: null }} defaultSort="updated_at" filters={[{ field: "email", label: "用户邮箱" }, { field: "model_code", label: "模型" }, { field: "enabled", label: "是否允许", operator: "eq", options: [{ label: "允许", value: "true" }, { label: "禁止", value: "false" }] }]} columns={[{ key: "email", label: "用户" }, { key: "model_code", label: "模型" }, { key: "enabled", label: "允许", format: "boolean" }, { key: "daily_token_limit", label: "每日 Token" }, { key: "monthly_token_limit", label: "每月 Token" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
 }
 
 export function GatewayUserDefaultLimitsView() {
@@ -138,17 +137,12 @@ export function GatewayUserDefaultLimitsView() {
 
 export function PlatformUsersResourceView() {
   const fields: AdminFieldDefinition[] = [
-    { key: "source", label: "来源", control: "select", section: "source", required: true, createOnly: true, readOnlyOnEdit: true, options: [{ label: "Ink Dream", value: "ink-dream" }] },
-    { key: "externalUserId", sourceKey: "external_user_id", label: "源业务用户", control: "relation", section: "source", required: true, createOnly: true, readOnlyOnEdit: true, relation: { resource: "source-users", labelKey: "email", secondaryKey: "display_name", searchField: "email" } },
-    { key: "email", label: "Email", control: "email", section: "profile", nullable: true },
-    { key: "displayName", sourceKey: "display_name", label: "显示名称", control: "text", section: "profile", nullable: true },
-    { key: "tier", label: "计费层级", control: "text", section: "billing", required: true },
+    { key: "tier", label: "套餐层级", control: "text", section: "billing", required: true },
     { key: "status", label: "状态", control: "select", section: "billing", required: true, options: [{ label: "启用", value: "active" }, { label: "暂停", value: "suspended" }, { label: "关闭", value: "closed" }] },
     { key: "dailyTokenLimit", sourceKey: "daily_token_limit", label: "每日 Token 限额", control: "number", section: "limits", nullable: true, min: 0 },
     { key: "monthlyTokenLimit", sourceKey: "monthly_token_limit", label: "每月 Token 限额", control: "number", section: "limits", nullable: true, min: 0 },
-    { key: "metadata", label: "扩展元数据", control: "json", section: "advanced" },
   ];
-  return <AdminResourceManager resource="platform-users" title="计费用户映射" description="把源 users 主键映射为 Gateway 与计费身份，不复制或改写业务用户。" container="drawer" createLabel="初始化计费身份" sections={[{ id: "source", title: "真实业务用户" }, { id: "profile", title: "计费资料" }, { id: "billing", title: "套餐与状态" }, { id: "limits", title: "默认限额" }, { id: "advanced", title: "扩展元数据" }]} fields={fields} createDefaults={{ source: "ink-dream", tier: "free", status: "active", dailyTokenLimit: null, monthlyTokenLimit: null, metadata: {} }} filters={[{ field: "email", label: "Email" }, { field: "source", label: "来源", operator: "eq" }, { field: "tier", label: "套餐", operator: "eq" }, { field: "status", label: "状态", operator: "eq" }]} columns={[{ key: "source", label: "来源" }, { key: "external_user_id", label: "源用户 ID" }, { key: "email", label: "Email" }, { key: "display_name", label: "显示名" }, { key: "tier", label: "套餐" }, { key: "status", label: "状态", format: "status" }]} />;
+  return <AdminResourceManager resource="platform-users" title="平台用户计费设置" description="平台用户就是计费主体：每个真实用户自动拥有零余额计费账户；这里只维护套餐层级、调用状态和默认 Token 上限。" container="drawer" canCreate={false} canDelete={false} sections={[{ id: "billing", title: "计费状态" }, { id: "limits", title: "默认限额" }]} fields={fields} filters={[{ field: "email", label: "Email" }, { field: "tier", label: "套餐", operator: "eq" }, { field: "status", label: "状态", operator: "eq" }]} columns={[{ key: "external_user_id", label: "用户 ID" }, { key: "email", label: "Email" }, { key: "display_name", label: "显示名" }, { key: "tier", label: "套餐" }, { key: "status", label: "状态", format: "status" }]} />;
 }
 
 export function UsersResourceView() {
@@ -212,7 +206,7 @@ export function SystemSettingsResourceView() {
 
 export function GatewayKeysResourceView() {
   const fields: AdminFieldDefinition[] = [
-    { key: "platformUserId", sourceKey: "platform_user_id", label: "计费用户", control: "relation", section: "identity", required: true, relation: { resource: "platform-users", labelKey: "email", secondaryKey: "display_name", searchField: "email" } },
+    { key: "platformUserId", sourceKey: "platform_user_id", label: "平台用户", control: "relation", section: "identity", required: true, relation: { resource: "platform-users", labelKey: "email", secondaryKey: "display_name", searchField: "email" } },
     { key: "name", label: "Key 名称", control: "text", section: "identity", required: true },
     { key: "scopes", label: "Scopes", control: "multiselect", section: "scope", required: true, options: [{ label: "Claude Messages", value: "messages:create" }, { label: "OpenAI Chat", value: "chat:create" }, { label: "模型列表", value: "models:list" }] },
     { key: "expiresAt", sourceKey: "expires_at", label: "过期时间", control: "datetime", section: "scope", nullable: true },

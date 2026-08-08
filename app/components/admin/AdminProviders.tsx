@@ -23,7 +23,7 @@ const resources = [
   {
     name: "platform-users",
     list: "/admin/resources/users",
-    meta: { label: "计费用户映射" },
+    meta: { label: "平台用户" },
   },
   {
     name: "user-model-permissions",

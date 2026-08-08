@@ -4,8 +4,6 @@ import { checkStorageConfiguration } from "@/lib/file-storage/configuration";
 
 export const runtime = "nodejs";
 
-export { checkStorageConfiguration };
-
 /**
  * GET /api/storage
  * 

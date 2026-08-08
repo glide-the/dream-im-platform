@@ -60,7 +60,7 @@ Story 枚举实值：status 为 draft 3/published 1；review_status 为 pending 
 
 | 业务实体 | ink-dream-memory 真实表 | 当前 Admin 表/Resource | 是否重复 | 最终数据源 | 读写策略 | 需要修改的代码 |
 |---|---|---|---|---|---|---|
-| 业务用户 | `users`（`id INTEGER`、email、display_name、avatar_url、role、created/updated） | `platform_users` / `platform-users` | 部分重复。`platform_users` 可作为计费身份映射，但不能代替业务用户主数据 | Story PostgreSQL 的 `users`；控制面保留 `platform_users(source, external_user_id)` 交叉引用 | 业务字段只读；状态/套餐/Token 限额只写控制面；不得修改源 password_hash | 新建 source-user repository；用户页组合源用户与计费身份；禁止独立创建“业务用户” |
+| 平台用户 | `users`（`id INTEGER`、email、display_name、avatar_url、role、created/updated） | `platform_users` / `platform-users` 曾被误当成独立用户资源 | 是，若作为产品用户理解；修复后仅为既有文本 FK 的内部兼容行 | Story PostgreSQL 的 `users` 是唯一用户全集；`platform_users(source, external_user_id)` 由迁移/trigger 自动维护 | 每个 `users` 行天然可计费并自动拥有账户；禁止手工创建第二类用户；业务字段只读，套餐/Token 限额写控制面；不得修改 password_hash | Resource 从 `users` 驱动并关联内部键；POST `platform-users` 返回 405；`0015` 回填及自动同步 |
 | 工作区 | `story_workspace_workspaces`（owner_id、name、settings） | `story_workspaces` / `story-workspaces` | 是 | Story PostgreSQL | 列表/详情；仅允许受控更新 name/settings；不允许任意创建或删除 | 停止 `resources.ts` 与 `mutations.ts` 对 `story_workspaces` 的 SQL；映射真实表 |
 | 剧本/故事 | `story_workspace_stories`（identifier、title、description、type、content、author_id、workspace_id、review_status、agent_session_id 等） | `story_projects` / `story-projects` | 是，且字段语义错误 | Story PostgreSQL | Agent/业务流程负责创建；Admin 可编辑源 API 已允许字段，执行 confirm/reject/archive；禁止硬删除 | Resource 改名/兼容别名为 stories；实现真实 repository/service；移除 create/delete UI |
 | 角色 | `story_workspace_characters`（全局 workspace 角色，经过关联表连接 Story） | `story_characters`（错误地直接 `project_id` FK） | 是，关系模型错误 | Story PostgreSQL | 编辑源契约字段、confirm/reject/archive；禁止创建/硬删除 | 映射真实表和 `story_workspace_story_characters`；修正列表、详情与层级导航 |
@@ -84,7 +84,7 @@ Story 枚举实值：status 为 draft 3/published 1；review_status 为 pending 
 
 ### 5.1 主键与身份
 
-- 源业务用户 `users.id` 是自增整数；Admin `platform_users.id` 是文本 ID。跨领域身份映射使用 `(source, external_user_id)`；由于键类型和生命周期不同，不伪造直接数据库外键。
+- 源业务用户 `users.id` 是唯一产品用户 ID。历史控制面外键仍使用 `platform_users.id` 文本键，`0015` 以 `(source, external_user_id)` 自动维护一对一兼容行；它不是另一类用户，也不需要人工开户。
 - 源 Story/Workspace/Character/Scene/Workflow Run 主键是文本 ID。Admin 可以原样返回这些 ID，不生成替代 ID。
 - Story 内部关系继续使用迁入后原有 PostgreSQL 外键；业务身份到 `platform_users` 的 crosswalk 由同库 repository 在事务中校验 `(source, external_user_id)`，控制面审计保存源 ID 快照。
 
@@ -179,7 +179,7 @@ flowchart LR
 - 保持 `app/api/admin/[resource]/**` 仅编排；Story 自定义动作增加轻量 Route Handler。
 - 调整 `app/components/admin/providers.ts` 的 Resource 注册、错误语义与只读/命令式能力。
 - 把 `/admin/story` 拆为工作区、剧本、角色、场景、工作流运行等清晰路由和真实字段表格。
-- 用户模块区分“源业务用户”和“计费身份”，不再把 `platform_users` 当作源用户表。
+- 用户模块只展示一套“平台用户”；计费账户作为用户的一对一附属对象展示，不提供单独的“计费用户”创建或映射入口。
 
 ### 测试
 
@@ -283,7 +283,7 @@ Dream REST 的实际写边界没有变化：Workspace 仅 PATCH name/settings；
 | Subscription Plan | 无 | 无 | 否 | `subscription_plans` | 控制面 CRUD；code 不变；停用不删除历史 | `schema/migration`、subscription service/API/UI |
 | Plan Version | 无 | 无 | 否 | `subscription_plan_versions` | 发布后只读；价格/周期/权益形成不可覆盖快照 | 同上 |
 | Entitlement | 无 | `user_model_permissions` 仅是 override | 否，语义互补 | `subscription_plan_entitlements` | 属于 Plan Version；允许模型/scope/RPM/配额；只追加版本内容 | 同上 + Gateway policy |
-| Subscription | 无 | 无 | 否 | `subscriptions` | 事务状态机；关联 `platform_users` 而非复制 Dream User | 同上 |
+| Subscription | 无 | 无 | 否 | `subscriptions` | 事务状态机；产品主体是 canonical `users`，现有 FK 暂经自动一对一内部兼容键关联，不形成第二套用户 | 同上 |
 | Period Allowance | 无 | 无 | 否 | `subscription_usage_allowances` | 每周期一行；保留 granted/reserved/consumed，事务更新并留 Ledger/Usage 证据 | billing/subscription repository |
 | Billing Account | 无 | `billing_accounts` | 否 | 现表保留 | cash available/reserved 不与赠送额度混写 | billing repository/UI |
 | Ledger | 无 | `billing_ledger_entries` | 否 | 现表保留并扩展类型/引用 | append-only、reversal 不改原记录 | migration/billing repository |
@@ -307,3 +307,18 @@ Dream REST 的实际写边界没有变化：Workspace 仅 PATCH name/settings；
 - [x] 隔离 PostgreSQL 16 从 `0000` 至 `0014` 迁移通过；订阅 E2E 1/1，Admin/Story/RBAC/Billing/Gateway/Storage/PWA E2E 1/1；1440×1000 与 390×844 视觉验收通过。
 - [x] 最终静态与单元门禁：env check、TypeScript、lint、build、diff check 通过；Vitest 41 files / 214 tests 通过。
 - [x] 一次性 55432 PostgreSQL、19000/19001 MinIO、3012 Next 与 18080 mock 已清理；共享 5433 和 Dream 源数据库未写入。
+
+## 14. Round 20 平台用户计费模型纠偏
+
+用户反馈“只有 `qa-author@ink-memory.test` 是计费用户”的根因已确认：订阅、Gateway Key、模型权限和账务关系选择器曾以手工维护的 `platform_users` 为全集，而不是 canonical `users`；因此只有被单独建档的 QA 用户可见。这不是数据缺失，而是把内部文本外键适配表错误暴露成第二套产品用户模型。
+
+最终模型与处理如下：
+
+- `users` 是唯一的平台用户全集，所有平台用户天然具备订阅、余额、Gateway、Usage 和 Ledger 资格；不存在“先创建计费用户”的运营步骤。
+- `0015_platform_users_are_billable.sql` 非破坏地回填每个 canonical 用户的内部兼容行与零余额 `billing_accounts`，并通过 `users` trigger 在新增或展示资料更新时幂等同步；唯一键 `(source, external_user_id)` 与账户 `platform_user_id` 唯一约束阻止重复。
+- `platform-users` GET 现由 `users` 驱动，只把内部文本键作为现有 Gateway/Billing FK 兼容值返回；POST 已移除并返回 405。既有 tier、状态、余额、订阅、Key、Usage 和 Ledger 不被 backfill 覆盖。
+- Billing Account 页面同样从 canonical 用户关联，只展示真实平台用户；所有关系选择器统一文案为“平台用户”，手工来源映射和“新增计费用户”入口已移除。
+- 隔离 PostgreSQL 16 证据：fixture 的 2 个 `users` 自动得到 2 个唯一内部关联和 2 个账户；新增第 3 个 canonical 用户后立即得到 1 个关联和 1 个账户；更新显示名同步成功且零余额未变化；重复运行 migration 后仍为 3/3/3，已有 1 个 Subscription 保留。
+- Playwright：订阅生命周期/Gateway allowance 1/1 通过（11.3s），断言两名 canonical 用户均进入订阅选择器；Admin/Story/RBAC/Billing/Gateway/Storage/PWA 1/1 通过（1.0m），其中手工 POST `platform-users` 返回 405，桌面 1440×1000 与移动 390×844 均通过。
+
+执行偏差：首次调用 `pnpm db:migrate` 时遗漏内联一次性 URL，脚本从 `.env.local` 读取共享 5433，并在该库应用了非破坏性 `0015`（回填、账户补齐、trigger、comment 和 migration journal；无 DROP/DELETE/TRUNCATE）。为避免破坏既有关联，本轮未擅自回滚。此事实覆盖 Round 19 的“共享库未写入”历史结论，仅影响 Round 20；后续所有数据库命令均显式使用 `127.0.0.1:55432/ink-memory`。

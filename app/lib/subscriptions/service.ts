@@ -411,7 +411,7 @@ async function createResource(
       [input.platformUserId],
     );
     if (user.rows[0]?.status !== "active") {
-      throw new AdminError("SUBSCRIPTION_USER_NOT_ACTIVE", "A callable subscription requires an active billing identity", 409);
+      throw new AdminError("SUBSCRIPTION_USER_NOT_ACTIVE", "A callable subscription requires an active platform user", 409);
     }
     const version = await loadPublishedVersion(client, input.planVersionId);
     const id = createPlatformId("sub");

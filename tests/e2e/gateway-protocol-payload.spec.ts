@@ -120,8 +120,10 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
     browserErrors.length = 0;
 
     const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
-    await pool.query(`INSERT INTO platform_users (id, source, external_user_id, email, display_name, tier, status) VALUES ('gateway-user-e2e', 'ink-dream', 'gateway-e2e', 'gateway-user@example.test', 'Gateway User', 'free', 'active')`);
-    await pool.query(`INSERT INTO billing_accounts (id, platform_user_id, available_microusd, reserved_microusd) VALUES ('gateway-account-e2e', 'gateway-user-e2e', 1000000000, 0)`);
+    await pool.query(`INSERT INTO users (id, email, password_hash, display_name, role) VALUES (201, 'gateway-user@example.test', 'fixture-password-hash-not-a-credential', 'Gateway User', 'user')`);
+    const gatewayUserId = String((await pool.query(`SELECT id FROM platform_users WHERE source = 'ink-dream' AND external_user_id = '201'`)).rows[0]?.id);
+    expect(gatewayUserId).not.toBe("undefined");
+    await pool.query(`UPDATE billing_accounts SET available_microusd = 1000000000 WHERE platform_user_id = $1`, [gatewayUserId]);
 
     const api = context.request;
     const adminHeaders = { origin, "content-type": "application/json" };
@@ -142,16 +144,19 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
     await model(anthropicProvider, "anthropic-native-e2e", "claude-mock");
     await model(openAIProvider, "openai-native-e2e", "gpt-mock");
 
-    const keyResponse = await api.post(`${baseURL}/api/admin/gateway-api-keys`, { headers: adminHeaders, data: { platformUserId: "gateway-user-e2e", name: "gateway-contract-e2e", scopes: ["messages:create", "chat:create", "models:list"], expiresAt: null } });
+    const keyResponse = await api.post(`${baseURL}/api/admin/gateway-api-keys`, { headers: adminHeaders, data: { platformUserId: gatewayUserId, name: "gateway-contract-e2e", scopes: ["messages:create", "chat:create", "models:list"], expiresAt: null } });
     expect(keyResponse.status()).toBe(201);
     const gatewayKey = (await keyResponse.json()).data.plaintextKey as string;
 
     // A policy rejection is still a complete application-layer exchange. It
     // must preserve the request and protocol-correct response instead of
     // leaving an uninspectable gateway_requests row in `pending` capture state.
-    await pool.query(`INSERT INTO platform_users (id, source, external_user_id, email, display_name, tier, status, daily_token_limit) VALUES ('gateway-limited-user-e2e', 'ink-dream', 'gateway-limited-e2e', 'gateway-limited@example.test', 'Gateway Limited User', 'free', 'active', 1)`);
-    await pool.query(`INSERT INTO billing_accounts (id, platform_user_id, available_microusd, reserved_microusd) VALUES ('gateway-limited-account-e2e', 'gateway-limited-user-e2e', 1000000000, 0)`);
-    const limitedKeyResponse = await api.post(`${baseURL}/api/admin/gateway-api-keys`, { headers: adminHeaders, data: { platformUserId: "gateway-limited-user-e2e", name: "gateway-limited-e2e", scopes: ["messages:create"], expiresAt: null } });
+    await pool.query(`INSERT INTO users (id, email, password_hash, display_name, role) VALUES (202, 'gateway-limited@example.test', 'fixture-password-hash-not-a-credential', 'Gateway Limited User', 'user')`);
+    const limitedGatewayUserId = String((await pool.query(`SELECT id FROM platform_users WHERE source = 'ink-dream' AND external_user_id = '202'`)).rows[0]?.id);
+    expect(limitedGatewayUserId).not.toBe("undefined");
+    await pool.query(`UPDATE platform_users SET daily_token_limit = 1 WHERE id = $1`, [limitedGatewayUserId]);
+    await pool.query(`UPDATE billing_accounts SET available_microusd = 1000000000 WHERE platform_user_id = $1`, [limitedGatewayUserId]);
+    const limitedKeyResponse = await api.post(`${baseURL}/api/admin/gateway-api-keys`, { headers: adminHeaders, data: { platformUserId: limitedGatewayUserId, name: "gateway-limited-e2e", scopes: ["messages:create"], expiresAt: null } });
     expect(limitedKeyResponse.status()).toBe(201);
     const limitedGatewayKey = (await limitedKeyResponse.json()).data.plaintextKey as string;
     const rejectedRawBody = JSON.stringify({ model: "anthropic-native-e2e", max_tokens: 32, stream: true, messages: [{ role: "user", content: "policy-rejection-payload-marker" }] });
@@ -275,9 +280,21 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
     await page.getByRole("button", { name: "编辑" }).first().click();
     await page.getByLabel("每日 Token 限额").fill("1000");
     await page.getByRole("button", { name: "保存更改" }).click();
-    await expect.poll(async () => Number((await pool.query(`SELECT daily_token_limit FROM platform_users WHERE id = 'gateway-limited-user-e2e'`)).rows[0]?.daily_token_limit)).toBe(1000);
+    await expect.poll(async () => Number((await pool.query(`SELECT daily_token_limit FROM platform_users WHERE id = $1`, [limitedGatewayUserId])).rows[0]?.daily_token_limit)).toBe(1000);
     const retryAfterLimitChange = await fetch(`${baseURL}/v1/messages?beta=true`, { method: "POST", headers: { "content-type": "application/json", "x-api-key": limitedGatewayKey }, body: JSON.stringify({ model: "anthropic-native-e2e", max_tokens: 32, messages: [{ role: "user", content: "retry after raising user default limit" }] }) });
     expect(retryAfterLimitChange.status).toBe(200);
+    await page.goto("/admin/models/permissions");
+    await expect(page.getByText("RPM", { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("每分钟请求数")).toHaveCount(0);
+    await page.getByRole("button", { name: "新增模型授权" }).click();
+    await expect(page.getByText("RPM", { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("每分钟请求数")).toHaveCount(0);
+    await page.getByRole("button", { name: "关闭", exact: true }).click();
+    await page.goto("/admin/subscriptions/entitlements");
+    await expect(page.getByText("RPM", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "添加模型权益" }).click();
+    await expect(page.getByText("RPM", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "关闭", exact: true }).click();
     await page.goto("/admin/gateway/requests");
     await page.getByRole("button", { name: `查看 ${requestId} 详情` }).click();
     await expect(page.getByRole("heading", { name: "请求详情" })).toBeVisible();

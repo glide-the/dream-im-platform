@@ -102,6 +102,16 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     const canonicalUsers = await api.get(`${baseURL}/api/admin/users?sort=updated_at&order=desc`);
     expect(canonicalUsers.status()).toBe(200);
     await expect(canonicalUsers.json()).resolves.toMatchObject({ data: expect.arrayContaining([expect.objectContaining({ id: "101", workspace_count: 1, story_count: 1 })]) });
+    const platformUsers = await api.get(`${baseURL}/api/admin/platform-users?sort=email&order=asc`);
+    expect(platformUsers.status()).toBe(200);
+    const platformUsersBody = await platformUsers.json();
+    expect(platformUsersBody.meta.total).toBe(2);
+    expect(platformUsersBody.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ external_user_id: "101", email: "creator@example.test", billing_account_id: expect.any(String) }),
+      expect.objectContaining({ external_user_id: "102", email: "other@example.test", billing_account_id: expect.any(String) }),
+    ]));
+    const creatorBillingUserId = String(platformUsersBody.data.find((user: { external_user_id: string }) => user.external_user_id === "101")?.id);
+    expect(creatorBillingUserId).not.toBe("undefined");
     expect((await api.patch(`${baseURL}/api/admin/users/101`, { headers, data: { status: "disabled" } })).status()).toBe(405);
 
     const workspaceCreate = await api.post(`${baseURL}/api/admin/story-workspaces`, {
@@ -140,7 +150,7 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
       headers,
       data: { source: "ink-dream", externalUserId: "101", email: "duplicate@example.test", displayName: "Duplicate", tier: "free", status: "active", metadata: {} },
     });
-    expect(duplicateCrosswalk.status()).toBe(409);
+    expect(duplicateCrosswalk.status()).toBe(405);
 
     const provider = await api.post(`${baseURL}/api/admin/providers`, {
       headers,
@@ -350,7 +360,7 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
 
     const gatewayKey = await api.post(`${baseURL}/api/admin/gateway-api-keys`, {
       headers,
-      data: { platformUserId: "user-e2e", name: "one-time-e2e", scopes: ["messages:create"], expiresAt: null },
+      data: { platformUserId: creatorBillingUserId, name: "one-time-e2e", scopes: ["messages:create"], expiresAt: null },
     });
     expect(gatewayKey.status()).toBe(201);
     const gatewayKeyBody = await gatewayKey.json();
@@ -373,13 +383,13 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect((await api.get(`${baseURL}/v1/models`, { headers: { authorization: `Bearer ${gatewayKeyBody.data.plaintextKey}` } })).status()).toBe(401);
 
     const creditIdempotencyKey = "credit-e2e-idempotency";
-    const credit = await api.post(`${baseURL}/api/admin/platform-users/user-e2e/account/credit`, {
+    const credit = await api.post(`${baseURL}/api/admin/platform-users/${encodeURIComponent(creatorBillingUserId)}/account/credit`, {
       headers,
       data: { amountMicrousd: 1000000, reason: "E2E controlled balance credit", idempotencyKey: creditIdempotencyKey },
     });
     expect(credit.status()).toBe(200);
     expect((await credit.json()).data.idempotent).toBe(false);
-    const duplicateCredit = await api.post(`${baseURL}/api/admin/platform-users/user-e2e/account/credit`, {
+    const duplicateCredit = await api.post(`${baseURL}/api/admin/platform-users/${encodeURIComponent(creatorBillingUserId)}/account/credit`, {
       headers,
       data: { amountMicrousd: 1000000, reason: "E2E controlled balance credit", idempotencyKey: creditIdempotencyKey },
     });
@@ -543,7 +553,7 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     await expect(page.getByRole("heading", { name: "Gateway Key", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "异常结算" })).toHaveCount(0);
     await page.getByRole("button", { name: "发放 Gateway Key" }).click();
-    await page.getByRole("combobox", { name: "计费用户 *" }).selectOption("user-e2e");
+    await page.getByRole("combobox", { name: "平台用户 *" }).selectOption(creatorBillingUserId);
     await page.getByLabel("Key 名称 *").fill("gateway-ui-e2e");
     await page.getByRole("button", { name: "创建并显示接入配置" }).click();
     await expect(page.getByRole("heading", { name: "Gateway Key 接入配置" })).toBeVisible();

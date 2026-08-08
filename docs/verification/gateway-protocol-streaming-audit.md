@@ -29,7 +29,7 @@
 
 日志缺报文有独立的真实根因：`beginGatewayRequest()` 已为限额拒绝创建 `gateway_requests` 行，但旧 `prepareGatewayRequest()` 仅在 `reserved` 分支调用 `recordGatewayRequestPayload()`，所以 429/402/409 预授权拒绝会停在 `payload_capture_status=pending`，响应体也没有写入 `gateway_response_payloads`；订阅暂停/失效等策略拒绝甚至发生在主行 INSERT 前。修复后，认证并解析成功的请求会先建立主行再执行订阅策略，除 idempotency replay 外，rejected 分支同样保存完整脱敏请求，并把外部协议正确的 JSON 错误响应保存为 complete；replay 不覆盖原始请求报文。实际 Dream 后续重试的只读元数据已显示 request/response 两侧均为 `complete`，未读取或输出 Prompt 内容。
 
-429 的运营可见性随后补齐：限额判定将 `limit_window`、`limit_metric`、`current`、`requested`、`limit`、`remaining`、`exceeded_by` 固化到 `gateway_requests.response_summary`，并生成包含同一快照的 `error_message` 和协议错误体。Admin 列表直接显示错误码/具体原因，详情在完整报文权限门之前显示中文诊断卡，因此定位 `/v1/messages?beta=true 429` 不需要加载大型 payload 或查看 Prompt。诊断卡按计量类型提供真实恢复入口：Token 429 携带用户/模型定位到可编辑的用户默认 Token 上限，RPM 定位到模型授权矩阵，并补充模型覆盖与套餐权益检查链接。`gateway_rate_limits` 明确展示为自动累加的实时用量计数，保持只读。隔离 E2E 已证明将测试用户日上限从 1 提高到 1000 后，同一 Gateway Key 重试由 429 变为 200。
+429 的运营可见性随后补齐：限额判定将 `limit_window`、`limit_metric`、`current`、`requested`、`limit`、`remaining`、`exceeded_by` 固化到 `gateway_requests.response_summary`，并生成包含同一快照的 `error_message` 和协议错误体。Admin 列表直接显示错误码/具体原因，详情在完整报文权限门之前显示中文诊断卡，因此定位 `/v1/messages?beta=true 429` 不需要加载大型 payload 或查看 Prompt。Token 429 携带用户/模型定位到可编辑的用户默认 Token 上限，并补充模型覆盖与套餐权益检查链接。`gateway_rate_limits` 明确展示为自动累加的实时用量计数，保持只读。隔离 E2E 已证明将测试用户日上限从 1 提高到 1000 后，同一 Gateway Key 重试由 429 变为 200。请求频率策略暂缓交付，相关 Admin 表单、列表和操作入口已隐藏，数据库兼容字段与内部读取暂时保留。
 
 ## 2. Route、Handler、Adapter、Transform 链路
 

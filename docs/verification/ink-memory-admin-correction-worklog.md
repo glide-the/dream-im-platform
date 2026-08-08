@@ -364,3 +364,42 @@ Optional Enhancers:
 
 - 在平台用户详情展示内部 Billing Identity ID，但仅作为只读技术信息，不作为第二类用户。
 - 为生产存量数据提供只读差异计数与显式 backfill 命令；运行时仍允许按需幂等补齐，避免迁移窗口阻断订阅。
+
+## Round 21 — Next.js Route Export 构建兼容
+
+Optimized Prompt:
+
+在“平台用户即计费用户”修复完成静态检查、单元测试和隔离 PostgreSQL E2E 后，处理 production build 揭示的既有 Storage Route 类型错误。`app/api/storage/route.ts` 只能导出 Next.js 允许的 Route 配置与 HTTP 方法，不得额外 re-export `checkStorageConfiguration`。保持 GET 响应、Storage driver、S3/Vercel Blob 配置检查、Admin Storage、RBAC 和测试语义不变；仅将配置函数测试改为直接从 `app/lib/file-storage/configuration.ts` 导入。
+
+验收必须运行相关 Storage unit、TypeScript、lint、production build 与 diff check。该修复不得改动 Storage 数据、删除对象、引入新 driver 或连接共享服务；build 继续在临时源码副本运行，避免覆盖用户拥有的主 `.next`。
+
+Optional Enhancers:
+
+- 后续可增加 lint 规则或 route type test，提前阻止 App Router 文件导出非白名单符号。
+
+## Round 20–21 执行证据
+
+- 根因：用户型关系选择器读取手工 `platform_users`，把内部文本 FK 适配行误建模成独立“计费用户”；只有 QA 账号被手工创建，所以其他 canonical 用户不可选。
+- 迁移：新增 `0015_platform_users_are_billable.sql`，回填 canonical 用户、幂等创建一对一零余额账户并建立同步 trigger；无删除、清空或旧关联改写。
+- API/Resource：所有用户选择器从 `users` 驱动；POST `platform-users` 返回 405；Billing Account 仅关联 canonical 用户；UI 统一称“平台用户”。
+- 隔离数据库：PostgreSQL 16 `127.0.0.1:55432/ink-memory` 从 0000–0015 迁移并加载 fixture；2 users = 2 internal links = 2 accounts。新增用户后为 3/3/3，重复 migration 不重复，既有 Subscription 保留。
+- 门禁：TypeScript、lint、diff check 通过；Vitest 41 files / 214 tests 通过，Storage focused 9/9 通过；subscription Playwright 1/1（11.3s），Admin 综合 Playwright 1/1（1.0m），视口含 1440×1000 与 390×844。
+- Build：发现并修复 Next.js 16 禁止 Route Handler 额外导出工具函数的问题；移除 Storage route 的 re-export，测试改从 lib 导入。`next build --webpack` 完整通过；默认 Turbopack 在临时副本因 `node_modules` 指向仓库外的 symlink 主动拒绝，属于临时副本工具限制。
+- 执行偏差：首次迁移命令漏写一次性 URL，导致共享 5433 非破坏性应用 0015；无 DROP/DELETE/TRUNCATE，未擅自回滚。另一次 build 误在主仓库 `.next` 完成；3000 进程仍监听且 `/admin` 返回 307。两项均在用户更新与最终报告中明确披露。
+
+## Round 22 — 平台 PRD 与交互规范模块化
+
+Optimized Prompt:
+
+重构 Ink Memory Admin 的产品需求与交互规范，使文档能够按业务模块独立阅读、评审、实施和验收，同时保留一份轻量总纲作为唯一导航入口。先盘点当前路由、Refine Resource、API、Repository、PostgreSQL 表、RBAC 权限、订阅/Gateway/Storage/Story 状态和既有设计 Token；不得根据旧标题或页面名称猜测。现有 Gateway 专项条款应归入 Gateway 模块，不再占据平台主 PRD 和主交互规范。
+
+在 `docs/prd/modules/` 下按模块创建 PRD，在 `docs/design/modules/` 下创建对应交互规范。至少覆盖：平台总览与 Admin Shell、平台用户与计费账户、Dream 创作运营、订阅与权益、Provider/Model/Pricing、Gateway Key/Request/限流、Usage/Ledger/账单、Storage、Admin/RBAC/Audit/System。每个模块文档必须包含模块目标、角色、范围/非范围、真实数据边界、页面与路由、Resource/API/Service/表映射、核心流程、状态/错误、权限、安全、验收和跨模块依赖；交互规范必须逐页定义列表、筛选、排序、分页、详情层级、创建/编辑容器、字段控件、校验、危险确认、loading/empty/error/403/404/409/503、1440×1000/390×844、键盘/焦点/label/读屏行为。
+
+将 `docs/prd/ink-memory-admin-prd-v3.md` 改为平台 PRD 总纲和模块索引，将 `docs/design/refine-admin-ui-v3-interaction-design.md` 改为全局 UI/UX 规范和模块索引。总纲必须明确 canonical `users` 是唯一平台用户集合、所有用户天然可计费，`platform_users` 仅是内部兼容键；账务、Usage、Ledger、Audit 不可变/只追加；Secret 永不回显；Route Handler 只编排；PostgreSQL-only；Dream 只读边界和非破坏迁移策略。模块间术语、路由、权限码、状态、金额单位和验收编号必须一致，链接使用相对路径并可从总纲双向导航。
+
+完成后执行 Markdown 链接/标题/术语检查，并以无上下文读者视角验证：产品、设计、后端、QA 和运营人员能在两次点击内找到某模块的目标、页面、数据来源、权限、交互与验收标准。不得只复制旧文档形成冗余，也不得把未实现能力写成已上线事实。
+
+Optional Enhancers:
+
+- 在总纲增加模块成熟度、Owner 和变更记录表，但没有真实 Owner 时标记待定而不虚构姓名。
+- 为关键模块增加 Mermaid 流程与跨模块依赖矩阵，避免在每份文档重复同一架构说明。

@@ -15,7 +15,7 @@ export async function handleAdminDashboard(request: Request) {
     const data = await withPlatformClient(async (client) => {
         const result = await client.query<Record<string, string>>(
         `SELECT
-           (SELECT COUNT(*)::text FROM platform_users) AS platform_users,
+           (SELECT COUNT(*)::text FROM platform_users WHERE source = 'ink-dream') AS platform_users,
            (SELECT COUNT(*)::text FROM ai_models WHERE enabled = TRUE) AS active_models,
            (SELECT COUNT(*)::text FROM gateway_requests WHERE created_at >= CURRENT_DATE) AS requests_today,
            (SELECT COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens), 0)::text

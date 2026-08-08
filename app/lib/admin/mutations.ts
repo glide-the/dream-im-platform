@@ -15,9 +15,7 @@ import {
   handleStorySourceDelete,
   handleStorySourceUpdate,
 } from "../story-source/mutations";
-import {
-  isStorySourceResource,
-} from "../story-source/repository";
+import { isStorySourceResource } from "../story-source/repository";
 import { recordAdminAuditOnClient } from "./audit";
 import { AdminError, adminErrorResponse } from "./errors";
 import {

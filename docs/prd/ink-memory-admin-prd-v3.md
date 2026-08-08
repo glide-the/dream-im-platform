@@ -1,78 +1,110 @@
-# Ink Memory Admin PRD v3 — Gateway 协议与完整报文纠偏
+# Ink Memory Admin PRD v3 — 平台总纲
 
-## 1. 产品目标
+> 版本：3.0  
+> 更新：2026-08-08  
+> 状态：平台产品与工程实施基线  
+> 详细需求：[`docs/prd/modules/`](modules/)  
+> 全局交互规范：[`docs/design/refine-admin-ui-v3-interaction-design.md`](../design/refine-admin-ui-v3-interaction-design.md)
 
-在不破坏 Gateway Key、Subscription、计费、Storage、RBAC 和 Story 的前提下，使 `/v1/messages` 与 `/v1/chat/completions` 成为可由官方 SDK 消费、可审计、可计费的真实增量 Gateway。v3 追加并覆盖 v2 中与 Gateway 日志、协议和流式有关的条款。
+## 1. 产品定位
 
-## 2. 功能需求
+Ink Memory Admin 是剧本业务运营控制台、AI 模型控制面、订阅计费后台和安全治理入口。主要操作者是内容运营、模型运营、财务运营、客服支持、安全审计与 Super Admin；它不是 Dream 创作前台，不恢复已移除的 PWA。
 
-### 2.1 协议
+平台必须完成以下闭环：
 
-- 支持 Anthropic/Anthropic、OpenAI/OpenAI 安全透传。
-- 支持 Anthropic/OpenAI、OpenAI/Anthropic 显式 Adapter。
-- Adapter 必须有请求 schema、请求/非流响应转换、流状态机、Usage、tool、stop/finish 与错误映射测试。
-- `/v1/messages/count_tokens` 对 Anthropic Provider 调原生 API；对 OpenAI Provider 返回一致的 Gateway 输入估算，不伪造 Provider 精确计数。
+```mermaid
+flowchart LR
+  U["平台用户 users"] --> S["订阅与权益"]
+  S --> G["Gateway 资格判断"]
+  G --> R["Provider / Model / Pricing"]
+  G --> X["Request / Usage"]
+  X --> A["Allowance / Billing Account"]
+  A --> L["Append-only Ledger"]
+```
 
-### 2.2 流
+## 2. 不可变产品决策
 
-- 首个有效上游 Event 可用后立即输出；不得等完整响应。
-- 支持任意网络 Chunk 边界、backpressure、客户端 cancel、Provider timeout。
-- 首字节前错误返回非 200 JSON；流开始后错误使用外部协议的 SSE error。
-- Anthropic named event 与 OpenAI data-only chunk 严格隔离。
+1. PostgreSQL `users` 是唯一平台用户全集；所有平台用户天然可订阅、持有计费账户、获得 Gateway Key 并产生 Usage/Ledger。不存在独立“计费用户”。
+2. `platform_users` 仅是现有 Gateway/Billing 文本外键的内部一对一兼容键，由迁移与 trigger 自动维护，不作为产品主数据或手工开户入口。
+3. Dream 权威业务表使用真实原名；Admin 不读取错误平行 Story 表，不修改 Dream 仓库。缺表时 503 fail-closed，不回退 SQLite、JSON 或内存数据。
+4. 单一 `DATABASE_URL`、单一 PostgreSQL 数据库 `ink-memory`、单一连接池。Route Handler 只做 Session/RBAC、Origin、解析、Zod 和 service 调用；SQL、事务与状态机位于 `app/lib/**`。
+5. 金额事实为整数 micro-USD；Plan Version、价格快照不可覆盖；Usage、Ledger、Subscription Event 与 Audit 不可变或只追加。
+6. Provider Secret、Gateway Key、系统 Secret 永不明文落库、回显、写日志或进入截图。Gateway Key 只在创建回执显示一次。
+7. 不使用假数据、虚构 KPI 或没有真实 API/领域行为的 CRUD 外壳。
 
-### 2.3 完整报文
+## 3. 模块地图
 
-- 主表只保留热查询摘要；完整请求、响应、事件存独立 PostgreSQL 表。
-- 请求保留原始 JSON 文本及 JSONB；非流响应保留完整 JSON/文本；流响应按 sequence 保留完整下游 event。
-- 保存字节数、SHA-256、Content-Type、白名单 Headers、Provider request ID、TTFT、总延迟和完成/中断状态。
-- 已建立 `gateway_requests` 主行的预授权拒绝（限额、余额、订阅并发）也必须保存完整脱敏请求和协议正确的完整 JSON 错误响应，不能停在 `pending`。
-- 429 限额拒绝必须在主表摘要保存窗口、计量单位、当前占用、本次预留、上限、请求前剩余和超出量；请求列表与详情默认可见，不得要求读取完整 Prompt。
-- 429 诊断卡必须提供可实际解除拒绝的配置入口：Token 限额优先导航到 `/admin/gateway/rate-limits#platform-users-manager` 的用户默认 Token 上限，RPM 导航到用户—模型授权矩阵，并携带当前用户邮箱和模型筛选；同时提供模型覆盖与套餐权益检查入口。实时窗口是自动累加的用量事实，必须只读，不能通过篡改计数解除 429。
-- Idempotency replay 不得覆盖第一次请求的原始报文；重放尝试只返回关联 Request ID。
-- 捕获失败不得中断已开始的代理流，必须留下 capture failure 状态。
+| 模块 | PRD | 主要路由 | 当前边界 |
+|---|---|---|---|
+| 平台基础与总览 | [00-platform-foundation](modules/00-platform-foundation.md) | `/admin`、登录与 Shell | Session、导航、全局状态、总览事实 |
+| 平台用户 | [01-platform-users](modules/01-platform-users.md) | `/admin/resources/users` | canonical 用户、计费账户自动附属、用户级限额 |
+| Dream 创作运营 | [02-story-operations](modules/02-story-operations.md) | `/admin/story/**` | 真实 Workspace/Story；扩展表缺失时 503 |
+| 订阅与权益 | [03-subscriptions](modules/03-subscriptions.md) | `/admin/subscriptions/**` | Plan、Version、Entitlement、生命周期、Allowance |
+| 模型供应链 | [04-model-catalog](modules/04-model-catalog.md) | `/admin/models/**` | Provider、Model、Pricing、模型权限与同步 |
+| Gateway | [05-gateway](modules/05-gateway.md) | `/admin/gateway/**`、`/v1/**` | Key、协议代理、Request、Payload、限流 |
+| Usage 与账务 | [06-billing](modules/06-billing.md) | `/admin/billing/**` | Usage、账户、Ledger、报表与调账 |
+| Storage | [07-storage](modules/07-storage.md) | `/admin/resources/storage`、`/api/storage/**` | S3/Vercel Blob 能力、资源与安全下载 |
+| 权限与系统治理 | [08-governance](modules/08-governance.md) | `/admin/access/**`、`/admin/system/**` | Admin、RBAC、Session、Settings、Audit |
 
-### 2.4 安全与隐私
+专项历史文档继续作为证据，不是平台入口：Gateway 完整报文条款已收敛到 [Gateway PRD](modules/05-gateway.md)；v2 保留为历史基线，不再新增跨模块需求。
 
-- 认证、Cookie、Gateway/Provider secret 在持久化前固定脱敏。
-- 完整报文读取需要 `gateway.payloads.read`，默认不加载并二次确认。
-- 每次读取写不可变 Admin Audit，Audit 不复制内容。
-- Copy 不触发 analytics；普通列表和 dashboard 不 join payload 表。
-- 默认在线保留目标为 30 天。长期保存必须经过隐私、删除请求、归档加密和访问审计评审。
+## 4. 角色与权限原则
 
-## 3. 管理端详情需求
+| 角色 | 默认职责 | 禁止越界 |
+|---|---|---|
+| Super Admin | 全模块、RBAC、Secret、财务高风险命令 | 不能改写 Ledger/Audit/历史版本 |
+| Operator | Story、模型、订阅、Gateway 日常运营 | 默认无 `billing.adjust`、`access.write`、`gateway.payloads.read` |
+| Auditor | 读取运营事实、RBAC、Audit、受保护 Payload | 不执行写操作 |
 
-请求详情桌面为右侧 Drawer（最大 860px），390×844 为全屏。内容顺序：
+服务端权限码按模块使用：`dashboard.*`、`story.*`、`users.*`、`subscriptions.*`、`providers.*`、`models.*`、`pricing.*`、`gateway.*`、`billing.*`、`storage.*`、`access.*`、`system.*`、`audit.*`。客户端隐藏按钮只是可用性优化，不是授权边界。
 
-1. Request Summary。
-2. User、Gateway Key prefix、Provider、Model。
-3. Token、价格快照、Ledger。
-4. 延迟、TTFT、错误和中断。
-5. 受保护的完整报文入口。
-6. 脱敏 Headers、请求 JSON/Raw Body。
-7. 非流响应 JSON/Raw Body。
-8. SSE sequence 时间线/表格与 Raw SSE。
-9. Ledger/Audit 链接。
+## 5. 全局状态契约
 
-所有大内容局部滚动；document 不产生横向溢出。JSON/Raw SSE 使用只读等宽 Viewer，时间/bytes/sequence 使用 tabular mono，event type 使用状态标签。
+| 状态 | 产品表现 | 恢复路径 |
+|---|---|---|
+| Loading | 保留页头、筛选和表头的等高骨架 | 不跳焦；超时说明仍在加载 |
+| Empty | 区分系统无数据与筛选无结果 | 创建（仅允许域）、清筛或返回上层 |
+| 400 | 错误摘要与字段错误，保留草稿 | 聚焦首错 |
+| 401 | 清除保护内容并进入登录 | 登录后安全返回原 URL |
+| 403 | 显示所需 permission，不泄露记录 | 返回可访问模块或申请权限 |
+| 404 | 资源不存在或不可见 | 返回模块列表 |
+| 409 | 展示最新状态、冲突对象和 request ID | 刷新/载入最新值后重试，不盲写 |
+| 503 | 数据源或依赖不可用 | 明确依赖与重试；禁止假数据回退 |
+| Success | 显示资源 ID、实际结果、审计/幂等回执 | 刷新受影响查询并合理归焦 |
 
-## 4. 数据与权限
+## 6. 跨模块数据与调用边界
 
-迁移新增 `gateway_request_payloads`、`gateway_response_payloads`、`gateway_response_events`，均以 `gateway_requests.id` 为真实 FK。事件唯一键为 `(gateway_request_id, sequence)`。
+| 数据域 | 权威表/服务 | 写入者 | 消费模块 |
+|---|---|---|---|
+| 平台用户 | `users` | Dream/迁移；Admin 业务字段只读 | 用户、订阅、Gateway、账务 |
+| Story | `story_workspace_*` | Dream；Admin 仅受控字段/确认命令 | Story、总览 |
+| 订阅 | `subscription_*` | Subscription service | Gateway、账务、用户详情 |
+| 模型供应链 | `ai_providers/models/pricing_rules` | Model services | Gateway、订阅权益、Usage |
+| Gateway 事实 | `gateway_*`、payload tables | Gateway lifecycle | Usage、审计、支持排障 |
+| 财务事实 | `billing_accounts`、`billing_ledger_entries` | Billing transaction services | Billing、订阅、Gateway |
+| 治理 | `admin_*`、`system_settings` | Admin security services | 全模块 |
 
-`gateway.payloads.read` 默认赋予 `super_admin` 与 `auditor`；`operator` 默认不授予。权限变更走现有 Access RBAC 与审计。
+## 7. 发布与回滚
 
-## 5. 计费规则
+- Schema 只做增量、非破坏迁移；旧平行表停止使用但不在本轮删除。
+- Plan Version、Pricing snapshot、Usage、Ledger、Audit 和 Subscription Event 不回滚为旧内容；问题使用向前修复或 reversal。
+- 新模块按“只读影子查询 → 小范围运营写入 → Gateway cohort → 全量”灰度。
+- 数据库测试只允许明确一次性 PostgreSQL 或 `TEST_DATABASE_URL`；不得迁移、清空或删除未知共享数据库。
+- Dream 后续接入遵循 [`ink-dream-subscription-integration-change-list.md`](../architecture/ink-dream-subscription-integration-change-list.md)，Admin 本轮不修改 Dream 代码。
 
-- 价格仍以 request 创建时 snapshot 为准，micro-USD，Ledger append-only。
-- 仅可靠 final Usage 可完成结算。
-- 首字节前明确未产生 Usage 的 4xx/429 可以释放预授权。
-- 流中断且 Usage 未知时标记 `settlement_failed`，禁止按 0 自动成功结算。
-- Payload persistence 与 billing transaction 解耦；payload 失败不能篡改 Usage 或账本。
+## 8. 平台级验收
 
-## 6. 监控（增强项）
+- 每个平台用户自动拥有唯一内部兼容键和唯一计费账户；任何用户选择器不依赖手工开户。
+- 所有列表具备真实总数、服务端分页/排序、白名单筛选和明确错误映射。
+- Session/RBAC 401/403、唯一/FK/状态 409、依赖 503 均有自动测试。
+- Gateway 资格链按 `User → Subscription → Entitlement → Model Permission → Allowance/Balance → Request → Usage → Ledger` 执行并冻结快照。
+- Secret 不出现在详情、API 重读、日志、DOM 或截图；Usage/Ledger/Audit 不提供更新/删除。
+- 1440×1000 与 390×844 无页面级横向溢出，键盘、焦点、label、状态文字和读屏通知可用。
+- `pnpm env:check`、TypeScript、lint、unit、build、隔离 PostgreSQL与 focused Playwright 通过；Storage、PWA 404 和 Dream 真实表回归不退化。
 
-按 endpoint、外部协议、Provider 协议和模型采集 TTFT、P50/P95 event gap、stream interruption rate、client cancellation rate、protocol conversion failure rate、payload capture failure rate；标签不得含 Prompt、response 或完整 key。
+## 9. 文档维护规则
 
-## 7. 验收
-
-验收以 `gateway-protocol-streaming-audit.md` 的命令证据为准。必须覆盖官方 Anthropic/OpenAI SDK contract、原生 fetch reader、`curl -N`、Mock Provider、隔离 PostgreSQL、预授权拒绝报文还原和 1440×1000/390×844 Playwright；真实外部 Provider 明确列为未执行，不能用 Mock 结果冒充。
+- 新需求先进入对应模块；只有跨三个以上模块的决策才修改本总纲。
+- PRD 描述“为什么、范围、规则与验收”；交互规范描述“页面如何工作”；实现细节只保留足以建立可测试契约的映射。
+- 模块 PRD 与同名交互文档必须双向链接，状态、路由、权限、表名、金额单位和验收编号一致。
+- 变更不得覆盖历史文档；过时内容标记 superseded，并从本索引移除主入口。

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 const importRoute = async () => await import("./route");
+const importConfiguration = async () => await import("@/lib/file-storage/configuration");
 
 describe("GET /api/storage", () => {
   beforeEach(() => {
@@ -82,7 +83,7 @@ describe("checkStorageConfiguration", () => {
 
   it("invalid when vercel-blob missing token", async () => {
     process.env.FILE_STORAGE_TYPE = "vercel-blob";
-    const { checkStorageConfiguration } = await importRoute();
+    const { checkStorageConfiguration } = await importConfiguration();
     const res = checkStorageConfiguration();
     expect(res.isValid).toBe(false);
     expect(res.error).toMatch(/BLOB_READ_WRITE_TOKEN/);
@@ -91,14 +92,14 @@ describe("checkStorageConfiguration", () => {
   it("vercel-blob valid with token", async () => {
     process.env.FILE_STORAGE_TYPE = "vercel-blob";
     process.env.BLOB_READ_WRITE_TOKEN = "test-token";
-    const { checkStorageConfiguration } = await importRoute();
+    const { checkStorageConfiguration } = await importConfiguration();
     const res = checkStorageConfiguration();
     expect(res.isValid).toBe(true);
   });
 
   it("s3 missing config", async () => {
     process.env.FILE_STORAGE_TYPE = "s3";
-    const { checkStorageConfiguration } = await importRoute();
+    const { checkStorageConfiguration } = await importConfiguration();
     const res = checkStorageConfiguration();
     expect(res.isValid).toBe(false);
     expect(res.error).toMatch(/Missing S3 configuration/);
@@ -108,7 +109,7 @@ describe("checkStorageConfiguration", () => {
     process.env.FILE_STORAGE_TYPE = "s3";
     process.env.FILE_STORAGE_S3_BUCKET = "bucket";
     process.env.FILE_STORAGE_S3_REGION = "us-east-1";
-    const { checkStorageConfiguration } = await importRoute();
+    const { checkStorageConfiguration } = await importConfiguration();
     const res = checkStorageConfiguration();
     expect(res.isValid).toBe(true);
   });

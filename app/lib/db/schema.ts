@@ -62,9 +62,10 @@ export const platformUsers = pgTable(
  * Canonical Story product identities and first-wave content tables.
  *
  * These tables live in the same PostgreSQL database as the Admin control
- * plane. They intentionally do not replace `platform_users`, which remains a
- * billing/gateway identity mapping, or the deprecated parallel `story_*`
- * Admin tables retained for a later controlled retirement.
+ * plane. Every canonical user is automatically provisioned into the internal
+ * `platform_users` Billing/Gateway FK adapter; that adapter is not a second
+ * product user resource. Deprecated parallel `story_*` tables remain retained
+ * for a later controlled retirement.
  */
 export const users = pgTable(
   "users",

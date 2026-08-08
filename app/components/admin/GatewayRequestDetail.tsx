@@ -53,8 +53,7 @@ function RateLimitReason({ record }: { record: Record<string, unknown> }) {
   if (record.model_code) policySearch.set("model_code", String(record.model_code));
   const policyBase = `/admin/gateway/rate-limits${policySearch.size ? `?${policySearch.toString()}` : ""}`;
   const isRequestLimit = summary.limit_metric === "requests";
-  const primaryPolicyHref = `${policyBase}#${isRequestLimit ? "user-model-permissions-manager" : "platform-users-manager"}`;
-  const primaryPolicyLabel = isRequestLimit ? "配置此用户的模型 RPM" : "配置此用户的默认 Token 上限";
+  const primaryPolicyHref = `${policyBase}#platform-users-manager`;
   return <section className="border border-danger/35 bg-danger-light p-4" data-testid="gateway-rate-limit-reason" role="alert">
     <p className="font-display text-lg font-semibold text-danger">{windowLabel} 上限已超出</p>
     <p className="mt-2 text-sm leading-6 text-text-secondary">当前已计数 <strong>{format(current)}</strong>，本次请求需预留 <strong>{format(requested)}</strong>，超过上限 <strong>{format(limit)}</strong>。</p>
@@ -63,12 +62,7 @@ function RateLimitReason({ record }: { record: Record<string, unknown> }) {
     </dl>
     <p className="mt-3 text-xs leading-5 text-text-tertiary">该请求在 Provider 调用前被预授权策略拒绝；本次预留包含输入估算与最大输出预算。</p>
     <div className="mt-4 border-t border-danger/20 pt-4">
-      <p className="text-xs leading-5 text-text-secondary">实际生效上限取用户默认、模型覆盖与套餐权益中的最小值。实时用量窗口是只读计数，不应通过修改计数解除 429。</p>
-      <div className="mt-3 flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap">
-        <Link href={primaryPolicyHref} className="inline-flex min-h-11 shrink-0 items-center justify-center bg-danger px-4 text-sm font-semibold text-white" data-testid="gateway-rate-limit-config-link">{primaryPolicyLabel}</Link>
-        {!isRequestLimit ? <Link href={`${policyBase}#user-model-permissions-manager`} className="inline-flex min-h-11 items-center justify-center border border-danger/35 bg-bg-surface px-4 text-sm font-semibold text-danger">检查模型覆盖策略</Link> : null}
-        <Link href={`/admin/subscriptions/entitlements${record.model_code ? `?model_code=${encodeURIComponent(String(record.model_code))}` : ""}#subscription-entitlements-manager`} className="inline-flex min-h-11 items-center justify-center px-2 text-sm font-semibold text-text-secondary underline decoration-border">检查套餐权益</Link>
-      </div>
+      {isRequestLimit ? <p className="text-xs leading-5 text-text-secondary">请求频率策略暂未在 Admin 开放配置；实时窗口只展示已经发生的请求计数。</p> : <><p className="text-xs leading-5 text-text-secondary">实际生效上限取用户默认、模型覆盖与套餐权益中的最小值。实时用量窗口是只读计数，不应通过修改计数解除 429。</p><div className="mt-3 flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap"><Link href={primaryPolicyHref} className="inline-flex min-h-11 shrink-0 items-center justify-center bg-danger px-4 text-sm font-semibold text-white" data-testid="gateway-rate-limit-config-link">配置此用户的默认 Token 上限</Link><Link href={`${policyBase}#user-model-permissions-manager`} className="inline-flex min-h-11 items-center justify-center border border-danger/35 bg-bg-surface px-4 text-sm font-semibold text-danger">检查模型覆盖策略</Link><Link href={`/admin/subscriptions/entitlements${record.model_code ? `?model_code=${encodeURIComponent(String(record.model_code))}` : ""}#subscription-entitlements-manager`} className="inline-flex min-h-11 items-center justify-center px-2 text-sm font-semibold text-text-secondary underline decoration-border">检查套餐权益</Link></div></>}
     </div>
   </section>;
 }

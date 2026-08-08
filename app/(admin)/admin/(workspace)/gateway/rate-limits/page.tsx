@@ -8,7 +8,7 @@ export default function GatewayRateLimitsPage() {
       <h2 id="rate-limit-data-model-title" className="font-display text-xl font-semibold">上限策略与实时计数不是同一类数据</h2>
       <p className="mt-2 max-w-4xl text-sm leading-6 text-text-secondary">Gateway 将当前用量与所有适用上限比较，实际生效上限取用户默认、用户—模型覆盖和订阅套餐权益中的最小值。提高一个上限后，如果另一个来源更低，429 仍会继续出现。</p>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {[{ title: "用户默认上限", detail: "可编辑每日／每月 Token，适用于该用户的所有模型。" }, { title: "模型覆盖策略", detail: "可编辑特定用户—模型的 RPM、每日／每月 Token。" }, { title: "套餐权益", detail: "可在订阅中心配置套餐版本对模型的上限。" }, { title: "实时用量计数", detail: "系统自动累加的运行事实；只读，不允许篡改或清零。" }].map((item) => <div key={item.title} className="border border-border bg-bg-secondary/45 p-4"><h3 className="text-sm font-semibold">{item.title}</h3><p className="mt-2 text-xs leading-5 text-text-tertiary">{item.detail}</p></div>)}
+        {[{ title: "用户默认上限", detail: "可编辑每日／每月 Token，适用于该用户的所有模型。" }, { title: "模型覆盖策略", detail: "可编辑特定用户—模型的调用权限和每日／每月 Token。" }, { title: "套餐权益", detail: "可在订阅中心配置套餐版本对模型的 Token 与 Storage 上限。" }, { title: "实时用量计数", detail: "系统自动累加的运行事实；只读，不允许篡改或清零。" }].map((item) => <div key={item.title} className="border border-border bg-bg-secondary/45 p-4"><h3 className="text-sm font-semibold">{item.title}</h3><p className="mt-2 text-xs leading-5 text-text-tertiary">{item.detail}</p></div>)}
       </div>
     </section>
     <GatewayUserDefaultLimitsView />
