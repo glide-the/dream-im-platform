@@ -311,6 +311,148 @@ async function queryList(
   return adminListResponse(data.rows, query, total);
 }
 
+async function enrichStorySourceItem(
+  client: PoolClient,
+  resource: StorySourceResource,
+  row: Record<string, unknown>,
+) {
+  const id = String(row.id);
+  if (resource === "story-workspaces") {
+    const counts = await client.query<Record<string, unknown>>(
+      `SELECT
+         (SELECT COUNT(*)::text FROM story_workspace_stories WHERE workspace_id = $1) AS stories,
+         (SELECT COUNT(*)::text FROM story_workspace_characters WHERE workspace_id = $1) AS characters,
+         (SELECT COUNT(*)::text FROM story_workspace_scenes WHERE workspace_id = $1) AS scenes,
+         (SELECT COUNT(*)::text FROM workflow_runs WHERE workspace_id = $1) AS workflow_runs`,
+      [id],
+    );
+    return { ...row, relation_counts: counts.rows[0] ?? {} };
+  }
+  if (resource === "story-stories") {
+    const [characters, scenes] = await Promise.all([
+      client.query<Record<string, unknown>>(
+        `SELECT c.id, c.identifier, c.name, c.status, c.review_status,
+                sc.role_type, sc.created_at AS linked_at
+         FROM story_workspace_characters c
+         JOIN story_workspace_story_characters sc ON sc.character_id = c.id
+         WHERE sc.story_id = $1
+         ORDER BY c.name ASC, c.id ASC`,
+        [id],
+      ),
+      client.query<Record<string, unknown>>(
+        `SELECT id, identifier, name, order_index, status, review_status,
+                character_count, created_at, updated_at
+         FROM story_workspace_scenes
+         WHERE story_id = $1
+         ORDER BY order_index ASC, id ASC`,
+        [id],
+      ),
+    ]);
+    return { ...row, characters: characters.rows, scenes: scenes.rows };
+  }
+  if (resource === "story-characters") {
+    const [stories, scenes] = await Promise.all([
+      client.query<Record<string, unknown>>(
+        `SELECT s.id, s.identifier, s.title, s.status, s.review_status,
+                sc.role_type, sc.created_at AS linked_at
+         FROM story_workspace_stories s
+         JOIN story_workspace_story_characters sc ON sc.story_id = s.id
+         WHERE sc.character_id = $1
+         ORDER BY s.updated_at DESC, s.id ASC`,
+        [id],
+      ),
+      client.query<Record<string, unknown>>(
+        `SELECT scn.id, scn.identifier, scn.name, scn.story_id,
+                story.title AS story_title, scn.order_index, scn.status,
+                scn.review_status, link.created_at AS linked_at
+         FROM story_workspace_scenes scn
+         JOIN story_workspace_scene_characters link ON link.scene_id = scn.id
+         LEFT JOIN story_workspace_stories story ON story.id = scn.story_id
+         WHERE link.character_id = $1
+         ORDER BY scn.updated_at DESC, scn.id ASC`,
+        [id],
+      ),
+    ]);
+    return { ...row, stories: stories.rows, scenes: scenes.rows };
+  }
+  if (resource === "story-scenes") {
+    const [story, characters, siblings] = await Promise.all([
+      row.story_id
+        ? client.query<Record<string, unknown>>(
+            `SELECT id, identifier, title, status, review_status, type,
+                    workspace_id, author_id::text AS author_id
+             FROM story_workspace_stories WHERE id = $1 LIMIT 1`,
+            [row.story_id],
+          )
+        : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
+      client.query<Record<string, unknown>>(
+        `SELECT c.id, c.identifier, c.name, c.status, c.review_status,
+                link.created_at AS linked_at
+         FROM story_workspace_characters c
+         JOIN story_workspace_scene_characters link ON link.character_id = c.id
+         WHERE link.scene_id = $1
+         ORDER BY c.name ASC, c.id ASC`,
+        [id],
+      ),
+      row.story_id
+        ? client.query<Record<string, unknown>>(
+            `SELECT id, identifier, name, order_index
+             FROM story_workspace_scenes
+             WHERE story_id = $1 AND id <> $2
+             ORDER BY order_index ASC, id ASC`,
+            [row.story_id, id],
+          )
+        : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
+    ]);
+    const order = Number(row.order_index ?? 0);
+    const currentId = String(row.id);
+    const previous = [...siblings.rows]
+      .filter(
+        (item) =>
+          Number(item.order_index) < order ||
+          (Number(item.order_index) === order && String(item.id) < currentId),
+      )
+      .at(-1) ?? null;
+    const next =
+      siblings.rows.find(
+        (item) =>
+          Number(item.order_index) > order ||
+          (Number(item.order_index) === order && String(item.id) > currentId),
+      ) ?? null;
+    return {
+      ...row,
+      story: story.rows[0] ?? null,
+      characters: characters.rows,
+      previous_scene: previous,
+      next_scene: next,
+    };
+  }
+  if (resource === "story-workflow-runs") {
+    const [transitions, tokenConsumptions] = await Promise.all([
+      client.query<Record<string, unknown>>(
+        `SELECT id, transition_seq, from_status, to_status, actor_id,
+                reason_code, failed_step, error_code, occurred_at
+         FROM workflow_run_transitions
+         WHERE workflow_run_id = $1 ORDER BY transition_seq ASC`,
+        [id],
+      ),
+      client.query<Record<string, unknown>>(
+        `SELECT token_digest, workflow_preflight_id, workspace_id, actor_id,
+                idempotency_key, semantic_fingerprint, consumed_at
+         FROM workflow_run_token_consumptions
+         WHERE workflow_run_id = $1 ORDER BY consumed_at ASC`,
+        [id],
+      ),
+    ]);
+    return {
+      ...row,
+      transitions: transitions.rows,
+      token_consumptions: tokenConsumptions.rows,
+    };
+  }
+  return row;
+}
+
 export async function queryStorySourceList(
   request: Request,
   resource: StorySourceResource,
@@ -344,7 +486,7 @@ export async function queryStorySourceItem(
           404,
         );
       }
-      return result.rows[0];
+      return await enrichStorySourceItem(client, resource, result.rows[0]);
     });
   } catch (error) {
     throw storySourceError(error);

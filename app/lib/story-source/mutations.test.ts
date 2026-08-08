@@ -57,6 +57,9 @@ describe("Story source mutations", () => {
       })
       .mockResolvedValueOnce({
         rows: [{ id: "workspace-1", name: "新名称", owner_id: "7" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ stories: "2", characters: "3", scenes: "4", workflow_runs: "1" }],
       });
 
     const response = await handleStorySourceUpdate(
@@ -99,6 +102,12 @@ describe("Story source mutations", () => {
       })
       .mockResolvedValueOnce({
         rows: [{ id: "story-1", review_status: "confirmed", status: "published" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: "character-1", name: "角色" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: "scene-1", name: "场景" }],
       });
 
     const response = await handleStorySourceAction(

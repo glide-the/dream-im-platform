@@ -1,10 +1,13 @@
 # Ink Memory Admin PRD v2
 
-> 版本：2.0  
+> 版本：2.1
 > 日期：2026-08-08  
 > 状态：工程实施基线  
 > 视觉依据：`Ink & Memory UI Design v2.1`、`docs/prd/color_system/**`  
 > 数据依据：`docs/verification/ink-dream-memory-data-integration-audit.md`
+> 字段与控件：`docs/design/admin-resource-field-control-matrix.md`
+> 模型/计费设计：`docs/design/cc-switch-model-billing-adaptation.md`
+> 视觉实施：`docs/design/admin-ui-visual-specification.md`
 
 ## 1. 产品定义
 
@@ -13,7 +16,7 @@ Ink Memory Admin 是 Ink Memory 的运营控制台和 AI 控制面，服务于�
 产品需要在一处完成五类工作：
 
 1. 观察和维护真实剧本业务数据及其工作流状态。
-2. 管理 Provider、模型别名、能力、定价和用户模型权限。
+2. 以 cc-switch 的配置方式管理 Provider、模型别名、能力、定价和用户模型权限，并把已注册供应商通过兼容代理发布给外部服务。
 3. 追踪 Token 用量、余额、预授权、结算与不可变账本。
 4. 运营 Anthropic/OpenAI 兼容代理网关、Key、限流和失败结算。
 5. 治理 Admin 身份、角色、权限、系统设置、Storage 和审计证据。
@@ -217,23 +220,34 @@ Token 计费
 
 ### 6.3 AI 模型中心
 
+模型设置直接采用 `/Users/dmeck/project/cc-switch` 的交互骨架：Provider 使用预设驱动的全屏新增/编辑面板，依次呈现协议、基础信息、Credential、Endpoint、关联模型摘要和高级配置；Model 使用同一全屏设置面板与 Model Dropdown；Pricing 使用全屏“创建价格版本”流程。视觉不复制 cc-switch 蓝灰，而由 Ink Memory 暖纸/暖夜 Token 统一实现。字段级控件和安全差异以 `docs/design/cc-switch-model-billing-adaptation.md` 为准。
+
+AI 模型中心同时是代理发布控制面：Provider Secret 只用于服务端连接上游；外部服务，主要是 `ink-dream-memory`，使用独立 Gateway Key 和稳定的 `ai_models.code` 调用 Ink Memory 代理。外部调用不得接触 Provider Secret、真实上游 Endpoint 或 `upstream_model`。
+
 #### Provider
 
 - 列表/筛选：code、name、protocol、status、base_url、updated_at；支持状态和协议筛选。
-- 创建/更新：code、name、protocol、baseUrl、timeoutMs、maxRetries、status、config、credential。
+- 创建/更新容器：独立全屏面板，固定 Header/Footer，中段独立滚动；移动端同为全屏。
+- 创建/更新字段：code 为创建时文本、编辑只读；protocol 为预设/分段单选且编辑只读；name 为文本；baseUrl 为 URL 输入；timeoutMs/maxRetries 为边界明确的整数输入；status 为开关；authMode/outputTokenParam 为下拉；只有未知扩展 config 使用 JSON Editor。
 - Secret：credential 仅提交时存在；列表/详情永不返回；更新空值表示不轮换而非清空。
-- 停用：允许；硬删除禁止。停用前说明关联启用模型影响。
+- Credential 使用 password 输入和本次草稿显隐；已配置凭据只显示状态与 fingerprint，不能载入或复制历史明文。
+- 停用：允许；硬删除禁止。确认 Modal 必须读取并说明关联启用模型和近期请求影响。
+- 对外代理：页面固定展示 `/v1/messages`、`/v1/messages/count_tokens`、`/v1/chat/completions`、`/v1/models`，分别说明 Header、Gateway Key Scope 和稳定模型别名；示例只能使用环境变量占位符。
 
 #### Models
 
 - 字段：code、provider、upstream_model、display_name、capabilities、context_window、max_output、enabled。
+- 创建/编辑容器：桌面和移动均采用 cc-switch 风格全屏设置面板；provider 使用受权、分页、可搜索 Combobox，禁止手填 Provider ID；`upstream_model` 使用按供应商分组的 Model Dropdown 并允许受控自定义；从 Provider 详情发起时预选并锁定。
+- capabilities 使用已知能力复选组，不用 JSON；context_window/max_output 使用可空正整数控件；enabled 使用开关并校验 Provider active。
 - CRUD：创建、更新、启停；删除默认禁止，只有无 Pricing/Permission/Request 依赖且具备高风险权限时才可讨论，本版本不开放。
 - 筛选：provider、code、upstream、enabled、capability；排序 code/updated_at。
 
 #### Pricing
 
 - 字段：model、user_tier、四类 Token 单价、markup_bps、discount_bps、currency、effective_from/to、status。
-- 创建新生效规则；重叠窗口返回 409 并展示冲突规则链接。
+- 容器：直接采用 cc-switch Pricing 全屏编辑骨架，但主动作固定为“创建价格版本”，不是“覆盖保存”。
+- model 使用真实可搜索 Combobox；四类价格使用十进制 USD/1M Token 输入并同步显示精确整数 micro-USD；markup/discount 使用百分比输入和 bps 辅助值；effective_from/to 使用带时区说明的日期时间选择器。
+- 创建新生效规则；提交前必须显示旧/新价格、有效窗和真实可得的影响摘要；重叠窗口返回 409 并展示冲突规则链接且保留草稿。
 - 已被请求快照引用的历史规则不可破坏性更新/删除；调整价格创建新版本并关闭旧窗口。
 - 价格单位明确显示 micro-USD / million tokens，并同时给只读 USD 格式化值。
 
@@ -245,11 +259,15 @@ Token 计费
 
 ### 6.4 Token 计费
 
+Usage 页面直接采用 cc-switch 的“全局筛选 → 事实摘要 → 趋势 → 请求日志 / Provider 统计 / 模型统计页签 → 请求详情”结构。全部区域由同一 URL 查询状态驱动；摘要和趋势仅使用真实聚合 API，暂不可得时显示“暂不可用”，不得对当前页数据外推或虚构全量指标。
+
 #### 使用记录
 
 - 来源为 gateway request 的四类 Token 与价格快照；只读。
-- 筛选 user/model/provider/request/status/time；排序 created_at、charged、tokens。
-- 详情链接到 Gateway Request、Pricing snapshot、Ledger entry。
+- 全局筛选：日期范围/时区、protocol、Provider、Model、Platform User、outcome、刷新频率；筛选同时驱动摘要、趋势和三个页签。
+- 请求日志专属筛选：request/status/http status/error code；排序 created_at、charged、tokens。
+- 详情采用桌面宽 Drawer、移动全屏，按用户与 Key、路由/模型解析、四类 Token、价格快照、Provider cost/charged、结算与 Ledger、性能、脱敏错误分区；保持列表筛选和页签上下文。
+- Request、Usage、快照与 Ledger 均只读；人工纠错入口跳转 Reconciliation 命令页，不直接编辑事实记录。
 
 #### 账户余额
 
@@ -270,6 +288,15 @@ Token 计费
 - 首版支持 CSV 导出当前筛选，不导出 Secret/完整请求正文。
 
 ### 6.5 代理网关
+
+代理网关是 AI 模型中心的执行面。`ink-dream-memory` 的接入链固定为：源用户映射 → Gateway Key → 兼容端点 → 稳定 Model alias → 注册 Provider → 上游调用 → Usage/价格快照 → Ledger。Provider active 本身不代表可调用；Credential、Model enabled、有效 Pricing、模型权限、余额、Scope 和限流必须全部通过。
+
+| 外部协议 | 路径 | 鉴权 | Scope | 外部 model 字段 |
+|---|---|---|---|---|
+| Anthropic Messages | `POST /v1/messages` | `x-api-key: $INK_MEMORY_GATEWAY_KEY` | `messages:create` | `ai_models.code` |
+| Anthropic Token Count | `POST /v1/messages/count_tokens` | `x-api-key: $INK_MEMORY_GATEWAY_KEY` | `messages:create` | `ai_models.code` |
+| OpenAI Chat | `POST /v1/chat/completions` | `Authorization: Bearer $INK_MEMORY_GATEWAY_KEY` | `chat:create` | `ai_models.code` |
+| Model List | `GET /v1/models` | Bearer 或 `x-api-key` | `models:list` | 返回当前用户真正可调用的 alias |
 
 #### 请求日志
 
@@ -478,12 +505,22 @@ PDF v2.1（2026-07-25）晚于 `color_system` 子文档中的旧亮色值，并�
 
 ## 12. 表单与高风险交互
 
+- `docs/design/admin-resource-field-control-matrix.md` 是所有资源的字段级权威规范；页面实现不得用通用推断覆盖其中的展示类型、控件、关系数据源、校验、脱敏和容器选择。
 - 常规字段使用结构化表单，不再以 JSON Workbench 作为默认 CRUD。
 - JSON/Config 编辑只用于真实 JSON 字段，提供格式化、schema 错误行列、恢复到服务器值；不允许未知字段。
 - 密钥输入显示“新凭据将覆盖旧凭据”，默认 password 类型，有显隐和粘贴支持；已保存值永不填回。
 - 停用/撤销确认说明影响范围；硬删除仅自定义 Role，并要求输入资源 code。
 - 财务/结算确认展示 before/after 金额、幂等键和理由，提交后不可编辑。
 - 所有表单有可见 label、description/error 关联、required/optional 标识和离开未保存提醒。
+
+| 操作复杂度 | 强制容器 | 示例 |
+|---|---|---|
+| 单实体、字段有限、从当前列表进入 | Modal 或右 Drawer；移动全屏 | Workspace、Model Permission、Platform Identity、Admin User、System Setting |
+| 多分区、依赖关系或财务高风险 | 独立全屏面板/独立路由 | Provider、Model、Pricing 新版本、Role 权限矩阵、Reconciliation |
+| 只读核对且需保留列表上下文 | 右 Drawer；移动全屏 | Story 详情、Workflow、Usage/Gateway Request |
+| 单一停用/撤销/拒绝/调账命令 | 有影响摘要的确认 Modal | Provider/Model 停用、Key revoke、Story reject、余额调整 |
+
+表单必须从操作者选中的真实记录 `getOne` 预填；不存在“记录 ID”输入框或模板占位 ID。Provider、Model、User、Role、Permission、Workspace、Story 等关系字段必须使用真实、受权、可搜索选择器。数组使用复选/多选，枚举使用下拉或分段单选，布尔使用开关，日期使用日期时间控件，整数和 micro-USD 使用有单位的数字控件；只有数据库真实 JSON 字段使用 JSON Editor。
 
 ## 13. 响应式与可访问性
 
@@ -539,6 +576,9 @@ PDF v2.1（2026-07-25）晚于 `color_system` 子文档中的旧亮色值，并�
 
 - [ ] 菜单与本 PRD IA 一致，桌面/移动可用，当前项清晰。
 - [ ] 默认页面不再呈现 JSON-only CRUD 工作台或默认 Refine/Ant Design 模板。
+- [ ] Provider/Pricing/Usage/Request Detail 保留 cc-switch 指定交互骨架，并完成 Ink Memory light/dark Token 换肤。
+- [ ] 每个表单字段与 `admin-resource-field-control-matrix.md` 一致；关系选择器只提交真实选中 ID，列表选择后能以服务器当前值预填。
+- [ ] Provider、Model 与 Pricing 在 cc-switch 式全屏面板完成；普通编辑在 Drawer/Modal；Request Detail 只读并保持筛选上下文。
 - [ ] loading/empty/400/401/403/404/409/500/503/success 均有恢复动作。
 - [ ] 1440×1000 与 390×844 无页面级横向溢出；表格局部滚动。
 - [ ] 键盘导航、焦点、label、live region、对比度通过检查；light/dark token 一致。

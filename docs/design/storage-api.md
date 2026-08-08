@@ -46,7 +46,7 @@ docker compose logs minio-init
 |------|-------------|
 | MinIO | `minioadmin` / `minioadmin` |
 | PostgreSQL | `postgres` / `postgres` |
-| 数据库名 | `ai4sales` |
+| 数据库名 | `ink-memory` |
 | S3 Bucket | `vibesales` (自动创建，设为公开访问) |
 
 ### 配置环境变量
@@ -65,7 +65,7 @@ AWS_SECRET_ACCESS_KEY=minioadmin
 FILE_STORAGE_PREFIX=uploads
 
 # PostgreSQL
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/ai4sales
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/ink-memory
 ```
 
 ---

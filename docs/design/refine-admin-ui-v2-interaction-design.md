@@ -3,7 +3,7 @@
 > 状态：工程实施基线  
 > 产品：Ink Memory Admin（Next.js 16 + React 19 + Refine 5 + Tailwind CSS 4）  
 > 基准视口：Desktop 1440×1000；Mobile 390×844  
-> 权威输入：`docs/prd/ink-memory-admin-prd-v2.md`、HTML Design Workflow Stage 1–4  
+> 权威输入：`docs/prd/ink-memory-admin-prd-v2.md`、`admin-resource-field-control-matrix.md`、`admin-ui-visual-specification.md`、`cc-switch-model-billing-adaptation.md`
 > 视觉方向：暖纸安静工作台（Warm-paper Quiet Workbench）× 超感官极简主义
 
 ## 1. 文档目的与决策优先级
@@ -20,6 +20,7 @@ Stage 4 中与工程 PRD 不同的暗色草案不进入实现；本文件第 3 �
 - Provider Secret、System Secret、Gateway Key 不明文落库、回显或进入 URL/日志/缓存。
 - 金额事实值是整数 micro-USD；Pricing snapshot 保留历史；Ledger/Audit append-only。
 - Route Handler 只编排；Session/RBAC、Zod、SQL、事务、状态机、审计均在服务端领域层。
+- 字段展示、表单控件、真实 options 数据源和 Modal/Drawer/独立页裁决不得在组件中临时猜测，统一采用 `admin-resource-field-control-matrix.md`。
 
 ## 2. 从 PDF / Color System 提取的视觉原则
 
@@ -242,14 +243,19 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  P["Provider"] --> M["Model"] --> PR["Pricing Rule vN"] & PM["User Model Permission"] & GR["Gateway Request"]
+  EXT["ink-dream-memory\nGateway Key + Model alias"] --> EP["/v1/messages · /v1/chat/completions"] --> GR["Gateway Request"]
+  P["Provider\nEncrypted upstream credential"] --> M["Model alias → upstream model"] --> PR["Pricing Rule vN"] & PM["User Model Permission"] & GR
   PR -->|"有效窗口 + 四类单价"| PS["Request Price Snapshot"]
   PS --> U["Usage"]
 ```
 
 - Provider 可创建/更新/停用，不硬删；停用前展示关联 enabled Model 数和影响链接。
+- Provider 注册表是代理供应链配置，不是向外分发上游密钥。页面展示四个真实兼容端点、Header/Scope 和 `ink-dream-memory` 接入链；外部只使用 Gateway Key 与 Model alias。
+- Provider 直接采用 cc-switch 全屏面板结构：预设/协议 → 基础信息 → Credential → Endpoint → Model 摘要 → 高级配置 → 影响/错误；Header/Footer 固定，只有中段滚动。Secret 留空表示不轮换，历史值永不回填。
 - Model 可创建/更新/启停，本版本不开放删除。
+- Model 与 Provider 均使用 cc-switch 风格全屏设置面板；Provider 为真实可搜索 Combobox，upstream model 为常用型号 Dropdown + 受控自定义输入，capabilities 为复选组。
 - Pricing 新价格创建版本并关闭旧窗口；重叠窗口返回 409 与冲突规则链接。
+- Pricing 直接采用 cc-switch 全屏编辑结构，但动作语义改为版本化：Model/Tier → 四类 Token 价格 → markup/discount → 生效窗口 → 旧/新 diff → 冲突/影响 → 创建价格版本。不得出现通用编辑或删除入口。
 - 已被 Request snapshot 引用的 Pricing 不可破坏性更新/删除。
 - 四类单价清楚标注 `micro-USD / million tokens`，USD 仅为只读格式化展示。
 - Model Permission 管理 enabled、RPM、daily/monthly token limit；删除 override 表示恢复默认。
@@ -270,6 +276,8 @@ flowchart LR
 Billing Account 显示 available、reserved、lifetime debited；不允许直接编辑余额。
 余额只通过 credit/debit/reversal 命令改变，必填 reason、idempotency key，可填 external ticket。
 Usage 来源为 Gateway Request 的四类 Token 和价格快照，只读；未知 usage 显示“未知”。
+Usage 直接采用 cc-switch Dashboard 骨架：顶部 Date Range/timezone、protocol、Provider、Model、User、outcome、refresh frequency 全局筛选，同时驱动真实事实摘要、趋势和“请求日志 / Provider 统计 / 模型统计”页签。聚合 API 不可用时显示“暂不可用”，不能用当前分页行伪装全量统计。
+Usage/Gateway Request 详情使用桌面宽 Drawer、移动全屏，按 User/Key、Routing、四类 Token、Price Snapshot/Cost、Settlement/Ledger、Performance、脱敏错误分区；关闭后恢复原 URL、页签、分页、滚动与焦点。
 Ledger append-only：显示 amount、available_after、reserved_after、request/pricing 引用和 operator reason；纠错追加 reversal/adjustment。
 报表只聚合真实 Usage/Ledger，显示日期范围、时区、币种和换算规则；CSV 仅导出当前筛选且排除敏感正文。
 
@@ -388,6 +396,9 @@ Role 硬删除仅允许自定义 Role，并要求输入 resource code；账本�
 | `FlatDataTable` | 替代 `AdminResourceTable.tsx` 外观 | 原生 table、局部滚动、状态与行操作 |
 | `ResourceDetail` / `DefinitionSection` | `app/components/admin/resources/` | E1–E5 详情结构 |
 | `StructuredForm` / `Field` / `SecretField` | `app/components/admin/forms/` | F1–F5、标签、错误、脏状态 |
+| `AdminFullScreenForm` | `app/components/admin/forms/` | cc-switch 式固定 Header/Footer、中段滚动、焦点锁定、脏态保护 |
+| `ProviderForm` / `ModelForm` / `PricingVersionForm` | `app/components/admin/forms/` | 预设、真实关系选择、结构化模型/价格字段与领域校验 |
+| `UsageDashboard` / `RequestDetailDrawer` | `app/components/admin/billing/` | 全局筛选、真实聚合、三统计页签与只读请求核对 |
 | `JsonEditor` / `DiffSummary` | `app/components/admin/workbench/` | schema、格式化、恢复、diff |
 | `CommandWorkbench` | 替代通用 `AdminCrudWorkbench` | 领域命令 G1–G4，不暴露假 CRUD |
 | `ReconciliationWorkbench` | 演进 `GatewayReconciliationAction.tsx` | 冻结、用量、影响、幂等回执 |

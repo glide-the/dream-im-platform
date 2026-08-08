@@ -96,10 +96,14 @@ const modelCreateSchema = z.strictObject({
   enabled: z.boolean().default(false),
 });
 
-const modelUpdateSchema = modelCreateSchema
-  .omit({ providerId: true, code: true })
-  .partial()
-  .strict();
+const modelUpdateSchema = z.strictObject({
+  upstreamModel: z.string().trim().min(1).max(200).optional(),
+  displayName: z.string().trim().min(1).max(160).optional(),
+  contextWindow: z.number().int().positive().nullable().optional(),
+  maxOutputTokens: z.number().int().positive().nullable().optional(),
+  capabilities: z.record(z.string(), z.boolean()).optional(),
+  enabled: z.boolean().optional(),
+});
 
 const pricingCreateSchema = z.strictObject({
   modelId: z.string().min(1).max(100),
@@ -113,12 +117,13 @@ const pricingCreateSchema = z.strictObject({
   status: z.enum(["active", "disabled"]).default("active"),
   effectiveFrom: z.iso.datetime(),
   effectiveTo: z.iso.datetime().nullable().optional(),
+  replacesPricingRuleId: z.string().min(1).max(100).nullable().optional(),
 });
 
-const pricingUpdateSchema = pricingCreateSchema
-  .omit({ modelId: true, userTier: true })
-  .partial()
-  .strict();
+const pricingUpdateSchema = z.strictObject({
+  status: z.enum(["active", "disabled"]).optional(),
+  effectiveTo: z.iso.datetime().nullable().optional(),
+});
 
 const platformUserCreateSchema = z.strictObject({
   source: codeSchema,
@@ -132,10 +137,15 @@ const platformUserCreateSchema = z.strictObject({
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
-const platformUserUpdateSchema = platformUserCreateSchema
-  .omit({ source: true, externalUserId: true })
-  .partial()
-  .strict();
+const platformUserUpdateSchema = z.strictObject({
+  email: z.email().max(320).nullable().optional(),
+  displayName: z.string().trim().min(1).max(160).nullable().optional(),
+  tier: codeSchema.optional(),
+  status: z.enum(["active", "suspended", "closed"]).optional(),
+  dailyTokenLimit: optionalLimit,
+  monthlyTokenLimit: optionalLimit,
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
 
 const userModelPermissionCreateSchema = z.strictObject({
   platformUserId: z.string().trim().min(1).max(100),
@@ -146,10 +156,12 @@ const userModelPermissionCreateSchema = z.strictObject({
   monthlyTokenLimit: optionalLimit,
 });
 
-const userModelPermissionUpdateSchema = userModelPermissionCreateSchema
-  .omit({ platformUserId: true, modelId: true })
-  .partial()
-  .strict();
+const userModelPermissionUpdateSchema = z.strictObject({
+  enabled: z.boolean().optional(),
+  requestsPerMinute: z.number().int().positive().nullable().optional(),
+  dailyTokenLimit: optionalLimit,
+  monthlyTokenLimit: optionalLimit,
+});
 
 const keyCreateSchema = z.strictObject({
   platformUserId: z.string().min(1).max(100),
@@ -205,10 +217,11 @@ const systemSettingCreateSchema = z.strictObject({
   isSecret: z.boolean().default(false),
   status: storyStatusSchema.default("active"),
 });
-const systemSettingUpdateSchema = systemSettingCreateSchema
-  .omit({ category: true, key: true })
-  .partial()
-  .strict();
+const systemSettingUpdateSchema = z.strictObject({
+  value: jsonObjectSchema.optional(),
+  description: z.string().trim().max(4_000).nullable().optional(),
+  status: storyStatusSchema.optional(),
+});
 
 async function parseBody<T extends z.ZodTypeAny>(request: Request, schema: T) {
   let body: unknown;
@@ -391,6 +404,52 @@ async function insertPricing(
       400,
     );
   }
+  let replacedPricingRuleId: string | null = null;
+  if (input.replacesPricingRuleId) {
+    const replaced = await loadRowForUpdate(
+      client,
+      "ai_pricing_rules",
+      input.replacesPricingRuleId,
+    );
+    if (
+      String(replaced.model_id) !== input.modelId ||
+      String(replaced.user_tier) !== input.userTier
+    ) {
+      throw new AdminError(
+        "PRICING_REPLACEMENT_MISMATCH",
+        "A pricing version can only replace a rule for the same model and user tier",
+        409,
+      );
+    }
+    const previousFrom = new Date(
+      replaced.effective_from as string | Date,
+    );
+    if (new Date(input.effectiveFrom) <= previousFrom) {
+      throw new AdminError(
+        "PRICING_REPLACEMENT_TIME_INVALID",
+        "The replacement pricing version must begin after the previous version",
+        409,
+      );
+    }
+    if (
+      replaced.effective_to &&
+      new Date(input.effectiveFrom) >
+        new Date(replaced.effective_to as string | Date)
+    ) {
+      throw new AdminError(
+        "PRICING_REPLACEMENT_GAP",
+        "The selected pricing rule already ends before the replacement begins",
+        409,
+      );
+    }
+    await client.query(
+      `UPDATE ai_pricing_rules
+       SET effective_to = $2::timestamptz, updated_at = NOW()
+       WHERE id = $1`,
+      [input.replacesPricingRuleId, input.effectiveFrom],
+    );
+    replacedPricingRuleId = input.replacesPricingRuleId;
+  }
   if (input.status === "active") await assertPricingWindow(client, input);
   const id = createPlatformId("price");
   const result = await client.query<Record<string, unknown>>(
@@ -419,7 +478,10 @@ async function insertPricing(
       input.effectiveTo ?? null,
     ],
   );
-  return result.rows[0];
+  return {
+    ...result.rows[0],
+    replaced_pricing_rule_id: replacedPricingRuleId,
+  };
 }
 
 async function insertPlatformUser(
@@ -857,8 +919,9 @@ async function updatePricing(
   input: z.infer<typeof pricingUpdateSchema>,
 ) {
   const before = await loadRowForUpdate(client, "ai_pricing_rules", id);
-  const effectiveFrom =
-    input.effectiveFrom ?? new Date(before.effective_from as string | Date).toISOString();
+  const effectiveFrom = new Date(
+    before.effective_from as string | Date,
+  ).toISOString();
   const effectiveTo =
     input.effectiveTo === undefined
       ? before.effective_to
@@ -885,14 +948,7 @@ async function updatePricing(
   const values: unknown[] = [id];
   const updates: string[] = [];
   for (const [column, value] of [
-    ["input_price_microusd_per_million", input.inputPriceMicrousdPerMillion],
-    ["output_price_microusd_per_million", input.outputPriceMicrousdPerMillion],
-    ["cache_read_price_microusd_per_million", input.cacheReadPriceMicrousdPerMillion],
-    ["cache_write_price_microusd_per_million", input.cacheWritePriceMicrousdPerMillion],
-    ["markup_bps", input.markupBps],
-    ["discount_bps", input.discountBps],
     ["status", input.status],
-    ["effective_from", input.effectiveFrom],
     ["effective_to", input.effectiveTo],
   ] as const) {
     addUpdate(updates, values, column, value);
@@ -960,6 +1016,45 @@ async function updateAdminUser(
   input: z.infer<typeof adminUserUpdateSchema>,
 ) {
   const before = await loadRowForUpdate(client, "admin_users", id);
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended('active-super-admin', 0))",
+  );
+  const currentSuperAdmin = await client.query<{ is_super_admin: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM admin_user_roles ur
+       JOIN admin_roles r ON r.id = ur.role_id
+       WHERE ur.admin_user_id = $1 AND r.code = 'super_admin'
+     ) AS is_super_admin`,
+    [id],
+  );
+  const isCurrentlyActiveSuperAdmin =
+    before.status === "active" &&
+    currentSuperAdmin.rows[0]?.is_super_admin === true;
+  const willRemainActive = (input.status ?? before.status) === "active";
+  const willRemainSuperAdmin = input.roleCodes
+    ? input.roleCodes.includes("super_admin")
+    : currentSuperAdmin.rows[0]?.is_super_admin === true;
+  if (
+    isCurrentlyActiveSuperAdmin &&
+    (!willRemainActive || !willRemainSuperAdmin)
+  ) {
+    const other = await client.query<{ count: string }>(
+      `SELECT COUNT(DISTINCT u.id)::text AS count
+       FROM admin_users u
+       JOIN admin_user_roles ur ON ur.admin_user_id = u.id
+       JOIN admin_roles r ON r.id = ur.role_id
+       WHERE u.status = 'active' AND r.code = 'super_admin' AND u.id <> $1`,
+      [id],
+    );
+    if (Number(other.rows[0]?.count ?? 0) < 1) {
+      throw new AdminError(
+        "ADMIN_LAST_SUPER_ADMIN_PROTECTED",
+        "At least one active super_admin must remain",
+        409,
+      );
+    }
+  }
   const roles = input.roleCodes
     ? await resolveRoleIds(client, input.roleCodes)
     : undefined;
@@ -1069,11 +1164,21 @@ const updateConfig = {
     permission: "system.write",
     schema: systemSettingUpdateSchema,
     update: async (client: PoolClient, id: string, input: CrudValue) => {
+      const value = input.value;
+      const isMaskedSecretPlaceholder =
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        Object.keys(value).length === 1 &&
+        (value as Record<string, unknown>).masked === true;
+      const safeInput = isMaskedSecretPlaceholder
+        ? Object.fromEntries(Object.entries(input).filter(([key]) => key !== "value"))
+        : input;
       const result = await updateCrudRow(
         client,
         "system_settings",
         id,
-        input,
+        safeInput,
         systemSettingFields,
       );
       return {
@@ -1146,7 +1251,6 @@ export async function handleAdminResourceDelete(
     assertAdminMutationOrigin(request);
     if (resource !== "gateway-api-keys") {
       const deletable = {
-        "system-settings": { table: "system_settings", permission: "system.write" },
         "user-model-permissions": { table: "user_model_permissions", permission: "users.write" },
         "admin-roles": { table: "admin_roles", permission: "access.write" },
       } as const;
@@ -1192,10 +1296,7 @@ export async function handleAdminResourceDelete(
           resourceId: id,
           requestId,
           request,
-          before:
-            resource === "system-settings"
-              ? maskSystemSetting(before)
-              : before,
+          before,
         });
         return { id };
       });

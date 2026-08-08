@@ -1,0 +1,35 @@
+Ink Memory Admin 字段级表单与资源详情重构
+
+目标：修复当前页面内嵌 AdminCrudWorkbench、手填记录 ID、模板占位 ID、泛化 JSON 输入和列表/编辑割裂问题。
+
+设计依据：
+- docs/prd/Ink & Memory UI Design v2.pdf
+- docs/prd/color_system/*
+- docs/prd/ink-memory-admin-prd-v2.md
+- docs/design/refine-admin-ui-v2-interaction-design.md
+- /Users/dmeck/project/cc-switch/assets/screenshots/main-zh.png
+- /Users/dmeck/project/cc-switch/assets/screenshots/add-zh.png
+- /Users/dmeck/project/cc-switch/docs/user-manual/assets/image-20260108011730105.png
+- /Users/dmeck/project/cc-switch/docs/user-manual/assets/image-20260108011859974.png
+- /Users/dmeck/project/cc-switch/src/components/providers/AddProviderDialog.tsx
+- /Users/dmeck/project/cc-switch/src/components/providers/EditProviderDialog.tsx
+- /Users/dmeck/project/cc-switch/src/components/providers/forms/ProviderForm.tsx
+- /Users/dmeck/project/cc-switch/src/components/usage/UsageDashboard.tsx
+- /Users/dmeck/project/cc-switch/src/components/usage/PricingConfigPanel.tsx
+- /Users/dmeck/project/cc-switch/src/components/usage/PricingEditModal.tsx
+- /Users/dmeck/project/cc-switch/src/components/usage/RequestDetailPanel.tsx
+
+模型设置与模型计费的交互骨架必须直接采用 cc-switch：Provider 预设驱动的全屏新增/编辑面板、基础信息与凭据/端点/模型/高级配置分区、Usage 顶部全局筛选、趋势图、请求日志/Provider 统计/模型统计页签、请求详情弹窗、Pricing 全屏编辑面板。视觉 Token 仍由 Ink & Memory PDF 与 color_system 统一换肤。
+
+不得照搬 cc-switch 的本地配置和破坏性行为：Ink Memory Provider/Model/Pricing 必须映射现有 PostgreSQL 表、RBAC 和审计；Secret 永不回显；价格使用整数 micro-USD；已生效价格不可原地改写，应通过关闭旧生效窗并创建新版本实现；Usage、Ledger、Audit 只读且不可删除。
+
+必须给出：
+1. 资源列表到详情、创建、编辑、停用、撤销、归档、审核的完整动线。
+2. 简单表单使用 Modal 或右侧 Drawer；复杂/高风险/多步骤操作使用独立页面。
+3. 每个字段逐项定义展示形式、控件、数据源、校验、权限、脱敏和错误恢复。
+4. 关系字段使用真实可搜索选择器，不允许手填 Provider/Model/User/Role/Permission/Workspace/Story ID。
+5. 只有真实 JSON 字段使用 JSON 编辑器；数组、枚举、布尔、日期、金额分别使用多选/下拉/开关/日期时间/整数金额控件。
+6. 列表选择记录后必须把服务器当前值带入表单，禁止复制粘贴 ID。
+7. Provider Secret、Gateway Key、System Secret、余额调整、异常结算、Story 审核、管理员停用和 Role 删除使用专用安全交互。
+8. 覆盖 1440×1000 与 390×844、键盘焦点锁定/归还、Escape、未保存确认、400/403/409/503 和成功回执。
+9. 严格沿用暖纸色 Token、字体、边框、圆角和操作层级，不使用默认 Ant Design/Refine CRUD 外观。

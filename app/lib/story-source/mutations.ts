@@ -31,7 +31,6 @@ const workspacePatchSchema = nonEmptyPatch({
 const storyPatchSchema = nonEmptyPatch({
   title: z.string().trim().min(1).max(240).optional(),
   description: z.string().trim().max(20_000).nullable().optional(),
-  content: z.string().max(2_000_000).nullable().optional(),
   type: z.enum(["short", "long", "script", "outline"]).optional(),
 });
 const characterPatchSchema = nonEmptyPatch({
@@ -74,7 +73,6 @@ const patchConfigs: Partial<Record<StorySourceResource, PatchConfig>> = {
     fields: {
       title: { column: "title" },
       description: { column: "description" },
-      content: { column: "content" },
       type: { column: "type" },
     },
   },
