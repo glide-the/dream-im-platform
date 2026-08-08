@@ -44,6 +44,7 @@ export default function AIProviderRegistry() {
   const [reachability, setReachability] = useState<Record<string, ReachabilityState>>({});
   const [discovery, setDiscovery] = useState<Record<string, DiscoveryState>>({});
   const [automaticDiscoveryFailed, setAutomaticDiscoveryFailed] = useState(false);
+  const [savedProviderId, setSavedProviderId] = useState("");
   const access = useCan({ resource: "providers", action: "create" });
   const filters = useMemo<CrudFilter[]>(
     () =>
@@ -62,9 +63,9 @@ export default function AIProviderRegistry() {
   });
 
   useEffect(() => {
-    setAutomaticDiscoveryFailed(
-      new URLSearchParams(window.location.search).get("discovery") === "failed",
-    );
+    const query = new URLSearchParams(window.location.search);
+    setAutomaticDiscoveryFailed(query.get("discovery") === "failed");
+    setSavedProviderId(query.get("saved") ?? "");
   }, []);
 
   async function testReachability(providerId: string) {
@@ -153,7 +154,13 @@ export default function AIProviderRegistry() {
 
         {automaticDiscoveryFailed ? (
           <div className="border-b border-warning/40 bg-accent-orange-light px-4 py-3 text-sm text-text-secondary" role="status">
-            Provider 已保存，但自动获取模型目录未完成。检查 Endpoint 与 Credential 后，在对应卡片点击“同步模型”重试。
+            Provider 已保存，但自动获取模型目录未完成。可检查 Endpoint 后重试，也可以
+            {savedProviderId ? (
+              <Link className="mx-1 font-semibold text-accent underline" href={`/admin/models/models/new?providerId=${encodeURIComponent(savedProviderId)}`}>
+                直接手工添加模型
+              </Link>
+            ) : "直接手工添加模型"}
+            ，无需依赖 `/models`。
           </div>
         ) : null}
 
@@ -186,6 +193,13 @@ export default function AIProviderRegistry() {
           {query.isLoading ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-36 animate-pulse rounded-2xl border border-border bg-bg-secondary" />) : null}
           {result.data.map((provider) => {
             const providerId = String(provider.id);
+            const providerConfig =
+              provider.config &&
+              typeof provider.config === "object" &&
+              !Array.isArray(provider.config)
+                ? (provider.config as Record<string, unknown>)
+                : {};
+            const manualCatalog = providerConfig.modelCatalogMode === "manual";
             const health = providerHealth(provider);
             const reachabilityResult = reachability[providerId];
             const discoveryResult = discovery[providerId];
@@ -200,6 +214,7 @@ export default function AIProviderRegistry() {
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="truncate text-lg font-semibold">{String(provider.name)}</h3>
                         <span className="rounded-full border border-border px-2 py-1 font-mono text-[10px] uppercase text-text-tertiary">{String(provider.protocol)}</span>
+                        {manualCatalog ? <span className="rounded-full border border-accent/35 bg-accent-light px-2 py-1 text-[10px] font-semibold text-accent">手工模型</span> : null}
                         <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${health.className}`}>{health.label}</span>
                       </div>
                       <p className="mt-2 truncate font-mono text-xs text-accent" title={String(provider.base_url)}>{String(provider.base_url)}</p>
@@ -235,7 +250,7 @@ export default function AIProviderRegistry() {
                   </dl>
 
                   <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
-                    {access.data?.can ? (
+                    {access.data?.can && !manualCatalog ? (
                       <button
                         type="button"
                         disabled={discoveryResult?.pending || !provider.credential_configured}
@@ -245,6 +260,14 @@ export default function AIProviderRegistry() {
                       >
                         {discoveryResult?.pending ? "同步中…" : "同步模型"}
                       </button>
+                    ) : null}
+                    {access.data?.can && manualCatalog ? (
+                      <Link
+                        href={`/admin/models/models/new?providerId=${encodeURIComponent(providerId)}${typeof providerConfig.manualModel === "string" && providerConfig.manualModel.trim() ? `&upstreamModel=${encodeURIComponent(providerConfig.manualModel.trim())}` : ""}`}
+                        className="inline-flex min-h-10 items-center rounded-xl border border-accent/35 bg-accent-light px-3 text-xs font-semibold text-accent hover:brightness-95"
+                      >
+                        手工添加模型
+                      </Link>
                     ) : null}
                     {access.data?.can ? (
                       <button

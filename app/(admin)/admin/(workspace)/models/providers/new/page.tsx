@@ -6,14 +6,14 @@ const sections = [
   { id: "connection", title: "Endpoint", description: "填写上游兼容入口，不把地址藏在 JSON 中。" },
   { id: "credential", title: "Credential", description: "Secret 只写入加密列；显隐只作用于本次草稿。" },
   { id: "runtime", title: "运行策略", description: "超时和重试共同决定代理失败边界。" },
-  { id: "advanced", title: "高级配置", description: "已知键使用具名控件，只有未知扩展使用 JSON。" },
+  { id: "advanced", title: "模型目录与高级配置", description: "没有 /models 接口时选择手工模式并填写实际上游型号；已知键使用具名控件。" },
 ];
 
 const presets = [
-  { label: "Anthropic Official", description: "Anthropic 原生 Messages API。", values: { code: "anthropic-main", name: "Anthropic", protocol: "anthropic", baseUrl: "https://api.anthropic.com", authMode: "x-api-key", outputTokenParam: "max_tokens", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: {} } },
-  { label: "DeepSeek Anthropic", description: "DeepSeek Anthropic 兼容入口；凭据仍需本次安全输入。", values: { code: "deepseek-anthropic", name: "DeepSeek", protocol: "anthropic", baseUrl: "https://api.deepseek.com/anthropic", authMode: "bearer", outputTokenParam: "max_tokens", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: {} } },
-  { label: "OpenAI Official", description: "OpenAI Chat Completions 入口。", values: { code: "openai-main", name: "OpenAI", protocol: "openai", baseUrl: "https://api.openai.com", authMode: "bearer", outputTokenParam: "max_completion_tokens", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: {} } },
-  { label: "自定义兼容端点", description: "自行填写协议、Endpoint 和凭据。", values: { code: "custom-provider", name: "Custom Provider", protocol: "openai", baseUrl: "https://example.com", authMode: "bearer", outputTokenParam: "max_completion_tokens", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: {} } },
+  { label: "Anthropic Official", description: "Anthropic 原生 Messages API。", values: { code: "anthropic-main", name: "Anthropic", protocol: "anthropic", baseUrl: "https://api.anthropic.com", authMode: "x-api-key", modelCatalogMode: "auto", manualModel: "", outputTokenParam: "max_tokens", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: {} } },
+  { label: "DeepSeek Anthropic", description: "DeepSeek Anthropic 兼容入口；凭据仍需本次安全输入。", values: { code: "deepseek-anthropic", name: "DeepSeek", protocol: "anthropic", baseUrl: "https://api.deepseek.com/anthropic", authMode: "bearer", modelCatalogMode: "auto", manualModel: "", outputTokenParam: "max_tokens", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: {} } },
+  { label: "OpenAI Official", description: "OpenAI Chat Completions 入口。", values: { code: "openai-main", name: "OpenAI", protocol: "openai", baseUrl: "https://api.openai.com", authMode: "bearer", modelCatalogMode: "auto", manualModel: "", outputTokenParam: "max_completion_tokens", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: {} } },
+  { label: "自定义兼容端点", description: "适用于无 /models 的 OpenAI 兼容入口；手工填写上游型号。", values: { code: "custom-provider", name: "Custom Provider", protocol: "openai", baseUrl: "https://example.com", authMode: "bearer", modelCatalogMode: "manual", manualModel: "", outputTokenParam: "max_tokens", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: {} } },
 ];
 
 function ProviderContext() {
@@ -21,5 +21,5 @@ function ProviderContext() {
 }
 
 export default function NewProviderPage() {
-  return <AdminResourceFormPage mode="create" resource="providers" title="添加 Provider" eyebrow="cc-switch · provider setup" description="按 cc-switch 的预设、基础信息、Credential、Endpoint 和高级配置顺序注册代理上游。创建后再配置稳定 Model alias 与价格版本。" backHref="/admin/models/providers" fields={providerFields} sections={sections} defaults={{ protocol: "anthropic", status: "disabled", timeoutMs: 120000, maxRetries: 1, authMode: "x-api-key", outputTokenParam: "max_tokens", config: {} }} presets={presets} submitLabel="添加 Provider" context={<ProviderContext />} />;
+  return <AdminResourceFormPage mode="create" resource="providers" title="添加 Provider" eyebrow="cc-switch · provider setup" description="按 cc-switch 的预设、基础信息、Credential、Endpoint 和高级配置顺序注册代理上游。支持自动读取 /models，也支持无目录接口时手工登记 Model。" backHref="/admin/models/providers" fields={providerFields} sections={sections} defaults={{ protocol: "anthropic", status: "disabled", timeoutMs: 120000, maxRetries: 1, authMode: "x-api-key", modelCatalogMode: "auto", manualModel: "", outputTokenParam: "max_tokens", config: {} }} presets={presets} submitLabel="添加 Provider" context={<ProviderContext />} />;
 }

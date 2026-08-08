@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildDiscoveryDiff,
+  fetchProviderModelCatalog,
   parseProviderModelCatalog,
   providerModelEndpointCandidates,
 } from "./provider-discovery";
@@ -37,5 +38,28 @@ describe("Provider model discovery", () => {
       expect.objectContaining({ id: "same", state: "existing", existingModelId: "model_existing" }),
       expect.objectContaining({ id: "new/model", state: "conflict" }),
     ]);
+  });
+
+  it("never calls /models when the Provider uses manual catalog mode", async () => {
+    const fetcher = vi.fn(async () => new Response("unexpected"));
+
+    await expect(fetchProviderModelCatalog(
+      {
+        protocol: "openai",
+        base_url: "https://api.openai.com",
+        timeout_ms: 5_000,
+        config: {
+          authMode: "bearer",
+          modelCatalogMode: "manual",
+          manualModel: "hy3-preview",
+        },
+      },
+      "fixture-secret",
+      fetcher as typeof fetch,
+    )).rejects.toMatchObject({
+      code: "PROVIDER_MODEL_DISCOVERY_DISABLED",
+      status: 409,
+    });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });

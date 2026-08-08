@@ -46,7 +46,7 @@ type AdminResourceFormPageProps = {
 
 type ApiResult = {
   data?: Record<string, unknown>;
-  error?: { message?: string; details?: unknown };
+  error?: { code?: string; message?: string; details?: unknown };
 };
 
 const EMPTY_FORM_DEFAULTS: Record<string, unknown> = {};
@@ -215,14 +215,34 @@ export default function AdminResourceFormPage({
       const nextRequestId = response.headers.get("x-request-id") ?? "";
       setRequestId(nextRequestId);
       if (!response.ok || !body.data) {
+        const code = body.error?.code;
         throw new Error(
-          body.error?.message ?? `保存失败（HTTP ${response.status}）`,
+          body.error?.message
+            ? `${body.error.message}${code ? `（${code}）` : ""}`
+            : `保存失败（HTTP ${response.status}）`,
         );
       }
       await invalidate({ resource, invalidates: ["list", "detail"] });
       setInitialValues(values);
       const savedId = String(body.data.id ?? recordId ?? "");
       if (mode === "create" && resource === "providers" && savedId) {
+        const savedConfig =
+          body.data.config &&
+          typeof body.data.config === "object" &&
+          !Array.isArray(body.data.config)
+            ? (body.data.config as Record<string, unknown>)
+            : {};
+        if (savedConfig.modelCatalogMode === "manual") {
+          const manualModel =
+            typeof savedConfig.manualModel === "string"
+              ? savedConfig.manualModel.trim()
+              : "";
+          const query = new URLSearchParams({ providerId: savedId });
+          if (manualModel) query.set("upstreamModel", manualModel);
+          router.push(`/admin/models/models/new?${query.toString()}`);
+          router.refresh();
+          return;
+        }
         try {
           const discoveryResponse = await fetch(
             `/api/admin/providers/${encodeURIComponent(savedId)}/discover`,

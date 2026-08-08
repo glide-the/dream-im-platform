@@ -113,6 +113,12 @@ pnpm docker:down
 
 Provider API Key 不属于应用运行环境变量。请在 `/admin/models` 创建 Provider 时录入，系统只保存加密密文并在读取接口中返回指纹。
 
+自定义 OpenAI/Anthropic 兼容域名必须先把**主机名**加入
+`AI_PROVIDER_HOST_ALLOWLIST`（逗号分隔，不填写 scheme 或 path），然后重启 Admin。
+Provider 没有 `/models` 接口时，在“添加 Provider → 模型目录模式”选择
+“无 `/models`，手工配置”并填写上游型号；保存后系统直接打开“添加模型”并预填
+Provider、上游型号、alias 和显示名称，不会发起模型目录请求。
+
 ## 文件存储
 
 Storage 业务和共享 lib 保留在当前项目中，支持 Vercel Blob、AWS S3 及兼容 S3 协议的对象存储：

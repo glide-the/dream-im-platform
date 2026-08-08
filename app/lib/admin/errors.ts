@@ -1,3 +1,5 @@
+import { GatewayError } from "../gateway/errors";
+
 export class AdminError extends Error {
   constructor(
     public readonly code: string,
@@ -14,6 +16,8 @@ export function adminErrorResponse(error: unknown, requestId?: string) {
   const resolved =
     error instanceof AdminError
       ? error
+      : error instanceof GatewayError
+        ? new AdminError(error.code, error.message, error.status)
       : new AdminError(
           "ADMIN_INTERNAL_ERROR",
           "The admin service could not complete the request",

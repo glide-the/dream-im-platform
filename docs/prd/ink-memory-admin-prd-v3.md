@@ -107,7 +107,7 @@ flowchart LR
 - Plan Version、Pricing snapshot、Usage、Ledger、Audit 和 Subscription Event 不回滚为旧内容；问题使用向前修复或 reversal。
 - 新模块按“只读影子查询 → 小范围运营写入 → Gateway cohort → 全量”灰度。
 - 数据库测试只允许明确一次性 PostgreSQL 或 `TEST_DATABASE_URL`；不得迁移、清空或删除未知共享数据库。
-- Dream 后续接入遵循 [`ink-dream-subscription-integration-change-list.md`](../architecture/ink-dream-subscription-integration-change-list.md)，Admin 本轮不修改 Dream 代码。
+- Dream 后续业务接入、页面清理和 PostgreSQL 迁移遵循 [`ink-dream-memory/README.md`](../architecture/ink-dream-memory/README.md)。Dream 当前不开发计费、订阅、订阅支付、推理服务或 Gateway 接入；Admin 本轮不修改 Dream 代码。
 
 ## 8. 平台级验收
 

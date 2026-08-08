@@ -179,6 +179,13 @@ export async function fetchProviderModelCatalog(
   credential: string,
   fetcher: typeof fetch = fetch,
 ) {
+  if (provider.config?.modelCatalogMode === "manual") {
+    throw new AdminError(
+      "PROVIDER_MODEL_DISCOVERY_DISABLED",
+      "该 Provider 配置为手工模型模式，不会调用 /models；请直接在模型注册表添加上游型号。",
+      409,
+    );
+  }
   const authMode = provider.config?.authMode === "bearer" ? "bearer" : "x-api-key";
   const attempts: Array<{ endpoint: string; status: number | null }> = [];
   for (const endpoint of providerModelEndpointCandidates(provider)) {

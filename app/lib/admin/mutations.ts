@@ -3,10 +3,12 @@ import { z } from "zod";
 import { resolveGatewayBaseUrl } from "../gateway/public-base-url";
 import { creditBillingAccountOnClient } from "../billing/repository";
 import { createGatewayApiKey } from "../gateway/api-keys";
+import { GatewayError } from "../gateway/errors";
 import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
 import { withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
 import {
+  CredentialConfigurationError,
   encryptCredential,
   type EncryptedCredential,
 } from "../security/credential-encryption";
@@ -57,6 +59,38 @@ const providerConfigSchema = z
         path: ["outputTokenParam"],
         message:
           "outputTokenParam must be max_tokens or max_completion_tokens",
+      });
+    }
+    if (
+      config.modelCatalogMode !== undefined &&
+      !["auto", "manual"].includes(String(config.modelCatalogMode))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["modelCatalogMode"],
+        message: "modelCatalogMode must be auto or manual",
+      });
+    }
+    if (
+      config.manualModel !== undefined &&
+      (typeof config.manualModel !== "string" ||
+        config.manualModel.trim().length > 200)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["manualModel"],
+        message: "manualModel must be a string of at most 200 characters",
+      });
+    }
+    if (
+      config.modelCatalogMode === "manual" &&
+      (typeof config.manualModel !== "string" ||
+        config.manualModel.trim().length === 0)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["manualModel"],
+        message: "manualModel is required when model discovery is disabled",
       });
     }
   });
@@ -245,6 +279,12 @@ function credentialColumns(encrypted?: EncryptedCredential) {
 
 function pgMutationError(error: unknown) {
   if (error instanceof AdminError) return error;
+  if (error instanceof GatewayError) {
+    return new AdminError(error.code, error.message, error.status);
+  }
+  if (error instanceof CredentialConfigurationError) {
+    return new AdminError(error.code, error.message, 503);
+  }
   if (
     error &&
     typeof error === "object" &&
@@ -260,11 +300,41 @@ function pgMutationError(error: unknown) {
   return error;
 }
 
+function resolveAdminProviderBaseUrl(input: {
+  protocol: "anthropic" | "openai";
+  baseUrl: string;
+}) {
+  try {
+    return resolveProviderBaseUrl(input);
+  } catch (error) {
+    if (!(error instanceof GatewayError)) throw error;
+    if (error.code !== "PROVIDER_HOST_NOT_ALLOWED") {
+      throw new AdminError(error.code, error.message, 400);
+    }
+    let hostname = "该主机";
+    try {
+      hostname = new URL(input.baseUrl).hostname.toLowerCase();
+    } catch {
+      // The original resolver already provides the safe validation failure.
+    }
+    throw new AdminError(
+      error.code,
+      `Provider Host ${hostname} 未获准。请将它加入服务端 AI_PROVIDER_HOST_ALLOWLIST 后重启 Admin。`,
+      409,
+      {
+        hostname,
+        configuration: "AI_PROVIDER_HOST_ALLOWLIST",
+        restartRequired: true,
+      },
+    );
+  }
+}
+
 async function insertProvider(
   client: PoolClient,
   input: z.infer<typeof providerCreateSchema>,
 ) {
-  const baseUrl = resolveProviderBaseUrl({
+  const baseUrl = resolveAdminProviderBaseUrl({
     protocol: input.protocol,
     baseUrl: input.baseUrl,
   });
@@ -824,7 +894,7 @@ async function updateProvider(
   const before = await loadRowForUpdate(client, "ai_providers", id);
   const protocol = before.protocol as "anthropic" | "openai";
   const baseUrl = input.baseUrl
-    ? resolveProviderBaseUrl({ protocol, baseUrl: input.baseUrl })
+    ? resolveAdminProviderBaseUrl({ protocol, baseUrl: input.baseUrl })
     : undefined;
   const encrypted = input.apiKey ? encryptCredential(input.apiKey) : undefined;
   if (

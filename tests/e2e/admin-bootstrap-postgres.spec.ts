@@ -164,6 +164,33 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(providerDetailBody.data.credential_configured).toBe(true);
     expect(JSON.stringify(providerDetailBody)).not.toContain("api_key_ciphertext");
 
+    const blockedProviderHost = await api.post(`${baseURL}/api/admin/providers`, {
+      headers,
+      data: {
+        code: "blocked-provider-host-e2e",
+        name: "Blocked Provider Host",
+        protocol: "openai",
+        baseUrl: "https://unlisted-provider.example.test/v1",
+        apiKey: "fixture-blocked-provider-secret",
+        status: "disabled",
+        timeoutMs: 5000,
+        maxRetries: 0,
+        config: { authMode: "bearer", modelCatalogMode: "auto" },
+      },
+    });
+    expect(blockedProviderHost.status()).toBe(409);
+    await expect(blockedProviderHost.json()).resolves.toMatchObject({
+      error: {
+        code: "PROVIDER_HOST_NOT_ALLOWED",
+        message: expect.stringContaining("AI_PROVIDER_HOST_ALLOWLIST"),
+        details: {
+          hostname: "unlisted-provider.example.test",
+          configuration: "AI_PROVIDER_HOST_ALLOWLIST",
+          restartRequired: true,
+        },
+      },
+    });
+
     const validationProvider = await api.post(`${baseURL}/api/admin/providers`, {
       headers,
       data: { code: "mock-validation-e2e", name: "Mock Validation", protocol: "anthropic", baseUrl: mockUpstreamUrl, apiKey: "fixture-model-validation-secret", status: "active", timeoutMs: 5000, maxRetries: 0, config: { authMode: "bearer" } },
@@ -194,6 +221,43 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
       expect.objectContaining({ id: "deepseek-v4-pro", state: "existing" }),
       expect.objectContaining({ id: "discovery-new-model", state: "new" }),
     ]));
+
+    const manualProvider = await api.post(`${baseURL}/api/admin/providers`, {
+      headers,
+      data: {
+        code: "manual-catalog-e2e",
+        name: "Manual Catalog E2E",
+        protocol: "openai",
+        baseUrl: mockUpstreamUrl,
+        apiKey: "fixture-manual-provider-secret",
+        status: "disabled",
+        timeoutMs: 5000,
+        maxRetries: 0,
+        config: {
+          authMode: "bearer",
+          modelCatalogMode: "manual",
+          manualModel: "hy3-preview",
+          outputTokenParam: "max_tokens",
+        },
+      },
+    });
+    expect(manualProvider.status()).toBe(201);
+    const manualProviderBody = await manualProvider.json();
+    expect(JSON.stringify(manualProviderBody)).not.toContain("fixture-manual-provider-secret");
+    expect(manualProviderBody.data.config).toMatchObject({
+      modelCatalogMode: "manual",
+      manualModel: "hy3-preview",
+    });
+    const requestsBeforeDisabledDiscovery = mockValidationRequests.length;
+    const disabledDiscovery = await api.post(
+      `${baseURL}/api/admin/providers/${manualProviderBody.data.id}/discover`,
+      { headers },
+    );
+    expect(disabledDiscovery.status()).toBe(409);
+    await expect(disabledDiscovery.json()).resolves.toMatchObject({
+      error: { code: "PROVIDER_MODEL_DISCOVERY_DISABLED" },
+    });
+    expect(mockValidationRequests).toHaveLength(requestsBeforeDisabledDiscovery);
 
     const pricingVersionStart = new Date(Date.now() + 60_000).toISOString();
     const pricingVersion = await api.post(`${baseURL}/api/admin/pricing-rules`, {
@@ -459,8 +523,20 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     await expect(page.getByLabel("Provider Code")).toHaveValue("deepseek-anthropic");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-provider-page-desktop-1440x1000.png"), fullPage: true });
-    page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: "返回列表" }).click();
+    await page.getByRole("button", { name: "自定义兼容端点" }).click();
+    await page.getByLabel("Provider Code").fill("manual-ui-e2e");
+    await page.getByLabel("显示名称").fill("Manual UI E2E");
+    await page.getByLabel("API Endpoint").fill(mockUpstreamUrl);
+    await page.getByLabel("API Key / Credential").fill("fixture-manual-ui-secret");
+    await page.getByLabel("模型目录模式").selectOption("manual");
+    await page.getByLabel("手工上游型号").fill("hy3-preview");
+    const requestsBeforeManualUi = mockValidationRequests.length;
+    await page.getByRole("button", { name: "添加 Provider", exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/models\/models\/new\?providerId=.*upstreamModel=hy3-preview/);
+    await expect(page.getByLabel("上游型号（Model Dropdown）")).toHaveValue("hy3-preview");
+    await expect(page.getByLabel("模型别名 Code")).toHaveValue("hy3-preview");
+    await expect(page.getByLabel("显示名称")).toHaveValue("hy3-preview");
+    expect(mockValidationRequests).toHaveLength(requestsBeforeManualUi);
 
     await page.goto("/admin/models/models/new");
     await expect(page.getByRole("heading", { name: "添加模型", exact: true })).toBeVisible();

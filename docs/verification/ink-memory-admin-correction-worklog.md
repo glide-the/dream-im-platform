@@ -448,3 +448,71 @@ Optional Enhancers:
 
 - 为 PostgreSQL 迁移增加可复制的只读盘点/校验 SQL 模板，但不得包含针对共享库的 DROP、TRUNCATE、DELETE 或自动执行命令。
 - 在总索引增加“现在做 / 明确不做 / 未来触发后再做”矩阵，便于产品、Dream 前端、后端、QA 和运维共同评审。
+
+## Round 25 — Dream 模块化接入与 PG 迁移文档编写
+
+Optimized Prompt:
+
+基于已完成的只读盘点，在 `docs/architecture/ink-dream-memory/` 编写 Dream 后续改造的唯一正式文档集。建立 `README.md` 总索引，并按以下职责拆分：当前范围与源系统基线、业务数据接入和 Admin 读写边界、前端页面改造清单、完整 PostgreSQL 迁移方案、发布/验证/回滚、延期领域、历史文档与证据映射。每份文件必须双向链接总索引，并标明状态、受众、本期范围、延期范围、具体 Dream 文件建议和可验证验收。
+
+当前实施主线仅是将 Dream 的真实业务持久化从 SQLite 分阶段迁入统一 PostgreSQL `ink-memory`，保持现有用户、认证、Workspace、Story、Character、Scene、Deck、Chat、Workflow、Plugin、Reflection、Event 等业务语义和页面行为；Admin 继续使用 canonical 原名表和受控读写边界。本期禁止新增或接入计费、订阅、订阅支付、模型推理服务、Gateway、套餐/额度/Usage/Ledger 页面与 API，也不修改现有 Dream 推理运行时的产品行为。现有静态订阅页应列入“隐藏入口/移除虚构档位”的页面清理任务，但不能替换成真实订阅开发。
+
+PostgreSQL 文档必须反映真实迁移复杂度：主 `database.py` 当前创建 43 张表并被大量 router/service 直接耦合；`notion/store.py` 另有 5 张 SQLite 表；现有 Admin 导入器只验证 `users`、`story_workspace_workspaces`、`story_workspace_stories` 三表，不能冒充 Dream 全量运行时迁移。给出迁移所有权、目标角色、迁移基线、依赖波次、SQLite→PostgreSQL SQL/类型/事务差异、只读快照、转换、staging、导入、行数/PK/FK/JSON/枚举/哈希验证、停写切换和回滚。优先选择演练充分后的短暂停写切换，不提出无幂等保证的长期双写。
+
+旧 `docs/architecture/ink-dream-subscription-integration-change-list.md`、`docs/integration/ink-dream-memory-postgresql-gateway-migration.md` 和 `docs/integration/ink-dream-memory-admin-gateway.md` 改为轻量历史入口，分别指向新 Deferred、PG 迁移和总索引；更新 `docs/README.md` 与平台 PRD 中的 Dream 后续改造入口。不得删除旧文件、破坏相对链接或把历史验收结论改写成当前事实。
+
+验收要求：所有新旧入口链接可解析；当前范围文档中不得出现要求实施 billing/subscription/payment/inference/Gateway 的任务、环境变量或测试；Deferred 文档必须明确需要产品重新立项和触发条件；PG 方案不包含 DROP/TRUNCATE/DELETE 共享数据的自动命令；Dream 仓库、数据库、应用代码和迁移均保持未修改。
+
+Optional Enhancers:
+
+- 在页面清单中加入“保留 / 隐藏 / 仅数据层适配 / 延期”四态矩阵。
+- 在 PG 迁移文档中加入只读校验 SQL 模板与迁移回执字段规范，避免输出密码哈希、正文或 Secret。
+
+## Round 26 — Dream 文档入口与延期范围一致性校验
+
+Optimized Prompt:
+
+对 `docs/architecture/ink-dream-memory/` 新文档集及所有旧 Dream 入口执行机械和语义一致性校验。确认总索引能在一次点击内到达范围、业务接入、页面、PG 迁移、发布回滚、Deferred 与证据文档；所有相对链接目标存在；H1 唯一；旧订阅/Gateway/PG 混合文档顶部明确 current/deferred/superseded，并指向当前权威文件。
+
+扫描当前执行文档，禁止出现要求本期实施 Billing、Subscription、Payment、Inference Service、Gateway 的 API、环境变量、页面、数据库表、测试或上线动作；允许出现的相关文字只能用于“暂不开发、禁止、保持既有行为、延期触发条件”。检查 PG 方案完整覆盖 Dream 主库 43 表和 Notion 5 表、现有 Admin 三表导入器的能力上限、canonical 用户唯一性、Schema 所有权、staging 冲突、停写切换和已有 PG 写入后的回滚限制。
+
+修复任何断链、歧义、旧入口竞争、当前/未来混写或不安全数据库指令。运行 `git diff --check` 和文档范围检查；不得运行 Dream 构建、数据库迁移或外部服务，不修改 Dream 仓库和应用代码。
+
+Optional Enhancers:
+
+- 生成当前执行文档与 Deferred 文档的关键词分类报告，保证同一动作不会同时出现在两种状态。
+
+## Round 27 — Dream 文档无上下文读者验收
+
+Optimized Prompt:
+
+以首次接触项目的产品、Dream 前端、Dream 后端、DBA 和 QA 读者视角，只阅读 `docs/architecture/ink-dream-memory/` 的新模块化文档及三个旧路径入口，不依赖此前对话。回答并以文档证据核对：当前唯一实施主线是什么；计费、订阅、订阅支付、推理服务和 Gateway 是否需要本期开发；静态订阅页如何处理；平台用户与未来计费身份是否为同一全集；PostgreSQL 迁移是否完整覆盖主库 43 表与 Notion 5 表，并明确现有 Admin 导入器只覆盖三表；Dream 与 Admin 各自拥有哪些 Schema；停写、切换、校验和已产生 PostgreSQL 新写入后的回滚边界是什么。
+
+重点寻找会让执行团队误解的矛盾、隐含开发任务、未经证实的路径/表/环境变量、危险数据库操作、断链、旧文档权威性竞争和缺少验收条件。读者只给出证据化问题清单，不修改文件；主执行者使用 `apply_patch` 修复所有有效发现后，重新运行相对链接、H1、延期关键词、文档范围和 `git diff --check` 校验。不得运行 Dream 构建或数据库迁移，不得修改 Dream 仓库、应用代码、Schema、配置或任何数据库。
+
+Optional Enhancers:
+
+- 要求读者用一句话复述发布决策；若复述中出现“本期接入订阅/Gateway/支付”，即判定文档范围表达失败。
+
+## Round 24–27 执行证据
+
+- Dream 只读事实复核：`backend/database.py` 的 `CREATE TABLE IF NOT EXISTS` 计数为 43，`backend/notion/store.py` 为 5；当前仍使用 SQLite，且 `backend/pyproject.toml` 未包含正式 PostgreSQL driver/migration runner。现有 Admin `scripts/import-ink-dream-story-source.mjs` 只覆盖 `users`、`story_workspace_workspaces`、`story_workspace_stories` 三表，未被描述为全量迁移器。
+- 模块化交付：在 `docs/architecture/ink-dream-memory/` 建立 8 份当前范围、边界、页面、PG 迁移、发布回滚、Deferred 与证据文档；`docs/README.md` 和平台 PRD 均指向该唯一正式入口。
+- 范围与身份纠偏：当前唯一主线是 Dream 真实业务持久化迁 PostgreSQL `ink-memory`；计费、订阅、订阅支付、推理服务与 Gateway 不进入 Dream 本期 API、页面、表、环境变量和验收。canonical `users` 是唯一平台用户全集，未来每个平台用户天然是计费主体；只显示 `qa-author@ink-memory.test` 等单个账号属于查询/投影/测试种子缺陷，不是“计费用户”设计。
+- 页面合同：静态三档订阅页面和设置入口列为清理项；旧 `/story-workspace/subscription` 统一使用 replace navigation 重定向已由 Dream 路由证据确认存在的 `/story-workspace/settings/about`，不创建真实套餐、Usage、余额或支付页。
+- 迁移方案：覆盖 43 + 5 表、Dream/Alembic 与 Admin/Drizzle 分领域所有权、canonical 三表 baseline adopt、只读快照、manifest、staging、冲突阻断、分波导入、短暂停写切换、隔离测试和 PG 写后回滚边界；physical owner/ACL 必须在实施前只读盘点并单独审批，不由文档假定或授权。
+- 无上下文 Reader Testing 能准确复述发布决策，P0 为 0；发现三个旧入口保留完整可执行 Gateway/Billing 正文会造成 P1 权威性竞争，以及 redirect/404 和 physical owner/ACL 两项 P2 歧义。已将旧入口收敛为轻量墓碑页、固定 redirect 合同并补充所有权审批边界。
+- 机械验收：13 份入口/关联文档相对链接 0 断链、H1 异常 0；8 份新模块齐全；6 份 current-scope 文档中未受否定/延期语义保护的计费、订阅、支付、推理或 Gateway 动作为 0；`git diff --check` 通过。
+- 修改边界：本阶段仅编辑 `ink-admin-memory/docs/**`，未运行 Dream 构建或数据库迁移，未修改 Dream 代码、Schema、迁移、依赖、配置或任何数据库。
+
+## Round 28 — Dream 文档交付收口
+
+Optimized Prompt:
+
+在 Reader Testing 修订完成后，对 Dream 模块化文档执行最终只读交付审计，不新增产品或工程范围。确认 8 份新模块、3 个旧路径墓碑页、`docs/README.md` 和平台 PRD 入口一致；重新检查所有相对链接、唯一 H1、Markdown 空白、延期域动作语义和工作日志记录。确认 PostgreSQL 方案仍精确表达 43 + 5 表、三表导入器上限、Schema/ACL 所有权审批、隔离数据库、停写切换和 PG 新写入后的回滚边界；确认静态订阅 URL 只有一个 redirect 合同，canonical `users` 是唯一平台用户全集，单个 QA 账号不构成“计费用户”设计。
+
+只允许修复文档断链、排版或范围歧义；不得修改 Dream 项目、Admin 应用代码、Schema、迁移、测试或数据库。全部检查通过后关闭当前文档计划，并在最终报告中给出权威路径、范围决策、迁移要点、验证数量和未执行事项。
+
+Optional Enhancers:
+
+- 最终报告优先链接总索引、页面清单、PG 迁移和 Deferred 四个入口，其他模块通过总索引访问。
