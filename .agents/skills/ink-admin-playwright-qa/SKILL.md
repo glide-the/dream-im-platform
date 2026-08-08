@@ -1,138 +1,112 @@
 ---
 name: ink-admin-playwright-qa
-description: Run reliable Playwright E2E, production-route smoke, and visual QA for the ink-admin-memory Next.js App Router repository. Use when Codex needs to create, debug, or execute browser tests for the existing PWA or Refine `/admin` console; validate route isolation, feature gates, responsive/theme behavior, API error states, uploads, chat, customers, todos, or PostgreSQL-backed flows; or diagnose flaky local Playwright runs on port 3000.
+description: Run focused Playwright E2E, isolated PostgreSQL integration, production-route smoke, and visual QA for the ink-memory-admin Next.js + Refine control plane. Use for /admin authentication and RBAC, Story CRUD, model/provider/pricing management, billing and gateway operations, system settings, audit, responsive layouts, or flaky local runs on ports 3000/5433. This repository has no PWA or SQLite test lane.
 ---
 
-# Ink Admin Playwright QA
+# Ink Memory Admin Playwright QA
 
-Use the repository-root `@playwright/test` installation and the checked-in
-`playwright.config.ts`. Prefer deterministic API mocks; isolate PostgreSQL state whenever a test
-must persist data. Produce assertions and diagnostics before screenshots.
+Use the repository `@playwright/test` installation and checked-in config. The application is a
+Refine-only Admin control plane backed exclusively by PostgreSQL. Prefer the smallest deterministic
+lane that proves the change and retain diagnostics before screenshots.
 
-Read [references/project-workflow.md](references/project-workflow.md) before a browser run. Load
-only the sections relevant to the requested lane.
+Read [references/project-workflow.md](references/project-workflow.md) before any browser run.
 
 ## Guardrails
 
-- Run commands from the repository root with `pnpm exec playwright`; do not use a global CLI.
-- Inspect `git status --short --branch` before and after the run. Preserve unrelated changes.
-- Resolve the PID and working directory before reusing or stopping a listener on port 3000 or 5433.
-- Let Playwright's configured `webServer` own `pnpm dev` for normal E2E runs.
-- Mock `/api/claude-agent`, provider, storage, and other external boundaries unless that integration
-  is explicitly under test. Never consume a real model key during ordinary UI QA.
-- Use a dedicated `TEST_DATABASE_URL` or disposable database for persistent API tests. Never run
-  migrations or destructive fixtures against an unresolved `DATABASE_URL`.
-- Register console, page-error, request-failure, and unexpected-response diagnostics before
-  navigation.
-- Prefer roles, labels, titles, and stable test ids. Avoid `force: true` and arbitrary long sleeps.
-- Assert behavior before capturing screenshots. Clean up only exact artifacts and processes created
-  by the current run.
+- Run from repository root with `pnpm exec playwright`; never use a global CLI.
+- Inspect Git status before and after QA and preserve unrelated worktree changes.
+- Resolve process ownership before reusing or stopping listeners on 3000 or 5433.
+- Let Playwright `webServer` own `pnpm dev` for ordinary authentication/routing tests.
+- Never consume a real model credential in UI QA; mock provider boundaries unless explicitly tested.
+- Persistent tests require a named disposable PostgreSQL or explicit `TEST_DATABASE_URL`. Never
+  migrate, truncate, drop, or seed an unresolved/shared `DATABASE_URL`.
+- Do not add SQLite fixtures, Story database mounts, PWA routes, or authentication bypasses.
+- Register console, page-error, request-failure, and unexpected 5xx diagnostics before navigation.
+- Prefer role/label/title selectors and web-first assertions; avoid `force: true` and sleeps.
+- Validate behavior and server-side authorization before visual evidence.
 
 ## Workflow
 
-### 1. Select the smallest proving lane
+### 1. Choose a proving lane
 
-| Lane | Use for | Preferred execution |
+| Lane | Use for | Command/pattern |
 | --- | --- | --- |
-| Unit/contract | serializers, parsers, providers, policy | `pnpm test:run -- path/to/test.ts` |
-| Mocked browser | UI, routing, loading/error states | `page.route()` + focused Playwright spec |
-| Isolated DB E2E | admin/API persistence and concurrency | dedicated Postgres URL + focused spec |
-| Production smoke | build, SSR, feature-gate behavior | `pnpm build` + owned `next start` session |
-| Visual QA | theme, responsive, overflow, focus | Chromium desktop and narrow viewports |
+| Unit | parsing, pricing, encryption, policies | `pnpm test:run -- path` |
+| Login/routing browser | redirect, form error, 404, responsive shell | focused Playwright with mocks |
+| Isolated DB E2E | bootstrap, session, CRUD, RBAC, audit | disposable PostgreSQL + owned server |
+| Gateway contract | compatible request/response/settlement | mock provider + isolated PostgreSQL |
+| Production smoke | build, feature gate, standalone behavior | `pnpm build` + owned `next start` |
+| Visual QA | responsive table/workbench/navigation | desktop + 390×844 |
 
-Do not escalate from mocked browser to real provider or shared database without evidence that the
-smaller lane cannot prove the requirement.
+Do not escalate to a real upstream provider or shared database when mocks/isolated fixtures prove the
+requirement.
 
 ### 2. Preflight
-
-Run:
 
 ```bash
 python3 .agents/skills/ink-admin-playwright-qa/scripts/preflight.py
 ```
 
-Resolve missing dependencies and occupied ports first. Install Chromium only when the repository
-browser is actually absent:
+If Chromium is absent:
 
 ```bash
 pnpm exec playwright install chromium
 ```
 
-### 3. Build deterministic state
+### 3. Establish deterministic state
 
-- Mock list/detail responses with `page.route()` when testing rendering or navigation.
-- Match HTTP method and pathname before fulfilling a route; fall back for unrelated requests.
-- Use unique IDs per test and assert the captured request body for mutation flows.
-- For API persistence, point both the app process and fixtures at the same dedicated database.
-- Keep test fixtures free of production secrets and realistic PII.
-- Do not rely on data already present in a developer database.
+- Mock login failures and read-only render states with method/path-specific `page.route()` handlers.
+- A protected Server Component layout cannot be authenticated by mocking browser `authProvider`.
+- Positive Admin resource tests must bootstrap/login against an isolated migrated PostgreSQL and use
+  the real HttpOnly cookie.
+- Use unique IDs and delete only records created by the test, or drop only the proven disposable DB.
+- Assert request body contracts for create/update/delete and check the matching audit entry.
 
-### 4. Handle Admin and PWA boundaries
+### 4. Required boundaries
 
-- Development enables the current Admin compatibility shell unless
-  `ADMIN_CONSOLE_ENABLED=false`; production requires `ADMIN_CONSOLE_ENABLED=true`.
-- For Admin positive-path browser tests, use the configured development server or explicitly set the
-  flag on the owned server process.
-- For fail-closed production smoke, omit the flag and require `/admin` and `/admin/login` to return
-  404 while `/` remains available.
-- Verify Refine client navigation, dynamic `[id]`, login/workspace layout isolation, and that `/`,
-  `/customers`, and other PWA routes are not captured by Admin routing.
-- Do not treat visible/hidden Refine controls as authorization proof; direct API 401/403 coverage is
-  required after protected Admin APIs exist.
+- Without a session, `/`, `/admin`, and resource pages end at `/admin/login`.
+- `/customers`, `/todos`, `/api/customers`, `/api/claude-agent` return 404.
+- Unauthenticated Admin API calls return 401; insufficient permissions return 403.
+- Refine control visibility is UX only; direct API assertions prove authorization.
+- Secret Provider/system setting values are never returned in list/detail payloads.
+- Ledger, usage and audit resources expose no destructive UI/API mutation.
 
-### 5. Author stable assertions
+### 5. Resource behavior
 
-- Assert URL and semantic readiness before interaction.
-- Prefer web-first assertions over timeouts.
-- Assert loading, empty, success, validation, permission, conflict, rate-limit, and server-error
-  states proportional to the change.
-- For streaming tests, assert ordered protocol events and terminal state; mock the stream unless the
-  real integration is the subject.
-- For uploads, mock storage capability and upload endpoints separately, then assert the final proxy
-  URL or workspace path.
-- Assert zero unexpected application diagnostics on the final run.
+- Story: workspaces → projects → characters/scenes → workflow-runs create/update/delete, FK conflict,
+  unique conflict and validation failure.
+- Models: Provider credential masking, model enable/disable, pricing window overlap conflict.
+- Users: status/tier/limits, balance credit idempotency, one-time Gateway Key plaintext and revoke.
+- Access: Admin status/role change, custom role CRUD, built-in role protection.
+- System: category/key uniqueness and secret value masking.
+- Gateway: success/failure/stream interruption and explicit `settlement_failed` reconciliation.
 
-### 6. Run proportional verification
-
-Start with the focused spec, then expand:
+### 6. Run proportional checks
 
 ```bash
-pnpm exec playwright test tests/e2e/example.spec.ts --reporter=line --workers=1
-pnpm exec eslint path/to/changed.ts tests/e2e/example.spec.ts
+pnpm exec playwright test tests/e2e/admin-shell.spec.ts --reporter=line --workers=1
+pnpm exec tsc --noEmit
+pnpm lint
 pnpm test:run
 pnpm build
 ```
 
-Use `pnpm test:e2e` only when the full suite's real-provider/database prerequisites are available.
-Distinguish baseline or environment failures from regressions introduced by the change.
-
 ### 7. Visual QA
 
-- Check at least 1440×1000 and 390×844 for shared Admin/PWA layout changes.
-- Check light and dark tokens when the change uses global colors.
-- Verify keyboard focus, no horizontal overflow, readable table/card fallback, and a single intended
-  vertical scroll owner.
-- Treat the Next.js development indicator as tooling chrome, not application UI.
-- Keep screenshots only when requested or when they are intentional evidence under a gitignored
-  output path.
+For shared Admin changes, cover 1440×1000 and 390×844. Verify keyboard focus, no page-level
+horizontal overflow, readable table horizontal scrolling, workbench error/success states, long
+Chinese/English values, and both theme token modes when global colors change.
 
-### 8. Clean up and report
+### 8. Cleanup and report
 
-- Close browser contexts and stop only owned server sessions.
-- Remove the exact temporary database/runtime and exploratory files created by the run.
-- Recheck listeners and Git status.
-- Report commands, pass/fail counts, browser/viewport coverage, diagnostics, skipped scenarios, and
-  any external-only failure separately.
+Stop only owned processes, remove exact disposable fixtures, recheck listeners/Git status, and report
+commands, pass counts, viewport coverage, diagnostics, skipped external scenarios and any environment
+failure separately.
 
 ## Failure discipline
 
-- If Playwright reuses a stale server, resolve the port owner and rerun with an owned server; do not
-  assume the displayed code matches the worktree.
-- If `/admin` returns 404 in development, inspect `ADMIN_CONSOLE_ENABLED` before changing routing.
-- If `/admin` returns 200 in production without the flag, treat it as a fail-closed regression.
-- If customer/todo pages fail because PostgreSQL is unavailable, mock the API for UI tests or start a
-  dedicated database for persistence tests; do not weaken assertions.
-- If full lint scans generated `html/` or `playwright-report/`, record that baseline configuration
-  issue and still require targeted lint on changed source and specs.
-- Never hide application exceptions, failed same-origin API calls, React errors, or authorization
-  failures behind a broad diagnostics allowlist.
+- Stale `.next/dev` route types after deleting routes are build artifacts, not source truth; regenerate
+  route types or use a clean build before diagnosing source imports.
+- If `/admin` is 404, inspect `ADMIN_CONSOLE_ENABLED`; production intentionally fails closed unless true.
+- If schema readiness fails, apply reviewed migrations to the isolated target; never reintroduce a DB fallback.
+- Treat unexpected same-origin 5xx, React exceptions, authorization bypasses and secret leakage as failures.

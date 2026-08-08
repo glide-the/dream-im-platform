@@ -1,5 +1,4 @@
 @import 'tailwindcss';
-@import './styles/markdown.css';
 
 @theme {
   --color-bg-primary: var(--color-bg-primary);

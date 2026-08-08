@@ -34,14 +34,11 @@ const themeColor = [
 ];
 
 export const metadata: Metadata = {
-  title: "AI for Sales",
-  description: "AI for Sales - Mobile-first PWA",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "AI for Sales"
-  }
+  title: {
+    default: "Ink Memory Admin",
+    template: "%s · Ink Memory Admin",
+  },
+  description: "Ink Memory AI 创作平台运营、模型、计费与代理网关控制台",
 };
 
 export const viewport: Viewport = {

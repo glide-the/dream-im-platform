@@ -1,40 +1,21 @@
-# ============================================
-# ai4sales-pwa-app — Docker Compose
-# ============================================
-# Usage:
-#   cd docker
-#   cp .env.example .env  (edit .env with real values)
-#   docker compose up -d --build
-# ============================================
-
 services:
-  # ---- Next.js Application ----
-  ai4sales-app:
+  ink-memory-admin:
     build:
       context: ..
       dockerfile: ./docker/Dockerfile
     ports:
       - "${APP_PORT:-3000}:3000"
-    entrypoint: ["/bin/sh", "/app/docker/entrypoint.sh"]
-    command: ["node", "server.js"]
     env_file:
       - .env
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:-ink_memory}@postgres:5432/${POSTGRES_DB:-ink-memory}
     networks:
-      - ai4sales-network
+      - ink-memory-network
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
-        condition: service_healthy
-    volumes:
-      - ./agent_workspaces:/app/agent-workspaces
-      - ./.claude:/app/.claude
     restart: unless-stopped
 
-  # ---- PostgreSQL ----
   postgres:
     image: postgres:16-alpine
     ports:
@@ -42,75 +23,23 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-ai4sales}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai4sales}
-      POSTGRES_DB: ${POSTGRES_DB:-ai4sales}
+      POSTGRES_USER: ${POSTGRES_USER:-ink_memory}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ink_memory}
+      POSTGRES_DB: ${POSTGRES_DB:-ink-memory}
     networks:
-      - ai4sales-network
+      - ink-memory-network
     volumes:
-      - ai4sales_postgres_data:/var/lib/postgresql/data
+      - ink_memory_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ai4sales}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # ---- MinIO (S3-compatible storage) ----
-  minio:
-    image: minio/minio:latest
-    ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin}
-    volumes:
-      - ai4sales_minio_data:/data
-    command: server /data --console-address ":9001"
-    networks:
-      - ai4sales-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ink_memory} -d ${POSTGRES_DB:-ink-memory}"]
       interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 10s
     restart: unless-stopped
 
-  # ---- MinIO Bucket Initialization ----
-  
-  # MinIO client to create bucket on startup
-  minio-init:
-    image: minio/mc:latest
-    container_name: ai4sales-minio-init
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      echo 'Waiting for MinIO to be ready...';
-      for i in 1 2 3 4 5 6 7 8 9 10; do
-        mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin} && break;
-        echo \"Attempt $$i failed, retrying in 3s...\";
-        sleep 3;
-      done;
-      mc mb myminio/$${MINIO_BUCKET:-vibesales} --ignore-existing;
-      mc anonymous set public myminio/$${MINIO_BUCKET:-vibesales};
-      echo 'MinIO bucket initialized successfully';
-      exit 0;
-      "
-    environment:
-      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin}
-      MINIO_BUCKET: ${FILE_STORAGE_S3_BUCKET:-vibesales}
-    networks:
-      - ai4sales-network
-
 volumes:
-  ai4sales_postgres_data:
-  ai4sales_minio_data:
+  ink_memory_postgres_data:
 
 networks:
-  ai4sales-network:
+  ink-memory-network:
     driver: bridge

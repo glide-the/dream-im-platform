@@ -181,3 +181,11 @@ export function hasBillableTokens(usage: TokenUsage) {
     usage.cacheWriteTokens > 0
   );
 }
+
+export function totalProcessedTokens(usage: TokenUsage) {
+  const input =
+    usage.inputTokenSemantics === "fresh"
+      ? usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
+      : usage.inputTokens;
+  return input + usage.outputTokens;
+}

@@ -1,49 +1,48 @@
 import Link from "next/link";
-
-import CompatibilityProbeButton from "./_components/CompatibilityProbeButton";
+import DashboardMetrics from "@/components/admin/DashboardMetrics";
 
 const releaseStages = [
   {
-    id: "S0",
-    title: "路由与运行时",
-    detail: "Refine Core、Next Router、显式路由",
+    id: "AUTH",
+    title: "身份与权限",
+    detail: "服务端 Session、RBAC、不可变审计",
     state: "current",
   },
   {
-    id: "S1",
-    title: "身份与协议",
-    detail: "IdP、RBAC、Admin API contracts",
-    state: "locked",
+    id: "AI",
+    title: "模型供应链",
+    detail: "Provider、模型别名、分层定价",
+    state: "current",
   },
   {
-    id: "S2",
-    title: "不可变审计",
-    detail: "事务边界与只读审计资源",
-    state: "locked",
+    id: "BILL",
+    title: "计费与代理",
+    detail: "预授权、Token 结算、Claude / OpenAI",
+    state: "current",
   },
   {
-    id: "S3–S4",
-    title: "资源与发布",
-    detail: "Customers、Todos、Settings、验证",
-    state: "locked",
+    id: "STORY",
+    title: "Story 运营域",
+    detail: "PostgreSQL 工作区、项目、角色、场景与工作流 CRUD",
+    state: "current",
   },
 ] as const;
 
 const boundaries = [
   {
-    label: "Routing",
-    title: "显式 /admin 路由树",
-    detail: "不使用 catch-all，不接管现有 PWA 页面。",
+    label: "Identity",
+    title: "服务端权限是唯一边界",
+    detail: "Refine 只改善交互；所有 API 重新核验 Session 与 permission。",
   },
   {
-    label: "State",
-    title: "共享 QueryClient",
-    detail: "Refine 复用根缓存实例，不创建第二套全局状态。",
+    label: "Billing",
+    title: "整数金额与不可变流水",
+    detail: "micro-USD、定价快照、reserve / capture / release 全链路可追踪。",
   },
   {
-    label: "Security",
-    title: "资源保持关闭",
-    detail: "真实 IdP 与服务端 RBAC 完成前，不暴露管理 CRUD。",
+    label: "Gateway",
+    title: "双协议代理与终态结算",
+    detail: "Anthropic 与 OpenAI 分离适配，流式中断不会静默释放成本。",
   },
 ];
 
@@ -53,44 +52,48 @@ export default function AdminOverviewPage() {
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-text-tertiary">
-            Control plane / route shell
+            AI creation platform / control plane
           </p>
           <p className="mt-2 text-sm text-text-secondary">
-            Refine 管理后台兼容性基座
+            模型、Token、代理与用户运营控制台
           </p>
         </div>
         <div className="flex items-center gap-3">
           <span className="rounded-full bg-success-light px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-success">
-            Refine mounted
+            Protected · online
           </span>
           <Link
-            href="/admin/login"
+            href="/admin/models"
             className="rounded-full border border-border bg-bg-surface px-4 py-2 text-xs font-semibold text-text-secondary transition-colors hover:border-accent hover:text-accent"
           >
-            查看身份状态
+            管理模型
           </Link>
         </div>
       </header>
+
+      <DashboardMetrics />
 
       <section className="grid gap-8 border-b border-border py-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)] lg:py-14">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-border bg-bg-surface px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-text-secondary">
             <span className="h-2 w-2 rounded-full bg-accent-orange" aria-hidden="true" />
-            S0 · evidence before access
+            OPERATIONS · BILLING · GATEWAY
           </div>
           <h1 className="mt-6 max-w-3xl font-display text-[clamp(2.35rem,6vw,5.4rem)] font-semibold leading-[0.98] tracking-[-0.04em] text-text-primary">
-            管理不是入口，
-            <span className="text-accent">是边界。</span>
+            把模型成本，
+            <span className="text-accent">变成可运营资产。</span>
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-8 text-text-secondary sm:text-lg">
-            这个壳层先证明 Next.js、Refine 和现有 PWA 可以共存。身份、权限、审计和业务资源会在各自 gate
-            通过后逐步解锁。
+            Refine 负责清晰的运营交互；服务端负责身份、权限、Story 数据、计价、账本和代理执行。
+            全部控制面数据统一落在 Ink Memory PostgreSQL。
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <CompatibilityProbeButton />
-            <span className="font-mono text-[11px] text-text-tertiary">
-              /admin/compatibility/:id
-            </span>
+            <Link href="/admin/users" className="rounded-full bg-text-primary px-5 py-3 text-sm font-semibold text-bg-surface">
+              进入用户中心
+            </Link>
+            <Link href="/admin/gateway" className="rounded-full border border-border px-5 py-3 text-sm font-semibold text-text-primary">
+              查看代理请求
+            </Link>
           </div>
         </div>
 
@@ -98,7 +101,7 @@ export default function AdminOverviewPage() {
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold text-text-primary">Release rail</h2>
             <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary">
-              1 / 4 active
+              4 / 4 active
             </span>
           </div>
           <ol className="mt-6 space-y-0">
@@ -132,14 +135,14 @@ export default function AdminOverviewPage() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-tertiary">
-              S0 boundaries
+              System boundaries
             </p>
             <h2 id="boundary-heading" className="mt-3 font-display text-2xl font-semibold text-text-primary sm:text-3xl">
-              当前真实可用的能力
+              控制面核心约束
             </h2>
           </div>
           <p className="max-w-xl text-sm leading-6 text-text-secondary">
-            这里只陈述已经落到代码的边界，不展示尚不存在的运营指标。
+            不展示虚构指标；每个状态都来自受保护的资源 API。
           </p>
         </div>
 

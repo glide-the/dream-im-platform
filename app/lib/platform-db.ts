@@ -8,7 +8,7 @@ export class PlatformSchemaNotReadyError extends Error {
 
   constructor() {
     super(
-      "AI platform schema is not installed. Run `pnpm db:migrate` before enabling Admin billing or the gateway.",
+      "Ink Memory PostgreSQL schema is not installed. Run `pnpm db:migrate` before starting the Admin console or gateway.",
     );
     this.name = "PlatformSchemaNotReadyError";
   }
@@ -21,15 +21,37 @@ export async function assertPlatformSchema() {
         users: string | null;
         requests: string | null;
         ledger: string | null;
+        admin_users: string | null;
+        story_projects: string | null;
+        system_settings: string | null;
+        estimated_tokens: string | null;
       }>(
         `SELECT
           to_regclass('public.platform_users')::text AS users,
           to_regclass('public.gateway_requests')::text AS requests,
-          to_regclass('public.billing_ledger_entries')::text AS ledger`,
+          to_regclass('public.billing_ledger_entries')::text AS ledger,
+          to_regclass('public.admin_users')::text AS admin_users,
+          to_regclass('public.story_projects')::text AS story_projects,
+          to_regclass('public.system_settings')::text AS system_settings,
+          (
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'gateway_requests'
+              AND column_name = 'estimated_tokens'
+          ) AS estimated_tokens`,
       )
       .then(({ rows }) => {
         const row = rows[0];
-        if (!row?.users || !row.requests || !row.ledger) {
+        if (
+          !row?.users ||
+          !row.requests ||
+          !row.ledger ||
+          !row.admin_users ||
+          !row.story_projects ||
+          !row.system_settings ||
+          !row.estimated_tokens
+        ) {
           throw new PlatformSchemaNotReadyError();
         }
       })

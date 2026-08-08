@@ -28,7 +28,9 @@
     ],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./app/*"]
+      "@/*": [
+        "./app/*"
+      ]
     }
   },
   "include": [
@@ -40,6 +42,7 @@
   ],
   "exclude": [
     "node_modules",
-    "agent-workspaces"
+    "agent-workspaces",
+    "html"
   ]
 }

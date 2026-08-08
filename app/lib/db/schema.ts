@@ -12,72 +12,6 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { Conversation, DecisionChainItem, SystemConfig } from "../types";
-
-export const customers = pgTable("customers", {
-  id: text("id").primaryKey(),
-  name: text("name"),
-  company: text("company"),
-  title: text("title"),
-  phones: text("phones").array(),
-  emails: text("emails").array(),
-  wechat: text("wechat"),
-  address: text("address"),
-  tags: text("tags").array(),
-  decision_chain: jsonb("decision_chain").$type<DecisionChainItem[]>(),
-  profile_markdown: text("profile_markdown"),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
-  source: text("source"),
-  last_verified_at: timestamp("last_verified_at", {
-    withTimezone: true,
-    mode: "date"
-  })
-});
-
-export const todos = pgTable("todos", {
-  id: text("id").primaryKey(),
-  title: text("title"),
-  description: text("description"),
-  priority: text("priority"),
-  status: text("status"),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-});
-
-export const conversations = pgTable("conversations", {
-  id: text("id").primaryKey(),
-  title: text("title"),
-  status: text("status"),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
-  messages: jsonb("messages").$type<Conversation["messages"]>(),
-  attachments: jsonb("attachments").$type<Conversation["attachments"]>(),
-  context_customer_ids: text("context_customer_ids").array(),
-  ai_outputs: jsonb("ai_outputs").$type<Conversation["ai_outputs"]>(),
-  linked_customer_id: text("linked_customer_id"),
-  /** Claude SDK session_id for resuming conversations */
-  claude_session_id: text("claude_session_id")
-});
-
-export const systemConfigs = pgTable("system_configs", {
-  /** Singleton row — use "default" as the primary key */
-  id: text("id").primaryKey().default("default"),
-  /** System prompt sent to the agent */
-  system_prompt: text("system_prompt"),
-  /** Model identifier, e.g. "claude-sonnet-4-20250514" */
-  model: text("model"),
-  /** Model provider, e.g. "anthropic" */
-  provider: text("provider"),
-  /** Theme preference: "light" | "dark" | "system" */
-  theme: text("theme"),
-  /** Whether workspace file access is enabled */
-  workspace_enabled: boolean("workspace_enabled").default(true),
-  /** Extra settings (future-proof) */
-  extras: jsonb("extras").$type<SystemConfig["extras"]>(),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
-});
 
 /**
  * AI platform control-plane schema.
@@ -121,6 +55,206 @@ export const platformUsers = pgTable(
       "platform_users_monthly_token_limit_check",
       sql`${table.monthly_token_limit} IS NULL OR ${table.monthly_token_limit} >= 0`,
     ),
+  ],
+);
+
+export const storyWorkspaces = pgTable(
+  "story_workspaces",
+  {
+    id: text("id").primaryKey(),
+    owner_user_id: text("owner_user_id")
+      .notNull()
+      .references(() => platformUsers.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("active"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("story_workspaces_slug_uidx").on(table.slug),
+    index("story_workspaces_owner_idx").on(table.owner_user_id),
+    index("story_workspaces_status_idx").on(table.status),
+  ],
+);
+
+export const storyProjects = pgTable(
+  "story_projects",
+  {
+    id: text("id").primaryKey(),
+    workspace_id: text("workspace_id")
+      .notNull()
+      .references(() => storyWorkspaces.id, { onDelete: "restrict" }),
+    owner_user_id: text("owner_user_id")
+      .notNull()
+      .references(() => platformUsers.id, { onDelete: "restrict" }),
+    identifier: text("identifier").notNull(),
+    title: text("title").notNull(),
+    synopsis: text("synopsis"),
+    story_type: text("story_type").notNull().default("screenplay"),
+    status: text("status").notNull().default("draft"),
+    review_status: text("review_status").notNull().default("pending"),
+    character_count: integer("character_count").notNull().default(0),
+    scene_count: integer("scene_count").notNull().default(0),
+    word_count: integer("word_count").notNull().default(0),
+    settings: jsonb("settings").$type<Record<string, unknown>>().default({}),
+    agent_generated: boolean("agent_generated").notNull().default(false),
+    confirmed_at: timestamp("confirmed_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    published_at: timestamp("published_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("story_projects_identifier_uidx").on(table.identifier),
+    index("story_projects_workspace_idx").on(table.workspace_id),
+    index("story_projects_owner_idx").on(table.owner_user_id),
+    index("story_projects_status_idx").on(table.status),
+    index("story_projects_updated_idx").on(table.updated_at),
+    check(
+      "story_projects_counts_check",
+      sql`${table.character_count} >= 0 AND ${table.scene_count} >= 0 AND ${table.word_count} >= 0`,
+    ),
+  ],
+);
+
+export const storyCharacters = pgTable(
+  "story_characters",
+  {
+    id: text("id").primaryKey(),
+    project_id: text("project_id")
+      .notNull()
+      .references(() => storyProjects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    role_type: text("role_type").notNull().default("supporting"),
+    description: text("description"),
+    profile: jsonb("profile").$type<Record<string, unknown>>().default({}),
+    sort_order: integer("sort_order").notNull().default(0),
+    status: text("status").notNull().default("active"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("story_characters_project_idx").on(table.project_id),
+    index("story_characters_status_idx").on(table.status),
+    check("story_characters_sort_check", sql`${table.sort_order} >= 0`),
+  ],
+);
+
+export const storyScenes = pgTable(
+  "story_scenes",
+  {
+    id: text("id").primaryKey(),
+    project_id: text("project_id")
+      .notNull()
+      .references(() => storyProjects.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    content: text("content"),
+    status: text("status").notNull().default("draft"),
+    sort_order: integer("sort_order").notNull().default(0),
+    word_count: integer("word_count").notNull().default(0),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("story_scenes_project_idx").on(table.project_id),
+    index("story_scenes_status_idx").on(table.status),
+    check(
+      "story_scenes_counts_check",
+      sql`${table.sort_order} >= 0 AND ${table.word_count} >= 0`,
+    ),
+  ],
+);
+
+export const storyWorkflowRuns = pgTable(
+  "story_workflow_runs",
+  {
+    id: text("id").primaryKey(),
+    workspace_id: text("workspace_id")
+      .notNull()
+      .references(() => storyWorkspaces.id, { onDelete: "restrict" }),
+    project_id: text("project_id").references(() => storyProjects.id, {
+      onDelete: "set null",
+    }),
+    created_by_user_id: text("created_by_user_id")
+      .notNull()
+      .references(() => platformUsers.id, { onDelete: "restrict" }),
+    workflow_code: text("workflow_code").notNull(),
+    workflow_version: text("workflow_version").notNull().default("1"),
+    status: text("status").notNull().default("queued"),
+    failed_step: text("failed_step"),
+    error_code: text("error_code"),
+    error_message: text("error_message"),
+    input: jsonb("input").$type<Record<string, unknown>>().default({}),
+    output: jsonb("output").$type<Record<string, unknown>>().default({}),
+    started_at: timestamp("started_at", { withTimezone: true, mode: "date" }),
+    completed_at: timestamp("completed_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("story_workflow_runs_workspace_idx").on(table.workspace_id),
+    index("story_workflow_runs_project_idx").on(table.project_id),
+    index("story_workflow_runs_status_idx").on(table.status),
+    index("story_workflow_runs_created_idx").on(table.created_at),
+  ],
+);
+
+export const systemSettings = pgTable(
+  "system_settings",
+  {
+    id: text("id").primaryKey(),
+    category: text("category").notNull(),
+    key: text("key").notNull(),
+    value: jsonb("value").$type<Record<string, unknown>>().notNull().default({}),
+    description: text("description"),
+    is_secret: boolean("is_secret").notNull().default(false),
+    status: text("status").notNull().default("active"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("system_settings_category_key_uidx").on(
+      table.category,
+      table.key,
+    ),
+    index("system_settings_status_idx").on(table.status),
   ],
 );
 
@@ -378,6 +512,18 @@ export const userModelPermissions = pgTable(
       table.platform_user_id,
       table.model_id,
     ),
+    check(
+      "user_model_permissions_rpm_check",
+      sql`${table.requests_per_minute} IS NULL OR ${table.requests_per_minute} > 0`,
+    ),
+    check(
+      "user_model_permissions_daily_tokens_check",
+      sql`${table.daily_token_limit} IS NULL OR ${table.daily_token_limit} >= 0`,
+    ),
+    check(
+      "user_model_permissions_monthly_tokens_check",
+      sql`${table.monthly_token_limit} IS NULL OR ${table.monthly_token_limit} >= 0`,
+    ),
   ],
 );
 
@@ -408,6 +554,9 @@ export const gatewayRequests = pgTable(
     status: text("status").notNull().default("received"),
     outcome: text("outcome").notNull().default("pending"),
     input_token_semantics: text("input_token_semantics").notNull(),
+    estimated_tokens: bigint("estimated_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
     input_tokens: bigint("input_tokens", { mode: "number" }).notNull().default(0),
     output_tokens: bigint("output_tokens", { mode: "number" })
       .notNull()
@@ -469,6 +618,10 @@ export const gatewayRequests = pgTable(
     ),
     index("gateway_requests_status_idx").on(table.status),
     index("gateway_requests_upstream_idx").on(table.upstream_request_id),
+    check(
+      "gateway_requests_estimated_tokens_check",
+      sql`${table.estimated_tokens} >= 0`,
+    ),
     check(
       "gateway_requests_input_tokens_check",
       sql`${table.input_tokens} >= 0`,

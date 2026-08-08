@@ -9,6 +9,7 @@ import { calculateCharge } from "./money";
 import type { PricingSnapshot, TokenUsage } from "./types";
 import { withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
+import { totalProcessedTokens } from "../gateway/usage";
 
 type AccountRow = {
   id: string;
@@ -22,9 +23,12 @@ type AccountRow = {
 type RequestRow = {
   id: string;
   platform_user_id: string;
+  model_id: string;
   status: string;
   outcome: string;
   reserved_microusd: string | number;
+  estimated_tokens: string | number;
+  created_at: Date;
   settled_at: Date | null;
   input_price_snapshot: string | number;
   output_price_snapshot: string | number;
@@ -171,47 +175,124 @@ async function insertLedgerEntry(
   return id;
 }
 
-export async function creditBillingAccount(input: {
+export type CreditBillingAccountInput = {
   platformUserId: string;
   amountMicrousd: number;
   idempotencyKey: string;
   description: string;
   actorType: "admin" | "system";
   actorId?: string;
-}) {
-  return await withPlatformTransaction(async (client) => {
-    const account = await lockAccount(client, input.platformUserId);
-    const duplicate = await existingLedgerEntry(client, input.idempotencyKey);
-    if (duplicate) {
-      return {
-        idempotent: true,
-        ledgerEntryId: duplicate.id,
-        account: accountSnapshot(account),
-      };
-    }
-    const transition = creditAccount(
-      accountSnapshot(account),
-      input.amountMicrousd,
-    );
-    await updateAccount(client, account.id, transition.after);
-    const ledgerEntryId = await insertLedgerEntry(client, {
-      accountId: account.id,
-      platformUserId: input.platformUserId,
-      entryType: "credit",
-      amountMicrousd: input.amountMicrousd,
-      before: transition.before,
-      after: transition.after,
-      idempotencyKey: input.idempotencyKey,
-      description: input.description,
-      actorType: input.actorType,
-      actorId: input.actorId,
-    });
+};
+
+export async function creditBillingAccountOnClient(
+  client: PoolClient,
+  input: CreditBillingAccountInput,
+) {
+  const account = await lockAccount(client, input.platformUserId);
+  const duplicate = await existingLedgerEntry(client, input.idempotencyKey);
+  if (duplicate) {
     return {
-      idempotent: false,
-      ledgerEntryId,
-      account: transition.after,
+      idempotent: true,
+      ledgerEntryId: duplicate.id,
+      account: accountSnapshot(account),
     };
+  }
+  const transition = creditAccount(
+    accountSnapshot(account),
+    input.amountMicrousd,
+  );
+  await updateAccount(client, account.id, transition.after);
+  const ledgerEntryId = await insertLedgerEntry(client, {
+    accountId: account.id,
+    platformUserId: input.platformUserId,
+    entryType: "credit",
+    amountMicrousd: input.amountMicrousd,
+    before: transition.before,
+    after: transition.after,
+    idempotencyKey: input.idempotencyKey,
+    description: input.description,
+    actorType: input.actorType,
+    actorId: input.actorId,
   });
+  return {
+    idempotent: false,
+    ledgerEntryId,
+    account: transition.after,
+  };
+}
+
+export async function creditBillingAccount(input: CreditBillingAccountInput) {
+  return await withPlatformTransaction(async (client) => {
+    return await creditBillingAccountOnClient(client, input);
+  });
+}
+
+export async function reserveGatewayRequestOnClient(
+  client: PoolClient,
+  input: {
+    platformUserId: string;
+    gatewayRequestId: string;
+    amountMicrousd: number;
+  },
+) {
+  const idempotencyKey = `${input.gatewayRequestId}:reserve`;
+  const requestResult = await client.query<{
+    platform_user_id: string;
+    status: string;
+    settled_at: Date | null;
+  }>(
+    `SELECT platform_user_id, status, settled_at
+     FROM gateway_requests
+     WHERE id = $1
+     FOR UPDATE`,
+    [input.gatewayRequestId],
+  );
+  const request = requestResult.rows[0];
+  if (!request) throw new Error("GATEWAY_REQUEST_NOT_FOUND");
+  if (request.platform_user_id !== input.platformUserId) {
+    throw new Error("GATEWAY_REQUEST_ACCOUNT_MISMATCH");
+  }
+  if (request.settled_at) {
+    throw new Error("GATEWAY_REQUEST_ALREADY_SETTLED");
+  }
+  const account = await lockAccount(client, input.platformUserId);
+  const duplicate = await existingLedgerEntry(client, idempotencyKey);
+  if (duplicate) {
+    return {
+      idempotent: true,
+      ledgerEntryId: duplicate.id,
+      account: accountSnapshot(account),
+    };
+  }
+  const transition = reserveAccount(
+    accountSnapshot(account),
+    input.amountMicrousd,
+  );
+  await updateAccount(client, account.id, transition.after);
+  const ledgerEntryId = await insertLedgerEntry(client, {
+    accountId: account.id,
+    platformUserId: input.platformUserId,
+    gatewayRequestId: input.gatewayRequestId,
+    entryType: "reserve",
+    amountMicrousd: input.amountMicrousd,
+    before: transition.before,
+    after: transition.after,
+    idempotencyKey,
+    description: "Gateway request pre-authorization",
+    actorType: "gateway",
+    actorId: input.gatewayRequestId,
+  });
+  await client.query(
+    `UPDATE gateway_requests
+     SET status = 'reserved', reserved_microusd = $2, started_at = NOW()
+     WHERE id = $1 AND platform_user_id = $3`,
+    [input.gatewayRequestId, input.amountMicrousd, input.platformUserId],
+  );
+  return {
+    idempotent: false,
+    ledgerEntryId,
+    account: transition.after,
+  };
 }
 
 export async function reserveGatewayRequest(input: {
@@ -219,65 +300,8 @@ export async function reserveGatewayRequest(input: {
   gatewayRequestId: string;
   amountMicrousd: number;
 }) {
-  const idempotencyKey = `${input.gatewayRequestId}:reserve`;
   return await withPlatformTransaction(async (client) => {
-    const requestResult = await client.query<{
-      platform_user_id: string;
-      status: string;
-      settled_at: Date | null;
-    }>(
-      `SELECT platform_user_id, status, settled_at
-       FROM gateway_requests
-       WHERE id = $1
-       FOR UPDATE`,
-      [input.gatewayRequestId],
-    );
-    const request = requestResult.rows[0];
-    if (!request) throw new Error("GATEWAY_REQUEST_NOT_FOUND");
-    if (request.platform_user_id !== input.platformUserId) {
-      throw new Error("GATEWAY_REQUEST_ACCOUNT_MISMATCH");
-    }
-    if (request.settled_at) {
-      throw new Error("GATEWAY_REQUEST_ALREADY_SETTLED");
-    }
-    const account = await lockAccount(client, input.platformUserId);
-    const duplicate = await existingLedgerEntry(client, idempotencyKey);
-    if (duplicate) {
-      return {
-        idempotent: true,
-        ledgerEntryId: duplicate.id,
-        account: accountSnapshot(account),
-      };
-    }
-    const transition = reserveAccount(
-      accountSnapshot(account),
-      input.amountMicrousd,
-    );
-    await updateAccount(client, account.id, transition.after);
-    const ledgerEntryId = await insertLedgerEntry(client, {
-      accountId: account.id,
-      platformUserId: input.platformUserId,
-      gatewayRequestId: input.gatewayRequestId,
-      entryType: "reserve",
-      amountMicrousd: input.amountMicrousd,
-      before: transition.before,
-      after: transition.after,
-      idempotencyKey,
-      description: "Gateway request pre-authorization",
-      actorType: "gateway",
-      actorId: input.gatewayRequestId,
-    });
-    await client.query(
-      `UPDATE gateway_requests
-       SET status = 'reserved', reserved_microusd = $2, started_at = NOW()
-       WHERE id = $1 AND platform_user_id = $3`,
-      [input.gatewayRequestId, input.amountMicrousd, input.platformUserId],
-    );
-    return {
-      idempotent: false,
-      ledgerEntryId,
-      account: transition.after,
-    };
+    return await reserveGatewayRequestOnClient(client, input);
   });
 }
 
@@ -304,7 +328,7 @@ function pricingFromRequest(row: RequestRow): PricingSnapshot {
   };
 }
 
-export async function settleGatewayRequest(input: {
+export type SettleGatewayRequestInput = {
   gatewayRequestId: string;
   usage: TokenUsage;
   outcome: "succeeded" | "failed" | "cancelled";
@@ -314,10 +338,18 @@ export async function settleGatewayRequest(input: {
   latencyMs?: number;
   firstTokenMs?: number;
   responseSummary?: Record<string, unknown>;
-}) {
-  return await withPlatformTransaction(async (client) => {
+  actorType?: "gateway" | "admin" | "system";
+  actorId?: string;
+  settlementDescription?: string;
+};
+
+export async function settleGatewayRequestOnClient(
+  client: PoolClient,
+  input: SettleGatewayRequestInput,
+) {
     const { rows } = await client.query<RequestRow>(
-      `SELECT id, platform_user_id, status, outcome, reserved_microusd,
+      `SELECT id, platform_user_id, model_id, status, outcome,
+              reserved_microusd, estimated_tokens, created_at,
               settled_at, input_price_snapshot, output_price_snapshot,
               cache_read_price_snapshot, cache_write_price_snapshot,
               markup_bps_snapshot, discount_bps_snapshot
@@ -343,6 +375,30 @@ export async function settleGatewayRequest(input: {
       reserved,
       charge.chargedMicrousd,
     );
+    const actualTokens = totalProcessedTokens(input.usage);
+    const estimatedTokens = safeDbNumber(
+      request.estimated_tokens,
+      "estimated_tokens",
+    );
+    const tokenDelta = actualTokens - estimatedTokens;
+
+    for (const windowType of ["day", "month"] as const) {
+      await client.query(
+        `UPDATE gateway_rate_limits
+         SET token_count = GREATEST(0, token_count + $5::bigint),
+             updated_at = NOW()
+         WHERE platform_user_id = $1 AND model_id = $2
+           AND window_type = $3
+           AND window_start = date_trunc($3, $4::timestamptz)`,
+        [
+          request.platform_user_id,
+          request.model_id,
+          windowType,
+          request.created_at,
+          tokenDelta,
+        ],
+      );
+    }
 
     if (transitions.capture) {
       await insertLedgerEntry(client, {
@@ -354,9 +410,10 @@ export async function settleGatewayRequest(input: {
         before: transitions.capture.before,
         after: transitions.capture.after,
         idempotencyKey: `${request.id}:capture`,
-        description: "Capture actual gateway usage",
-        actorType: "gateway",
-        actorId: request.id,
+        description:
+          input.settlementDescription ?? "Capture actual gateway usage",
+        actorType: input.actorType ?? "gateway",
+        actorId: input.actorId ?? request.id,
         metadata: { providerCostMicrousd: charge.providerCostMicrousd },
       });
     }
@@ -370,9 +427,11 @@ export async function settleGatewayRequest(input: {
         before: transitions.release.before,
         after: transitions.release.after,
         idempotencyKey: `${request.id}:release`,
-        description: "Release unused gateway pre-authorization",
-        actorType: "gateway",
-        actorId: request.id,
+        description:
+          input.settlementDescription ??
+          "Release unused gateway pre-authorization",
+        actorType: input.actorType ?? "gateway",
+        actorId: input.actorId ?? request.id,
       });
     }
 
@@ -424,5 +483,42 @@ export async function settleGatewayRequest(input: {
       account: transitions.final,
       overdraftMicrousd: transitions.overdraftMicrousd,
     };
+}
+
+export async function settleGatewayRequest(input: SettleGatewayRequestInput) {
+  return await withPlatformTransaction(async (client) => {
+    return await settleGatewayRequestOnClient(client, input);
+  });
+}
+
+export async function markGatewayRequestSettlementFailed(input: {
+  gatewayRequestId: string;
+  outcome: "failed" | "cancelled";
+  errorCode: string;
+  errorMessage: string;
+  httpStatus?: number;
+  latencyMs?: number;
+  firstTokenMs?: number;
+}) {
+  return await withPlatformTransaction(async (client) => {
+    const result = await client.query(
+      `UPDATE gateway_requests
+       SET status = 'settlement_failed', outcome = $2,
+           http_status = $3, error_code = $4, error_message = $5,
+           latency_ms = $6, first_token_ms = $7,
+           completed_at = COALESCE(completed_at, NOW())
+       WHERE id = $1 AND settled_at IS NULL
+         AND status IN ('reserved', 'streaming')`,
+      [
+        input.gatewayRequestId,
+        input.outcome,
+        input.httpStatus ?? null,
+        input.errorCode,
+        input.errorMessage.slice(0, 1_000),
+        input.latencyMs ?? null,
+        input.firstTokenMs ?? null,
+      ],
+    );
+    return { updated: result.rowCount === 1 };
   });
 }

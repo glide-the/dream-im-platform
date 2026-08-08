@@ -1,35 +1,28 @@
 ---
-description: "ai4sales-pwa-app 项目概览与核心原则"
+description: "ink-memory-admin 项目概览与核心原则"
 globs: ["**/*"]
 alwaysApply: true
 ---
 
-# ai4sales-pwa-app 项目概览
+# ink-memory-admin
 
-本仓库是一个 Next.js（App Router）PWA 应用：页面与 API 在同一仓库内组织。
+本仓库是 Next.js + Refine 的 Ink Memory 管理控制台，数据存储仅支持 PostgreSQL。
 
 ## 核心原则
 
-**API 只做接入与编排，通用能力沉淀在 `app/lib`，且 `app/lib` 功能基本不变。**
+- `/admin` 是唯一 UI，根路径跳转到 Admin。
+- `app/api/admin` 与 `app/v1` 只做接入编排，领域能力位于 `app/lib`。
+- 管理 API 服务端强制 Session、RBAC、Zod、事务和审计。
+- 禁止恢复 `app/(app)`、ai4sales PWA、SQLite 或本地数据库回退。
 
-## 项目结构概要
+## 结构
 
+```text
+app/(admin)/       Refine 页面
+app/components/admin
+app/api/admin      管理 API
+app/v1             Claude/OpenAI 网关
+app/lib            Admin/Gateway/Billing/DB 领域
+drizzle            PostgreSQL 迁移
+tests/e2e          Playwright
 ```
-app/
-├── (app)/        # 业务页面路由
-├── api/          # 后端接口（Route Handlers）
-├── components/   # 可复用 UI 组件
-├── hooks/        # 可复用 hooks
-└── lib/          # 通用能力与领域/基础设施
-drizzle/          # 数据库迁移
-tests/            # 测试文件
-```
-
-## 技术栈
-
-- Next.js (App Router)
-- TypeScript
-- Drizzle ORM
-- Zod (校验)
-- Vitest (单测)
-- Playwright (E2E)

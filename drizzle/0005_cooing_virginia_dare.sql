@@ -1,0 +1,5 @@
+ALTER TABLE "gateway_requests" ADD COLUMN "estimated_tokens" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "gateway_requests" ADD CONSTRAINT "gateway_requests_estimated_tokens_check" CHECK ("gateway_requests"."estimated_tokens" >= 0);--> statement-breakpoint
+ALTER TABLE "user_model_permissions" ADD CONSTRAINT "user_model_permissions_rpm_check" CHECK ("user_model_permissions"."requests_per_minute" IS NULL OR "user_model_permissions"."requests_per_minute" > 0);--> statement-breakpoint
+ALTER TABLE "user_model_permissions" ADD CONSTRAINT "user_model_permissions_daily_tokens_check" CHECK ("user_model_permissions"."daily_token_limit" IS NULL OR "user_model_permissions"."daily_token_limit" >= 0);--> statement-breakpoint
+ALTER TABLE "user_model_permissions" ADD CONSTRAINT "user_model_permissions_monthly_tokens_check" CHECK ("user_model_permissions"."monthly_token_limit" IS NULL OR "user_model_permissions"."monthly_token_limit" >= 0);

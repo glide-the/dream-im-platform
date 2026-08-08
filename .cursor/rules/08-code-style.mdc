@@ -15,8 +15,8 @@ globs: ["**/*.ts", "**/*.tsx"]
 
 | 类型 | 命名规范 | 示例 |
 |------|----------|------|
-| 组件 | `PascalCase.tsx` | `CustomerCard.tsx` |
-| Hooks | `useX.ts` | `useDebounce.ts` |
+| 组件 | `PascalCase.tsx` | `AdminResourceTable.tsx` |
+| Hooks | `useX.ts` | `useAdminFilters.ts` |
 | Utils | `camelCase.ts` | `formatDate.ts` |
 | Types | `types.ts` 或 `PascalCase.ts` | `types.ts` |
 | Schema | `*-schema.ts` | `chat-schema.ts` |
@@ -58,19 +58,19 @@ import type { Customer } from '@/app/lib/types'
 
 ```ts
 // ✅ 优先使用 zod 推导
-const customerSchema = z.object({
+const storySchema = z.object({
   id: z.string(),
   name: z.string(),
 })
-type Customer = z.infer<typeof customerSchema>
+type Story = z.infer<typeof storySchema>
 
 // ✅ 显式类型
-function getCustomer(id: string): Promise<Customer | null> {
+function getStory(id: string): Promise<Story | null> {
   // ...
 }
 
 // ❌ 避免
-function getCustomer(id: any): any {
+function getStory(id: any): any {
   // ...
 }
 ```

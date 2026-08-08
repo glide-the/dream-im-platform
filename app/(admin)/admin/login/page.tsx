@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AdminLoginForm from "./AdminLoginForm";
 
 export default function AdminLoginPage() {
   return (
@@ -19,8 +20,8 @@ export default function AdminLoginPage() {
             <br />再开放控制。
           </h1>
           <p className="mt-7 max-w-xl text-base leading-8 text-bg-surface/70">
-            管理后台不会创建临时账号或浏览器端管理员旁路。企业身份、稳定 subject 与 callback allowlist
-            配置完成后，登录动作才会启用。
+            管理员由一次性引导接口或拥有 access.write 的管理员创建。密码在服务端使用 scrypt
+            校验，权限和 Session 每次都由数据库核验。
           </p>
         </div>
         <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-bg-surface/45">
@@ -37,28 +38,19 @@ export default function AdminLoginPage() {
             <span className="font-mono text-xs uppercase tracking-[0.2em] text-text-secondary">/ OPS</span>
           </div>
 
-          <div className="mt-8 inline-flex items-center gap-2 rounded-full bg-accent-orange-light px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-accent-orange lg:mt-0">
-            <span className="h-2 w-2 rounded-full bg-accent-orange" aria-hidden="true" />
-            configuration required
+          <div className="mt-8 inline-flex items-center gap-2 rounded-full bg-success-light px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-success lg:mt-0">
+            <span className="h-2 w-2 rounded-full bg-success" aria-hidden="true" />
+            protected session
           </div>
-          <h2 className="mt-6 font-display text-3xl font-semibold text-text-primary">身份接入尚未配置</h2>
+          <h2 className="mt-6 font-display text-3xl font-semibold text-text-primary">登录运营控制台</h2>
           <p className="mt-4 text-sm leading-7 text-text-secondary">
-            当前没有可核实的生产 IdP、稳定 identity subject 或 callback allowlist。按照 fail-closed
-            策略，此页面不会接受账号密码。
+            管理身份、角色和权限均由服务端数据库核验。浏览器不会保存 Provider 密钥或管理 Session 明文。
           </p>
-
-          <button
-            type="button"
-            disabled
-            className="mt-8 flex min-h-12 w-full cursor-not-allowed items-center justify-center rounded-full bg-bg-secondary px-5 py-3 text-sm font-semibold text-text-tertiary"
-          >
-            使用企业身份继续
-          </button>
-          <p className="mt-3 text-center text-xs text-text-tertiary">等待部署责任人完成身份配置</p>
+          <AdminLoginForm />
 
           <div className="mt-8 border-t border-border pt-6">
-            <Link href="/admin" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent">
-              ← 返回兼容性控制台
+            <Link href="/" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent">
+              ← 返回应用首页
             </Link>
           </div>
         </div>

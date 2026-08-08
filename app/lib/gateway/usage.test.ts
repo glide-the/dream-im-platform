@@ -7,6 +7,7 @@ import {
   hasBillableTokens,
   parseAnthropicResponse,
   parseOpenAIChatResponse,
+  totalProcessedTokens,
 } from "./usage";
 
 describe("Anthropic usage", () => {
@@ -58,6 +59,32 @@ describe("Anthropic usage", () => {
       cacheReadTokens: 40,
       upstreamRequestId: "msg_stream",
     });
+  });
+});
+
+describe("totalProcessedTokens", () => {
+  it("adds Anthropic cache buckets because fresh input excludes them", () => {
+    expect(
+      totalProcessedTokens({
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadTokens: 30,
+        cacheWriteTokens: 10,
+        inputTokenSemantics: "fresh",
+      }),
+    ).toBe(160);
+  });
+
+  it("does not double count OpenAI cached input", () => {
+    expect(
+      totalProcessedTokens({
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadTokens: 30,
+        cacheWriteTokens: 0,
+        inputTokenSemantics: "total_including_cache",
+      }),
+    ).toBe(120);
   });
 });
 

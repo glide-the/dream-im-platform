@@ -3,11 +3,32 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const lockedResources = ["客户", "待办", "运行设置", "审计日志"];
+const resources = [
+  { label: "总览", href: "/admin", permission: "dashboard.read" },
+  { label: "剧本数据", href: "/admin/story", permission: "story.read" },
+  { label: "平台用户", href: "/admin/users", permission: "users.read" },
+  { label: "模型中心", href: "/admin/models", permission: "models.read" },
+  { label: "Token 计费", href: "/admin/billing", permission: "billing.read" },
+  { label: "代理网关", href: "/admin/gateway", permission: "gateway.read" },
+  { label: "权限管理", href: "/admin/access", permission: "access.read" },
+  { label: "系统设置", href: "/admin/system", permission: "system.read" },
+  { label: "审计日志", href: "/admin/audit", permission: "audit.read" },
+] as const;
 
-export default function AdminNavigation() {
+export default function AdminNavigation({
+  identity,
+}: {
+  identity: { name: string; roles: string[]; permissions: string[] };
+}) {
   const pathname = usePathname();
-  const overviewActive = pathname === "/admin";
+  const visibleResources = resources.filter((resource) =>
+    identity.permissions.includes(resource.permission),
+  );
+
+  async function logout() {
+    await fetch("/api/admin/auth/logout", { method: "POST" });
+    window.location.assign("/admin/login");
+  }
 
   return (
     <>
@@ -32,48 +53,52 @@ export default function AdminNavigation() {
 
         <nav className="mt-10" aria-label="管理后台主导航">
           <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-tertiary">
-            Available now
-          </p>
-          <Link
-            href="/admin"
-            aria-current={overviewActive ? "page" : undefined}
-            className={`mt-3 flex min-h-11 items-center justify-between rounded-xl px-3 text-sm font-medium transition-colors ${
-              overviewActive
-                ? "bg-accent-light text-accent"
-                : "text-text-secondary hover:bg-bg-secondary hover:text-text-primary"
-            }`}
-          >
-            <span>控制台概览</span>
-            <span className="h-2 w-2 rounded-full bg-success" aria-hidden="true" />
-          </Link>
-
-          <p className="mt-8 font-mono text-[10px] uppercase tracking-[0.22em] text-text-tertiary">
-            Awaiting gates
+            Control plane
           </p>
           <div className="mt-3 space-y-1">
-            {lockedResources.map((resource) => (
-              <div
-                key={resource}
-                className="flex min-h-11 items-center justify-between rounded-xl px-3 text-sm text-text-tertiary"
-                aria-disabled="true"
-              >
-                <span>{resource}</span>
-                <span className="font-mono text-[9px] uppercase tracking-wider">
-                  locked
-                </span>
-              </div>
-            ))}
+            {visibleResources.map((resource) => {
+              const active =
+                resource.href === "/admin"
+                  ? pathname === resource.href
+                  : pathname.startsWith(resource.href);
+              return (
+                <Link
+                  key={resource.href}
+                  href={resource.href}
+                  aria-current={active ? "page" : undefined}
+                  className={`flex min-h-11 items-center justify-between rounded-xl px-3 text-sm font-medium transition-colors ${
+                    active
+                      ? "bg-accent-light text-accent"
+                      : "text-text-secondary hover:bg-bg-secondary hover:text-text-primary"
+                  }`}
+                >
+                  <span>{resource.label}</span>
+                  {active ? (
+                    <span
+                      className="h-2 w-2 rounded-full bg-success"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </Link>
+              );
+            })}
           </div>
         </nav>
 
         <div className="mt-auto border-t border-border pt-5">
-          <div className="flex items-center gap-2 text-xs text-text-secondary">
-            <span className="h-2 w-2 rounded-full bg-accent-orange" aria-hidden="true" />
-            <span className="font-mono uppercase tracking-[0.12em]">internal-only</span>
-          </div>
-          <p className="mt-2 text-xs leading-5 text-text-tertiary">
-            身份、权限与资源 API 尚未开放。
+          <p className="truncate text-xs font-semibold text-text-primary">
+            {identity.name}
           </p>
+          <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-wider text-text-tertiary">
+            {identity.roles.join(" · ")}
+          </p>
+          <button
+            type="button"
+            onClick={logout}
+            className="mt-4 min-h-10 text-xs font-semibold text-accent"
+          >
+            退出管理后台
+          </button>
         </div>
       </aside>
 
@@ -87,24 +112,24 @@ export default function AdminNavigation() {
               / OPS
             </span>
           </Link>
-          <span className="rounded-full bg-accent-orange-light px-3 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-accent-orange">
-            internal · S0
-          </span>
+          <button
+            type="button"
+            onClick={logout}
+            className="rounded-full border border-border px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-text-secondary"
+          >
+            退出
+          </button>
         </div>
         <nav className="mt-3 flex gap-2 overflow-x-auto" aria-label="移动端管理后台导航">
-          <Link
-            href="/admin"
-            aria-current={overviewActive ? "page" : undefined}
-            className="min-h-11 shrink-0 rounded-full bg-accent-light px-4 py-3 text-xs font-semibold text-accent"
-          >
-            概览
-          </Link>
-          <Link
-            href="/admin/login"
-            className="min-h-11 shrink-0 rounded-full border border-border px-4 py-3 text-xs font-semibold text-text-secondary"
-          >
-            身份状态
-          </Link>
+          {visibleResources.map((resource) => (
+            <Link
+              key={resource.href}
+              href={resource.href}
+              className="min-h-11 shrink-0 rounded-full border border-border px-4 py-3 text-xs font-semibold text-text-secondary"
+            >
+              {resource.label}
+            </Link>
+          ))}
         </nav>
       </header>
     </>
