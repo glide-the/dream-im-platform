@@ -13,6 +13,38 @@
 - 财务、Provider、平台用户和管理员不允许硬删除，改用停用/撤销/冲正。
 - 成功后刷新对应 Refine list/detail cache；失败展示服务端安全错误文案。
 
+## 首次启动交互
+
+### 触发规则
+
+`/admin/login` 加载后请求 `GET /api/admin/auth/bootstrap`。接口仅返回 `required: boolean`：
+
+- `true`：PostgreSQL 的 `admin_users` 为空，显示首次设置卡片；
+- `false`：已经存在管理员，只显示正常登录；
+- 数据库或 schema 不可用：显示启动检查失败、迁移命令和“重新检查”，不降级为不安全的登录或免认证模式。
+
+### 页面流程
+
+```text
+检查 PostgreSQL
+      │
+      ├─ 无管理员 → 设置首位管理员 → 校验启动密钥 → 创建账号/角色/权限/审计 → 建立 Session → /admin
+      │
+      ├─ 有管理员 → 标准登录 → /admin
+      │
+      └─ 不可用   → 明确错误 + 迁移提示 + 重试
+```
+
+首次设置以覆盖式对话卡片呈现，默认填写 `dmeck@suoxya.com` / `test123456`，并明确标记默认密码仅适合开发环境。真实的 `ADMIN_BOOTSTRAP_TOKEN` 不进入 HTML、不写入客户端配置，必须由操作者从 ignored 环境文件手工粘贴。
+
+提交仍走 `POST /api/admin/auth/bootstrap`，保留 Origin 校验、32-byte 一次性 Token、数据库排他锁和 409 竞态处理。成功响应设置 HttpOnly Session Cookie 并直接进入控制台；竞态中若其他操作者先完成初始化，则当前页面切换到标准登录。
+
+### 可访问性与响应式
+
+- 首次设置与登录共享一个有名称的 `dialog` 容器；所有输入都有可见 label，错误通过 `role="alert"` 宣告。
+- 390px 宽度下表单切换为单列，状态步骤不造成页面级横向滚动。
+- 检查、提交和重试均有明确动词与忙碌状态；焦点样式、密码显隐和错误恢复支持键盘操作。
+
 ## Story 数据运营
 
 页面按依赖顺序组织：工作区 → 项目 → 角色 → 场景 → 工作流。

@@ -23,6 +23,22 @@ const ROOT_KEYS = new Set([
   "AI_PROVIDER_ALLOW_INSECURE_LOCALHOST",
   "GATEWAY_MIN_RESERVE_MICROUSD",
   "GATEWAY_MAX_BODY_BYTES",
+  "FILE_STORAGE_TYPE",
+  "FILE_STORAGE_PREFIX",
+  "BLOB_READ_WRITE_TOKEN",
+  "FILE_STORAGE_S3_BUCKET",
+  "FILE_STORAGE_S3_REGION",
+  "FILE_STORAGE_S3_ENDPOINT",
+  "FILE_STORAGE_S3_FORCE_PATH_STYLE",
+  "FILE_STORAGE_S3_PUBLIC_BASE_URL",
+  "AWS_REGION",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "MINIO_USER",
+  "MINIO_PASSWORD",
+  "MINIO_API_PORT",
+  "MINIO_CONSOLE_PORT",
 ]);
 
 const DOCKER_KEYS = new Set([
@@ -42,6 +58,22 @@ const DOCKER_KEYS = new Set([
   "GATEWAY_MIN_RESERVE_MICROUSD",
   "GATEWAY_MAX_BODY_BYTES",
   "RUN_DB_MIGRATIONS",
+  "FILE_STORAGE_TYPE",
+  "FILE_STORAGE_PREFIX",
+  "BLOB_READ_WRITE_TOKEN",
+  "FILE_STORAGE_S3_BUCKET",
+  "FILE_STORAGE_S3_REGION",
+  "FILE_STORAGE_S3_ENDPOINT",
+  "FILE_STORAGE_S3_FORCE_PATH_STYLE",
+  "FILE_STORAGE_S3_PUBLIC_BASE_URL",
+  "AWS_REGION",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "MINIO_USER",
+  "MINIO_PASSWORD",
+  "MINIO_API_PORT",
+  "MINIO_CONSOLE_PORT",
 ]);
 
 function parseArguments(argv) {
@@ -153,6 +185,10 @@ function isBoolean(value) {
   return value === "true" || value === "false";
 }
 
+function isBooleanFlag(value) {
+  return isBoolean(value) || value === "1" || value === "0";
+}
+
 function isInteger(value, minimum, maximum = Number.MAX_SAFE_INTEGER) {
   if (!/^\d+$/.test(value)) return false;
   const parsed = Number(value);
@@ -177,6 +213,118 @@ function isDockerPostgresPassword(value) {
 
 function randomSecret(prefix = "") {
   return `${prefix}${randomBytes(32).toString("base64url")}`;
+}
+
+function storageConfiguration(existing, defaults) {
+  const optionalValue = (key, fallback = "") =>
+    configuredValue(
+      existing,
+      key,
+      (value) =>
+        !/[\r\n]/.test(value) &&
+        (fallback === "" || value.trim().length > 0),
+      fallback,
+    );
+  const hasOperatorConfiguration = [
+    "BLOB_READ_WRITE_TOKEN",
+    "FILE_STORAGE_S3_BUCKET",
+    "FILE_STORAGE_S3_REGION",
+    "FILE_STORAGE_S3_ENDPOINT",
+    "FILE_STORAGE_S3_PUBLIC_BASE_URL",
+    "AWS_REGION",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+  ].some((key) => (existing.get(key) ?? "").trim().length > 0);
+  const useLocalMinio = !hasOperatorConfiguration;
+  const minioUser = configuredValue(
+    existing,
+    "MINIO_USER",
+    (value) => /^[A-Za-z0-9_-]{3,}$/.test(value),
+    "ink_memory",
+  );
+
+  return [
+    [
+      "FILE_STORAGE_TYPE",
+      useLocalMinio
+        ? "s3"
+        : configuredValue(
+            existing,
+            "FILE_STORAGE_TYPE",
+            (value) => value === "vercel-blob" || value === "s3",
+            "vercel-blob",
+          ),
+    ],
+    ["FILE_STORAGE_PREFIX", optionalValue("FILE_STORAGE_PREFIX", "uploads")],
+    ["BLOB_READ_WRITE_TOKEN", optionalValue("BLOB_READ_WRITE_TOKEN")],
+    [
+      "FILE_STORAGE_S3_BUCKET",
+      optionalValue("FILE_STORAGE_S3_BUCKET", useLocalMinio ? "ink-memory" : ""),
+    ],
+    [
+      "FILE_STORAGE_S3_REGION",
+      optionalValue("FILE_STORAGE_S3_REGION", useLocalMinio ? "us-east-1" : ""),
+    ],
+    [
+      "FILE_STORAGE_S3_ENDPOINT",
+      optionalValue(
+        "FILE_STORAGE_S3_ENDPOINT",
+        useLocalMinio ? defaults.endpoint : "",
+      ),
+    ],
+    [
+      "FILE_STORAGE_S3_FORCE_PATH_STYLE",
+      useLocalMinio
+        ? "true"
+        : configuredValue(
+            existing,
+            "FILE_STORAGE_S3_FORCE_PATH_STYLE",
+            isBooleanFlag,
+            "false",
+          ),
+    ],
+    [
+      "FILE_STORAGE_S3_PUBLIC_BASE_URL",
+      optionalValue("FILE_STORAGE_S3_PUBLIC_BASE_URL"),
+    ],
+    [
+      "AWS_REGION",
+      optionalValue("AWS_REGION", useLocalMinio ? "us-east-1" : ""),
+    ],
+    [
+      "AWS_ACCESS_KEY_ID",
+      optionalValue("AWS_ACCESS_KEY_ID", useLocalMinio ? minioUser : ""),
+    ],
+    [
+      "AWS_SECRET_ACCESS_KEY",
+      optionalValue(
+        "AWS_SECRET_ACCESS_KEY",
+        useLocalMinio ? defaults.minioPassword : "",
+      ),
+    ],
+    ["AWS_SESSION_TOKEN", optionalValue("AWS_SESSION_TOKEN")],
+    ["MINIO_USER", minioUser],
+    ["MINIO_PASSWORD", defaults.minioPassword],
+    [
+      "MINIO_API_PORT",
+      configuredValue(
+        existing,
+        "MINIO_API_PORT",
+        (value) => isInteger(value, 1, 65_535),
+        "9000",
+      ),
+    ],
+    [
+      "MINIO_CONSOLE_PORT",
+      configuredValue(
+        existing,
+        "MINIO_CONSOLE_PORT",
+        (value) => isInteger(value, 1, 65_535),
+        "9001",
+      ),
+    ],
+  ];
 }
 
 function buildConfiguration(rootExisting, dockerExisting) {
@@ -204,9 +352,16 @@ function buildConfiguration(rootExisting, dockerExisting) {
   const encryptionKey = pairedSecret(
     rootExisting,
     dockerExisting,
-      "AI_CREDENTIAL_ENCRYPTION_KEY",
-      isEncryptionKey,
+    "AI_CREDENTIAL_ENCRYPTION_KEY",
+    isEncryptionKey,
     () => randomBytes(32).toString("base64"),
+  );
+  const minioPassword = pairedSecret(
+    rootExisting,
+    dockerExisting,
+    "MINIO_PASSWORD",
+    isDockerPostgresPassword,
+    () => randomSecret("minio_"),
   );
   const rootOriginAllowlist = configuredValue(
     rootExisting,
@@ -297,6 +452,10 @@ function buildConfiguration(rootExisting, dockerExisting) {
         "20971520",
       ),
     ],
+    ...storageConfiguration(rootExisting, {
+      endpoint: "http://localhost:9000",
+      minioPassword: minioPassword.root,
+    }),
   ]);
 
   const docker = new Map([
@@ -368,6 +527,10 @@ function buildConfiguration(rootExisting, dockerExisting) {
       "RUN_DB_MIGRATIONS",
       firstValid([dockerExisting], "RUN_DB_MIGRATIONS", isBoolean) ?? "true",
     ],
+    ...storageConfiguration(dockerExisting, {
+      endpoint: "http://minio:9000",
+      minioPassword: minioPassword.docker,
+    }),
   ]);
 
   return { root, docker };
@@ -402,6 +565,24 @@ AI_PROVIDER_HOST_ALLOWLIST=${encodeValue(values.get("AI_PROVIDER_HOST_ALLOWLIST"
 AI_PROVIDER_ALLOW_INSECURE_LOCALHOST=${values.get("AI_PROVIDER_ALLOW_INSECURE_LOCALHOST")}
 GATEWAY_MIN_RESERVE_MICROUSD=${values.get("GATEWAY_MIN_RESERVE_MICROUSD")}
 GATEWAY_MAX_BODY_BYTES=${values.get("GATEWAY_MAX_BODY_BYTES")}
+
+# File storage. External credentials are never generated automatically.
+FILE_STORAGE_TYPE=${values.get("FILE_STORAGE_TYPE")}
+FILE_STORAGE_PREFIX=${encodeValue(values.get("FILE_STORAGE_PREFIX"))}
+BLOB_READ_WRITE_TOKEN=${encodeValue(values.get("BLOB_READ_WRITE_TOKEN"))}
+FILE_STORAGE_S3_BUCKET=${encodeValue(values.get("FILE_STORAGE_S3_BUCKET"))}
+FILE_STORAGE_S3_REGION=${encodeValue(values.get("FILE_STORAGE_S3_REGION"))}
+FILE_STORAGE_S3_ENDPOINT=${encodeValue(values.get("FILE_STORAGE_S3_ENDPOINT"))}
+FILE_STORAGE_S3_FORCE_PATH_STYLE=${values.get("FILE_STORAGE_S3_FORCE_PATH_STYLE")}
+FILE_STORAGE_S3_PUBLIC_BASE_URL=${encodeValue(values.get("FILE_STORAGE_S3_PUBLIC_BASE_URL"))}
+AWS_REGION=${encodeValue(values.get("AWS_REGION"))}
+AWS_ACCESS_KEY_ID=${encodeValue(values.get("AWS_ACCESS_KEY_ID"))}
+AWS_SECRET_ACCESS_KEY=${encodeValue(values.get("AWS_SECRET_ACCESS_KEY"))}
+AWS_SESSION_TOKEN=${encodeValue(values.get("AWS_SESSION_TOKEN"))}
+MINIO_USER=${encodeValue(values.get("MINIO_USER"))}
+MINIO_PASSWORD=${encodeValue(values.get("MINIO_PASSWORD"))}
+MINIO_API_PORT=${values.get("MINIO_API_PORT")}
+MINIO_CONSOLE_PORT=${values.get("MINIO_CONSOLE_PORT")}
 `;
 }
 
@@ -425,6 +606,23 @@ AI_PROVIDER_ALLOW_INSECURE_LOCALHOST=${values.get("AI_PROVIDER_ALLOW_INSECURE_LO
 GATEWAY_MIN_RESERVE_MICROUSD=${values.get("GATEWAY_MIN_RESERVE_MICROUSD")}
 GATEWAY_MAX_BODY_BYTES=${values.get("GATEWAY_MAX_BODY_BYTES")}
 RUN_DB_MIGRATIONS=${values.get("RUN_DB_MIGRATIONS")}
+
+FILE_STORAGE_TYPE=${values.get("FILE_STORAGE_TYPE")}
+FILE_STORAGE_PREFIX=${encodeValue(values.get("FILE_STORAGE_PREFIX"))}
+BLOB_READ_WRITE_TOKEN=${encodeValue(values.get("BLOB_READ_WRITE_TOKEN"))}
+FILE_STORAGE_S3_BUCKET=${encodeValue(values.get("FILE_STORAGE_S3_BUCKET"))}
+FILE_STORAGE_S3_REGION=${encodeValue(values.get("FILE_STORAGE_S3_REGION"))}
+FILE_STORAGE_S3_ENDPOINT=${encodeValue(values.get("FILE_STORAGE_S3_ENDPOINT"))}
+FILE_STORAGE_S3_FORCE_PATH_STYLE=${values.get("FILE_STORAGE_S3_FORCE_PATH_STYLE")}
+FILE_STORAGE_S3_PUBLIC_BASE_URL=${encodeValue(values.get("FILE_STORAGE_S3_PUBLIC_BASE_URL"))}
+AWS_REGION=${encodeValue(values.get("AWS_REGION"))}
+AWS_ACCESS_KEY_ID=${encodeValue(values.get("AWS_ACCESS_KEY_ID"))}
+AWS_SECRET_ACCESS_KEY=${encodeValue(values.get("AWS_SECRET_ACCESS_KEY"))}
+AWS_SESSION_TOKEN=${encodeValue(values.get("AWS_SESSION_TOKEN"))}
+MINIO_USER=${encodeValue(values.get("MINIO_USER"))}
+MINIO_PASSWORD=${encodeValue(values.get("MINIO_PASSWORD"))}
+MINIO_API_PORT=${values.get("MINIO_API_PORT")}
+MINIO_CONSOLE_PORT=${values.get("MINIO_CONSOLE_PORT")}
 `;
 }
 
@@ -517,6 +715,25 @@ function validateConfiguration(root, docker, rootParsed, dockerParsed) {
     if (!(values.get("ADMIN_ORIGIN_ALLOWLIST") ?? "").trim()) {
       errors.push(`${file}: ADMIN_ORIGIN_ALLOWLIST must not be empty`);
     }
+    if (!['vercel-blob', 's3'].includes(values.get("FILE_STORAGE_TYPE") ?? "")) {
+      errors.push(`${file}: FILE_STORAGE_TYPE must be vercel-blob or s3`);
+    }
+    if (!isBooleanFlag(values.get("FILE_STORAGE_S3_FORCE_PATH_STYLE") ?? "")) {
+      errors.push(
+        `${file}: FILE_STORAGE_S3_FORCE_PATH_STYLE must be true, false, 1, or 0`,
+      );
+    }
+    if (!/^[A-Za-z0-9_-]{3,}$/.test(values.get("MINIO_USER") ?? "")) {
+      errors.push(`${file}: MINIO_USER must contain at least 3 URL-safe characters`);
+    }
+    if (!isDockerPostgresPassword(values.get("MINIO_PASSWORD") ?? "")) {
+      errors.push(`${file}: MINIO_PASSWORD must contain at least 16 URL-safe characters`);
+    }
+    for (const key of ["MINIO_API_PORT", "MINIO_CONSOLE_PORT"]) {
+      if (!isInteger(values.get(key) ?? "", 1, 65_535)) {
+        errors.push(`${file}: ${key} must be a valid TCP port`);
+      }
+    }
   }
   if (!isInteger(root.get("PGPOOL_MAX") ?? "", 1, 100)) {
     errors.push(".env.local: PGPOOL_MAX must be between 1 and 100");
@@ -564,7 +781,9 @@ async function run() {
     if (errors.length > 0) {
       throw new Error(`Environment validation failed:\n- ${errors.join("\n- ")}`);
     }
-    console.log("Environment configuration is valid for ink-memory-admin.");
+    console.log(
+      "Environment structure is valid for ink-memory-admin; local MinIO credentials are managed automatically and external cloud credentials remain operator-managed.",
+    );
     return;
   }
 
@@ -587,7 +806,7 @@ async function run() {
     console.log(`Removed unsupported docker/.env keys: ${dockerRemoved.join(", ")}`);
   }
   console.log(
-    "Existing valid control-plane secrets were preserved; missing secrets were generated.",
+    "Existing control-plane secrets and storage settings were preserved; missing control-plane secrets were generated.",
   );
 }
 

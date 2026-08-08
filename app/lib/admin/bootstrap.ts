@@ -1,4 +1,4 @@
-import { withPlatformTransaction } from "../platform-db";
+import { withPlatformClient, withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
 import { recordAdminAuditOnClient } from "./audit";
 import { AdminError } from "./errors";
@@ -37,6 +37,17 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     (permission) => permission.endsWith(".read"),
   ),
 };
+
+export async function isAdminBootstrapRequired() {
+  return await withPlatformClient(async (client) => {
+    const result = await client.query<{ required: boolean }>(
+      `SELECT NOT EXISTS (
+         SELECT 1 FROM admin_users LIMIT 1
+       ) AS required`,
+    );
+    return result.rows[0]?.required ?? true;
+  });
+}
 
 export async function bootstrapFirstAdmin(input: {
   email: string;

@@ -16,5 +16,42 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: minio/minio:latest
+    container_name: ink-memory-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-ink_memory}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:?Run pnpm env:setup first}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - ink_memory_storage_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: ink-memory-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set ink-memory http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+      mc mb ink-memory/$$MINIO_BUCKET --ignore-existing;
+      exit 0;
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-ink_memory}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:?Run pnpm env:setup first}
+      MINIO_BUCKET: ${FILE_STORAGE_S3_BUCKET:-ink-memory}
+
 volumes:
   ink_memory_postgres_data:
+  ink_memory_storage_data:

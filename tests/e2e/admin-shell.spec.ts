@@ -1,6 +1,20 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("Refine admin authentication boundary", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route("**/api/admin/auth/bootstrap", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: { required: false } }),
+      });
+    });
+  });
+
   test("redirects the protected workspace to the login page", async ({ page }) => {
     await page.goto("/admin");
 

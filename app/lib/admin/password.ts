@@ -8,6 +8,7 @@ const N = 16_384;
 const R = 8;
 const P = 1;
 const MAX_MEMORY = 64 * 1024 * 1024;
+export const ADMIN_PASSWORD_MIN_LENGTH = 10;
 
 function derive(password: string, salt: Buffer) {
   return new Promise<Buffer>((resolve, reject) => {
@@ -25,8 +26,10 @@ function derive(password: string, salt: Buffer) {
 }
 
 export function validateAdminPassword(password: string) {
-  if (password.length < 14 || password.length > 256) {
-    throw new RangeError("Admin passwords must contain 14-256 characters");
+  if (password.length < ADMIN_PASSWORD_MIN_LENGTH || password.length > 256) {
+    throw new RangeError(
+      `Admin passwords must contain ${ADMIN_PASSWORD_MIN_LENGTH}-256 characters`,
+    );
   }
 }
 

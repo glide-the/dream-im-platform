@@ -21,4 +21,8 @@ describe("admin password hashing", () => {
     expect(() => validateAdminPassword("too-short")).toThrow(RangeError);
     await expect(verifyAdminPassword("anything", "broken")).resolves.toBe(false);
   });
+
+  it("accepts the ten-character first-run default", () => {
+    expect(() => validateAdminPassword("test123456")).not.toThrow();
+  });
 });

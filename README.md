@@ -1,6 +1,6 @@
 # Ink Memory Admin
 
-基于 Next.js 与 Refine 的 Ink Memory 运营控制台。一个项目内提供剧本数据运营、平台用户管理、AI Provider 与模型配置、Token 计费、Claude/OpenAI 兼容网关、RBAC、系统设置和审计能力，所有持久化数据统一存储在 PostgreSQL `ink-memory`。
+基于 Next.js 与 Refine 的 Ink Memory 运营控制台。一个项目内提供剧本数据运营、平台用户管理、AI Provider 与模型配置、Token 计费、Claude/OpenAI 兼容网关、文件存储、RBAC、系统设置和审计能力，结构化数据统一存储在 PostgreSQL `ink-memory`。
 
 ## 核心能力
 
@@ -14,6 +14,7 @@
 | 代理网关 | 请求日志、错误、限流窗口、失败结算核对 | `/admin/gateway` |
 | 权限管理 | 管理员、角色、权限与角色授权 | `/admin/access` |
 | 系统治理 | 系统设置与管理操作审计 | `/admin/system`、`/admin/audit` |
+| 文件存储 | 服务端上传、直传 URL、文件代理预览与下载 | `/api/storage/*` |
 
 模型网关提供 Anthropic `POST /v1/messages`、`POST /v1/messages/count_tokens`，以及 OpenAI `POST /v1/chat/completions`、`GET /v1/models` 兼容接口。
 
@@ -23,6 +24,7 @@
 - Refine Core 5、Next.js Router、TanStack Query
 - PostgreSQL 16、Drizzle ORM 与版本化 SQL migrations
 - Anthropic SDK、OpenAI SDK
+- AWS S3 SDK、Vercel Blob
 - Vitest、Playwright、ESLint
 
 ## 本地开发
@@ -32,7 +34,7 @@
 ```bash
 pnpm install
 pnpm env:setup
-docker compose up -d postgres
+docker compose --env-file .env.local up -d postgres minio minio-init
 pnpm db:migrate
 pnpm dev
 ```
@@ -45,6 +47,7 @@ pnpm dev
 - 将本地数据库统一配置为 PostgreSQL `ink-memory`；
 - 自动生成 Session、首次管理员、Gateway pepper、Provider 凭据加密所需的随机密钥；
 - 保留已有且格式有效的控制面密钥，清除当前项目不使用的旧环境变量；
+- 保留 Storage/S3/Vercel Blob 配置，并为本地 MinIO 自动生成独立凭据；
 - 不生成或写入 Anthropic、OpenAI 等上游 Provider API Key。
 
 可重复执行初始化；使用下面的命令检查两套环境文件是否完整有效：
@@ -55,23 +58,18 @@ pnpm env:check
 
 如果生产数据库已经保存 Provider 凭据或 Gateway Key，不要删除环境文件后重新生成 `AI_CREDENTIAL_ENCRYPTION_KEY` 或 `GATEWAY_API_KEY_PEPPER`。生产环境应把这些值持久化到 Secret Manager，并在部署前设置正确的 `ADMIN_ORIGIN_ALLOWLIST`。
 
-## 创建首个管理员
+## 首次启动设置
 
-先启动应用，再从自动生成的 `.env.local` 加载 Bootstrap Token：
+第一次打开 `/admin` 时，系统先检查 PostgreSQL 中是否存在管理员。若数据库为空，登录入口会自动弹出“设置首位管理员”页面，不再要求手工调用 Bootstrap API。
 
-```bash
-set -a
-source .env.local
-set +a
+页面默认填写：
 
-curl -X POST http://localhost:3000/api/admin/auth/bootstrap \
-  -H "Origin: http://localhost:3000" \
-  -H "X-Admin-Bootstrap-Token: $ADMIN_BOOTSTRAP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","displayName":"Super Admin","password":"replace-with-at-least-14-characters"}'
-```
+- 管理员邮箱：`dmeck@suoxya.com`
+- 初始密码：`test123456`
 
-Bootstrap 只允许成功一次。之后通过 `/admin/login` 登录并在权限管理中维护其他管理员。
+将 `.env.local` 中由 `pnpm env:setup` 自动生成的 `ADMIN_BOOTSTRAP_TOKEN` 粘贴到“首次启动密钥”，然后点击“创建管理员并进入控制台”。初始化会在同一事务中创建超级管理员、内置角色、权限和审计记录，并立即建立管理 Session。
+
+Bootstrap 只允许成功一次；已有管理员时 `/admin/login` 只显示正常登录。默认密码仅用于本地首次设置，生产环境应在提交前改成独立强密码。
 
 ## Docker 部署
 
@@ -89,7 +87,7 @@ pnpm docker:logs
 pnpm docker:down
 ```
 
-生产部署前至少修改 `docker/.env` 中的公开端口、数据库密码、管理后台 Origin，并将敏感值交由部署平台的 Secret Manager 注入。数据库密码需使用至少 16 位的 URL-safe 字符。Compose 会拒绝在必需密钥为空时启动。
+生产部署前至少修改 `docker/.env` 中的公开端口、数据库密码、MinIO 密码、管理后台 Origin，并将敏感值交由部署平台的 Secret Manager 注入。数据库与 MinIO 密码需使用至少 16 位的 URL-safe 字符。Compose 会拒绝在必需密钥为空时启动。
 
 ## 环境变量
 
@@ -97,7 +95,7 @@ pnpm docker:down
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL 连接；本地默认连接 `localhost:5433/ink-memory` | 自动配置 |
 | `ADMIN_SESSION_SECRET` | 管理员 Session HMAC | 自动生成，至少 32 bytes |
-| `ADMIN_BOOTSTRAP_TOKEN` | 首个管理员一次性初始化授权 | 自动生成，至少 32 bytes |
+| `ADMIN_BOOTSTRAP_TOKEN` | 首次设置页面的一次性初始化授权 | 自动生成，至少 32 bytes；不发送给页面，需手工粘贴 |
 | `ADMIN_ORIGIN_ALLOWLIST` | 管理写操作允许的 Origin，逗号分隔 | 本地默认 `http://localhost:3000` |
 | `GATEWAY_API_KEY_PEPPER` | Gateway Key HMAC | 自动生成，至少 32 bytes |
 | `AI_CREDENTIAL_ENCRYPTION_KEY` | Provider 凭据 AES-256-GCM 密钥 | 自动生成 32-byte Base64 |
@@ -105,8 +103,28 @@ pnpm docker:down
 | `AI_PROVIDER_ALLOW_INSECURE_LOCALHOST` | 开发环境允许本地 HTTP Provider | 默认 `false` |
 | `GATEWAY_MIN_RESERVE_MICROUSD` | 单次请求最低预授权金额 | 默认 `0` |
 | `GATEWAY_MAX_BODY_BYTES` | 网关请求体上限 | 默认 `20971520` |
+| `FILE_STORAGE_TYPE` | 文件存储驱动：`vercel-blob` 或 `s3` | 默认 `vercel-blob` |
+| `FILE_STORAGE_PREFIX` | 对象 Key 前缀 | 默认 `uploads` |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob 凭据 | 使用 Vercel Blob 时配置 |
+| `FILE_STORAGE_S3_*` | Bucket、Region、Endpoint、公开 URL 与 Path Style | 使用 S3 时配置 |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | S3 访问凭据 | 使用需要静态凭据的 S3 时配置 |
+| `MINIO_USER` / `MINIO_PASSWORD` | 内置 MinIO 管理凭据 | 本地自动生成/配置 |
+| `MINIO_API_PORT` / `MINIO_CONSOLE_PORT` | MinIO S3 API 与控制台端口 | 默认 `9000` / `9001` |
 
 Provider API Key 不属于应用运行环境变量。请在 `/admin/models` 创建 Provider 时录入，系统只保存加密密文并在读取接口中返回指纹。
+
+## 文件存储
+
+Storage 业务和共享 lib 保留在当前项目中，支持 Vercel Blob、AWS S3 及兼容 S3 协议的对象存储：
+
+- `GET /api/storage`：读取存储驱动和配置状态；
+- `POST /api/storage/upload`：服务端 multipart 上传；
+- `POST /api/storage/upload-url`：获取 Vercel Blob 客户端令牌或 S3 Presigned URL；
+- `GET /api/storage/file/k64_<key>`：通过安全编码的对象 Key 代理预览或下载。
+
+Storage 的核心接口、驱动实现、Key 校验与内容转换位于 `app/lib/file-storage`。对公网开放上传接口前，应在业务接入层补齐用户鉴权、限流与文件大小策略。
+
+本地默认使用 S3 驱动连接 Compose 中的 MinIO。控制台地址为 [http://localhost:9001](http://localhost:9001)，登录凭据保存在 ignored 的 `.env.local` 中。切换到 Vercel Blob 或外部 S3 时，修改相应 Storage 变量后重新运行 `pnpm env:check`。
 
 ## 数据库与迁移
 
@@ -120,6 +138,7 @@ pnpm db:push      # 仅限明确的本地开发场景
 
 ```bash
 docker compose exec postgres pg_isready -U ink_memory -d ink-memory
+curl -f http://localhost:9000/minio/health/ready
 ```
 
 ## 项目结构
@@ -128,11 +147,13 @@ docker compose exec postgres pg_isready -U ink_memory -d ink-memory
 app/
 ├── (admin)/admin/       # Refine 管理页面、登录与工作区布局
 ├── api/admin/           # 管理 API：鉴权、资源 CRUD、充值与结算核对
+├── api/storage/         # 文件上传、直传与代理下载 API
 ├── components/admin/    # Refine Provider 与管理端交互组件
 ├── lib/
 │   ├── admin/           # Session、RBAC、审计与资源编排
 │   ├── billing/         # 定价、余额预授权、结算与账本
 │   ├── gateway/         # Anthropic/OpenAI 代理生命周期
+│   ├── file-storage/    # Vercel Blob / S3 存储抽象与实现
 │   ├── models/          # 模型解析
 │   ├── security/        # Provider 凭据加密
 │   └── db/              # PostgreSQL schema
@@ -163,3 +184,4 @@ pnpm build
 - 管理写操作同时校验 Session、RBAC 与 Origin，并写入审计日志。
 - 计费金额使用整数 micro-USD；交易账本只追加，异常结算进入人工核对。
 - 不要提交 `.env.local`、`docker/.env`、数据库备份、Provider Key 或 Gateway Key。
+- 不要提交 Blob Token、AWS/S3 凭据；生产环境通过 Secret Manager 注入。
