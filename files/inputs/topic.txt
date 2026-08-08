@@ -1,5 +1,14 @@
 Ink Memory Admin 字段级表单与资源详情重构
 
+Round 9 纠偏：AI 模型中心必须按 cc-switch 的桌面端交互和同步链重新设计。当前 `target_image.png` 是需要被纠正的 Admin 基线，不是最终视觉参照；Provider 主界面和新增界面的权威视觉参照分别是 `/Users/dmeck/project/cc-switch/assets/screenshots/main-zh.png` 与 `/Users/dmeck/project/cc-switch/assets/screenshots/add-zh.png`，当前源码交互以 `ProviderList`、`ProviderCard`、`FullScreenPanel`、`ProviderForm`、`ModelInputWithFetch`、`UsageDashboard`、`PricingConfigPanel`、`ModelsDevAutoSyncPanel` 为准。
+
+必须明确体现三条真实能力链：
+1. Provider 配置使用已保存且加密的 Credential，从兼容 `/v1/models` 候选端点发现模型；Ink Memory 在首次注册后自动触发 discover，显示新增、更新、未变化、冲突和未定价差异，应用前保留财务/alias 确认。
+2. 模型定价从 models.dev 的可信目录匹配并同步；服务端不得覆盖历史有效价格，而是创建来源明确的新价格版本。无法匹配的模型显示“未定价”，绝不填假价格。
+3. Provider、Model、Pricing、Gateway Usage 与 Request Detail 必须在同一桌面工作台中联动；Provider 卡片直接展示模型同步状态、定价覆盖、代理健康和近期真实请求，并提供“同步模型”“查看用量”“编辑配置”上下文动作。
+
+桌面交互必须使用 cc-switch 的紧凑顶部域切换、卡片列表、全窗口配置层、固定 Header/Footer 和局部滚动内容；Provider/Model/Pricing 表单不得保留 Admin 侧栏造成双重导航。移动端再降级为 390×844 全屏单列。
+
 目标：修复当前页面内嵌 AdminCrudWorkbench、手填记录 ID、模板占位 ID、泛化 JSON 输入和列表/编辑割裂问题。
 
 设计依据：

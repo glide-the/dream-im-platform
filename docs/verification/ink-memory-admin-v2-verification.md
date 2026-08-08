@@ -8,7 +8,7 @@
 - 只读业务源：`/Users/dmeck/project/ink-dream-memory`
 - 测试数据库：一次性 Docker PostgreSQL，数据库名 `ink-memory`，宿主端口 `55432`
 - 持久化项目数据库端口 `5433` 未被连接、迁移、清空或写入
-- 测试结束后已删除 tmpfs 容器 `ink-memory-admin-e2e-20260808-1603`；其中只有可由迁移和 fixture 重建的测试数据
+- 测试结束后删除自有容器 `ink-memory-admin-e2e-round7-20260808`；其中只有可由迁移和 fixture 重建的测试数据
 
 ## 静态与构建门禁
 
@@ -17,7 +17,7 @@
 | `pnpm env:check` | 通过；只接受指向 PostgreSQL `ink-memory` 的 `DATABASE_URL` |
 | `pnpm exec tsc --noEmit` | 通过 |
 | `pnpm lint` | 通过，0 error |
-| `pnpm test:run` | 通过；26 个测试文件、156/156 项测试 |
+| `pnpm test:run` | 通过；27 个测试文件、159/159 项测试 |
 | `pnpm build` | 通过；Next.js 16.1.6 生产构建和全部 Admin/API/Gateway 路由生成成功 |
 | `pnpm exec drizzle-kit generate --custom --name single_database_comments` | 通过；生成非破坏性 `0008` 注释纠偏迁移与快照 |
 | `git diff --check` | 通过；无空白错误 |
@@ -30,7 +30,7 @@
 4. 聚焦命令 `pnpm exec playwright test tests/e2e/admin-bootstrap-postgres.spec.ts --project=chromium --workers=1`：1/1 通过。
 5. Mock Session/Bootstrap 聚焦命令 `pnpm exec playwright test tests/e2e/admin-shell.spec.ts tests/e2e/admin-bootstrap.spec.ts --reporter=line --workers=1`：6/6 通过。
 6. 浏览器诊断未发现非预期 5xx、`pageerror`、console error 或 request failure。
-7. 测试后置条件：管理员 2 条、审计 16 条、目标 Gateway Request 为 `settled`、账本 3 条、目标 Story 已 `confirmed`；迁移表记录 9 条，旧平行表注释已指向单一 `DATABASE_URL`。
+7. 测试后置条件：管理员 2 条、审计 20 条（含 2 条 `model_validation`）、目标 Gateway Request 为 `settled`、账本 3 条、目标 Story 已 `confirmed`；迁移表记录 9 条，旧平行表注释已指向单一 `DATABASE_URL`。
 8. 视觉轮次发现 Next.js dev 工具按钮会覆盖移动菜单的鼠标点击，最终改用真实键盘 focus + Enter 验证菜单；同时等待 Provider/Model 关系选项加载后再截图。未使用 `force` 绕过应用交互。
 
 覆盖场景：
@@ -43,6 +43,9 @@
 - Provider 凭据加密与永不回显
 - Provider 注册表、cc-switch 式预设/端点/认证/出参 Token 参数配置，以及面向 `ink-dream-memory` 的 Anthropic/OpenAI 代理契约
 - Provider 连通测试的 `providers.write` 权限拒绝路径；reachability 的任意 HTTP 状态/网络失败/慢响应由单元测试覆盖，未调用真实上游
+- Model validation 的 `models.write`、Origin、已加密 Credential、1 Token 上限、200/401/429/网络失败分类、不读取响应正文和脱敏审计；E2E 只调用本机 mock 上游
+- Provider/Model 服务端分页、名称/Code/上游型号联合搜索、Usage URL 的 Provider/Model 筛选预填和 API ID 白名单
+- Provider/Model 停用影响确认 Modal；独立编辑页稳定加载，不再发生 effect 循环和 DOM 重建
 - Gateway Key 对模型代理端点的 scope 校验、模型别名解析、吊销后拒绝访问
 - 系统 Secret 脱敏
 - Gateway Key 仅创建时返回一次明文
@@ -58,14 +61,17 @@
 
 | 视口 | 证据 | 结果 |
 |---|---|---|
-| 1440×1000 | `test-results/admin-bootstrap-postgres-R-68c61--billing-and-both-viewports-chromium/admin-provider-page-desktop-1440x1000.png` | cc-switch 式 Provider 独立配置页包含预设、Endpoint、Credential、运行策略与代理发布侧栏；固定操作区且无页面级横向溢出 |
-| 390×844 | `test-results/admin-bootstrap-postgres-R-68c61--billing-and-both-viewports-chromium/admin-provider-page-mobile-390x844.png` | Provider 独立页单列重排，预设局部横向滚动，Secret 与底部操作保持可用 |
-| 1440×1000 | `test-results/admin-bootstrap-postgres-R-68c61--billing-and-both-viewports-chromium/admin-model-page-desktop-1440x1000.png` | Provider 关系、稳定 alias、Model Dropdown、Token 上限、能力复选组与启用策略完整呈现 |
-| 390×844 | `test-results/admin-bootstrap-postgres-R-68c61--billing-and-both-viewports-chromium/admin-model-page-mobile-390x844.png` | 真实 Provider 选项加载后截图；表单单列且固定提交区可达 |
-| 1440×1000 | `test-results/admin-bootstrap-postgres-R-68c61--billing-and-both-viewports-chromium/admin-pricing-page-desktop-1440x1000.png` | Model/Tier、四类 Token USD/1M、micro-USD 辅助值、bps 与生效窗口采用版本化独立页 |
-| 390×844 | `test-results/admin-bootstrap-postgres-R-68c61--billing-and-both-viewports-chromium/admin-pricing-page-mobile-390x844.png` | 真实 Model 关系已选中；四类价格和版本动作按单列继续滚动，无页面级横向溢出 |
-| 1440×1000 | `test-results/admin-bootstrap-postgres-R-68c61--billing-and-both-viewports-chromium/admin-story-desktop-1440x1000.png` | 侧栏、模块导航、筛选器、表格与 Story 安全编辑区层级清晰，无页面级横向溢出 |
-| 390×844 | `test-results/admin-bootstrap-postgres-R-68c61--billing-and-both-viewports-chromium/admin-mobile-menu-390x844.png` | 图片实际像素为 390×844；移动抽屉、遮罩、分组、当前项和触控布局正常 |
+| 1440×1000 | `test-results/round7-postgres/**/admin-provider-page-desktop-1440x1000.png` | cc-switch 式 Provider 独立配置页包含预设、Endpoint、Credential、运行策略与代理发布侧栏；固定操作区且无页面级横向溢出 |
+| 390×844 | `test-results/round7-postgres/**/admin-provider-page-mobile-390x844.png` | Provider 独立页单列重排，预设局部横向滚动，Secret 与底部操作保持可用 |
+| 1440×1000 | `test-results/round7-postgres/**/admin-provider-disable-confirm-desktop-1440x1000.png` | 停用确认 Modal 展示关联启用模型、24h 请求和历史计费不受影响的恢复说明 |
+| 1440×1000 | `test-results/round7-postgres/**/admin-model-page-desktop-1440x1000.png` | Provider 关系、稳定 alias、Model Dropdown、Token 上限、能力复选组与启用策略完整呈现 |
+| 390×844 | `test-results/round7-postgres/**/admin-model-page-mobile-390x844.png` | 真实 Provider 选项加载后截图；表单单列且固定提交区可达 |
+| 1440×1000 | `test-results/round7-postgres/**/admin-model-validation-desktop-1440x1000.png` | Model 卡片展示 mock 上游验证成功、耗时与 HTTP 200，不展示 Secret 或响应内容 |
+| 1440×1000 | `test-results/round7-postgres/**/admin-pricing-page-desktop-1440x1000.png` | Model/Tier、四类 Token USD/1M、micro-USD 辅助值、百分比/bps 与生效窗口采用版本化独立页 |
+| 390×844 | `test-results/round7-postgres/**/admin-pricing-page-mobile-390x844.png` | 真实 Model 关系已选中；四类价格和版本动作按单列继续滚动，无页面级横向溢出 |
+| 1440×1000 | `test-results/round7-postgres/**/admin-story-desktop-1440x1000.png` | 侧栏、模块导航、筛选器、表格与 Story 安全编辑区层级清晰，无页面级横向溢出 |
+| 390×844 | `test-results/round7-postgres/**/admin-usage-mobile-390x844.png` | Model URL 筛选真实预填；统计筛选单列重排，无页面级横向溢出 |
+| 390×844 | `test-results/round7-postgres/**/admin-mobile-menu-390x844.png` | 图片实际像素为 390×844；移动抽屉、遮罩、分组、当前项和触控布局正常 |
 
 截图中的黑色 `N` 为 Next.js 开发模式指示器，不属于应用 UI，生产构建不会呈现。
 

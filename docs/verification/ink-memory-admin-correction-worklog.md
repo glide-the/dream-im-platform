@@ -110,3 +110,46 @@ Optional Enhancers:
 
 - 保存模型验证成功卡片和 Provider/Model/Pricing 双视口截图，并记录 mock 上游只收到脱敏 fixture 请求。
 - 将 cc-switch 的桌面 ProxyToggle/failover queue 标记为服务端平台差异，不虚构为已实现；当前始终在线代理与未来多上游路由策略分别记录。
+
+## Round 7 执行证据
+
+- 首轮反证捕获 Usage `provider_id/model_id` 未进入服务端筛选白名单导致 HTTP 400；补齐参数化 SQL 列和白名单后通过。
+- 第二轮反证捕获独立 edit 页可选对象默认值引用不稳定，触发加载 effect 循环和 DOM 持续重建；改为模块级稳定默认对象后，Provider 编辑与停用 Modal 可正常操作。
+- `pnpm env:check`、TypeScript、lint、159/159 unit、production build、`git diff --check` 通过。
+- PostgreSQL 16 临时 `ink-memory` 应用 0000–0008 共 9 个迁移；主 E2E 1/1、Session/Bootstrap 6/6 通过。
+- 本机 mock Anthropic-compatible 上游只收到 fixture Bearer Credential、`deepseek-v4-pro`、`max_tokens: 1` 和 `stream: false`；未访问真实 DeepSeek。
+- 临时数据库后置：2 admins、20 audits、2 条 operational/HTTP 200 的 `model_validation`、3 ledger entries、目标请求 settled、目标 Story published/confirmed。
+- 11 张视觉证据保存在 `test-results/round7-postgres/`，覆盖 1440×1000 与 390×844 的 Provider/Model/Pricing/Usage/Story、停用确认和移动导航。
+- 自有容器 `ink-memory-admin-e2e-round7-20260808` 已删除；3000/55432 无监听，共享 `ink-memory-postgres` 的 5433 容器保持 healthy 且未写入。
+
+## Round 8：真实源数据库只读同步与迁移后验收
+
+Optimized Prompt:
+
+主动审计并只读访问 `/Users/dmeck/project/ink-dream-memory` 当前实际使用的数据库，不凭文件名猜测数据源。解析其环境配置、ORM/Drizzle schema、迁移、数据库连接代码和真实数据库元数据，确认数据库引擎、精确文件/实例、表名、主键、外键、唯一约束、枚举、时间格式和行数；任何连接信息与用户数据只在本机使用，不把 Secret、密码散列或敏感正文输出到日志和文档。
+
+以 `users`、`story_workspace_workspaces`、`story_workspace_stories` 为最低迁移集合，并按外键闭包补齐 Admin 查询或 Story 写操作实际依赖的关系表、Character、Scene、Workflow 等必要表。源数据库全程只读；不得修改 `ink-dream-memory` 代码、schema、migration、数据库文件或运行逻辑。不得把源数据库作为 Admin 运行时第二数据源，不得提交 SQLite fixture、JSON 数据库或回退。若源当前不是 PostgreSQL，只允许使用源项目已有只读能力或系统原生客户端执行一次性抽取，目标始终是明确自有、可删除的 PostgreSQL 16 `ink-memory`。
+
+设计并实现可复核的单向迁移流程：迁移前 schema/row-count/fingerprint；显式字段映射和类型转换；保留源主键、时间、nullable、owner/workspace 关系；按依赖顺序事务写入；使用 conflict-fail 或明确幂等策略；迁移后逐表行数、主键集合、外键 orphan、唯一冲突和抽样字段校验。任何失败整体回滚，不清空或覆盖共享数据库。迁移脚本应拒绝非 PostgreSQL目标、拒绝目标数据库名不是 `ink-memory`、拒绝源与目标相同、默认 dry-run，并要求显式 `TEST_DATABASE_URL` 或一次性容器。
+
+随后让 `ink-admin-memory` 直接通过唯一 `DATABASE_URL` 读取迁入的真实数据，运行源用户、Workspace、Story 列表/详情、白名单更新、confirm/reject/archive、跨 Workspace 409、RBAC、审计和 Dashboard 验收。使用 `ink-admin-playwright-qa` 创建命名临时 PostgreSQL、执行 Admin migrations、同步真实源数据、运行 focused integration/E2E，并覆盖 1440×1000 与 390×844。测试结束前记录迁移清单、行数与一致性证据；停止自有进程并删除精确临时目标，源数据库和共享 5433 均保持未写入。
+
+Optional Enhancers:
+
+- 对真实源数据只记录不可逆哈希、行数和脱敏 ID 示例，不在截图或报告暴露用户邮箱、正文、Token 或密码散列。
+- 如果真实数据库缺少某些业务表或为空，明确区分“schema 已迁移”“数据已迁移”“无源数据”三种状态，并使用源 schema 生成的合成最小关系仅作为另一个隔离测试，不冒充真实同步结果。
+
+## Round 9：cc-switch 桌面交互与 Provider 自动同步纠偏
+
+Optimized Prompt:
+
+以 `/Users/dmeck/project/cc-switch` 的当前桌面端产品为唯一 AI 模型中心交互参照，逐页、逐状态和逐调用链审计其 Provider 注册、预设选择、凭据配置、模型自动发现/同步、模型映射、定价获取或维护、代理开关、用量监控、请求明细与异常恢复。不得把“样式相似”或手工创建 Model/Pricing 当作完成；必须确认 cc-switch 的自动同步究竟读取远端 `/models`、使用内置 Provider 预设/模型目录、从本地配置导入，还是组合策略，并用源代码、桌面截图和网络/服务调用证据记录结论。
+
+将可移植的 cc-switch 桌面信息架构和交互模式落到 Next.js/Refine：AI 模型中心保持桌面控制台式双栏或主从布局、紧凑 Provider 卡片/列表、固定上下文操作区、配置独立页或桌面侧滑层、模型同步进度与差异预览、定价状态、代理健康度、Usage/Request Detail 联动；不使用默认 Ant Design CRUD 表格和无意义指标卡。Provider 创建或更新成功后，可显式或按 cc-switch 规则自动触发安全的模型发现，先显示新增/更新/未变化/冲突差异，再以事务写入 `ai_models`；定价只有在上游或内置目录存在可验证来源时才能同步，否则必须标记“待配置”，不得编造价格。同步使用已加密 Credential、短超时、SSRF 防护、RBAC、Origin 校验、响应大小限制、字段白名单、Secret 永不回显和审计；失败不得破坏现有模型或历史价格。
+
+更新 PRD 和交互设计，严格列出每个桌面页面的数据项、展示控件、表单载体（独立页面、侧滑层或确认弹窗）、同步触发条件、状态机、键盘操作、错误恢复、1440×1000 主验收和 390×844 降级方式。实现对应 repository/service/API/UI 与 mock 合同测试；真实用户 Token 不得使用。与此同时继续 Round 8：源 SQLite 只读、真实数据只同步到一次性 PostgreSQL `ink-memory` 并验收，绝不修改源库或共享 5433。
+
+Optional Enhancers:
+
+- 为 cc-switch 当前桌面页建立“源组件/命令 → Admin 页面/服务/API → 测试”追踪矩阵，并保留对比截图。
+- 将模型同步拆成 `discover → preview diff → apply` 三段，Provider 首次注册可自动执行 discover，已有 Provider 的批量变化要求人工确认 apply。
