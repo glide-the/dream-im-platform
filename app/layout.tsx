@@ -1,4 +1,5 @@
 import React from "react";
+import Script from "next/script";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import localFont from "next/font/local";
@@ -73,6 +74,13 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <head>
+        {process.env.NODE_ENV === "development" && (
+          <Script
+            src="//unpkg.com/react-grab/dist/index.global.js"
+            crossOrigin="anonymous"
+            strategy="beforeInteractive"
+          />
+        )}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body

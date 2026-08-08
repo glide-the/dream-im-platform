@@ -339,6 +339,10 @@ export async function handlePricingSyncApply(request: Request, snapshotId: strin
       const created: string[] = [];
       const unchanged: string[] = [];
       for (const match of selected) {
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+          [`${match.localModelId}:default`],
+        );
         const { rows } = await client.query<Record<string, unknown>>(
           `SELECT * FROM ai_pricing_rules
            WHERE model_id = $1 AND user_tier = 'default' AND status = 'active' AND effective_to IS NULL

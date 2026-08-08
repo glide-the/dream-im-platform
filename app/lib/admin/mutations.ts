@@ -352,6 +352,17 @@ async function insertModel(
   return result.rows[0];
 }
 
+async function lockPricingScope(
+  client: PoolClient,
+  modelId: string,
+  userTier: string,
+) {
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+    [`${modelId}:${userTier}`],
+  );
+}
+
 async function assertPricingWindow(
   client: PoolClient,
   input: {
@@ -362,10 +373,6 @@ async function assertPricingWindow(
     excludeId?: string;
   },
 ) {
-  await client.query(
-    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-    [`${input.modelId}:${input.userTier}`],
-  );
   const overlap = await client.query(
     `SELECT 1 FROM ai_pricing_rules
      WHERE model_id = $1 AND user_tier = $2 AND status = 'active'
@@ -384,10 +391,42 @@ async function assertPricingWindow(
   if (overlap.rows[0]) {
     throw new AdminError(
       "PRICING_WINDOW_CONFLICT",
-      "An active pricing rule already covers part of this time window",
+      "该模型与用户层级已有价格版本覆盖此生效时间，请晚于当前版本开始时间或检查未来价格窗口",
       409,
     );
   }
+}
+
+async function loadOpenPricingRuleForReplacement(
+  client: PoolClient,
+  input: z.infer<typeof pricingCreateSchema>,
+) {
+  if (input.replacesPricingRuleId) {
+    return await loadRowForUpdate(
+      client,
+      "ai_pricing_rules",
+      input.replacesPricingRuleId,
+    );
+  }
+  if (input.status !== "active") return undefined;
+  const current = await client.query<Record<string, unknown>>(
+    `SELECT * FROM ai_pricing_rules
+     WHERE model_id = $1 AND user_tier = $2
+       AND status = 'active' AND effective_to IS NULL
+     ORDER BY effective_from DESC
+     LIMIT 2
+     FOR UPDATE`,
+    [input.modelId, input.userTier],
+  );
+  if (current.rows.length > 1) {
+    throw new AdminError(
+      "PRICING_CURRENT_VERSION_AMBIGUOUS",
+      "检测到多个开放的当前价格版本，请先核对并结束重复窗口",
+      409,
+      { pricingRuleIds: current.rows.map((row) => String(row.id)) },
+    );
+  }
+  return current.rows[0];
 }
 
 async function insertPricing(
@@ -404,13 +443,19 @@ async function insertPricing(
       400,
     );
   }
+  if (input.status === "active") {
+    await lockPricingScope(client, input.modelId, input.userTier);
+  }
   let replacedPricingRuleId: string | null = null;
-  if (input.replacesPricingRuleId) {
-    const replaced = await loadRowForUpdate(
-      client,
-      "ai_pricing_rules",
-      input.replacesPricingRuleId,
-    );
+  const replaced = await loadOpenPricingRuleForReplacement(client, input);
+  if (replaced) {
+    if (input.status !== "active") {
+      throw new AdminError(
+        "PRICING_REPLACEMENT_STATUS_INVALID",
+        "只有 active 价格版本可以替换当前版本",
+        409,
+      );
+    }
     if (
       String(replaced.model_id) !== input.modelId ||
       String(replaced.user_tier) !== input.userTier
@@ -421,34 +466,34 @@ async function insertPricing(
         409,
       );
     }
+    if (String(replaced.status) !== "active" || replaced.effective_to) {
+      throw new AdminError(
+        "PRICING_REPLACEMENT_NOT_CURRENT",
+        "只能替换 active 且尚未结束的当前价格版本；历史版本保持不可变",
+        409,
+      );
+    }
     const previousFrom = new Date(
       replaced.effective_from as string | Date,
     );
     if (new Date(input.effectiveFrom) <= previousFrom) {
       throw new AdminError(
         "PRICING_REPLACEMENT_TIME_INVALID",
-        "The replacement pricing version must begin after the previous version",
+        `新价格版本必须晚于当前版本开始时间 ${previousFrom.toISOString()}`,
         409,
-      );
-    }
-    if (
-      replaced.effective_to &&
-      new Date(input.effectiveFrom) >
-        new Date(replaced.effective_to as string | Date)
-    ) {
-      throw new AdminError(
-        "PRICING_REPLACEMENT_GAP",
-        "The selected pricing rule already ends before the replacement begins",
-        409,
+        {
+          pricingRuleId: String(replaced.id),
+          effectiveFrom: previousFrom.toISOString(),
+        },
       );
     }
     await client.query(
       `UPDATE ai_pricing_rules
        SET effective_to = $2::timestamptz, updated_at = NOW()
        WHERE id = $1`,
-      [input.replacesPricingRuleId, input.effectiveFrom],
+      [replaced.id, input.effectiveFrom],
     );
-    replacedPricingRuleId = input.replacesPricingRuleId;
+    replacedPricingRuleId = String(replaced.id);
   }
   if (input.status === "active") await assertPricingWindow(client, input);
   const id = createPlatformId("price");
@@ -937,6 +982,11 @@ async function updatePricing(
     );
   }
   if (status === "active") {
+    await lockPricingScope(
+      client,
+      String(before.model_id),
+      String(before.user_tier),
+    );
     await assertPricingWindow(client, {
       modelId: String(before.model_id),
       userTier: String(before.user_tier),

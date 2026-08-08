@@ -289,9 +289,9 @@ stateDiagram-v2
 - Model 可创建/更新/启停，本版本不开放删除。
 - Model 与 Provider 均使用 cc-switch 风格独立路由全屏设置页；Provider 为真实可搜索 Combobox，upstream model 为常用型号 Dropdown + 受控自定义输入，capabilities 为复选组。列表页不得以内嵌 Dialog 代替独立页。
 - 模型候选优先来自 Provider 最近 discover snapshot，并显示 owned_by/source/last seen。手工 upstream_model 明确标为“未验证”；Model 验证仍是独立 1-token 安全请求，不与列表 discover 混为一谈。
-- Pricing 新价格创建版本并关闭旧窗口；重叠窗口返回 409 与冲突规则链接。
-- Pricing 直接采用 cc-switch 全屏编辑结构，但动作语义改为版本化：Model/Tier → 四类 Token 价格 → markup/discount → 生效窗口 → 旧/新 diff → 冲突/影响 → 创建价格版本。不得出现通用编辑或删除入口。
-- Pricing 增加 cc-switch `ModelsDevAutoSyncPanel` 同构入口：Provider/Model 搜索、目录版本/更新时间、四类目录价、exact/normalized/ambiguous/unmatched 证据。只有 exact 默认选，Apply 只 INSERT 新版本；自动同步最多每 6 小时一次，不能覆盖历史价格或把 unmatched 当 0。
+- Pricing 新价格创建版本并关闭旧窗口；表单右侧 `Version transition` 区随 Model/Tier 变化加载当前开放版本，显示 ID/source、四类旧价和切换时间。没有当前版本显示“创建首个版本”；回填时间或陈旧 `replaces` 链接显示可恢复的 409 提示。
+- Pricing 直接采用 cc-switch 全屏编辑结构，但动作语义改为版本化：Model/Tier → 当前版本摘要 → 四类 Token 价格 → markup/discount → 生效窗口 → 旧/新 diff → 冲突/影响 → 创建价格版本。服务端自动识别唯一开放版本，列表只对开放 active 行显示“新版本/结束”，历史行不得出现可修改窗口的入口。
+- Pricing 增加 cc-switch `ModelsDevAutoSyncPanel` 同构入口：Provider/Model 搜索、目录版本/更新时间、四类目录价、exact/normalized/ambiguous/unmatched 证据。只有 exact 默认选，Apply 只 INSERT 新版本；自动同步最多每 6 小时一次，不能覆盖历史价格或把 unmatched 当 0。Apply 成功后等待 `pricing-rules` list/detail cache 失效再导航，列表必须立即显示新增来源行。
 - 已被 Request snapshot 引用的 Pricing 不可破坏性更新/删除。
 - 四类单价清楚标注 `micro-USD / million tokens`，USD 仅为只读格式化展示。
 - Model Permission 管理 enabled、RPM、daily/monthly token limit；删除 override 表示恢复默认。

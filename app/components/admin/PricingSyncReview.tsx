@@ -1,5 +1,6 @@
 "use client";
 
+import { useInvalidate } from "@refinedev/core";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -47,6 +48,7 @@ function usd(microusd: string) {
 
 export default function PricingSyncReview({ snapshotId }: { snapshotId: string }) {
   const router = useRouter();
+  const invalidate = useInvalidate();
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"all" | MatchState>("all");
@@ -99,6 +101,7 @@ export default function PricingSyncReview({ snapshotId }: { snapshotId: string }
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error?.message ?? `应用价格失败（HTTP ${response.status}）`);
+      await invalidate({ resource: "pricing-rules", invalidates: ["list", "detail"] });
       router.push(`/admin/models/pricing?synced=${encodeURIComponent(snapshotId)}`);
       router.refresh();
     } catch (caught) {

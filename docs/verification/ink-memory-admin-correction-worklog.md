@@ -207,3 +207,13 @@ Optional Enhancers:
 
 - 在创建页增加“将结束的当前版本”摘要，显示 Model、Tier、四类价格和当前生效时间。
 - 成功返回中统一携带 `replaced_pricing_rule_id`，供列表 success receipt 和审计定位。
+
+## Round 12 执行证据
+
+- 根因：独立创建页未携带 `replacesPricingRuleId` 时，服务端只执行重叠检测而不会识别当前开放版本；models.dev Apply 成功后只执行 `router.push/refresh`，Refine Query cache 仍保留旧列表。
+- 事务修复：Pricing create 先取得 Model/Tier PostgreSQL advisory transaction lock，自动或显式解析唯一 `active + effective_to IS NULL` 版本；校验新时间严格晚于旧版本后，将旧 `effective_to` 与新 INSERT 原子提交，并返回 `replaced_pricing_rule_id`。历史/已结束规则不能再作为替换目标，真正回填或歧义窗口保持 409。
+- 页面修复：新增 `PricingVersionFormPage` 的 `Version transition` 摘要，展示当前 ID/source、四类 USD/1M 价格与切换时间；历史列表行隐藏“新版本/结束”。Pricing sync review 在导航前等待 `pricing-rules` list/detail cache 失效完成。
+- 静态门禁：`pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、`git diff --check` 和临时副本 `pnpm build` 全部通过；Vitest 30 files / 169 tests 全部通过。
+- 隔离 E2E：一次性 PostgreSQL 16 `127.0.0.1:55432/ink-memory` 应用 0000–0012 与测试 fixtures；`admin-bootstrap-postgres.spec.ts` 最终复跑 1/1 通过（21.7s；冷启动完整轮 1.6m）。覆盖无隐藏 replaces 的自动版本推进、显式 replaces、真实回填 409、真实 models.dev snapshot Apply 后列表立即出现 `default · models.dev`，以及 1440×1000 / 390×844 Pricing 视觉和横向溢出检查。
+- 数据后置：`model-e2e/free` 三个 active 历史窗口首尾精确衔接，开放版本唯一；`model-e2e/default` 新增 `source=models.dev`；全库 active Pricing 时间窗重叠计数为 0；两次 models.dev Apply 均有审计。
+- 环境边界：发现仓库已有用户 Next.js 进程占用 3000/3011 和主 `.next` 锁后未终止、未复用；改用 `/tmp/ink-memory-pricing-e2e.*` 临时副本与自有 3012 服务。共享 5433 未连接、迁移、清理或写入。

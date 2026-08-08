@@ -59,6 +59,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "postcss": "8.4.39",
+    "react-grab": "^0.1.50",
     "tailwindcss": "4.1.18",
     "typescript": "5.5.4",
     "vite-tsconfig-paths": "^6.0.5",

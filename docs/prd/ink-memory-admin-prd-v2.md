@@ -276,12 +276,12 @@ AI 模型中心同时是代理发布控制面：Provider Secret 只用于服务�
 - 字段：model、user_tier、四类 Token 单价、markup_bps、discount_bps、effective_from/to、status；币种固定 USD，不另建可变 currency 字段。
 - 容器：独立路由 `/admin/models/pricing/new`，直接采用 cc-switch Pricing 全屏编辑骨架；主动作固定为“创建价格版本”，不是“覆盖保存”。
 - model 使用真实可搜索 Combobox；四类价格使用十进制 USD/1M Token 输入并同步显示精确整数 micro-USD；markup/discount 使用百分比输入和 bps 辅助值；effective_from/to 使用带时区说明的日期时间选择器。
-- 创建新生效规则；提交前必须显示旧/新价格、有效窗和真实可得的影响摘要；重叠窗口返回 409 并展示冲突规则链接且保留草稿。
+- 创建新生效规则；选择 Model/Tier 后，右侧必须查询并显示唯一 `active + effective_to IS NULL` 的当前版本、四类旧价、来源和开始时间。直接从“创建价格版本”进入时也由服务端在事务锁内自动识别该版本，不得依赖 `replaces` 隐藏参数；新生效时间晚于当前版本时原子关闭旧窗口并插入新版本。回填时间、多个开放版本或额外未来窗口才返回 409，并展示冲突上下文且保留草稿。
 - 已被请求快照引用的历史规则不可破坏性更新/删除；调整价格创建新版本并关闭旧窗口。
 - 价格单位明确显示 micro-USD / million tokens，并同时给只读 USD 格式化值。
 - 提供 cc-switch 同构的 `models.dev` 同步入口：Provider 级联、模型搜索、目录版本/更新时间、exact/normalized/ambiguous/unmatched 匹配状态、四类目录价和来源链接。只有 exact 默认勾选；ambiguous/unmatched 不自动应用。
 - 自动同步开关遵循 cc-switch “最多每 6 小时一次”的节流语义，但由服务端持久化配置和执行；页面启动只触发受权命令，不允许 GET 隐式写库。目录不可用时保留历史价格可读，显示 503/request ID，不使用缓存假价。
-- Apply 只能 INSERT 新价格版本，并在同一事务按明确策略结束冲突旧窗口；价格未变化记为 no-op。任何 overwrite/delete 历史版本的交互均禁止。
+- Apply 只能 INSERT 新价格版本，并在同一事务按明确策略结束冲突旧窗口；价格未变化记为 no-op。成功后必须先失效 Refine/React Query 的 Pricing list/detail cache，再返回列表，使新增 `source=models.dev` 行无需浏览器刷新即可显示。任何 overwrite/delete 历史版本的交互均禁止。
 
 #### 模型权限
 

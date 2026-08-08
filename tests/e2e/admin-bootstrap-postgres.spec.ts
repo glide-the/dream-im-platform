@@ -214,7 +214,8 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
       data: { inputPriceMicrousdPerMillion: 1 },
     });
     expect(mutateHistoricalPrice.status()).toBe(400);
-    const overlappingPricing = await api.post(`${baseURL}/api/admin/pricing-rules`, {
+    const automaticPricingVersionStart = new Date(Date.parse(pricingVersionStart) + 1_000).toISOString();
+    const automaticPricingVersion = await api.post(`${baseURL}/api/admin/pricing-rules`, {
       headers,
       data: {
         modelId: "model-e2e",
@@ -226,11 +227,37 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
         markupBps: 0,
         discountBps: 0,
         status: "active",
-        effectiveFrom: new Date(Date.parse(pricingVersionStart) + 1_000).toISOString(),
+        effectiveFrom: automaticPricingVersionStart,
         effectiveTo: null,
       },
     });
-    expect(overlappingPricing.status()).toBe(409);
+    expect(automaticPricingVersion.status()).toBe(201);
+    await expect(automaticPricingVersion.json()).resolves.toMatchObject({
+      data: {
+        model_id: "model-e2e",
+        replaced_pricing_rule_id: pricingVersionBody.data.id,
+      },
+    });
+    const truePricingConflict = await api.post(`${baseURL}/api/admin/pricing-rules`, {
+      headers,
+      data: {
+        modelId: "model-e2e",
+        userTier: "free",
+        inputPriceMicrousdPerMillion: 2,
+        outputPriceMicrousdPerMillion: 2,
+        cacheReadPriceMicrousdPerMillion: 0,
+        cacheWritePriceMicrousdPerMillion: 0,
+        markupBps: 0,
+        discountBps: 0,
+        status: "active",
+        effectiveFrom: new Date(Date.parse(pricingVersionStart) + 500).toISOString(),
+        effectiveTo: null,
+      },
+    });
+    expect(truePricingConflict.status()).toBe(409);
+    await expect(truePricingConflict.json()).resolves.toMatchObject({
+      error: { code: "PRICING_REPLACEMENT_TIME_INVALID" },
+    });
 
     const pricingSyncSnapshotId = "pricing-sync-real-e2e";
     const pricingSyncClient = new pg.Client({ connectionString: process.env.DATABASE_URL });
@@ -259,6 +286,32 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
           outputMicrousd: "1200000",
           cacheReadMicrousd: "60000",
           cacheWriteMicrousd: "375000",
+        }])],
+      );
+      await pricingSyncClient.query(
+        `INSERT INTO ai_pricing_sync_snapshots (
+           id, provider_id, catalog_ref, catalog_version, catalog_hash,
+           matches, created_by, expires_at
+         ) VALUES ('pricing_sync_ui_e2e', 'provider-e2e',
+                   'https://models.dev/api.json', 'fixture-ui-v1',
+                   'fixture-ui-hash', $1::jsonb, 'e2e', now() + interval '10 minutes')`,
+        [JSON.stringify([{
+          localModelId: "model-e2e",
+          localModelCode: "model-e2e",
+          upstreamModel: "model-e2e-upstream",
+          providerCode: "provider-e2e",
+          match: "exact",
+          key: "anthropic/claude-e2e",
+          providerId: "anthropic",
+          providerName: "Anthropic",
+          modelId: "claude-e2e",
+          normalizedId: "claude-e2e",
+          modelName: "Claude E2E",
+          releaseDate: "2026-08-01",
+          inputMicrousd: "3000000",
+          outputMicrousd: "15000000",
+          cacheReadMicrousd: "300000",
+          cacheWriteMicrousd: "3750000",
         }])],
       );
     } finally {
@@ -439,36 +492,23 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-pricing-page-desktop-1440x1000.png"), fullPage: true });
 
-    let pricingSyncApplied = false;
-    await page.route("**/api/admin/pricing-sync/pricing_sync_ui_e2e**", async (route) => {
-      const url = new URL(route.request().url());
-      if (url.pathname.endsWith("/apply") && route.request().method() === "POST") {
-        pricingSyncApplied = true;
-        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { snapshotId: "pricing_sync_ui_e2e", selectedCount: 1, created: ["pricing_ui_e2e"], unchanged: [] } }) });
-        return;
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ data: {
-          id: "pricing_sync_ui_e2e", catalog_ref: "https://models.dev/api.json", catalog_version: "fixture-v1", catalog_hash: "fixture-hash", status: "ready",
-          expires_at: new Date(Date.now() + 600_000).toISOString(), created_at: new Date().toISOString(),
-          matches: [
-            { localModelId: "model-e2e", localModelCode: "claude-e2e", upstreamModel: "claude-e2e", providerCode: "provider-e2e", match: "exact", key: "anthropic/claude-e2e", providerName: "Anthropic", modelName: "Claude E2E", inputMicrousd: "3000000", outputMicrousd: "15000000", cacheReadMicrousd: "300000", cacheWriteMicrousd: "3750000" },
-            { localModelId: "model-ambiguous-e2e", localModelCode: "ambiguous", upstreamModel: "ambiguous", providerCode: "custom", match: "ambiguous", key: "one/ambiguous", providerName: "One", modelName: "Ambiguous", inputMicrousd: "1000000", outputMicrousd: "2000000", cacheReadMicrousd: "0", cacheWriteMicrousd: "0", candidates: ["one/ambiguous", "two/ambiguous"] },
-          ],
-        } }),
-      });
-    });
+    await page.goto("/admin/models/pricing");
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "model-e2e" }).filter({ hasText: "free · manual" }).first(),
+    ).toBeVisible();
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "model-e2e" }).filter({ hasText: "default · models.dev" }),
+    ).toHaveCount(0);
     await page.goto("/admin/models/pricing/sync/pricing_sync_ui_e2e");
     await expect(page.getByRole("heading", { name: "价格目录差异确认" })).toBeVisible();
-    await expect(page.getByText("claude-e2e", { exact: true })).toBeVisible();
-    await expect(page.getByText("2 个候选，需人工配置")).toBeVisible();
+    await expect(page.getByText("model-e2e", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-pricing-sync-desktop-1440x1000.png"), fullPage: true });
     await page.getByRole("button", { name: /应用 1 个价格版本/ }).click();
     await expect(page).toHaveURL(/\/admin\/models\/pricing\?synced=/);
-    expect(pricingSyncApplied).toBe(true);
+    await expect(
+      page.locator("tbody tr").filter({ hasText: "model-e2e" }).filter({ hasText: "default · models.dev" }),
+    ).toBeVisible();
 
     await page.goto("/admin/story/stories");
     await expect(page.getByRole("heading", { name: "剧本", exact: true }).first()).toBeVisible();

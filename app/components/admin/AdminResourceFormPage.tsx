@@ -41,7 +41,7 @@ type AdminResourceFormPageProps = {
   defaults?: Record<string, unknown>;
   presets?: Preset[];
   submitLabel: string;
-  context?: ReactNode;
+  context?: ReactNode | ((values: FormValues) => ReactNode);
 };
 
 type ApiResult = {
@@ -405,7 +405,7 @@ export default function AdminResourceFormPage({
           </div>
 
           <aside className="space-y-4 lg:sticky lg:top-28 lg:self-start">
-            {context}
+            {typeof context === "function" ? context(values) : context}
             <section className="rounded-2xl border border-border bg-bg-surface p-5">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary">
                 Save impact
