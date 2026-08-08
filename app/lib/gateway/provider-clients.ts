@@ -4,6 +4,7 @@ import type { ResolvedBillableModel } from "../models/resolver";
 import { decryptCredential } from "../security/credential-encryption";
 import { GatewayError } from "./errors";
 import { resolveProviderBaseUrl } from "./provider-endpoint";
+import { resolveAnthropicAuthMode } from "./provider-auth";
 
 function credential(resolved: ResolvedBillableModel) {
   try {
@@ -29,8 +30,11 @@ export function createAnthropicProviderClient(
       "configuration_error",
     );
   }
+  const secret = credential(resolved);
+  const authMode = resolveAnthropicAuthMode(resolved.provider.config);
   return new Anthropic({
-    apiKey: credential(resolved),
+    apiKey: authMode === "x-api-key" ? secret : null,
+    authToken: authMode === "bearer" ? secret : null,
     baseURL: resolveProviderBaseUrl({
       protocol: "anthropic",
       baseUrl: resolved.provider.baseUrl,

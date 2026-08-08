@@ -67,6 +67,8 @@ pnpm build
 
 浏览器验收应遵循 [ink-admin-playwright-qa](.agents/skills/ink-admin-playwright-qa/SKILL.md)。
 
+`ink-dream-memory` 当前业务库的 PostgreSQL 迁移、真实 Story 表映射和 Claude Agent 网关变量建议见 [接入与迁移建议](docs/integration/ink-dream-memory-postgresql-gateway-migration.md)。
+
 ## 安全约束
 
 - Provider 密钥加密保存，读取 API 只返回指纹。

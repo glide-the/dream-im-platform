@@ -16,6 +16,29 @@ export default function AdminUsersPage() {
         allowDelete={false}
       />
       <AdminResourceTable resource="platform-users" title="Platform Users" description="计费身份、套餐与默认 Token 配额。" columns={[{ key: "id", label: "ID" }, { key: "source", label: "来源" }, { key: "external_user_id", label: "外部用户" }, { key: "email", label: "Email" }, { key: "tier", label: "套餐" }, { key: "status", label: "状态", format: "status" }]} />
+      <AdminCrudWorkbench
+        resource="user-model-permissions"
+        title="用户模型权限与独立限额"
+        description="按用户和模型覆盖启停、每分钟请求数、每日及每月 Token 限额；删除覆盖后恢复用户默认策略。"
+        createTemplate={{ platformUserId: "user_...", modelId: "model_...", enabled: true, requestsPerMinute: 30, dailyTokenLimit: null, monthlyTokenLimit: null }}
+        updateTemplate={{ enabled: true, requestsPerMinute: 30, dailyTokenLimit: null, monthlyTokenLimit: null }}
+      />
+      <AdminResourceTable
+        resource="user-model-permissions"
+        title="Model Permissions"
+        description="用户—模型级授权和限流覆盖；未配置记录时按启用模型与用户默认限额处理。"
+        defaultSort="updated_at"
+        columns={[
+          { key: "id", label: "Permission ID" },
+          { key: "email", label: "用户" },
+          { key: "model_code", label: "模型" },
+          { key: "enabled", label: "允许", format: "boolean" },
+          { key: "requests_per_minute", label: "RPM" },
+          { key: "daily_token_limit", label: "每日 Token" },
+          { key: "monthly_token_limit", label: "每月 Token" },
+          { key: "updated_at", label: "更新时间", format: "date" },
+        ]}
+      />
       <AdminResourceTable resource="gateway-api-keys" title="Gateway API Keys" description="这里只显示前缀；明文密钥无法恢复。" columns={[{ key: "key_prefix", label: "前缀" }, { key: "email", label: "用户" }, { key: "name", label: "名称" }, { key: "scopes", label: "Scopes", format: "json" }, { key: "status", label: "状态", format: "status" }, { key: "last_used_at", label: "最近使用", format: "date" }]} />
     </div>
   );

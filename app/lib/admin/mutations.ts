@@ -26,6 +26,33 @@ const codeSchema = z
   .max(80)
   .regex(/^[a-z0-9][a-z0-9._-]*$/);
 const optionalLimit = z.number().int().nonnegative().nullable().optional();
+const providerConfigSchema = z
+  .record(z.string(), z.unknown())
+  .superRefine((config, context) => {
+    if (
+      config.authMode !== undefined &&
+      !["x-api-key", "bearer"].includes(String(config.authMode))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["authMode"],
+        message: "authMode must be x-api-key or bearer",
+      });
+    }
+    if (
+      config.outputTokenParam !== undefined &&
+      !["max_tokens", "max_completion_tokens"].includes(
+        String(config.outputTokenParam),
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["outputTokenParam"],
+        message:
+          "outputTokenParam must be max_tokens or max_completion_tokens",
+      });
+    }
+  });
 
 const providerCreateSchema = z.strictObject({
   code: codeSchema,
@@ -36,7 +63,7 @@ const providerCreateSchema = z.strictObject({
   status: z.enum(["active", "disabled"]).default("disabled"),
   timeoutMs: z.number().int().min(1_000).max(900_000).default(120_000),
   maxRetries: z.number().int().min(0).max(5).default(1),
-  config: z.record(z.string(), z.unknown()).default({}),
+  config: providerConfigSchema.default({}),
 });
 
 const providerUpdateSchema = z.strictObject({
@@ -46,7 +73,7 @@ const providerUpdateSchema = z.strictObject({
   status: z.enum(["active", "disabled"]).optional(),
   timeoutMs: z.number().int().min(1_000).max(900_000).optional(),
   maxRetries: z.number().int().min(0).max(5).optional(),
-  config: z.record(z.string(), z.unknown()).optional(),
+  config: providerConfigSchema.optional(),
 });
 
 const modelCreateSchema = z.strictObject({
@@ -98,6 +125,20 @@ const platformUserCreateSchema = z.strictObject({
 
 const platformUserUpdateSchema = platformUserCreateSchema
   .omit({ source: true, externalUserId: true })
+  .partial()
+  .strict();
+
+const userModelPermissionCreateSchema = z.strictObject({
+  platformUserId: z.string().trim().min(1).max(100),
+  modelId: z.string().trim().min(1).max(100),
+  enabled: z.boolean().default(true),
+  requestsPerMinute: z.number().int().positive().nullable().optional(),
+  dailyTokenLimit: optionalLimit,
+  monthlyTokenLimit: optionalLimit,
+});
+
+const userModelPermissionUpdateSchema = userModelPermissionCreateSchema
+  .omit({ platformUserId: true, modelId: true })
   .partial()
   .strict();
 
@@ -670,6 +711,14 @@ const systemSettingFields = {
   isSecret: { column: "is_secret" },
   status: { column: "status" },
 } as const satisfies FieldMap;
+const userModelPermissionFields = {
+  platformUserId: { column: "platform_user_id" },
+  modelId: { column: "model_id" },
+  enabled: { column: "enabled" },
+  requestsPerMinute: { column: "requests_per_minute" },
+  dailyTokenLimit: { column: "daily_token_limit" },
+  monthlyTokenLimit: { column: "monthly_token_limit" },
+} as const satisfies FieldMap;
 
 async function insertCrudRow(
   client: PoolClient,
@@ -711,14 +760,30 @@ const insertStoryScene = (client: PoolClient, input: CrudValue) =>
   insertCrudRow(client, "story_scenes", "scene", input, storySceneFields);
 const insertStoryWorkflowRun = (client: PoolClient, input: CrudValue) =>
   insertCrudRow(client, "story_workflow_runs", "workflow", input, storyWorkflowRunFields);
-const insertSystemSetting = (client: PoolClient, input: CrudValue) =>
-  insertCrudRow(client, "system_settings", "setting", input, systemSettingFields);
+const insertUserModelPermission = (client: PoolClient, input: CrudValue) =>
+  insertCrudRow(
+    client,
+    "user_model_permissions",
+    "modelperm",
+    input,
+    userModelPermissionFields,
+  );
+
+function maskSystemSetting(row: Record<string, unknown>) {
+  return row.is_secret ? { ...row, value: { masked: true } } : row;
+}
+
+const insertSystemSetting = async (client: PoolClient, input: CrudValue) =>
+  maskSystemSetting(
+    await insertCrudRow(client, "system_settings", "setting", input, systemSettingFields),
+  );
 
 const createConfig = {
   providers: { permission: "providers.write", schema: providerCreateSchema, insert: insertProvider },
   models: { permission: "models.write", schema: modelCreateSchema, insert: insertModel },
   "pricing-rules": { permission: "pricing.write", schema: pricingCreateSchema, insert: insertPricing },
   "platform-users": { permission: "users.write", schema: platformUserCreateSchema, insert: insertPlatformUser },
+  "user-model-permissions": { permission: "users.write", schema: userModelPermissionCreateSchema, insert: insertUserModelPermission },
   "gateway-api-keys": { permission: "gateway.keys.write", schema: keyCreateSchema, insert: insertGatewayKey },
   "admin-users": { permission: "access.write", schema: adminUserCreateSchema, insert: insertAdminUser },
   "admin-roles": { permission: "access.write", schema: adminRoleCreateSchema, insert: insertAdminRole },
@@ -774,6 +839,7 @@ async function loadRowForUpdate(client: PoolClient, table: string, id: string) {
     "ai_models",
     "ai_pricing_rules",
     "platform_users",
+    "user_model_permissions",
     "story_workspaces",
     "story_projects",
     "story_characters",
@@ -1125,6 +1191,18 @@ const updateConfig = {
   models: { permission: "models.write", schema: modelUpdateSchema, update: updateModel },
   "pricing-rules": { permission: "pricing.write", schema: pricingUpdateSchema, update: updatePricing },
   "platform-users": { permission: "users.write", schema: platformUserUpdateSchema, update: updatePlatformUser },
+  "user-model-permissions": {
+    permission: "users.write",
+    schema: userModelPermissionUpdateSchema,
+    update: (client: PoolClient, id: string, input: CrudValue) =>
+      updateCrudRow(
+        client,
+        "user_model_permissions",
+        id,
+        input,
+        userModelPermissionFields,
+      ),
+  },
   "admin-users": { permission: "access.write", schema: adminUserUpdateSchema, update: updateAdminUser },
   "admin-roles": { permission: "access.write", schema: adminRoleUpdateSchema, update: updateAdminRole },
   "story-workspaces": {
@@ -1160,8 +1238,19 @@ const updateConfig = {
   "system-settings": {
     permission: "system.write",
     schema: systemSettingUpdateSchema,
-    update: (client: PoolClient, id: string, input: CrudValue) =>
-      updateCrudRow(client, "system_settings", id, input, systemSettingFields),
+    update: async (client: PoolClient, id: string, input: CrudValue) => {
+      const result = await updateCrudRow(
+        client,
+        "system_settings",
+        id,
+        input,
+        systemSettingFields,
+      );
+      return {
+        before: maskSystemSetting(result.before),
+        after: maskSystemSetting(result.after),
+      };
+    },
   },
 } as const;
 
@@ -1227,6 +1316,7 @@ export async function handleAdminResourceDelete(
         "story-scenes": { table: "story_scenes", permission: "story.write" },
         "story-workflow-runs": { table: "story_workflow_runs", permission: "story.write" },
         "system-settings": { table: "system_settings", permission: "system.write" },
+        "user-model-permissions": { table: "user_model_permissions", permission: "users.write" },
         "admin-roles": { table: "admin_roles", permission: "access.write" },
       } as const;
       const config = deletable[resource as keyof typeof deletable];
@@ -1271,7 +1361,10 @@ export async function handleAdminResourceDelete(
           resourceId: id,
           requestId,
           request,
-          before,
+          before:
+            resource === "system-settings"
+              ? maskSystemSetting(before)
+              : before,
         });
         return { id };
       });

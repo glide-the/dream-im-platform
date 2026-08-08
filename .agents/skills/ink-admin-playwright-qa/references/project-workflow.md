@@ -8,6 +8,7 @@
 - PostgreSQL 16 is the only data store. Local Docker maps `ink-memory` to host port 5433.
 - Admin routes: `/admin/**`; protected resources use real server sessions and `/api/admin/**`.
 - Gateway routes: `/v1/messages`, `/v1/chat/completions`, `/v1/models`.
+- User/model permission overrides and gateway rate-limit windows are first-class Admin resources.
 - Root `/` redirects to `/admin`; historical PWA routes are intentionally absent.
 
 ## Runtime ownership

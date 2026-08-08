@@ -11,8 +11,8 @@ export default function AdminModelsPage() {
         resource="providers"
         title="Provider 高级维护"
         description="创建或更新协议端点、凭据、超时与运行状态。Provider 采用停用而非硬删除。"
-        createTemplate={{ code: "anthropic-main", name: "Anthropic", protocol: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "replace-with-provider-key", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: {} }}
-        updateTemplate={{ name: "Anthropic", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: {} }}
+        createTemplate={{ code: "anthropic-main", name: "Anthropic", protocol: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "replace-with-provider-key", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: { authMode: "x-api-key" } }}
+        updateTemplate={{ name: "Anthropic", status: "disabled", timeoutMs: 120000, maxRetries: 1, config: { authMode: "x-api-key" } }}
         allowDelete={false}
       />
       <AdminResourceTable resource="providers" title="Providers" description="密钥永不回显；指纹用于核对轮换。" columns={[{ key: "id", label: "Provider ID" }, { key: "code", label: "Code" }, { key: "protocol", label: "协议" }, { key: "base_url", label: "Endpoint" }, { key: "status", label: "状态", format: "status" }, { key: "credential_configured", label: "密钥", format: "boolean" }, { key: "api_key_fingerprint", label: "指纹" }]} />

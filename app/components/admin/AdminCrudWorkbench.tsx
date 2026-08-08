@@ -1,6 +1,6 @@
 "use client";
 
-import { useInvalidate } from "@refinedev/core";
+import { useCan, useInvalidate } from "@refinedev/core";
 import { FormEvent, useMemo, useState } from "react";
 
 type Operation = "create" | "update" | "delete";
@@ -21,6 +21,7 @@ export default function AdminCrudWorkbench({
   allowDelete?: boolean;
 }) {
   const invalidate = useInvalidate();
+  const access = useCan({ resource, action: "create" });
   const [operation, setOperation] = useState<Operation>("create");
   const [recordId, setRecordId] = useState("");
   const [payload, setPayload] = useState(() =>
@@ -99,6 +100,8 @@ export default function AdminCrudWorkbench({
     });
     if (operation === "create" && result.data?.id) setRecordId(result.data.id);
   }
+
+  if (!access.data?.can) return null;
 
   return (
     <section className="rounded-[24px] border border-border bg-bg-surface p-5 shadow-subtle sm:p-6">

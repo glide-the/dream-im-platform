@@ -5,10 +5,19 @@ services:
       dockerfile: ./docker/Dockerfile
     ports:
       - "${APP_PORT:-3000}:3000"
-    env_file:
-      - .env
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:-ink_memory}@postgres:5432/${POSTGRES_DB:-ink-memory}
+      ADMIN_CONSOLE_ENABLED: ${ADMIN_CONSOLE_ENABLED:-true}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:-}
+      ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:-}
+      ADMIN_ORIGIN_ALLOWLIST: ${ADMIN_ORIGIN_ALLOWLIST:-http://localhost:3000}
+      GATEWAY_API_KEY_PEPPER: ${GATEWAY_API_KEY_PEPPER:-}
+      AI_CREDENTIAL_ENCRYPTION_KEY: ${AI_CREDENTIAL_ENCRYPTION_KEY:-}
+      AI_PROVIDER_HOST_ALLOWLIST: ${AI_PROVIDER_HOST_ALLOWLIST:-}
+      AI_PROVIDER_ALLOW_INSECURE_LOCALHOST: ${AI_PROVIDER_ALLOW_INSECURE_LOCALHOST:-false}
+      GATEWAY_MIN_RESERVE_MICROUSD: ${GATEWAY_MIN_RESERVE_MICROUSD:-0}
+      GATEWAY_MAX_BODY_BYTES: ${GATEWAY_MAX_BODY_BYTES:-20971520}
+      RUN_DB_MIGRATIONS: ${RUN_DB_MIGRATIONS:-true}
     networks:
       - ink-memory-network
     depends_on:
@@ -20,8 +29,6 @@ services:
     image: postgres:16-alpine
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
-    env_file:
-      - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ink_memory}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ink_memory}

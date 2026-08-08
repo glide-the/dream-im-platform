@@ -21,6 +21,8 @@ export type AdminResource =
   | "ledger"
   | "gateway-requests"
   | "gateway-api-keys"
+  | "gateway-rate-limits"
+  | "user-model-permissions"
   | "admin-users"
   | "admin-roles"
   | "admin-permissions"
@@ -231,6 +233,68 @@ const resources: Record<AdminResource, ResourceConfig> = {
     },
     defaultSort: "created_at",
     filterFields: ["platform_user_id", "email", "name", "key_prefix", "status"],
+  },
+  "gateway-rate-limits": {
+    permission: "gateway.read",
+    select: `l.platform_user_id || ':' || l.model_id || ':' || l.window_type || ':' ||
+             extract(epoch FROM l.window_start)::bigint::text AS id,
+             l.platform_user_id, u.email, l.model_id, m.code AS model_code,
+             l.window_type, l.window_start, l.request_count, l.token_count,
+             l.updated_at`,
+    from: `FROM gateway_rate_limits AS l
+           JOIN platform_users AS u ON u.id = l.platform_user_id
+           JOIN ai_models AS m ON m.id = l.model_id`,
+    columns: {
+      id: "l.platform_user_id || ':' || l.model_id || ':' || l.window_type || ':' || extract(epoch FROM l.window_start)::bigint::text",
+      platform_user_id: "l.platform_user_id",
+      email: "u.email",
+      model_id: "l.model_id",
+      model_code: "m.code",
+      window_type: "l.window_type",
+      window_start: "l.window_start",
+      request_count: "l.request_count",
+      token_count: "l.token_count",
+      updated_at: "l.updated_at",
+    },
+    defaultSort: "window_start",
+    filterFields: [
+      "platform_user_id",
+      "email",
+      "model_id",
+      "model_code",
+      "window_type",
+    ],
+  },
+  "user-model-permissions": {
+    permission: "users.read",
+    select: `ump.id, ump.platform_user_id, u.email, ump.model_id,
+             m.code AS model_code, ump.enabled, ump.requests_per_minute,
+             ump.daily_token_limit, ump.monthly_token_limit,
+             ump.created_at, ump.updated_at`,
+    from: `FROM user_model_permissions AS ump
+           JOIN platform_users AS u ON u.id = ump.platform_user_id
+           JOIN ai_models AS m ON m.id = ump.model_id`,
+    columns: {
+      id: "ump.id",
+      platform_user_id: "ump.platform_user_id",
+      email: "u.email",
+      model_id: "ump.model_id",
+      model_code: "m.code",
+      enabled: "ump.enabled::text",
+      requests_per_minute: "ump.requests_per_minute",
+      daily_token_limit: "ump.daily_token_limit",
+      monthly_token_limit: "ump.monthly_token_limit",
+      created_at: "ump.created_at",
+      updated_at: "ump.updated_at",
+    },
+    defaultSort: "updated_at",
+    filterFields: [
+      "platform_user_id",
+      "email",
+      "model_id",
+      "model_code",
+      "enabled",
+    ],
   },
   "admin-users": {
     permission: "access.read",

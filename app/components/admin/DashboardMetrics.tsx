@@ -7,7 +7,7 @@ type Metrics = {
   storyProjects: number;
   activeModels: number;
   requestsToday: number;
-  tokensToday: number;
+  tokensToday: string;
   chargedTodayMicrousd: string;
   settlementFailures: number;
 };

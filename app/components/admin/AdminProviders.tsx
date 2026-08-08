@@ -16,6 +16,11 @@ const resources = [
     meta: { label: "平台用户" },
   },
   {
+    name: "user-model-permissions",
+    list: "/admin/users",
+    meta: { label: "用户模型权限" },
+  },
+  {
     name: "story-workspaces",
     list: "/admin/story",
     meta: { label: "创作空间" },
@@ -46,9 +51,29 @@ const resources = [
     meta: { label: "模型中心" },
   },
   {
+    name: "providers",
+    list: "/admin/models",
+    meta: { label: "模型供应商" },
+  },
+  {
+    name: "pricing-rules",
+    list: "/admin/models",
+    meta: { label: "模型定价" },
+  },
+  {
+    name: "billing-accounts",
+    list: "/admin/billing",
+    meta: { label: "计费账户" },
+  },
+  {
     name: "usage",
     list: "/admin/billing",
     meta: { label: "Token 计费" },
+  },
+  {
+    name: "ledger",
+    list: "/admin/billing",
+    meta: { label: "计费账本" },
   },
   {
     name: "gateway-requests",
@@ -56,9 +81,29 @@ const resources = [
     meta: { label: "代理网关" },
   },
   {
+    name: "gateway-api-keys",
+    list: "/admin/users",
+    meta: { label: "网关密钥" },
+  },
+  {
+    name: "gateway-rate-limits",
+    list: "/admin/gateway",
+    meta: { label: "网关限流窗口" },
+  },
+  {
     name: "admin-users",
     list: "/admin/access",
     meta: { label: "权限管理" },
+  },
+  {
+    name: "admin-roles",
+    list: "/admin/access",
+    meta: { label: "管理员角色" },
+  },
+  {
+    name: "admin-permissions",
+    list: "/admin/access",
+    meta: { label: "权限代码" },
   },
   {
     name: "system-settings",

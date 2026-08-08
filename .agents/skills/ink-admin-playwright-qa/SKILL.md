@@ -75,11 +75,11 @@ pnpm exec playwright install chromium
 
 - Story: workspaces → projects → characters/scenes → workflow-runs create/update/delete, FK conflict,
   unique conflict and validation failure.
-- Models: Provider credential masking, model enable/disable, pricing window overlap conflict.
-- Users: status/tier/limits, balance credit idempotency, one-time Gateway Key plaintext and revoke.
+- Models: Provider credential masking, native/Bearer Anthropic auth mode, model enable/disable, pricing window overlap conflict.
+- Users: status/tier/limits, per-model permission CRUD, balance credit idempotency, one-time Gateway Key plaintext and revoke.
 - Access: Admin status/role change, custom role CRUD, built-in role protection.
 - System: category/key uniqueness and secret value masking.
-- Gateway: success/failure/stream interruption and explicit `settlement_failed` reconciliation.
+- Gateway: success/failure/stream interruption, minute/day/month limit windows and explicit `settlement_failed` reconciliation.
 
 ### 6. Run proportional checks
 

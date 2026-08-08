@@ -18,6 +18,8 @@ const registeredResources = new Set([
   "ledger",
   "gateway-requests",
   "gateway-api-keys",
+  "gateway-rate-limits",
+  "user-model-permissions",
   "admin-users",
   "admin-roles",
   "admin-permissions",
@@ -30,26 +32,34 @@ const registeredResources = new Set([
   "system-settings",
 ]);
 
-const resourcePermission: Record<string, string> = {
-  "platform-users": "users",
-  providers: "providers",
-  models: "models",
-  "pricing-rules": "pricing",
-  "billing-accounts": "billing",
-  usage: "billing",
-  ledger: "billing",
-  "gateway-requests": "gateway",
-  "gateway-api-keys": "gateway",
-  "admin-users": "access",
-  "admin-roles": "access",
-  "admin-permissions": "access",
-  "audit-logs": "audit",
-  "story-workspaces": "story",
-  "story-projects": "story",
-  "story-characters": "story",
-  "story-scenes": "story",
-  "story-workflow-runs": "story",
-  "system-settings": "system",
+const resourcePermission: Record<
+  string,
+  { read: string; write: string }
+> = {
+  "platform-users": { read: "users.read", write: "users.write" },
+  "user-model-permissions": { read: "users.read", write: "users.write" },
+  providers: { read: "providers.read", write: "providers.write" },
+  models: { read: "models.read", write: "models.write" },
+  "pricing-rules": { read: "pricing.read", write: "pricing.write" },
+  "billing-accounts": { read: "billing.read", write: "billing.adjust" },
+  usage: { read: "billing.read", write: "billing.adjust" },
+  ledger: { read: "billing.read", write: "billing.adjust" },
+  "gateway-requests": { read: "gateway.read", write: "gateway.reconcile" },
+  "gateway-api-keys": {
+    read: "gateway.read",
+    write: "gateway.keys.write",
+  },
+  "gateway-rate-limits": { read: "gateway.read", write: "gateway.reconcile" },
+  "admin-users": { read: "access.read", write: "access.write" },
+  "admin-roles": { read: "access.read", write: "access.write" },
+  "admin-permissions": { read: "access.read", write: "access.write" },
+  "audit-logs": { read: "audit.read", write: "audit.read" },
+  "story-workspaces": { read: "story.read", write: "story.write" },
+  "story-projects": { read: "story.read", write: "story.write" },
+  "story-characters": { read: "story.read", write: "story.write" },
+  "story-scenes": { read: "story.read", write: "story.write" },
+  "story-workflow-runs": { read: "story.read", write: "story.write" },
+  "system-settings": { read: "system.read", write: "system.write" },
 };
 
 function resourceEndpoint(resource: string) {
@@ -233,11 +243,13 @@ export const adminAccessControlProvider: AccessControlProvider = {
     }
     const identity = await getIdentity();
     if (!identity) return { can: false, reason: "Authentication required" };
-    const domain = resourcePermission[resource];
-    const suffix = ["list", "show"].includes(action) ? "read" : "write";
+    const permissions = resourcePermission[resource];
+    const required = ["list", "show"].includes(action)
+      ? permissions.read
+      : permissions.write;
     return {
-      can: identity.permissions.includes(`${domain}.${suffix}`),
-      reason: `Permission ${domain}.${suffix} is required`,
+      can: identity.permissions.includes(required),
+      reason: `Permission ${required} is required`,
     };
   },
   options: {

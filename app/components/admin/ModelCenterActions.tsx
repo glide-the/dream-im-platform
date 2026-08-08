@@ -32,7 +32,9 @@ export default function ModelCenterActions() {
           status: form.get("status"),
           timeoutMs: Number(form.get("timeoutMs")),
           maxRetries: Number(form.get("maxRetries")),
-          config: {},
+          config: {
+            authMode: form.get("authMode"),
+          },
         },
       },
       {
@@ -125,6 +127,10 @@ export default function ModelCenterActions() {
             <select className={inputClass} name="protocol"><option value="anthropic">Anthropic</option><option value="openai">OpenAI</option></select>
             <input className={inputClass} name="baseUrl" type="url" placeholder="https://api.anthropic.com" required />
             <input className={inputClass} name="apiKey" type="password" autoComplete="new-password" placeholder="Provider API Key（不回显）" required />
+            <select className={inputClass} name="authMode">
+              <option value="x-api-key">x-api-key（Anthropic 官方）</option>
+              <option value="bearer">Authorization Bearer（Claude 中转）</option>
+            </select>
             <div className="grid grid-cols-2 gap-3"><input className={inputClass} name="timeoutMs" type="number" defaultValue="120000" /><input className={inputClass} name="maxRetries" type="number" defaultValue="1" /></div>
             <select className={inputClass} name="status"><option value="disabled">先禁用</option><option value="active">立即启用</option></select>
             <button className="min-h-11 w-full rounded-full bg-text-primary text-sm font-semibold text-bg-surface">保存 Provider</button>

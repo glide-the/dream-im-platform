@@ -25,7 +25,7 @@ export async function handleAdminDashboard(request: Request) {
         storyProjects: Number(row.story_projects),
         activeModels: Number(row.active_models),
         requestsToday: Number(row.requests_today),
-        tokensToday: Number(row.tokens_today),
+        tokensToday: row.tokens_today,
         chargedTodayMicrousd: row.charged_today_microusd,
         settlementFailures: Number(row.settlement_failures),
       };
