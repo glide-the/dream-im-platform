@@ -2,7 +2,79 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
+
+type ThemeMode = "light" | "dark";
+
+const THEME_STORAGE_KEY = "dashboard-theme";
+const THEME_CHANGE_EVENT = "ink-memory-theme-change";
+
+function readTheme(): ThemeMode {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function applyTheme(theme: ThemeMode, mode: ThemeMode | "system" = theme) {
+  const root = document.documentElement;
+  root.dataset.themeMode = mode;
+  root.dataset.theme = theme;
+  root.style.colorScheme = theme;
+}
+
+function subscribeToTheme(onChange: () => void) {
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key !== THEME_STORAGE_KEY) return;
+    const mode = event.newValue === "light" || event.newValue === "dark"
+      ? event.newValue
+      : "system";
+    const resolved = mode === "system"
+      ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+      : mode;
+    applyTheme(resolved, mode);
+    onChange();
+  };
+  window.addEventListener(THEME_CHANGE_EVENT, onChange);
+  window.addEventListener("storage", handleStorage);
+  return () => {
+    window.removeEventListener(THEME_CHANGE_EVENT, onChange);
+    window.removeEventListener("storage", handleStorage);
+  };
+}
+
+function ThemeToggle() {
+  const theme = useSyncExternalStore(subscribeToTheme, readTheme, () => "light");
+  const isDark = theme === "dark";
+  const nextTheme: ThemeMode = isDark ? "light" : "dark";
+
+  function toggleTheme() {
+    applyTheme(nextTheme);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    } catch {
+      // The selected theme still applies for this page when storage is unavailable.
+    }
+    window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      aria-label={`切换至${isDark ? "浅色" : "深色"}主题`}
+      aria-pressed={isDark}
+      className="mt-3 flex min-h-10 w-full items-center justify-between border border-border bg-bg-primary px-3 text-xs font-semibold text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]"
+    >
+      <span className="inline-flex items-center gap-2">
+        <span aria-hidden="true" className="font-mono text-[11px]">
+          {isDark ? "●" : "○"}
+        </span>
+        主题
+      </span>
+      <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-tertiary">
+        {isDark ? "深色" : "浅色"}
+      </span>
+    </button>
+  );
+}
 
 type NavItem = {
   label: string;
@@ -48,7 +120,6 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
     label: "代理网关",
     items: [
       { label: "请求日志", href: "/admin/gateway/requests", permission: "gateway.read", mark: "RQ" },
-      { label: "异常结算", href: "/admin/gateway/reconciliation", permission: "gateway.read", mark: "RC" },
       { label: "Gateway Key", href: "/admin/gateway/keys", permission: "gateway.read", mark: "KY" },
       { label: "限流策略", href: "/admin/gateway/rate-limits", permission: "gateway.read", mark: "RL" },
     ],
@@ -155,6 +226,7 @@ function NavContent({
       <div className="border-t border-border px-5 py-4">
         <p className="truncate text-xs font-semibold">{identity.name}</p>
         <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-[0.12em] text-text-tertiary">{identity.roles.join(" · ")}</p>
+        <ThemeToggle />
         <button type="button" onClick={logout} className="mt-3 min-h-10 text-xs font-semibold text-text-secondary underline decoration-border">退出管理后台</button>
       </div>
     </div>

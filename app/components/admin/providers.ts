@@ -34,7 +34,6 @@ const registeredResources = new Set([
   "stories",
   "story-characters",
   "story-scenes",
-  "story-workflow-runs",
   "system-settings",
 ]);
 
@@ -70,7 +69,6 @@ const resourcePermission: Record<
   stories: { read: "story.read", write: "story.write" },
   "story-characters": { read: "story.read", write: "story.write" },
   "story-scenes": { read: "story.read", write: "story.write" },
-  "story-workflow-runs": { read: "story.read", write: "story.write" },
   "system-settings": { read: "system.read", write: "system.write" },
 };
 

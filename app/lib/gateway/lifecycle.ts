@@ -76,8 +76,8 @@ export async function finalizeUnknownUsage(input: {
           : input.firstTokenAt - input.startedAt,
     });
   } catch {
-    // The reserved amount remains held. A reconciliation worker can safely retry
-    // from the immutable request and ledger records once the database recovers.
+    // The immutable request/error record remains available for an idempotent
+    // automated recovery after the database becomes available again.
   }
 }
 

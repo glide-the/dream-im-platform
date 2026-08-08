@@ -124,7 +124,7 @@ flowchart TB
   Story --> StoryRoutes["workspaces / stories / characters / scenes / workflow-runs"]
   Models --> ModelRoutes["providers / models / pricing / permissions"]
   Billing --> BillingRoutes["usage / accounts / ledger / reports"]
-  Gateway --> GatewayRoutes["requests / reconciliation / keys / rate-limits"]
+  Gateway --> GatewayRoutes["requests / keys / rate-limits"]
   Resources --> ResourceRoutes["users / storage"]
   Access --> AccessRoutes["admins / roles / permissions"]
   System --> SystemRoutes["settings / audit"]
@@ -216,9 +216,10 @@ E5 永远在末端；先展示前置状态、影响对象、permission、审计�
 - Secret 默认 `type=password`，支持显隐与粘贴；显隐只作用于本次未提交值。
 - Provider credential 更新留空表示“不轮换”，不是清空；列表/详情只显示“已配置/未配置”。
 - System Secret 写入后详情仅返回 `{masked:true}`。
-- Gateway Key 创建回执只显示一次明文，并提供 Copy 与“关闭后不可恢复”提示。
+- Gateway Key 创建 Modal 成功后原位切换为一次性接入回执：先显示网关根地址与 `/v1/messages`，再显示 `ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN` 和完整 env 片段。地址、Token、完整配置各有独立 Copy；复制成功/失败由 `aria-live=polite` 文本反馈。
 - Key 列表只显示 prefix、name、scopes、status、last_used、expires；允许 revoke，不允许取回或更新 secret。
 - Secret/Key 不进入 URL、DOM 持久副本、localStorage、analytics、错误信息或审计 metadata。
+- 关闭回执或刷新后只保留 key prefix；详情页不得重建环境配置中的 Token。390px 下代码使用 `white-space: pre-wrap` 与 `overflow-wrap:anywhere`，不得产生页面级横向滚动。
 
 ## 9. Story 运营域
 
@@ -232,10 +233,10 @@ flowchart TB
 ```
 
 - Workspace：读、受控改 name/settings；不创建、删除、停用。
-- Story：读，更新 title/description/type，pending 可 confirm/reject，active 可 archive；不通用创建/硬删。
-- Character：读、允许字段更新、confirm/reject/archive；不通用创建/硬删。
+- Story：读，更新 title/description/type，pending 仅可 confirm；不提供 reject/archive，不通用创建/硬删。
+- Character：读、允许字段更新和 confirm；不提供 reject/archive，不通用创建/硬删。
 - Scene：读，更新 name/description/story_id/order_index；绑定 Story 时校验同 owner/workspace。
-- Workflow Run：只读时间线、transition、token consumption；retry/cancel 是带状态版本与幂等键的命令。
+- Workflow Run：当前不进入 Admin 产品范围；不展示业务失败状态，也不提供人工 retry/cancel。
 - Story/Character/Scene 详情保留 Workspace 上下文；关系编辑必须事务校验，不复制源记录。
 - Story PostgreSQL 不可用显示 503；控制面其他域保持可用，但不展示旧表或假数据。
 
@@ -317,25 +318,24 @@ Usage/Gateway Request 详情使用桌面宽 Drawer、移动全屏，按 User/Key
 Ledger append-only：显示 amount、available_after、reserved_after、request/pricing 引用和 operator reason；纠错追加 reversal/adjustment。
 报表只聚合真实 Usage/Ledger，显示日期范围、时区、币种和换算规则；CSV 仅导出当前筛选且排除敏感正文。
 
-## 12. Gateway Request 与 Reconciliation
+## 12. Gateway Request 与失败记录
 
 ```mermaid
 flowchart LR
   GR["Gateway Request"] --> US["Usage"] --> PS["Pricing Snapshot"] --> LE["Ledger Entry"]
-  GR -->|"settlement_failed / usage unknown"| RC["Reconciliation Workbench"]
-  RC -->|"settle known usage"| NEW["New Ledger Entry"]
-  RC -->|"proven unbilled release"| REL["Release Entry"]
-  NEW & REL --> AUD["Audit Receipt"]
+  GR -->|"settlement_failed / usage unknown"| ER["Failure Record"]
+  ER --> AUD["Audit Evidence"]
+  ER -. "read-only links" .-> US
+  ER -. "read-only links" .-> LE
   LE -. "correction" .-> REV["New reversal / adjustment"]
 ```
 
 Request 列表/详情只读；展示 request/upstream ID、user、model/provider/protocol、outcome、四类 Token、reserved/provider cost/charged、latency、error 和时间。
 详情只展示安全 metadata，不展示完整 Prompt/Response；链路节点都可跳到对应过滤视图。
-Reconciliation 默认筛选 `settlement_failed`、usage unknown、ledger mismatch。
+`settlement_failed`、usage unknown 与上游异常都留在同一 Request 查询面，通过 status/error code/Provider/Model/时间筛选定位。
 G1 固定上下文：冻结金额、已知四类 Token、Provider 错误、价格快照和更新时间。
-G2 操作：disposition 二选一；settle 填实际 Token，release 必须明确证明无用量。
-G3 影响：整数 micro-USD 的 available/reserved/amount before→after；409 展示最新请求状态。
-G4 提交：reason、external ticket、idempotency key；成功进入只读回执，不允许改历史分录。
+G2 关联证据：Usage、Ledger 与 Audit 仅提供只读链接；未知 Token 显示 unavailable，不默认为 0。
+G3 运维动作：复制 Request ID、查看同类错误、返回筛选结果；不提供 disposition、settle/release、手填 Token、改余额或补账入口。
 
 ## 13. RBAC 管理矩阵
 
@@ -353,7 +353,7 @@ G4 提交：reason、external ticket、idempotency key；成功进入只读回�
 | `pricing.read` | ✓ | ✓ | ✓ | Pricing 读取 |
 | `pricing.write` | ✓ | ✓ | — | Pricing 版本发布 |
 | `billing.read` | ✓ | ✓ | ✓ | Usage/Account/Ledger/Report |
-| `billing.adjust` | ✓ | — | — | 调账/异常结算 |
+| `billing.adjust` | ✓ | — | — | 余额调账；Gateway 错误无人工结算动作 |
 | `gateway.read` | ✓ | ✓ | ✓ | Request/Key 掩码/限流 |
 | `gateway.keys.write` | ✓ | ✓ | — | 创建/revoke Key |
 | `access.read` | ✓ | — | ✓ | Admin/Role/Permission 读取 |
@@ -398,7 +398,7 @@ Toast 使用不透明 surface，Desktop 位于 Paper 右下、Mobile 位于 safe
 
 ## 16. 高风险确认规范
 
-适用：Provider 停用、Key revoke、Story reject/archive、Workflow retry/cancel、余额调整、异常结算、Role 删除、管理员停用、Secret 覆盖。
+适用：Provider 停用、Key revoke、余额调整、Role 删除、管理员停用、Secret 覆盖。Story 当前仅提供确认，不设计 reject/archive、业务失败或人工重试。Gateway 错误记录为只读，不进入高风险人工结算流程。
 确认 Dialog 顺序：动作名称 → 不可逆性 → 前置状态 → 影响范围与数量 → before/after → reason/ticket/idempotency → 类型化确认（仅最高风险）→ 提交。
 确认对象与当前服务器状态不一致时返回 409；Dialog 保留用户输入并把焦点移到冲突摘要。
 提交中按钮显示动词进行态并禁止重复；网络结果未知时不得提示成功，先按 idempotency key 查询结果。
@@ -437,7 +437,7 @@ Role 硬删除仅允许自定义 Role，并要求输入 resource code；账本�
 | `UsageDashboard` / `RequestDetailDrawer` | `app/components/admin/billing/` | 全局筛选、真实聚合、三统计页签与只读请求核对 |
 | `JsonEditor` / `DiffSummary` | `app/components/admin/workbench/` | schema、格式化、恢复、diff |
 | `CommandWorkbench` | 替代通用 `AdminCrudWorkbench` | 领域命令 G1–G4，不暴露假 CRUD |
-| `ReconciliationWorkbench` | 演进 `GatewayReconciliationAction.tsx` | 冻结、用量、影响、幂等回执 |
+| Gateway failure record | `AdminUsageDashboard` Request Detail | 只读错误、Usage、价格快照与时间线；无人工处置按钮 |
 | `ContentState` / `LiveFeedback` | `app/components/admin/feedback/` | Loading/Empty/Error/Toast/live region |
 | `LocalIcon` primitives | `app/components/admin/icons/` | currentColor SVG、统一笔画与名称 |
 
@@ -449,7 +449,7 @@ Role 硬删除仅允许自定义 Role，并要求输入 resource code；账本�
 | Story | `/admin/story/workspaces`、`/stories`、`/characters`、`/scenes`、`/workflow-runs` |
 | Models | `/admin/models/providers`、`/providers/new`、`/providers/[id]/edit`、`/providers/[id]/discover/[jobId]`、`/models`、`/pricing`、`/pricing/sync`、`/permissions` |
 | Billing | `/admin/billing/usage`、`/accounts`、`/ledger`、`/reports` |
-| Gateway | `/admin/gateway/requests`、`/reconciliation`、`/keys`、`/rate-limits` |
+| Gateway | `/admin/gateway/requests`、`/keys`、`/rate-limits` |
 | Resources | `/admin/resources/users`、`/storage` |
 | Access | `/admin/access/admins`、`/roles`、`/permissions` |
 | System | `/admin/system/settings`、`/audit` |
@@ -471,13 +471,14 @@ Role 硬删除仅允许自定义 Role，并要求输入 resource code；账本�
 ### 19.2 领域与安全
 
 - [ ] Story 只使用 PostgreSQL 权威表；503 fail-closed；无旧表/SQLite/JSON fallback。
-- [ ] Story/Character/Scene 不提供通用 create/硬删；Workflow 仅命令式 retry/cancel。
-- [ ] Provider/System Secret 永不回显；Gateway Key 只在创建成功显示一次。
+- [ ] Story/Character/Scene 不提供通用 create/硬删，审核操作仅保留 confirm；无 reject/archive。Workflow 不进入当前 UI，也无人工 retry/cancel。
+- [ ] Provider/System Secret 永不回显；Gateway Key 只在创建成功显示一次，同时展示可复制的 Gateway 地址、`ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN`；刷新/详情不回显。
 - [ ] Provider fixed 全窗口层覆盖 Admin 侧栏；保存成功与 discover 成功分别反馈；五类 diff、后台继续、重试和 stale 409 可完成。
 - [ ] models.dev 目录显示 source/version/hash，最多 6 小时节流；only exact 默认选；同步只创建新价格版本，不覆盖历史。
 - [ ] Pricing overlap 返回 409；历史 snapshot 不破坏更新。
 - [ ] Usage/Ledger/Audit 无 update/delete；调账和纠错只追加记录。
 - [ ] micro-USD 始终为整数事实值；未知 Usage 不按 0 结算。
+- [ ] `settlement_failed` 只在 Request/Usage/Audit 中记录；侧栏、子导航、详情与 API 均无人工 reconciliation 操作。
 - [ ] Storage 不虚构 list/count；首版不开放删除对象。
 - [ ] 菜单隐藏与 API 服务端 RBAC 均实现；写操作使用严格 Zod、事务和审计。
 

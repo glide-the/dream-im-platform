@@ -12,7 +12,7 @@ const queues = [
 export default function AdminOverviewPage() {
   return (
     <div className="space-y-7">
-      <AdminPageHeader eyebrow="Operations overview" title="运营总览" description="把需要处置的审核、结算、模型和资源问题放在同一工作台。这里不展示装饰性指标，所有数字均可追溯到真实资源。" status="PostgreSQL · protected" />
+      <AdminPageHeader eyebrow="Operations overview" title="运营总览" description="把需要处置的审核、模型和资源问题以及只读网关记录放在同一工作台。这里不展示装饰性指标，所有数字均可追溯到真实资源。" status="PostgreSQL · protected" />
       <DashboardMetrics />
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
         <div className="admin-panel p-5 sm:p-6">

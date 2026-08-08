@@ -46,7 +46,6 @@ export const billingTabs = [
 
 export const gatewayTabs = [
   { label: "请求日志", href: "/admin/gateway/requests" },
-  { label: "异常结算", href: "/admin/gateway/reconciliation" },
   { label: "Gateway Key", href: "/admin/gateway/keys" },
   { label: "限流策略", href: "/admin/gateway/rate-limits" },
 ];

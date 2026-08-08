@@ -27,7 +27,7 @@ Story 资源是 PostgreSQL 一等实体，支持完整运营 CRUD；不再通过
 - Provider/Model/Pricing 使用稳定 code，历史请求保存定价快照。
 - 余额与账本使用 micro-USD 整数，所有扣费在事务中完成。
 - Gateway 请求保存状态、归因、用量、成本和错误摘要，不保存完整 Prompt/响应。
-- Admin 写操作与关键人工结算写不可变审计日志。
+- Admin 写操作写入不可变审计日志；Gateway 自动结算失败仅记录，不产生人工结算写操作。
 
 ## 请求生命周期
 
@@ -36,7 +36,7 @@ Story 资源是 PostgreSQL 一等实体，支持完整运营 CRUD；不再通过
 3. 预估上限并冻结余额，创建请求快照。
 4. 调用上游并解析流式/非流式 usage。
 5. capture 实际费用或 release 余额；写入账本终态。
-6. 未知 usage 不猜测为零，进入人工结算。
+6. 未知 usage 不猜测为零，保留 `settlement_failed` 状态、错误和快照供查询；不提供人工结算入口。
 
 ## 删除策略
 

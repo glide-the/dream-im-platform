@@ -217,3 +217,42 @@ Optional Enhancers:
 - 隔离 E2E：一次性 PostgreSQL 16 `127.0.0.1:55432/ink-memory` 应用 0000–0012 与测试 fixtures；`admin-bootstrap-postgres.spec.ts` 最终复跑 1/1 通过（21.7s；冷启动完整轮 1.6m）。覆盖无隐藏 replaces 的自动版本推进、显式 replaces、真实回填 409、真实 models.dev snapshot Apply 后列表立即出现 `default · models.dev`，以及 1440×1000 / 390×844 Pricing 视觉和横向溢出检查。
 - 数据后置：`model-e2e/free` 三个 active 历史窗口首尾精确衔接，开放版本唯一；`model-e2e/default` 新增 `source=models.dev`；全库 active Pricing 时间窗重叠计数为 0；两次 models.dev Apply 均有审计。
 - 环境边界：发现仓库已有用户 Next.js 进程占用 3000/3011 和主 `.next` 锁后未终止、未复用；改用 `/tmp/ink-memory-pricing-e2e.*` 临时副本与自有 3012 服务。共享 5433 未连接、迁移、清理或写入。
+
+## Round 13 — Gateway 记录化与 Key 接入指引
+
+Optimized Prompt:
+
+将 Ink Memory Admin 的代理网关交互收敛为轻量、可观测的服务控制台。移除面向运营人员的“异常结算/人工核对/手工补账”复杂工作流、相关主菜单入口和可执行操作；Gateway 请求失败、上游错误、自动计费或自动结算失败只作为不可变请求/Usage/Audit 记录保存并可查询、筛选、排序和查看详情，不向管理员提供会修改余额、Ledger 或结算状态的人工按钮。保留 Gateway 正常请求生命周期、自动预授权与自动结算、错误分类、请求日志、Token Usage、价格快照、审计和只追加 Ledger 的内部一致性，不得因删除人工流程而吞掉错误或破坏自动计费。
+
+重构 Gateway Key 创建成功体验：密钥仍只在创建响应中展示一次且永不落库明文、永不在列表或详情回显；成功回执必须显示当前可调用的网关根地址以及可复制的 Claude/Anthropic 环境配置，至少包含 `ANTHROPIC_BASE_URL=<gateway origin>` 和 `ANTHROPIC_AUTH_TOKEN=<one-time key>`，并明确实际协议入口 `/v1/messages`、密钥仅显示一次、应立即保存以及撤销后的行为。网关公开地址优先使用经过校验的服务端公开配置；没有显式配置时使用当前浏览器 origin，不得硬编码 localhost、生产域名或虚构地址。复制动作应分别支持复制地址、Token 和完整 env 片段，提供成功/失败反馈、键盘可达、移动端不横向溢出，并避免 Token 进入 URL、日志、审计、截图或文档。
+
+先审计现有 Gateway reconciliation 页面、菜单、Resource、Route Handler、`app/lib/gateway/**`、`app/lib/billing/**`、Gateway Key 创建表单与一次性 secret 回执，再做最小且完整的代码调整。更新 PRD 与交互设计中的网关状态机和字段/控件说明；补充单元或 Playwright 覆盖：创建 Key 后一次性显示网关地址与两项 Anthropic 环境变量，刷新或进入详情后 Token 不再出现；请求失败仍可在日志中读取；人工 reconciliation 操作不再出现在 UI，旧操作 API 应返回 404/405 或明确只读响应。使用一次性 PostgreSQL `ink-memory` 验证，不调用真实模型、不操作共享 5433、不削弱 Storage、RBAC、Session、Secret 加密和审计。
+
+Optional Enhancers:
+
+- 同一回执可附带不含 Secret 的 `curl /v1/models` 或 Claude Code 配置说明，但不得让辅助内容压过两项必需环境变量。
+- 若部署存在反向代理，新增单一 `GATEWAY_PUBLIC_BASE_URL` 环境配置并在 env check 中校验 HTTPS/允许的本地开发 HTTP；未配置时才回退浏览器 origin。
+
+## Round 14 — Gateway 变更最终验收与安全清理
+
+Optimized Prompt:
+
+作为 Ink Memory Admin 的发布验收负责人，对“Gateway 失败记录化 + Gateway Key 一次性 Anthropic 接入回执”执行最终、可复现的质量门禁。先核对 PRD、交互稿、字段控件矩阵和现有设计说明，确认菜单、流程图、RBAC 与验收标准不再把 `settlement_failed` 描述为人工 Reconciliation；再检查源码不存在旧页面、专用 reconcile Route Handler、人工修改 Token/余额/Ledger 的组件或可执行入口。验证 Gateway Key create API 只在一次响应中返回明文和非敏感公开 base URL，审计与数据库不包含明文或回执 URL 字段，列表/详情/刷新不回显 Token；公开 URL 必须在直连通配地址和 `x-forwarded-host`/`x-forwarded-proto` 反向代理场景下返回用户可用 origin。
+
+使用 `ink-admin-playwright-qa` 的命名一次性 PostgreSQL 16 容器和自有 3012 服务执行 `pnpm env:check`、干净副本 `pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm test:run`、`pnpm build` 及 focused Playwright。E2E 必须覆盖无 Session、RBAC 401/403、Story/模型/Pricing/Storage 回归、Gateway Key Modal 创建、Base URL/`/v1/messages`/`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/完整 env 展示、关闭后明文消失、旧 reconciliation 页面与写 API 为 404、失败请求状态和原预留 Ledger 不被改写，以及 1440×1000、390×844 无页面级横向溢出。截图只在 Secret 回执关闭后保存。最后查询隔离数据库证明 Gateway failure 状态未变化、无 reconcile Audit、Key audit 不含 `plaintextKey`/`gatewayBaseUrl`，停止并删除精确临时容器、服务和副本，确认 3012/55432 无监听且共享 3000/5433 未被停止、迁移、清理或写入。
+
+Optional Enhancers:
+
+- 把首次因 `request.url` 返回 `0.0.0.0` 发现的缺陷记录为反向代理地址解析回归用例，保留直连、forwarded 和非法协议三组单测。
+- 在最终报告中区分应用诊断、Next 开发模式已知提示与测试外部工具噪声；不通过静默忽略真正的同源 5xx 或页面异常来制造通过结果。
+
+## Round 14 执行证据
+
+- 产品与代码收敛：删除 `/admin/gateway/reconciliation` 页面、专用 reconcile Route Handler、人工结算组件及领域 service/test；侧栏、Gateway 子导航、Request 详情和 Dashboard 不再提供人工修改 Token、余额、Ledger 或请求终态的入口。`settlement_failed` 继续保存错误、Token/价格快照、预留与审计事实。
+- Gateway Key 回执：创建 Modal 成功后一次性显示 Gateway 根地址、`/v1/messages`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN` 和完整 env，支持分别复制；关闭后只保留 prefix。创建审计过滤 `plaintextKey`，公开地址仅加入响应而不写数据库/审计。
+- 地址纠偏：隔离 E2E 首轮发现 Next 绑定 `0.0.0.0` 时 `request.url.origin` 不可作为外部配置；新增 `resolveGatewayBaseUrl`，优先使用首个 `x-forwarded-host`/`x-forwarded-proto` 或 Host，非法协议/Host 回退请求 origin。三组单测覆盖 wildcard 直连、反向代理和非法协议。
+- 静态门禁：`pnpm env:check`、干净副本 `pnpm exec tsc --noEmit`、`pnpm lint`、`git diff --check` 和 `pnpm build` 全部通过；Vitest 31 files / 178 tests 全部通过。
+- 隔离 E2E：一次性 PostgreSQL 16 `ink-memory` 在 `127.0.0.1:55432` 应用 0000–0012 与 Story/control-plane fixtures；自有 3012 Dev Server + Chromium focused spec 1/1 通过（28.7s）。覆盖 Key 回执全部字段、关闭后 Token 消失、旧页面/API 404、失败请求只读、Session/RBAC、Story/Provider/Model/Pricing/Billing/Storage 回归和移除 PWA 路由 404。
+- 数据后置：fixture Request 仍为 `settlement_failed / UPSTREAM_STREAM_INTERRUPTED / reserved=1000000`；关联 Ledger 仍只有原 reserve 1 条；Gateway Request reconcile Audit 为 0；Gateway Key Audit 中带 `plaintextKey` 或 `gatewayBaseUrl` 的记录为 0。
+- 视觉：1440×1000 与 390×844 的 Gateway Key 页面根节点横向溢出 ≤ 1px；仅在一次性 Secret 回执关闭后保存截图到 `test-results/gateway-key-record-only/`。
+- 清理与边界：精确命名容器停止并因 `--rm` 删除，临时副本与诊断文件移入系统废纸篓；3012/55432 无监听。共享 3000/5433 保持原监听且未复用、迁移、清理或写入；`ink-dream-memory` 业务代码未修改，其既有未跟踪 `.claude/worktrees/` 保持原状。

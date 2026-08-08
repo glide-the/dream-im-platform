@@ -56,11 +56,6 @@ const resources = [
     meta: { label: "场景数据" },
   },
   {
-    name: "story-workflow-runs",
-    list: "/admin/story/workflow-runs",
-    meta: { label: "工作流运行" },
-  },
-  {
     name: "models",
     list: "/admin/models/models",
     create: "/admin/models/models/new",

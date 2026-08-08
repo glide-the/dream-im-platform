@@ -69,13 +69,13 @@ export default function StorySourceEditor({
     }
   }
 
-  async function review(action: "confirm" | "reject" | "archive") {
+  async function confirmReview() {
     if (!id.trim()) {
       setState({ pending: false, error: "请输入源业务记录 ID。" });
       return;
     }
     await call(
-      `/api/admin/${resource}/${encodeURIComponent(id.trim())}/${action}`,
+      `/api/admin/${resource}/${encodeURIComponent(id.trim())}/confirm`,
       "POST",
       reviewNotes.trim() ? { reviewNotes: reviewNotes.trim() } : {},
     );
@@ -103,7 +103,7 @@ export default function StorySourceEditor({
       </form>
 
       {reviewActions ? (
-        <div className="mt-6 border-t border-border pt-5"><h3 className="text-sm font-semibold">审核与归档</h3><p className="mt-1 text-xs leading-5 text-text-tertiary">仅 Agent 生成、待审核且未归档的记录可确认或拒绝；归档替代硬删除。</p><label className="mt-4 block text-xs font-semibold text-text-secondary">审核备注（拒绝时建议填写）<textarea rows={3} maxLength={2000} className="admin-field mt-2 block min-h-20 text-sm" value={reviewNotes} onChange={(event) => setReviewNotes(event.target.value)} /></label><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={state.pending} onClick={() => review("confirm")} className="min-h-11 border border-success/40 bg-success-light px-4 text-sm font-semibold text-success">确认</button><button type="button" disabled={state.pending} onClick={() => review("reject")} className="min-h-11 border border-danger/40 bg-danger-light px-4 text-sm font-semibold text-danger">拒绝</button><button type="button" disabled={state.pending} onClick={() => review("archive")} className="min-h-11 border border-border px-4 text-sm font-semibold text-text-secondary">归档</button></div></div>
+        <div className="mt-6 border-t border-border pt-5"><h3 className="text-sm font-semibold">审核确认</h3><p className="mt-1 text-xs leading-5 text-text-tertiary">确认当前待审核记录。</p><label className="mt-4 block text-xs font-semibold text-text-secondary">确认备注（可选）<textarea rows={3} maxLength={2000} className="admin-field mt-2 block min-h-20 text-sm" value={reviewNotes} onChange={(event) => setReviewNotes(event.target.value)} /></label><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={state.pending} onClick={confirmReview} className="min-h-11 border border-success/40 bg-success-light px-4 text-sm font-semibold text-success">确认</button></div></div>
       ) : null}
 
       {state.error ? <p className="mt-4 border border-danger/35 bg-danger-light p-3 text-sm text-danger" role="alert">{state.error}</p> : null}

@@ -13,7 +13,6 @@ type Metrics = {
   storyStories: number | null;
   draftStories?: number;
   publishedStories?: number;
-  archivedStories?: number;
   pendingStoryReviews: number | null;
   activeModels: number;
   requestsToday: number;
@@ -48,7 +47,7 @@ export default function DashboardMetrics() {
   const rows = [
     { group: "业务源", label: "用户 / 活跃 / 停用", value: metrics?.sourceUsers === null ? null : metrics ? `${metrics.sourceUsers} / ${metrics.activeUsers ?? "—"} / ${metrics.disabledUsers ?? "—"}` : undefined, note: "users" },
     { group: "业务源", label: "工作区 / 活跃 / 归档", value: metrics?.storyWorkspaces === null ? null : metrics ? `${metrics.storyWorkspaces} / ${metrics.activeWorkspaces ?? "—"} / ${metrics.archivedWorkspaces ?? "—"}` : undefined, note: "story_workspace_workspaces" },
-    { group: "业务源", label: "剧本 / 草稿 / 发布 / 归档", value: metrics?.storyStories === null ? null : metrics ? `${metrics.storyStories} / ${metrics.draftStories ?? "—"} / ${metrics.publishedStories ?? "—"} / ${metrics.archivedStories ?? "—"}` : undefined, note: "story_workspace_stories" },
+    { group: "业务源", label: "剧本 / 草稿 / 发布", value: metrics?.storyStories === null ? null : metrics ? `${metrics.storyStories} / ${metrics.draftStories ?? "—"} / ${metrics.publishedStories ?? "—"}` : undefined, note: "story_workspace_stories" },
     { group: "待处理", label: "待审核剧本", value: metrics?.pendingStoryReviews, note: "review_status=pending" },
   ];
 

@@ -25,9 +25,9 @@ Ink Memory Admin 是 Ink Memory 的运营控制台和 AI 控制面，服务于�
 
 | 用户 | 主要目标 | 风险边界 |
 |---|---|---|
-| 内容运营 | 查找 Workspace/Story/Character/Scene，审阅、纠错、确认、拒绝或归档 | 不创建 Agent 产物，不硬删除业务记录，不改 Workflow provenance |
+| 内容运营 | 查找 Workspace/Story/Character/Scene，审阅、纠错和确认 | 当前不设计业务驳回、业务失败、人工重试或内容归档；不创建 Agent 产物，不硬删除业务记录 |
 | 模型运营 | 配置 Provider/Model/Pricing，控制可用性和生效窗口 | Secret 永不回显；活动价格不可重叠 |
-| 财务运营 | 查询用量、余额、账本和异常结算，执行有理由的调账/核对 | micro-USD 整数；账本只追加；每次人工动作审计 |
+| 财务运营 | 查询用量、余额、账本和网关失败记录，执行有理由的账户调账 | micro-USD 整数；账本只追加；账户调账审计 |
 | 客服/支持 | 按用户、请求、时间、错误码定位问题 | 默认只读；不得查看 Provider Secret、Gateway 明文 Key、完整 Prompt/响应 |
 | 安全审计 | 检查管理员操作、RBAC、Key 和系统配置 | 审计只读且 append-only |
 | Super Admin | 初始化、角色治理、系统配置和紧急处置 | 高风险动作二次确认；内置角色和关键历史记录受保护 |
@@ -83,12 +83,12 @@ flowchart LR
 |---|---|---|---|
 | 业务用户 | `users` | 整数 PK；拥有 workspace/story/character/scene | 业务字段只读；与 `platform_users` 通过 source/external ID 映射 |
 | 工作区 | `story_workspace_workspaces` | owner_id -> users.id | 读、受控改名/设置；不创建/删除 |
-| 剧本 | `story_workspace_stories` | author_id、workspace_id | 读、允许字段更新、confirm/reject/archive；不通用创建/删除 |
-| 角色 | `story_workspace_characters` | author_id、workspace_id；与 Story M:N | 读、允许字段更新、confirm/reject/archive；不通用创建/删除 |
-| 场景 | `story_workspace_scenes` | author_id、workspace_id、可空 story_id；与 Character M:N | 读、允许字段更新、confirm/reject/archive；不通用创建/删除 |
+| 剧本 | `story_workspace_stories` | author_id、workspace_id | 读、允许字段更新和 confirm；不通用创建/删除，不提供 reject/archive UI |
+| 角色 | `story_workspace_characters` | author_id、workspace_id；与 Story M:N | 读、允许字段更新和 confirm；不通用创建/删除，不提供 reject/archive UI |
+| 场景 | `story_workspace_scenes` | author_id、workspace_id、可空 story_id；与 Character M:N | 读、允许字段更新和 confirm；不通用创建/删除，不提供 reject/archive UI |
 | 剧本角色 | `story_workspace_story_characters` | (story_id, character_id)，含 role_type | 详情读取；关系变更须事务校验同 owner/workspace |
 | 场景角色 | `story_workspace_scene_characters` | (scene_id, character_id) | 详情读取；关系变更须事务校验同 owner/workspace |
-| 工作流 | `workflow_runs`、`workflow_run_transitions`、`workflow_run_token_consumptions` | provenance、状态版本、幂等、转换历史 | 只读；retry/cancel 仅走命令式接口 |
+| 工作流 | `workflow_runs`、`workflow_run_transitions`、`workflow_run_token_consumptions` | provenance、状态版本、幂等、转换历史 | 当前不进入 Admin 产品范围；不设计业务失败、人工 retry/cancel UI |
 | 关联创作域 | `decks`、`voices`、`chat_thread`、`chat_message`、`agent_sessions` | 工作流/Agent provenance | 默认不独立运营；按最小披露用于详情关联 |
 
 ### 3.2 Admin 控制面表
@@ -134,7 +134,6 @@ Token 计费
   └─ 计费报表
 代理网关
   ├─ 请求日志
-  ├─ 错误与异常结算
   ├─ Gateway Key
   └─ 限流策略
 用户与资源
@@ -160,7 +159,7 @@ Token 计费
 | Pricing | `/admin/models/pricing`；新价格版本 `/new`（可带 `modelId`/`replaces` 查询参数） |
 | 模型权限 | `/admin/models/permissions` |
 | 使用/余额/账本/报表 | `/admin/billing/usage`、`/accounts`、`/ledger`、`/reports` |
-| 请求/异常/Key/限流 | `/admin/gateway/requests`、`/reconciliation`、`/keys`、`/rate-limits` |
+| 请求/Key/限流 | `/admin/gateway/requests`、`/keys`、`/rate-limits` |
 | 平台用户/Storage | `/admin/resources/users`、`/admin/resources/storage` |
 | 管理员/角色/权限 | `/admin/access/admins`、`/roles`、`/permissions` |
 | 系统设置/审计 | `/admin/system/settings`、`/audit` |
@@ -184,7 +183,7 @@ Token 计费
 
 用户目标：快速发现需要处理的真实运营事项，而非阅读装饰性指标。
 
-- 显示真实来源：Story 数据源健康、启用模型数、今日网关请求/Token/计费、待人工结算数、停用/异常 Provider、最近审计。
+- 显示真实来源：Story 数据源健康、启用模型数、今日网关请求/Token/计费、结算失败记录数、停用/异常 Provider、最近审计。
 - 不显示虚构“release 4/4”等静态指标。
 - 优先队列链接到：pending review Story、settlement_failed、余额不足用户、Provider 不可用、最近 RBAC 变更。
 - 每个数字说明统计时间窗、更新时间与来源；数据不可用时显示不可用而不是 0。
@@ -207,7 +206,7 @@ Token 计费
 - 筛选：关键词 title/identifier、workspace_id、author_id、status、review_status、type、agent_generated；排序：title、created_at、updated_at。
 - 详情：正文只读预览、关联角色、排序场景、审阅历史、Agent/Workflow provenance。
 - 更新：仅 title、description、type；content 默认只读，若未来开放需独立权限与版本快照。
-- 动作：pending -> confirm 或 reject；active Story -> archive。状态不匹配返回 409。
+- 动作：仅 pending -> confirm。当前不提供 reject、业务失败、人工重试或 archive 操作；历史枚举只为数据兼容保留。
 - 创建：禁止，Agent/业务流程是权威创建者。删除：禁止硬删除。
 
 #### 角色
@@ -216,7 +215,7 @@ Token 计费
 - 筛选：name/identifier、workspace_id、author_id、review_status、status、agent_generated；排序：name、created_at、updated_at。
 - 详情：完整角色资料、关联 Story 及 role_type、关联 Scene；跳转保持 Workspace 上下文。
 - 更新：name、avatar_url、identity、personality、background、catchphrase、tags、notes。
-- 动作：confirm/reject/archive；创建和硬删除禁止。
+- 动作：仅 confirm；当前不提供 reject/archive，创建和硬删除禁止。
 
 #### 场景
 
@@ -224,15 +223,12 @@ Token 计费
 - 筛选：name/identifier、story_id、workspace_id、author_id、review_status、status；排序：order_index、name、created_at、updated_at。
 - 详情：所属 Story、出场角色、前后场景导航、审阅状态。
 - 更新：name、description、story_id、order_index。story_id 变更校验目标 Story 与 Scene 同 owner/workspace。
-- 动作：confirm/reject/archive；创建和硬删除禁止。
+- 动作：仅 confirm；当前不提供 reject/archive，创建和硬删除禁止。
 
-#### 工作流运行
+#### 工作流运行（本轮不设计）
 
-- 字段：id、workspace_id、deck_plugin_id/version、workflow_definition_ref、runtime snapshot/lock/receipt、status、failed_step、error_code、retry_of_run_id、preflight_id、agent_session_id、source message provenance、idempotency_key、status_version、created_by、created/started/completed。
-- 筛选：id、workspace_id、created_by、status、error_code、deck_plugin_id、created_at 范围；排序 created_at、started_at、completed_at。
-- 详情：provenance、状态时间线、transition、token consumption、失败信息和相关 Story/Agent 链接（存在时）。
-- 通用 create/update/delete 全部禁止。
-- cancel/retry 为显式命令，需 `story.write`、状态前置条件和幂等键；冲突返回 409。
+- Admin 不提供工作流运行菜单、列表、详情、业务失败状态、人工 retry/cancel 或相关操作入口。
+- 现有数据库字段、历史记录和服务端兼容查询暂时保留，不作为当前产品能力或验收范围。
 
 ### 6.3 AI 模型中心
 
@@ -299,7 +295,7 @@ Usage 页面直接采用 cc-switch 的“全局筛选 → 事实摘要 → 趋�
 - 全局筛选：日期范围/时区、protocol、Provider、Model、Platform User、outcome、刷新频率；筛选同时驱动摘要、趋势和三个页签。
 - 请求日志专属筛选：request/status/http status/error code；排序 created_at、charged、tokens。
 - 详情采用桌面宽 Drawer、移动全屏，按用户与 Key、路由/模型解析、四类 Token、价格快照、Provider cost/charged、结算与 Ledger、性能、脱敏错误分区；保持列表筛选和页签上下文。
-- Request、Usage、快照与 Ledger 均只读；人工纠错入口跳转 Reconciliation 命令页，不直接编辑事实记录。
+- Request、Usage、快照与 Ledger 均只读；自动结算失败保留原状态、错误与关联事实，不提供人工纠错命令。
 
 #### 账户余额
 
@@ -336,15 +332,17 @@ Usage 页面直接采用 cc-switch 的“全局筛选 → 事实摘要 → 趋�
 - 筛选：request/upstream/user/model/provider/status/outcome/error/time；只读详情。
 - 详情展示 request -> usage -> pricing snapshot -> ledger 链路，不展示完整 Prompt/响应。
 
-#### 错误与异常结算
+#### 网关错误记录
 
-- 默认筛选 `settlement_failed`、用量未知、账本不一致。
-- 人工核对操作要求 disposition、实际四类 Token 或明确 release、reason、external ticket、幂等键。
-- 操作前展示现有冻结、已知用量、Provider 错误和影响金额；提交后不可修改，通过新 reversal 纠错。
+- Provider/网络/流式中断、用量未知和自动结算失败统一保留在只读请求日志，字段包含 status/outcome、错误码、脱敏错误摘要、四类 Token、价格快照、预留/收费与时间戳。
+- `settlement_failed` 是可观测记录状态，不生成运营人工队列，不提供手工填写 Token、释放预留、补账、修改余额或改变请求终态的 UI/API。
+- 自动预授权和已知用量自动结算继续由 Gateway/Billing service 完成；暂时无法完成的内部恢复只能由幂等自动任务处理，管理员只查询记录和审计。
 
 #### Gateway Key
 
-- 创建时选择计费身份、name、scopes、expires_at；明文只在成功后一次显示，离开后不可恢复。
+- 创建时选择计费身份、name、scopes、expires_at；表单使用 Modal。明文只在成功回执中显示一次，离开后不可恢复。
+- 一次性回执字段固定为：网关根地址（文本/URL）、Anthropic Messages 入口（只读 URL）、`ANTHROPIC_BASE_URL`（只读代码）、`ANTHROPIC_AUTH_TOKEN`（一次性 Secret 代码）和完整 env 片段（多行代码）。分别提供“复制地址”“复制 Token”“复制完整配置”，反馈使用 polite live region。
+- 网关根地址取本次 Admin 请求的同源 origin；不得硬编码 localhost 或生产域名。调用方把 `ai_models.code` 作为稳定模型 alias，实际 Anthropic 路径为 `{ANTHROPIC_BASE_URL}/v1/messages`。
 - 列表只显示 prefix、name、scopes、status、last_used、expires；支持 revoke，不支持取回或更新 Secret。
 - 页面不得把明文写入 URL、日志、localStorage 或 analytics。
 
@@ -420,8 +418,8 @@ flowchart LR
 
   GR --> US[Usage + Price Snapshot]
   US --> LE[Ledger Entry]
-  GR --> RC[Reconciliation]
-  RC --> LE
+  GR --> ER[Failure Record]
+  ER -. "read-only evidence" .-> LE
 ```
 
 跨模块链接必须携带白名单筛选参数而不是复制数据，例如用户详情 -> Usage、Request、Ledger；Model 详情 -> Pricing、Permission、Request；Gateway Request -> User、Model、Ledger。
@@ -432,10 +430,10 @@ flowchart LR
 |---|---|---|---|
 | `source-users` | `/api/admin/source-users` | Story PG `users` + control crosswalk | list/get；计费绑定为自定义动作 |
 | `story-workspaces` | `/api/admin/story-workspaces` | `story_workspace_workspaces` | list/get/update |
-| `story-stories` | `/api/admin/story-stories` | `story_workspace_stories` | list/get/update + confirm/reject/archive |
-| `story-characters` | `/api/admin/story-characters` | `story_workspace_characters` + relations | list/get/update + review/archive |
-| `story-scenes` | `/api/admin/story-scenes` | `story_workspace_scenes` + relations | list/get/update + review/archive |
-| `story-workflow-runs` | `/api/admin/story-workflow-runs` | `workflow_runs` + transition/consumption | list/get + retry/cancel command |
+| `story-stories` | `/api/admin/story-stories` | `story_workspace_stories` | list/get/update + confirm；reject/archive 仅服务端兼容保留，无 UI |
+| `story-characters` | `/api/admin/story-characters` | `story_workspace_characters` + relations | list/get/update + confirm；reject/archive 无 UI |
+| `story-scenes` | `/api/admin/story-scenes` | `story_workspace_scenes` + relations | list/get/update + confirm；reject/archive 无 UI |
+| `story-workflow-runs` | `/api/admin/story-workflow-runs` | `workflow_runs` + transition/consumption | 当前无 Refine 页面或人工命令入口；仅保留服务端兼容查询 |
 | `providers` | `/api/admin/providers` | `ai_providers` | list/get/create/update/disable |
 | `models` | `/api/admin/models` | `ai_models` | list/get/create/update/enable/disable |
 | `pricing-rules` | `/api/admin/pricing-rules` | `ai_pricing_rules` | list/get/create/version |
@@ -443,7 +441,7 @@ flowchart LR
 | `billing-accounts` | `/api/admin/billing-accounts` | `billing_accounts` | list/get + adjustment command |
 | `usage` | `/api/admin/usage` | `gateway_requests` usage projection | list/get only |
 | `ledger` | `/api/admin/ledger` | `billing_ledger_entries` | list/get only |
-| `gateway-requests` | `/api/admin/gateway-requests` | `gateway_requests` | list/get + reconcile command |
+| `gateway-requests` | `/api/admin/gateway-requests` | `gateway_requests` | list/get only；失败与结算异常只读记录 |
 | `gateway-api-keys` | `/api/admin/gateway-api-keys` | `gateway_api_keys` | list/get/create/revoke |
 | `gateway-rate-limits` | `/api/admin/gateway-rate-limits` | `gateway_rate_limits` | list/get only |
 | `platform-users` | internal composition/crosswalk | `platform_users` | bind/update/disable |
@@ -476,7 +474,7 @@ Data Provider 合同：
 | `pricing.read` | ✓ | ✓ | ✓ | Pricing 读取 |
 | `pricing.write` | ✓ | ✓ | - | Pricing 版本发布 |
 | `billing.read` | ✓ | ✓ | ✓ | Usage/Account/Ledger/Report |
-| `billing.adjust` | ✓ | - | - | 调账与失败结算 |
+| `billing.adjust` | ✓ | - | - | 余额调账；不用于 Gateway 人工结算 |
 | `gateway.read` | ✓ | ✓ | ✓ | Request/Key 掩码/限流读取 |
 | `gateway.keys.write` | ✓ | ✓ | - | 创建/revoke Gateway Key |
 | `access.read` | ✓ | - | ✓ | Admin/Role/Permission 读取 |
@@ -542,15 +540,15 @@ PDF v2.1（2026-07-25）晚于 `color_system` 子文档中的旧亮色值，并�
 - JSON/Config 编辑只用于真实 JSON 字段，提供格式化、schema 错误行列、恢复到服务器值；不允许未知字段。
 - 密钥输入显示“新凭据将覆盖旧凭据”，默认 password 类型，有显隐和粘贴支持；已保存值永不填回。
 - 停用/撤销确认说明影响范围；硬删除仅自定义 Role，并要求输入资源 code。
-- 财务/结算确认展示 before/after 金额、幂等键和理由，提交后不可编辑。
+- 财务账户调账确认展示 before/after 金额、幂等键和理由，提交后不可编辑；Gateway 失败记录无结算表单。
 - 所有表单有可见 label、description/error 关联、required/optional 标识和离开未保存提醒。
 
 | 操作复杂度 | 强制容器 | 示例 |
 |---|---|---|
 | 单实体、字段有限、从当前列表进入 | Modal 或右 Drawer；移动全屏 | Workspace、Model Permission、Platform Identity、Admin User、System Setting |
-| 多分区、依赖关系或财务高风险 | 独立全屏面板/独立路由 | Provider、Model、Pricing 新版本、Role 权限矩阵、Reconciliation |
+| 多分区、依赖关系或财务高风险 | 独立全屏面板/独立路由 | Provider、Model、Pricing 新版本、Role 权限矩阵 |
 | 只读核对且需保留列表上下文 | 右 Drawer；移动全屏 | Story 详情、Workflow、Usage/Gateway Request |
-| 单一停用/撤销/拒绝/调账命令 | 有影响摘要的确认 Modal | Provider/Model 停用、Key revoke、Story reject、余额调整 |
+| 单一停用/撤销/调账命令 | 有影响摘要的确认 Modal | Provider/Model 停用、Key revoke、余额调整 |
 
 表单必须从操作者选中的真实记录 `getOne` 预填；不存在“记录 ID”输入框或模板占位 ID。Provider、Model、User、Role、Permission、Workspace、Story 等关系字段必须使用真实、受权、可搜索选择器。数组使用复选/多选，枚举使用下拉或分段单选，布尔使用开关，日期使用日期时间控件，整数和 micro-USD 使用有单位的数字控件；只有数据库真实 JSON 字段使用 JSON Editor。
 
@@ -567,11 +565,11 @@ PDF v2.1（2026-07-25）晚于 `color_system` 子文档中的旧亮色值，并�
 ## 14. 安全与财务要求
 
 - Provider credential 使用现有加密能力；响应仅返回配置状态，不返回密文或明文。
-- Gateway Key 只存 hash/prefix；创建响应只显示一次。
+- Gateway Key 只存 hash/prefix；创建响应只显示一次明文，并同时返回非敏感的同源 Gateway base URL 供接入回执展示。
 - system secret 值只写不读；audit 必须脱敏。
 - 所有金额使用整数 micro-USD；禁止 JS 浮点参与账务计算。
 - Gateway Request 保存价格快照；历史账本 append-only，由数据库 trigger 与 API 双重禁止 update/delete。
-- 未知 usage 不按 0 结算；进入 `settlement_failed` 人工核对。
+- 未知 usage 不按 0 结算；只记录为 `settlement_failed`，不开放人工修改请求、Token、余额或账本的操作。
 - Route Handler 仅解析、鉴权、调用 service；SQL、事务、状态机和审计在 `app/lib/**`。
 
 ## 15. 迁移、兼容与回滚
@@ -601,12 +599,12 @@ PDF v2.1（2026-07-25）晚于 `color_system` 子文档中的旧亮色值，并�
 ### Admin/安全
 
 - [ ] 无 Session 页面重定向登录，Admin API 401；权限不足 403。
-- [ ] Provider/system secret 永不回显；Gateway Key 仅创建时一次显示。
+- [ ] Provider/system secret 永不回显；Gateway Key 仅创建时一次显示，并显示/复制 `ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN` 和 `/v1/messages` 地址；刷新或详情不再回显 Token。
 - [ ] Pricing overlap 409；模型/Provider 启停关系明确。
 - [ ] Provider 首次保存后自动 discover；失败不回滚 Provider；diff 明确新增/更新/未变化/冲突/未定价，stale snapshot 返回 409。
 - [ ] models.dev 自动同步最多每 6 小时一次，只创建新价格版本；ambiguous/unmatched 不应用，历史 Pricing 与 Request snapshot 不被覆盖。
 - [ ] Usage/Ledger/Audit 无 update/delete UI/API；数据库 trigger 阻止破坏性 SQL。
-- [ ] Gateway failure 有人工核对入口并产生 ledger/audit。
+- [ ] Gateway failure 在请求日志中保留错误、Usage/价格快照和审计；无人工 reconciliation 页面、菜单或写 API。
 - [ ] Storage 现有 route/lib 单测继续通过。
 
 ### UI/UX

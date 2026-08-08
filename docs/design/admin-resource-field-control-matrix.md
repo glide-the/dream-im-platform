@@ -42,7 +42,7 @@
 | D1 | Data Table | 原生 table，主识别列常显，行操作在末列 | 关键列优先；表格壳局部横滚 | 查询、比较、选择真实记录 |
 | D2 | Detail | 右侧 Drawer 或独立详情，按身份/资料/关系/历史/风险区组织 | Drawer 变全屏 | 查看真实字段和跨资源链路 |
 | E1 | Simple Form | Modal 或 620–720px Drawer；从当前记录预填 | 全屏；底部操作固定在 safe area 上方 | 单实体、有限字段的创建/编辑 |
-| E2 | Complex Form | 独立路由全屏页；固定 Header、独立滚动、固定 Footer | 全屏；逐节单列 | Provider、Model、Pricing、Role、Reconciliation |
+| E2 | Complex Form | 独立路由全屏页；固定 Header、独立滚动、固定 Footer | 全屏；逐节单列 | Provider、Model、Pricing、Role |
 | F1 | Confirmation | 实底 Modal；展示当前状态、影响、理由、before/after | 全屏或底部 Sheet；不裁剪说明 | 停用、撤销、审核、调账等高风险动作 |
 | G1 | Feedback | 字段错误、冲突摘要、一次性回执、审计 Request ID | Toast 位于固定操作区上方 | 400/403/404/409/503 与成功恢复 |
 
@@ -62,8 +62,8 @@
 | Model Permission 新增/编辑 | 640px Drawer；移动全屏 | User/Model 均用真实搜索选择；删除 override 使用 Modal |
 | Billing Account 调账 | 600px 高风险 Modal | 先取余额与版本，展示 before/after、reason、幂等键 |
 | Usage / Gateway Request 详情 | **直接采用 cc-switch Request Detail 的宽 Drawer 骨架** | 只读分区；保持 Usage 全局筛选与页签 |
-| Reconciliation | 独立页面 `/admin/gateway/reconciliation/[requestId]` | 三步：冻结上下文→处置与影响→不可变回执 |
-| Gateway Key 创建 | 640px Modal；成功后切换一次性回执 | 关闭回执后不可再次显示明文；revoke 另用确认 Modal |
+| Gateway failure | Request 只读 Drawer | 展示状态、错误、Token/价格快照、Usage/Ledger/Audit 链接；无结算表单 |
+| Gateway Key 创建 | 640px Modal；成功后切换一次性接入回执 | 显示 Gateway URL、Anthropic env 和一次性 Token；关闭后不可再次显示明文；revoke 另用确认 Modal |
 | Platform Billing Identity | 680px Drawer | 从 Source User 详情发起时自动带入且锁定 source/external user |
 | Admin User 创建/编辑 | 640px Drawer | 角色为多选；停用/重置密码为独立确认流程 |
 | Role 创建/编辑 | 独立页面 | 权限矩阵和影响摘要复杂；内置角色保护 |
@@ -335,19 +335,14 @@ Provider 卡片的“连通测试”不是表单字段：使用显式按钮调�
 
 当前列表/getOne 投影必须补齐 Key、pricing snapshot、response summary、完整时间和 Ledger 关联，详情才能达到此规范。
 
-### 8.2 Reconciliation（独立命令页）
+### 8.2 Gateway Failure Record（请求详情内只读）
 
-| 步骤/字段 | 展示形式 | 控件/校验 | 错误恢复 |
+| 字段组 | 展示形式 | 控件/校验 | 错误恢复 |
 |---|---|---|---|
-| 选择请求 | 从 settlement_failed 列表行进入 | 不提供手填 Request ID | 404 返回队列 |
-| 冻结上下文 | User/Provider/Model、status/version、reserved、已知 Token、快照、错误、最近更新时间 | 全部只读 | 503 重试，不进入填写态 |
-| `disposition` | 二选一说明 | settle/release radio | 不允许自由字符串 |
-| 四类实际 Token | 仅 settle 显示 | 4 个非负整数输入 | unknown 不默认 0；必填策略由命令决定 |
-| release 证据 | 仅 release 显示 | textarea + external ticket | 必填且说明来源 |
-| `reason` | 高风险理由 | textarea 8–500 | 必填 |
-| `idempotency_key` | Mono | text，8–128 regex | 网络未知时按 key 查结果 |
-| 影响 | 账户 before→after、release/capture、charged、Ledger 类型 | 只读服务端预览 | 数据更新时 409 并要求刷新 |
-| 回执 | Request、Ledger、Audit、金额与时间 | 只读；复制/跳转 | 提交后不可编辑 |
+| 状态与错误 | `settlement_failed` 状态标签、error code、脱敏 error message | 无编辑控件 | 503 保留筛选并允许重试读取 |
+| 请求上下文 | User/Provider/Model、reserved、四类已知 Token、价格快照、最近更新时间 | 只读事实组 | 未知 Token 显示 unavailable，不默认为 0 |
+| 财务链路 | Usage、预留、已存在 Ledger 与 Audit 链接 | 只读时间线 | 不开放 release、settle、补 Token、改余额或改账本 |
+| 运维动作 | 复制 Request ID、筛选同类错误、查看 Audit | 普通按钮/链接 | 不建立人工结算队列或独立命令页 |
 
 ### 8.3 Gateway Key（`gateway-api-keys`）
 
@@ -359,7 +354,11 @@ Provider 卡片的“连通测试”不是表单字段：使用显式按钮调�
 | `expires_at` | 日期或“永不过期” | nullable DateTime Picker | 必须晚于当前时间（服务端为准） |
 | `key_prefix` | Mono | 系统生成 | 可复制但不可认证 |
 | `status`,`last_used_at`,`revoked_at`,`created_at` | 状态/时间 | 只读 | active 才显示 revoke |
-| plaintext | 不在列表/详情存在 | 成功回执 password-like code + Copy | 只显示一次，不写 URL/storage/analytics |
+| Gateway 根地址 | 不在历史详情重复生成 | 成功回执只读 URL + Copy | 取当前同源 origin，不硬编码环境 |
+| Anthropic Messages 地址 | 不在列表显示 | 成功回执只读 URL | `{baseUrl}/v1/messages` |
+| `ANTHROPIC_BASE_URL` | 不在列表显示 | 成功回执 code + Copy | 值为 Gateway 根地址 |
+| plaintext / `ANTHROPIC_AUTH_TOKEN` | 不在列表/详情存在 | 成功回执 password-like code + Copy | 只显示一次，不写 URL/storage/analytics |
+| 完整 env | 不在列表/详情存在 | 成功回执多行 code + Copy | 同时包含 Base URL 与 Token；关闭后不可恢复 Token |
 
 Revoke Modal 显示用户、prefix、最近使用、影响说明和 reason；动作实际是状态迁移，不是硬删除。
 
@@ -487,7 +486,8 @@ flowchart LR
   SU["Source User"] --> PU["Platform Billing Identity"] --> MP["Model Permission"]
   PU --> BA["Billing Account"] --> LE["Ledger"]
   PU --> GR["Gateway Request"] --> UD["Usage Detail"] --> LE
-  GR --> RC["Reconciliation"] --> LE
+  GR --> ER["Failure Record"]
+  ER -. "read-only evidence" .-> LE
 ```
 
 ```mermaid
@@ -541,7 +541,7 @@ Modal、Drawer、全屏面板均锁定 Tab 焦点；初始焦点为标题或首�
 3. 关系 Combobox 通过现有 Refine Data Provider 分页查询，并显示名称/code/辅助 ID；禁止接受不在 options 中的裸 ID。
 4. Provider 卡片列表、Provider/Model/Pricing 独立全屏页、Usage Dashboard、Request Detail 按 cc-switch 对应源码结构实现，视觉类名全部映射 Ink Memory Token。
 5. Route Handler 只解析/鉴权/编排；关系投影、价格版本、影响预览、最后 super_admin 保护、Setting 停用和结算仍在 `app/lib/**` 事务服务。
-6. 当前实现必须修复的契约差异：Story content 不可编辑；Story/Character/Scene/Workflow 详情补真实关系；Pricing 禁止历史原地改价；最后 active super_admin 保护；System Setting 不硬删；Gateway Key 提供 revoke UI；Reconciliation 不手填 Request ID。
+6. 当前实现必须修复的契约差异：Story content 不可编辑；Story/Character/Scene/Workflow 详情补真实关系；Pricing 禁止历史原地改价；最后 active super_admin 保护；System Setting 不硬删；Gateway Key 提供接入回执与 revoke UI；Gateway failure 只读且无人工结算入口。
 7. 自动化覆盖：无 Session、401/403、真实列表选中到预填表单、关系选择、400 首错、409 最新值、503 保留草稿、Secret 不回显、Key 一次性回执、Pricing 新版本、Ledger/Audit 无写入口、1440×1000 与 390×844、light/dark、键盘焦点锁定/归还和无页面级横溢出。
 
 本 Stage 1 的通过标准是：每个资源的展示/控件/数据源/校验/安全边界可直接转译为 Stage 2 结构草图，不再需要工程师根据字段名猜测 `text`、`select`、`JSON` 或关系 ID 输入方式。

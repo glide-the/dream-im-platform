@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { z } from "zod";
+import { resolveGatewayBaseUrl } from "../gateway/public-base-url";
 import { creditBillingAccountOnClient } from "../billing/repository";
 import { createGatewayApiKey } from "../gateway/api-keys";
 import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
@@ -796,8 +797,12 @@ export async function handleAdminResourceCreate(request: Request, resource: stri
       });
       return created;
     });
+    const responseData =
+      resource === "gateway-api-keys"
+        ? { ...data, gatewayBaseUrl: resolveGatewayBaseUrl(request) }
+        : data;
     return Response.json(
-      { data },
+      { data: responseData },
       { status: 201, headers: { "cache-control": "no-store", "x-request-id": requestId } },
     );
   } catch (error) {

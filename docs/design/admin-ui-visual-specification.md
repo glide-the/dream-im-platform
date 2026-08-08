@@ -291,7 +291,7 @@ E01：Modal 560–620px 或 Drawer 640–720px；Mobile 全屏。E02 类型化�
 
 K01 实底 Modal 600px；Mobile 全屏或不裁剪说明的 Sheet。K02 当前资源/status/version/time；K03 真实影响或“暂不可计算”；K04 before→after；K05 reason/ticket/idempotency/code；K06 具名命令。
 
-提交前重取 status/version/impact。409 保留输入并聚焦冲突摘要。余额/结算按 idempotency key 查询未知网络结果。Role 删除要求 code；Story reject 必填说明；Provider/Model 停用显示依赖；Key revoke 显示 prefix/last used。
+提交前重取 status/version/impact。409 保留输入并聚焦冲突摘要。余额/结算按 idempotency key 查询未知网络结果。Role 删除要求 code；Story 当前仅保留 confirm；Provider/Model 停用显示依赖；Key revoke 显示 prefix/last used。
 
 ## 8. Provider 全屏（P01–P11）
 
@@ -363,15 +363,13 @@ Desktop 760–840px read-only Drawer；Mobile 全屏；Header sticky、中段纵
 | Q08 | Performance/Timeline | streaming、first token、latency、created→settled |
 | Q09 | Error/Safe Summary | http/error、脱敏 message、只读 response_summary JSON；无正文 |
 
-Loading skeleton 按 Q03–Q09 每段保留标题、2–4 条 16px 高事实线，不能用一个大灰块。`settlement_failed` + `billing.adjust` 仅显示“前往 Reconciliation”。
+Loading skeleton 按 Q03–Q09 每段保留标题、2–4 条 16px 高事实线，不能用一个大灰块。`settlement_failed` 只显示错误记录、快照、Usage、Ledger 与 Audit 事实，不显示人工结算动作。
 
-## 12. Reconciliation、Role、Storage（C/X/T）
+## 12. Gateway Failure Record、Role、Storage（C/X/T）
 
-### 12.1 C01–C09 Reconciliation
+### 12.1 C01–C05 Gateway Failure Record
 
-独立路由，不手填 Request ID。C02 sticky Header；C03 冻结 User/Provider/Model/status/version/reserved/tokens/snapshot/error；503 只能重试；C04 settle/release；C05 settle 四类非负整数且 unknown 不预填 0；C06 release evidence/ticket；C07 reason/idempotency；C08 server before→after；C09 sticky submit。
-
-version 变化进入 Z07，刷新 preview 后再次确认。成功进入不可编辑 Z09，列 Request、Ledger、Audit、金额、时间。
+失败记录留在 Request 列表与 Q01–Q09 只读详情：C01 status/error 筛选；C02 Request ID 与复制；C03 User/Provider/Model/reserved/tokens/snapshot/error；C04 Usage/Ledger/Audit 只读关联；C05 同类错误筛选与返回。无独立 Reconciliation 路由、无 settle/release 表单、无手填 Token、余额或账本动作。
 
 ### 12.2 X01–X07 Role
 
@@ -391,15 +389,15 @@ T02 Driver/config health；T03 direct-upload capability/prefix；T04 keyboard-ac
 |---|---|
 | Workspace edit | 560px Modal / Mobile full-screen |
 | Story/Character/Scene edit | 720px Drawer / Mobile full-screen |
-| Story review/archive | K01 confirm |
-| Workflow detail | 760px read-only Drawer；无适配器则无 retry/cancel |
+| Story review | 仅 confirm；无 reject/archive |
+| Workflow | 当前无运营页面、失败状态或人工 retry/cancel |
 | Provider create/edit/rotate | P01 full-screen |
 | Model create/edit | M01 independent full-screen route |
 | Pricing new version | R01 full-screen |
 | Model Permission | 640px Drawer；删除 override 用 K01 |
 | Billing adjustment | 600px K01 |
 | Usage/Gateway Request | Q01 read-only Drawer |
-| Reconciliation | C01 independent page |
+| Gateway failure | Q01 read-only Drawer / C01 failure evidence section |
 | Gateway Key create | 640px Modal → one-time Z09；revoke 用 K01 |
 | Platform Identity | 680px Drawer |
 | Admin User | 640px Drawer；disable/reset 独立确认 |
@@ -511,7 +509,7 @@ export function Field({ id,label,description,error,children }:{
 - Pricing：R01, R02, R03, R04, R05, R06, R07, R08, R09。
 - Usage：U01, U02, U03, U04, U05, U06, U07, U08, U09。
 - Request：Q01, Q02, Q03, Q04, Q05, Q06, Q07, Q08, Q09。
-- Reconciliation：C01, C02, C03, C04, C05, C06, C07, C08, C09。
+- Gateway failure evidence：C01, C02, C03, C04, C05。
 - Role：X01, X02, X03, X04, X05, X06, X07。
 - Storage：T01, T02, T03, T04, T05, T06, T07。
 - State：Z01, Z02, Z03, Z04, Z05, Z06, Z07, Z08, Z09, Z10。

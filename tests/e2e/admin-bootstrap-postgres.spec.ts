@@ -32,7 +32,7 @@ function collectDiagnostics(page: Page) {
 }
 
 test.describe("Refine Admin with owned isolated PostgreSQL", () => {
-  test.setTimeout(120_000);
+  test.describe.configure({ timeout: 180_000 });
   test.skip(!bootstrapToken, "Set ADMIN_BOOTSTRAP_E2E_TOKEN only for an owned isolated PostgreSQL lane");
 
   test.beforeAll(async () => {
@@ -69,6 +69,9 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
   });
 
   test("validates source data, control plane, RBAC, billing and both viewports", async ({ context, page, request, baseURL }, testInfo) => {
+    await page.route("http://unpkg.com/react-grab/dist/index.global.js", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/javascript", body: "" });
+    });
     const diagnostics = collectDiagnostics(page);
     const origin = new URL(baseURL!).origin;
 
@@ -355,6 +358,7 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(gatewayKey.status()).toBe(201);
     const gatewayKeyBody = await gatewayKey.json();
     expect(gatewayKeyBody.data.plaintextKey).toMatch(/^gw_/);
+    expect(gatewayKeyBody.data.gatewayBaseUrl).toBe(origin);
     const keyDetail = await api.get(`${baseURL}/api/admin/gateway-api-keys/${gatewayKeyBody.data.id}`);
     expect(JSON.stringify(await keyDetail.json())).not.toContain(gatewayKeyBody.data.plaintextKey);
     const missingAliasThroughProxy = await api.post(`${baseURL}/v1/messages`, {
@@ -407,9 +411,16 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
       headers,
       data: { mode: "release_unbilled", confirmation: "RELEASE_UNBILLED", reason: "E2E evidence confirms no provider usage", inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
     });
-    expect(reconciliation.status()).toBe(200);
-    const reconciled = await api.get(`${baseURL}/api/admin/gateway-requests/request-settlement-failed-e2e`);
-    await expect(reconciled.json()).resolves.toMatchObject({ data: { status: "settled", charged_microusd: "0" } });
+    expect(reconciliation.status()).toBe(404);
+    const recordedFailure = await api.get(`${baseURL}/api/admin/gateway-requests/request-settlement-failed-e2e`);
+    await expect(recordedFailure.json()).resolves.toMatchObject({
+      data: {
+        status: "settlement_failed",
+        outcome: "failed",
+        error_code: "UPSTREAM_STREAM_INTERRUPTED",
+        reserved_microusd: "1000000",
+      },
+    });
 
     const currentAdmins = await api.get(`${baseURL}/api/admin/admin-users?filter[email][eq]=${encodeURIComponent(superEmail)}`);
     expect(currentAdmins.status()).toBe(200);
@@ -531,6 +542,33 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-storage-desktop-1440x1000.png"), fullPage: true });
 
+    await page.goto("/admin/gateway/keys");
+    await expect(page.getByRole("heading", { name: "Gateway Key", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "异常结算" })).toHaveCount(0);
+    await page.getByRole("button", { name: "发放 Gateway Key" }).click();
+    await page.getByRole("combobox", { name: "计费用户 *" }).selectOption("user-e2e");
+    await page.getByLabel("Key 名称 *").fill("gateway-ui-e2e");
+    await page.getByRole("button", { name: "创建并显示接入配置" }).click();
+    await expect(page.getByRole("heading", { name: "Gateway Key 接入配置" })).toBeVisible();
+    await expect(page.getByLabel("网关根地址")).toHaveText(origin);
+    await expect(page.getByLabel("Anthropic Messages 入口")).toHaveText(`${origin}/v1/messages`);
+    await expect(page.getByLabel("ANTHROPIC_BASE_URL 配置值")).toHaveText(origin);
+    const oneTimeGatewayToken = await page.getByLabel("ANTHROPIC_AUTH_TOKEN 配置值").textContent();
+    expect(oneTimeGatewayToken).toMatch(/^gw_/);
+    await expect(page.getByLabel("Anthropic 完整环境配置")).toContainText(`ANTHROPIC_BASE_URL=${origin}`);
+    await expect(page.getByLabel("Anthropic 完整环境配置")).toContainText(`ANTHROPIC_AUTH_TOKEN=${oneTimeGatewayToken}`);
+    await expect(page.getByRole("button", { name: "复制地址" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "复制 Token" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "复制完整配置" })).toBeVisible();
+    await page.getByRole("button", { name: "关闭" }).click();
+    await expect(page.getByRole("heading", { name: "Gateway Key 接入配置" })).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText(oneTimeGatewayToken!);
+    await expect(page.locator("tbody tr").filter({ hasText: "gateway-ui-e2e" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-gateway-keys-desktop-1440x1000.png"), fullPage: true });
+
+    expect((await api.get(`${baseURL}/admin/gateway/reconciliation`)).status()).toBe(404);
+
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/admin/story/stories");
     await expect(page.getByRole("heading", { name: "剧本", exact: true }).first()).toBeVisible();
@@ -565,6 +603,11 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     await expect(page.getByRole("combobox", { name: "模型" })).toHaveValue(validationModelBody.data.id);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-usage-mobile-390x844.png") });
+
+    await page.goto("/admin/gateway/keys");
+    await expect(page.getByRole("heading", { name: "Gateway Key", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-gateway-keys-mobile-390x844.png") });
 
     await context.clearCookies();
     await page.goto("/admin/login");

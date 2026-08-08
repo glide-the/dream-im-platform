@@ -41,7 +41,7 @@ cc-switch 是本地代理配置工具，Ink Memory 是 PostgreSQL 多用户运�
 - API Key 只写入加密列；读接口只返回 `credential_configured` 与 `api_key_fingerprint`。显隐按钮只显示本次尚未提交的输入，不读取历史明文。
 - 金额在数据库/API 中为整数 micro-USD；UI 同时显示 `$x.xxxxxx / 1M tokens` 与精确 micro-USD，提交前转换并回显转换结果。
 - 已被请求引用或已开始生效的 Pricing 不原地改价。新价格通过“创建新版本”写入；必要时在同一事务中结束旧规则的 `effective_to`。
-- `gateway_requests`、Token Usage、`billing_ledger_entries`、Audit 只读；异常结算是显式、审计化的补偿动作，不是编辑请求或账本。
+- `gateway_requests`、Token Usage、`billing_ledger_entries`、Audit 只读；自动结算失败只保留状态、错误、价格快照与审计记录，不提供运营人工补偿动作。
 - cc-switch 的本地代理在本产品中对应 `/v1/messages`、`/v1/messages/count_tokens`、`/v1/chat/completions`、`/v1/models`。外部只提交 Gateway Key 与 `ai_models.code`，服务端才解密 Provider Secret 并替换为 `upstream_model`。
 - cc-switch 的卡片数量摘要仅在真实聚合 API 可用时呈现；无真实聚合不显示装饰性或估算指标。
 - cc-switch 的 Tauri command、Rust 代理 server、配置文件接管、热切换和本地 SQLite/状态库不可直接复制；其协议转换、模型映射、usage 解析和错误分类语义必须移植到 `app/lib/gateway/**`，持久化统一使用同一个 `DATABASE_URL` 指向的 PostgreSQL `ink-memory`。
@@ -146,7 +146,7 @@ models.dev 同步层额外字段：目录 provider/model ID（文本）、source
 | 数据项 | 展示形式 | 交互 |
 |---|---|---|
 | 请求、用户、Provider、Model | 具名文本 + 辅助等宽 ID | 可复制；有权限时跳转关联详情 |
-| 状态/结果/HTTP 状态 | 语义徽标 | 失败状态附错误恢复或人工核对入口 |
+| 状态/结果/HTTP 状态 | 语义徽标 | 失败状态附只读错误证据与关联 Audit；无人工结算入口 |
 | Input/Output/Cache read/Cache write | 千分位整数，四类分列或紧凑双行 | 表头说明口径；不把缓存 Token 混入 fresh input |
 | Provider cost / charged | 精确 micro-USD 转美元 | 详情展示价格快照、markup/discount 与结算差额 |
 | 延迟/首 Token | `ms`/`s` tabular nums | 趋势与分位数仅来自真实聚合 |
