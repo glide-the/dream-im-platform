@@ -1,5 +1,7 @@
 # Ink Memory Admin v2 交互设计规范
 
+> **历史版本 / 已被替代：** 当前全局规范为 [`refine-admin-ui-v3-interaction-design.md`](refine-admin-ui-v3-interaction-design.md)，页面交互按 [`modules/`](modules/) 维护。本文仅保留历史设计依据。
+
 > 状态：工程实施基线  
 > 产品：Ink Memory Admin（Next.js 16 + React 19 + Refine 5 + Tailwind CSS 4）  
 > 基准视口：Desktop 1440×1000；Mobile 390×844  

@@ -1,5 +1,7 @@
 # Story / User / Resource Admin PRD
 
+> **专项历史版本 / 已被替代：** 平台用户与 Story 的当前需求分别见 [`modules/01-platform-users.md`](modules/01-platform-users.md) 和 [`modules/02-story-operations.md`](modules/02-story-operations.md)。
+
 > 版本：1.0  
 > 日期：2026-08-08  
 > 状态：本轮实施基线  

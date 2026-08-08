@@ -121,8 +121,11 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
 
     const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
     await pool.query(`INSERT INTO users (id, email, password_hash, display_name, role) VALUES (201, 'gateway-user@example.test', 'fixture-password-hash-not-a-credential', 'Gateway User', 'user')`);
-    const gatewayUserId = String((await pool.query(`SELECT id FROM platform_users WHERE source = 'ink-dream' AND external_user_id = '201'`)).rows[0]?.id);
+    const provisionedGatewayUser = (await pool.query(`SELECT id, daily_token_limit, monthly_token_limit FROM platform_users WHERE source = 'ink-dream' AND external_user_id = '201'`)).rows[0];
+    const gatewayUserId = String(provisionedGatewayUser?.id);
     expect(gatewayUserId).not.toBe("undefined");
+    expect(Number(provisionedGatewayUser?.daily_token_limit)).toBe(100_000);
+    expect(provisionedGatewayUser?.monthly_token_limit).toBeNull();
     await pool.query(`UPDATE billing_accounts SET available_microusd = 1000000000 WHERE platform_user_id = $1`, [gatewayUserId]);
 
     const api = context.request;

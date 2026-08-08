@@ -376,19 +376,21 @@ Revoke Modal 显示用户、prefix、最近使用、影响说明和 reason；动
 
 ## 9. 用户、资源与 Storage
 
-### 9.1 Platform Billing Identity（`platform-users`）
+### 9.1 平台用户与内部兼容键（`users` / `platform-users`）
 
-| 字段 | 列表/详情 | 创建/编辑控件 | 数据源/校验 | 边界 |
+`users` 是唯一平台用户全集，所有用户自动具备计费账户。`platform-users` 仅返回现有 Gateway/Billing FK 所需的内部兼容键，不提供创建或手工映射表单。
+
+| 字段 | 列表/详情 | 编辑控件 | 数据源/校验 | 边界 |
 |---|---|---|---|---|
-| `source`,`external_user_id` | 来源 + 源用户链接 | 从 Source User 发起时锁定；否则 source 固定 ink-dream + Source User Combobox | 唯一组合 | 不手填 ID，不创建业务用户 |
-| `email`,`display_name` | 主识别 | 默认来自 Source User；允许计费展示覆盖时 text/email | email≤320，name≤160 | 明示不回写源 users |
+| `users.id` | canonical 用户 ID + Copy | 只读 | `users` PK | 唯一产品用户 ID |
+| `source`,`external_user_id` | 详情技术信息 | 只读 | 自动固定 `ink-dream` + `users.id`；唯一组合 | 不手填、不创建第二类用户 |
+| `email`,`display_name` | 主识别 | 只读 | 始终来自 canonical `users` | 不在兼容表覆盖业务真值 |
 | `tier` | chip | 可搜索 tier Combobox | 现存 tier + code regex | 409 显示依赖 Pricing |
 | `status` | active/suspended/closed | select；停用走确认 | 固定枚举 | 不等同删除源用户 |
 | `daily_token_limit`,`monthly_token_limit` | 整数或“未设置” | nullable integer | 非负整数 | 空不转 0 |
-| `metadata` | 详情 JSON Viewer | 折叠 JSON Editor | object | 不放 Secret |
 | 时间 | 更新时间 | 只读 | 服务端 | — |
 
-详情联动到 Model Permission、Billing Account、Usage、Gateway Request、Ledger、Gateway Key。
+平台用户详情联动到 Subscription、Allowance、Model Permission、Billing Account、Usage、Gateway Request、Ledger、Gateway Key；所有 Relation Selector 以 canonical 用户全集为数据源。
 
 ### 9.2 Storage（保留现有 API/lib）
 

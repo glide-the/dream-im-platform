@@ -1,5 +1,7 @@
 # Ink Memory Admin PRD v2
 
+> **历史版本 / 已被替代：** 当前平台总纲为 [`ink-memory-admin-prd-v3.md`](ink-memory-admin-prd-v3.md)，详细需求按 [`modules/`](modules/) 维护。本文仅用于追溯 v2 决策，不再接收新需求。
+
 > 版本：2.2
 > 日期：2026-08-08  
 > 状态：工程实施基线  

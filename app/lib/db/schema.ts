@@ -30,7 +30,9 @@ export const platformUsers = pgTable(
     display_name: text("display_name"),
     tier: text("tier").notNull().default("free"),
     status: text("status").notNull().default("active"),
-    daily_token_limit: bigint("daily_token_limit", { mode: "number" }),
+    daily_token_limit: bigint("daily_token_limit", { mode: "number" }).default(
+      100_000,
+    ),
     monthly_token_limit: bigint("monthly_token_limit", { mode: "number" }),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })

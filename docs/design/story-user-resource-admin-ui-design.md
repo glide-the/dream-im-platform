@@ -1,5 +1,7 @@
 # Story / User / Resource Admin 交互设计稿
 
+> **专项历史版本 / 已被替代：** 当前交互分别见 [`modules/01-platform-users.md`](modules/01-platform-users.md) 和 [`modules/02-story-operations.md`](modules/02-story-operations.md)。
+
 > 版本：1.0  
 > 日期：2026-08-08  
 > 适用 PRD：`docs/prd/story-user-resource-admin-prd.md`  
