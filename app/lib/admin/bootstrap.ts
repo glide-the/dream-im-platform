@@ -21,7 +21,10 @@ const PERMISSIONS = [
   "pricing.write",
   "billing.read",
   "billing.adjust",
+  "subscriptions.read",
+  "subscriptions.write",
   "gateway.read",
+  "gateway.payloads.read",
   "gateway.keys.write",
   "access.read",
   "access.write",
@@ -34,7 +37,7 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
   super_admin: PERMISSIONS,
   operator: PERMISSIONS.filter(
     (permission) =>
-      !["billing.adjust", "access.write"].includes(permission),
+      !["billing.adjust", "access.write", "gateway.payloads.read"].includes(permission),
   ),
   auditor: PERMISSIONS.filter(
     (permission) => permission.endsWith(".read"),

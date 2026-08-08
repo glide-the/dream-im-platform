@@ -99,20 +99,17 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(sourceUsersBody.data[0]).toMatchObject({ id: "101", email: "creator@example.test" });
     expect(JSON.stringify(sourceUsersBody)).not.toContain("password_hash");
 
-    const canonicalUsers = await api.get(`${baseURL}/api/admin/users?filter[status][eq]=active&sort=updated_at&order=desc`);
+    const canonicalUsers = await api.get(`${baseURL}/api/admin/users?sort=updated_at&order=desc`);
     expect(canonicalUsers.status()).toBe(200);
     await expect(canonicalUsers.json()).resolves.toMatchObject({ data: expect.arrayContaining([expect.objectContaining({ id: "101", workspace_count: 1, story_count: 1 })]) });
-    expect((await api.patch(`${baseURL}/api/admin/users/101`, { headers, data: { status: "disabled" } })).status()).toBe(200);
-    expect((await api.patch(`${baseURL}/api/admin/users/101`, { headers, data: { status: "active" } })).status()).toBe(200);
+    expect((await api.patch(`${baseURL}/api/admin/users/101`, { headers, data: { status: "disabled" } })).status()).toBe(405);
 
     const workspaceCreate = await api.post(`${baseURL}/api/admin/story-workspaces`, {
       headers,
       data: { ownerId: 101, name: "E2E 运营工作区", settings: { language: "zh-CN" } },
     });
-    expect(workspaceCreate.status()).toBe(201);
-    const workspaceCreateBody = await workspaceCreate.json();
-    expect((await api.patch(`${baseURL}/api/admin/story-workspaces/${workspaceCreateBody.data.id}`, { headers, data: { status: "archived" } })).status()).toBe(200);
-    expect((await api.post(`${baseURL}/api/admin/story-workspaces`, { headers, data: { ownerId: 999999, name: "孤儿工作区", settings: {} } })).status()).toBe(409);
+    expect(workspaceCreate.status()).toBe(405);
+    expect((await api.patch(`${baseURL}/api/admin/story-workspaces/workspace-e2e`, { headers, data: { settings: { language: "zh-CN", reviewed: true } } })).status()).toBe(200);
 
     const stories = await api.get(`${baseURL}/api/admin/story-stories?filter[title][contains]=真实源`);
     expect(stories.status()).toBe(200);
@@ -121,7 +118,7 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
 
     const businessDashboard = await api.get(`${baseURL}/api/admin/dashboard`);
     expect(businessDashboard.status()).toBe(200);
-    await expect(businessDashboard.json()).resolves.toMatchObject({ data: { sourceUsers: 2, activeUsers: 2, storyStories: 2 } });
+    await expect(businessDashboard.json()).resolves.toMatchObject({ data: { sourceUsers: 2, storyStories: 2 } });
     expect((await api.get(`${baseURL}/api/admin/roles`)).status()).toBe(200);
     expect((await api.get(`${baseURL}/api/admin/permissions`)).status()).toBe(200);
     expect((await api.get(`${baseURL}/api/admin/storage-resources`)).status()).toBe(200);

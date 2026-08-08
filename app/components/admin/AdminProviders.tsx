@@ -81,6 +81,36 @@ const resources = [
     meta: { label: "计费账户" },
   },
   {
+    name: "subscription-plans",
+    list: "/admin/subscriptions/plans",
+    meta: { label: "订阅套餐" },
+  },
+  {
+    name: "subscription-plan-versions",
+    list: "/admin/subscriptions/versions",
+    meta: { label: "套餐版本" },
+  },
+  {
+    name: "subscription-entitlements",
+    list: "/admin/subscriptions/entitlements",
+    meta: { label: "套餐权益" },
+  },
+  {
+    name: "subscriptions",
+    list: "/admin/subscriptions/users",
+    meta: { label: "用户订阅" },
+  },
+  {
+    name: "subscription-allowances",
+    list: "/admin/subscriptions/users",
+    meta: { label: "周期额度" },
+  },
+  {
+    name: "subscription-events",
+    list: "/admin/subscriptions/users",
+    meta: { label: "订阅事件" },
+  },
+  {
     name: "usage",
     list: "/admin/billing/usage",
     meta: { label: "Token 计费" },

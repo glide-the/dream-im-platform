@@ -22,6 +22,13 @@ export async function parseGatewayJson<T extends z.ZodTypeAny>(
   request: Request,
   schema: T,
 ): Promise<z.infer<T>> {
+  return (await parseGatewayJsonCapture(request, schema)).data;
+}
+
+export async function parseGatewayJsonCapture<T extends z.ZodTypeAny>(
+  request: Request,
+  schema: T,
+): Promise<{ data: z.infer<T>; rawBody: string; body: unknown }> {
   const maxBytes = configuredMaxBodyBytes();
   const contentLength = request.headers.get("content-length");
   if (contentLength && Number(contentLength) > maxBytes) {
@@ -66,7 +73,7 @@ export async function parseGatewayJson<T extends z.ZodTypeAny>(
       "invalid_request_error",
     );
   }
-  return parsed.data;
+  return { data: parsed.data, rawBody: text, body: json };
 }
 
 export function estimateJsonTokens(value: unknown) {

@@ -9,11 +9,6 @@ export const stateOptions = [
   { label: "停用", value: "disabled" },
 ];
 
-const workspaceStatusOptions = [
-  { label: "使用中", value: "active" },
-  { label: "已归档", value: "archived" },
-];
-
 const storyStatusOptions = [
   { label: "草稿", value: "draft" },
   { label: "已发布", value: "published" },
@@ -133,6 +128,14 @@ export function ModelPermissionsResourceView() {
   return <AdminResourceManager resource="user-model-permissions" title="用户—模型授权矩阵" description="关系从真实用户和模型选择；删除覆盖仅恢复默认策略，不影响历史窗口。" container="drawer" createLabel="新增模型授权" canDelete deleteLabel="删除覆盖" sections={[{ id: "relation", title: "用户与模型" }, { id: "policy", title: "调用策略" }, { id: "limits", title: "Token 限额" }]} fields={permissionFields} createDefaults={{ enabled: true, requestsPerMinute: null, dailyTokenLimit: null, monthlyTokenLimit: null }} defaultSort="updated_at" filters={[{ field: "email", label: "用户邮箱" }, { field: "model_code", label: "模型" }, { field: "enabled", label: "是否允许", operator: "eq", options: [{ label: "允许", value: "true" }, { label: "禁止", value: "false" }] }]} columns={[{ key: "email", label: "用户" }, { key: "model_code", label: "模型" }, { key: "enabled", label: "允许", format: "boolean" }, { key: "requests_per_minute", label: "RPM" }, { key: "daily_token_limit", label: "每日 Token" }, { key: "monthly_token_limit", label: "每月 Token" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
 }
 
+export function GatewayUserDefaultLimitsView() {
+  const fields: AdminFieldDefinition[] = [
+    { key: "dailyTokenLimit", sourceKey: "daily_token_limit", label: "每日 Token 限额", control: "number", section: "limits", nullable: true, min: 0 },
+    { key: "monthlyTokenLimit", sourceKey: "monthly_token_limit", label: "每月 Token 限额", control: "number", section: "limits", nullable: true, min: 0 },
+  ];
+  return <AdminResourceManager resource="platform-users" title="用户默认 Token 上限" description="修改 Gateway 用户级每日／每月上限；留空表示该层不设上限。生效值仍会取用户默认、模型覆盖和套餐权益中的最小值。" container="drawer" canCreate={false} canDelete={false} sections={[{ id: "limits", title: "用户默认上限", description: "保存后新请求立即按新上限预授权；不会改写已经产生的实时用量计数。" }]} fields={fields} defaultSort="updated_at" filters={[{ field: "email", label: "用户邮箱" }, { field: "status", label: "状态", operator: "eq" }]} columns={[{ key: "email", label: "用户" }, { key: "display_name", label: "显示名" }, { key: "tier", label: "层级" }, { key: "daily_token_limit", label: "每日 Token" }, { key: "monthly_token_limit", label: "每月 Token" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
+}
+
 export function PlatformUsersResourceView() {
   const fields: AdminFieldDefinition[] = [
     { key: "source", label: "来源", control: "select", section: "source", required: true, createOnly: true, readOnlyOnEdit: true, options: [{ label: "Ink Dream", value: "ink-dream" }] },
@@ -149,34 +152,24 @@ export function PlatformUsersResourceView() {
 }
 
 export function UsersResourceView() {
-  const fields: AdminFieldDefinition[] = [
-    { key: "displayName", sourceKey: "display_name", label: "显示名称", control: "text", section: "profile", nullable: true },
-    { key: "avatarUrl", sourceKey: "avatar_url", label: "头像 URL", control: "url", section: "profile", nullable: true },
-    { key: "status", label: "用户状态", control: "select", section: "status", required: true, options: stateOptions },
-  ];
   return <AdminResourceManager
     resource="users"
     title="平台用户"
-    description="管理 ink-memory 中的真实业务用户状态并查看 Workspace、Story 关联；密码与会话字段不会返回到浏览器。"
+    description="只读查看 Dream 真实 users 与 Workspace、Story 关联；密码与会话字段不会返回到浏览器。"
     container="drawer"
     canCreate={false}
+    canEdit={false}
     canDelete={false}
-    sections={[
-      { id: "profile", title: "公开资料", description: "只允许维护对运营可见的显示信息。" },
-      { id: "status", title: "账号状态", description: "停用会阻止后续业务访问，但不会删除历史内容。" },
-    ]}
-    fields={fields}
+    fields={[]}
     defaultSort="updated_at"
     filters={[
       { field: "email", label: "邮箱或显示名" },
-      { field: "status", label: "状态", operator: "eq", options: stateOptions },
       { field: "role", label: "业务角色", operator: "eq" },
     ]}
     columns={[
       { key: "email", label: "Email" },
       { key: "display_name", label: "显示名" },
       { key: "role", label: "业务角色", format: "status" },
-      { key: "status", label: "状态", format: "status" },
       { key: "workspace_count", label: "Workspace" },
       { key: "story_count", label: "Story" },
       { key: "updated_at", label: "更新时间", format: "date" },
@@ -232,7 +225,7 @@ type StoryResourceViewProps = { kind: "workspaces" | "stories" | "characters" | 
 export function StoryResourceView({ kind }: StoryResourceViewProps) {
   if (kind === "workspaces") {
     // Keep creation unavailable until Dream defines the object-storage-backed Workspace configuration contract.
-    return <AdminResourceManager resource="story-workspaces" title="工作区" description="查看并维护 ink-memory 的现有工作区；创建入口暂时关闭，等待 Dream 完成对象存储的工作区配置契约。" canCreate={false} container="drawer" createLabel="新增工作区" sections={[{ id: "owner", title: "所属用户" }, { id: "main", title: "工作区信息" }]} fields={[{ key: "ownerId", sourceKey: "owner_id", label: "所属用户", control: "relation", section: "owner", required: true, createOnly: true, readOnlyOnEdit: true, relation: { resource: "users", labelKey: "email", secondaryKey: "display_name", searchField: "email" } }, { key: "name", label: "工作区名称", control: "text", section: "main", required: true }, { key: "status", label: "状态", control: "select", section: "main", required: true, options: workspaceStatusOptions }, { key: "settings", label: "Workspace Settings", control: "json", section: "main", required: true }]} createDefaults={{ status: "active", settings: {} }} defaultSort="updated_at" filters={[{ field: "name", label: "名称或用户" }, { field: "owner_id", label: "用户 ID", operator: "eq" }, { field: "status", label: "状态", operator: "eq", options: workspaceStatusOptions }]} columns={[{ key: "name", label: "工作区" }, { key: "owner_email", label: "所属用户" }, { key: "status", label: "状态", format: "status" }, { key: "story_count", label: "Story 数量" }, { key: "created_at", label: "创建时间", format: "date" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
+    return <AdminResourceManager resource="story-workspaces" title="工作区" description="查看并受控维护 Dream 真实工作区的名称与 settings；创建和删除仍由业务系统负责。" canCreate={false} canDelete={false} container="drawer" sections={[{ id: "main", title: "工作区信息" }]} fields={[{ key: "name", label: "工作区名称", control: "text", section: "main", required: true }, { key: "settings", label: "Workspace Settings", control: "json", section: "main", required: true }]} createDefaults={{ settings: {} }} defaultSort="updated_at" filters={[{ field: "name", label: "名称或用户" }, { field: "owner_id", label: "用户 ID", operator: "eq" }]} columns={[{ key: "name", label: "工作区" }, { key: "owner_email", label: "所属用户" }, { key: "story_count", label: "Story 数量" }, { key: "created_at", label: "创建时间", format: "date" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
   }
   if (kind === "stories") return <AdminResourceManager resource="stories" title="剧本" description="正文与内部结构只读；运营人员仅可维护标题、说明、类型并确认待审核内容。" canCreate={false} canDelete={false} container="drawer" fields={[{ key: "title", label: "标题", control: "text", section: "main", required: true }, { key: "description", label: "说明", control: "textarea", section: "main", nullable: true }, { key: "type", label: "类型", control: "select", section: "main", options: [{ label: "短篇", value: "short" }, { label: "长篇", value: "long" }, { label: "剧本", value: "script" }, { label: "大纲", value: "outline" }] }]} commands={[{ action: "confirm", label: "确认", description: "仅确认当前剧本的审核状态，不改写正文或其他业务实体。", tone: "success" }]} defaultSort="updated_at" filters={[{ field: "title", label: "标题、工作区或用户" }, { field: "workspace_id", label: "Workspace ID", operator: "eq" }, { field: "author_id", label: "用户 ID", operator: "eq" }, { field: "review_status", label: "审核", operator: "eq", options: reviewStatusOptions }, { field: "status", label: "状态", operator: "eq", options: storyStatusOptions }, { field: "type", label: "类型", operator: "eq" }]} columns={[{ key: "title", label: "剧本" }, { key: "workspace_name", label: "工作区" }, { key: "author_email", label: "所属用户" }, { key: "type", label: "类型" }, { key: "review_status", label: "审核", format: "status" }, { key: "status", label: "状态", format: "status" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
   if (kind === "characters") return <AdminResourceManager resource="story-characters" title="真实角色" description="角色详情包含真实 Story role_type 与 Scene 关系；当前审核操作仅保留确认。" canCreate={false} container="drawer" fields={[{ key: "name", label: "名称", control: "text", section: "main", required: true }, { key: "identity", label: "身份", control: "textarea", section: "main", nullable: true }, { key: "personality", label: "性格", control: "textarea", section: "main", nullable: true }, { key: "background", label: "背景", control: "textarea", section: "main", nullable: true }, { key: "catchphrase", label: "口头禅", control: "textarea", section: "main", nullable: true }, { key: "tags", label: "标签", control: "tags", section: "main", help: "使用逗号分隔；提交为字符串数组。" }, { key: "avatarUrl", sourceKey: "avatar_url", label: "头像 URL", control: "url", section: "main", nullable: true }]} commands={[{ action: "confirm", label: "确认", description: "确认 pending Agent 角色。", tone: "success" }]} filters={[{ field: "name", label: "角色名" }, { field: "workspace_name", label: "工作区" }, { field: "review_status", label: "审核", operator: "eq", options: reviewStatusOptions }]} columns={[{ key: "name", label: "角色" }, { key: "workspace_name", label: "工作区" }, { key: "story_count", label: "剧本数" }, { key: "review_status", label: "审核", format: "status" }]} />;

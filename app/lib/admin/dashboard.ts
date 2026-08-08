@@ -61,11 +61,7 @@ export async function handleAdminDashboard(request: Request) {
         const result = await client.query<Record<string, string>>(
           `SELECT
              (SELECT COUNT(*)::text FROM users) AS source_users,
-             (SELECT COUNT(*)::text FROM users WHERE status = 'active') AS active_users,
-             (SELECT COUNT(*)::text FROM users WHERE status = 'disabled') AS disabled_users,
              (SELECT COUNT(*)::text FROM story_workspace_workspaces) AS workspaces,
-             (SELECT COUNT(*)::text FROM story_workspace_workspaces WHERE status = 'active') AS active_workspaces,
-             (SELECT COUNT(*)::text FROM story_workspace_workspaces WHERE status = 'archived') AS archived_workspaces,
              (SELECT COUNT(*)::text FROM story_workspace_stories) AS stories,
              (SELECT COUNT(*)::text FROM story_workspace_stories WHERE status = 'draft') AS draft_stories,
              (SELECT COUNT(*)::text FROM story_workspace_stories WHERE status = 'published') AS published_stories,
@@ -95,11 +91,7 @@ export async function handleAdminDashboard(request: Request) {
         return {
           ...controlData,
           sourceUsers: Number(row.source_users),
-          activeUsers: Number(row.active_users),
-          disabledUsers: Number(row.disabled_users),
           storyWorkspaces: Number(row.workspaces),
-          activeWorkspaces: Number(row.active_workspaces),
-          archivedWorkspaces: Number(row.archived_workspaces),
           storyStories: Number(row.stories),
           draftStories: Number(row.draft_stories),
           publishedStories: Number(row.published_stories),

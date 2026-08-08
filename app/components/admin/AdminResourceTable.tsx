@@ -2,6 +2,7 @@
 
 import { type CrudFilter, useList } from "@refinedev/core";
 import { FormEvent, useMemo, useState } from "react";
+import GatewayRequestDetail from "./GatewayRequestDetail";
 
 export type AdminTableColumn = {
   key: string;
@@ -64,6 +65,7 @@ export default function AdminResourceTable({
   pageSize = 12,
   filters: filterDefinitions = [],
   defaultFilters = [],
+  gatewayPayloadDetail = false,
 }: {
   resource: string;
   title: string;
@@ -73,6 +75,7 @@ export default function AdminResourceTable({
   pageSize?: number;
   filters?: FilterDefinition[];
   defaultFilters?: CrudFilter[];
+  gatewayPayloadDetail?: boolean;
 }) {
   const [page, setPage] = useState(1);
   const [draftFilters, setDraftFilters] = useState<Record<string, string>>({});
@@ -189,7 +192,7 @@ export default function AdminResourceTable({
         <button type="button" disabled={page >= pages} onClick={() => setPage((value) => Math.min(pages, value + 1))} className="min-h-10 border border-border px-4 text-xs font-semibold disabled:opacity-40">下一页</button>
       </footer>
 
-      {selected ? (
+      {selected && (gatewayPayloadDetail || resource === "gateway-requests") ? <GatewayRequestDetail record={selected} onClose={() => setSelected(null)} /> : selected ? (
         <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby={`${resource}-detail-title`}>
           <button type="button" className="absolute inset-0 bg-black/35" onClick={() => setSelected(null)} aria-label="关闭详情" />
           <aside className="absolute inset-y-0 right-0 w-[min(94vw,620px)] overflow-y-auto border-l border-border bg-bg-surface p-5 shadow-medium sm:p-7">

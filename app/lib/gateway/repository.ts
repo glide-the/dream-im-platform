@@ -5,6 +5,12 @@ import type { ResolvedBillableModel } from "../models/resolver";
 import { withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
 import type { GatewayPrincipal } from "./auth";
+import {
+  releaseSubscriptionAllowanceOnClient,
+  reserveSubscriptionAllowanceOnClient,
+  resolveGatewaySubscriptionOnClient,
+  type GatewaySubscriptionContext,
+} from "../subscriptions/gateway";
 
 type ExistingRequestRow = {
   id: string;
@@ -30,15 +36,18 @@ export type BeginGatewayRequestResult =
   | {
       kind: "rejected";
       requestId: string;
-      code:
-        | "INSUFFICIENT_BALANCE"
-        | "REQUEST_RATE_LIMIT_EXCEEDED"
-        | "DAILY_TOKEN_LIMIT_EXCEEDED"
-        | "MONTHLY_TOKEN_LIMIT_EXCEEDED";
+      code: string;
+      status?: 402 | 403 | 409 | 429;
+      message?: string;
       availableMicrousd?: number;
       requiredMicrousd?: number;
       limit?: number;
       current?: number;
+      requested?: number;
+      remaining?: number;
+      exceededBy?: number;
+      limitWindow?: LimitWindow["type"];
+      limitMetric?: "requests" | "tokens";
     };
 
 type LimitWindow = {
@@ -59,6 +68,12 @@ function windowStart(type: LimitWindow["type"], at: Date) {
   if (type === "day" || type === "month") start.setUTCHours(0, 0, 0, 0);
   if (type === "month") start.setUTCDate(1);
   return start;
+}
+
+function optionalMinimum(a?: number, b?: number) {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return Math.min(a, b);
 }
 
 async function lockLimitWindows(input: {
@@ -130,7 +145,15 @@ async function lockLimitWindows(input: {
       throw new Error("GATEWAY_LIMIT_COUNTER_INVALID");
     }
     if (window.limit !== undefined && current + increment > window.limit) {
-      return { window, current };
+      return {
+        window,
+        current,
+        limit: window.limit,
+        requested: increment,
+        remaining: Math.max(0, window.limit - current),
+        exceededBy: current + increment - window.limit,
+        metric: window.requestIncrement > 0 ? "requests" as const : "tokens" as const,
+      };
     }
   }
   return { windows };
@@ -171,6 +194,7 @@ export async function beginGatewayRequest(input: {
   idempotencyKey?: string;
   reservationMicrousd: number;
   estimatedTokens: number;
+  requiredScope: string;
   limits: {
     requestsPerMinute?: number;
     dailyTokenLimit?: number;
@@ -198,6 +222,9 @@ export async function beginGatewayRequest(input: {
     const requestId = createPlatformId("req");
     const inputTokenSemantics: InputTokenSemantics =
       input.protocol === "anthropic" ? "fresh" : "total_including_cache";
+    // Persist the resolved request before subscription policy evaluation. A
+    // paused/ineligible/exhausted subscription is still an authenticated
+    // Gateway request and needs a stable FK target for its full payloads.
     await client.query(
       `INSERT INTO gateway_requests (
          id, idempotency_key, platform_user_id, gateway_api_key_id,
@@ -207,8 +234,8 @@ export async function beginGatewayRequest(input: {
          cache_read_price_snapshot, cache_write_price_snapshot,
          markup_bps_snapshot, discount_bps_snapshot, is_streaming
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-         $12, $13, $14, $15, $16, $17, $18, $19
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+         $13, $14, $15, $16, $17, $18, $19
        )`,
       [
         requestId,
@@ -232,6 +259,62 @@ export async function beginGatewayRequest(input: {
         input.isStreaming,
       ],
     );
+    const subscriptionEligibility = await resolveGatewaySubscriptionOnClient(client, {
+      platformUserId: input.principal.platformUserId,
+      modelId: input.resolved.model.id,
+      requiredScope: input.requiredScope,
+      estimatedTokens: input.estimatedTokens,
+      reservationMicrousd: input.reservationMicrousd,
+      at: new Date(),
+    });
+    if (subscriptionEligibility && "code" in subscriptionEligibility) {
+      await client.query(
+        `UPDATE gateway_requests
+         SET status = 'rejected', outcome = 'failed', http_status = $2,
+             error_code = $3, error_message = $4,
+             completed_at = NOW(), settled_at = NOW()
+         WHERE id = $1`,
+        [
+          requestId,
+          subscriptionEligibility.status,
+          subscriptionEligibility.code,
+          subscriptionEligibility.message,
+        ],
+      );
+      return {
+        kind: "rejected",
+        requestId,
+        code: subscriptionEligibility.code,
+        status: subscriptionEligibility.status,
+        message: subscriptionEligibility.message,
+        availableMicrousd: subscriptionEligibility.availableMicrousd,
+        requiredMicrousd: subscriptionEligibility.requiredMicrousd,
+      };
+    }
+    const subscription = subscriptionEligibility as GatewaySubscriptionContext | null;
+    if (subscription) {
+      await client.query(
+        `UPDATE gateway_requests
+         SET subscription_id = $2, subscription_plan_version_id = $3,
+             subscription_entitlement_id = $4, subscription_allowance_id = $5,
+             subscription_snapshot = $6::jsonb,
+             subscription_coverage_mode = $7,
+             allowance_reserved_microusd = $8,
+             allowance_reserved_tokens = $9
+         WHERE id = $1`,
+        [
+          requestId,
+          subscription.subscriptionId,
+          subscription.planVersionId,
+          subscription.entitlementId,
+          subscription.allowanceId,
+          JSON.stringify(subscription.snapshot),
+          subscription.coverageMode,
+          subscription.allowanceReservedMicrousd,
+          subscription.allowanceReservedTokens,
+        ],
+      );
+    }
 
     const at = new Date();
     const limiter = await lockLimitWindows({
@@ -240,27 +323,95 @@ export async function beginGatewayRequest(input: {
       modelId: input.resolved.model.id,
       at,
       estimatedTokens: input.estimatedTokens,
-      ...input.limits,
+      requestsPerMinute: optionalMinimum(
+        input.limits.requestsPerMinute,
+        subscription?.limits.requestsPerMinute,
+      ),
+      dailyTokenLimit: optionalMinimum(
+        input.limits.dailyTokenLimit,
+        subscription?.limits.dailyTokenLimit,
+      ),
+      monthlyTokenLimit: optionalMinimum(
+        input.limits.monthlyTokenLimit,
+        subscription?.limits.monthlyTokenLimit,
+      ),
     });
     if ("window" in limiter) {
+      const windowLabel = limiter.window.type === "minute"
+        ? "Per-minute request"
+        : limiter.window.type === "day"
+          ? "Daily token"
+          : "Monthly token";
+      const errorMessage = `${windowLabel} limit exceeded: current=${limiter.current}, requested=${limiter.requested}, limit=${limiter.limit}, remaining=${limiter.remaining}, exceeded_by=${limiter.exceededBy}`;
+      const rejectionSummary = {
+        rejection_stage: "preauthorization",
+        limit_window: limiter.window.type,
+        limit_metric: limiter.metric,
+        current: limiter.current,
+        requested: limiter.requested,
+        limit: limiter.limit,
+        remaining: limiter.remaining,
+        exceeded_by: limiter.exceededBy,
+      };
       await client.query(
         `UPDATE gateway_requests
          SET status = 'rejected', outcome = 'failed', http_status = 429,
-             error_code = $2, error_message = 'Gateway usage limit exceeded',
+             error_code = $2, error_message = $3,
+             response_summary = $4::jsonb,
              completed_at = NOW(), settled_at = NOW()
          WHERE id = $1`,
-        [requestId, limiter.window.errorCode],
+        [
+          requestId,
+          limiter.window.errorCode,
+          errorMessage,
+          JSON.stringify(rejectionSummary),
+        ],
       );
       return {
         kind: "rejected",
         requestId,
         code: limiter.window.errorCode,
-        limit: limiter.window.limit,
+        message: errorMessage,
+        limit: limiter.limit,
         current: limiter.current,
+        requested: limiter.requested,
+        remaining: limiter.remaining,
+        exceededBy: limiter.exceededBy,
+        limitWindow: limiter.window.type,
+        limitMetric: limiter.metric,
       };
     }
 
-    if (input.reservationMicrousd === 0) {
+    if (subscription) {
+      try {
+        await reserveSubscriptionAllowanceOnClient(client, subscription);
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          error.message !== "SUBSCRIPTION_ALLOWANCE_CONCURRENT_CONFLICT"
+        ) throw error;
+        await client.query(
+          `UPDATE gateway_requests
+           SET status = 'rejected', outcome = 'failed', http_status = 409,
+               error_code = 'SUBSCRIPTION_ALLOWANCE_CONFLICT',
+               error_message = 'Subscription allowance changed concurrently',
+               completed_at = NOW(), settled_at = NOW()
+           WHERE id = $1`,
+          [requestId],
+        );
+        return {
+          kind: "rejected",
+          requestId,
+          code: "SUBSCRIPTION_ALLOWANCE_CONFLICT",
+          status: 409,
+          message: "Subscription allowance changed concurrently; retry the request",
+        };
+      }
+    }
+
+    const cashReservation =
+      subscription?.cashReservedMicrousd ?? input.reservationMicrousd;
+    if (cashReservation === 0) {
       await client.query(
         `UPDATE gateway_requests
          SET status = 'reserved', started_at = NOW()
@@ -273,14 +424,18 @@ export async function beginGatewayRequest(input: {
         modelId: input.resolved.model.id,
         windows: limiter.windows,
       });
-      return { kind: "reserved", requestId, reservedMicrousd: 0 };
+      return {
+        kind: "reserved",
+        requestId,
+        reservedMicrousd: input.reservationMicrousd,
+      };
     }
 
     try {
       await reserveGatewayRequestOnClient(client, {
         platformUserId: input.principal.platformUserId,
         gatewayRequestId: requestId,
-        amountMicrousd: input.reservationMicrousd,
+        amountMicrousd: cashReservation,
       });
       await applyLimitReservations({
         client,
@@ -295,6 +450,9 @@ export async function beginGatewayRequest(input: {
       };
     } catch (error) {
       if (!(error instanceof InsufficientBalanceError)) throw error;
+      if (subscription) {
+        await releaseSubscriptionAllowanceOnClient(client, subscription);
+      }
       await client.query(
         `UPDATE gateway_requests
          SET status = 'rejected', outcome = 'failed', http_status = 402,

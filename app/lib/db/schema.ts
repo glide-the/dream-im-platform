@@ -59,93 +59,6 @@ export const platformUsers = pgTable(
 );
 
 /**
- * Canonical ink-dream-memory business tables. These preserve the audited
- * source names and relations; platformUsers remains a separate billing and
- * gateway identity mapping rather than replacing these source users.
- */
-export const storySourceUsers = pgTable(
-  "users",
-  {
-    id: bigint("id", { mode: "number" })
-      .primaryKey()
-      .generatedByDefaultAsIdentity(),
-    email: text("email").notNull(),
-    password_hash: text("password_hash").notNull(),
-    display_name: text("display_name"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow(),
-    avatar_url: text("avatar_url"),
-    role: text("role").default("user"),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
-  },
-  (table) => [uniqueIndex("users_email_unique").on(table.email)],
-);
-
-export const storySourceWorkspaces = pgTable(
-  "story_workspace_workspaces",
-  {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    owner_id: bigint("owner_id", { mode: "number" })
-      .notNull()
-      .references(() => storySourceUsers.id, { onDelete: "restrict" }),
-    settings: text("settings").default("{}"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .notNull()
-      .defaultNow(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [index("idx_sw_workspaces_owner").on(table.owner_id)],
-);
-
-export const storySourceStories = pgTable(
-  "story_workspace_stories",
-  {
-    id: text("id").primaryKey(),
-    identifier: text("identifier").notNull(),
-    title: text("title").notNull(),
-    description: text("description"),
-    status: text("status").notNull().default("draft"),
-    review_status: text("review_status").notNull().default("pending"),
-    type: text("type").notNull().default("short"),
-    content: text("content"),
-    author_id: bigint("author_id", { mode: "number" })
-      .notNull()
-      .references(() => storySourceUsers.id, { onDelete: "restrict" }),
-    workspace_id: text("workspace_id")
-      .notNull()
-      .references(() => storySourceWorkspaces.id, { onDelete: "restrict" }),
-    character_count: integer("character_count").notNull().default(0),
-    scene_count: integer("scene_count").notNull().default(0),
-    agent_generated: integer("agent_generated").notNull().default(1),
-    agent_session_id: text("agent_session_id"),
-    review_notes: text("review_notes"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .notNull()
-      .defaultNow(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .notNull()
-      .defaultNow(),
-    confirmed_at: timestamp("confirmed_at", { withTimezone: true, mode: "date" }),
-    published_at: timestamp("published_at", { withTimezone: true, mode: "date" }),
-  },
-  (table) => [
-    index("idx_sw_stories_author").on(table.author_id, table.updated_at.desc()),
-    index("idx_sw_stories_review_status").on(table.review_status, table.updated_at.desc()),
-    index("idx_sw_stories_status").on(table.status, table.updated_at.desc()),
-    index("idx_sw_stories_type").on(table.type, table.updated_at.desc()),
-    index("idx_sw_stories_search").on(table.title),
-    index("idx_sw_stories_agent").on(table.agent_session_id),
-    check("story_workspace_stories_status_check", sql`${table.status} IN ('draft', 'published', 'archived')`),
-    check("story_workspace_stories_review_status_check", sql`${table.review_status} IN ('pending', 'confirmed', 'rejected')`),
-    check("story_workspace_stories_type_check", sql`${table.type} IN ('short', 'long', 'script', 'outline')`),
-    check("story_workspace_stories_agent_generated_check", sql`${table.agent_generated} IN (0, 1)`),
-  ],
-);
-
-/**
  * Canonical Story product identities and first-wave content tables.
  *
  * These tables live in the same PostgreSQL database as the Admin control
@@ -164,7 +77,8 @@ export const users = pgTable(
     display_name: text("display_name"),
     avatar_url: text("avatar_url"),
     role: text("role").notNull().default("user"),
-    status: text("status").notNull().default("active"),
+    /** @deprecated Admin-only compatibility column from migration 0011. */
+    admin_deprecated_status: text("status").notNull().default("active"),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
       .defaultNow(),
@@ -174,8 +88,14 @@ export const users = pgTable(
   },
   (table) => [
     uniqueIndex("users_email_uidx").on(table.email),
-    index("users_status_updated_idx").on(table.status, table.updated_at),
-    check("users_status_check", sql`${table.status} IN ('active', 'disabled')`),
+    index("users_status_updated_idx").on(
+      table.admin_deprecated_status,
+      table.updated_at,
+    ),
+    check(
+      "users_status_check",
+      sql`${table.admin_deprecated_status} IN ('active', 'disabled')`,
+    ),
   ],
 );
 
@@ -187,11 +107,13 @@ export const storyWorkspaceWorkspaces = pgTable(
     owner_id: bigint("owner_id", { mode: "number" })
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
+    // Migration 0011 stores the source JSON-text value as lossless jsonb.
     settings: jsonb("settings")
       .$type<Record<string, unknown>>()
       .notNull()
       .default({}),
-    status: text("status").notNull().default("active"),
+    /** @deprecated Admin-only compatibility column from migration 0011. */
+    admin_deprecated_status: text("status").notNull().default("active"),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
       .defaultNow(),
@@ -202,12 +124,12 @@ export const storyWorkspaceWorkspaces = pgTable(
   (table) => [
     index("story_workspace_workspaces_owner_idx").on(table.owner_id),
     index("story_workspace_workspaces_status_updated_idx").on(
-      table.status,
+      table.admin_deprecated_status,
       table.updated_at,
     ),
     check(
       "story_workspace_workspaces_status_check",
-      sql`${table.status} IN ('active', 'archived')`,
+      sql`${table.admin_deprecated_status} IN ('active', 'archived')`,
     ),
   ],
 );
@@ -611,6 +533,293 @@ export const billingAccounts = pgTable(
   ],
 );
 
+export const subscriptionPlans = pgTable(
+  "subscription_plans",
+  {
+    id: text("id").primaryKey(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    currency: text("currency").notNull().default("USD"),
+    status: text("status").notNull().default("draft"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("subscription_plans_code_uidx").on(table.code),
+    index("subscription_plans_status_updated_idx").on(
+      table.status,
+      table.updated_at,
+    ),
+    check(
+      "subscription_plans_status_check",
+      sql`${table.status} IN ('draft', 'active', 'retired')`,
+    ),
+    check("subscription_plans_currency_check", sql`${table.currency} = 'USD'`),
+  ],
+);
+
+export const subscriptionPlanVersions = pgTable(
+  "subscription_plan_versions",
+  {
+    id: text("id").primaryKey(),
+    plan_id: text("plan_id")
+      .notNull()
+      .references(() => subscriptionPlans.id, { onDelete: "restrict" }),
+    version_number: integer("version_number").notNull(),
+    status: text("status").notNull().default("draft"),
+    billing_period: text("billing_period").notNull().default("monthly"),
+    base_price_microusd: bigint("base_price_microusd", { mode: "number" })
+      .notNull()
+      .default(0),
+    trial_days: integer("trial_days").notNull().default(0),
+    grace_period_days: integer("grace_period_days").notNull().default(0),
+    allowance_tokens: bigint("allowance_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    allowance_microusd: bigint("allowance_microusd", { mode: "number" })
+      .notNull()
+      .default(0),
+    overage_policy: text("overage_policy").notNull().default("deny"),
+    effective_from: timestamp("effective_from", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    published_at: timestamp("published_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("subscription_plan_versions_plan_number_uidx").on(
+      table.plan_id,
+      table.version_number,
+    ),
+    index("subscription_plan_versions_status_effective_idx").on(
+      table.status,
+      table.effective_from,
+    ),
+    check(
+      "subscription_plan_versions_status_check",
+      sql`${table.status} IN ('draft', 'published', 'retired')`,
+    ),
+    check(
+      "subscription_plan_versions_billing_period_check",
+      sql`${table.billing_period} IN ('monthly', 'annual')`,
+    ),
+    check(
+      "subscription_plan_versions_overage_check",
+      sql`${table.overage_policy} IN ('deny', 'cash_balance')`,
+    ),
+    check(
+      "subscription_plan_versions_values_check",
+      sql`${table.version_number} > 0 AND ${table.base_price_microusd} >= 0 AND ${table.trial_days} >= 0 AND ${table.grace_period_days} >= 0 AND ${table.allowance_tokens} >= 0 AND ${table.allowance_microusd} >= 0`,
+    ),
+  ],
+);
+
+export const subscriptionPlanEntitlements = pgTable(
+  "subscription_plan_entitlements",
+  {
+    id: text("id").primaryKey(),
+    plan_version_id: text("plan_version_id")
+      .notNull()
+      .references(() => subscriptionPlanVersions.id, { onDelete: "cascade" }),
+    model_id: text("model_id")
+      .notNull()
+      .references(() => aiModels.id, { onDelete: "restrict" }),
+    gateway_scopes: text("gateway_scopes").array().notNull(),
+    requests_per_minute: integer("requests_per_minute"),
+    daily_token_limit: bigint("daily_token_limit", { mode: "number" }),
+    monthly_token_limit: bigint("monthly_token_limit", { mode: "number" }),
+    storage_bytes_limit: bigint("storage_bytes_limit", { mode: "number" }),
+    enabled: boolean("enabled").notNull().default(true),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("subscription_entitlements_version_model_uidx").on(
+      table.plan_version_id,
+      table.model_id,
+    ),
+    index("subscription_entitlements_model_idx").on(table.model_id),
+    check(
+      "subscription_entitlements_rpm_check",
+      sql`${table.requests_per_minute} IS NULL OR ${table.requests_per_minute} > 0`,
+    ),
+    check(
+      "subscription_entitlements_limits_check",
+      sql`(${table.daily_token_limit} IS NULL OR ${table.daily_token_limit} >= 0) AND (${table.monthly_token_limit} IS NULL OR ${table.monthly_token_limit} >= 0) AND (${table.storage_bytes_limit} IS NULL OR ${table.storage_bytes_limit} >= 0)`,
+    ),
+  ],
+);
+
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: text("id").primaryKey(),
+    platform_user_id: text("platform_user_id")
+      .notNull()
+      .references(() => platformUsers.id, { onDelete: "restrict" }),
+    plan_version_id: text("plan_version_id")
+      .notNull()
+      .references(() => subscriptionPlanVersions.id, { onDelete: "restrict" }),
+    pending_plan_version_id: text("pending_plan_version_id").references(
+      () => subscriptionPlanVersions.id,
+      { onDelete: "restrict" },
+    ),
+    status: text("status").notNull(),
+    current_period_start: timestamp("current_period_start", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    current_period_end: timestamp("current_period_end", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    trial_ends_at: timestamp("trial_ends_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    grace_ends_at: timestamp("grace_ends_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    renewal_enabled: boolean("renewal_enabled").notNull().default(true),
+    paused_at: timestamp("paused_at", { withTimezone: true, mode: "date" }),
+    cancelled_at: timestamp("cancelled_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    version: integer("version").notNull().default(1),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("subscriptions_user_status_idx").on(
+      table.platform_user_id,
+      table.status,
+    ),
+    index("subscriptions_period_end_idx").on(table.current_period_end),
+    check(
+      "subscriptions_status_check",
+      sql`${table.status} IN ('trial', 'active', 'past_due', 'paused', 'cancel_at_period_end', 'cancelled', 'expired')`,
+    ),
+    check(
+      "subscriptions_period_check",
+      sql`${table.current_period_end} > ${table.current_period_start}`,
+    ),
+    check("subscriptions_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const subscriptionUsageAllowances = pgTable(
+  "subscription_usage_allowances",
+  {
+    id: text("id").primaryKey(),
+    subscription_id: text("subscription_id")
+      .notNull()
+      .references(() => subscriptions.id, { onDelete: "restrict" }),
+    period_start: timestamp("period_start", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    period_end: timestamp("period_end", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    granted_tokens: bigint("granted_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    reserved_tokens: bigint("reserved_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    consumed_tokens: bigint("consumed_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    granted_microusd: bigint("granted_microusd", { mode: "number" })
+      .notNull()
+      .default(0),
+    reserved_microusd: bigint("reserved_microusd", { mode: "number" })
+      .notNull()
+      .default(0),
+    consumed_microusd: bigint("consumed_microusd", { mode: "number" })
+      .notNull()
+      .default(0),
+    version: integer("version").notNull().default(1),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("subscription_allowances_period_uidx").on(
+      table.subscription_id,
+      table.period_start,
+      table.period_end,
+    ),
+    index("subscription_allowances_period_end_idx").on(table.period_end),
+    check(
+      "subscription_allowances_period_check",
+      sql`${table.period_end} > ${table.period_start}`,
+    ),
+    check(
+      "subscription_allowances_balance_check",
+      sql`${table.granted_tokens} >= 0 AND ${table.reserved_tokens} >= 0 AND ${table.consumed_tokens} >= 0 AND ${table.reserved_tokens} + ${table.consumed_tokens} <= ${table.granted_tokens} AND ${table.granted_microusd} >= 0 AND ${table.reserved_microusd} >= 0 AND ${table.consumed_microusd} >= 0 AND ${table.reserved_microusd} + ${table.consumed_microusd} <= ${table.granted_microusd}`,
+    ),
+  ],
+);
+
+export const subscriptionEvents = pgTable(
+  "subscription_events",
+  {
+    id: text("id").primaryKey(),
+    subscription_id: text("subscription_id")
+      .notNull()
+      .references(() => subscriptions.id, { onDelete: "restrict" }),
+    event_type: text("event_type").notNull(),
+    idempotency_key: text("idempotency_key").notNull(),
+    actor_type: text("actor_type").notNull(),
+    actor_id: text("actor_id"),
+    reason: text("reason"),
+    before: jsonb("before").$type<Record<string, unknown>>(),
+    after: jsonb("after").$type<Record<string, unknown>>(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("subscription_events_idempotency_uidx").on(
+      table.idempotency_key,
+    ),
+    index("subscription_events_subscription_created_idx").on(
+      table.subscription_id,
+      table.created_at,
+    ),
+  ],
+);
+
 export const gatewayApiKeys = pgTable(
   "gateway_api_keys",
   {
@@ -701,6 +910,24 @@ export const gatewayRequests = pgTable(
     pricing_rule_id: text("pricing_rule_id")
       .notNull()
       .references(() => aiPricingRules.id, { onDelete: "restrict" }),
+    subscription_id: text("subscription_id").references(
+      () => subscriptions.id,
+      { onDelete: "restrict" },
+    ),
+    subscription_plan_version_id: text(
+      "subscription_plan_version_id",
+    ).references(() => subscriptionPlanVersions.id, { onDelete: "restrict" }),
+    subscription_entitlement_id: text("subscription_entitlement_id").references(
+      () => subscriptionPlanEntitlements.id,
+      { onDelete: "restrict" },
+    ),
+    subscription_allowance_id: text("subscription_allowance_id").references(
+      () => subscriptionUsageAllowances.id,
+      { onDelete: "restrict" },
+    ),
+    subscription_snapshot: jsonb("subscription_snapshot").$type<
+      Record<string, unknown>
+    >(),
     protocol: text("protocol").notNull(),
     requested_model: text("requested_model").notNull(),
     resolved_model: text("resolved_model").notNull(),
@@ -740,6 +967,27 @@ export const gatewayRequests = pgTable(
     reserved_microusd: bigint("reserved_microusd", { mode: "number" })
       .notNull()
       .default(0),
+    allowance_reserved_microusd: bigint("allowance_reserved_microusd", {
+      mode: "number",
+    })
+      .notNull()
+      .default(0),
+    allowance_charged_microusd: bigint("allowance_charged_microusd", {
+      mode: "number",
+    })
+      .notNull()
+      .default(0),
+    allowance_reserved_tokens: bigint("allowance_reserved_tokens", {
+      mode: "number",
+    })
+      .notNull()
+      .default(0),
+    allowance_charged_tokens: bigint("allowance_charged_tokens", {
+      mode: "number",
+    })
+      .notNull()
+      .default(0),
+    subscription_coverage_mode: text("subscription_coverage_mode"),
     provider_cost_microusd: bigint("provider_cost_microusd", { mode: "number" })
       .notNull()
       .default(0),
@@ -753,6 +1001,8 @@ export const gatewayRequests = pgTable(
     first_token_ms: integer("first_token_ms"),
     latency_ms: integer("latency_ms"),
     response_summary: jsonb("response_summary").$type<Record<string, unknown>>(),
+    payload_capture_status: text("payload_capture_status").notNull().default("pending"),
+    payload_capture_error: text("payload_capture_error"),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
       .defaultNow(),
@@ -772,6 +1022,10 @@ export const gatewayRequests = pgTable(
     ),
     index("gateway_requests_status_idx").on(table.status),
     index("gateway_requests_upstream_idx").on(table.upstream_request_id),
+    index("gateway_requests_subscription_idx").on(
+      table.subscription_id,
+      table.created_at,
+    ),
     check(
       "gateway_requests_estimated_tokens_check",
       sql`${table.estimated_tokens} >= 0`,
@@ -794,8 +1048,103 @@ export const gatewayRequests = pgTable(
     ),
     check(
       "gateway_requests_money_check",
-      sql`${table.reserved_microusd} >= 0 AND ${table.provider_cost_microusd} >= 0 AND ${table.charged_microusd} >= 0`,
+      sql`${table.reserved_microusd} >= 0 AND ${table.allowance_reserved_microusd} >= 0 AND ${table.allowance_charged_microusd} >= 0 AND ${table.provider_cost_microusd} >= 0 AND ${table.charged_microusd} >= 0`,
     ),
+  ],
+);
+
+/**
+ * Full application-layer gateway payloads are intentionally split from the
+ * hot request index. They may contain user prompts and model output and must
+ * only be read through the dedicated gateway.payloads.read permission.
+ */
+export const gatewayRequestPayloads = pgTable(
+  "gateway_request_payloads",
+  {
+    gateway_request_id: text("gateway_request_id")
+      .primaryKey()
+      .references(() => gatewayRequests.id, { onDelete: "cascade" }),
+    method: text("method").notNull(),
+    path: text("path").notNull(),
+    query: jsonb("query").$type<Record<string, string[]>>().notNull().default({}),
+    protocol: text("protocol").notNull(),
+    requested_model: text("requested_model").notNull(),
+    provider_protocol: text("provider_protocol").notNull(),
+    headers: jsonb("headers").$type<Record<string, string>>().notNull().default({}),
+    body_json: jsonb("body_json").$type<unknown>(),
+    body_text: text("body_text").notNull(),
+    content_type: text("content_type"),
+    byte_length: bigint("byte_length", { mode: "number" }).notNull(),
+    sha256: text("sha256").notNull(),
+    compression: text("compression").notNull().default("none"),
+    completion_status: text("completion_status").notNull().default("complete"),
+    capture_error: text("capture_error"),
+    captured_at: timestamp("captured_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("gateway_request_payloads_captured_idx").on(table.captured_at),
+    check("gateway_request_payloads_bytes_check", sql`${table.byte_length} >= 0`),
+  ],
+);
+
+export const gatewayResponsePayloads = pgTable(
+  "gateway_response_payloads",
+  {
+    gateway_request_id: text("gateway_request_id")
+      .primaryKey()
+      .references(() => gatewayRequests.id, { onDelete: "cascade" }),
+    http_status: integer("http_status"),
+    content_type: text("content_type"),
+    headers: jsonb("headers").$type<Record<string, string>>().notNull().default({}),
+    body_json: jsonb("body_json").$type<unknown>(),
+    body_text: text("body_text"),
+    byte_length: bigint("byte_length", { mode: "number" }).notNull().default(0),
+    sha256: text("sha256"),
+    compression: text("compression").notNull().default("none"),
+    completion_status: text("completion_status").notNull().default("pending"),
+    provider_request_id: text("provider_request_id"),
+    error_body: jsonb("error_body").$type<unknown>(),
+    capture_error: text("capture_error"),
+    started_at: timestamp("started_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    first_event_at: timestamp("first_event_at", { withTimezone: true, mode: "date" }),
+    completed_at: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    index("gateway_response_payloads_completed_idx").on(table.completed_at),
+    check("gateway_response_payloads_bytes_check", sql`${table.byte_length} >= 0`),
+  ],
+);
+
+export const gatewayResponseEvents = pgTable(
+  "gateway_response_events",
+  {
+    id: text("id").primaryKey(),
+    gateway_request_id: text("gateway_request_id")
+      .notNull()
+      .references(() => gatewayRequests.id, { onDelete: "cascade" }),
+    sequence: integer("sequence").notNull(),
+    event_type: text("event_type").notNull(),
+    raw_data: text("raw_data").notNull(),
+    raw_event: text("raw_event").notNull(),
+    byte_length: bigint("byte_length", { mode: "number" }).notNull(),
+    elapsed_ms: integer("elapsed_ms").notNull(),
+    emitted_at: timestamp("emitted_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("gateway_response_events_request_sequence_uidx").on(
+      table.gateway_request_id,
+      table.sequence,
+    ),
+    index("gateway_response_events_request_idx").on(table.gateway_request_id),
+    check("gateway_response_events_sequence_check", sql`${table.sequence} >= 0`),
+    check("gateway_response_events_bytes_check", sql`${table.byte_length} >= 0`),
+    check("gateway_response_events_elapsed_check", sql`${table.elapsed_ms} >= 0`),
   ],
 );
 
@@ -811,6 +1160,14 @@ export const billingLedgerEntries = pgTable(
       .references(() => platformUsers.id, { onDelete: "restrict" }),
     gateway_request_id: text("gateway_request_id").references(
       () => gatewayRequests.id,
+      { onDelete: "restrict" },
+    ),
+    subscription_id: text("subscription_id").references(
+      () => subscriptions.id,
+      { onDelete: "restrict" },
+    ),
+    subscription_allowance_id: text("subscription_allowance_id").references(
+      () => subscriptionUsageAllowances.id,
       { onDelete: "restrict" },
     ),
     entry_type: text("entry_type").notNull(),
@@ -845,6 +1202,10 @@ export const billingLedgerEntries = pgTable(
       table.created_at,
     ),
     index("billing_ledger_entries_request_idx").on(table.gateway_request_id),
+    index("billing_ledger_entries_subscription_idx").on(
+      table.subscription_id,
+      table.created_at,
+    ),
     check(
       "billing_ledger_entries_amount_check",
       sql`${table.amount_microusd} > 0`,

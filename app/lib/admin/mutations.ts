@@ -17,7 +17,6 @@ import {
 } from "../story-source/mutations";
 import {
   isStorySourceResource,
-  queryStorySourceItem,
 } from "../story-source/repository";
 import { recordAdminAuditOnClient } from "./audit";
 import { AdminError, adminErrorResponse } from "./errors";
@@ -124,18 +123,6 @@ const pricingCreateSchema = z.strictObject({
 const pricingUpdateSchema = z.strictObject({
   status: z.enum(["active", "disabled"]).optional(),
   effectiveTo: z.iso.datetime().nullable().optional(),
-});
-
-const platformUserCreateSchema = z.strictObject({
-  source: codeSchema,
-  externalUserId: z.string().trim().min(1).max(200),
-  email: z.email().max(320).nullable().optional(),
-  displayName: z.string().trim().min(1).max(160).nullable().optional(),
-  tier: codeSchema.default("free"),
-  status: z.enum(["active", "suspended", "closed"]).default("active"),
-  dailyTokenLimit: optionalLimit,
-  monthlyTokenLimit: optionalLimit,
-  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
 const platformUserUpdateSchema = z.strictObject({
@@ -530,40 +517,6 @@ async function insertPricing(
   };
 }
 
-async function insertPlatformUser(
-  client: PoolClient,
-  input: z.infer<typeof platformUserCreateSchema>,
-) {
-  const id = createPlatformId("user");
-  const result = await client.query<Record<string, unknown>>(
-    `INSERT INTO platform_users (
-       id, source, external_user_id, email, display_name, tier, status,
-       daily_token_limit, monthly_token_limit, metadata
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
-     RETURNING id, source, external_user_id, email, display_name, tier,
-               status, daily_token_limit, monthly_token_limit,
-               created_at, updated_at`,
-    [
-      id,
-      input.source,
-      input.externalUserId,
-      input.email ?? null,
-      input.displayName ?? null,
-      input.tier,
-      input.status,
-      input.dailyTokenLimit ?? null,
-      input.monthlyTokenLimit ?? null,
-      JSON.stringify(input.metadata),
-    ],
-  );
-  await client.query(
-    `INSERT INTO billing_accounts (id, platform_user_id)
-     VALUES ($1, $2)`,
-    [createPlatformId("acct"), id],
-  );
-  return result.rows[0];
-}
-
 async function insertGatewayKey(
   client: PoolClient,
   input: z.infer<typeof keyCreateSchema>,
@@ -746,7 +699,6 @@ const createConfig = {
   providers: { permission: "providers.write", schema: providerCreateSchema, insert: insertProvider },
   models: { permission: "models.write", schema: modelCreateSchema, insert: insertModel },
   "pricing-rules": { permission: "pricing.write", schema: pricingCreateSchema, insert: insertPricing },
-  "platform-users": { permission: "users.write", schema: platformUserCreateSchema, insert: insertPlatformUser },
   "user-model-permissions": { permission: "users.write", schema: userModelPermissionCreateSchema, insert: insertUserModelPermission },
   "gateway-api-keys": { permission: "gateway.keys.write", schema: keyCreateSchema, insert: insertGatewayKey },
   "admin-users": { permission: "access.write", schema: adminUserCreateSchema, insert: insertAdminUser },
@@ -771,17 +723,6 @@ export async function handleAdminResourceCreate(request: Request, resource: stri
     }
     const identity = await requireAdminRequest(request, config.permission);
     const input = await parseBody(request, config.schema);
-    if (resource === "platform-users") {
-      const platformUserInput = input as z.infer<
-        typeof platformUserCreateSchema
-      >;
-      if (platformUserInput.source === "ink-dream") {
-        await queryStorySourceItem(
-          "source-users",
-          platformUserInput.externalUserId,
-        );
-      }
-    }
     const data = await withPlatformTransaction(async (client) => {
       const created = await config.insert(client, input as never);
       await recordAdminAuditOnClient(client, {

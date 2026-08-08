@@ -4,6 +4,12 @@ import { resolveBillableModel } from "../models/resolver";
 import { authenticateGatewayRequest, type GatewayPrincipal } from "./auth";
 import { GatewayError } from "./errors";
 import {
+  recordGatewayJsonResponse,
+  recordGatewayRequestPayload,
+  safePayloadWrite,
+  type GatewayRequestCapture,
+} from "./payloads";
+import {
   beginGatewayRequest,
   type BeginGatewayRequestResult,
 } from "./repository";
@@ -51,6 +57,7 @@ export async function prepareGatewayRequest(input: {
   estimatedInputTokens: number;
   requestedMaxOutputTokens?: number | null;
   outputChoices?: number;
+  requestCapture?: GatewayRequestCapture;
 }): Promise<PrepareGatewayRequestResult> {
   if (
     !Number.isSafeInteger(input.estimatedInputTokens) ||
@@ -123,6 +130,7 @@ export async function prepareGatewayRequest(input: {
     idempotencyKey: input.idempotencyKey,
     reservationMicrousd,
     estimatedTokens,
+    requiredScope: input.requiredScope,
     limits: {
       requestsPerMinute: resolved.limits.requestsPerMinute,
       dailyTokenLimit: optionalMinimum(
@@ -135,6 +143,22 @@ export async function prepareGatewayRequest(input: {
       ),
     },
   });
+  // A rejected reservation is still a real application-layer request. The
+  // repository has already created its gateway_requests row, so capture the
+  // exact request before returning the policy/billing error. Replays point at
+  // an older request and must never overwrite that request's original body.
+  if (input.requestCapture && result.kind !== "replay") {
+    await safePayloadWrite(
+      recordGatewayRequestPayload({
+        requestId: result.requestId,
+        capture: input.requestCapture,
+        protocol: input.protocol,
+        requestedModel: input.requestedModel,
+        providerProtocol: resolved.provider.protocol,
+      }),
+      result.requestId,
+    );
+  }
   if (result.kind !== "reserved") return result;
   return {
     kind: "ready",
@@ -148,64 +172,86 @@ export async function prepareGatewayRequest(input: {
   };
 }
 
-export function preparationErrorResponse(
+export async function preparationErrorResponse(
   result: Extract<PrepareGatewayRequestResult, { kind: "rejected" | "replay" }>,
+  protocol: AiProviderProtocol,
 ) {
+  const requestId = result.kind === "replay" ? result.request.id : result.requestId;
   if (result.kind === "replay") {
     const code = result.request.is_streaming
       ? "STREAM_REPLAY_NOT_SUPPORTED"
       : result.request.status === "settled"
         ? "REQUEST_ALREADY_COMPLETED"
         : "REQUEST_IN_PROGRESS";
-    return Response.json(
-      {
-        error: {
-          type: "invalid_request_error",
-          code,
-          message:
-            code === "REQUEST_IN_PROGRESS"
-              ? "A request with this Idempotency-Key is still in progress"
-              : "This Idempotency-Key has already been consumed",
-          request_id: result.request.id,
-        },
-        request: {
-          id: result.request.id,
-          status: result.request.status,
-          outcome: result.request.outcome,
-          response_summary: result.request.response_summary,
-        },
+    const message =
+      code === "REQUEST_IN_PROGRESS"
+        ? "A request with this Idempotency-Key is still in progress"
+        : "This Idempotency-Key has already been consumed";
+    const error = { type: "invalid_request_error", code, message, request_id: requestId };
+    const body = protocol === "anthropic"
+      ? { type: "error", error, request_id: requestId, request: { id: result.request.id, status: result.request.status, outcome: result.request.outcome, response_summary: result.request.response_summary } }
+      : { error, request: { id: result.request.id, status: result.request.status, outcome: result.request.outcome, response_summary: result.request.response_summary } };
+    return Response.json(body, {
+      status: 409,
+      headers: {
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+        "x-request-id": requestId,
       },
-      {
-        status: 409,
-        headers: { "x-request-id": result.request.id },
-      },
-    );
+    });
   }
 
-  const insufficient = result.code === "INSUFFICIENT_BALANCE";
-  return Response.json(
-    {
-      error: {
-        type: insufficient ? "billing_error" : "rate_limit_error",
-        code: result.code,
-        message: insufficient
-          ? "Account balance is insufficient for this request"
-          : "The configured gateway usage limit has been exceeded",
-        request_id: result.requestId,
-        ...(insufficient
-          ? {
-              available_microusd: result.availableMicrousd,
-              required_microusd: result.requiredMicrousd,
-            }
-          : { limit: result.limit, current: result.current }),
-      },
-    },
-    {
-      status: insufficient ? 402 : 429,
-      headers: {
-        "x-request-id": result.requestId,
-        ...(!insufficient ? { "retry-after": "60" } : {}),
-      },
-    },
+  const insufficient = [
+    "INSUFFICIENT_BALANCE",
+    "SUBSCRIPTION_ALLOWANCE_EXHAUSTED",
+  ].includes(result.code);
+  const status = result.status ?? (insufficient ? 402 : 429);
+  const error = {
+    type:
+      status === 402
+        ? "billing_error"
+        : status === 429
+          ? "rate_limit_error"
+          : "permission_error",
+    code: result.code,
+    message:
+      result.message ??
+      (insufficient
+        ? "Account balance or subscription allowance is insufficient for this request"
+        : "The configured gateway usage limit has been exceeded"),
+    request_id: requestId,
+    ...(insufficient
+      ? {
+          available_microusd: result.availableMicrousd,
+          required_microusd: result.requiredMicrousd,
+        }
+      : {
+          limit: result.limit,
+          current: result.current,
+          requested: result.requested,
+          remaining: result.remaining,
+          exceeded_by: result.exceededBy,
+          limit_window: result.limitWindow,
+          limit_metric: result.limitMetric,
+        }),
+  };
+  const body = protocol === "anthropic"
+    ? { type: "error", error, request_id: requestId }
+    : { error };
+  const headers = new Headers({
+    "cache-control": "no-store",
+    "content-type": "application/json; charset=utf-8",
+    "x-request-id": requestId,
+    ...(status === 429 ? { "retry-after": "60" } : {}),
+  });
+  await safePayloadWrite(
+    recordGatewayJsonResponse({
+      requestId,
+      status,
+      headers,
+      body,
+    }),
+    requestId,
   );
+  return Response.json(body, { status, headers });
 }

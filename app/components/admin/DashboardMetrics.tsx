@@ -5,11 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 type Metrics = {
   platformUsers: number;
   sourceUsers: number | null;
-  activeUsers?: number;
-  disabledUsers?: number;
   storyWorkspaces: number | null;
-  activeWorkspaces?: number;
-  archivedWorkspaces?: number;
   storyStories: number | null;
   draftStories?: number;
   publishedStories?: number;
@@ -45,8 +41,8 @@ export default function DashboardMetrics() {
 
   const metrics = query.data;
   const rows = [
-    { group: "业务源", label: "用户 / 活跃 / 停用", value: metrics?.sourceUsers === null ? null : metrics ? `${metrics.sourceUsers} / ${metrics.activeUsers ?? "—"} / ${metrics.disabledUsers ?? "—"}` : undefined, note: "users" },
-    { group: "业务源", label: "工作区 / 活跃 / 归档", value: metrics?.storyWorkspaces === null ? null : metrics ? `${metrics.storyWorkspaces} / ${metrics.activeWorkspaces ?? "—"} / ${metrics.archivedWorkspaces ?? "—"}` : undefined, note: "story_workspace_workspaces" },
+    { group: "业务源", label: "真实业务用户", value: metrics?.sourceUsers, note: "users（Dream 无 status 字段）" },
+    { group: "业务源", label: "真实工作区", value: metrics?.storyWorkspaces, note: "story_workspace_workspaces" },
     { group: "业务源", label: "剧本 / 草稿 / 发布", value: metrics?.storyStories === null ? null : metrics ? `${metrics.storyStories} / ${metrics.draftStories ?? "—"} / ${metrics.publishedStories ?? "—"}` : undefined, note: "story_workspace_stories" },
     { group: "待处理", label: "待审核剧本", value: metrics?.pendingStoryReviews, note: "review_status=pending" },
   ];

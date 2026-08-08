@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { recordAdminAuditOnClient } from "../admin/audit";
@@ -27,17 +26,6 @@ const nonEmptyPatch = <T extends z.ZodRawShape>(shape: T) =>
 const workspacePatchSchema = nonEmptyPatch({
   name: z.string().trim().min(1).max(180).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
-  status: z.enum(["active", "archived"]).optional(),
-});
-const workspaceCreateSchema = z.strictObject({
-  name: z.string().trim().min(1).max(180),
-  ownerId: z.coerce.number().int().positive(),
-  settings: z.record(z.string(), z.unknown()).default({}),
-});
-const userPatchSchema = nonEmptyPatch({
-  displayName: z.string().trim().min(1).max(180).nullable().optional(),
-  avatarUrl: z.url().max(2_000).nullable().optional(),
-  status: z.enum(["active", "disabled"]).optional(),
 });
 const storyPatchSchema = nonEmptyPatch({
   title: z.string().trim().min(1).max(240).optional(),
@@ -72,18 +60,6 @@ type PatchConfig = {
 };
 
 const patchConfigs: Partial<Record<StorySourceResource, PatchConfig>> = {
-  users: {
-    table: "users",
-    permission: "users.write",
-    safeSelect:
-      "id, email, display_name, avatar_url, role, status, created_at, updated_at",
-    schema: userPatchSchema,
-    fields: {
-      displayName: { column: "display_name" },
-      avatarUrl: { column: "avatar_url" },
-      status: { column: "status" },
-    },
-  },
   "story-workspaces": {
     table: "story_workspace_workspaces",
     permission: "story.write",
@@ -91,7 +67,6 @@ const patchConfigs: Partial<Record<StorySourceResource, PatchConfig>> = {
     fields: {
       name: { column: "name" },
       settings: { column: "settings", json: true },
-      status: { column: "status" },
     },
   },
   "story-stories": {
@@ -304,62 +279,11 @@ export async function handleStorySourceCreate(
   const requestId = adminRequestId(request);
   try {
     assertAdminMutationOrigin(request);
-    if (resource !== "story-workspaces") {
-      await requireAdminRequest(request, storySourcePermission(resource));
-      throw new AdminError(
-        "STORY_SOURCE_CREATE_DENIED",
-        "This Story resource is created by the product workflow, not by Admin",
-        405,
-      );
-    }
-    const identity = await requireAdminRequest(request, "story.write");
-    const input = await parseBody(request, workspaceCreateSchema);
-    const id = randomUUID();
-    await withStoryTransaction(async (client) => {
-      const owner = await client.query<{ status: string }>(
-        "SELECT status FROM users WHERE id = $1 FOR SHARE",
-        [input.ownerId],
-      );
-      if (!owner.rows[0]) {
-        throw new AdminError(
-          "STORY_WORKSPACE_OWNER_NOT_FOUND",
-          "The selected Workspace owner does not exist",
-          409,
-        );
-      }
-      if (owner.rows[0].status !== "active") {
-        throw new AdminError(
-          "STORY_WORKSPACE_OWNER_DISABLED",
-          "A new Workspace requires an active owner",
-          409,
-        );
-      }
-      const created = await client.query<Record<string, unknown>>(
-        `INSERT INTO story_workspace_workspaces
-           (id, name, owner_id, settings, status)
-         VALUES ($1, $2, $3, $4::jsonb, 'active')
-         RETURNING id, name, owner_id::text AS owner_id, settings, status,
-                   created_at, updated_at`,
-        [id, input.name, input.ownerId, JSON.stringify(input.settings)],
-      );
-      await auditSourceMutation(client, {
-        request,
-        requestId,
-        identity,
-        action: "create",
-        resource,
-        id,
-        before: {},
-        after: created.rows[0],
-      });
-    });
-    const data = await queryStorySourceItem(resource, id);
-    return Response.json(
-      { data },
-      {
-        status: 201,
-        headers: { "cache-control": "no-store", "x-request-id": requestId },
-      },
+    await requireAdminRequest(request, storySourcePermission(resource));
+    throw new AdminError(
+      "STORY_SOURCE_CREATE_DENIED",
+      "This Story resource is created by the product workflow, not by Admin",
+      405,
     );
   } catch (error) {
     return adminErrorResponse(storySourceError(error), requestId);

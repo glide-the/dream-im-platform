@@ -139,14 +139,9 @@ export async function resolveBillableModel(input: {
         "invalid_request_error",
       );
     }
-    if (row.protocol !== input.protocol) {
-      throw new GatewayError(
-        "MODEL_PROTOCOL_MISMATCH",
-        `The requested model is not available through the ${input.protocol} endpoint`,
-        400,
-        "invalid_request_error",
-      );
-    }
+    // The public endpoint protocol and the selected provider protocol are
+    // independent. A protocol adapter is selected by the gateway handler when
+    // they differ; model resolution must not reject that valid matrix entry.
     if (!row.api_key_ciphertext || !row.api_key_iv || !row.api_key_tag) {
       throw new GatewayError(
         "PROVIDER_CREDENTIAL_UNAVAILABLE",

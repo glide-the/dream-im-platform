@@ -1,401 +1,385 @@
-# Ink Memory Admin：页面层级与逻辑映射
+# Ink Memory Admin v3：页面层级与业务逻辑映射
 
 > HTML Design Workflow / Stage 3 — Hierarchy Logic Mapper
->
-> 输入基线：`files/workspace/1_prd_draft.md`、`files/workspace/2_structure_sketch.md`、`files/inputs/target_image.png`
->
+> 输入：`files/workspace/1_prd_draft.md`、`files/workspace/2_structure_sketch.md`、`files/inputs/target_image.png`
 > 目标视口：Desktop `1440×1000`；Mobile `390×844`
->
-> 稳定性约束：本文件只沿用 Stage 2 已定义的模块 ID，不新增模型、计费、网关模块，不改变单一 PostgreSQL 与现有 Storage driver 边界。
+> 编号规则：严格沿用 Stage 2 的 `S / D / P / U / M / G / X` 模块 ID，不另建平行编号。
 
-## 0. 层级结论
+## 0. 本阶段 Prompt Architect 记录
 
-本轮界面由一个后台应用壳、九个业务/治理页面根节点和一组跨页面状态层组成。逻辑上分为两条互补但不混淆的链：
+**Optimized Prompt：**综合 Stage 1 PRD、Stage 2 页面结构草图与目标图，为 Ink Memory Admin v3 输出可直接交给 UI Art Director 的中文页面结构草图和 Parent-Child 逻辑树。必须保持 Stage 2 模块 ID，明确 Admin Shell、Dream 真实实体关系、套餐与不可变版本、用户订阅状态机、Provider/Model/Pricing、Gateway 资格及 Allowance/Cash 结算、只追加 Ledger、跨页面错误层的父子关系；补充路由上下文的进入、返回与 URL 筛选继承；分别说明 1440×1000 与 390×844 的逻辑变化。不得把封面误作后台截图，不得设计 Landing Page，不得填入假指标、假金额或 Secret 明文。
 
-1. 业务实体链：`User → Workspace → Story`。User 是 Workspace 的父实体，Workspace 是 Story 的父实体；Story 同时保留 author User 关联，且 author 必须与 Workspace owner 一致。
-2. 治理链：`Admin → Role → Permission` 控制访问，`Storage Object → Audit` 与所有敏感写操作共同进入 append-only Audit。RBAC、Storage、Audit 不成为 User/Workspace/Story 的平行业务模型。
+**Optional Enhancers：**将月度账单预览与安全 CSV 作为 `G6` 的只读聚合子路径；将支付适配器保留为后端可插拔边界，不在界面中模拟支付成功；在状态命令与结算链中固定幂等、冲突恢复和审计入口。
 
-全局布局继承目标图的暖纸画布、248px 桌面侧栏、清晰衬线标题与细分隔线；Stage 2 将数据区收敛为页面唯一虚线 Paper Boundary。移动端不压缩桌面侧栏，而是切换为 Drawer、筛选 Sheet 和全屏详情层。
+## 1. 结构判断
 
----
+- 目标图是 UI v2.1 封面，不含可验证的后台控件；本阶段只继承暖纸画布、大留白、深炭棕层级、视觉收敛、单一虚线 Paper、无卡片墙，不从图中虚构导航或数据。
+- 页面逻辑由五个业务根页承载：`D0` Dream 层级、`P0` 套餐版本、`U0` 用户订阅、`M0` 模型中心、`G0` 网关计费；它们都嵌入 `S0`，不是五套独立 Shell。
+- Dream 实体是业务事实；Subscription、Provider、Gateway、Billing、RBAC、Storage 和 Audit 是控制面。两者只通过 Billing Identity、关系筛选和审计引用连接，不建立语义重复的用户/工作区/剧本。
+- `X1` 是 `S12` 的原位状态替换；`X2` 是写操作覆盖层。二者是跨页面子层，不是导航 Resource。
 
-## 1. 页面结构草图（模块分区，精炼版）
+## 2. 页面结构草图（模块分区，精炼版）
 
-### 1.1 Desktop 1440×1000
-
-```text
-┌──────────────────────────────────────── [G0 Admin Shell] ────────────────────────────────────────┐
-│┌──────────────── [G1 Sidebar / 248px fixed] ───────────────┐┌──────── [G2 Main Canvas / min-width:0] ────────┐│
-││ 品牌 / OPERATIONS CONSOLE                                │││ [G3 Breadcrumb / 返回路径 / 数据时间]          ││
-││                                                         │││ [G4 H1 / 页面目的]                 [唯一主操作] ││
-││ OV 运营总览                                             │││                                               ││
-││ 剧本数据                                                │││ ┌┈┈┈┈┈┈┈┈ [G5 唯一 Paper Boundary] ┈┈┈┈┈┈┈┈┐ ││
-││ ├─ WS 工作区                                            │││ ┋ [G6 摘要 / 上下文 / 能力事实]              ┋ ││
-││ └─ ST 剧本                                              │││ ┋─────────────────────────────────────────────┋ ││
-││ 用户中心                                                │││ ┋ [G7 搜索 / 筛选 / chips / URL 状态]         ┋ ││
-││ └─ US 平台用户                                          │││ ┋─────────────────────────────────────────────┋ ││
-││ 权限管理                                                │││ ┋ [G8 表格 / 关系行 / 详情段]  ↔ local scroll ┋ ││
-││ ├─ AU 管理员                                            │││ ┋ [X0 原位状态区：X1/X2/X3/X6/X7]           ┋ ││
-││ ├─ RL 角色                                              │││ ┋─────────────────────────────────────────────┋ ││
-││ └─ PM 权限                                              │││ ┋ [G9 total / pageSize / pagination]          ┋ ││
-││ 资源管理                                                │││ └┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┘ ││
-││ └─ FS 文件存储                                          │││                                               ││
-││ 系统治理                                                │││ [详情/表单右层：W1/S1/U1/A2/R2/F3/F4/L3]     ││
-││ └─ AL 审计日志                                          │││ [确认层：X4 / X5；背景 inert、上下文保留]     ││
-││─────────────────────────────────────────────────────────│││                                               ││
-││ [G10 当前管理员 / 角色 / 主题 / 账户]                   │││                                               ││
-│└─────────────────────────────────────────────────────────┘└───────────────────────────────────────────────┘│
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-桌面逻辑：`G1` 与 `G2` 是 `G0` 的并列一级区域；`G3`、`G4`、`G5` 是 `G2` 内自上而下的页面层。`G6–G9` 是列表型页面在 `G5` 内的固定阅读顺序。详情/表单作为可刷新恢复的 Resource 子路由覆盖 `G2` 右侧，背景列表保留 URL、分页、滚动与触发行焦点。
-
-### 1.2 Mobile 390×844
+### 2.1 Desktop 1440×1000
 
 ```text
-┌──────────────────────────────── [G0 Mobile Shell] ────────────────────────────────┐
-│ [M1 Sticky Header / 56px]  [☰] Ink Memory             [主题] [账户]              │
-│ [G3 面包屑 / 返回父实体]                                                        │
-│ [G4 H1 / 最多三行说明]                                                         │
-│ [唯一主操作：另起一行，触控目标 ≥44×44]                                        │
-│ ┌┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈ [G5 Paper / 8px canvas] ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┐ │
-│ ┋ [G6 摘要 / 上下文：纵向堆叠或自然换行]                         ┋ │
-│ ┋ [G7 搜索常显]                                  [M3 筛选 {n}] ┋ │
-│ ┋ [已生效 chips / 清除全部]                                     ┋ │
-│ ┋────────────────────────────────────────────────────────────────┋ │
-│ ┋ [G8 关键实体 / 状态 / 更新时间 / 常显动作]                     ┋ │
-│ ┋ <可聚焦局部横滚；根节点不横滚>                                 ┋ │
-│ ┋────────────────────────────────────────────────────────────────┋ │
-│ ┋ [G9 共 {n} 条]                         [上一页] [下一页]        ┋ │
-│ └┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┘ │
-└─────────────────────────────────────────────────────────────────────────────────┘
-
-┌────────────── [M2 Navigation Drawer / min(320px,88vw)] ──────────────┐
-│ 分组导航：D0 / W0 / S0 / U0 / A0 / R0 / P0 / F0 / L0                │
-│ [G10 当前管理员 / 角色 / 主题]；锁焦、Escape/遮罩关闭并归焦 M1       │
-└───────────────────────────────────────────────────────────────────────┘
-
-┌────────────────────── [M3 Filter Bottom Sheet] ──────────────────────┐
-│ 次级筛选 / 当前结果 / 清除 / 应用 / safe-area；关闭后归焦 G7 触发器 │
-└───────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────── [S0 Admin Shell] ──────────────────────────────────────────┐
+│┌──────────── [S1 固定主导航] ────────────┐┌────────────────── [S2 顶部上下文栏] ────────────────────┐│
+││ [S4] 总览                              ││ 面包屑 / 数据源健康 / 主题 / 当前账户                    ││
+││ [S5] 剧本运营                          │└──────────────────────────────────────────────────────────┘│
+││   [D1] 用户 → [D2] 工作区 → [D3] 剧本 │┌────────────────── [S3 单一主滚动区] ────────────────────┐│
+││                       ├→ [D4] 角色     ││ 页面标题 / 任务说明 / 刷新时间              [主操作]     ││
+││                       └→ [D5] 场景     ││                                                          ││
+││ [S6] 订阅中心                          ││ ┌┈┈┈┈┈┈┈┈┈┈ [S10 页面唯一 Paper] ┈┈┈┈┈┈┈┈┈┈┈┈┈┐ ││
+││   [P1] 套餐 → [P2] 版本 → [P3] 权益   ││ ┋ [S11 查询、筛选、排序、已选上下文]              ┋ ││
+││   [U1] 用户订阅入口                    ││ ┋───────────────────────────────────────────────────┋ ││
+││ [S7] 模型中心                          ││ ┋ [S12 当前 Resource 主事实 / 详情 / 编辑]          ┋ ││
+││   [M1] Provider → [M2] Model           ││ ┋   D0 / P0 / U0 / M0 / G0 之一                    ┋ ││
+││                  → [M3] Pricing        ││ ┋   [X1 loading/empty/error 原位替换]               ┋ ││
+││   [M4] 用户模型限制                    ││ ┋───────────────────────────────────────────────────┋ ││
+││ [S8] 网关与计费                        ││ ┋ [S13 真实总数 / 服务端分页]                       ┋ ││
+││   [G1] Key → [G2] Request → [G3] Usage││ └┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┘ ││
+││   [G4] Account → [G5] Ledger          ││ [S14 Toast / live region / request ID]                     ││
+││   [G6] 账单预览 / 安全 CSV            ││ [X2 高风险确认：Modal；完成或取消后归焦触发器]             ││
+││ [S9] Storage / RBAC / Session / Audit ││                                                          ││
+││      / System Settings                ││                                                          ││
+│└────────────────────────────────────────┘└──────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-移动逻辑：`M1` 替代 `G1` 的常驻可见性，`M2` 承载同一导航树，`M3` 承载 `G7` 的次级筛选。`W1/S1/U1/A2/R2/F3/F4/L3` 均变为全屏层；固定操作 Footer 使用 Stage 2 已有的 `W8/W10/S9/U8/A7/R8`，并包含 safe-area。
+桌面 Parent-Child 规则：`S1` 与右侧内容是 `S0` 的一级子区；`S2`、`S3` 在右侧上下排列；`S10` 属于 `S3`，且只包裹当前页面事实，不包裹侧栏和覆盖层。`S11 → S12 → S13` 是固定阅读顺序，`S14` 是反馈兄弟层。详情使用 Drawer 或独立子路由时保留父列表 URL、滚动和触发行。
 
----
-
-## 2. 页面层级结构图（父子逻辑树）
+### 2.2 Mobile 390×844
 
 ```text
-[G0 Admin Shell] 后台根
-├── [G1 Sidebar] Desktop 全局导航
-│   ├── 运营总览 → [D0]
-│   ├── 剧本数据
-│   │   ├── 工作区 → [W0]
-│   │   └── 剧本 → [S0]
-│   ├── 用户中心
-│   │   └── 平台用户 → [U0]
-│   ├── 权限管理
-│   │   ├── 管理员 → [A0]
-│   │   ├── 角色 → [R0]
-│   │   └── 权限 → [P0]
-│   ├── 资源管理
-│   │   └── 文件存储 → [F0]
-│   ├── 系统治理
-│   │   └── 审计日志 → [L0]
-│   └── [G10 Admin Identity] 当前管理员 / 角色 / 主题 / 账户
-├── [M1 Mobile Header] Mobile 全局入口
-│   ├── [M2 Navigation Drawer] 复用 G1 的导航语义
-│   └── [M3 Filter Sheet] 承接当前页面 G7 的次级筛选
-└── [G2 Main Canvas] 当前 Resource 工作区
-    ├── [G3 Breadcrumb] 父实体返回、查询上下文、更新时间
-    ├── [G4 Page Header] 唯一 H1、页面目的、唯一主操作
-    └── [G5 Paper Boundary] 当前页面唯一数据纸面
-        ├── [G6 Summary/Context] 真实指标、关系上下文、能力事实
-        ├── [G7 Filter Bar] 搜索、筛选、排序入口、chips、URL 状态
-        ├── [G8 Data/Detail Body] 表格、关系行或详情段落
-        │   └── [X0 State Region] 数据区原位状态
-        │       ├── [X1 Loading] 保形 Skeleton + 加载完成播报
-        │       ├── [X2 Empty] 系统空 / 筛选空 / 关系空
-        │       ├── [X3 Error] 400/401/403/404/409/500/503
-        │       ├── [X6 Relation Warning] 外键或 owner-author 关系异常
-        │       └── [X7 Storage Unconfigured] Storage 能力/配置缺失
-        ├── [G9 Pagination] total、pageSize、页码
-        ├── 页面内容分支
-        │   ├── [D0 Dashboard Paper]
-        │   │   ├── [D1 Dashboard Source] ink-memory 与刷新事实
-        │   │   ├── [D2 User Metrics] 用户总数/状态 → U0 筛选
-        │   │   ├── [D3 Workspace Metrics] 工作区总数/状态 → W0 筛选
-        │   │   ├── [D4 Story Metrics] 剧本总数/分布 → S0 筛选
-        │   │   ├── [D5 Recent Stories] 最近 Story → S1/W1
-        │   │   └── [D6 Recent Operations] 最近操作 → L3
-        │   ├── [W0 Workspace List]
-        │   │   └── [W1 Workspace Detail]
-        │   │       ├── [W2 Workspace Header] 名称、ID、返回/关闭
-        │   │       ├── [W3 Workspace Basics] 名称、状态、时间
-        │   │       ├── [W4 Workspace Owner] 所属 User → U1；owner 只读
-        │   │       ├── [W5 Workspace Stories] Story 子列表 → S0/S1
-        │   │       ├── [W6 Workspace Settings] 白名单字段 + 未知 JSON 只读
-        │   │       ├── [W7 Workspace Audit] 时间与操作 → L2/L3
-        │   │       └── [W8 Workspace Actions] 编辑/归档
-        │   │           └── [W9 Workspace Form]
-        │   │               └── [W10 Workspace Form Footer] 取消/保存
-        │   ├── [S0 Story List]
-        │   │   └── [S1 Story Detail]
-        │   │       ├── [S2 Story Header] title、identifier、返回/关闭
-        │   │       ├── [S3 Story Identity] title/type/id
-        │   │       ├── [S4 Story Relations] Workspace → W1；author → U1
-        │   │       │   └── 关系异常时原位使用 [X6]
-        │   │       ├── [S5 Story Content] Markdown/长文本安全只读
-        │   │       ├── [S6 Story Metadata] JSON 树安全只读
-        │   │       ├── [S7 Story Timeline] 状态与时间事实
-        │   │       ├── [S8 Story Audit] 关联操作 → L3
-        │   │       └── [S9 Story Actions] 编辑/Confirm/Reject/Archive
-        │   │           └── [S10 Story Legal Edit] title/type/description
-        │   ├── [U0 User List]
-        │   │   └── [U1 User Detail]
-        │   │       ├── [U2 User Header] 名称、邮箱、ID、返回/关闭
-        │   │       ├── [U3 Safe Profile] 非敏感用户资料
-        │   │       ├── [U4 User Status] active/disabled
-        │   │       ├── [U5 User Workspaces] Workspace 关联 → W0/W1
-        │   │       ├── [U6 User Stories] Story 关联 → S0/S1
-        │   │       ├── [U7 User Audit] 用户相关操作 → L3
-        │   │       └── [U8 User Actions] 编辑资料/停用/启用
-        │   ├── [A0 Admin Users]
-        │   │   ├── [A1 Admin List] email、roles、status、last login
-        │   │   └── [A2 Admin Form]
-        │   │       ├── [A3 Admin Identity] email/name/status
-        │   │       ├── [A4 Admin Password] 新密码；永不回填
-        │   │       ├── [A5 Admin Role Assignment] 可搜索角色 + 权限摘要
-        │   │       ├── [A6 Admin Role Diff] 新增/移除角色与影响
-        │   │       └── [A7 Admin Footer] 取消/复核保存
-        │   ├── [R0 Roles]
-        │   │   ├── [R1 Role List] 类型、权限数、管理员数、时间
-        │   │   └── [R2 Role Detail/Edit]
-        │   │       ├── [R3 Role Header] name/code/内置保护
-        │   │       ├── [R4 Role Basics] name/description/code
-        │   │       ├── [R5 Role Impact] 关联管理员与权限数量
-        │   │       ├── [R6 Permission Matrix] domain × capability
-        │   │       ├── [R7 Permission Diff] 增删权限、风险、受影响管理员
-        │   │       └── [R8 Role Footer] 取消/复核保存
-        │   ├── [P0 Permissions]
-        │   │   ├── [P1 Permission Note] migration/bootstrap 发布、无 CRUD
-        │   │   └── [P2 Permission Groups] 按域分组 → R0
-        │   ├── [F0 Storage Resources]
-        │   │   ├── [F1 Capability Strip] driver 与能力事实；无 credential
-        │   │   ├── [F2 File List] filename/key/MIME/size/time/actions
-        │   │   ├── [F3 Upload Layer] 文件校验与上传
-        │   │   ├── [F4 Preview/Detail] 元信息与安全预览
-        │   │   └── [F5 Delete Confirm] 完整 key 精确删除确认
-        │   └── [L0 Audit Logs]
-        │       ├── [L1 Audit Note] append-only 与脱敏说明
-        │       ├── [L2 Audit List] actor/action/resource/request/result
-        │       └── [L3 Audit Detail]
-        │           ├── [L4 Audit Header] action/result/time/request
-        │           ├── [L5 Before/After] 脱敏只读 JSON diff
-        │           └── [L6 Audit Metadata] 请求关联与错误类别
-        └── 跨页面保护层
-            ├── [X4 Sensitive Confirm] 停用/归档/审核/RBAC/Storage 删除
-            └── [X5 Unsaved Changes] 离开草稿确认
+┌────────────────────────────── [S0 Mobile Admin Shell] ──────────────────────────────┐
+│ [S2 Sticky Header]  [打开 S1] Ink Memory        [健康] [账户]                     │
+│┌──────────────────────────── [S3 主内容 / 16px] ──────────────────────────────────┐│
+││ 返回父上下文 / 短面包屑                                                         ││
+││ 页面标题 · 状态 · 任务说明                                                     ││
+││ [主操作 / 整行]                                                               ││
+││ ┌┈┈┈┈┈┈┈┈┈┈┈┈┈┈ [S10 单列 Paper] ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┐                           ││
+││ ┋ [S11 搜索常显]                      [筛选 Sheet / 条件数] ┋                           ││
+││ ┋ [条件 chips / 清除]                                      ┋                           ││
+││ ┋───────────────────────────────────────────────────────────┋                           ││
+││ ┋ [S12 关键事实行，或当前详情的一次单层钻取]                ┋                           ││
+││ ┋ [X1 原位状态；根页面不横向滚动]                           ┋                           ││
+││ ┋───────────────────────────────────────────────────────────┋                           ││
+││ ┋ [S13 真实总数]                     [上一页] [下一页]      ┋                           ││
+││ └┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┘                           ││
+│└─────────────────────────────────────────────────────────────────────────────────┘│
+│ [S14 底部 live region / Toast，不遮挡 safe area]                                  │
+└────────────────────────────────────────────────────────────────────────────────────┘
+
+[S1 导航 Drawer]             [S11 筛选 Sheet]              [X2 全屏高风险确认]
+分组 S4–S9                   锁焦 / 应用后写回 URL          影响 → 账务 → 幂等 → 确认
+关闭后归焦 S2 触发器         关闭后归焦筛选触发器           返回保留表单与父上下文
 ```
 
-逻辑意图：列表是可恢复的父上下文，详情是该 Resource 的子路由层，表单或确认层再从详情/行操作派生。状态只替换失败区域，不替换 `G0–G5`，所以用户始终知道自己在哪、失败发生在哪、如何恢复。
+移动端不是桌面缩放：侧栏变 `S1` Drawer；筛选从 `S11` 工具条变 Sheet；宽表变 `S12` 关键事实行；Drawer 详情变全屏子路由；并列事实改为有先后因果的纵向区块。
 
----
-
-## 3. 组件、路由与状态层级
-
-### 3.1 Canonical Resource 路由映射
-
-| 导航层级 | 页面根模块 | Canonical Refine Resource | 目标路由层级 | API / 数据事实 | Read / Write |
-|---|---:|---|---|---|---|
-| 运营总览 | D0 | dashboard virtual | `/admin` | `GET /api/admin/dashboard` / 三张业务表 + `admin_audit_logs` | `dashboard.read` / 无 |
-| 剧本数据 → 工作区 | W0 | `story-workspaces` | `/admin/story/workspaces` → `/:id` | `/api/admin/story-workspaces` / `story_workspace_workspaces` | `story.read` / `story.write` |
-| 剧本数据 → 剧本 | S0 | `stories` | `/admin/story/stories` → `/:id` | `/api/admin/stories` / `story_workspace_stories` | `story.read` / `story.write` |
-| 用户中心 → 平台用户 | U0 | `users` | `/admin/users` → `/:id` | `/api/admin/users` / `users` | `users.read` / `users.write` |
-| 权限管理 → 管理员 | A0 | `admin-users` | `/admin/access/admins` → `/:id` | `/api/admin/admin-users` / `admin_users`、`admin_user_roles` | `access.read` / `access.write` |
-| 权限管理 → 角色 | R0 | `roles` | `/admin/access/roles` → `/:id` | `/api/admin/roles` / `admin_roles`、`admin_role_permissions` | `access.read` / `access.write` |
-| 权限管理 → 权限 | P0 | `permissions` | `/admin/access/permissions` | `/api/admin/permissions` / `admin_permissions` | `access.read` / 只读 |
-| 资源管理 → 文件存储 | F0 | `storage-resources` | `/admin/resources/storage` → 对象详情层 | `/api/admin/storage-resources` / 现有 Storage driver | `storage.read` / `storage.write`、`storage.delete` |
-| 系统治理 → 审计日志 | L0 | `audit-logs` | `/admin/system/audit` → 审计详情层 | `/api/admin/audit-logs` / `admin_audit_logs` | `audit.read` / append-only |
-
-路由层的 `/:id` 表示 Stage 1、2 要求的可刷新恢复 Resource 详情层；筛选、排序、页码、pageSize 使用 query string。现有模型、计费、网关路由保持原导航和实现，本文件不为其新增模块、层级或交互。
-
-### 3.2 页面内组件组合规则
+## 3. 页面层级结构图（Parent-Child 逻辑树）
 
 ```text
-列表页 = G3 + G4 + G5(G6 + G7 + G8(X0) + G9)
-详情层 = Resource Detail(W1/S1/U1/R2/F4/L3) + fixed Header + scroll Content + optional fixed Footer
-创建/编辑层 = W9/S10/A2/R2/F3 + 可见Label + X3字段错误 + X5离开保护 + fixed Footer
-高风险写入 = 触发动作 → X4/F5复核 → 服务端校验 → 成功刷新事实 → L2/L3可追溯
-只读页面 = P0/L0 + 常显说明(P1/L1) + 查询区 + 安全只读内容
+[S0 Admin Shell]  应用根：Session、RBAC、主题和单一 PostgreSQL 上下文
+├─ [S1 主导航]  选择业务域，不承载页面数据
+│  ├─ [S4 总览]  真实异常与待处理入口
+│  ├─ [S5 剧本运营]
+│  │  ├─ [D1 Dream User]
+│  │  ├─ [D2 Workspace]
+│  │  ├─ [D3 Story]
+│  │  ├─ [D4 Character]
+│  │  └─ [D5 Scene]
+│  ├─ [S6 订阅中心]
+│  │  ├─ [P1 Plan]
+│  │  ├─ [P2 Plan Version]
+│  │  ├─ [P3 Entitlement]
+│  │  └─ [U1 用户订阅入口；页根为 U0，见歧义说明]
+│  ├─ [S7 模型中心]
+│  │  ├─ [M1 Provider]
+│  │  ├─ [M2 Model]
+│  │  ├─ [M3 Pricing]
+│  │  └─ [M4 用户模型限制]
+│  ├─ [S8 网关与计费]
+│  │  ├─ [G1 Gateway Key]
+│  │  ├─ [G2 Request]
+│  │  ├─ [G3 Token Usage]
+│  │  ├─ [G4 Billing Account]
+│  │  ├─ [G5 Append-only Ledger]
+│  │  └─ [G6 月度账单预览 / 安全 CSV]
+│  └─ [S9 资源与治理]  Storage / RBAC / Session / Audit / Settings 保留现有边界
+├─ [S2 顶部上下文栏]  当前路径、依赖健康、主题、账户
+├─ [S3 主内容]
+│  ├─ 页面标题 / 当前 Resource 上下文 / 唯一主操作
+│  ├─ [S10 页面唯一 Paper Boundary]
+│  │  ├─ [S11 查询与上下文]  白名单筛选、排序、URL 状态
+│  │  ├─ [S12 主事实区]
+│  │  │  ├─ [D0 Dream 层级页] 或
+│  │  │  ├─ [P0 套餐与版本页] 或
+│  │  │  ├─ [U0 用户订阅详情] 或
+│  │  │  ├─ [M0 模型中心] 或
+│  │  │  ├─ [G0 网关与计费]
+│  │  │  └─ [X1 主事实区原位状态替换]
+│  │  └─ [S13 服务端分页]  真实 total、page、pageSize
+│  └─ [X2 高风险确认]  桌面 Modal / 移动全屏；提交经审计
+└─ [S14 反馈层]  Toast、polite live region、request ID
 ```
 
-任何 `*.read` 缺失时，`G1/M2` 可隐藏入口，但直接路由仍进入 `X3/403`；按钮隐藏不是授权边界。所有写入均保持 Session → permission → Origin → 严格 Zod → transaction → 脱敏 audit 的服务端顺序。
-
-### 3.3 状态层级与恢复路径
-
-| 状态模块 | 挂载层级 | 触发条件 | 不得发生 | 恢复动作 |
-|---|---|---|---|---|
-| X1 Loading | G8 或单个 D2–D6 | 首次查询、筛选、分页、局部刷新 | 清空 Shell、标题或筛选；显示假 0 | 保形 Skeleton；完成后 live region 播报 |
-| X2 Empty | G8、W5、U5、U6 | 成功查询且 total=0 | 把请求失败解释为空数据 | 区分系统空/筛选空/关系空；创建、清筛选或返回父实体 |
-| X3 Error | G8、表单顶部或局部指标 | 400/401/403/404/409/500/503 | 切第二数据源、静默覆盖冲突 | 聚焦首错、登录恢复、返回列表、刷新比较、区域重试 |
-| X4 Sensitive Confirm | G0 顶层 Modal | 停用、归档、审核、RBAC 变更、Storage 删除 | 无对象/影响说明的静默提交 | 取消归焦；具名确认后提交并进入 Audit |
-| X5 Unsaved Changes | Detail/Form 之上 | 关闭、Escape、刷新、路由跳转会丢草稿 | 未提醒丢弃输入 | 继续编辑或放弃并离开 |
-| X6 Relation Warning | S4 或其他关系事实区 | 外键异常、Story author ≠ Workspace owner | 自动造替代实体或伪造关联 | 展示只读技术事实，跳父实体或关联 Audit |
-| X7 Storage Unconfigured | F2 原位 | driver/endpoint/授权或 list 能力缺失 | 回显 credential、制造假文件列表 | 查看部署修复说明并重新检查 |
-
-`401` 需先清除保护数据再去登录；`403` 明示所需 permission；`404` 返回保留 query 的父列表；`409` 保留草稿并对比服务器最新值；`500/503` 显示失败范围与 Request ID。
-
----
-
-## 4. User → Workspace → Story 业务逻辑
-
-### 4.1 数据父子关系
+### 3.1 Dream 层级页
 
 ```text
-[U0/U1] User：users.id BIGINT
-├── owner 1:N
-│   └── [W0/W1] Workspace：story_workspace_workspaces.owner_id → users.id
-│       └── contains 1:N
-│           └── [S0/S1] Story：story_workspace_stories.workspace_id → workspace.id
-└── author 1:N
-    └── [S0/S1] Story：story_workspace_stories.author_id → users.id
-
-一致性不变量：Story.author_id = Story.workspace.owner_id
-生命周期：User 停用、Workspace/Story 归档只改变业务状态；历史关系与 Audit 保留，不硬删除。
+[D0 Dream 层级详情]  从真实源实体进入的关系上下文
+└─ [D6 Dream Paper]
+   ├─ [D7 身份与计费映射]
+   │  └─ Dream User → Billing Identity → Subscription 摘要 / 不可调用原因
+   ├─ [D8 关系导航]
+   │  ├─ [D1 User]  源身份；不读取 password_hash
+   │  ├─ [D2 Workspace]  User owns
+   │  ├─ [D3 Story]  Workspace contains；另保留 author User 关系
+   │  ├─ [D4 Character]  Workspace/Story relation
+   │  ├─ [D5 Scene]  Workspace/Story ordered relation
+   │  └─ Subscription / Usage / Keys / Audit 上下文入口
+   ├─ [D9 Story 详情主体]  基本信息 → 正文只读 → 审阅 / provenance
+   ├─ [D10 Story 关系索引]
+   │  ├─ [D4 Character + role_type]
+   │  └─ [D5 Scene + order_index] → related [D4 Character]
+   └─ [D11 受控动作与恢复]  白名单写；409 Diff；缺表 503；禁止旧表回退
 ```
 
-### 4.2 页面跳转与上下文恢复
+业务父子与关系语义：
 
 ```text
-[U1 User Detail]
-├── [U5 Workspace count/list]
-│   └── owner_id={user.id} → [W0 Workspace List]
-│       └── row → [W1 Workspace Detail]
-│           ├── [W4 Owner] → [U1 User Detail]
-│           └── [W5 Story count/list]
-│               └── workspace_id={workspace.id} → [S0 Story List] → [S1 Story Detail]
-└── [U6 Story count/list]
-    └── author_id={user.id} → [S0 Story List] → [S1 Story Detail]
-
-[S1 Story Detail]
-├── [S4 Workspace] → [W1 Workspace Detail]
-├── [S4 Author] → [U1 User Detail]，进入后标题焦点落在 [U2]
-└── [S8 Audit] → [L3 Audit Detail]
+[D1 User]
+├─ owns ───────> [D2 Workspace]
+│                 ├─ contains ──> [D3 Story]
+│                 │                ├─ relates ──> [D4 Character]
+│                 │                └─ orders ───> [D5 Scene]
+│                 ├─ contains ──> [D4 Character]
+│                 └─ contains ──> [D5 Scene] ── relates ──> [D4 Character]
+└─ authors ─────> [D3 Story]
 ```
 
-所有跳转只在 URL 中保存稳定 ID；界面显示 name、title、display_name/email。详情关闭或浏览器返回时恢复来源列表的筛选、排序、页码、pageSize、滚动位置和触发行焦点。无效关系进入 `X3` 或 `X6`，不得静默清空筛选。
+### 3.2 套餐、版本与权益页
 
-### 4.3 合法动作边界
+```text
+[P0 套餐与版本页]
+└─ [P4 Plan Paper]
+   ├─ [P5 Plan 查询]  name/code/status/排序 → URL
+   ├─ [P1 Plan]  稳定 code/name/status/currency；不直接承载可变价格
+   ├─ [P2 Plan Version]  Plan 的版本时间轴
+   │  ├─ Draft：可进入 [P6]
+   │  └─ Published：只读；仅可复制为新 Draft
+   └─ [P6 发布工作区]  独立路由
+      ├─ [P7 价格与周期]  billing interval / micro-USD / trial / grace
+      ├─ [P8 权益编辑]
+      │  └─ [P3 Entitlement]  model aliases / scopes / RPM / Token / 金额 / Storage
+      ├─ [P9 超额策略]  deny 或 cash_balance
+      ├─ [P10 发布核对]  Draft 与不可变目标快照 Diff
+      └─ [P11 发布 Footer]  保存草稿 / 发布并锁定；409 保留草稿
+```
 
-| 实体 | 可维护 | 只读/禁止 | 保护层 |
+父子约束：`P1 1:N P2`，`P2 1:N P3`；Published `P2` 与其 `P3` 一起冻结。现有 Subscription 始终引用具体 `P2`，发布新版本不会静默迁移订阅。
+
+### 3.3 用户订阅详情页
+
+```text
+[U0 用户订阅详情]  解释“谁、订了什么、为什么可调用、如何计费”
+└─ [U1 Subscription Paper]
+   ├─ [U2 身份与状态]  D1 User → Billing Identity → Subscription → P2 Version
+   ├─ [U3 资格解释]
+   │  ├─ [U4 套餐权益]
+   │  ├─ [U5 用户模型 Override]
+   │  └─ intersection → [U6 最终权限]  Model/Scope/RPM/Quota/Overage
+   ├─ [U7 周期 Allowance]  granted / reserved / consumed / remaining
+   ├─ [U8 Billing Account]  available / reserved；与 U7 赠送额度分离
+   ├─ [U9 当前周期 Usage]
+   │  └─ [U10 预计超额]  有方法才预测，否则明确“暂不预测”
+   ├─ [U11 生命周期与账务时间线]  状态事件 → Ledger / Audit 引用
+   ├─ [U12 上下文链接]  Request / Usage / Ledger / Key / User / Version
+   └─ [U13 生命周期操作]
+      ├─ [U14 账务预览]  charge / credit / allowance 影响
+      └─ [U15 幂等键与理由]  防重复、冲突恢复、审计输入
+```
+
+### 3.4 模型中心页
+
+```text
+[M0 模型中心]
+└─ [M5 Model Paper]
+   ├─ [M1 Provider]  protocol/base URL/健康/Credential 配置状态
+   │  └─ contains/discovers → [M2 Model]
+   ├─ [M2 Model]  alias → upstream_model / capabilities
+   │  └─ versioned-by → [M3 Pricing]  历史只读，新价格新版本
+   ├─ [M4 用户模型限制]  allow/deny override，与 U4 取交集形成 U6
+   └─ [M6 链路跳转]  Provider → Model → Pricing → 已筛选 G2 Request
+```
+
+Secret 不是该树的可读子节点：`M1` 仅展示“已配置/未配置”，编辑空值表示不轮换，永不预填或查看现有值。
+
+### 3.5 Gateway 与计费页
+
+```text
+[G0 网关与计费]
+└─ [G7 Gateway Paper]
+   ├─ [G8 共用筛选]  日期/时区/协议/Provider/Model/User/Subscription/outcome
+   ├─ [G1 Gateway Key]  Billing Identity + scopes + expiry；仅 prefix 可回看
+   │  └─ create → [G18 Key 创建] → success-once → [G19 一次性配置回执]
+   ├─ [G2 Request]  请求事实与 outcome
+   │  └─ open → [G9 Request Detail]
+   │     ├─ [G10 Key/User]  prefix、scope、安全身份
+   │     ├─ [G11 Subscription/Plan/Entitlement 资格快照]
+   │     ├─ [G12 Alias → Provider → upstream_model 路由]
+   │     ├─ [G13 四类 Token + Pricing Snapshot]
+   │     ├─ [G14 Allowance 预留/消费/释放]
+   │     ├─ [G15 Cash 预留/扣费/释放]
+   │     ├─ [G16 Settlement + Ledger refs]
+   │     └─ [G17 性能 / 脱敏错误 / request ID]
+   ├─ [G3 Token Usage]  请求冻结后的四类 Token 与价格快照
+   ├─ [G4 Billing Account]  现金 available/reserved/lifetime debited
+   ├─ [G5 Append-only Ledger]  type/amount/before-after/refs/idempotency
+   └─ [G6 月度账单预览 / CSV]  基于当前筛选的只读聚合与安全导出
+```
+
+## 4. 路由上下文与返回逻辑
+
+| 进入路径 | 当前根模块 | 继承的安全上下文 | 返回行为 |
 |---|---|---|---|
-| User | display_name、avatar_url、active/disabled | 创建密码、重置业务密码、硬删、任何凭据 | U4/U8 → X4；并发冲突 → X3/409 |
-| Workspace | 创建；name、白名单 settings、active/archived | 创建后转移 owner、通用 JSON 工作台、硬删 | W8/W9/W10 → X4/X5；FK/阻塞 → X3/409 |
-| Story | title、description、type；confirm/reject/archive | content、author、workspace、count、version、provenance、时间、硬删 | S9/S10 → X4/X5；关系异常 → X6 |
+| `/admin/story/users` → 用户详情 → Workspace → Story | `D0` / `D1–D10` | `userId`、`workspaceId`、白名单筛选、page/sort | 逐级返回；恢复父列表筛选、页码、滚动和触发行焦点 |
+| `/admin/subscriptions/plans` → Version → 发布 | `P0` / `P1–P11` | `planId`、`versionId`；Published 只读 | 返回版本时间轴；409 保留 Draft 与 Diff，不盲目覆盖 |
+| `/admin/subscriptions/users` → `/{id}` | `U0` / `U1–U15` | `platformUserId`、Subscription ID、周期范围 | 生命周期操作完成后刷新同一详情；不跳失上下文 |
+| `/admin/models/providers` → Model → Pricing → Request | `M0` → `G0` | Provider/Model alias 白名单筛选 | 返回时恢复模型链原筛选，而非回到未筛选网关首页 |
+| `/admin/gateway/requests` → Request Detail | `G0` / `G2`、`G9–G17` | request ID 与父列表 filter/page/sort | Desktop 关闭 Drawer；Mobile 返回全屏父列表并恢复位置 |
+| `/admin/billing/usage|accounts|ledger|invoices/preview` | `G3–G6` | User/Subscription/Request/period 白名单筛选 | 上下文链接互跳时保留可共享筛选，不携带 Secret |
 
----
+Desktop 中简单核对可在 Drawer 完成，版本发布和财务/生命周期操作走独立路由或 `X2`；Mobile 所有复杂详情与编辑走全屏子路由。筛选始终由 URL 表达，临时表单和一次性 `G19` Secret 不进入 URL、历史记录或日志。
 
-## 5. RBAC、Storage 与 Audit 治理逻辑
-
-### 5.1 RBAC 父子关系与写入链
-
-```text
-[A0 Admin Users]
-├── [A1 Admin List] → 进入 [A2 Admin Form]
-└── [A2]
-    ├── [A3] 管理员身份
-    ├── [A4] 新密码（仅新值输入，永不回填）
-    ├── [A5] 分配 Role → [R0/R2]
-    ├── [A6] 角色增删与权限影响 diff
-    └── [A7] 复核保存 → [X4] → transaction → [L2/L3]
-
-[R0 Roles]
-├── [R1 Role List] → [R2 Role Detail/Edit]
-└── [R2]
-    ├── [R3/R4] 身份与内置保护
-    ├── [R5] 关联管理员/权限真实数量
-    ├── [R6] Permission Matrix → [P0/P2]
-    ├── [R7] Permission diff 与高风险提示
-    └── [R8] 复核保存 → [X4] → transaction → [L2/L3]
-
-[P0 Permissions]
-├── [P1] migration/bootstrap 发布说明
-└── [P2] domain 分组与 role count → [R0]
-```
-
-内置角色只读保护；自定义角色可创建、编辑、删除，但有关联管理员时由服务端规则阻止。最后一个 active super admin 不可停用或移除 `super_admin`，进入 `X3/409`。Permission 本身不提供 UI CRUD。
-
-### 5.2 Storage → Audit
+## 5. Subscription 生命周期状态机
 
 ```text
-[F0 Storage Resources]
-├── [F1 Capability Strip] 判断 list/upload/preview/download/delete 能力
-│   └── 配置或能力缺失 → [X7]
-├── [F2 File List]
-│   ├── 上传 → [F3] → permission/Origin/Zod/driver → 成功 → [L2/L3]
-│   ├── 预览/详情 → [F4] → 安全图片/文本/PDF；不支持类型仅元信息+下载
-│   ├── 下载 → permission/精确 key/driver；不把文件内容写入 Audit
-│   └── 删除 → [F5] 完整 key 输入 → [X4]具名确认 → driver delete → [L2/L3]
-└── 失败 → [X3] 保留筛选、对象上下文与 Request ID
+[无 Subscription]
+├─ start trial ───────────────────────────────────────> [trial]
+└─ activate（余额或未来 adapter 成功；幂等扣费）────> [active]
 
-[L0 Audit Logs / append-only]
-├── [L1] 只读与脱敏说明
-├── [L2] actor/action/resource/request/result 列表
-└── [L3]
-    ├── [L4] action/result/time/request
-    ├── [L5] 脱敏 Before/After
-    └── [L6] 请求关联/错误类别；无 password/secret/token/session/file content
+[trial]
+├─ trial/renewal success ─────────────────────────────> [active]
+├─ renewal failure ───────────────────────────────────> [past_due + grace_end]
+├─ pause now ─────────────────────────────────────────> [paused]
+├─ cancel at period end ─> [trial + cancel_at_period_end=true] ─到期→ [cancelled]
+└─ cancel now（高权限）───────────────────────────────> [cancelled]
+
+[active]
+├─ renewal success ───────────────────────────────────> [active / 新周期 + 新 U7]
+├─ renewal failure ───────────────────────────────────> [past_due + grace_end]
+├─ upgrade now ───────────────────────────────────────> [active / 立即锁定新 P2]
+│   └─ U14：旧版本未使用价值 credit + 新版本差额 charge；U7 只补正差
+├─ downgrade ─────────────────────────────────────────> [active + scheduled_version_id]
+│   └─ 到下次 renewal anchor 才切换 P2；当前周期权益不缩水
+├─ pause now ─────────────────────────────────────────> [paused]
+├─ cancel at period end ─> [active + cancel_at_period_end=true] ─到期→ [cancelled]
+└─ cancel now（高权限）───────────────────────────────> [cancelled]
+
+[past_due]
+├─ payment/recovery success ──────────────────────────> [active]
+└─ grace expired ─────────────────────────────────────> [paused] 或 [expired]
+
+[paused]
+└─ resume（版本、周期、计费均有效）───────────────────> [active]
+
+[cancelled]
+└─ resubscribe ───────────────────────────────────────> [新 Subscription]
+
+[expired] ──> 终止只读；不能继续 Gateway 调用
 ```
 
-User、Workspace、Story、Admin、Role 与 Storage 的成功敏感操作都可进入对应 `L3`；无法映射的 resource ID 保留原始 mono 值，不创建占位实体。
+逻辑规则：`cancel_at_period_end` 是 `trial/active` 上的标志，不是独立状态；所有命令经 `U13 → U14 → U15 → transaction → U11/Audit`。续费、升级、Webhook 或重复点击共享幂等键，同一业务事件不得重复扣费、重复授予 `U7` 或改写旧 `G5`。
 
----
+## 6. Gateway 资格与结算逻辑
 
-## 6. Desktop / Mobile 响应式映射
+### 6.1 调用资格链
 
-| 逻辑区域 | Desktop 1440×1000 | Mobile 390×844 | 不变量 |
+```text
+[D1 Dream User]
+  → [D7 Billing Identity 已绑定且启用?]
+  → [G1 Key 有效且 Scope 匹配?]
+  → [U2 Subscription 状态允许调用?]
+  → [P2 Published Version 仍可解析?]
+  → [U4 Entitlement ∩ U5 User Override]
+  → [U6 Model Alias / Scope / RPM / Token Limit 通过?]
+  → [M2 Alias] → [M1 Provider] → upstream model
+  → [U7 Allowance 足够?]
+       ├─ yes：进入 [G14 reserve allowance]
+       └─ no：检查 [P9 overage]
+              ├─ deny：停止，402
+              └─ cash_balance：检查 [U8/G4 available]
+                    ├─ 足够：进入 [G15 reserve cash]
+                    └─ 不足：停止，402
+  → 建立 [G2 Gateway Request]
+```
+
+拒绝分支：Key 缺失/失效为 401；Scope、Entitlement、Override 或模型禁止为 403；订阅状态/并发版本冲突为 409；RPM/Token 窗口超限为 429；余额或额度不足为 402；资格依赖不可用为 503，禁止放行或回退旧表。
+
+### 6.2 请求与只追加结算链
+
+```text
+[G14 Allowance reserve] 或 [G15 Cash reserve]
+                    │
+                    ▼
+             [G2 Gateway Request]
+                    │  冻结 G11 资格、G12 路由、M3 价格引用
+                    ▼
+       上游完成 / 失败 / 流式中断 / usage 未知
+                    │
+                    ▼
+       [G3 + G13 Usage / Pricing Snapshot]
+                    │
+        ┌───────────┴───────────┐
+        │                       │
+  capture 实际消耗        release 未使用预留
+        │                       │
+        └───────────┬───────────┘
+                    ▼
+       [G16 Settlement refs + 状态]
+                    │
+                    ▼
+         [G5 Append-only Ledger]
+```
+
+- `G14` 与 `G15` 是互斥或有明确顺序的资金来源，不能把赠送额度与现金合并成一个“总余额”。
+- 价格以整数 micro-USD 快照结算；历史 Request 不因 `M3` 新版本、套餐升级或退款而重算。
+- 失败、释放、退款和纠错均新增 Ledger entry/reversal；不更新或删除原账本。
+- 流式中断或 usage 未知进入安全待结算/失败状态，不按 0 假结算；`G17` 只显示脱敏错误。
+
+## 7. Desktop / Mobile 逻辑变化
+
+| 逻辑对象 | Desktop 1440×1000 | Mobile 390×844 | 不变条件 |
 |---|---|---|---|
-| G0/G1/G2/G10 | 248px 固定 G1 + 剩余 G2；G10 位于侧栏底部 | G1 隐藏，M1 触发 M2；G10 进入 M2/账户菜单 | 导航分组、权限裁剪语义相同；直接路由仍服务端鉴权 |
-| G3/G4 | 面包屑与 H1 横向空间充足；主操作最多一个 | 位于 M1 下；说明最多三行；主操作另起一行 | 清晰返回路径、唯一 H1、说明不伪装成按钮 |
-| G5–G9 | Paper 占满可用宽；G7 可换至两行；G8 内横滚；完整 pageSize/页码 | 8px canvas；搜索常显，次筛选进 M3；G8 可聚焦横滚；简化为上一页/下一页 | 根无横滚、筛选写 URL、状态原位替换 |
-| D0–D6 | D2–D4 三列；D5/D6 两列 | D1–D6 依次纵向堆叠 | 只展示真实数据；单组失败不显示 0 |
-| W0/S0/U0/A0/R0/P0/L0 | sticky 表头，48–52px 行高，关联文字链接与行尾动作 | 保留关键实体/状态/更新时间/动作；完整表格在 G8 局部横滚 | 主信息优先、ID 次行 mono、触控/点击目标 ≥44px |
-| W1/S1/U1 | 右侧 780/840/780px Drawer，背景列表 inert 且上下文保留 | 全屏详情层，内容独立纵滚 | 固定 Header；有写操作才固定 Footer；关闭归焦 |
-| W9/S10/A2 | Drawer 或专用层；字段与复核摘要完整可见 | 全屏表单；最后字段后预留 ≥96px | 可见 Label、字段错误、X5 草稿保护、safe-area Footer |
-| R2/R6 | 840px 详情/编辑层；矩阵容器横滚 | 全屏；R6 首列 sticky、矩阵局部横滚 | Checkbox 保持完整 label，不缩成不可点击小格 |
-| F0–F5 | F1 横排；F2 表格；F3/F4 Drawer；F5 Dialog | F1 自然换行；F3/F4 全屏；F5 保留完整 key 输入与 safe-area | 不泄露 credential；仅安全预览；精确 key 删除 |
-| L3–L6 | Drawer；JSON diff 局部滚动 | 全屏；JSON viewer 局部横滚/换行 | append-only、脱敏、无页面根横滚 |
-| X0–X7 | X1/X2/X3/X6/X7 原位；X4/X5 居中 Modal 并锁焦 | 原位状态不变；X4/X5 适配窄屏与 safe-area | Escape/遮罩规则明确，关闭归焦；reduced-motion 下取消非必要动画 |
-| M1–M3 | 不显示 | M1 sticky 56px；M2 左 Drawer；M3 Bottom Sheet | M2/M3 锁焦、Escape/遮罩关闭、归焦触发器 |
+| `S1` 导航 | 248px 固定侧栏，分组展开 | 锁焦 Drawer | 分组和目标 Resource 不变 |
+| `S11` 查询 | 搜索、筛选、排序同栏 | 搜索常显，筛选进 Sheet | 应用后写回相同 URL 白名单参数 |
+| `S12` 列表 | 表格；表体可局部横滚 | 关键事实行；一次只看一个层级 | 真实 total、排序和服务端分页不变 |
+| `D0` 层级 | User/Workspace/Story 关系可同屏核对 | 单层钻取，关系 Tab 可聚焦横滚 | 返回恢复父上下文与焦点 |
+| `P6` 发布 | 四段同页 + 固定 `P11` | 一步一屏 + Sticky `P11` | Published 不可编辑；409 保留 Draft |
+| `U7/U8` | 双列并排 | 纵向分区 | Allowance 与现金语义始终分离 |
+| `U13–U15` | 影响摘要 Modal | 操作 Sheet → 全屏确认 | 幂等、账务预览、理由与审计不变 |
+| `M0` | Provider/Model/Pricing 可同屏联动 | 独立全屏列表/表单 | Secret 只写不读 |
+| `G9` | 宽 Drawer 展示证据链 | 全屏按 `G10→G17` 展开 | 快照、结算、Ledger 引用顺序不变 |
+| `G3–G6` | 可在 `G0` 分区汇总 | 各自独立路由 | 从 Request/User 进入时继承安全筛选 |
+| `X1/X2` | 原位状态 + Modal | 原位状态 + 全屏确认 | 状态语义、焦点恢复和 request ID 不变 |
 
-键盘与无障碍逻辑保持跨视口一致：输入始终有可见 Label，排序维护 `aria-sort`，禁用分页使用真实 `disabled`，焦点使用可见 outline，Drawer/Dialog/Sheet 有语义标题与确定的打开、关闭焦点顺序。
+## 8. 歧义与 Stage 4 处理说明
 
----
+1. Stage 2 的全局信息架构把 `U1` 标成“用户订阅”，模块索引又把 `U1` 定义为 “Subscription Paper”。本文件不改号：Stage 4 应以 `U0` 作为用户订阅页面/路由根，以 `U1` 作为页内唯一 Paper；侧栏点击文案仍为“用户订阅”。
+2. Stage 1 只给出部分建议路由，Dream User、Workspace、Story 的详情子路径未全部定稿。界面可表达父子钻取与 URL 上下文，但不应在视觉稿中写死未经实现确认的动态段名。
+3. Character、Scene 及更深 Dream 表若尚未迁入 PostgreSQL，`D4/D5/D10` 必须显示 `X1` 的 503 缺表证据与 request ID，不得借旧 Admin 表或假数据补齐。
+4. `past_due` 宽限期是否继续允许调用由锁定 `P2/P3` 策略决定；资格解释必须在 `U3/G11` 显示实际命中规则，不能把所有 `past_due` 统一画成可用或禁用。
+5. `past_due` 宽限到期后的目标可能是 `paused` 或 `expired`，应由服务端状态机策略返回；UI 只展示影响摘要和实际目标，不自行推断。
+6. 支付渠道尚未接入。`U14` 只展示余额扣费或适配器返回的真实预览/状态，不展示 Stripe、支付宝、微信按钮或虚构支付成功。
+7. 目标图仅证明品牌视觉原则，不证明任何 Admin 控件、布局尺寸或交互；Stage 4 不得将其封面标题、Landing Page 文案或营销区复制进控制台。
 
-## 7. 层级完整性与歧义说明
+## 9. Stage 3 验收
 
-### 7.1 模块 ID 完整性
-
-本文件完整复用 Stage 2 的稳定 ID 集：
-
-```text
-G0–G10；M1–M3；D0–D6；W0–W10；S0–S10；U0–U8；
-A0–A7；R0–R8；P0–P2；F0–F5；L0–L6；X0–X7。
-```
-
-没有引入新的功能区编号，也没有复用同一 ID 表示不同语义。所有页面根节点都从 `G1/M2` 导航进入，并挂载在 `G2 → G5`；所有状态均挂载到 `X0` 或顶层保护层，不与实体页面争夺父级。
-
-### 7.2 歧义处理
-
-1. Stage 2 的 Story 草图写作 `S4 author → U2`，而模块索引定义 `U2` 为 User Header、`U1` 才是 User Detail。这里保持模块含义不变，将导航目标明确为 `U1`，进入详情后焦点落在 `U2`；未重编号。
-2. Stage 1 要求详情使用可刷新恢复的 Resource 路由，但未固定全部 `/:id` 文件结构。本文件以当前导航层级为父路由，并用 `/:id` 表示目标详情子层；实现阶段可使用同语义的 Next.js segment，但不可退化为不可刷新恢复的纯临时 Modal。
-3. Storage 对象未必有 PostgreSQL 主键，`F4` 详情与 `F5` 删除都以严格校验的完整 object key 为稳定身份；文件内容仍留在现有 Storage driver，不进入 PostgreSQL 或 Audit。
-
-### 7.3 范围校验
-
-- User → Workspace → Story 是唯一业务实体父子链；未创建平行实体。
-- RBAC 和 Storage 是治理域，所有敏感写入可追溯至 L0–L6。
-- 模型、计费、网关只保留现有入口，本阶段没有新增其模块、流程或页面设计。
-- 未引入第二数据源、SQLite、JSON/内存回退、迁移/同步/ETL 或 `app/(app)`。
+- [x] 同时输出精炼页面结构草图与 Parent-Child 页面层级树。
+- [x] 沿用 Stage 2 的全部模块 ID，并标明 `U1` 复用歧义。
+- [x] 明确 Dream、Plan、Subscription、Model、Gateway 五个页面根及其父子关系。
+- [x] 覆盖路由上下文、订阅状态机、Gateway 资格、Allowance/Cash 预留和只追加 Ledger。
+- [x] 说明 Desktop 与 Mobile 的逻辑重排，而非等比缩放。
+- [x] 未使用假数据、Secret 明文、Landing Page 或默认卡片墙结构。

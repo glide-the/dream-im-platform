@@ -10,6 +10,7 @@ import type { PricingSnapshot, TokenUsage } from "./types";
 import { withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
 import { totalProcessedTokens } from "../gateway/usage";
+import { settleSubscriptionAllowanceOnClient } from "../subscriptions/gateway";
 
 type AccountRow = {
   id: string;
@@ -28,6 +29,11 @@ type RequestRow = {
   outcome: string;
   reserved_microusd: string | number;
   estimated_tokens: string | number;
+  subscription_id: string | null;
+  subscription_allowance_id: string | null;
+  subscription_coverage_mode: string | null;
+  allowance_reserved_microusd: string | number;
+  allowance_reserved_tokens: string | number;
   created_at: Date;
   settled_at: Date | null;
   input_price_snapshot: string | number;
@@ -44,7 +50,8 @@ type LedgerEntryType =
   | "capture"
   | "release"
   | "refund"
-  | "adjustment";
+  | "adjustment"
+  | "allowance_capture";
 
 function safeDbNumber(value: string | number, name: string) {
   const parsed = typeof value === "number" ? value : Number(value);
@@ -133,6 +140,8 @@ async function insertLedgerEntry(
     accountId: string;
     platformUserId: string;
     gatewayRequestId?: string | null;
+    subscriptionId?: string | null;
+    subscriptionAllowanceId?: string | null;
     entryType: LedgerEntryType;
     amountMicrousd: number;
     before: AccountSnapshot;
@@ -147,18 +156,22 @@ async function insertLedgerEntry(
   const id = createPlatformId("ledger");
   await client.query(
     `INSERT INTO billing_ledger_entries (
-       id, account_id, platform_user_id, gateway_request_id, entry_type,
+       id, account_id, platform_user_id, gateway_request_id,
+       subscription_id, subscription_allowance_id, entry_type,
        amount_microusd, available_before_microusd, available_after_microusd,
        reserved_before_microusd, reserved_after_microusd, idempotency_key,
        description, actor_type, actor_id, metadata
      ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+       $13, $14, $15, $16, $17::jsonb
      )`,
     [
       id,
       input.accountId,
       input.platformUserId,
       input.gatewayRequestId ?? null,
+      input.subscriptionId ?? null,
+      input.subscriptionAllowanceId ?? null,
       input.entryType,
       input.amountMicrousd,
       input.before.availableMicrousd,
@@ -349,7 +362,9 @@ export async function settleGatewayRequestOnClient(
 ) {
     const { rows } = await client.query<RequestRow>(
       `SELECT id, platform_user_id, model_id, status, outcome,
-              reserved_microusd, estimated_tokens, created_at,
+              reserved_microusd, estimated_tokens, subscription_id,
+              subscription_allowance_id, subscription_coverage_mode,
+              allowance_reserved_microusd, allowance_reserved_tokens, created_at,
               settled_at, input_price_snapshot, output_price_snapshot,
               cache_read_price_snapshot, cache_write_price_snapshot,
               markup_bps_snapshot, discount_bps_snapshot
@@ -370,17 +385,51 @@ export async function settleGatewayRequestOnClient(
       request.reserved_microusd,
       "reserved_microusd",
     );
+    const actualTokens = totalProcessedTokens(input.usage);
+    const allowance = await settleSubscriptionAllowanceOnClient(client, {
+      allowanceId: request.subscription_allowance_id,
+      coverageMode: request.subscription_coverage_mode,
+      reservedTokens: safeDbNumber(
+        request.allowance_reserved_tokens,
+        "allowance_reserved_tokens",
+      ),
+      reservedMicrousd: safeDbNumber(
+        request.allowance_reserved_microusd,
+        "allowance_reserved_microusd",
+      ),
+      actualTokens,
+      chargeMicrousd: charge.chargedMicrousd,
+    });
     const transitions = settleAccount(
       accountSnapshot(account),
       reserved,
-      charge.chargedMicrousd,
+      allowance.cashChargeMicrousd,
     );
-    const actualTokens = totalProcessedTokens(input.usage);
     const estimatedTokens = safeDbNumber(
       request.estimated_tokens,
       "estimated_tokens",
     );
     const tokenDelta = actualTokens - estimatedTokens;
+
+    if (allowance.allowanceChargeMicrousd > 0) {
+      const snapshot = accountSnapshot(account);
+      await insertLedgerEntry(client, {
+        accountId: account.id,
+        platformUserId: request.platform_user_id,
+        gatewayRequestId: request.id,
+        subscriptionId: request.subscription_id,
+        subscriptionAllowanceId: request.subscription_allowance_id,
+        entryType: "allowance_capture",
+        amountMicrousd: allowance.allowanceChargeMicrousd,
+        before: snapshot,
+        after: snapshot,
+        idempotencyKey: `${request.id}:allowance:capture`,
+        description: "Capture subscription allowance for gateway usage",
+        actorType: input.actorType ?? "gateway",
+        actorId: input.actorId ?? request.id,
+        metadata: { allowanceChargedTokens: allowance.allowanceChargedTokens },
+      });
+    }
 
     for (const windowType of ["day", "month"] as const) {
       await client.query(
@@ -405,6 +454,8 @@ export async function settleGatewayRequestOnClient(
         accountId: account.id,
         platformUserId: request.platform_user_id,
         gatewayRequestId: request.id,
+        subscriptionId: request.subscription_id,
+        subscriptionAllowanceId: request.subscription_allowance_id,
         entryType: "capture",
         amountMicrousd: transitions.capture.amountMicrousd,
         before: transitions.capture.before,
@@ -422,6 +473,8 @@ export async function settleGatewayRequestOnClient(
         accountId: account.id,
         platformUserId: request.platform_user_id,
         gatewayRequestId: request.id,
+        subscriptionId: request.subscription_id,
+        subscriptionAllowanceId: request.subscription_allowance_id,
         entryType: "release",
         amountMicrousd: transitions.release.amountMicrousd,
         before: transitions.release.before,
@@ -446,6 +499,8 @@ export async function settleGatewayRequestOnClient(
            http_status = $10, error_code = $11, error_message = $12,
            latency_ms = $13, first_token_ms = $14,
            response_summary = $15::jsonb,
+           allowance_charged_microusd = $16,
+           allowance_charged_tokens = $17,
            completed_at = COALESCE(completed_at, NOW()), settled_at = NOW()
        WHERE id = $1`,
       [
@@ -464,6 +519,8 @@ export async function settleGatewayRequestOnClient(
         input.latencyMs ?? null,
         input.firstTokenMs ?? null,
         JSON.stringify(input.responseSummary ?? {}),
+        allowance.allowanceChargeMicrousd,
+        allowance.allowanceChargedTokens,
       ],
     );
 

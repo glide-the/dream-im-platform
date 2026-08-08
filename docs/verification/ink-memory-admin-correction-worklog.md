@@ -291,3 +291,76 @@ Optional Enhancers:
 
 - 在订阅详情加入月度账单预览与 CSV 导出交互，明确数据来源、时区和舍入规则。
 - 为并发生命周期操作设计 409 最新状态恢复和幂等请求回执。
+
+## Round 17 — 订阅领域、Admin API/UI 与 Gateway 集成实现
+
+Optimized Prompt:
+
+在 PRD v3 与交互设计 v3 已完成的前提下，仅修改 `ink-admin-memory`，实现可迁移、可回滚、可测试的订阅计费控制面。首先纠正 canonical Dream schema 的应用层漂移：Drizzle 只保留一套真实三表定义，Repository 不再读取/写入 Dream 不存在的 User/Workspace status，不开放源 User patch 或 Workspace create；已发布物理扩展列只 comment deprecated，不 DROP。旧 Admin 平行 Story 表继续保留但不绑定 Resource。
+
+新增 `subscription_plans`、`subscription_plan_versions`、`subscription_plan_entitlements`、`subscriptions`、`subscription_usage_allowances`、`subscription_events`，并为 `gateway_requests` 增加订阅、版本、权益与额度快照引用。Plan Version/Entitlement 在 published 后由 service 与 PostgreSQL trigger 双重拒绝 UPDATE/DELETE；Subscription 生命周期使用事务、行锁/乐观 version、幂等事件和 Audit；Allowance 保持 granted/reserved/consumed 守恒，cash 与赠送额度不混写；Ledger、Usage、Audit 只追加。所有金额为整数 micro-USD。
+
+实现 `app/lib/subscriptions/**` 的 types、strict Zod contracts、repository、service/state machine 和 eligibility；实现 `/api/admin/subscription-*` 的轻 Route Handler、RBAC permission、Refine Resources、服务端分页/排序/筛选和 Plan/Version/Entitlement/Subscription 页面。复杂创建/编辑使用独立页面，生命周期动作使用有影响摘要的 Modal/移动全屏，用户订阅详情解释权益、override、额度、余额、Usage 与 Ledger。设计 Token 集中维护，遵循暖纸、单一虚线边界、无默认 CRUD 卡片墙。
+
+Gateway 在上游调用前执行 `User → Subscription → Published Version → Entitlement → User Model Permission → Allowance/Overage Cash → Request`，请求时冻结订阅/Version/Entitlement/Allowance snapshot；结算时先 capture/release Allowance，再按 overage policy 处理 cash，未知 Usage 仍保留安全失败记录。保留现有无订阅用户的受控迁移兼容 feature flag，默认在测试/明确启用时强制；不得静默放行已存在但无资格的订阅。Route Handler 不写 SQL/状态机，Secret 不回显。
+
+补充 unit、PostgreSQL integration 与 focused Playwright，覆盖 Plan/Version 不可变、全生命周期、幂等/并发冲突、Entitlement/Allowance/Overage、Gateway 402/403/409/429、Usage/Ledger、RBAC/Secret/Storage/PWA 404。任何数据库写验收只使用明确一次性 PostgreSQL `ink-memory` 或 `TEST_DATABASE_URL`，不触碰共享 5433。
+
+Optional Enhancers:
+
+- 实现真实月度账单预览 API 与安全 CSV 导出。
+- 预留 PaymentAdapter/Webhook interface 与幂等 contract，但默认不调用外部渠道。
+
+## Round 18 — Dream 接入清单与隔离发布验收
+
+Optimized Prompt:
+
+在订阅控制面、Admin API/UI 和 Gateway allowance/cash 结算代码完成后，进入只读 Dream 交付说明与发布验收阶段。先创建 `docs/architecture/ink-dream-subscription-integration-change-list.md`，只描述 `/Users/dmeck/project/ink-dream-memory` 后续应实施的变更，绝不修改其代码、Schema、迁移或运行配置。清单必须基于本轮实际 Admin 路由、错误码、数据模型与 Gateway 协议，覆盖 Dream 用户到 `platform_users.external_user_id` 的 Billing Identity 映射、Gateway Base URL/一次性 Key Secret 注入、稳定 Model Alias、套餐与订阅状态、Allowance/余额/Usage 展示、套餐选择、管理/取消/续费、401/402/403/409/429 错误恢复、环境变量、部署顺序、前后端/类型/测试/监控文件建议、灰度开关与回滚；不得虚构第三方支付已接入。
+
+随后严格使用 `ink-admin-playwright-qa` 在明确命名、可删除的 PostgreSQL 16 `ink-memory` 上执行迁移 0000–0014、fixture、订阅成功/失败路径和 focused Playwright；不得连接或写入共享 5433。验证 `pnpm env:check`、TypeScript、lint、207+ unit、build、API/领域隔离 PostgreSQL、1440×1000 与 390×844。数据库断言覆盖 Plan/Version/Entitlement、published immutability、开通/续费/升级/降级/暂停/恢复/取消、事件幂等、Allowance 守恒、Gateway token/money allowance 优先、cash overage、402/403/409/429、Usage/Ledger 只追加、真实 Dream 三表查询边界、Secret 脱敏、Storage 和 PWA 404。
+
+若发现工作区中非本任务并发改动，保持其内容和迁移序号，采用增量兼容修复，不 reset、不覆盖。完成后更新工作日志执行证据与最终报告，列出精确命令、测试数量、视口、迁移、未跑外部场景和风险，并确认 Dream 未修改、无 SQLite runtime/fallback、未恢复 PWA、Storage 未删除、共享数据库未操作。
+
+Optional Enhancers:
+
+- 加入订阅月度账单预览/CSV 作为后续迭代，不阻塞本轮核心验收。
+- 将真实支付保持为 PaymentAdapter/Webhook 幂等边界说明，不调用 Stripe、支付宝或微信。
+
+## Round 19 — 并发 Next 进程下的临时副本验收
+
+Optimized Prompt:
+
+当前工作区的 3000 端口和主 `.next/dev/lock` 被用户拥有的另一个 Next 进程占用。不得停止、复用、覆盖或干扰该进程；保持一次性 PostgreSQL `ink-memory` 容器与 55432 目标不变。创建一个 `mktemp -d` 命名的临时源码副本，排除 `.git`、`.next`、`node_modules`、测试产物和 Secret 文件，仅把当前未提交源码快照复制进去，并只在临时副本内把 Playwright webServer 明确绑定到自有 3012。依赖使用只读 symlink 指向主工作区 `node_modules`，测试结果保留在临时副本或显式产物目录。
+
+在临时副本用同一隔离 DATABASE_URL 和测试 Secret 运行 focused subscription Playwright、必要的诊断复跑和 production build；发现代码缺陷时只用 `apply_patch` 修复主工作区，再重新同步到新的/已验证的临时副本。验收结束停止 Playwright 自有 3012 服务，删除精确临时副本和一次性 PostgreSQL 容器；不得触碰 3000/5433。报告需把首轮错误归类为“错误环境复用/主 `.next` lock”，而不是产品失败，并给出隔离库未被首轮写入的证据。
+
+Optional Enhancers:
+
+- 在清理前检查 3012/55432 的 PID/container ownership 和主 3000 PID 保持不变。
+
+## Round 18–19 执行证据
+
+- 文档先行：完成数据接入审计、PRD v3、Refine 交互设计 v3 与 Dream 后续订阅接入清单；设计输入来自 PDF 实际渲染和 `color_system`，四阶段设计产物保存在 `files/workspace/`。
+- Schema/迁移：一次性 PostgreSQL 16 `127.0.0.1:55432/ink-memory` 从 `0000` 到 `0014` 全量迁移通过；`0014_subscription_control_plane.sql` 创建 Plan、不可覆盖 Version/Entitlement、Subscription、Allowance 与 append-only Event，并扩展 Gateway Request/Ledger 的订阅快照关联。未执行 DROP/DELETE/TRUNCATE 业务表。
+- 领域与 Gateway：聚焦 E2E 覆盖版本发布后 PATCH 409、重复开通幂等、重复有效订阅 409、pause 后 Gateway 403、resume、upgrade、downgrade、renew、cancel-at-period-end、订阅删除 405，以及真实上游 mock 返回 10 input + 5 output tokens 后的 token allowance 15 捕获。数据库后置证据为 1 Plan、2 Versions、2 Entitlements、1 Subscription、7 Events；Gateway Request 为 `settled/succeeded/token_allowance`，cash reserve 为 0，Allowance monetary consumed 保持 0，Ledger 新增 `subscription_charge` 与 `allowance_capture`。
+- 缺陷修复：隔离 PostgreSQL 首轮揭示 token allowance 的“货币等值”被错误累加到 money allowance consumed，触发守恒约束；已将货币等值仅用于 Request/Ledger 价格事实，token coverage 只增加 `consumed_tokens`。正式 E2E 从空库重跑通过。
+- E2E 环境纠偏：未复用用户占用的 3000 与主 `.next`；使用 `/tmp/ink-memory-subscription-e2e.*` 与自有 3012。Codex 注入的 `react-grab` CDN CORS 错误只在测试诊断器按精确 URL/消息过滤，同源 request failure、page error 和所有 5xx 仍会失败。Storage 回归使用另一个精确命名的一次性 MinIO（19000/19001），未使用现有 9000/9001 服务。
+- 发布门禁：`pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、`git diff --check` 通过；最终 Vitest 41 files / 214 tests 全通过（含订阅 402、cash overage 与 Gateway 429）；临时副本 `pnpm build` 通过并包含四个订阅路由；subscription focused Playwright 1/1（6.4s），Admin/Story/RBAC/Billing/Gateway/Storage/PWA focused Playwright 1/1（29.7s）。
+- 视觉：人工检查 1440×1000 用户订阅页与 390×844 套餐页；两者页面根节点横向溢出 ≤ 1px，桌面侧栏、移动菜单、表单区、状态与表格层级符合 v3 Token。
+- 安全：隔离库审计中测试 Provider Secret/Gateway plaintext 命中为 0；Provider Secret 与 Gateway Key 不出现在保存截图。共享 5433 未连接、迁移、清理或写入；Dream 项目只读。
+- 清理：自有 18080 mock、19000/19001 MinIO、3012 Next 与 55432 PostgreSQL 均已释放；两个精确命名的 `--rm` 容器已停止删除，临时副本移入系统废纸篓。用户原有 3000、5433、9000 监听保持存在且未停止。
+
+## Round 20 — 平台用户即计费用户
+
+Optimized Prompt:
+
+修复 Ink Memory Admin 将真实平台用户与“计费用户”错误拆分为两个运营概念的问题。产品模型只有一套平台用户：PostgreSQL canonical `users` 中每个用户天然可订阅、持有余额、获得 Gateway Key、产生 Usage 并进入 Ledger；不得要求运营人员另行创建 `platform_users` 才能出现在订阅或计费关系选择器中。`platform_users` 只允许作为 Admin 控制面内部 Billing Identity/crosswalk，由服务端根据 `users.id/email/display_name` 幂等自动补齐和同步，不作为独立业务用户主数据，也不得产生重复身份。
+
+先审计用户列表、Subscription 开通选择器、Billing Account、Gateway Key、Model Permission、Usage/Ledger 筛选以及 `platform_users` 当前创建路径。实现统一的 Repository/Service 查询与幂等映射边界：所有用户型选择器以 canonical `users` 为全集，返回稳定的内部 billing identity；缺失映射在受控事务中自动创建，并按 `(source, external_user_id)` 唯一约束处理并发；已有映射保留余额、订阅、Key、Usage 和 Ledger 关联，只同步允许的展示字段。不得修改 Dream 源代码或 password_hash，不得把源用户复制成第二套可编辑用户。
+
+移除 UI 中“计费用户”这一独立概念和文案，统一显示“平台用户”；保留 `billing_accounts` 作为每个平台用户的一对一财务账户，可在首次需要时幂等创建。严格保持 Session/RBAC、Origin、Zod、审计、Secret、micro-USD、append-only Usage/Ledger/Audit 和 PostgreSQL-only 约束。补充单元与隔离 PostgreSQL/Playwright 回归，至少证明多名 canonical 用户都出现在订阅选择器，选择尚无 crosswalk 的用户可成功开通订阅并自动建立唯一 Billing Identity/Account，重复调用不重复建档，既有用户余额和关联不被覆盖；运行 TypeScript、lint、unit、build 和 focused E2E，禁止写共享 5433。
+
+Optional Enhancers:
+
+- 在平台用户详情展示内部 Billing Identity ID，但仅作为只读技术信息，不作为第二类用户。
+- 为生产存量数据提供只读差异计数与显式 backfill 命令；运行时仍允许按需幂等补齐，避免迁移窗口阻断订阅。

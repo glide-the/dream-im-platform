@@ -5,6 +5,7 @@ import { decryptCredential } from "../security/credential-encryption";
 import { GatewayError } from "./errors";
 import { resolveProviderBaseUrl } from "./provider-endpoint";
 import { resolveAnthropicAuthMode } from "./provider-auth";
+import { ProviderHttpError } from "./provider-transport";
 
 function credential(resolved: ResolvedBillableModel) {
   try {
@@ -71,11 +72,25 @@ function isProviderApiError(error: unknown): error is ProviderApiError {
 }
 
 export function providerRequestId(error: unknown) {
+  if (error instanceof ProviderHttpError) return error.requestId;
   return isProviderApiError(error) ? error.requestID ?? undefined : undefined;
 }
 
 export function toProviderGatewayError(error: unknown) {
   if (error instanceof GatewayError) return error;
+  if (error instanceof ProviderHttpError) {
+    const status = error.status;
+    if (status === 429) {
+      return new GatewayError("UPSTREAM_RATE_LIMITED", "The upstream model provider is rate limited", 429, "rate_limit_error", true);
+    }
+    if (status === 400 || status === 404 || status === 422) {
+      return new GatewayError("UPSTREAM_REQUEST_REJECTED", "The upstream model provider rejected the request", status === 404 ? 400 : status, "invalid_request_error");
+    }
+    if (status === 401 || status === 403) {
+      return new GatewayError("UPSTREAM_CREDENTIAL_REJECTED", "The upstream model provider rejected its configured credential", 502, "upstream_error");
+    }
+    return new GatewayError("UPSTREAM_ERROR", "The upstream model provider could not complete the request", 502, "upstream_error", status >= 500);
+  }
   if (!isProviderApiError(error)) {
     return new GatewayError(
       "UPSTREAM_CONNECTION_ERROR",

@@ -108,6 +108,15 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
     ],
   },
   {
+    label: "订阅中心",
+    items: [
+      { label: "套餐", href: "/admin/subscriptions/plans", permission: "subscriptions.read", mark: "PL" },
+      { label: "版本", href: "/admin/subscriptions/versions", permission: "subscriptions.read", mark: "VR" },
+      { label: "权益", href: "/admin/subscriptions/entitlements", permission: "subscriptions.read", mark: "EN" },
+      { label: "用户订阅", href: "/admin/subscriptions/users", permission: "subscriptions.read", mark: "SB" },
+    ],
+  },
+  {
     label: "Token 计费",
     items: [
       { label: "使用记录", href: "/admin/billing/usage", permission: "billing.read", mark: "US" },

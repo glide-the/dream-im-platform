@@ -44,6 +44,13 @@ export const billingTabs = [
   { label: "计费报表", href: "/admin/billing/reports" },
 ];
 
+export const subscriptionTabs = [
+  { label: "套餐", href: "/admin/subscriptions/plans" },
+  { label: "版本", href: "/admin/subscriptions/versions" },
+  { label: "权益", href: "/admin/subscriptions/entitlements" },
+  { label: "用户订阅", href: "/admin/subscriptions/users" },
+];
+
 export const gatewayTabs = [
   { label: "请求日志", href: "/admin/gateway/requests" },
   { label: "Gateway Key", href: "/admin/gateway/keys" },

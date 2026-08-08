@@ -3,6 +3,12 @@ import {
   handleAdminResourceDelete,
   handleAdminResourceUpdate,
 } from "../../../../lib/admin/mutations";
+import {
+  handleSubscriptionDelete,
+  handleSubscriptionGetOne,
+  handleSubscriptionUpdate,
+  isSubscriptionResource,
+} from "../../../../lib/subscriptions/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +26,9 @@ export async function GET(
   context: { params: Promise<{ resource: string; id: string }> },
 ) {
   const { resource, id } = await context.params;
+  if (isSubscriptionResource(resource)) {
+    return await handleSubscriptionGetOne(request, resource, id);
+  }
   return await handleAdminResourceGetOne(request, canonicalResource(resource), id);
 }
 
@@ -28,6 +37,9 @@ export async function PATCH(
   context: { params: Promise<{ resource: string; id: string }> },
 ) {
   const { resource, id } = await context.params;
+  if (isSubscriptionResource(resource)) {
+    return await handleSubscriptionUpdate(request, resource, id);
+  }
   return await handleAdminResourceUpdate(request, canonicalResource(resource), id);
 }
 
@@ -36,5 +48,8 @@ export async function DELETE(
   context: { params: Promise<{ resource: string; id: string }> },
 ) {
   const { resource, id } = await context.params;
+  if (isSubscriptionResource(resource)) {
+    return await handleSubscriptionDelete(request, resource);
+  }
   return await handleAdminResourceDelete(request, canonicalResource(resource), id);
 }

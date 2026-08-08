@@ -107,6 +107,10 @@ export type AdminResourceManagerProps = {
     description: string;
     requiresNotes?: boolean;
     tone?: "default" | "danger" | "success";
+    buildPayload?: (
+      record: Record<string, unknown>,
+      notes: string,
+    ) => Record<string, unknown>;
   }>;
 };
 
@@ -802,7 +806,11 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/json" },
           body: JSON.stringify(
-            commandNotes.trim() ? { reviewNotes: commandNotes.trim() } : {},
+            activeCommand.buildPayload
+              ? activeCommand.buildPayload(record, commandNotes.trim())
+              : commandNotes.trim()
+                ? { reviewNotes: commandNotes.trim() }
+                : {},
           ),
         },
       );
@@ -828,7 +836,7 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
 
   const formMode = mode === "create" ? "create" : "edit";
   return (
-    <section className="admin-panel min-w-0 overflow-hidden">
+    <section id={`${resource}-manager`} className="admin-panel min-w-0 scroll-mt-6 overflow-hidden">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-border px-4 py-5 sm:px-5">
         <div className="max-w-3xl"><h2 className="font-display text-xl font-semibold">{title}</h2><p className="mt-1 text-sm leading-6 text-text-secondary">{description}</p></div>
         <div className="flex items-center gap-3">

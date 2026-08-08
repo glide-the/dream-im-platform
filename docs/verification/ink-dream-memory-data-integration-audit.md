@@ -297,3 +297,13 @@ Dream REST 的实际写边界没有变化：Workspace 仅 PATCH name/settings；
 - [x] 旧 `story_*` 平行表继续只保留、不使用、不删除。
 - [ ] `0011` 的同表扩展漂移需在本轮应用层停止使用并非破坏标记弃用。
 - [ ] Subscription、Plan Version、Entitlement、Allowance、生命周期和 Gateway 资格链需在本轮实现并验证。
+
+## 13. Round 19 最终关闭结论
+
+上节保留为 Round 15 起点快照；其中两个待办现已关闭：
+
+- [x] 应用层不再读取或写入 Dream 不存在的 `users.status`、`story_workspace_workspaces.status`；源 User PATCH 和 Workspace create 返回 405，Workspace 只允许 name/settings 白名单 PATCH。`0011` 历史物理列不删除，并由 `0014` comment 标记 deprecated。
+- [x] Subscription Plan、不可覆盖 Plan Version/Entitlement、Subscription、Allowance、append-only Event、生命周期命令和 Gateway 资格/结算链已实现；`0014_subscription_control_plane.sql` 为非破坏性增量迁移。
+- [x] 隔离 PostgreSQL 16 从 `0000` 至 `0014` 迁移通过；订阅 E2E 1/1，Admin/Story/RBAC/Billing/Gateway/Storage/PWA E2E 1/1；1440×1000 与 390×844 视觉验收通过。
+- [x] 最终静态与单元门禁：env check、TypeScript、lint、build、diff check 通过；Vitest 41 files / 214 tests 通过。
+- [x] 一次性 55432 PostgreSQL、19000/19001 MinIO、3012 Next 与 18080 mock 已清理；共享 5433 和 Dream 源数据库未写入。
