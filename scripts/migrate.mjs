@@ -3,9 +3,52 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 
-const databaseUrl = process.env.DATABASE_URL;
+function parseEnvValue(text, name) {
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const normalized = line.startsWith("export ") ? line.slice(7).trim() : line;
+    const separator = normalized.indexOf("=");
+    if (separator <= 0 || normalized.slice(0, separator).trim() !== name) {
+      continue;
+    }
+    const rawValue = normalized.slice(separator + 1).trim();
+    if (rawValue.startsWith('"') && rawValue.endsWith('"')) {
+      try {
+        return JSON.parse(rawValue);
+      } catch {
+        return rawValue.slice(1, -1);
+      }
+    }
+    if (rawValue.startsWith("'") && rawValue.endsWith("'")) {
+      return rawValue.slice(1, -1);
+    }
+    return rawValue;
+  }
+  return undefined;
+}
+
+async function resolveDatabaseUrl() {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  try {
+    const localEnv = await readFile(
+      fileURLToPath(new URL("../.env.local", import.meta.url)),
+      "utf8",
+    );
+    return parseEnvValue(localEnv, "DATABASE_URL");
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+const databaseUrl = await resolveDatabaseUrl();
 if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required to apply generated migrations");
+  throw new Error(
+    "DATABASE_URL is required to apply generated migrations. Run pnpm env:setup first.",
+  );
 }
 
 const migrationsDirectory = fileURLToPath(

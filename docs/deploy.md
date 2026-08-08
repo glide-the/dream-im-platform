@@ -3,14 +3,12 @@
 ## Docker Compose
 
 ```bash
-cd docker
-cp .env.example .env
-# 填写强随机密钥
-docker compose up -d --build
-docker compose logs -f ink-memory-admin
+pnpm env:setup
+pnpm docker:up
+pnpm docker:logs
 ```
 
-Compose 只包含 `ink-memory-admin` 与 PostgreSQL，不再启动 MinIO、SQLite 挂载或 Agent workspace。
+`pnpm env:setup` 会生成 `docker/.env`、安全随机密钥和 PostgreSQL 密码，并删除当前项目不使用的旧变量。Compose 只包含 `ink-memory-admin` 与 PostgreSQL。
 
 ## 必填环境变量
 
@@ -21,12 +19,17 @@ Compose 只包含 `ink-memory-admin` 与 PostgreSQL，不再启动 MinIO、SQLit
 - `AI_CREDENTIAL_ENCRYPTION_KEY`
 - `ADMIN_ORIGIN_ALLOWLIST`
 
-生产环境设置 `ADMIN_CONSOLE_ENABLED=true`。默认 `RUN_DB_MIGRATIONS=true` 会在应用启动前通过 `scripts/migrate.mjs` 加锁执行已生成迁移。
+生产环境设置 `ADMIN_CONSOLE_ENABLED=true`。默认 `RUN_DB_MIGRATIONS=true` 会在应用启动前通过 `scripts/migrate.mjs` 加锁执行已生成迁移。Provider API Key 应在管理后台加密录入，不写入部署环境文件。
 
 ## 首次初始化
 
 ```bash
+set -a
+source docker/.env
+set +a
+
 curl -X POST http://localhost:3000/api/admin/auth/bootstrap \
+  -H "Origin: http://localhost:${APP_PORT}" \
   -H "X-Admin-Bootstrap-Token: $ADMIN_BOOTSTRAP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@example.com","displayName":"Super Admin","password":"replace-with-a-long-password"}'

@@ -8,6 +8,8 @@
   },
   "type": "module",
   "scripts": {
+    "env:setup": "node scripts/setup-env.mjs",
+    "env:check": "node scripts/setup-env.mjs --check",
     "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
