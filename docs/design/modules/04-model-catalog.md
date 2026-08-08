@@ -2,6 +2,8 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[模型供应链](../../prd/modules/04-model-catalog.md)
 
+> 实现状态：核心页面与同步流程已实现；RPM 编辑明确不开放。
+
 ## 1. Provider
 
 列表采用单列紧凑条目：身份（name/code/protocol/base URL）→ Credential/网络/同步/模型数/价格覆盖 → 常显“同步模型、查看用量、编辑”。筛选 keyword/protocol/status/sync status；不依赖 hover。
@@ -31,4 +33,3 @@ Drawer 字段：平台用户 relation、Model relation、enabled switch、daily/
 - UI-MOD-02：Discover 失败不显示 Provider 保存失败；stale Apply 可恢复。
 - UI-MOD-03：价格单位、旧/新版本和生效时间同时可见。
 - UI-MOD-04：模型权限用户选择器覆盖所有 canonical 用户。
-

@@ -2,6 +2,8 @@
 
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[系统治理](../../design/modules/08-governance.md)
 
+> 实现状态：Admin、RBAC、Session、Settings 与 Audit 已实现；Settings 路由当前不在主导航，Secret 当前使用 masked-marker + JSON 覆盖流程而非专用 password 控件。
+
 ## 1. 目标
 
 治理谁可以访问 Admin、可以执行哪些模块动作、系统配置如何安全更新，以及所有关键操作如何留下不可变证据。
@@ -33,3 +35,5 @@
 - GOV-03：角色权限变更显示 before/after 和受影响管理员并写 Audit。
 - GOV-04：System Secret/API Key/密码/Session token 不回显、不进 Audit 或日志。
 - GOV-05：Audit 无 update/delete，按 actor/action/resource/time 可分页筛选并可追溯 request ID。
+
+交互验收映射：GOV-01/02 → UI-GOV-01/02；GOV-03/04/05 → UI-GOV-03/04 + API/数据库不可变断言。

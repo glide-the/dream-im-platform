@@ -2,6 +2,8 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[订阅中心](../../prd/modules/03-subscriptions.md)
 
+> 实现状态：Plan/Version/Entitlement 管理、订阅列表/开通和生命周期 Modal 已实现；聚合详情 Drawer 与完整账务影响预览为后续目标。
+
 ## 1. 页面结构
 
 | 页面 | 列表重点 | 创建/编辑容器 |
@@ -36,11 +38,13 @@ flowchart LR
   Active --> Upgrade["立即升级"]
   Active --> Downgrade["期末降级"]
   Active --> Pause["暂停"] --> Resume["恢复"]
-  Active --> Cancel["期末取消"] --> Resume
+  Active --> Cancel["期末取消"] --> PaidReturn["当前仅 renew/upgrade 可回 active（会收费）"]
   Active --> Renew["续费 / 新周期"]
 ```
 
 每个 Modal 显示 current→target、立即/期末生效、价格/Allowance 影响、Gateway 影响、reason 和幂等回执。提交中禁止重复；409 留在 Modal 并提供刷新最新状态。
+
+当前已实现 Modal 仅提供 action/target/reason 与结果消息；完整影响预览是后续目标。上线前文案至少必须明确：upgrade 从当前时间重开周期、全额扣目标版本价格、发完整新 Allowance、旧周期不 prorate/退款；downgrade 仅排队到续费；renew 按目标版本全额收费。`resume` 当前只接受 paused/past_due；对 cancel_at_period_end 执行 renew/upgrade 是收费动作，不得标成“撤销取消”。当前没有自动 cancelled/expired 状态推进 UI 或后台任务。UI 不发送不存在的 `expectedVersion`，并发由服务端行锁、状态校验和幂等键处理。
 
 ## 5. 状态与验收
 
@@ -50,4 +54,3 @@ flowchart LR
 - UI-SUB-02：已发布对象只读且无误导编辑按钮。
 - UI-SUB-03：两视口清楚区分 Allowance 与 cash、立即与期末动作。
 - UI-SUB-04：重复提交显示同一结果，不出现两条成功回执。
-

@@ -2,6 +2,8 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[Story 运营](../../prd/modules/02-story-operations.md)
 
+> 实现状态：Workspace/Story 交互已实现；Character/Scene 条件开放；`/admin/story/workflow-runs` 当前重定向 Story，不存在 Workflow 列表或 Drawer。
+
 ## 1. 操作者与层级
 
 内容运营按 `平台用户 → Workspace → Story → Character/Scene` 定位真实创作数据。面包屑和详情关联必须保留 Workspace 上下文。
@@ -23,7 +25,6 @@ flowchart LR
 | Story | title/identifier、workspace、author、status/review/type、updated | keyword、workspace、author、status/review/type | 查看、编辑白名单、confirm |
 | Character | name/identifier、workspace、story_count、review | keyword、workspace、author/review/status | 条件查看/编辑/confirm |
 | Scene | name/identifier、story、workspace、order、review | keyword、story/workspace/review | 条件查看/编辑/confirm |
-| Workflow | id、status、provenance、created/completed | status/workspace/time | 只读查看 |
 
 分页 20/50/100；无批量写、创建和删除。扩展实体不在主导航时只能从关联详情进入；缺表显示 503 状态页。
 
@@ -33,7 +34,8 @@ flowchart LR
 - Story：宽 Drawer，正文/关系只读；编辑 title text、description textarea、type select；pending 时显示“确认”命令。
 - Character：Drawer；文本字段、avatar URL、tags multiselect/token input、notes textarea。
 - Scene：Drawer；name/description、可搜索 Story relation、order integer；变更 Story 显示目标 Workspace/owner 校验摘要。
-- Workflow：宽只读 Drawer，provenance/transition/token consumption 分区，无 retry/cancel。
+
+规划能力（不属于当前页面）：仅在真实 Workflow 表、Repository/API 和权限均存在后，才可增加只读列表与宽 Drawer（provenance/transition/token consumption），且无 retry/cancel。当前路由重定向不能作为该页面已实现的证据。
 
 Confirm 使用 Modal，显示对象、当前 review status、不可撤销影响和 reason（若服务要求）。409 保留层并提供载入最新状态。
 
@@ -47,6 +49,6 @@ Confirm 使用 Modal，显示对象、当前 review status、不可撤销影响�
 ## 5. 交互验收
 
 - UI-STO-01：用户→Workspace→Story 的筛选与返回上下文保持。
-- UI-STO-02：任何页面无通用创建/硬删；Workflow 无人工状态按钮。
+- UI-STO-02：当前页面无通用创建/硬删，也不呈现任何 Workflow 操作 UI；直接访问 Workflow 路由按现状返回 Story 列表。
 - UI-STO-03：FK/状态 409、缺表 503、无权限 403 都有明确恢复动作。
 - UI-STO-04：390×844 下正文/JSON/长 ID 不造成 document 横滚。

@@ -2,6 +2,8 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[Storage](../../prd/modules/07-storage.md)
 
+> 实现状态：已实现；本文用于 Storage 回归与后续优化。
+
 ## 1. 页面目的
 
 资源运营和管理员检查 driver/config health，查询真实对象并执行受控上传、读取、下载或删除；页面不得伪造文件列表或容量指标。
@@ -34,4 +36,3 @@
 - UI-STOG-02：无删除权限时控件不存在，直接 API 返回 403。
 - UI-STOG-03：390×844 可完成上传、复制 key、下载和危险确认。
 - UI-STOG-04：空列表不展示伪容量/文件数。
-

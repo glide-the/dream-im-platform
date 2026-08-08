@@ -1,5 +1,7 @@
 # Ink Memory AI 平台控制面设计
 
+> **Superseded（历史设计，不再作为实现基线）**：本文包含旧 Story CRUD 与“不保存完整报文”等已失效表述。当前规范请使用 [平台 PRD v3](../prd/ink-memory-admin-prd-v3.md)、[Gateway PRD](../prd/modules/05-gateway.md) 和 [Gateway 交互规范](modules/05-gateway.md)。本文仅保留作决策演进证据。
+
 ## 产品职责
 
 Ink Memory Admin 同时是：剧本数据运营后台、模型注册中心、Token 计费中心、Claude/OpenAI 代理网关控制台、用户与权限后台。

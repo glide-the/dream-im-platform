@@ -2,6 +2,8 @@
 
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[Storage](../../design/modules/07-storage.md)
 
+> 实现状态：现有 S3/Vercel Blob API、Admin Resource、权限与删除审计已实现。
+
 ## 1. 目标
 
 保留并运营现有 S3/Vercel Blob 文件能力，为授权管理员提供配置健康、资源查询、受控上传/读取/下载和审计。Storage 不使用数据库替代实现，不引入本地 JSON/内存回退。
@@ -32,3 +34,5 @@
 - STOG-03：路径遍历、越权读取/删除返回 400/403，不访问对象。
 - STOG-04：长 key 可复制且不造成页面横向溢出。
 - STOG-05：平台用户、订阅、Gateway 等改动不导致 Storage 回归。
+
+交互验收映射：STOG-01 → UI-STOG-01；STOG-02/03 → UI-STOG-02/03；STOG-04 → UI-STOG-03；STOG-05 由 focused Storage E2E 覆盖。

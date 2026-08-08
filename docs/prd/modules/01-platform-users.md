@@ -2,6 +2,8 @@
 
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[平台用户](../../design/modules/01-platform-users.md)
 
+> 实现状态：canonical 用户列表、自动兼容键/账户和用户级限额已实现；订阅开通与人工 credit 的本地选择器目前各只加载前 100 名用户，服务端搜索分页的统一 Relation Selector 与聚合详情仍为规划能力。
+
 ## 1. 目标与产品模型
 
 让运营人员以唯一的 canonical `users` 集合查询平台用户、关联 Story、订阅、账户、Gateway 和用量。每个平台用户天然是计费主体；不存在手工创建或绑定“计费用户”的产品流程。
@@ -27,20 +29,24 @@
 | 计费账户 | `billing_accounts` / `billing-accounts` | 自动创建；余额命令式调整 |
 | 用户模型覆盖 | `user_model_permissions` | 见模型模块 |
 
-所有用户型 Relation Selector 必须从 canonical 用户全集返回稳定内部键；POST `/api/admin/platform-users` 返回 405。
+所有用户型 Relation Selector 的目标合同是从 canonical 用户全集经服务端搜索/分页返回稳定内部键；POST `/api/admin/platform-users` 返回 405。当前 `SubscriptionLifecycleManager` 与 `BillingAdjustmentForm` 只请求前 100 条，是 UI 查询范围缺口，不得解释为只有这些用户可以订阅或计费。
 
 ## 4. 规则与冲突
 
 - `(source='ink-dream', external_user_id=users.id)` 唯一；每个兼容键只有一个账户。
 - Backfill/trigger 只同步 email/display_name，不覆盖既有 tier、status、limits、余额、订阅、Key、Usage 或 Ledger。
+- `platform_users.status` 是 Gateway/控制面访问策略，不是平台用户成员资格。`active` 才能新开订阅并通过 Gateway Key 鉴权；`suspended/closed` 保留用户、账户、订阅和历史事实，不删除 canonical 用户。
 - 用户、账户和内部键不一致属于数据完整性事件；页面不得通过创建第二行“修复”。
+- 当前 `0015` 只补齐/同步 canonical 用户对应兼容行，不删除也不约束历史 orphan `platform_users`；Gateway auth 当前又只 JOIN 兼容表。产品不变量要求认证时反向验证 `users.id::text = platform_users.external_user_id` 且 source 正确。orphan 必须先审计关联 Key、余额、Usage/Ledger，再停用、映射或隔离，禁止破坏性删除财务历史。
 - `users.read` 可读用户；`users.write` 仅允许控制面 tier/status/limits 和模型 override。
 
 ## 5. 验收
 
-- USR-01：`users` 行数与可选择平台用户数一致；零余额用户也可选。
+- USR-01（目标 release gate）：`users` 全集都可经搜索选择；零余额用户也可选，不受前 100 条本地缓存限制。
 - USR-02：新增 canonical 用户自动获得唯一兼容键和零余额账户；重复同步不重复。
-- USR-03：订阅、Gateway Key、模型权限选择器均显示同一用户全集。
+- USR-03（目标 release gate）：订阅、Gateway Key、模型权限和人工 credit 选择器均基于同一用户全集。
 - USR-04：手工创建兼容用户返回 405；源用户通用 PATCH/DELETE 返回 405。
 - USR-05：用户详情和 API 永不返回 password_hash、Session 或 Secret。
+- USR-06（P0）：不存在对应 canonical `users` 的兼容行，即使持有 active Key/余额也不能通过 Gateway 认证。
 
+交互验收映射：USR-01/03 → UI-USR-01；USR-02/04 由 PostgreSQL/API 测试覆盖；USR-05 → UI-USR-02/03。

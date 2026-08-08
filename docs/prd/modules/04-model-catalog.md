@@ -2,9 +2,11 @@
 
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[模型供应链](../../design/modules/04-model-catalog.md)
 
+> 实现状态：Provider/Model/Pricing/Discover/目录同步与 Token override 已实现；请求频率 RPM 编辑暂不在 Admin 开放。
+
 ## 1. 目标
 
-管理上游 Provider、稳定 Model alias、不可追溯覆盖的价格版本、模型发现/目录同步和用户模型权限，为 Gateway 与订阅权益提供真实配置。
+管理上游 Provider、稳定 Model alias、不可覆盖且可追溯的价格版本、模型发现/目录同步和用户模型权限，为 Gateway 与订阅权益提供真实配置。
 
 ## 2. 页面
 
@@ -36,3 +38,5 @@
 - MOD-03：Model alias 唯一，禁用模型在 Gateway 解析阶段拒绝。
 - MOD-04：Pricing overlap/陈旧 replacement 返回 409；历史价格快照不被修改。
 - MOD-05：模型权限用户选择器覆盖全部 canonical 用户，并受 Subscription 权益上限约束。
+
+交互验收映射：MOD-01 → UI-MOD-01；MOD-02 → UI-MOD-02；MOD-03/04 → UI-MOD-03；MOD-05 → UI-MOD-04。

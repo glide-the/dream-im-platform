@@ -2,6 +2,8 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[账务运营](../../prd/modules/06-billing.md)
 
+> 实现状态：Usage、账户、Ledger、报表、当前筛选 CSV 与 credit 已实现；跨域富详情及 debit/reversal 命令是后续目标。
+
 ## 1. Usage Dashboard
 
 全局筛选：Date Range/timezone、protocol、Provider、Model、平台用户、outcome、refresh。筛选同时驱动事实摘要、趋势和“请求日志 / Provider 统计 / 模型统计”；聚合不可用时显示不可用，不用当前页合计替代。
@@ -12,21 +14,20 @@ Usage 表列 request ID、user、provider/model、四类 Token、coverage mode�
 
 列表列平台用户、currency、available、reserved、lifetime debited、version、updated；筛选 user/tier，金额 mono/tabular。详情宽 Drawer：cash → current Subscription/Allowance → recent Ledger/Usage → 调账入口。
 
-调账 Modal 控件：类型 radio（credit/debit/reversal 边界）、amount micro-USD integer + USD preview、reason textarea、external ticket text、idempotency key。显示 before/after 预览；不能直接输入目标余额。
+当前调账 Modal 仅为 credit：平台用户普通 Select、USD number（最多 6 位小数）+ micro-USD 换算提示、reason textarea、不可变账本确认 checkbox；幂等键由客户端提交时自动生成。当前没有 external ticket 独立字段、before/after 预览、类型 radio 或 debit/reversal；也不能直接输入目标余额。服务端仍只接收整数 `amountMicrousd`。
 
 ## 3. Ledger 与报表
 
-Ledger 列 entry type、signed amount、available/reserved after、user、request/subscription、actor、created；筛选 user/account/type/request/subscription/time；只读，无行编辑/删除。纠错从原 entry 发起新的 reversal，并在确认中显示双向关联。
+Ledger 列 entry type、signed amount、available/reserved after、user、request/subscription、actor、created；筛选 user/account/type/request/subscription/time；只读，无行编辑/删除。未来 reversal 应从原 entry 发起新命令并显示双向关联；当前 UI 不展示未实现入口。
 
-报表选择日期、时区、Provider/Model/User、币种展示；显示 Usage 与 Ledger 的真实聚合、舍入规则和数据更新时间。CSV 仅当前筛选，导出前显示行数/时间范围，不包含 Prompt/Secret。
+报表选择日期、时区、Provider/Model/User、币种展示；显示 Usage 与 Ledger 的真实聚合、舍入规则和数据更新时间。当前已实现客户端 CSV 导出，导出当前已加载报表结果且不包含 Prompt/Secret；“导出前行数/时间范围确认”是后续增强，不得把它写成现状。
 
 ## 4. 状态与验收
 
 - 未知 Usage 显示“未知/待处置”，不能显示 0 Token 或成功结算。
-- 409 保留调账输入并刷新当前 version/balance；网络未知先查询 idempotency result。
+- 当前 409/网络错误保留调账输入并显示安全错误；“自动刷新当前 version/balance、按幂等键查询未知结果”是目标恢复能力，完成前不能显示成功。
 - Mobile 摘要纵向，金额标签不省略；表格局部横滚。
 - UI-BIL-01：Allowance 与 cash 始终分区，并能追到 Subscription/Request/Ledger。
 - UI-BIL-02：调账只能追加 Ledger，重复提交只显示一次结果。
 - UI-BIL-03：Ledger 无编辑/删除控件，审计角色可完整键盘查询。
 - UI-BIL-04：报表不可用时不显示假指标或空 CSV。
-

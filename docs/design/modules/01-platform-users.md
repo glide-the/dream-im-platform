@@ -2,6 +2,8 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[平台用户](../../prd/modules/01-platform-users.md)
 
+> 实现状态：用户列表与限额编辑已实现；统一 Relation Selector 是目标设计。当前订阅开通和人工 credit 各只加载前 100 名用户；下述跨模块聚合详情 Drawer 也未作为当前 release gate。
+
 ## 1. 页面目的
 
 内容运营、支持和财务人员查询同一套真实平台用户，并从用户进入 Workspace、Story、订阅、账户、Gateway 与 Usage。页面不得出现“计费用户”“初始化身份”或第二套用户创建按钮。
@@ -29,6 +31,8 @@
 - 零余额、无订阅用户仍可选；不得因内部兼容行缺少运营字段而隐藏用户。
 - 浏览器提交内部兼容键，但 UI 不要求操作者理解或输入该键。
 
+当前差距：`SubscriptionLifecycleManager` 与 `BillingAdjustmentForm` 使用普通 Select 并只请求前 100 条。它们必须迁移到上述服务端搜索/分页合同；在完成前，空搜索结果不得显示“该用户不是计费用户”，应提示改用精确搜索能力尚未完成并记录为规模化缺口。
+
 ## 4. 用户计费设置
 
 用户级 Token 上限在 `/admin/gateway/rate-limits#platform-users-manager` 的 Drawer 编辑：daily/monthly number，可空表示该层不设上限；tier/status 为有权限人员的控制面字段。保存前显示最终限制还受模型 override 和套餐权益取最小值。
@@ -37,7 +41,6 @@
 
 - 503：说明 canonical 用户表/映射迁移状态，不显示手工开户入口。
 - 409：显示完整性冲突并要求运维检查，不允许创建重复身份。
-- UI-USR-01：所有用户选择器显示同一 canonical 集合。
+- UI-USR-01（目标）：所有用户选择器可搜索同一 canonical 全集；不受前 100 条加载限制。
 - UI-USR-02：390×844 的长邮箱/ID 换行或局部截断，不产生根横滚。
 - UI-USR-03：用户详情中账户、订阅、Usage 都是链接/只读事实，危险动作进入所属模块。
-

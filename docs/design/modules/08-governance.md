@@ -2,6 +2,8 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[系统治理](../../prd/modules/08-governance.md)
 
+> 实现状态：Admin/RBAC/Audit 与 Settings masked-marker/JSON 覆盖已实现；System Settings 当前由直接路由访问、不在主导航，专用 Secret password 控件为后续优化。
+
 ## 1. 管理员
 
 列表列 email/display、status、roles、last login、updated；筛选 email/status/role。创建/编辑 Drawer：email、display text，roles searchable multiselect，status select；密码创建/重置用 Secret 控件且不回填。
@@ -16,7 +18,7 @@ Role 列 code/name/type、permission count、admin count；自定义 Role 使用
 
 ## 3. System Settings
 
-列表按 category/key/status/secret 筛选。编辑 Drawer：category/key 创建后只读，非 Secret 使用 JSON Editor，Secret 使用 password 控件；已配置只显示 masked/configured，空值不清除。覆盖 Secret 使用危险确认并写 Audit。
+列表按 category/key/status/secret 筛选。编辑 Drawer 当前统一使用 JSON Editor，Secret GET 只显示 masked marker，提交新 JSON 值表示覆盖，空值不清除。目标态可将 Secret 改为专用 password/secret 控件；无论控件类型，Provider/System Secret 都不得返回一次性明文回执。覆盖 Secret 使用危险确认并写 Audit。
 
 ## 4. Audit
 
@@ -28,5 +30,5 @@ Role 列 code/name/type、permission count、admin count；自定义 Role 使用
 - Mobile 权限矩阵按 domain 折叠，行标签与 checkbox 保持关联；Audit JSON 自身滚动。
 - UI-GOV-01：键盘完成管理员创建、角色分配和自定义 Role 更新。
 - UI-GOV-02：最后 Super Admin/内置 Role/被引用 Role 危险动作有可恢复 409。
-- UI-GOV-03：Secret、密码、Session token 不进入 DOM 重读、Copy、Audit 或截图。
+- UI-GOV-03：Secret、密码、Session token 不进入 DOM 重读、Copy、Audit、自动化截图或遥测；人工截图验收只使用明确的脱敏测试值。
 - UI-GOV-04：Audit 只读，before/after 有明确空值语义且可追溯 request ID。

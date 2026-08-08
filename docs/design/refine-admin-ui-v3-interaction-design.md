@@ -10,11 +10,9 @@
 
 Admin 使用“暖纸张上的专业运营工具”语言：高信息密度、平面列表、清晰规则线、小面积状态色。不得退化为默认 Refine/Ant Design CRUD、卡片墙、Landing Page 或装饰性指标。
 
-- 页面画布：亮色 `#f8f0e6` / 暗色 `#1f1b16`。
-- 主纸面：亮色 `#fffef9` / 暗色 `#2a251e`。
-- 主文字：亮色 `#2c2c2c` / 暗色 `#f3eee6`。
-- 纸面边框：亮色 `#d0c4b0` / 暗色 `#5a4d3d`。
-- 链接：亮色 `#4a90e2` / 暗色 `#81b7d2`。
+- 页面画布使用 `--color-bg-app`，主纸面使用 `--color-bg-paper`。
+- 主文字使用 `--color-text-primary`，纸面边框使用 `--color-border-paper`。
+- 链接使用 `--color-action-link`，主操作使用 `--color-action-primary`。
 - 成功、警告、错误、危险必须使用既有语义 Token，并配文字/图标，不能只依赖颜色。
 
 完整 Token 继续以 [`admin-ui-visual-specification.md`](admin-ui-visual-specification.md) 和 `docs/prd/color_system/` 为唯一值来源；模块文档不复制颜色表。
@@ -59,7 +57,7 @@ Admin 使用“暖纸张上的专业运营工具”语言：高信息密度、�
 | Provider、Model、Pricing、Plan Version 等复杂配置 | 独立页面或固定全窗口层 |
 | 只读 Request/User/Subscription 详情 | 宽 Drawer；Mobile 全屏 |
 | 生命周期、高风险确认 | Modal；Mobile bottom/full-screen sheet |
-| 一次性 Secret 回执 | 阻断式回执层，关闭后不可恢复明文 |
+| 一次性 Gateway Key 回执 | 阻断式回执层，关闭后不可恢复明文；Provider/System Secret 不返回明文回执 |
 
 每个模块的具体选择见模块文档。
 
@@ -84,7 +82,7 @@ Admin 使用“暖纸张上的专业运营工具”语言：高信息密度、�
 | 日期/时间 | date/datetime | 显示时区；服务端验证有效窗口 |
 | 布尔 | Switch | label 说明生效影响；危险状态不用单独 Switch |
 | JSON | JSON Editor | 仅未知扩展字段；格式化、schema、行列错误、恢复草稿 |
-| Secret | password/secret | 创建草稿可显隐；历史值永不加载；空值表示不轮换 |
+| Provider/System Secret | password/secret 或当前 JSON 覆盖控件 | 只写；历史值永不加载；空值表示不轮换；不得生成明文回执 |
 | ID/状态/快照 | 只读 code/status tag | 可复制；状态同时有文字 |
 
 所有字段使用稳定 `label/description/error/required` 关联。提交失败保留草稿并聚焦首错；离开脏表单前确认。
@@ -96,9 +94,11 @@ Admin 使用“暖纸张上的专业运营工具”语言：高信息密度、�
 | Loading | 页头/筛选稳定，等高 skeleton，`aria-busy=true` |
 | Empty | 区分无数据/无匹配，提供唯一合理下一步 |
 | 401 | 不渲染保护数据；登录后安全返回 |
+| 402 | 展示额度/余额缺口、重置时间与升级/账户处理入口 |
 | 403 | `role=alert`，显示所需权限和返回动作 |
 | 404 | 返回对应列表，保留安全 request ID |
 | 409 | 保留输入，展示服务器最新状态和刷新/重载动作 |
+| 429 | 展示限制窗口、当前/本次/上限/剩余与 Retry-After；实时计数只读 |
 | 500 | 安全错误摘要 + request ID；不显示 SQL、stack 或 Secret |
 | 503 | 说明具体依赖；提供重试；禁止回退假数据 |
 | Success | polite live region；刷新缓存；回执包含实际对象和审计/幂等结果 |
@@ -110,7 +110,7 @@ Toast 使用不透明 surface，最多两条且不抢焦点。网络结果未知
 - 停用 Provider、撤销 Gateway Key、余额调整、订阅暂停/取消、管理员停用、Role 删除、Secret 覆盖必须显示对象、当前状态、影响、before/after、reason 与 request/idempotency 信息。
 - 最高风险动作要求输入对象 code 或确认短语；提交中禁止重复。
 - 409 不关闭确认层，焦点移到冲突摘要。
-- Secret 创建回执显示一次；Copy 仅写 clipboard，不触发 analytics；离开前提示不可再次查看。
+- 只有 Gateway Key 创建回执显示一次明文；Copy 仅写 clipboard，不触发 analytics；离开前提示不可再次查看。Provider/System Secret 只有“已配置/已覆盖”回执，不返回或复制明文。
 - Ledger、Usage、Audit、Request 历史、已发布 Plan Version/Entitlement 不提供删除或直接编辑入口。
 
 ## 9. 模块交互索引

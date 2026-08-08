@@ -417,3 +417,34 @@ Optimized Prompt:
 Optional Enhancers:
 
 - 后续可将链接和术语检查固化为 CI 脚本，但本轮不因缺少 Markdown 工具链而引入新依赖。
+
+## Round 22–23 执行证据
+
+- 文档架构：`docs/prd/ink-memory-admin-prd-v3.md` 收敛为平台总纲，`docs/design/refine-admin-ui-v3-interaction-design.md` 收敛为全局交互规范；分别建立 00–08 九个 PRD 模块与九个对应交互模块。`00-platform-foundation` 对应 `00-admin-shell`，其余模块同名双向链接。
+- 核心产品纠偏：明确 canonical PostgreSQL `users` 是唯一平台用户全集，所有平台用户天然可订阅和计费；`platform_users` 仅是内部兼容键，不存在单独“计费用户”产品设计，也没有手工开户流程。
+- 当前态/目标态分层：逐模块增加 2026-08-08 实现状态；把聚合详情、完整影响预览、Workflow、debit/reversal、页面级 permission guard、可扩展 Relation Selector 等未完成能力标为目标，不作为已实现事实。
+- Reader Testing 修订：补齐 Gateway 401/402/403/409/429/502/503 错误合同、订阅升级/降级/续费真实账务规则、`cancel_at_period_end` 与自动状态推进实际限制、Billing credit/CSV 实际状态、限流 `users.write`、Provider/System Secret 与 Gateway Key 的不同回执策略。
+- 发布风险显式化：记录 Gateway auth 未反向验证 canonical 用户及历史 orphan `platform_users` 风险、从未订阅用户 cash-only 兼容且无开关、Token allowance 402 将 Token 混入 micro-USD 字段、两个用户选择器前 100 条限制、Dashboard/页面权限缺口。文档不虚构这些问题已修复。
+- Story 边界：当前仅确认 `users`、`story_workspace_workspaces`、`story_workspace_stories`；Character/Scene 条件开放，Workflow 权威表/API 尚未确认且当前路由重定向 Story，不再描述成已实现列表/Drawer。
+- 历史权威性：旧 `ai-platform-admin-billing-gateway-design.md` 标记 Superseded，并明确指向 v3 平台总纲、Gateway PRD 与交互规范；旧 v2/Story 专项文档保留为历史证据。
+- 机械校验：21 份本轮变更 Markdown 相对链接检查 `0` 断链；PRD 模块 `9`、交互模块 `9`、缺失配对 `0`；`git diff --check` 通过。
+- 修改边界：本阶段仅更新 `ink-admin-memory/docs/**`；未修改应用代码、Schema、迁移、数据库或 Dream 项目。
+
+## Round 24 — Dream 后续接入、页面改造与 PostgreSQL 迁移文档
+
+Optimized Prompt:
+
+在 `/Users/dmeck/project/ink-admin-memory` 内更新面向 `/Users/dmeck/project/ink-dream-memory` 的后续业务接入、页面改造和 PostgreSQL 迁移文档；Dream 仓库全程只读，不修改代码、Schema、迁移、依赖、环境变量或运行逻辑。先基于 Dream 真实 Schema、迁移、查询、API、类型、页面路由和当前数据持久化方式，以及 Admin 已完成的数据接入审计、PRD、Gateway/Subscription 设计和历史改造清单，逐项核对事实；禁止依据旧方案标题或表名猜测。
+
+在 `docs/architecture/ink-dream-memory/` 建立唯一正式文档入口，至少包含：总索引与范围说明、现阶段业务接入清单、前端页面与交互改造清单、PostgreSQL 迁移方案、部署灰度与回滚清单。把已有 `ink-dream-memory` 迁移/订阅/Gateway 改造方案中仍有效的内容修订后归入该目录；旧路径保留轻量 superseded/redirect 说明，避免断链，不复制相互冲突的正文。
+
+本阶段明确不开发计费、订阅、推理服务和订阅支付：Dream 不新增套餐选择、订阅管理、余额/额度、Usage/Ledger、支付收银台、支付 Webhook、Gateway Key 管理、模型代理调用或推理错误处理页面；相关内容只在“延期范围与未来触发条件”中登记，不作为当前 API、环境变量、迁移、页面或验收任务。现阶段仅规划 Dream 真实业务数据迁入统一 PostgreSQL `ink-memory` 及不依赖上述延期域的必要适配，保持用户、Workspace、Story 等 canonical 实体唯一，Admin 不建立平行业务表。
+
+PostgreSQL 迁移方案必须写明：现状数据源与证据、目标表/字段/主外键/枚举映射、扩展与冲突项、迁移前只读盘点、可重复导出与校验、目标 schema 基线、分批导入顺序、ID/时间/JSON/空值处理、外键与唯一冲突隔离、双写/停写选择、切换窗口、校验 SQL 类型、应用配置切换、灰度、回滚和数据保留。任何验证只能使用明确隔离 PostgreSQL 或 `TEST_DATABASE_URL`；不得连接、迁移、清空或写入未知/共享 `ink-memory`，不得提出 SQLite/JSON/内存回退。
+
+每份文档必须标注受众、当前事实、目标状态、本期范围、延期范围、前置条件、具体文件/模块建议、操作顺序、验收标准、风险与回滚；路径、表名、字段、页面和环境变量必须能由仓库证据支撑。完成后执行相对 Markdown 链接、文档配对、术语和延期范围一致性检查，并用无上下文读者测试确认其不会误以为计费、订阅、推理或支付需要本期开发。
+
+Optional Enhancers:
+
+- 为 PostgreSQL 迁移增加可复制的只读盘点/校验 SQL 模板，但不得包含针对共享库的 DROP、TRUNCATE、DELETE 或自动执行命令。
+- 在总索引增加“现在做 / 明确不做 / 未来触发后再做”矩阵，便于产品、Dream 前端、后端、QA 和运维共同评审。
