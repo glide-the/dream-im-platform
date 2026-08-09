@@ -17,8 +17,6 @@ const baseRow = {
   current_period_end: new Date("2026-09-01T00:00:00.000Z"),
   trial_ends_at: null,
   grace_ends_at: null,
-  billing_period: "monthly",
-  overage_policy: "deny",
   entitlement_id: "ent_1",
   gateway_scopes: ["messages:create"],
   requests_per_minute: 10,
@@ -28,13 +26,10 @@ const baseRow = {
   granted_tokens: 100_000,
   reserved_tokens: 1_000,
   consumed_tokens: 20_000,
-  granted_microusd: 0,
-  reserved_microusd: 0,
-  consumed_microusd: 0,
 };
 
 describe("subscription Gateway eligibility", () => {
-  it("reserves token allowance before cash", async () => {
+  it("reserves only the current subscription-period Token allowance", async () => {
     const query = vi.fn().mockResolvedValue({ rows: [baseRow] });
     const result = await resolveGatewaySubscriptionOnClient(
       clientWith(query),
@@ -43,15 +38,15 @@ describe("subscription Gateway eligibility", () => {
         modelId: "model_1",
         requiredScope: "messages:create",
         estimatedTokens: 10_000,
-        reservationMicrousd: 50_000,
         at: new Date("2026-08-08T00:00:00.000Z"),
       },
     );
     expect(result).toMatchObject({
       coverageMode: "token_allowance",
       allowanceReservedTokens: 10_000,
-      cashReservedMicrousd: 0,
     });
+    expect(result).not.toHaveProperty("cashReservedMicrousd");
+    expect(result).not.toHaveProperty("allowanceReservedMicrousd");
   });
 
   it("rejects paused subscriptions before Provider dispatch", async () => {
@@ -65,21 +60,18 @@ describe("subscription Gateway eligibility", () => {
         modelId: "model_1",
         requiredScope: "messages:create",
         estimatedTokens: 1_000,
-        reservationMicrousd: 10_000,
         at: new Date("2026-08-08T00:00:00.000Z"),
       },
     );
     expect(result).toMatchObject({ code: "SUBSCRIPTION_PAUSED", status: 403 });
   });
 
-  it("returns 402 when allowance is exhausted and overage is denied", async () => {
+  it("rejects a future personal subscription period before Provider dispatch", async () => {
     const query = vi.fn().mockResolvedValue({
       rows: [{
         ...baseRow,
-        granted_tokens: 20_000,
-        reserved_tokens: 0,
-        consumed_tokens: 20_000,
-        overage_policy: "deny",
+        current_period_start: new Date("2026-08-09T00:00:00.000Z"),
+        current_period_end: new Date("2026-09-09T00:00:00.000Z"),
       }],
     });
     const result = await resolveGatewaySubscriptionOnClient(
@@ -89,45 +81,112 @@ describe("subscription Gateway eligibility", () => {
         modelId: "model_1",
         requiredScope: "messages:create",
         estimatedTokens: 1_000,
-        reservationMicrousd: 10_000,
         at: new Date("2026-08-08T00:00:00.000Z"),
       },
     );
     expect(result).toMatchObject({
-      code: "SUBSCRIPTION_ALLOWANCE_EXHAUSTED",
+      code: "SUBSCRIPTION_PERIOD_NOT_STARTED",
+      status: 403,
+    });
+  });
+
+  it("returns a Token-specific 402 when the period allowance is exhausted", async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [{
+        ...baseRow,
+        granted_tokens: 20_000,
+        reserved_tokens: 0,
+        consumed_tokens: 20_000,
+      }],
+    });
+    const result = await resolveGatewaySubscriptionOnClient(
+      clientWith(query),
+      {
+        platformUserId: "user_1",
+        modelId: "model_1",
+        requiredScope: "messages:create",
+        estimatedTokens: 1_000,
+        at: new Date("2026-08-08T00:00:00.000Z"),
+      },
+    );
+    expect(result).toMatchObject({
+      code: "SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED",
       status: 402,
+      metric: "tokens",
+      unit: "tokens",
+      availableTokens: 0,
+      requiredTokens: 1_000,
+      periodEnd: "2026-09-01T00:00:00.000Z",
     });
   });
 
-  it("falls through to cash reservation when overage is enabled", async () => {
-    const query = vi.fn().mockResolvedValue({
-      rows: [{
-        ...baseRow,
-        granted_tokens: 20_000,
-        reserved_tokens: 0,
-        consumed_tokens: 20_000,
-        overage_policy: "cash_balance",
-      }],
-    });
-    const result = await resolveGatewaySubscriptionOnClient(
+  it("settles Token usage without charging cash or a monetary allowance", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [{
+          granted_tokens: 100_000,
+          reserved_tokens: 10_000,
+          consumed_tokens: 20_000,
+          granted_microusd: 0,
+          reserved_microusd: 0,
+          consumed_microusd: 0,
+        }],
+      })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] });
+    const result = await settleSubscriptionAllowanceOnClient(
       clientWith(query),
       {
-        platformUserId: "user_1",
-        modelId: "model_1",
-        requiredScope: "messages:create",
-        estimatedTokens: 1_000,
-        reservationMicrousd: 10_000,
-        at: new Date("2026-08-08T00:00:00.000Z"),
+        allowanceId: "allow_1",
+        coverageMode: "token_allowance",
+        reservedTokens: 10_000,
+        reservedMicrousd: 0,
+        actualTokens: 2_000,
+        chargeMicrousd: 30_000,
       },
     );
-    expect(result).toMatchObject({
-      coverageMode: "cash_only",
-      allowanceReservedTokens: 0,
-      cashReservedMicrousd: 10_000,
+    expect(result).toEqual({
+      cashChargeMicrousd: 0,
+      allowanceChargeMicrousd: 0,
+      allowanceChargedTokens: 2_000,
     });
+    expect(query.mock.calls[1][1]).toEqual(["allow_1", 10_000, 2_000]);
   });
 
-  it("captures money allowance and releases the unused reservation", async () => {
+  it("clamps underestimated Token usage and releases the full request reservation", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [{
+          granted_tokens: 100_000,
+          reserved_tokens: 20_000,
+          consumed_tokens: 70_000,
+          granted_microusd: 0,
+          reserved_microusd: 0,
+          consumed_microusd: 0,
+        }],
+      })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] });
+    const result = await settleSubscriptionAllowanceOnClient(
+      clientWith(query),
+      {
+        allowanceId: "allow_1",
+        coverageMode: "token_allowance",
+        reservedTokens: 10_000,
+        reservedMicrousd: 0,
+        actualTokens: 30_000,
+        chargeMicrousd: 50_000,
+      },
+    );
+    expect(result).toEqual({
+      cashChargeMicrousd: 0,
+      allowanceChargeMicrousd: 0,
+      allowanceChargedTokens: 20_000,
+    });
+    expect(query.mock.calls[1][1]).toEqual(["allow_1", 10_000, 20_000]);
+  });
+
+  it("settles only a legacy in-flight money reservation during rolling deploy", async () => {
     const query = vi
       .fn()
       .mockResolvedValueOnce({
@@ -159,8 +218,6 @@ describe("subscription Gateway eligibility", () => {
     });
     expect(query.mock.calls[1][1]).toEqual([
       "allow_1",
-      0,
-      0,
       50_000,
       30_000,
     ]);

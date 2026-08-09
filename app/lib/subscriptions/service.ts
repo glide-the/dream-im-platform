@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { recordAdminAuditOnClient } from "../admin/audit";
@@ -23,6 +24,7 @@ import {
   subscriptionCreateSchema,
   type SubscriptionResource,
 } from "./contracts";
+import { monthlyCyclePeriod, monthlyCyclePeriodAt } from "./cycle";
 import { querySubscriptionItem, querySubscriptionList } from "./repository";
 
 async function parseBody<T extends z.ZodTypeAny>(request: Request, schema: T) {
@@ -86,19 +88,6 @@ function subscriptionError(error: unknown) {
   return error;
 }
 
-function nextPeriod(start: Date, period: "monthly" | "annual") {
-  const result = new Date(start);
-  const day = result.getUTCDate();
-  result.setUTCDate(1);
-  if (period === "monthly") result.setUTCMonth(result.getUTCMonth() + 1);
-  else result.setUTCFullYear(result.getUTCFullYear() + 1);
-  const lastDay = new Date(
-    Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0),
-  ).getUTCDate();
-  result.setUTCDate(Math.min(day, lastDay));
-  return result;
-}
-
 async function loadPublishedVersion(client: PoolClient, id: string) {
   const result = await client.query<{
     id: string;
@@ -110,9 +99,11 @@ async function loadPublishedVersion(client: PoolClient, id: string) {
     allowance_tokens: string | number;
     allowance_microusd: string | number;
     overage_policy: "deny" | "cash_balance";
+    effective_from: Date | null;
   }>(
     `SELECT id, plan_id, status, billing_period, base_price_microusd,
-            trial_days, allowance_tokens, allowance_microusd, overage_policy
+            trial_days, allowance_tokens, allowance_microusd, overage_policy,
+            effective_from
      FROM subscription_plan_versions WHERE id = $1 FOR SHARE`,
     [id],
   );
@@ -121,6 +112,20 @@ async function loadPublishedVersion(client: PoolClient, id: string) {
     throw new AdminError(
       "SUBSCRIPTION_VERSION_NOT_CALLABLE",
       "A subscription requires a published plan version",
+      409,
+    );
+  }
+  if (
+    version.billing_period !== "monthly" ||
+    safeInteger(version.base_price_microusd, "base_price_microusd") !== 0 ||
+    safeInteger(version.allowance_microusd, "allowance_microusd") !== 0 ||
+    version.overage_policy !== "deny" ||
+    version.effective_from !== null ||
+    safeInteger(version.allowance_tokens, "allowance_tokens") <= 0
+  ) {
+    throw new AdminError(
+      "SUBSCRIPTION_VERSION_LEGACY_MONETARY",
+      "New subscriptions require a published monthly Token-only plan version",
       409,
     );
   }
@@ -139,9 +144,54 @@ function safeInteger(value: string | number, field: string) {
   return parsed;
 }
 
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableJsonValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, entry]) => entry !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, stableJsonValue(entry)]),
+    );
+  }
+  return value;
+}
+
+function subscriptionRequestDigest(
+  operation: string,
+  payload: Record<string, unknown>,
+) {
+  return createHash("sha256")
+    .update(JSON.stringify(stableJsonValue({ operation, payload })))
+    .digest("hex");
+}
+
+async function requireDraftPlanVersion(client: PoolClient, id: string) {
+  const result = await client.query<{ status: string }>(
+    "SELECT status FROM subscription_plan_versions WHERE id = $1 FOR SHARE",
+    [id],
+  );
+  if (!result.rows[0]) {
+    throw new AdminError(
+      "SUBSCRIPTION_VERSION_NOT_FOUND",
+      "The subscription plan version does not exist",
+      409,
+    );
+  }
+  if (result.rows[0].status !== "draft") {
+    throw new AdminError(
+      "SUBSCRIPTION_ENTITLEMENT_IMMUTABLE",
+      "Entitlements can be changed only while their plan version is a draft",
+      409,
+    );
+  }
+}
+
 async function insertAllowance(
   client: PoolClient,
   subscriptionId: string,
+  planVersionId: string,
+  periodNumber: number,
   start: Date,
   end: Date,
   version: Awaited<ReturnType<typeof loadPublishedVersion>>,
@@ -149,99 +199,20 @@ async function insertAllowance(
   const id = createPlatformId("allow");
   await client.query(
     `INSERT INTO subscription_usage_allowances (
-       id, subscription_id, period_start, period_end,
-       granted_tokens, granted_microusd
-     ) VALUES ($1, $2, $3, $4, $5, $6)`,
+       id, subscription_id, plan_version_id, period_number,
+       period_start, period_end, granted_tokens
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [
       id,
       subscriptionId,
+      planVersionId,
+      periodNumber,
       start,
       end,
       safeInteger(version.allowance_tokens, "allowance_tokens"),
-      safeInteger(version.allowance_microusd, "allowance_microusd"),
     ],
   );
   return id;
-}
-
-async function chargeBasePrice(
-  client: PoolClient,
-  input: {
-    subscriptionId: string;
-    platformUserId: string;
-    amountMicrousd: number;
-    idempotencyKey: string;
-    identity: AdminIdentity;
-    description: string;
-  },
-) {
-  if (input.amountMicrousd === 0) return null;
-  const account = await client.query<{
-    id: string;
-    available_microusd: string | number;
-    reserved_microusd: string | number;
-    lifetime_debited_microusd: string | number;
-  }>(
-    `SELECT id, available_microusd, reserved_microusd,
-            lifetime_debited_microusd
-     FROM billing_accounts WHERE platform_user_id = $1 FOR UPDATE`,
-    [input.platformUserId],
-  );
-  if (!account.rows[0]) {
-    throw new AdminError(
-      "SUBSCRIPTION_BILLING_ACCOUNT_MISSING",
-      "The user does not have a billing account",
-      409,
-    );
-  }
-  const row = account.rows[0];
-  const available = safeInteger(row.available_microusd, "available_microusd");
-  const reserved = safeInteger(row.reserved_microusd, "reserved_microusd");
-  const lifetime = safeInteger(
-    row.lifetime_debited_microusd,
-    "lifetime_debited_microusd",
-  );
-  if (available < input.amountMicrousd) {
-    throw new AdminError(
-      "SUBSCRIPTION_BALANCE_INSUFFICIENT",
-      "The billing account balance is insufficient for the subscription charge",
-      402,
-      { availableMicrousd: available, requiredMicrousd: input.amountMicrousd },
-    );
-  }
-  const after = available - input.amountMicrousd;
-  await client.query(
-    `UPDATE billing_accounts
-     SET available_microusd = $2, lifetime_debited_microusd = $3,
-         version = version + 1, updated_at = NOW()
-     WHERE id = $1`,
-    [row.id, after, lifetime + input.amountMicrousd],
-  );
-  const ledgerId = createPlatformId("ledger");
-  await client.query(
-    `INSERT INTO billing_ledger_entries (
-       id, account_id, platform_user_id, subscription_id, entry_type,
-       amount_microusd, available_before_microusd,
-       available_after_microusd, reserved_before_microusd,
-       reserved_after_microusd, idempotency_key, description,
-       actor_type, actor_id, metadata
-     ) VALUES ($1, $2, $3, $4, 'subscription_charge', $5, $6, $7,
-               $8, $8, $9, $10, 'admin', $11, '{}'::jsonb)`,
-    [
-      ledgerId,
-      row.id,
-      input.platformUserId,
-      input.subscriptionId,
-      input.amountMicrousd,
-      available,
-      after,
-      reserved,
-      `${input.idempotencyKey}:charge`,
-      input.description,
-      input.identity.id,
-    ],
-  );
-  return ledgerId;
 }
 
 async function insertEvent(
@@ -279,12 +250,35 @@ async function insertEvent(
 async function existingEventSubscription(
   client: PoolClient,
   idempotencyKey: string,
+  eventType: string,
+  requestDigest: string,
 ) {
-  const result = await client.query<{ subscription_id: string }>(
-    "SELECT subscription_id FROM subscription_events WHERE idempotency_key = $1",
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
     [idempotencyKey],
   );
-  return result.rows[0]?.subscription_id ?? null;
+  const result = await client.query<{
+    subscription_id: string;
+    event_type: string;
+    metadata: Record<string, unknown> | null;
+  }>(
+    `SELECT subscription_id, event_type, metadata
+     FROM subscription_events WHERE idempotency_key = $1`,
+    [idempotencyKey],
+  );
+  const existing = result.rows[0];
+  if (!existing) return null;
+  if (
+    existing.event_type !== eventType ||
+    existing.metadata?.requestDigest !== requestDigest
+  ) {
+    throw new AdminError(
+      "SUBSCRIPTION_IDEMPOTENCY_CONFLICT",
+      "The idempotency key was already used for a different subscription request",
+      409,
+    );
+  }
+  return existing.subscription_id;
 }
 
 async function audit(
@@ -359,9 +353,9 @@ async function createResource(
     const input = planCreateSchema.parse(body);
     const id = createPlatformId("plan");
     await client.query(
-      `INSERT INTO subscription_plans (id, code, name, description, currency)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, input.code, input.name, input.description ?? null, input.currency],
+      `INSERT INTO subscription_plans (id, code, name, description)
+       VALUES ($1, $2, $3, $4)`,
+      [id, input.code, input.name, input.description ?? null],
     );
     return { id, action: "create" };
   }
@@ -375,19 +369,17 @@ async function createResource(
     const id = createPlatformId("planv");
     await client.query(
       `INSERT INTO subscription_plan_versions (
-         id, plan_id, version_number, billing_period, base_price_microusd,
-         trial_days, grace_period_days, allowance_tokens,
-         allowance_microusd, overage_policy, effective_from
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [id, input.planId, next.rows[0]?.number ?? 1, input.billingPeriod,
-       input.basePriceMicrousd, input.trialDays, input.gracePeriodDays,
-       input.allowanceTokens, input.allowanceMicrousd, input.overagePolicy,
-       input.effectiveFrom ?? null],
+         id, plan_id, version_number, trial_days, grace_period_days,
+         allowance_tokens
+       ) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [id, input.planId, next.rows[0]?.number ?? 1, input.trialDays,
+       input.gracePeriodDays, input.allowanceTokens],
     );
     return { id, action: "create_draft" };
   }
   if (resource === "subscription-entitlements") {
     const input = entitlementCreateSchema.parse(body);
+    await requireDraftPlanVersion(client, input.planVersionId);
     const id = createPlatformId("ent");
     await client.query(
       `INSERT INTO subscription_plan_entitlements (
@@ -404,7 +396,19 @@ async function createResource(
   }
   if (resource === "subscriptions") {
     const input = subscriptionCreateSchema.parse(body);
-    const duplicate = await existingEventSubscription(client, input.idempotencyKey);
+    const requestDigest = subscriptionRequestDigest("activated", {
+      platformUserId: input.platformUserId,
+      planVersionId: input.planVersionId,
+      startsAt: input.startsAt ?? null,
+      startInTrial: input.startInTrial,
+      reason: input.reason,
+    });
+    const duplicate = await existingEventSubscription(
+      client,
+      input.idempotencyKey,
+      "activated",
+      requestDigest,
+    );
     if (duplicate) return { id: duplicate, action: "idempotent" };
     const user = await client.query<{ status: string }>(
       "SELECT status FROM platform_users WHERE id = $1 FOR SHARE",
@@ -415,8 +419,9 @@ async function createResource(
     }
     const version = await loadPublishedVersion(client, input.planVersionId);
     const id = createPlatformId("sub");
-    const start = input.startsAt ? new Date(input.startsAt) : new Date();
-    const end = nextPeriod(start, version.billing_period);
+    const cycleAnchor = input.startsAt ? new Date(input.startsAt) : new Date();
+    const periodNumber = 0;
+    const { start, end } = monthlyCyclePeriod(cycleAnchor, periodNumber);
     const trialEnd = input.startInTrial && version.trial_days > 0
       ? new Date(start.getTime() + version.trial_days * 86_400_000)
       : null;
@@ -424,21 +429,21 @@ async function createResource(
     await client.query(
       `INSERT INTO subscriptions (
          id, platform_user_id, plan_version_id, status,
+         cycle_anchor_at, current_period_number,
          current_period_start, current_period_end, trial_ends_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [id, input.platformUserId, input.planVersionId, status, start, end, trialEnd],
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, input.platformUserId, input.planVersionId, status, cycleAnchor,
+       periodNumber, start, end, trialEnd],
     );
-    const allowanceId = await insertAllowance(client, id, start, end, version);
-    if (!trialEnd) {
-      await chargeBasePrice(client, {
-        subscriptionId: id,
-        platformUserId: input.platformUserId,
-        amountMicrousd: safeInteger(version.base_price_microusd, "base_price_microusd"),
-        idempotencyKey: input.idempotencyKey,
-        identity,
-        description: "Subscription activation charge",
-      });
-    }
+    const allowanceId = await insertAllowance(
+      client,
+      id,
+      input.planVersionId,
+      periodNumber,
+      start,
+      end,
+      version,
+    );
     await insertEvent(client, {
       subscriptionId: id,
       eventType: "activated",
@@ -446,7 +451,7 @@ async function createResource(
       identity,
       reason: input.reason,
       after: { status, planVersionId: input.planVersionId, periodStart: start.toISOString(), periodEnd: end.toISOString() },
-      metadata: { allowanceId },
+      metadata: { allowanceId, periodNumber, requestDigest },
     });
     return { id, action: "activate" };
   }
@@ -514,23 +519,31 @@ export async function handleSubscriptionUpdate(
         if (current.rows[0]?.status !== "draft") throw new AdminError("SUBSCRIPTION_VERSION_IMMUTABLE", "Only draft plan versions can be edited", 409);
         await client.query(
           `UPDATE subscription_plan_versions SET
-             billing_period = COALESCE($2, billing_period),
-             base_price_microusd = COALESCE($3, base_price_microusd),
-             trial_days = COALESCE($4, trial_days),
-             grace_period_days = COALESCE($5, grace_period_days),
-             allowance_tokens = COALESCE($6, allowance_tokens),
-             allowance_microusd = COALESCE($7, allowance_microusd),
-             overage_policy = COALESCE($8, overage_policy),
-             effective_from = CASE WHEN $9::boolean THEN $10::timestamptz ELSE effective_from END,
+             trial_days = COALESCE($2, trial_days),
+             grace_period_days = COALESCE($3, grace_period_days),
+             allowance_tokens = COALESCE($4, allowance_tokens),
              updated_at = NOW() WHERE id = $1`,
-          [id, value.billingPeriod ?? null, value.basePriceMicrousd ?? null,
-           value.trialDays ?? null, value.gracePeriodDays ?? null,
-           value.allowanceTokens ?? null, value.allowanceMicrousd ?? null,
-           value.overagePolicy ?? null, value.effectiveFrom !== undefined,
-           value.effectiveFrom ?? null],
+          [id, value.trialDays ?? null, value.gracePeriodDays ?? null,
+           value.allowanceTokens ?? null],
         );
       } else {
         const value = input as z.infer<typeof entitlementUpdateSchema>;
+        const entitlement = await client.query<{ plan_version_id: string }>(
+          `SELECT plan_version_id FROM subscription_plan_entitlements
+           WHERE id = $1 FOR UPDATE`,
+          [id],
+        );
+        if (!entitlement.rows[0]) {
+          throw new AdminError(
+            "SUBSCRIPTION_ITEM_NOT_FOUND",
+            "The subscription entitlement does not exist",
+            404,
+          );
+        }
+        await requireDraftPlanVersion(
+          client,
+          entitlement.rows[0].plan_version_id,
+        );
         await client.query(
           `UPDATE subscription_plan_entitlements SET
              gateway_scopes = COALESCE($2, gateway_scopes),
@@ -578,6 +591,8 @@ type SubscriptionRow = {
   plan_version_id: string;
   pending_plan_version_id: string | null;
   status: string;
+  cycle_anchor_at: Date;
+  current_period_number: number;
   current_period_start: Date;
   current_period_end: Date;
   renewal_enabled: boolean;
@@ -595,11 +610,22 @@ async function transitionSubscription(
     planVersionId?: string;
   },
 ) {
-  const duplicate = await existingEventSubscription(client, input.idempotencyKey);
-  if (duplicate) return duplicate;
+  const requestDigest = subscriptionRequestDigest(input.action, {
+    subscriptionId: input.id,
+    planVersionId: input.planVersionId ?? null,
+    reason: input.reason,
+  });
+  const duplicate = await existingEventSubscription(
+    client,
+    input.idempotencyKey,
+    input.action,
+    requestDigest,
+  );
+  if (duplicate) return { subscriptionId: duplicate, idempotent: true };
   const result = await client.query<SubscriptionRow>(
     `SELECT id, platform_user_id, plan_version_id, pending_plan_version_id,
-            status, current_period_start, current_period_end,
+            status, cycle_anchor_at, current_period_number,
+            current_period_start, current_period_end,
             renewal_enabled, version
      FROM subscriptions WHERE id = $1 FOR UPDATE`,
     [input.id],
@@ -610,9 +636,11 @@ async function transitionSubscription(
   let status = before.status;
   let pendingVersionId = before.pending_plan_version_id;
   let renewalEnabled = before.renewal_enabled;
+  let periodNumber = before.current_period_number;
   let start = before.current_period_start;
   let end = before.current_period_end;
   let allowanceId: string | null = null;
+  let periodsSkipped = 0;
   if (input.action === "pause") {
     if (!["trial", "active", "past_due", "cancel_at_period_end"].includes(status)) throw new AdminError("SUBSCRIPTION_TRANSITION_INVALID", "Only a callable subscription can be paused", 409);
     status = "paused";
@@ -625,11 +653,18 @@ async function transitionSubscription(
     if (!["trial", "active", "past_due", "paused"].includes(status)) throw new AdminError("SUBSCRIPTION_TRANSITION_INVALID", "This subscription cannot be cancelled", 409);
     status = "cancel_at_period_end";
     renewalEnabled = false;
-  } else if (input.action === "downgrade") {
+  } else if (input.action === "upgrade" || input.action === "downgrade") {
     if (!input.planVersionId) throw new AdminError("SUBSCRIPTION_TARGET_REQUIRED", "planVersionId is required", 400);
+    if (!["trial", "active", "past_due"].includes(status)) {
+      throw new AdminError(
+        "SUBSCRIPTION_TRANSITION_INVALID",
+        "Only a trial, active, or past-due subscription can schedule a plan change",
+        409,
+      );
+    }
     await loadPublishedVersion(client, input.planVersionId);
     pendingVersionId = input.planVersionId;
-  } else if (input.action === "upgrade" || input.action === "renew") {
+  } else if (input.action === "renew") {
     if (
       !["trial", "active", "past_due", "cancel_at_period_end"].includes(
         status,
@@ -637,31 +672,43 @@ async function transitionSubscription(
     ) {
       throw new AdminError(
         "SUBSCRIPTION_TRANSITION_INVALID",
-        "Only a trial, active, past-due, or period-end-cancelling subscription can renew or upgrade",
+        "Only a trial, active, past-due, or period-end-cancelling subscription can renew",
         409,
       );
     }
-    if (input.action === "upgrade" && !input.planVersionId) throw new AdminError("SUBSCRIPTION_TARGET_REQUIRED", "planVersionId is required", 400);
-    versionId = input.action === "upgrade"
-      ? input.planVersionId!
-      : before.pending_plan_version_id ?? before.plan_version_id;
+    const now = new Date();
+    if (now < before.current_period_end) {
+      throw new AdminError(
+        "SUBSCRIPTION_PERIOD_NOT_DUE",
+        "The subscription can renew only at or after its current period boundary",
+        409,
+        { periodEnd: before.current_period_end.toISOString() },
+      );
+    }
+    versionId = before.pending_plan_version_id ?? before.plan_version_id;
     const target = await loadPublishedVersion(client, versionId);
-    start = input.action === "renew" && before.current_period_end > new Date()
-      ? before.current_period_end
-      : new Date();
-    end = nextPeriod(start, target.billing_period);
+    const containingPeriod = monthlyCyclePeriodAt(before.cycle_anchor_at, now);
+    periodNumber = Math.max(
+      before.current_period_number + 1,
+      containingPeriod.periodNumber,
+    );
+    periodsSkipped = Math.max(
+      0,
+      periodNumber - before.current_period_number - 1,
+    );
+    ({ start, end } = monthlyCyclePeriod(before.cycle_anchor_at, periodNumber));
     status = "active";
     renewalEnabled = true;
     pendingVersionId = null;
-    await chargeBasePrice(client, {
-      subscriptionId: before.id,
-      platformUserId: before.platform_user_id,
-      amountMicrousd: safeInteger(target.base_price_microusd, "base_price_microusd"),
-      idempotencyKey: input.idempotencyKey,
-      identity: input.identity,
-      description: input.action === "upgrade" ? "Subscription upgrade charge" : "Subscription renewal charge",
-    });
-    allowanceId = await insertAllowance(client, before.id, start, end, target);
+    allowanceId = await insertAllowance(
+      client,
+      before.id,
+      versionId,
+      periodNumber,
+      start,
+      end,
+      target,
+    );
   } else {
     throw new AdminError("SUBSCRIPTION_ACTION_NOT_FOUND", "The requested subscription action does not exist", 404);
   }
@@ -669,12 +716,13 @@ async function transitionSubscription(
     `UPDATE subscriptions SET plan_version_id = $2,
        pending_plan_version_id = $3, status = $4,
        current_period_start = $5, current_period_end = $6,
-       renewal_enabled = $7,
+       renewal_enabled = $7, current_period_number = $8,
        paused_at = CASE WHEN $4 = 'paused' THEN NOW() ELSE NULL END,
        cancelled_at = CASE WHEN $4 = 'cancel_at_period_end' THEN NOW() ELSE NULL END,
        version = version + 1, updated_at = NOW()
      WHERE id = $1`,
-    [before.id, versionId, pendingVersionId, status, start, end, renewalEnabled],
+    [before.id, versionId, pendingVersionId, status, start, end,
+     renewalEnabled, periodNumber],
   );
   const after = await querySubscriptionItem(client, "subscriptions", before.id);
   await insertEvent(client, {
@@ -685,9 +733,9 @@ async function transitionSubscription(
     reason: input.reason,
     before: before as unknown as Record<string, unknown>,
     after,
-    metadata: { allowanceId },
+    metadata: { allowanceId, periodNumber, periodsSkipped, requestDigest },
   });
-  return before.id;
+  return { subscriptionId: before.id, idempotent: false };
 }
 
 export async function handleSubscriptionAction(
@@ -701,7 +749,7 @@ export async function handleSubscriptionAction(
     assertAdminMutationOrigin(request);
     const identity = await requireAdminRequest(request, "subscriptions.write");
     if (resource === "subscription-plan-versions" && action === "publish") {
-      const input = await parseBody(request, publishVersionSchema);
+      await parseBody(request, publishVersionSchema);
       const data = await withPlatformTransaction(async (client) => {
         const before = await querySubscriptionItem(client, resource, id);
         if (before.status === "published") return before;
@@ -710,11 +758,39 @@ export async function handleSubscriptionAction(
           [id],
         );
         if (count.rows[0]?.count === "0") throw new AdminError("SUBSCRIPTION_ENTITLEMENT_REQUIRED", "Publish requires at least one enabled model entitlement", 409);
+        const version = await client.query<{
+          allowance_tokens: string | number;
+          billing_period: string;
+          base_price_microusd: string | number;
+          allowance_microusd: string | number;
+          overage_policy: string;
+          effective_from: Date | null;
+        }>(
+          `SELECT allowance_tokens, billing_period, base_price_microusd,
+                  allowance_microusd, overage_policy, effective_from
+           FROM subscription_plan_versions WHERE id = $1 FOR UPDATE`,
+          [id],
+        );
+        const draft = version.rows[0];
+        if (
+          !draft ||
+          safeInteger(draft.allowance_tokens, "allowance_tokens") <= 0 ||
+          draft.billing_period !== "monthly" ||
+          safeInteger(draft.base_price_microusd, "base_price_microusd") !== 0 ||
+          safeInteger(draft.allowance_microusd, "allowance_microusd") !== 0 ||
+          draft.overage_policy !== "deny" ||
+          draft.effective_from !== null
+        ) {
+          throw new AdminError(
+            "SUBSCRIPTION_VERSION_NOT_TOKEN_ONLY",
+            "Publish requires a monthly Token-only version without monetary or global-effective fields",
+            409,
+          );
+        }
         await client.query(
           `UPDATE subscription_plan_versions SET status = 'published',
-             effective_from = COALESCE($2::timestamptz, effective_from, NOW()),
              published_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'draft'`,
-          [id, input.effectiveFrom ?? null],
+          [id],
         );
         await client.query("UPDATE subscription_plans SET status = 'active', updated_at = NOW() WHERE id = $1", [before.plan_id]);
         const after = await querySubscriptionItem(client, resource, id);
@@ -727,12 +803,28 @@ export async function handleSubscriptionAction(
     if (!["renew", "upgrade", "downgrade", "pause", "resume", "cancel"].includes(action)) throw new AdminError("SUBSCRIPTION_ACTION_NOT_FOUND", "The requested subscription action does not exist", 404);
     const input = await parseBody(request, subscriptionActionSchema);
     const data = await withPlatformTransaction(async (client) => {
-      const subscriptionId = await transitionSubscription(client, {
+      const transition = await transitionSubscription(client, {
         id, action, identity, idempotencyKey: input.idempotencyKey,
         reason: input.reason, planVersionId: input.planVersionId,
       });
-      const after = await querySubscriptionItem(client, "subscriptions", subscriptionId);
-      await audit(client, request, requestId, identity, action, resource, subscriptionId, {}, after);
+      const after = await querySubscriptionItem(
+        client,
+        "subscriptions",
+        transition.subscriptionId,
+      );
+      if (!transition.idempotent) {
+        await audit(
+          client,
+          request,
+          requestId,
+          identity,
+          action,
+          resource,
+          transition.subscriptionId,
+          {},
+          after,
+        );
+      }
       return after;
     });
     return Response.json({ data }, { headers: { "cache-control": "no-store", "x-request-id": requestId } });

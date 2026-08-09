@@ -70,6 +70,45 @@ beforeEach(() => {
 });
 
 describe("gateway preparation payload capture", () => {
+  it("returns Token allowance exhaustion fields without micro-USD fields", async () => {
+    const result = {
+      kind: "rejected" as const,
+      requestId: "req_subscription_tokens",
+      code: "SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED",
+      status: 402 as const,
+      message: "The current subscription-period Token allowance is insufficient",
+      metric: "tokens" as const,
+      unit: "tokens" as const,
+      availableTokens: 512,
+      requiredTokens: 1_024,
+      periodEnd: "2026-09-01T00:00:00.000Z",
+    };
+
+    const response = await preparationErrorResponse(result, "anthropic");
+    expect(response.status).toBe(402);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      type: "error",
+      request_id: "req_subscription_tokens",
+      error: {
+        type: "billing_error",
+        code: "SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED",
+        request_id: "req_subscription_tokens",
+        metric: "tokens",
+        unit: "tokens",
+        available_tokens: 512,
+        required_tokens: 1_024,
+        period_end: "2026-09-01T00:00:00.000Z",
+      },
+    });
+    expect(body.error).not.toHaveProperty("available_microusd");
+    expect(body.error).not.toHaveProperty("required_microusd");
+    expect(mocks.recordResponse).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: "req_subscription_tokens",
+      status: 402,
+    }));
+  });
+
   it("captures both sides of a rejected Anthropic request with protocol-correct JSON", async () => {
     mocks.begin.mockResolvedValue({
       kind: "rejected",

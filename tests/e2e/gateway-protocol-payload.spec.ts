@@ -290,8 +290,8 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
     await expect(page.getByRole("link", { name: "模型权限", exact: true })).toHaveCount(0);
     await page.goto("/admin/models/permissions");
     await expect(page).toHaveURL(/\/admin\/gateway\/rate-limits#user-model-permissions-manager$/);
-    await expect(page.getByRole("heading", { name: "用户默认 Token 上限" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "用户—模型例外限制" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "用户默认 Token 上限" }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "用户—模型例外限制" }).first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "套餐权益提示" })).toBeVisible();
     await expect(page.getByRole("link", { name: "前往套餐权益" })).toHaveAttribute("href", "/admin/subscriptions/entitlements");
     await expect(page.getByRole("heading", { name: "实时用量窗口" })).toBeVisible();

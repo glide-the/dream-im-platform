@@ -1,8 +1,11 @@
 # 01 · Subscription Experience
 
-> 文档状态：**Planned**  
-> 正式入口：`/story-workspace/subscription`  
-> 操作者：已登录的 Dream canonical user  
+> 文档状态：**Planned**
+>
+> 正式入口：`/story-workspace/subscription`
+>
+> 操作者：已登录的 Dream canonical user
+>
 > 返回：[Dream 交互设计索引](README.md)
 
 ## 1. 页面目标与状态分层
@@ -10,19 +13,21 @@
 ### Current
 
 - `StoryWorkspaceSubscriptionPage.tsx` 渲染本地静态三档套餐数组和“即将开放”文案。
-- 页面没有真实 Subscription、Plan Version、Entitlement、Allowance、Billing Account 或生命周期命令数据源。
-- 因此当前页面不能作为价格、用户订阅或可用权益证据。
+- 页面没有真实 Subscription、Plan Version、Entitlement、个人月度 Token Allowance 或生命周期命令数据源。
+- 既有设计曾把套餐与价格、currency、金额余额、Payment 和平台统一生效日绑定；这些字段不是 Token-only 订阅合同。
 
 ### Target
 
-让用户在一个可追溯页面内：理解当前订阅与周期，对比对其真实可用的已发布 Plan Version/Entitlement，预览开通、续费、升级、降级、暂停、恢复和取消的实际影响，再以幂等命令提交给 Admin。
+让用户在同一页面理解当前订阅状态、个人月度周期、Token 发放与权益，对比 Admin 已发布的 Token-only Plan Version，预览下一周期的变更，再以幂等命令提交。
+
+页面只回答：本周期何时开始/结束、发放/预留/消耗/剩余多少 Token、允许哪些模型和 Scope、RPM/Storage 限制是什么、下周期将使用哪个套餐。
 
 ### Release Gate
 
-- 删除静态 Plan 数组和任何 fallback；只渲染 Admin 产品 API 返回的 published/effective 版本。
-- canonical user 从 Dream Session 绑定，所有用户都可被自动投影为 Billing Account；页面不存在手工开户。
-- 全生命周期命令、幂等重放、并发 409、网络结果未知、两视口和无障碍 E2E 通过。
-- 页面的 Current/Target 文案与 API 实现、PRD 和架构状态一致。
+- 删除静态 Plan 数组和任何 fallback；只渲染 Admin 产品 API 返回的 published 版本。
+- canonical user 从 Dream Session 绑定；每个平台用户天然是订阅主体，不存在手工开户或独立“计费用户”。
+- DTO、DOM、控件和文案均不包含套餐价格、currency、金额 allowance、cash balance、充值、金额超额、Payment 或全局 `effectiveFrom/effectiveTo`。
+- 全生命周期命令、个人月度锚点、幂等重放、并发 409、网络结果未知、两视口和无障碍 E2E 通过。
 
 ## 2. 数据来源与合同
 
@@ -38,199 +43,217 @@ Dream BFF `GET /api/story-workspace/subscription/context` 服务端调用 `GET /
       "id": "sub_...",
       "status": "active",
       "version": 7,
-      "currentPeriodStart": "2026-08-01T00:00:00Z",
-      "currentPeriodEnd": "2026-09-01T00:00:00Z",
+      "cycleAnchorAt": "2026-08-09T10:00:00Z",
+      "currentPeriodNumber": 0,
+      "currentPeriodStart": "2026-08-09T10:00:00Z",
+      "currentPeriodEnd": "2026-09-09T10:00:00Z",
       "cancelAtPeriodEnd": false,
       "pendingChange": null,
-      "allowedActions": ["renew", "upgrade", "downgrade", "pause", "cancel"]
+      "allowedActions": ["upgrade", "downgrade", "pause", "cancel"]
     },
     "planVersion": {
       "planCode": "creator",
       "planName": "Creator",
       "planVersionId": "pv_...",
       "version": 4,
-      "billingCycle": "monthly",
-      "basePriceMicrousd": 12000000,
-      "currency": "USD"
+      "billingCycle": "monthly"
     },
-    "entitlements": [],
+    "entitlements": [
+      {
+        "gatewayScope": "story.generate",
+        "modelAliases": ["dream-balanced"],
+        "rpmLimit": 30,
+        "storageBytes": 10737418240
+      }
+    ],
     "allowance": {
       "unit": "token",
       "granted": 1000000,
       "reserved": 1000,
       "consumed": 240000,
       "remaining": 759000,
-      "resetsAt": "2026-09-01T00:00:00Z"
+      "resetsAt": "2026-09-09T10:00:00Z"
     },
-    "billingAccount": {
-      "currency": "USD",
-      "availableMicrousd": 8500000,
-      "reservedMicrousd": 200000,
-      "version": 11
-    },
-    "asOf": "2026-08-09T10:00:00Z"
+    "asOf": "2026-08-09T10:05:00Z"
   },
   "meta": { "requestId": "req_..." }
 }
 ```
 
-示例只定义类型/单位，不得复制其中数值作为 fixture 外的页面数据。无订阅时 `subscription/planVersion/allowance` 为 `null`，不由前端构造 free plan。`canonicalUser` 不包含内部 `platformUserId`。
+示例只定义类型与单位，不得复制数值为页面假数据。无订阅时 `subscription/planVersion/allowance` 为 `null`，不由前端构造 free plan。`canonicalUser` 不包含平行用户 ID。
+
+`cycleAnchorAt` 是用户个人月度锚点，`currentPeriodNumber` 是相对锚点的零基周期序号；二者都不是平台套餐生效日。服务端必须执行月末钳制并记住原锚点日：1 月 31 日→2 月月末→3 月 31 日；前端不得用固定 30 天或前一周期结束日自行推导。
 
 ### 2.2 套餐列表
 
-`GET /api/story-workspace/subscription/plans?page=1&pageSize=20` → `GET /api/product/v1/plans`，返回 `{data, meta:{total,page,pageSize}}`。每项只允许：
+`GET /api/story-workspace/subscription/plans?page=1&pageSize=20` → `GET /api/product/v1/plans`，返回 `{data,meta:{total,page,pageSize}}`。每项字段白名单：
 
 - `planCode/planName/description`；
-- published `planVersionId/version/billingCycle/effectiveFrom/effectiveTo`；
-- `basePriceMicrousd/currency`；
-- 结构化 `entitlements`：`scope/modelAlias/rpm/tokenLimit/storageLimit/overagePolicy`；
-- `eligibility` 与服务端解释；
-- `availableActions` 与目标生效方式。
+- `planVersionId/version/billingCycle`，其中 `billingCycle` 固定为 `monthly`；
+- `monthlyAllowanceTokens`；
+- `entitlements`：`gatewayScopes/modelAliases/rpmLimit/storageBytes`；
+- `eligibility` 与服务端安全解释；
+- `availableActions` 和变更将在当前用户 `currentPeriodEnd` 应用的说明。
 
-列表不接受浏览器传入的 user ID。无 published/effective 版本时 System Empty；页面不显示过期价格、未发布版本或 Admin 内部备注。
+列表不接受浏览器传入 user ID。无 published 版本时进入 System Empty。`publishedAt` 仅可作为版本元数据，不得显示或解释成全体用户统一生效时间；产品合同不返回 `effectiveFrom/effectiveTo`。
 
 ### 2.3 预览与命令
 
-`POST /api/story-workspace/subscription/previews` 转发至 `POST /api/product/v1/me/subscription-command-previews`：
+预览与执行共用 Dream BFF `POST /api/story-workspace/subscription/commands` 和 Admin `POST /api/product/v1/me/subscription-commands`。升级预览：
 
 ```json
 {
   "action": "upgrade",
+  "phase": "preview",
   "targetPlanVersionId": "pv_...",
-  "expectedSubscriptionVersion": 7,
-  "cancelTiming": null
+  "expectedVersion": 7
 }
 ```
 
-服务端返回 `previewToken/expiresAt/current/target/effectiveAt/priceImpactMicrousd/allowanceImpact/balanceImpact/gatewayImpact/paymentRequirement/warnings`。未知/无法估算字段为 `null` 并有 `reasonCode`，不显示 0。
+服务端返回：
 
-`POST /api/story-workspace/subscription/commands` 转发至 `POST /api/product/v1/me/subscription-commands`：
+- `previewId/digest/expiresAt`；
+- `current/target` 套餐与版本；
+- `appliesAt`，升级和降级均等于该用户 `currentPeriodEnd`；
+- `allowanceImpact`，明确本周期不变、下周期 Token 数；
+- `entitlementImpact/gatewayImpact/warnings`；
+- `allowed` 与稳定 `reasonCode`。
+
+不得返回或渲染 `priceImpactMicrousd/balanceImpact/paymentRequirement/currency`。前端不自行做差额、比例、金额或 Token 折算。
+
+执行使用同一路由，并由 Dream BFF 转发 HTTP `Idempotency-Key`：
 
 ```json
 {
   "action": "upgrade",
+  "phase": "execute",
   "targetPlanVersionId": "pv_...",
-  "expectedSubscriptionVersion": 7,
-  "previewToken": "opaque-short-lived-token",
-  "idempotencyKey": "client-operation-uuid",
-  "reason": "User confirmed upgrade"
+  "expectedVersion": 7,
+  "previewId": "preview_...",
+  "digest": "sha256:...",
+  "reason": "User confirmed next-period upgrade"
 }
 ```
 
-响应包含 `commandId/outcome(applied|scheduled|pending_authorization)/subscription/actualImpact/paymentState/idempotentReplay/requestId`。浏览器不自行计算新余额；只使用命令响应和随后 refetch。
+响应包含 `commandId/outcome(applied|scheduled)/subscription/actualImpact/idempotentReplay/requestId`。`action` 只允许 `create|renew|upgrade|downgrade|pause|resume|cancel|revoke_cancel`。浏览器只使用命令回执与随后 refetch，不自行构造未来周期或发放 Token。
 
-## 3. 核心关系
-
-```mermaid
-flowchart LR
-  U["Canonical User"] -->|"automatic projection"| B["Billing Account"]
-  B --> S["Subscription"]
-  S --> V["Immutable Plan Version"]
-```
+## 3. 个人月度周期与生命周期规则
 
 ```mermaid
-flowchart LR
-  S["Subscription"] --> V["Plan Version"]
-  V --> E["Entitlement"]
-  E --> MP["Model Permission"]
-  MP --> GA["Gateway eligibility"]
+stateDiagram-v2
+  [*] --> Trial: create trial
+  [*] --> Active: create
+  Trial --> Active: next period activation
+  Active --> Active: renew at period boundary
+  Active --> Active: upgrade/downgrade at next period
+  Active --> Paused: pause
+  Paused --> Active: resume without resetting period
+  Active --> CancelAtPeriodEnd: cancel
+  CancelAtPeriodEnd --> Active: revoke_cancel
+  CancelAtPeriodEnd --> Cancelled: period ends
+  Trial --> Expired: trial ends
+  Cancelled --> Active: create new subscription
+  Expired --> Active: create new subscription
 ```
 
-Dream 不让用户编辑 Billing Account、Plan Version 或 Entitlement，也不把内部投影键显示成业务对象。
+| 动作 | 应用时点 | Token 与周期规则 | 冲突行为 |
+|---|---|---|---|
+| 开通 | 命令成功时间 | 建立个人 `cycleAnchorAt/currentPeriodNumber=0`，发放首个完整月度 Token | 已有不可兼容订阅返 409 |
+| 续费 | 当前周期边界 | 只生成一个新周期和一份新 Token；不允许提前使用未来 Token | 提前续费或不同 key 重复续费返 409 |
+| 升级 | 当前 `currentPeriodEnd` | 当前周期 Token/权益不变；下一周期采用目标版本完整快照 | 已有 pending change 时按最新状态重新 preview |
+| 降级 | 当前 `currentPeriodEnd` | 当前周期不提前收窄；下一周期采用目标版本 | 与并发取消/升级冲突返 409 |
+| 暂停 | 服务端命令时点 | 不重置个人锚点、不重复发放；Gateway 按状态拒绝 | 状态不允许返 409/403 |
+| 恢复 | 服务端命令时点 | 恢复剩余当前周期；不新开周期 | 过期后需 create，不伪装 resume |
+| 取消 | 默认当前周期末 | 保留本周期 Token/权益至 `currentPeriodEnd` | 已取消命令幂等回放同一结果 |
+| 撤销期末取消 | 周期结束前 | 清除期末取消标记，周期与 Token 不变 | 周期已结束返 409 |
 
-## 4. 页面结构、字段和控件
+Plan Version 的发布只决定能否被新命令选择。已订阅用户在本周期固定引用不可变版本快照，平台不得用一个全局日期无提示切换所有用户。
+
+## 4. 页面结构、字段与控件
 
 | 区域 | 字段/内容 | 控件 | 规则 |
 |---|---|---|---|
-| 页头 | 订阅与用量、`asOf`、数据健康 | Refresh button | 刷新不清空当前内容；加载时标记 stale，不冒充最新 |
-| 当前订阅 | 状态、Plan + Version、周期、续费/取消、pending change | status tag、definition list | 状态文字+图标；显示精确时区 |
-| Allowance | granted/reserved/consumed/remaining/reset | progress + definition list | 数值守恒可读；不与 cash 合并 |
-| 当前权益 | scope、model alias、RPM、Token/Storage、overage | 只读分组列表 | `null` 显示“未设置”，不补默认值 |
-| 套餐比较 | 名称、version、cycle、price、entitlements、eligibility | radio/list + “预览影响” | 只展示 API 返回项；不用 marketing 静态卡片 |
-| 影响预览 | current→target、effective time、price/allowance/balance/gateway/payment | 宽 Drawer/Modal | 数据由 preview API 提供；过期后不可提交 |
-| 确认区 | reason、同意影响、幂等操作 ID | textarea + checkbox + button | 不允许重复点击；永不要求输入 Secret |
+| 页头 | 订阅、`asOf`、数据健康 | H1 + Refresh button | 刷新不清空当前内容；stale 有文字标签 |
+| 当前订阅 | 状态、Plan + Version、个人周期、期末取消、pending change | status tag + definition list | 精确时区；不用“平台生效日” |
+| Token Allowance | granted/reserved/consumed/remaining/reset | progress + definition list | 每项显式 `Token`；reserved 有解释 |
+| 当前权益 | model alias、Gateway Scope、RPM、Storage | 只读分组列表 | `null` 显示“未设置”，不补默认值 |
+| 套餐比较 | 名称、version、monthly Token、模型/Scope/RPM/Storage、eligibility | 原生语义 radio + 平面对比列表 | 无价格、currency、金额或 Payment |
+| 影响预览 | current→target、`appliesAt`、下周期 Token/权益变化 | 宽 Drawer/Modal | 升降级固定下周期；过期 preview 不可提交 |
+| 确认区 | reason、确认影响、幂等操作状态 | textarea + checkbox + button | 防重复点击；永不要求 Secret |
 
 ### 订阅状态标签
 
 | 状态 | 主文案 | 关键辅助信息 |
 |---|---|---|
-| `trial` | 试用中 | 试用结束时间、结束后条件 |
-| `active` | 已生效 | 当前周期结束时间 |
-| `past_due` | 待处理 | 受影响功能与处理入口；不假设支付渠道 |
-| `paused` | 已暂停 | Gateway 可用性与可恢复时间 |
-| `cancel_at_period_end` | 将于期末取消 | 实际生效时间和 API 返回的可用恢复动作 |
-| `cancelled` | 已取消 | 终止时间和历史版本 |
-| `expired` | 已过期 | 过期时间与可重新开通条件 |
+| `trial` | 试用中 | 个人试用结束与 Token reset 时间 |
+| `active` | 使用中 | 当前个人周期结束时间 |
+| `past_due` | 状态待处理 | 仅按服务端真实状态说明；不得引导付款 |
+| `paused` | 已暂停 | Gateway 不可用范围与可恢复动作 |
+| `cancel_at_period_end` | 将于期末取消 | 实际期末时间与撤销动作 |
+| `cancelled` | 已取消 | 终止时间与重新开通条件 |
+| `expired` | 已过期 | 过期时间与可选择套餐 |
 
-## 5. 生命周期与影响预览
-
-```mermaid
-stateDiagram-v2
-  [*] --> Trial: 开通试用
-  [*] --> Active: 开通 / 人工授权
-  Trial --> Active: 续费 / 授权完成
-  Active --> Active: 立即升级 / 续费
-  Active --> Active: 期末降级生效
-  Active --> Paused: 暂停
-  Paused --> Active: 恢复
-  Active --> CancelAtPeriodEnd: 期末取消
-  CancelAtPeriodEnd --> Active: 服务端允许的恢复
-  CancelAtPeriodEnd --> Cancelled: 周期结束
-  Trial --> Expired: 试用过期
-  Cancelled --> Active: 重新开通
-  Expired --> Active: 重新开通
-```
-
-每个动作的 preview 必须包括：
-
-| 动作 | 生效时间 | 必须预览的影响 | 不得假设 |
-|---|---|---|---|
-| 开通 | 立即、试用开始或待授权 | 目标版本、价格、试用、Allowance、Gateway、payment requirement | 未接真实渠道时不显示已支付 |
-| 续费 | 新周期 | 新 period、价格版本、Allowance reset/grant、余额/授权 | 不隐藏全额扣费或版本变化 |
-| 升级 | API 返回的立即/期末 | 当前→目标、是否重开周期、是否 prorate/refund、新 Allowance | 不在前端自算差价 |
-| 降级 | 默认期末，以 API 为准 | 排队变更、生效时间、权益/模型丧失 | 不在当前周期提前收窄体验 |
-| 暂停 | 命令结果时间 | Gateway 停止范围、period/allowance 处理、恢复条件 | 不只显示一个 Switch |
-| 恢复 | 命令结果时间 | 恢复后状态、新周期/费用/权益、Gateway | 不把收费的 renew/upgrade 标为“撤销取消” |
-| 取消 | 期末或 API 允许的时间 | 最后可用时间、Allowance/余额、Gateway、可恢复条件 | 不隐藏未结算 Usage |
-
-## 6. Loading、Empty 和错误
+## 5. Loading、Empty 与错误恢复
 
 | 状态 | 展示 | 恢复 |
 |---|---|---|
-| Loading | 稳定页头+等高订阅/Allowance/套餐 skeleton，`aria-busy=true` | 请求可取消；不显示假数值 |
-| 无订阅 | “当前没有订阅”+真实可用 Plan | 预览开通；无 Plan 则说明暂无可用版本 |
+| Loading | 稳定页头+等高订阅/Token/套餐 skeleton，`aria-busy=true` | 请求可取消；不显示假数值 |
+| 无订阅 | “当前没有订阅”+真实可用 Plan | 预览开通；无 Plan 时说明暂无版本 |
 | 无可用 Plan | 不显示过期/静态套餐 | 刷新或联系支持；显示 request ID |
-| 403 | 具体状态/权益条件；不显示不可用命令 | 返回当前订阅概览 |
-| 409 | 保留 Drawer 和 reason，显示 current version 已变 | 刷新→重新 preview→使用新 idempotency key |
-| 429 | 提交命令过快或读取限制的窗口和 Retry-After | 按计时后重试；禁用按钮但不抢焦 |
-| 503 | 明确 Admin/PG 不可用或维护，显示 `asOf` | 重试；不切回静态 plans |
-| 结果未知 | 不显示 success，显示 operation ID | 用同一幂等键查询/重放；按服务器结果刷新 |
+| 401 | 不渲染订阅或 Token | 登录后返回原安全路由 |
+| 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED` | 当前个人周期 Token 不足 | 显示 `availableTokens/requiredTokens/periodEnd`，等待重置或预览下周期套餐 |
+| 403 | 具体状态、模型或 Scope 条件 | 返回当前订阅概览，不显示不可用命令 |
+| 404 | Plan/Subscription 不存在或不可见 | 返回真实空状态并刷新列表 |
+| 409 | 保留 Drawer/reason，显示服务器版本或状态变化 | 刷新→重新 preview→提交；不提前发 Token |
+| 429 | 命令或 Gateway 窗口限流 | 按 `Retry-After` 后重试；禁用按钮但不抢焦 |
+| 503 | Admin/PG/Gateway 不可用或合同含禁用字段 | 重试；不切回静态 plans、金额或 Payment UI |
+| 结果未知 | 不显示成功，显示 operation ID | 使用同一幂等键查询/重放，按服务器结果刷新 |
 
-## 7. 响应式、键盘和读屏
+## 6. 高风险确认与错误预防
+
+- 升级/降级确认标题必须写“将在 {currentPeriodEnd} 应用”，不能用笼统“立即生效”。
+- 取消确认必须列出最后可用时间、剩余 Token 的到期处理和 `revoke_cancel` 截止条件。
+- 暂停确认列出 Gateway 受影响 Scope，并明确恢复不会重置 Token。
+- 二次确认使用明确按钮文案，如“确认下周期升级”；不使用通用“确定”。
+- `previewId` 过期、版本变化或 pending change 冲突时禁止静默重新提交。
+
+## 7. Secret、身份与数据边界
+
+- 页面、DOM、Storage、Network response、analytics 和日志永不出现 Gateway Key、Provider Secret、Payment Secret、System Secret 或服务间凭据。
+- canonical user 由 Dream Session 确定；BFF 不接受浏览器提交 user ID，页面不存在用户映射控件。
+- Plan/Entitlement 响应不含 Provider endpoint、routing secret reference、Admin 内部备注、价格或财务对象。
+- Usage 与 Subscription Event 为只读事实；Dream 不提供手工 Token 发放、调整、编辑或删除入口。
+
+## 8. 响应式与无障碍
 
 ### 1440×1000
 
-- 上部为当前订阅与 Allowance/Balance 摘要；下部套餐比较用平面对比表，不使用三列 marketing 卡片。
-- 影响预览宽 Drawer 最大 720px，标题/错误摘要/最终操作保持可见，内容独立滚动。
+- 上部为当前订阅与 Token Allowance 2:1 摘要，下部为权益和套餐平面对比；不使用营销三卡布局。
+- Preview Drawer 宽度约 560–640px，首屏显示应用时点和 Token 变化；操作区不遮挡警告。
+- 桌面表格仅在内部容器横滚，表头与套餐名称保持可见。
 
 ### 390×844
 
-- 顺序为状态→周期→Allowance→Balance→权益→可用 Plan；套餐对比改为可展开的定义列表。
-- Preview 全屏；底部操作区不遮挡 checkbox/error/safe area，长 ID 不撑开视口。
+- 顺序为状态→个人周期→Token→权益→可用 Plan；套餐改为可展开定义列表。
+- Drawer/Modal 全屏并考虑 safe area；主操作位于内容流末尾，不固定遮挡 402/409。
+- 时间与长 ID 可换行；页面无 document 横向溢出。
 
-### 焦点与读屏
+### 键盘、焦点、Label 与读屏
 
-- 套餐选择使用原生 radio 语义；每项 accessible name 包含名称、版本、周期与格式化价格。
-- Drawer 锁焦，打开聚焦 H2/摘要，409 聚焦冲突摘要，关闭归焦原动作。
-- 当状态因后台命令改变时，`aria-live=polite` 宣布实际状态和生效时间；不只宣布“成功”。
+- 套餐选择使用原生 radio 语义；accessible name 包含名称、版本、月度 Token 与关键权益。
+- Drawer 打开后聚焦标题/影响摘要，Tab 留在层内，Escape 关闭，关闭后归焦原按钮。
+- 确认 checkbox 有独立 label 和 description；错误摘要 `role=alert`，首错字段 `aria-describedby` 关联错误。
+- 进度条 `aria-valuemin=0`、`aria-valuemax=granted`、`aria-valuenow=consumed`，读屏文本另报 reserved 与 remaining。
+- 状态变化由单一 `aria-live=polite` 公告；颜色、图标、进度都配文字。
 
-## 8. 可自动化验收
+## 9. 可自动化验收
 
-- `DREAM-SUB-01`：无订阅用户仅看到 API 返回的 published Plans；断网/503 时不出现静态三档。
-- `DREAM-SUB-02`：trial/active/past_due/paused/cancel_at_period_end/cancelled/expired 的状态、时间和 allowed actions 与 API 一致。
-- `DREAM-SUB-03`：七类生命周期操作都必须先拿 previewToken；过期/并发返 409 且保留输入。
-- `DREAM-SUB-04`：重复提交同 idempotency key 只产生一个 Subscription Event/账务效果，UI 显示 `idempotentReplay`。
-- `DREAM-SUB-05`：所有价格/影响传输值为整数 micro-USD，无 JS 浮点反算提交。
-- `DREAM-SUB-06`：无真实支付渠道时，开通/续费只能显示待人工授权或测试环境真实状态，不显示虚假支付成功。
-- `DREAM-SUB-07`：1440×1000 与 390×844 无横向溢出；只用键盘可完成选择、preview、确认、冲突恢复和关闭归焦。
-
+- `DREAM-SUB-01`：无 Session 返 401；页面和响应不泄露订阅、Token 或内部 user ID。
+- `DREAM-SUB-02`：每个平台用户可直接读取自己的订阅上下文；不存在“创建计费用户”入口或独立名册。
+- `DREAM-SUB-03`：套餐列表只含 monthly Token、model/scope/RPM/storage；价格、currency、金额 allowance、balance、Payment 和 `effectiveFrom/effectiveTo` 均不存在。
+- `DREAM-SUB-04`：1 月 31 日锚点按月末钳制后回到 3 月 31 日；不同用户按各自起点计算。
+- `DREAM-SUB-05`：升级/降级只在各自 `currentPeriodEnd` 应用；本周期 Token 不变且不重复发放。
+- `DREAM-SUB-06`：提前续费、重复续费、同幂等键异 payload、并发变更均返确定 409 且无额外周期/Token。
+- `DREAM-SUB-07`：Token 耗尽返 402，单位为 token，页面无现金补扣、充值或金额超额路径。
+- `DREAM-SUB-08`：loading/empty/401/402/403/404/409/429/503 和网络结果未知均显示准确恢复动作。
+- `DREAM-SUB-09`：1440×1000 与 390×844 下无横向 document overflow；radio、Drawer、焦点归还、label、live region 与 200% zoom 通过。

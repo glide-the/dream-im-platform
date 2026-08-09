@@ -120,6 +120,13 @@
       "when": 1786291200000,
       "tag": "0016_default_new_user_daily_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786294800000,
+      "tag": "0017_subscription_token_only_monthly",
+      "breakpoints": true
     }
   ]
 }

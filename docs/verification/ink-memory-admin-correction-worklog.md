@@ -599,3 +599,203 @@ Optional Enhancers:
 
 - 架构、PRD、交互设计正文尚未修改：本 Round 记录是进入阶段前的强制门禁，完成本记录后才可开始。
 - 应用代码、数据库和外部服务不执行：必须等待本阶段文档与 Reader Testing 完成。
+
+## Round 31 — Token-only 月度订阅语义纠偏审计
+
+Optimized Prompt:
+
+作为 Ink Memory 的资深产品架构师、PostgreSQL 数据架构师、订阅状态机架构师、Gateway 计量结算工程师和 Refine UI 负责人，纠正当前 Subscription Plan/Plan Version 把订阅 Token 权益与金额额度、平台统一生效日期混合的业务错误。先对最新工作树执行证据化审计，逐项追踪 `allowance_microusd`、套餐 currency/base price、Plan Version `effective_from/effective_to`、Subscription `current_period_start/current_period_end`、Allowance grant/renew、Gateway eligibility/settlement、Ledger、API contracts、Refine list/form/detail、Dream 产品 API、PRD、交互规范、Drizzle schema/migration 和测试的真实调用链；不得仅删除表格列形成视觉修复。
+
+固定目标业务不变量：Subscription Plan 是用户级月度 Token 权益规则，只定义周期、Token 配额、模型/Scope/RPM/Storage 等非货币权益；不定义或发放 micro-USD 金额额度，不把 Token 折算成套餐金额，不以平台统一 `effective_from/effective_to` 决定所有用户何时生效。每个 Subscription 以自身 `current_period_start/current_period_end` 计算月度周期并在周期边界幂等发放 Token allowance；Plan Version 只作为不可覆盖的规则快照，以 draft/published/retired 与 `published_at`/版本号管理，不使用全局生效时间窗。升级、降级、续费和版本切换必须明确立即或下周期语义，并保持 Token grant/reserved/consumed 守恒。
+
+Subscription 域不得包含 currency、base price、subscription charge、monetary allowance、预计金额超额或 PaymentAdapter 依赖。既有 cash Billing Account、micro-USD Ledger、Provider Pricing 和 Gateway pay-as-you-go/overage 若继续保留，必须作为独立按量计费领域：不能由套餐发放、不能影响套餐 Token 额度展示，也不能把 Token allowance 写入 micro-USD 字段。真实支付与订阅购买不在本轮；不得因移除套餐金额破坏历史现金账本、Provider 定价快照或 Gateway 已结算事实。
+
+先更新权威 PRD、架构与交互文档并记录 Current/Target/Migration/Release Gate，再修改 Schema、前向且可回滚的 Drizzle migration、Repository/Service/API/UI 和测试。旧列不得直接 DROP；采用停止写入、nullable/deprecated、读路径切换、回填/验证和后续独立清理的分阶段方案。Route Handler 保持轻薄；Usage、Ledger、Audit 只追加；Secret 永不回显；只使用显式隔离 PostgreSQL。保留用户并行未提交修改，所有编辑使用小块增量 patch。
+
+验收必须证明：Plan/Version 页面不再出现“金额额度”、币种、套餐价格或平台生效窗口；月度 Token 配额由每个用户自己的订阅周期计算；两个不同开始日用户的周期互不影响；重复续费/并发周期推进不重复发放 Token；Gateway 先消耗 Token allowance，独立现金结算仅按已批准的非订阅策略发生；历史 monetary subscription 数据可审计但不再参与新决策。运行聚焦 unit、TypeScript、lint、隔离 PostgreSQL integration、focused Playwright，并覆盖 1440×1000 与 390×844；不得连接、迁移或清理共享数据库。
+
+Optional Enhancers:
+
+- 为月末、闰年、时区、补偿重试和并发 renewal 增加状态机属性测试。
+- 在 Subscription 详情增加仅 Token 的 `granted / reserved / consumed / remaining` 周期进度，不展示任何货币换算。
+- 为 deprecated monetary 字段增加只读审计报表与迁移完成率，但不在运营主流程继续展示。
+
+范围变化：
+
+- Subscription 从“价格 + 金额/Token allowance + 平台有效窗口”收敛为纯 Token 月度权益规则。
+- 真实支付、PaymentAdapter 与 subscription charge 不再属于 Subscription 当前实现链路；cash Billing、Provider Pricing 和 Gateway 按量结算仅作为独立领域保留。
+- 本轮先审计并更新 PRD/交互，再实施代码与隔离验证；不得把移除一个 UI 列误报为完成。
+
+执行证据和验证结果：
+
+- 尚未开始代码审计；本 Round 是进入纠偏阶段前的强制计划记录。
+
+未执行事项及原因：
+
+- Schema、API、UI 和测试尚未修改：必须先完成真实调用链审计和文档语义更新。
+- 未连接任何数据库或运行浏览器：隔离测试目标尚未建立。
+
+## Round 32 — Token-only 月度订阅 PRD、架构与交互规范
+
+Optimized Prompt:
+
+作为 Ink Memory 的产品架构师、订阅状态机架构师、AI Gateway 计量负责人和 UI/UX 负责人，以 Round 31 的真实代码审计为证据，在修改 Schema、服务或页面前，先把权威 PRD、架构说明与交互规范统一纠偏为“用户级 Token-only 月度订阅”。逐文件读取最新工作树并使用小块增量修改，保留用户和并行任务已有的未提交内容。
+
+固定产品定义：canonical `users` 是唯一平台用户全集，每个平台用户天然可拥有订阅；Subscription Plan 只保存稳定的 code/name/status/description，Plan Version 是发布后不可覆盖的月度 Token 与非货币权益快照。版本不含 currency、base price、金额 allowance、现金 overage、Payment 依赖或平台统一 `effective_from/effective_to`。套餐规则在每个用户自己的 `[current_period_start,current_period_end)` 周期边界应用；两个不同开通日的用户有独立周期。版本只用 version/status/published_at 表达发布历史，不能用平台日历替代用户周期。
+
+生命周期采用无金额语义：开通按用户 anchor 建首期；升级和降级都排到下一周期，避免中途重复发放 Token；续期只能在实际周期边界幂等推进；暂停、恢复和期末取消不收费。Token allowance 只展示与保存 granted/reserved/consumed/remaining tokens。套餐 Token 用尽返回明确 Token 单位的 402，不把 Token 折算成 micro-USD，也不由套餐自动动用现金余额。Provider Pricing、Billing Account、现金 Ledger 与非订阅按量调用可以作为独立领域继续存在，但不得出现在套餐权益、用户订阅详情或订阅购买链路中。历史 subscription monetary 字段和账本事实只读保留并分阶段停止写入，不直接删除。
+
+至少更新平台订阅 PRD、订阅交互模块、平台总纲中相关引用、Gateway/Billing 边界文档，以及 `docs/architecture/ink-dream-memory/` 和 `docs/design/ink-dream-memory/` 下所有把套餐价格、余额、PaymentAdapter、全局生效窗口或金额超额当作订阅依赖的正文。Dream 页面只展示真实套餐 Token 规则、个人周期、Token 使用进度、模型权限与状态；不得展示套餐价格、充值、支付、金额余额或预计金额超额。真实支付和订阅支付明确 Deferred，不作为本轮发布门禁。
+
+交互规范必须覆盖桌面 1440×1000 与移动 390×844、loading/empty/401/402/403/404/409/429/503、字段控件、Token 单位、生命周期确认、键盘/焦点/label/aria-live、高风险操作和错误恢复。Mermaid 流程统一为 `User → Subscription → Plan Version → Entitlement → Token Allowance → Gateway → Usage`，现金 Billing 仅以独立旁路出现。完成后执行关键词、链接、H1、Mermaid 和 Markdown 检查，并由无上下文读者验证“套餐不发金额、没有全局生效日、个人月度周期、支付延期、现金域独立”五项均能唯一复述。
+
+Optional Enhancers:
+
+- 为 Jan 31、闰年和两个不同开通日补充周期示例，明确锚点保持规则。
+- 增加“历史金额字段仅审计、运营主流程不展示”的迁移状态徽标与发布门禁。
+
+范围变化：
+
+- Round 30 中 Subscription 对 price、monetary allowance、cash overage、PaymentAdapter/Webhook 的依赖全部撤销；真实支付与订阅支付恢复为 Deferred。
+- Plan Version 不再使用平台全局生效时间；版本选择只在用户开通或个人周期边界发生。
+- Provider Pricing 和独立现金按量计费继续存在，但不是 Subscription 权益或套餐兜底。
+
+执行证据和验证结果：
+
+- Round 31 已完成 Schema、migration、contract、service、Gateway、UI、测试和文档链路审计，确认错误语义是跨层实现而非单列表头。
+- 本 Round 记录是进入权威文档修改前的强制门禁；正文与机械检查尚未开始。
+
+未执行事项及原因：
+
+- 应用代码、Drizzle migration、数据库和浏览器测试尚未执行；必须等待本阶段文档更新与 Reader Testing 完成。
+
+## Round 33 — Token-only 月度订阅范围确认与执行计划重置
+
+Optimized Prompt:
+
+作为 Ink Memory 的资深产品架构师、PostgreSQL 迁移架构师、订阅状态机与 AI Gateway 架构师、FastAPI/Python 和 Next.js/Refine 工程负责人，以用户最新明确确认为最高优先级，将 Token-only 用户级月度订阅设为本轮唯一权威产品定义，并据此继续完成文档一致性、代码实现和隔离验证。
+
+固定范围：canonical PostgreSQL `users` 是唯一平台用户全集；每个用户天然可拥有订阅。Subscription Plan 只保存稳定身份与状态，Plan Version 是发布后不可覆盖的月度 Token/模型/Scope/RPM/Storage 规则快照；不含 currency、base price、金额 allowance、cash overage、订阅 charge、PaymentAdapter 依赖或平台统一 `effective_from/effective_to`。每个 Subscription 使用自身 `billing_anchor_at/current_period_start/current_period_end`，在个人周期边界幂等发放 Token allowance；升级和降级排到下一周期，续期不得提前或重复发放，暂停、恢复、期末取消与撤销取消不产生金额语义。
+
+Gateway 资格链固定为 canonical user → active subscription → published Plan Version → Entitlement/model permission → RPM/Token limit → Token allowance reserve/capture/release → Provider → Token Usage。套餐 Token 耗尽返回明确 Token 单位的 402，不把 Token 写入 micro-USD 字段，也不自动动用现金余额。既有 Provider Pricing、Billing Account、micro-USD Ledger 与非订阅按量调用保留为独立历史/按量域，不得进入 Subscription DTO、Dream 套餐页面或 Token allowance 决策。
+
+真实支付、订阅支付、PaymentAdapter、Webhook event store、Fake Adapter 与第三方支付渠道全部 Deferred；当前代码、Schema、API、导航、页面和 release gate 不新增这些能力，不显示测试支付或虚假成功。Round 30 中与此冲突的 Payment/套餐金额设计由 Round 31–33 Superseded，但审计证据、43+5 PostgreSQL、canonical 用户修复、Gateway 接入、新推理链、Secret/ASR 安全阻断仍有效。
+
+先完成 Token-only PRD/架构/Dream UX 的无上下文 Reader Testing 和机械一致性检查，确保不存在金额套餐、全局生效窗、Payment 当前范围或旧命令合同残留；再实施 Admin 前向兼容 migration、Repository/Service/API/UI 和 Dream 产品 API/真实订阅页/Gateway client；最后实现 Dream-owned 43+5 Alembic/Repository/迁移 CLI 并在显式隔离 PostgreSQL 执行 unit/integration/rehearsal/build/focused Playwright。保留所有用户并行未提交修改，禁止连接或破坏共享数据库，禁止读取/使用真实 Secret。
+
+验收必须自动证明：两个不同开通日用户的周期独立；Jan 31/闰年/时区锚点确定；并发 renewal/重复 idempotency 不重复 grant；升降级只在下一周期换版；Token granted/reserved/consumed/remaining 守恒；402 单位准确；所有 canonical users 可订阅且 >100 搜索分页完整；Dream 无静态套餐/余额/支付；Gateway 不再 cash-only 绕过；43+5 PG-only runtime；两个视口与错误恢复通过。
+
+Optional Enhancers:
+
+- 为周期锚点、Allowance 守恒和并发续期增加属性测试。
+- 为 deprecated subscription monetary 字段增加只读迁移审计，不在运营主流程展示。
+- 为 Gateway rollout 增加 shadow eligibility 与用户级 canary，但 shadow 不扣 Token、不调用 Provider。
+
+范围变化：
+
+- 用户明确确认 Round 31–32 的 Token-only 月度订阅覆盖 Round 30 的套餐金额、现金 overage 与 PaymentAdapter 当前范围。
+- PaymentAdapter/Webhook/Fake Adapter 与所有真实支付渠道统一 Deferred。
+- 43+5 PostgreSQL、canonical user、Token Subscription、Gateway、Usage 和新推理调用链继续属于当前实现范围。
+
+执行证据和验证结果：
+
+- 用户已在当前任务明确回复“最新的需求是改为 Token-only 月度订阅”。
+- 检测到工作树已由并行任务更新 Token-only PRD、架构和 Dream UX；此前已暂停冲突任务，未覆盖这些修改。
+- 尚未修改本轮代码、Schema 或数据库；本记录是重新规划前的强制门禁。
+
+未执行事项及原因：
+
+- Token-only 文档最终 Reader Testing、代码实现与隔离测试尚未开始：完成本记录并重新读取最新工作树后执行。
+- credential 吊销/轮换仍需密钥所有者外部操作；本任务不得联网试用该值。
+
+## Round 31–32 执行证据
+
+- Schema、`0014` migration、Zod contracts、Subscription service/repository、Gateway resolver/reserve/settle、Billing settlement、Refine 页面与 unit/E2E 全链路审计确认：金额不是单一表头，而是 Plan currency/base price、money allowance、cash overage、subscription charge、全局 `effective_from` 与 Token→micro-USD capture 的跨层错误语义。
+- 周期审计确认 `effective_from` 从未参与版本资格；当前 early renew 会提前切换未来周期，Gateway 又未校验 `current_period_start <= now`；从上期结束日递推会产生 Jan 31→Feb 末→Mar 28 漂移；upgrade 会立即重开周期并发完整 Allowance。
+- 已完成模块化 PRD、平台交互、Dream 架构和 Dream 页面规范纠偏。权威定义统一为 Plan 稳定身份、Version 固定 monthly Token/非货币权益、用户个人 `[periodStart,periodEnd)`、升降级下周期、Token 402 fail-closed、Payment/订阅支付 Deferred、Provider Pricing/独立现金 Billing 保留。
+- 文档机械检查：本轮检查的 64 份 Markdown 相对链接断链 0；目标文档实际 H1 与 Mermaid fence 正常；`git diff --check` 通过。代码围栏内 shell `#` 不计入 H1。
+- 首轮独立 Reader Testing 发现唯一 P0：402 场景存在 `BILLING_ALLOWANCE_EXHAUSTED` / `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED` 与 `resetAt` / `periodEnd` 冲突。已统一为 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`；Gateway `/v1/**` 使用 `available_tokens/required_tokens/period_end`，Dream Product 使用 `availableTokens/requiredTokens/periodEnd`，`metric/unit=tokens`。
+- 复核 Reader Testing 结论为 `PASS`：套餐金额/全局生效日/现金兜底/Payment 依赖均为 0，个人周期与下周期换版唯一，独立 Provider Pricing/Billing 未被误删。
+
+## Round 33 — Token-only 月度订阅迁移与代码实现
+
+Optimized Prompt:
+
+作为 Ink Memory 的 PostgreSQL/Drizzle 数据架构师、订阅状态机工程师、Gateway 计量结算工程师、Refine/Next.js 工程师和测试负责人，以已经通过 Reader Testing 的 Token-only PRD 与交互规范为唯一产品合同，在 `/Users/dmeck/project/ink-admin-memory` 实施非破坏性的跨层纠偏。先读取所有目标文件最新工作树，保留用户及并行 agent 的未提交修改；只修改 Subscription/Gateway 所需代码、迁移和聚焦测试，不修改 `/Users/dmeck/project/ink-dream-memory`。
+
+新增前向 Drizzle migration `0017`：为 Subscription 增加用户级 `cycle_anchor_at` 和 `current_period_number`，为新 Allowance 记录 plan version/period number；只归一化未发布 draft 的 legacy subscription monetary/effective 字段，保留 published 历史快照和既有 Ledger。数据库 trigger 必须阻止新 Plan Version 写入 annual、base price、money allowance、cash overage 或 global effective date，阻止新 Allowance 写入金额值；旧列只加 DEPRECATED 注释，不 DROP，不重写历史账本。迁移只在显式隔离 PostgreSQL 验证。
+
+严格收敛 API：Plan create 不接受 currency；Version create/update 只接受 planId、trialDays、gracePeriodDays、allowanceTokens；publish 不接受 effectiveFrom。Repository 和 Refine list/detail/form 不投影或显示 currency、price、money allowance、overage 或 effective date。版本固定显示 monthly；publishedAt 仅为审计时间。用户订阅页面只显示 Token granted/reserved/consumed/remaining、个人周期、pending version 和生命周期，不出现任何金额或现金兜底。
+
+状态机按原始 UTC anchor 计算月度边界，短月 clamp 后后续月份恢复原 anchor day；新增 Gateway `period_start <= at < period_end` 校验。开通创建 period 0；upgrade 与 downgrade 都只写 pending version，在用户下一周期边界应用；renew 在边界前返回 409，在事务行锁内只推进一个 period 并依靠唯一周期约束避免重复 Token grant。开通、续期、换版、暂停、恢复、取消不得锁或扣 Billing Account，不得写 `subscription_charge`。
+
+Gateway 对存在有效 Subscription 的请求只允许 `token_allowance`：Token 不足返回 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`，Gateway error 使用 snake_case `metric=tokens/unit=tokens/available_tokens/required_tokens/period_end`；不查询 money allowance，不回落 cash balance。Token reserve/capture/release 只更新 Token 列；Token 覆盖请求的 `charged_microusd=0`，仍保存 Provider Pricing/成本快照。历史已在途 `money_allowance` 结算可保留隔离兼容分支，但 resolver 永不创建新记录；新 Token 请求不得写 `allowance_capture` 金额 Ledger。无 Subscription 的显式独立现金按量路径保持现状。
+
+测试更新必须覆盖：strict schema 拒绝全部货币/effective/annual 字段；Jan 31/闰年锚点；未来周期不可提前调用；Token-only 402 字段；Token settlement 不产生现金收费；Repository/UI 无禁用字段；隔离 PG 中 Plan→Version→Entitlement→Subscription、early renew 409、到期 renew 单次 grant、下一周期升级/降级、Gateway Token Usage 与 Ledger 无订阅金额；1440×1000 和 390×844 不出现“金额额度/基础价格/币种/生效时间/现金兜底”。依次运行 env check、typecheck、lint、unit、隔离 PostgreSQL focused E2E 和 build；任何缺失的安全隔离条件必须明确跳过，禁止使用共享 `ink-memory`。
+
+Optional Enhancers:
+
+- 在生命周期 Modal 中显示目标版本将于个人 `currentPeriodEnd` 生效，并给出 Token grant 变化，不做金额预览。
+- 对 legacy `money_allowance` 在途结算增加计数监控，归零后再以独立迁移删除兼容分支。
+
+范围变化：
+
+- 文档阶段已完成并通过 Reader Testing，开始允许修改 Admin Schema、migration、Repository/Service/API/UI 和聚焦测试。
+- Dream 项目继续保持只读；PaymentAdapter、Webhook 和真实订阅支付不实现。
+
+执行证据和验证结果：
+
+- 尚未修改应用代码或 migration；本 Round 是进入实现前的强制门禁。
+
+未执行事项及原因：
+
+- 数据库与浏览器验证尚未执行；需先完成实现并通过静态/unit 检查，再按 QA skill 建立明确隔离目标。
+
+## Round 34 — Token-only 月度订阅验证与交付收口
+
+Optimized Prompt:
+
+作为 Ink Memory 的发布验证负责人、PostgreSQL 迁移审查员、订阅状态机测试工程师和 Next.js/Refine 质量负责人，对 Round 33 已完成的 Token-only 月度订阅纠偏执行分层验证和最终交付审计。验证目标不是只证明 UI 隐藏了“金额额度”，而是证明 API、服务、数据库约束、Gateway reserve/settle、Usage/Ledger、用户个人周期和两个目标视口均不再把 Subscription 与金额、现金兜底或平台统一生效日期绑定。
+
+先执行只读安全 preflight：检查工作树并保留用户未提交修改；运行 QA skill 的 preflight、`pnpm env:check`，检查 3000/5433 监听状态，并仅以布尔结果确认 `TEST_DATABASE_URL` 是否存在，禁止打印连接串或 Secret。只有显式 `TEST_DATABASE_URL` 且能证明是隔离临时 PostgreSQL 时，才允许运行 migration、数据库集成或 persistent Playwright；否则必须跳过并记录原因，绝不迁移、清空或删除共享 `ink-memory`。
+
+静态与单元验证必须包括：`pnpm exec tsc --noEmit`、聚焦 ESLint、Token-only contracts/cycle/gateway/prepare Vitest、`git diff --check`，随后运行仓库级 `pnpm lint`、`pnpm test:run` 和 `pnpm build`。检查 strict contract 确实拒绝 currency、base price、money allowance、cash overage、annual 和 `effectiveFrom`；Jan 31、闰年与原始 UTC anchor 不漂移；未来个人周期 403、提前 renew 409；Token 不足固定返回 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED` 及 Token 单位字段；订阅覆盖的请求收费为 0、不写 `subscription_charge`/`allowance_capture`，无订阅的独立现金按量路径仍保留。
+
+迁移审查必须确认 `0017` 只回填用户周期 anchor/period provenance、只归一化未发布 draft、保留 published 历史金额快照和 append-only Ledger，不 DROP 旧列；新写入 guard 阻止 annual、金额、cash overage、global effective date 和 monetary Allowance。检查迁移与 Drizzle schema/journal 一致，并在具备隔离数据库时验证前向应用、约束、重复周期唯一性和应用启动；不具备时明确将 SQL 运行验证列为未执行风险。
+
+浏览器验证仅在安全隔离数据库和可用 Session/bootstrap 条件满足时运行 `tests/e2e/subscription-billing-postgres.spec.ts`，覆盖 1440×1000 与 390×844、全部 canonical 平台用户选择、Plan/Version/Subscription 生命周期、Token Usage/Ledger 以及禁用文案缺席。若条件不足，不得用假数据、共享数据库或静态截图替代；保留 E2E 自动化用例并报告未执行。
+
+最终执行关键词与响应合同复核，区分 Subscription Token-only 与 Provider Pricing/独立现金 Billing 两个领域，允许迁移注释、历史 migration、拒绝旧输入测试和 rolling-deploy legacy settlement 中出现 deprecated 字段，不得把这些兼容证据误判为新产品行为。独立代码审查的 P0/P1 必须修复并重新验证；P2 必须处理或作为已知风险说明。最终报告用实际命令、测试数量、文件路径和未执行条件交付，并明确确认未修改 Dream 代码、未引入 SQLite、未实现 Payment/订阅支付、未操作共享数据库真实数据。
+
+Optional Enhancers:
+
+- 若隔离 PostgreSQL 可用，增加迁移前后 catalog 查询，证明 trigger、partial unique index、column comment 和历史 published 行保持不变。
+- 若本地浏览器环境可用，保存两个视口的 Playwright artifact；不得把未经真实数据链验证的截图称为验收通过。
+
+范围变化：
+
+- Round 33 的实现已通过 TypeScript、聚焦 ESLint、`git diff --check` 与 23 个聚焦单测，进入仓库级验证和交付收口。
+- 不增加产品功能；只允许修复验证发现的 Token-only、周期、迁移安全、兼容和测试问题。
+
+执行证据和验证结果：
+
+- 已完成第一轮主代理静态复核：`pnpm exec tsc --noEmit` 通过；4 个聚焦测试文件共 23/23 通过；聚焦 ESLint 与 `git diff --check` 通过。
+- 尚未运行仓库级 lint/unit/build、数据库迁移或 Playwright；必须先完成本 Round 的隔离 preflight。
+
+## Round 33–34 执行证据
+
+- 产品合同、主 PRD、模块 PRD、平台交互规范、Dream 架构入口和 Dream 页面设计已统一为 Token-only：Plan 不含价格/币种，Version 固定月度 Token 与非货币权益，`publishedAt` 只做审计，用户以自身 cycle anchor 计算周期；Payment/订阅支付 Deferred，Provider Pricing/独立现金 Billing 保留但不做套餐兜底。
+- 新增 `drizzle/0017_subscription_token_only_monthly.sql` 与 Drizzle journal：新增/回填 `cycle_anchor_at/current_period_number` 和 Allowance version/period provenance；只归一化 draft，保留 published 历史及 Ledger；数据库 guard 拒绝新 annual/金额/cash-overage/global-effective Version、非 draft Version/Entitlement 改写，以及新 Token Allowance 的金额写入。旧金额列只标 DEPRECATED，没有 DROP。
+- API/Repository/UI 已移除 Plan currency、基础价格、金额 allowance、cash overage、annual 选择和平台生效日；用户订阅页只显示个人周期、pending version 与 Token granted/reserved/consumed/remaining。canonical users 继续是唯一平台用户全集，不存在“计费用户”名册。
+- 状态机从原始 UTC anchor 计算 Jan-31/闰年边界；提前 renew 409；延迟多周期时一次定位到包含 now 的个人周期，只发一条当前期 Allowance，不追溯补发漏期；升降级只写 pending。相同 idempotency key 由事务 advisory lock 串行化，并绑定 action/target/reason 请求摘要；异 payload 返回 409 且不重复 Audit。
+- Gateway resolver 对订阅只创建 `token_allowance`；Token 不足固定 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED` 与 Token 单位字段，不读取现金余额。Token 覆盖结算 `charged_microusd=0`，不写 `subscription_charge`/`allowance_capture`；实际 Token 超过估算时释放完整预留、按剩余 Allowance 封顶 consumed，完整实际 Usage 仍保留。仅保留 resolver 不会新建的 rolling-deploy legacy money settlement。
+- focused PostgreSQL E2E 合同已补：published Entitlement create/update 409、多周期 renew 单次当前期 grant、同 key 异 payload/action/target 409，以及“账户有正现金余额但 1 Token 不足”仍在 Provider 前返回 Token-only 402，Account/Ledger/Allowance 不变；同时覆盖 1440×1000 与 390×844 禁用字段缺席。用例已通过 ESLint/TypeScript，但未实际连接数据库运行。
+- QA preflight 与 `pnpm env:check` 通过；本机 3000/5433 有监听，但 `TEST_DATABASE_URL=unset`，因此未把身份不明的 5433 当作测试库，也未运行 migration、persistent E2E 或截图验收。
+- 最终静态验证：`pnpm exec tsc --noEmit` 通过；聚焦 ESLint 通过；4 个聚焦 Vitest 文件 26/26 通过；`pnpm lint` 通过；`pnpm test:run` 为 45 files、234/234 tests 通过；`pnpm build` 通过；`git diff --check` 通过。
+- 独立代码审查首轮发现 published Entitlement 服务边界、多周期延迟、Token 超估结算、幂等摘要和 Allowance UPDATE guard 缺口；全部修订。二轮发现并修复 `0017` 的 PL/pgSQL `DECLARE` 语法阻断；最终静态复核结论 `PASS`，无剩余 P0/P1。
+
+未执行事项及原因：
+
+- `0017` 前向迁移、trigger/partial unique index/catalog 与真实事务并发尚未在 PostgreSQL 执行；缺少明确隔离的 `TEST_DATABASE_URL`，禁止借用共享或未知数据库。SQL 仍须在隔离库通过后才可发布。
+- `tests/e2e/subscription-billing-postgres.spec.ts` 与 1440×1000、390×844 视觉 artifact 未实际运行/生成；同样受隔离数据库和 bootstrap 条件阻断，不能用假数据或静态截图替代。
+- 未修改 `/Users/dmeck/project/ink-dream-memory` 的代码、Schema、迁移、依赖或运行逻辑；该仓库仅保留用户既有未跟踪 `.claude/worktrees/`。未引入 SQLite/JSON DB/内存回退，未实现 PaymentAdapter、Webhook 或真实订阅支付，未操作共享 PostgreSQL 数据。

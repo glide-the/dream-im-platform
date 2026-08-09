@@ -6,7 +6,6 @@ import { withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
 import type { GatewayPrincipal } from "./auth";
 import {
-  releaseSubscriptionAllowanceOnClient,
   reserveSubscriptionAllowanceOnClient,
   resolveGatewaySubscriptionOnClient,
   type GatewaySubscriptionContext,
@@ -41,6 +40,11 @@ export type BeginGatewayRequestResult =
       message?: string;
       availableMicrousd?: number;
       requiredMicrousd?: number;
+      metric?: "tokens";
+      unit?: "tokens";
+      availableTokens?: number;
+      requiredTokens?: number;
+      periodEnd?: string;
       limit?: number;
       current?: number;
       requested?: number;
@@ -264,7 +268,6 @@ export async function beginGatewayRequest(input: {
       modelId: input.resolved.model.id,
       requiredScope: input.requiredScope,
       estimatedTokens: input.estimatedTokens,
-      reservationMicrousd: input.reservationMicrousd,
       at: new Date(),
     });
     if (subscriptionEligibility && "code" in subscriptionEligibility) {
@@ -287,8 +290,11 @@ export async function beginGatewayRequest(input: {
         code: subscriptionEligibility.code,
         status: subscriptionEligibility.status,
         message: subscriptionEligibility.message,
-        availableMicrousd: subscriptionEligibility.availableMicrousd,
-        requiredMicrousd: subscriptionEligibility.requiredMicrousd,
+        metric: subscriptionEligibility.metric,
+        unit: subscriptionEligibility.unit,
+        availableTokens: subscriptionEligibility.availableTokens,
+        requiredTokens: subscriptionEligibility.requiredTokens,
+        periodEnd: subscriptionEligibility.periodEnd,
       };
     }
     const subscription = subscriptionEligibility as GatewaySubscriptionContext | null;
@@ -299,8 +305,8 @@ export async function beginGatewayRequest(input: {
              subscription_entitlement_id = $4, subscription_allowance_id = $5,
              subscription_snapshot = $6::jsonb,
              subscription_coverage_mode = $7,
-             allowance_reserved_microusd = $8,
-             allowance_reserved_tokens = $9
+             allowance_reserved_microusd = 0,
+             allowance_reserved_tokens = $8
          WHERE id = $1`,
         [
           requestId,
@@ -310,7 +316,6 @@ export async function beginGatewayRequest(input: {
           subscription.allowanceId,
           JSON.stringify(subscription.snapshot),
           subscription.coverageMode,
-          subscription.allowanceReservedMicrousd,
           subscription.allowanceReservedTokens,
         ],
       );
@@ -409,8 +414,7 @@ export async function beginGatewayRequest(input: {
       }
     }
 
-    const cashReservation =
-      subscription?.cashReservedMicrousd ?? input.reservationMicrousd;
+    const cashReservation = subscription ? 0 : input.reservationMicrousd;
     if (cashReservation === 0) {
       await client.query(
         `UPDATE gateway_requests
@@ -427,7 +431,7 @@ export async function beginGatewayRequest(input: {
       return {
         kind: "reserved",
         requestId,
-        reservedMicrousd: input.reservationMicrousd,
+        reservedMicrousd: cashReservation,
       };
     }
 
@@ -446,13 +450,10 @@ export async function beginGatewayRequest(input: {
       return {
         kind: "reserved",
         requestId,
-        reservedMicrousd: input.reservationMicrousd,
+        reservedMicrousd: cashReservation,
       };
     } catch (error) {
       if (!(error instanceof InsufficientBalanceError)) throw error;
-      if (subscription) {
-        await releaseSubscriptionAllowanceOnClient(client, subscription);
-      }
       await client.query(
         `UPDATE gateway_requests
          SET status = 'rejected', outcome = 'failed', http_status = 402,

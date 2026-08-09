@@ -201,10 +201,10 @@ export async function preparationErrorResponse(
     });
   }
 
-  const insufficient = [
-    "INSUFFICIENT_BALANCE",
-    "SUBSCRIPTION_ALLOWANCE_EXHAUSTED",
-  ].includes(result.code);
+  const tokenAllowanceExhausted =
+    result.code === "SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED";
+  const insufficient =
+    result.code === "INSUFFICIENT_BALANCE" || tokenAllowanceExhausted;
   const status = result.status ?? (insufficient ? 402 : 429);
   const error = {
     type:
@@ -217,10 +217,20 @@ export async function preparationErrorResponse(
     message:
       result.message ??
       (insufficient
-        ? "Account balance or subscription allowance is insufficient for this request"
+        ? tokenAllowanceExhausted
+          ? "The current subscription-period Token allowance is insufficient for this request"
+          : "Account balance is insufficient for this request"
         : "The configured gateway usage limit has been exceeded"),
     request_id: requestId,
-    ...(insufficient
+    ...(tokenAllowanceExhausted
+      ? {
+          metric: result.metric,
+          unit: result.unit,
+          available_tokens: result.availableTokens,
+          required_tokens: result.requiredTokens,
+          period_end: result.periodEnd,
+        }
+      : insufficient
       ? {
           available_microusd: result.availableMicrousd,
           required_microusd: result.requiredMicrousd,

@@ -2,7 +2,15 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[平台用户](../../prd/modules/01-platform-users.md)
 
-> 实现状态：用户列表与限额编辑已实现；统一 Relation Selector 是目标设计。当前订阅开通和人工 credit 各只加载前 100 名用户；下述跨模块聚合详情 Drawer 也未作为当前 release gate。
+> 实现状态：用户列表与限额编辑已实现；统一 Relation Selector 是 Target。当前 Subscription、credit 和 Usage 专用选择器只加载首页 100，通用 relation 只有首页 50/100；跨模块聚合详情 Drawer 也尚未实现。
+
+## 0. Current / Target / Release Gate
+
+| 分层 | 交互边界 |
+|---|---|
+| Current | canonical 用户列表和限额编辑；Subscription/credit/Usage 各只加载首页 100，通用 relation 仅首页 50/100，跨模块详情未完成。 |
+| Target | 所有 Subscription、Gateway Key、用户—模型例外、Usage 和 credit 使用同一 canonical 服务端 typeahead/paging/hydration；UI 始终称“平台用户”。 |
+| Release Gate | 205 用户跨页搜索/选中/total、orphan 403/409 和 390×844 长邮箱/ID 通过；无“创建计费用户”入口。 |
 
 ## 1. 页面目的
 
@@ -24,14 +32,15 @@
 
 ## 3. 关系选择器
 
-订阅、Gateway Key、模型权限等使用同一个可搜索 Relation Select：
+订阅、Gateway Key、Gateway 用户—模型例外、Usage、credit 等使用同一个可搜索 Relation Select：
 
 - accessible label 统一“平台用户”；选项主行 email，次行 display name + canonical ID。
 - 默认分页加载，输入搜索服务端请求；loading/empty/error 显示在下拉内。
+- 下拉显示当前范围/总数与加载更多；已选项即使不在当前页也会按 ID hydration，不因新搜索丢失 label。
 - 零余额、无订阅用户仍可选；不得因内部兼容行缺少运营字段而隐藏用户。
 - 浏览器提交内部兼容键，但 UI 不要求操作者理解或输入该键。
 
-当前差距：`SubscriptionLifecycleManager` 与 `BillingAdjustmentForm` 使用普通 Select 并只请求前 100 条。它们必须迁移到上述服务端搜索/分页合同；在完成前，空搜索结果不得显示“该用户不是计费用户”，应提示改用精确搜索能力尚未完成并记录为规模化缺口。
+当前差距：`SubscriptionLifecycleManager`、`BillingAdjustmentForm` 与 `AdminUsageDashboard` 只请求首页 100，通用 relation 无翻页/hydration。它们必须迁移到上述服务端搜索/分页合同；在完成前，空搜索结果不得显示“该用户不是计费用户”，应明确是规模化查询缺口。
 
 ## 4. 用户计费设置
 
@@ -44,3 +53,5 @@
 - UI-USR-01（目标）：所有用户选择器可搜索同一 canonical 全集；不受前 100 条加载限制。
 - UI-USR-02：390×844 的长邮箱/ID 换行或局部截断，不产生根横滚。
 - UI-USR-03：用户详情中账户、订阅、Usage 都是链接/只读事实，危险动作进入所属模块。
+- UI-USR-04（Target release gate）：搜索“QA”只返回匹配结果而非唯一计费名册；清搜索恢复稳定 total，orphan 不被创建第二身份“修复”。
+- UI-USR-05（Target release gate）：兼容 profile email/display_name 不提供可编辑控件，避免保存成功但 canonical 列表不可见的 split-brain。

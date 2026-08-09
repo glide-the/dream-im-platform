@@ -10,12 +10,11 @@
 | 领域 | Current | Target / Planned | Release Gate |
 |---|---|---|---|
 | Dream 持久化 | 主库 SQLite 43 表；Notion SQLite 5 表；主库 25 trigger | 单一 PostgreSQL `ink-memory`、Dream Alembic、Repository/UoW | 48/48 DDL、Repository、导入、validator、owner 归属齐全；runtime SQLite open=0 |
-| canonical 用户 | `users` 是业务用户真值；Admin 有内部 `platform_users` 投影 | 每个 canonical user 自动有 mapping 和 Billing Account | 205 用户搜索/分页/total；Gateway 反向 JOIN `users`；orphan fail-closed |
-| Subscription/Billing | Admin 有 Plan Version、Entitlement、Subscription、Allowance、reserve/capture/release 基线 | 补完整生命周期、产品 API、refund/reversal 与严格结算 | 并发、幂等、守恒、append-only 测试通过 |
+| canonical 用户 | `users` 是业务用户真值；Admin 有内部 `platform_users`/account 投影 | 每个 canonical user 天然是订阅主体；内部投影不构成第二类用户 | 205 用户搜索/分页/total；Gateway 反向 JOIN `users`；无“计费用户”入口；orphan fail-closed |
+| Token Subscription / 独立 Billing | Admin Plan/Allowance baseline 仍混入金额与 cash fallback；Provider Pricing/Billing/Ledger 已存在 | Subscription 固定用户月度 Token；独立现金域不作套餐权益/兜底 | Token 周期/守恒/幂等通过；新套餐金额写入为 0；历史账务 append-only |
 | Gateway | Admin 有 Anthropic/OpenAI 兼容路由与部分结算；Dream 仍多路直连 | Dream server-only Gateway；stable model alias；严格资格顺序 | 401/402/403/409/429/502/503、流取消与 usage 缺失终态通过 |
-| Dream 订阅 UX | `/story-workspace/subscription` 是静态三档数组 | 真实产品 API 驱动的计划/订阅/Allowance/Usage/Ledger 页面 | 无静态 fallback、假价格、假余额或伪支付成功 |
-| Payment | 无 Adapter、intent/event store、Webhook 幂等实现 | 标准 Adapter、签名边界、event ID 唯一、test-only Fake | 生产启动禁止 Fake；重复 Webhook 不重复开通/扣费 |
-| 真实支付渠道 | 无 | **Deferred** | 不属于本轮完成条件 |
+| Dream 订阅 UX | `/story-workspace/subscription` 是静态三档数组 | 真实产品 API 驱动的月度 Token 计划/用户周期/Allowance/Usage/模型权限页面 | 无静态 fallback、金额/余额/支付或全局生效日期 |
+| Payment/订阅支付 | 无 Adapter、intent/event store、Webhook 幂等实现 | **Deferred**：Adapter、Webhook、Fake 与真实渠道均不开发 | 本轮依赖、表、路由、环境变量和 UI 增量为 0 |
 | ASR Gateway | 未鉴权 WebSocket 直连 Provider，且源码发现已提交 credential | endpoint 先禁用/加固；Gateway audio capability 仍 **Deferred** | credential 吊销/轮换、移除、secret scan；匿名请求被拒绝 |
 
 ## 2. 当前数据源

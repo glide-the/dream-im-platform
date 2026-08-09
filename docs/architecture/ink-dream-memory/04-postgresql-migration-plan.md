@@ -127,7 +127,17 @@ baseline adopt 只表示 Dream Alembic 接受经逐项验证的已存在结构�
 
 `daily_pictures` 当前 base64 内容先按原 TEXT 无损迁移，避免把数据库切换和对象存储改造合并；后续若迁 Storage 应单独立项。Chat parts/metadata 在转换为 JSONB 前必须全量校验；无法解析的行进入隔离清单并阻断该波次。
 
-### Wave 4：Deck、Plugin、Workflow 与 Agent
+### Wave 4：Reflection 与 Event
+
+1. `reflections_section_configs`
+2. `reflection_task`
+3. `reflection_result`
+4. `reflection_task_event`
+5. `events`
+
+Event/Task Event 的 sequence、幂等和 append-only 合同必须在 PostgreSQL trigger/权限与 service 双层验证。`reflection_task_event` 当前 writer 的 `INSERT OR REPLACE` 不能翻译为覆盖：同 event ID + 同 canonical JSON digest 返回原事实，异 digest 必须冲突。
+
+### Wave 5：Deck、Plugin、Workflow 与 Agent
 
 建议顺序：
 
@@ -148,16 +158,6 @@ baseline adopt 只表示 Dream Alembic 接受经逐项验证的已存在结构�
 15. `claude_plugin_installations`、`claude_plugin_operations`、`deck_claude_plugin_refs`
 
 这是外键拓扑，不是可任意调整的业务分组：`workflow_runs` 依赖 preflight、binding 与 lock；receipt/reconcile 依赖 run；entry/agent session 依赖 receipt；`deck_claude_plugin_refs` 同时依赖 `decks` 和 installation。`workflow_runs.retry_of_run_id` 使用 parent-first 或 manifest 明示的受控两阶段 self-FK。此波次依赖复杂 FK、partial unique、状态版本、25 个 SQLite trigger 中的大部分、append-only 事实和事务锁，是最高风险波次。
-
-### Wave 5：Reflection 与 Event
-
-1. `reflections_section_configs`
-2. `reflection_task`
-3. `reflection_result`
-4. `reflection_task_event`
-5. `events`
-
-Event/Task Event 的 sequence、幂等和 append-only 合同必须在 PostgreSQL trigger/权限与 service 双层验证。`reflection_task_event` 当前 writer 的 `INSERT OR REPLACE` 不能翻译为覆盖：同 event ID + 同 canonical JSON digest 返回原事实，异 digest 必须冲突。
 
 ### Wave 6：Notion Connector 独立库
 
@@ -284,7 +284,7 @@ ORDER BY status, review_status, type;
 4. 执行源校验、staging 导入、冲突检查、目标导入和全量验证。
 5. 运行 Alembic head、Dream/Admin compatibility check 和数据库权限检查。
 6. 部署 `DATABASE_URL` 版本；先运行不提交业务写的 smoke/transaction rollback 检查。
-7. 验证认证、Story、Chat、Deck、Workflow、Plugin、Reflection、Notion（若已到 Wave 6）关键路径。
+7. 验证认证、Story、Chat、Deck、Workflow、Plugin、Reflection、Notion 全部关键路径；Wave 1–6 必须全部通过，Notion 不得作为可选项。
 8. 解除维护并开启 PG 写入；SQLite 快照转为受控只读归档，应用不再连接。
 
 PG cutover 与 Product API/Gateway canary 是两个可独立停止的发布阶段。PG 成为唯一业务持久化后，Gateway 仍先做 shadow eligibility（不扣费），再启用受控 reserve/capture/release，最后按 PolyAgent、Claude Agent/Chat、Dream/Workflow、image 分批切换；不得因 Gateway canary 回滚而恢复 SQLite。

@@ -4,6 +4,14 @@
 
 > 实现状态：Workspace/Story 交互已实现；Character/Scene 条件开放；`/admin/story/workflow-runs` 当前重定向 Story，不存在 Workflow 列表或 Drawer。
 
+## 0. Current / Target / Release Gate
+
+| 分层 | 交互边界 |
+|---|---|
+| Current | Workspace/Story 真实表交互；Character/Scene 缺表 503，Workflow 重定向 Story。 |
+| Target | Dream 43+5 PostgreSQL cutover 后，Admin 仅对批准领域提供只读/白名单命令；页面永不回退旧平行表或 SQLite。 |
+| Release Gate | 48 表演练/cutover 状态可追溯；缺表只返 503，无假数据/通用硬删；现有 Story 回归通过。 |
+
 ## 1. 操作者与层级
 
 内容运营按 `平台用户 → Workspace → Story → Character/Scene` 定位真实创作数据。面包屑和详情关联必须保留 Workspace 上下文。

@@ -96,7 +96,7 @@ Dream 只经 [06](06-billing-subscription-gateway-integration.md) 规定的 Prod
 | 502 | Provider 失败或协议错误 | 显示上游失败；Gateway 必须结算到 release/capture/failed 终态 |
 | 503 | 数据库、配置、维护或结算不可确定 | 显示维护/重试；不回退 SQLite、静态计划或直接 Provider |
 
-错误体只含稳定 `code`、安全 `message`、`request_id`、可选 `retry_after`/`unit`/`current_version`；不返回 SQL、DSN、Secret、内部 stack、正文或 Provider 原始敏感响应。
+错误体统一为 `{error:{code,message,details?},meta:{requestId,retryAfterSeconds?}}`。`details` 只允许 code 对应的白名单字段（如 `metric/unit/currentVersion/availableMicrousd/requiredMicrousd`）；字段使用 camelCase，不再同时提供顶层 snake_case 变体。不返回 SQL、DSN、Secret、内部 stack、正文或 Provider 原始敏感响应。
 
 ## 8. Dream Repository 目标结构
 

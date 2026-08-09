@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 const bootstrapToken = process.env.ADMIN_BOOTSTRAP_E2E_TOKEN;
 let upstream: Server | undefined;
 let upstreamUrl = "";
+let upstreamRequestCount = 0;
 
 function diagnosticsFor(page: Page) {
   const diagnostics: string[] = [];
@@ -39,6 +40,7 @@ test.describe("subscription billing on owned PostgreSQL", () => {
       return;
     }
     upstream = createServer((request, response) => {
+      upstreamRequestCount += 1;
       request.resume();
       request.on("end", () => {
         response.writeHead(200, { "content-type": "application/json" });
@@ -91,7 +93,9 @@ test.describe("subscription billing on owned PostgreSQL", () => {
       expect.objectContaining({ external_user_id: "102", email: "other@example.test" }),
     ]));
     const billingUserId = String(platformUsersBody.data.find((user: { external_user_id: string }) => user.external_user_id === "101")?.id);
+    const cashBackedBillingUserId = String(platformUsersBody.data.find((user: { external_user_id: string }) => user.external_user_id === "102")?.id);
     expect(billingUserId).not.toBe("undefined");
+    expect(cashBackedBillingUserId).not.toBe("undefined");
     const provider = await api.post(`${baseURL}/api/admin/providers`, {
       headers,
       data: { code: "subscription-provider", name: "Subscription Provider", protocol: "anthropic", baseUrl: upstreamUrl, apiKey: "subscription-provider-test-secret", status: "active", timeoutMs: 5000, maxRetries: 0, config: { authMode: "x-api-key" } },
@@ -104,62 +108,186 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     });
     expect(model.status()).toBe(201);
     const modelId = (await model.json()).data.id;
+    const immutableEntitlementModel = await api.post(`${baseURL}/api/admin/models`, {
+      headers,
+      data: { providerId, code: "subscription-immutable-model", upstreamModel: "subscription-immutable-upstream", displayName: "Subscription Immutable Entitlement Model", contextWindow: 100000, maxOutputTokens: 1024, capabilities: { chat: true, streaming: true }, enabled: true },
+    });
+    expect(immutableEntitlementModel.status()).toBe(201);
+    const immutableEntitlementModelId = (await immutableEntitlementModel.json()).data.id as string;
     expect((await api.post(`${baseURL}/api/admin/pricing-rules`, {
       headers,
       data: { modelId, userTier: "free", inputPriceMicrousdPerMillion: 1000000, outputPriceMicrousdPerMillion: 2000000, cacheReadPriceMicrousdPerMillion: 0, cacheWritePriceMicrousdPerMillion: 0, markupBps: 0, discountBps: 0, status: "active", effectiveFrom: new Date(Date.now() - 60_000).toISOString(), effectiveTo: null },
     })).status()).toBe(201);
 
+    const legacyPlan = await api.post(`${baseURL}/api/admin/subscription-plans`, {
+      headers,
+      data: { code: "legacy-money-plan", name: "Legacy Money Plan", currency: "USD" },
+    });
+    expect(legacyPlan.status()).toBe(400);
+
     const plan = await api.post(`${baseURL}/api/admin/subscription-plans`, {
       headers,
-      data: { code: "dream-pro", name: "Dream Pro", description: "E2E plan", currency: "USD" },
+      data: { code: "dream-pro", name: "Dream Pro", description: "E2E Token plan" },
     });
     expect(plan.status()).toBe(201);
     const planId = (await plan.json()).data.id;
-    const createVersion = async (basePriceMicrousd: number) => {
+    const legacyVersion = await api.post(`${baseURL}/api/admin/subscription-plan-versions`, {
+      headers,
+      data: {
+        planId,
+        billingPeriod: "monthly",
+        basePriceMicrousd: 1_000_000,
+        allowanceTokens: 100000,
+        allowanceMicrousd: 5_000_000,
+        overagePolicy: "cash_balance",
+        effectiveFrom: new Date().toISOString(),
+      },
+    });
+    expect(legacyVersion.status()).toBe(400);
+
+    const createVersion = async (allowanceTokens = 100000, versionPlanId = planId) => {
       const response = await api.post(`${baseURL}/api/admin/subscription-plan-versions`, {
         headers,
-        data: { planId, billingPeriod: "monthly", basePriceMicrousd, trialDays: 7, gracePeriodDays: 3, allowanceTokens: 100000, allowanceMicrousd: 0, overagePolicy: "cash_balance", effectiveFrom: null },
+        data: { planId: versionPlanId, trialDays: 7, gracePeriodDays: 3, allowanceTokens },
       });
       expect(response.status()).toBe(201);
       return (await response.json()).data.id as string;
     };
     const publishVersion = async (id: string, suffix: string) => {
-      expect((await api.post(`${baseURL}/api/admin/subscription-entitlements`, {
+      const entitlement = await api.post(`${baseURL}/api/admin/subscription-entitlements`, {
         headers,
         data: { planVersionId: id, modelId, gatewayScopes: ["messages:create", "models:list"], requestsPerMinute: 30, dailyTokenLimit: 50000, monthlyTokenLimit: 500000, storageBytesLimit: 1000000, enabled: true },
-      })).status()).toBe(201);
+      });
+      expect(entitlement.status()).toBe(201);
+      const entitlementId = (await entitlement.json()).data.id as string;
+      const legacyPublish = await api.post(`${baseURL}/api/admin/subscription-plan-versions/${id}/publish`, {
+        headers,
+        data: { effectiveFrom: new Date().toISOString(), idempotencyKey: `legacy-publish:${suffix}:e2e`, reason: "Reject global effective date" },
+      });
+      expect(legacyPublish.status()).toBe(400);
       const response = await api.post(`${baseURL}/api/admin/subscription-plan-versions/${id}/publish`, {
         headers,
-        data: { effectiveFrom: new Date().toISOString(), idempotencyKey: `publish:${suffix}:e2e`, reason: "E2E publish" },
+        data: { idempotencyKey: `publish:${suffix}:e2e`, reason: "E2E publish" },
       });
       expect(response.status()).toBe(200);
+      return entitlementId;
     };
-    const versionOne = await createVersion(1_000_000);
-    await publishVersion(versionOne, "v1");
+    const versionOne = await createVersion();
+    const versionOneEntitlementId = await publishVersion(versionOne, "v1");
     const immutable = await api.patch(`${baseURL}/api/admin/subscription-plan-versions/${versionOne}`, {
       headers,
-      data: { basePriceMicrousd: 1 },
+      data: { allowanceTokens: 100001 },
     });
     expect(immutable.status()).toBe(409);
     await expect(immutable.json()).resolves.toMatchObject({ error: { code: "SUBSCRIPTION_VERSION_IMMUTABLE" } });
 
+    const immutableEntitlementCreate = await api.post(`${baseURL}/api/admin/subscription-entitlements`, {
+      headers,
+      data: { planVersionId: versionOne, modelId: immutableEntitlementModelId, gatewayScopes: ["messages:create"], enabled: true },
+    });
+    expect(immutableEntitlementCreate.status()).toBe(409);
+    await expect(immutableEntitlementCreate.json()).resolves.toMatchObject({ error: { code: "SUBSCRIPTION_ENTITLEMENT_IMMUTABLE" } });
+    const immutableEntitlementUpdate = await api.patch(`${baseURL}/api/admin/subscription-entitlements/${versionOneEntitlementId}`, {
+      headers,
+      data: { enabled: false },
+    });
+    expect(immutableEntitlementUpdate.status()).toBe(409);
+    await expect(immutableEntitlementUpdate.json()).resolves.toMatchObject({ error: { code: "SUBSCRIPTION_ENTITLEMENT_IMMUTABLE" } });
+
+    const startsAt = new Date();
+    startsAt.setUTCDate(1);
+    startsAt.setUTCMonth(startsAt.getUTCMonth() - 4);
+    startsAt.setUTCMinutes(startsAt.getUTCMinutes() - 1);
     const activationKey = "activate:user-e2e:dream-pro:e2e";
     const activate = await api.post(`${baseURL}/api/admin/subscriptions`, {
       headers,
-      data: { platformUserId: billingUserId, planVersionId: versionOne, startInTrial: false, idempotencyKey: activationKey, reason: "E2E activation" },
+      data: { platformUserId: billingUserId, planVersionId: versionOne, startsAt: startsAt.toISOString(), startInTrial: false, idempotencyKey: activationKey, reason: "E2E activation" },
     });
     expect(activate.status()).toBe(201);
     const subscriptionId = (await activate.json()).data.id as string;
     const duplicate = await api.post(`${baseURL}/api/admin/subscriptions`, {
       headers,
-      data: { platformUserId: billingUserId, planVersionId: versionOne, startInTrial: false, idempotencyKey: activationKey, reason: "E2E duplicate activation" },
+      data: { platformUserId: billingUserId, planVersionId: versionOne, startsAt: startsAt.toISOString(), startInTrial: false, idempotencyKey: activationKey, reason: "E2E activation" },
     });
     expect(duplicate.status()).toBe(201);
     expect((await duplicate.json()).data.id).toBe(subscriptionId);
+    const activationPayloadConflict = await api.post(`${baseURL}/api/admin/subscriptions`, {
+      headers,
+      data: { platformUserId: billingUserId, planVersionId: versionOne, startsAt: startsAt.toISOString(), startInTrial: false, idempotencyKey: activationKey, reason: "E2E activation with changed payload" },
+    });
+    expect(activationPayloadConflict.status()).toBe(409);
+    await expect(activationPayloadConflict.json()).resolves.toMatchObject({ error: { code: "SUBSCRIPTION_IDEMPOTENCY_CONFLICT" } });
     expect((await api.post(`${baseURL}/api/admin/subscriptions`, {
       headers,
-      data: { platformUserId: billingUserId, planVersionId: versionOne, startInTrial: false, idempotencyKey: "activate:user-e2e:conflict:e2e", reason: "E2E conflict" },
+      data: { platformUserId: billingUserId, planVersionId: versionOne, startsAt: startsAt.toISOString(), startInTrial: false, idempotencyKey: "activate:user-e2e:conflict:e2e", reason: "E2E conflict" },
     })).status()).toBe(409);
+
+    const command = async (action: string, key: string, data: Record<string, unknown> = {}) => api.post(`${baseURL}/api/admin/subscriptions/${subscriptionId}/${action}`, { headers, data: { idempotencyKey: key, reason: `E2E ${action}`, ...data } });
+    const versionTwo = await createVersion(120000);
+    await publishVersion(versionTwo, "v2");
+    const versionThree = await createVersion(150000);
+    await publishVersion(versionThree, "v3");
+    const downgrade = await command("downgrade", "downgrade:subscription:e2e", { planVersionId: versionTwo });
+    expect(downgrade.status()).toBe(200);
+    expect((await downgrade.json()).data).toMatchObject({
+      plan_version_id: versionOne,
+      pending_plan_version_id: versionTwo,
+    });
+    const actionIdempotencyConflict = await api.post(`${baseURL}/api/admin/subscriptions/${subscriptionId}/upgrade`, {
+      headers,
+      data: { idempotencyKey: "downgrade:subscription:e2e", reason: "E2E downgrade", planVersionId: versionTwo },
+    });
+    expect(actionIdempotencyConflict.status()).toBe(409);
+    await expect(actionIdempotencyConflict.json()).resolves.toMatchObject({ error: { code: "SUBSCRIPTION_IDEMPOTENCY_CONFLICT" } });
+    const upgrade = await command("upgrade", "upgrade:subscription:e2e", { planVersionId: versionThree });
+    expect(upgrade.status()).toBe(200);
+    expect((await upgrade.json()).data).toMatchObject({
+      plan_version_id: versionOne,
+      pending_plan_version_id: versionThree,
+    });
+    const targetIdempotencyConflict = await command("upgrade", "upgrade:subscription:e2e", { planVersionId: versionTwo });
+    expect(targetIdempotencyConflict.status()).toBe(409);
+    await expect(targetIdempotencyConflict.json()).resolves.toMatchObject({ error: { code: "SUBSCRIPTION_IDEMPOTENCY_CONFLICT" } });
+
+    const allowancesBeforeDelayedRenew = await api.get(`${baseURL}/api/admin/subscription-allowances?filter[subscription_id][eq]=${encodeURIComponent(subscriptionId)}`);
+    expect(allowancesBeforeDelayedRenew.status()).toBe(200);
+    const allowancesBeforeDelayedRenewBody = await allowancesBeforeDelayedRenew.json();
+    expect(allowancesBeforeDelayedRenewBody.data).toEqual([
+      expect.objectContaining({ subscription_id: subscriptionId, period_number: 0, plan_version_id: versionOne }),
+    ]);
+    const renewRequestedAt = Date.now();
+    const renew = await command("renew", "renew:subscription:e2e");
+    expect(renew.status()).toBe(200);
+    const renewedSubscription = (await renew.json()).data as Record<string, unknown>;
+    expect(renewedSubscription).toMatchObject({
+      plan_version_id: versionThree,
+      pending_plan_version_id: null,
+      granted_tokens: "150000",
+    });
+    const renewedPeriodNumber = Number(renewedSubscription.current_period_number);
+    expect(renewedPeriodNumber).toBeGreaterThan(1);
+    expect(Date.parse(String(renewedSubscription.current_period_start))).toBeLessThanOrEqual(renewRequestedAt);
+    expect(Date.parse(String(renewedSubscription.current_period_end))).toBeGreaterThan(renewRequestedAt);
+
+    const allowancesAfterDelayedRenew = await api.get(`${baseURL}/api/admin/subscription-allowances?filter[subscription_id][eq]=${encodeURIComponent(subscriptionId)}`);
+    expect(allowancesAfterDelayedRenew.status()).toBe(200);
+    const allowancesAfterDelayedRenewBody = await allowancesAfterDelayedRenew.json();
+    expect(allowancesAfterDelayedRenewBody.data).toHaveLength(2);
+    expect(
+      allowancesAfterDelayedRenewBody.data
+        .map((allowance: { period_number: number }) => allowance.period_number)
+        .sort((left: number, right: number) => left - right),
+    ).toEqual([0, renewedPeriodNumber]);
+    expect(allowancesAfterDelayedRenewBody.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        subscription_id: subscriptionId,
+        plan_version_id: versionThree,
+        period_number: renewedPeriodNumber,
+        period_start: renewedSubscription.current_period_start,
+        period_end: renewedSubscription.current_period_end,
+        granted_tokens: "150000",
+      }),
+    ]));
 
     const gatewayKey = await api.post(`${baseURL}/api/admin/gateway-api-keys`, {
       headers,
@@ -174,9 +302,123 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     expect(gateway.status()).toBe(200);
     const usage = await api.get(`${baseURL}/api/admin/usage?filter[subscription_id][eq]=${encodeURIComponent(subscriptionId)}`);
     expect(usage.status()).toBe(200);
-    await expect(usage.json()).resolves.toMatchObject({ data: [expect.objectContaining({ subscription_id: subscriptionId, subscription_coverage_mode: "token_allowance", allowance_charged_tokens: "15", reserved_microusd: "0" })] });
+    await expect(usage.json()).resolves.toMatchObject({ data: [expect.objectContaining({ subscription_id: subscriptionId, subscription_coverage_mode: "token_allowance", allowance_charged_tokens: "15", allowance_charged_microusd: "0", reserved_microusd: "0", charged_microusd: "0" })] });
 
-    const command = async (action: string, key: string, data: Record<string, unknown> = {}) => api.post(`${baseURL}/api/admin/subscriptions/${subscriptionId}/${action}`, { headers, data: { idempotencyKey: key, reason: `E2E ${action}`, ...data } });
+    const allowances = await api.get(`${baseURL}/api/admin/subscription-allowances?filter[subscription_id][eq]=${encodeURIComponent(subscriptionId)}`);
+    expect(allowances.status()).toBe(200);
+    const allowanceRows = (await allowances.json()).data as Array<Record<string, unknown>>;
+    expect(allowanceRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ subscription_id: subscriptionId, period_number: renewedPeriodNumber, granted_tokens: "150000" }),
+    ]));
+    for (const allowance of allowanceRows) {
+      expect(allowance).not.toHaveProperty("granted_microusd");
+      expect(allowance).not.toHaveProperty("reserved_microusd");
+      expect(allowance).not.toHaveProperty("consumed_microusd");
+    }
+
+    const subscriptionLedger = await api.get(`${baseURL}/api/admin/ledger?filter[subscription_id][eq]=${encodeURIComponent(subscriptionId)}`);
+    expect(subscriptionLedger.status()).toBe(200);
+    const subscriptionLedgerBody = await subscriptionLedger.json();
+    for (const entryType of ["subscription_charge", "allowance_capture"]) {
+      expect(subscriptionLedgerBody.data).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ entry_type: entryType }),
+      ]));
+    }
+
+    const oneTokenPlan = await api.post(`${baseURL}/api/admin/subscription-plans`, {
+      headers,
+      data: { code: "one-token-only", name: "One Token Only", description: "E2E exhausted Token allowance" },
+    });
+    expect(oneTokenPlan.status()).toBe(201);
+    const oneTokenPlanId = (await oneTokenPlan.json()).data.id as string;
+    const oneTokenVersionId = await createVersion(1, oneTokenPlanId);
+    await publishVersion(oneTokenVersionId, "one-token");
+    const cashCredit = await api.post(`${baseURL}/api/admin/platform-users/${encodeURIComponent(cashBackedBillingUserId)}/account/credit`, {
+      headers,
+      data: { amountMicrousd: 1_000_000, reason: "E2E positive cash balance must not cover exhausted Tokens", idempotencyKey: "credit:token-exhausted:e2e" },
+    });
+    expect(cashCredit.status()).toBe(200);
+    await expect(cashCredit.json()).resolves.toMatchObject({
+      data: { account: { availableMicrousd: expect.any(Number), reservedMicrousd: 0 } },
+    });
+    const oneTokenActivation = await api.post(`${baseURL}/api/admin/subscriptions`, {
+      headers,
+      data: { platformUserId: cashBackedBillingUserId, planVersionId: oneTokenVersionId, startInTrial: false, idempotencyKey: "activate:one-token:e2e", reason: "E2E one Token activation" },
+    });
+    expect(oneTokenActivation.status()).toBe(201);
+    const oneTokenSubscription = (await oneTokenActivation.json()).data as Record<string, unknown>;
+    const oneTokenSubscriptionId = String(oneTokenSubscription.id);
+    const exhaustedGatewayKey = await api.post(`${baseURL}/api/admin/gateway-api-keys`, {
+      headers,
+      data: { platformUserId: cashBackedBillingUserId, name: "subscription-token-exhausted-e2e", scopes: ["messages:create"], expiresAt: null },
+    });
+    expect(exhaustedGatewayKey.status()).toBe(201);
+    const exhaustedPlaintextKey = (await exhaustedGatewayKey.json()).data.plaintextKey as string;
+
+    const cashAccountUrl = `${baseURL}/api/admin/billing-accounts?pageSize=100&filter[platform_user_id][eq]=${encodeURIComponent(cashBackedBillingUserId)}`;
+    const cashAccountBeforeResponse = await api.get(cashAccountUrl);
+    expect(cashAccountBeforeResponse.status()).toBe(200);
+    const cashAccountBefore = (await cashAccountBeforeResponse.json()).data[0] as Record<string, unknown>;
+    expect(Number(cashAccountBefore.available_microusd)).toBeGreaterThan(0);
+    expect(cashAccountBefore.reserved_microusd).toBe("0");
+    const cashLedgerUrl = `${baseURL}/api/admin/ledger?pageSize=100&sort=created_at&order=asc&filter[platform_user_id][eq]=${encodeURIComponent(cashBackedBillingUserId)}`;
+    const cashLedgerBeforeResponse = await api.get(cashLedgerUrl);
+    expect(cashLedgerBeforeResponse.status()).toBe(200);
+    const cashLedgerBefore = await cashLedgerBeforeResponse.json();
+    const oneTokenAllowancesUrl = `${baseURL}/api/admin/subscription-allowances?filter[subscription_id][eq]=${encodeURIComponent(oneTokenSubscriptionId)}`;
+    const oneTokenAllowancesBeforeResponse = await api.get(oneTokenAllowancesUrl);
+    expect(oneTokenAllowancesBeforeResponse.status()).toBe(200);
+    const oneTokenAllowancesBefore = await oneTokenAllowancesBeforeResponse.json();
+    expect(oneTokenAllowancesBefore.data).toEqual([
+      expect.objectContaining({ granted_tokens: "1", reserved_tokens: "0", consumed_tokens: "0" }),
+    ]);
+
+    const upstreamCallsBeforeExhaustion = upstreamRequestCount;
+    const exhaustedGatewayCall = await api.post(`${baseURL}/v1/messages`, {
+      headers: { "content-type": "application/json", "x-api-key": exhaustedPlaintextKey, "idempotency-key": "subscription-token-exhausted-gateway-e2e" },
+      data: { model: "subscription-model", max_tokens: 32, messages: [{ role: "user", content: "Token estimate must exceed the one Token allowance" }] },
+    });
+    expect(exhaustedGatewayCall.status()).toBe(402);
+    const exhaustedRequestId = exhaustedGatewayCall.headers()["x-request-id"];
+    expect(exhaustedRequestId).toBeTruthy();
+    expect(await exhaustedGatewayCall.json()).toEqual({
+      type: "error",
+      request_id: exhaustedRequestId,
+      error: {
+        type: "billing_error",
+        code: "SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED",
+        message: "The current subscription-period Token allowance is insufficient",
+        request_id: exhaustedRequestId,
+        metric: "tokens",
+        unit: "tokens",
+        available_tokens: 1,
+        required_tokens: expect.any(Number),
+        period_end: oneTokenSubscription.current_period_end,
+      },
+    });
+    if (upstream) expect(upstreamRequestCount).toBe(upstreamCallsBeforeExhaustion);
+
+    const cashAccountAfterResponse = await api.get(cashAccountUrl);
+    expect(cashAccountAfterResponse.status()).toBe(200);
+    const cashAccountAfter = (await cashAccountAfterResponse.json()).data[0] as Record<string, unknown>;
+    expect(cashAccountAfter).toMatchObject({
+      available_microusd: cashAccountBefore.available_microusd,
+      reserved_microusd: cashAccountBefore.reserved_microusd,
+      version: cashAccountBefore.version,
+    });
+    const cashLedgerAfterResponse = await api.get(cashLedgerUrl);
+    expect(cashLedgerAfterResponse.status()).toBe(200);
+    const cashLedgerAfter = await cashLedgerAfterResponse.json();
+    expect(cashLedgerAfter).toEqual(cashLedgerBefore);
+    for (const entryType of ["allowance_capture", "subscription_charge"]) {
+      expect(cashLedgerAfter.data).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ entry_type: entryType }),
+      ]));
+    }
+    const oneTokenAllowancesAfterResponse = await api.get(oneTokenAllowancesUrl);
+    expect(oneTokenAllowancesAfterResponse.status()).toBe(200);
+    expect(await oneTokenAllowancesAfterResponse.json()).toEqual(oneTokenAllowancesBefore);
+
     expect((await command("pause", "pause:subscription:e2e")).status()).toBe(200);
     const pausedCall = await api.post(`${baseURL}/v1/messages`, {
       headers: { "content-type": "application/json", "x-api-key": plaintextKey },
@@ -203,15 +445,6 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     });
     expect((await command("resume", "resume:subscription:e2e")).status()).toBe(200);
 
-    const versionTwo = await createVersion(1_500_000);
-    await publishVersion(versionTwo, "v2");
-    const downgrade = await command("downgrade", "downgrade:subscription:e2e", { planVersionId: versionTwo });
-    expect(downgrade.status()).toBe(200);
-    expect((await downgrade.json()).data.pending_plan_version_id).toBe(versionTwo);
-    const upgrade = await command("upgrade", "upgrade:subscription:e2e", { planVersionId: versionTwo });
-    expect(upgrade.status()).toBe(200);
-    expect((await upgrade.json()).data.plan_version_id).toBe(versionTwo);
-    expect((await command("renew", "renew:subscription:e2e")).status()).toBe(200);
     const cancel = await command("cancel", "cancel:subscription:e2e");
     expect(cancel.status()).toBe(200);
     expect((await cancel.json()).data.status).toBe("cancel_at_period_end");
@@ -222,6 +455,14 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     expect((await api.delete(`${baseURL}/api/admin/subscriptions/${subscriptionId}`, { headers })).status()).toBe(405);
 
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto("/admin/subscriptions/versions");
+    await expect(page.getByRole("heading", { name: "套餐版本", exact: true }).first()).toBeVisible();
+    for (const forbidden of ["金额额度", "基础价格", "币种", "生效时间", "现金兜底"]) {
+      await expect(page.getByText(forbidden, { exact: true })).toHaveCount(0);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("subscription-versions-desktop-1440x1000.png"), fullPage: true });
+
     await page.goto("/admin/subscriptions/users");
     await expect(page.getByRole("heading", { name: "用户订阅", exact: true })).toBeVisible();
     const platformUserSelect = page.getByLabel("平台用户");
@@ -233,12 +474,14 @@ test.describe("subscription billing on owned PostgreSQL", () => {
         .getByText("creator@example.test", { exact: true }),
     ).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: testInfo.outputPath("subscriptions-desktop-1440x1000.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/admin/subscriptions/plans");
-    await expect(page.getByRole("heading", { name: "订阅套餐", exact: true }).first()).toBeVisible();
+    await page.goto("/admin/subscriptions/versions");
+    await expect(page.getByRole("heading", { name: "套餐版本", exact: true }).first()).toBeVisible();
+    for (const forbidden of ["金额额度", "基础价格", "币种", "生效时间", "现金兜底"]) {
+      await expect(page.getByText(forbidden, { exact: true })).toHaveCount(0);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: testInfo.outputPath("subscriptions-mobile-390x844.png") });
+    await page.screenshot({ path: testInfo.outputPath("subscription-versions-mobile-390x844.png") });
     expect(diagnostics).toEqual([]);
   });
 });

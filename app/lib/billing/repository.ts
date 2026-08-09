@@ -488,7 +488,9 @@ export async function settleGatewayRequestOnClient(
       });
     }
 
-    await updateAccount(client, account.id, transitions.final);
+    if (reserved !== 0 || allowance.cashChargeMicrousd !== 0) {
+      await updateAccount(client, account.id, transitions.final);
+    }
     await client.query(
       `UPDATE gateway_requests
        SET status = 'settled', outcome = $2,
@@ -511,7 +513,7 @@ export async function settleGatewayRequestOnClient(
         input.usage.cacheReadTokens,
         input.usage.cacheWriteTokens,
         charge.providerCostMicrousd,
-        charge.chargedMicrousd,
+        allowance.cashChargeMicrousd,
         input.usage.upstreamRequestId ?? null,
         input.httpStatus ?? null,
         input.errorCode ?? null,

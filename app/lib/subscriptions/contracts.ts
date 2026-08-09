@@ -6,14 +6,13 @@ const code = z
   .min(2)
   .max(80)
   .regex(/^[a-z0-9][a-z0-9._-]*$/);
-const safeMoney = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-const optionalLimit = safeMoney.nullable().optional();
+const safeCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const optionalLimit = safeCount.nullable().optional();
 
 export const planCreateSchema = z.strictObject({
   code,
   name: z.string().trim().min(1).max(160),
   description: z.string().trim().max(4_000).nullable().optional(),
-  currency: z.literal("USD").default("USD"),
 });
 
 export const planUpdateSchema = z.strictObject({
@@ -24,14 +23,9 @@ export const planUpdateSchema = z.strictObject({
 
 export const planVersionCreateSchema = z.strictObject({
   planId: z.string().trim().min(1).max(100),
-  billingPeriod: z.enum(["monthly", "annual"]),
-  basePriceMicrousd: safeMoney,
   trialDays: z.number().int().min(0).max(365).default(0),
   gracePeriodDays: z.number().int().min(0).max(90).default(0),
-  allowanceTokens: safeMoney.default(0),
-  allowanceMicrousd: safeMoney.default(0),
-  overagePolicy: z.enum(["deny", "cash_balance"]).default("deny"),
-  effectiveFrom: z.iso.datetime().nullable().optional(),
+  allowanceTokens: safeCount.positive().default(1),
 });
 
 export const planVersionUpdateSchema = planVersionCreateSchema
@@ -74,7 +68,6 @@ export const subscriptionActionSchema = z.strictObject({
 });
 
 export const publishVersionSchema = z.strictObject({
-  effectiveFrom: z.iso.datetime().optional(),
   idempotencyKey: z.string().trim().min(8).max(128),
   reason: z.string().trim().min(3).max(500),
 });

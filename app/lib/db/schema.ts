@@ -694,6 +694,13 @@ export const subscriptions = pgTable(
       withTimezone: true,
       mode: "date",
     }).notNull(),
+    cycle_anchor_at: timestamp("cycle_anchor_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    current_period_number: integer("current_period_number")
+      .notNull()
+      .default(0),
     trial_ends_at: timestamp("trial_ends_at", {
       withTimezone: true,
       mode: "date",
@@ -730,6 +737,10 @@ export const subscriptions = pgTable(
       "subscriptions_period_check",
       sql`${table.current_period_end} > ${table.current_period_start}`,
     ),
+    check(
+      "subscriptions_period_number_check",
+      sql`${table.current_period_number} >= 0`,
+    ),
     check("subscriptions_version_check", sql`${table.version} > 0`),
   ],
 );
@@ -741,6 +752,11 @@ export const subscriptionUsageAllowances = pgTable(
     subscription_id: text("subscription_id")
       .notNull()
       .references(() => subscriptions.id, { onDelete: "restrict" }),
+    plan_version_id: text("plan_version_id").references(
+      () => subscriptionPlanVersions.id,
+      { onDelete: "restrict" },
+    ),
+    period_number: integer("period_number"),
     period_start: timestamp("period_start", {
       withTimezone: true,
       mode: "date",
@@ -781,7 +797,14 @@ export const subscriptionUsageAllowances = pgTable(
       table.period_start,
       table.period_end,
     ),
+    uniqueIndex("subscription_allowances_cycle_period_uidx")
+      .on(table.subscription_id, table.period_number)
+      .where(sql`${table.period_number} IS NOT NULL`),
     index("subscription_allowances_period_end_idx").on(table.period_end),
+    check(
+      "subscription_allowances_period_number_check",
+      sql`${table.period_number} IS NULL OR ${table.period_number} >= 0`,
+    ),
     check(
       "subscription_allowances_period_check",
       sql`${table.period_end} > ${table.period_start}`,

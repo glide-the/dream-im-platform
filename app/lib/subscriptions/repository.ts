@@ -17,7 +17,7 @@ type Config = {
 
 const configs: Record<SubscriptionResource, Config> = {
   "subscription-plans": {
-    select: `p.id, p.code, p.name, p.description, p.currency, p.status,
+    select: `p.id, p.code, p.name, p.description, p.status,
              p.created_at, p.updated_at,
              (SELECT COUNT(*)::int FROM subscription_plan_versions v WHERE v.plan_id = p.id) AS version_count`,
     from: "FROM subscription_plans p",
@@ -27,14 +27,13 @@ const configs: Record<SubscriptionResource, Config> = {
   },
   "subscription-plan-versions": {
     select: `v.id, v.plan_id, p.code AS plan_code, p.name AS plan_name,
-             v.version_number, v.status, v.billing_period,
-             v.base_price_microusd, v.trial_days, v.grace_period_days,
-             v.allowance_tokens, v.allowance_microusd, v.overage_policy,
-             v.effective_from, v.published_at, v.created_at, v.updated_at,
+             v.version_number, v.status, 'monthly'::text AS billing_period,
+             v.trial_days, v.grace_period_days, v.allowance_tokens,
+             v.published_at, v.created_at, v.updated_at,
              (SELECT COUNT(*)::int FROM subscription_plan_entitlements e WHERE e.plan_version_id = v.id AND e.enabled) AS entitlement_count`,
     from: "FROM subscription_plan_versions v JOIN subscription_plans p ON p.id = v.plan_id",
-    columns: { id: "v.id", plan_id: "v.plan_id", plan_code: "p.code", version_number: "v.version_number", status: "v.status", billing_period: "v.billing_period", effective_from: "v.effective_from", created_at: "v.created_at", updated_at: "v.updated_at" },
-    filterFields: ["plan_id", "plan_code", "status", "billing_period"],
+    columns: { id: "v.id", plan_id: "v.plan_id", plan_code: "p.code", version_number: "v.version_number", status: "v.status", billing_period: "v.billing_period", created_at: "v.created_at", updated_at: "v.updated_at" },
+    filterFields: ["plan_id", "plan_code", "status"],
     defaultSort: "created_at",
   },
   "subscription-entitlements": {
@@ -54,18 +53,23 @@ const configs: Record<SubscriptionResource, Config> = {
   subscriptions: {
     select: `s.id, s.platform_user_id, u.email, u.display_name,
              s.plan_version_id, p.code AS plan_code, p.name AS plan_name,
-             v.version_number, s.pending_plan_version_id, s.status,
-             v.overage_policy,
+             v.version_number, s.pending_plan_version_id,
+             pending_p.code AS pending_plan_code,
+             pending_v.version_number AS pending_version_number, s.status,
+             s.cycle_anchor_at, s.current_period_number,
              s.current_period_start, s.current_period_end, s.trial_ends_at,
              s.grace_ends_at, s.renewal_enabled, s.paused_at, s.cancelled_at,
              s.version, s.created_at, s.updated_at,
              a.id AS allowance_id, a.granted_tokens, a.reserved_tokens,
-             a.consumed_tokens, a.granted_microusd, a.reserved_microusd,
-             a.consumed_microusd`,
+             a.consumed_tokens`,
     from: `FROM subscriptions s
            JOIN platform_users u ON u.id = s.platform_user_id
            JOIN subscription_plan_versions v ON v.id = s.plan_version_id
            JOIN subscription_plans p ON p.id = v.plan_id
+           LEFT JOIN subscription_plan_versions pending_v
+             ON pending_v.id = s.pending_plan_version_id
+           LEFT JOIN subscription_plans pending_p
+             ON pending_p.id = pending_v.plan_id
            LEFT JOIN subscription_usage_allowances a ON a.subscription_id = s.id
              AND a.period_start = s.current_period_start AND a.period_end = s.current_period_end`,
     columns: { id: "s.id", platform_user_id: "s.platform_user_id", email: "u.email", plan_version_id: "s.plan_version_id", plan_code: "p.code", status: "s.status", current_period_end: "s.current_period_end", created_at: "s.created_at", updated_at: "s.updated_at" },
@@ -74,9 +78,9 @@ const configs: Record<SubscriptionResource, Config> = {
   },
   "subscription-allowances": {
     select: `a.id, a.subscription_id, s.platform_user_id, u.email,
-             a.period_start, a.period_end, a.granted_tokens, a.reserved_tokens,
-             a.consumed_tokens, a.granted_microusd, a.reserved_microusd,
-             a.consumed_microusd, a.version, a.created_at, a.updated_at`,
+             a.plan_version_id, a.period_number, a.period_start, a.period_end,
+             a.granted_tokens, a.reserved_tokens, a.consumed_tokens,
+             a.version, a.created_at, a.updated_at`,
     from: `FROM subscription_usage_allowances a
            JOIN subscriptions s ON s.id = a.subscription_id
            JOIN platform_users u ON u.id = s.platform_user_id`,

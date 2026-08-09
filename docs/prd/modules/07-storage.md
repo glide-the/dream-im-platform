@@ -4,6 +4,14 @@
 
 > 实现状态：现有 S3/Vercel Blob API、Admin Resource、权限与删除审计已实现。
 
+## 0. Current / Target / Release Gate
+
+| 分层 | 范围 |
+|---|---|
+| Current | S3/Vercel Blob API、Admin Resource、权限与删除审计已实现。 |
+| Target | 在 PostgreSQL、Subscription/Gateway/Payment 改造中继续使用原有 driver 边界；不引入 JSON/内存文件回退。 |
+| Release Gate | 隔离 driver/MinIO 回归、Secret 不回显、路径安全与 390×844 长 key 交互通过。 |
+
 ## 1. 目标
 
 保留并运营现有 S3/Vercel Blob 文件能力，为授权管理员提供配置健康、资源查询、受控上传/读取/下载和审计。Storage 不使用数据库替代实现，不引入本地 JSON/内存回退。

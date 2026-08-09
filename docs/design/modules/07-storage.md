@@ -4,6 +4,14 @@
 
 > 实现状态：已实现；本文用于 Storage 回归与后续优化。
 
+## 0. Current / Target / Release Gate
+
+| 分层 | 交互边界 |
+|---|---|
+| Current | S3/Vercel Blob 资源运营交互已实现。 |
+| Target | 订阅/Gateway/PostgreSQL 改造不改变 Storage 真实 driver 边界，不增加本地 JSON/内存 fallback。 |
+| Release Gate | 隔离 driver 与 focused E2E 保证上传/读取/删除/长 key 与 Secret 安全无回归。 |
+
 ## 1. 页面目的
 
 资源运营和管理员检查 driver/config health，查询真实对象并执行受控上传、读取、下载或删除；页面不得伪造文件列表或容量指标。

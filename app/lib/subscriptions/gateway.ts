@@ -8,8 +8,6 @@ type Row = {
   current_period_end: Date;
   trial_ends_at: Date | null;
   grace_ends_at: Date | null;
-  billing_period: string;
-  overage_policy: "deny" | "cash_balance";
   entitlement_id: string | null;
   gateway_scopes: string[] | null;
   requests_per_minute: number | null;
@@ -19,9 +17,6 @@ type Row = {
   granted_tokens: string | number | null;
   reserved_tokens: string | number | null;
   consumed_tokens: string | number | null;
-  granted_microusd: string | number | null;
-  reserved_microusd: string | number | null;
-  consumed_microusd: string | number | null;
 };
 
 export type GatewaySubscriptionContext = {
@@ -29,10 +24,8 @@ export type GatewaySubscriptionContext = {
   planVersionId: string;
   entitlementId: string;
   allowanceId: string;
-  coverageMode: "token_allowance" | "money_allowance" | "cash_only";
+  coverageMode: "token_allowance";
   allowanceReservedTokens: number;
-  allowanceReservedMicrousd: number;
-  cashReservedMicrousd: number;
   limits: {
     requestsPerMinute?: number;
     dailyTokenLimit?: number;
@@ -45,8 +38,11 @@ export type GatewaySubscriptionRejection = {
   code: string;
   status: 402 | 403 | 409;
   message: string;
-  availableMicrousd?: number;
-  requiredMicrousd?: number;
+  metric?: "tokens";
+  unit?: "tokens";
+  availableTokens?: number;
+  requiredTokens?: number;
+  periodEnd?: string;
 };
 
 function safe(value: string | number | null, name: string) {
@@ -68,7 +64,6 @@ export async function resolveGatewaySubscriptionOnClient(
     modelId: string;
     requiredScope: string;
     estimatedTokens: number;
-    reservationMicrousd: number;
     at: Date;
   },
 ): Promise<GatewaySubscriptionContext | GatewaySubscriptionRejection | null> {
@@ -76,15 +71,11 @@ export async function resolveGatewaySubscriptionOnClient(
     `SELECT s.id AS subscription_id, s.plan_version_id,
             s.status AS subscription_status, s.current_period_start,
             s.current_period_end, s.trial_ends_at, s.grace_ends_at,
-            v.billing_period, v.overage_policy,
             e.id AS entitlement_id, e.gateway_scopes,
             e.requests_per_minute, e.daily_token_limit,
             e.monthly_token_limit, a.id AS allowance_id,
-            a.granted_tokens, a.reserved_tokens, a.consumed_tokens,
-            a.granted_microusd, a.reserved_microusd,
-            a.consumed_microusd
+            a.granted_tokens, a.reserved_tokens, a.consumed_tokens
      FROM subscriptions s
-     JOIN subscription_plan_versions v ON v.id = s.plan_version_id
      LEFT JOIN subscription_plan_entitlements e
        ON e.plan_version_id = s.plan_version_id
       AND e.model_id = $2 AND e.enabled
@@ -95,7 +86,7 @@ export async function resolveGatewaySubscriptionOnClient(
      WHERE s.platform_user_id = $1
      ORDER BY s.created_at DESC
      LIMIT 1
-     FOR SHARE OF s, v`,
+     FOR SHARE OF s`,
     [input.platformUserId, input.modelId],
   );
   const row = result.rows[0];
@@ -121,6 +112,13 @@ export async function resolveGatewaySubscriptionOnClient(
           : "SUBSCRIPTION_INACTIVE",
       status: 403,
       message: "The user subscription is not callable",
+    };
+  }
+  if (row.current_period_start > input.at) {
+    return {
+      code: "SUBSCRIPTION_PERIOD_NOT_STARTED",
+      status: 403,
+      message: "The current subscription period has not started",
     };
   }
   if (row.current_period_end <= input.at && !inGrace) {
@@ -156,43 +154,16 @@ export async function resolveGatewaySubscriptionOnClient(
     safe(row.granted_tokens, "granted_tokens") -
     safe(row.reserved_tokens, "reserved_tokens") -
     safe(row.consumed_tokens, "consumed_tokens");
-  const moneyRemaining =
-    safe(row.granted_microusd, "granted_microusd") -
-    safe(row.reserved_microusd, "reserved_microusd") -
-    safe(row.consumed_microusd, "consumed_microusd");
-  const hasTokenAllowance = safe(row.granted_tokens, "granted_tokens") > 0;
-  const hasMoneyAllowance =
-    safe(row.granted_microusd, "granted_microusd") > 0;
-
-  let coverageMode: GatewaySubscriptionContext["coverageMode"] = "cash_only";
-  let allowanceReservedTokens = 0;
-  let allowanceReservedMicrousd = 0;
-  let cashReservedMicrousd = input.reservationMicrousd;
-  if (hasTokenAllowance && tokenRemaining >= input.estimatedTokens) {
-    coverageMode = "token_allowance";
-    allowanceReservedTokens = input.estimatedTokens;
-    cashReservedMicrousd = 0;
-  } else if (hasMoneyAllowance && moneyRemaining > 0) {
-    coverageMode = "money_allowance";
-    allowanceReservedMicrousd = Math.min(
-      moneyRemaining,
-      input.reservationMicrousd,
-    );
-    cashReservedMicrousd =
-      input.reservationMicrousd - allowanceReservedMicrousd;
-  }
-
-  if (cashReservedMicrousd > 0 && row.overage_policy === "deny") {
+  if (tokenRemaining < input.estimatedTokens) {
     return {
-      code: "SUBSCRIPTION_ALLOWANCE_EXHAUSTED",
+      code: "SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED",
       status: 402,
-      message: "The subscription allowance is insufficient and overage is disabled",
-      availableMicrousd:
-        coverageMode === "money_allowance" ? moneyRemaining : tokenRemaining,
-      requiredMicrousd:
-        coverageMode === "money_allowance"
-          ? input.reservationMicrousd
-          : input.estimatedTokens,
+      message: "The current subscription-period Token allowance is insufficient",
+      metric: "tokens",
+      unit: "tokens",
+      availableTokens: tokenRemaining,
+      requiredTokens: input.estimatedTokens,
+      periodEnd: row.current_period_end.toISOString(),
     };
   }
 
@@ -201,10 +172,8 @@ export async function resolveGatewaySubscriptionOnClient(
     planVersionId: row.plan_version_id,
     entitlementId: row.entitlement_id,
     allowanceId: row.allowance_id,
-    coverageMode,
-    allowanceReservedTokens,
-    allowanceReservedMicrousd,
-    cashReservedMicrousd,
+    coverageMode: "token_allowance",
+    allowanceReservedTokens: input.estimatedTokens,
     limits: {
       requestsPerMinute: row.requests_per_minute ?? undefined,
       dailyTokenLimit: optional(row.daily_token_limit),
@@ -212,12 +181,11 @@ export async function resolveGatewaySubscriptionOnClient(
     },
     snapshot: {
       status: row.subscription_status,
-      billingPeriod: row.billing_period,
+      billingPeriod: "monthly",
       periodStart: row.current_period_start.toISOString(),
       periodEnd: row.current_period_end.toISOString(),
-      overagePolicy: row.overage_policy,
       gatewayScopes: row.gateway_scopes,
-      coverageMode,
+      coverageMode: "token_allowance",
     },
   };
 }
@@ -226,23 +194,14 @@ export async function reserveSubscriptionAllowanceOnClient(
   client: PoolClient,
   input: GatewaySubscriptionContext,
 ) {
-  if (
-    input.allowanceReservedTokens === 0 &&
-    input.allowanceReservedMicrousd === 0
-  ) return;
+  if (input.allowanceReservedTokens === 0) return;
   const result = await client.query(
     `UPDATE subscription_usage_allowances
      SET reserved_tokens = reserved_tokens + $2,
-         reserved_microusd = reserved_microusd + $3,
          version = version + 1, updated_at = NOW()
      WHERE id = $1
-       AND reserved_tokens + consumed_tokens + $2 <= granted_tokens
-       AND reserved_microusd + consumed_microusd + $3 <= granted_microusd`,
-    [
-      input.allowanceId,
-      input.allowanceReservedTokens,
-      input.allowanceReservedMicrousd,
-    ],
+       AND reserved_tokens + consumed_tokens + $2 <= granted_tokens`,
+    [input.allowanceId, input.allowanceReservedTokens],
   );
   if (result.rowCount !== 1) {
     throw new Error("SUBSCRIPTION_ALLOWANCE_CONCURRENT_CONFLICT");
@@ -253,21 +212,13 @@ export async function releaseSubscriptionAllowanceOnClient(
   client: PoolClient,
   input: GatewaySubscriptionContext,
 ) {
-  if (
-    input.allowanceReservedTokens === 0 &&
-    input.allowanceReservedMicrousd === 0
-  ) return;
+  if (input.allowanceReservedTokens === 0) return;
   const result = await client.query(
     `UPDATE subscription_usage_allowances
      SET reserved_tokens = reserved_tokens - $2,
-         reserved_microusd = reserved_microusd - $3,
          version = version + 1, updated_at = NOW()
-     WHERE id = $1 AND reserved_tokens >= $2 AND reserved_microusd >= $3`,
-    [
-      input.allowanceId,
-      input.allowanceReservedTokens,
-      input.allowanceReservedMicrousd,
-    ],
+     WHERE id = $1 AND reserved_tokens >= $2`,
+    [input.allowanceId, input.allowanceReservedTokens],
   );
   if (result.rowCount !== 1) {
     throw new Error("SUBSCRIPTION_ALLOWANCE_RELEASE_INVARIANT");
@@ -309,63 +260,65 @@ export async function settleSubscriptionAllowanceOnClient(
   if (!row) throw new Error("SUBSCRIPTION_ALLOWANCE_NOT_FOUND");
   const reservedTokens = safe(row.reserved_tokens, "reserved_tokens");
   const reservedMoney = safe(row.reserved_microusd, "reserved_microusd");
-  if (
-    reservedTokens < input.reservedTokens ||
-    reservedMoney < input.reservedMicrousd
-  ) {
-    throw new Error("SUBSCRIPTION_ALLOWANCE_SETTLEMENT_INVARIANT");
-  }
-
-  let allowanceChargedTokens = 0;
-  let allowanceChargeMicrousd = 0;
-  let allowanceConsumedMicrousd = 0;
   if (input.coverageMode === "token_allowance") {
+    if (reservedTokens < input.reservedTokens) {
+      throw new Error("SUBSCRIPTION_ALLOWANCE_SETTLEMENT_INVARIANT");
+    }
     const availableIncludingRequest =
       safe(row.granted_tokens, "granted_tokens") -
       safe(row.consumed_tokens, "consumed_tokens") -
       (reservedTokens - input.reservedTokens);
-    allowanceChargedTokens = Math.min(
+    const allowanceChargedTokens = Math.min(
       input.actualTokens,
       Math.max(0, availableIncludingRequest),
     );
-    allowanceChargeMicrousd =
-      input.actualTokens === 0
-        ? 0
-        : Math.floor(
-            (input.chargeMicrousd * allowanceChargedTokens) /
-              input.actualTokens,
-          );
-  } else if (input.coverageMode === "money_allowance") {
+    await client.query(
+      `UPDATE subscription_usage_allowances
+       SET reserved_tokens = reserved_tokens - $2,
+           consumed_tokens = consumed_tokens + $3,
+           version = version + 1, updated_at = NOW()
+       WHERE id = $1`,
+      [input.allowanceId, input.reservedTokens, allowanceChargedTokens],
+    );
+    return {
+      cashChargeMicrousd: 0,
+      allowanceChargeMicrousd: 0,
+      allowanceChargedTokens,
+    };
+  }
+
+  // Rolling-deploy compatibility for requests reserved before the Token-only
+  // migration. The resolver never creates new money_allowance requests.
+  if (input.coverageMode === "money_allowance") {
+    if (reservedMoney < input.reservedMicrousd) {
+      throw new Error("SUBSCRIPTION_ALLOWANCE_SETTLEMENT_INVARIANT");
+    }
     const availableIncludingRequest =
       safe(row.granted_microusd, "granted_microusd") -
       safe(row.consumed_microusd, "consumed_microusd") -
       (reservedMoney - input.reservedMicrousd);
-    allowanceChargeMicrousd = Math.min(
+    const allowanceChargeMicrousd = Math.min(
       input.chargeMicrousd,
       Math.max(0, availableIncludingRequest),
     );
-    allowanceConsumedMicrousd = allowanceChargeMicrousd;
+    await client.query(
+      `UPDATE subscription_usage_allowances
+       SET reserved_microusd = reserved_microusd - $2,
+           consumed_microusd = consumed_microusd + $3,
+           version = version + 1, updated_at = NOW()
+       WHERE id = $1`,
+      [input.allowanceId, input.reservedMicrousd, allowanceChargeMicrousd],
+    );
+    return {
+      cashChargeMicrousd: input.chargeMicrousd - allowanceChargeMicrousd,
+      allowanceChargeMicrousd,
+      allowanceChargedTokens: 0,
+    };
   }
 
-  await client.query(
-    `UPDATE subscription_usage_allowances
-     SET reserved_tokens = reserved_tokens - $2,
-         consumed_tokens = consumed_tokens + $3,
-         reserved_microusd = reserved_microusd - $4,
-         consumed_microusd = consumed_microusd + $5,
-         version = version + 1, updated_at = NOW()
-     WHERE id = $1`,
-    [
-      input.allowanceId,
-      input.reservedTokens,
-      allowanceChargedTokens,
-      input.reservedMicrousd,
-      allowanceConsumedMicrousd,
-    ],
-  );
   return {
-    cashChargeMicrousd: input.chargeMicrousd - allowanceChargeMicrousd,
-    allowanceChargeMicrousd,
-    allowanceChargedTokens,
+    cashChargeMicrousd: input.chargeMicrousd,
+    allowanceChargeMicrousd: 0,
+    allowanceChargedTokens: 0,
   };
 }

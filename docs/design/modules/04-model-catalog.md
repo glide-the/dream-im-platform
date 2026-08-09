@@ -4,6 +4,14 @@
 
 > 实现状态：核心页面与同步流程已实现；RPM 编辑明确不开放。
 
+## 0. Current / Target / Release Gate
+
+| 分层 | 交互边界 |
+|---|---|
+| Current | Provider/Model/Pricing/Discover/同步页面；用户—模型例外已移至 Gateway 限流唯一入口，RPM 编辑未开放。 |
+| Target | 为 Dream 的 `/api/product/v1/me/model-catalog` 发布已定价、Entitlement/Permission 实际允许的 stable alias/label/capability；无静态模型 fallback。 |
+| Release Gate | 历史 Pricing 只读，Secret 无 DOM/回读，未授权/未定价 alias 不进产品 catalog，旧 permissions 路由只跳 Gateway。 |
+
 ## 1. Provider
 
 列表采用单列紧凑条目：身份（name/code/protocol/base URL）→ Credential/网络/同步/模型数/价格覆盖 → 常显“同步模型、查看用量、编辑”。筛选 keyword/protocol/status/sync status；不依赖 hover。
@@ -33,3 +41,4 @@ Pricing 列表列 model/tier、四类价格、markup/discount、source/status/ef
 - UI-MOD-02：Discover 失败不显示 Provider 保存失败；stale Apply 可恢复。
 - UI-MOD-03：价格单位、旧/新版本和生效时间同时可见。
 - UI-MOD-04：模型中心不存在“模型权限”Tab 或侧边导航；旧路径跳转到限流策略的用户—模型例外限制区。
+- UI-MOD-05（Target release gate）：产品 catalog empty/403/503 显示真实空集或不可用，不插入 Auto/Claude/GPT 静态选项；新 Pricing 生效不改历史 Request 快照。

@@ -2,13 +2,13 @@
 
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[平台用户](../../design/modules/01-platform-users.md)
 
-> 实现状态：canonical 用户列表、自动兼容键/账户和用户级限额已实现；订阅开通与人工 credit 的本地选择器目前各只加载前 100 名用户，服务端搜索分页的统一 Relation Selector 与聚合详情仍为规划能力。
+> 实现状态：canonical 用户列表、自动兼容键/账户和用户级限额已实现；Subscription、credit 与 Usage 的专用选择器仍固定首页 100，通用 relation 仅首页 50/100，服务端搜索分页/hydration 与聚合详情仍为 Target。
 
 ## 0. Current / Target / Release Gate
 
 | 分层 | 范围 |
 |---|---|
-| Current | `users` 驱动列表，`0015` 自动回填 `platform_users`/账户；专用 selector 仍取前 100，通用 relation 仍只有首页 50/100，Gateway/Subscription/Key/Permission/credit 未都在同一事务反查 canonical 用户。 |
+| Current | `users` 驱动列表，`0015` 自动回填 `platform_users`/账户；Subscription/credit/Usage 专用 selector 仍取首页 100，通用 relation 仍只有首页 50/100，Gateway/Subscription/Key/Permission/credit 未都在同一事务反查 canonical 用户。 |
 | Target | `CanonicalUserRelationService` 从 `users` 提供 `q/page/pageSize/total`、跨页选中 hydration 和内部 billing identity；不存在第二套用户名册或创建入口。 |
 | Release Gate | 至少 205 用户的搜索/翻页/total 自动化通过；QA seed 不得成为唯一计费用户；orphan 先审计 Key/余额/Usage/Ledger/Subscription 再隔离，不删财务历史。 |
 
@@ -37,7 +37,7 @@
 | 计费账户 | `billing_accounts` / `billing-accounts` | 自动创建；余额命令式调整 |
 | 用户—模型例外限制 | `user_model_permissions` | 见 [Gateway 限流模块](05-gateway.md)；不扩大 Entitlement |
 
-所有用户型 Relation Selector 的目标合同是从 canonical 用户全集经服务端搜索/分页返回稳定内部键；POST `/api/admin/platform-users` 返回 405。当前 `SubscriptionLifecycleManager` 与 `BillingAdjustmentForm` 只请求前 100 条，是 UI 查询范围缺口，不得解释为只有这些用户可以订阅或计费。
+所有用户型 Relation Selector 的目标合同是从 canonical 用户全集经服务端搜索/分页返回稳定内部键；POST `/api/admin/platform-users` 返回 405。当前 `SubscriptionLifecycleManager`、`BillingAdjustmentForm` 与 `AdminUsageDashboard` 只请求首页 100，是 UI 查询范围缺口，不得解释为只有这些用户可以订阅、计费或查看 Usage。
 
 ## 4. 规则与冲突
 
