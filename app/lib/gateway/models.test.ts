@@ -33,7 +33,6 @@ describe("public Gateway model catalog", () => {
           code: "dream-balanced",
           display_name: "Dream Balanced",
           protocol: "anthropic",
-          provider_code: "provider-a",
           context_window: 200000,
           max_output_tokens: 8192,
           capabilities: { tools: true },
@@ -52,6 +51,7 @@ describe("public Gateway model catalog", () => {
       expect.objectContaining({
         id: "dream-balanced",
         display_name: "Dream Balanced",
+        owned_by: "ink-memory",
         gateway_scopes: ["messages:create", "models:list"],
       }),
     ]);

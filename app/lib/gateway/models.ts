@@ -6,7 +6,6 @@ type ModelListRow = {
   code: string;
   display_name: string;
   protocol: "anthropic" | "openai";
-  provider_code: string;
   context_window: number | null;
   max_output_tokens: number | null;
   capabilities: Record<string, boolean> | null;
@@ -20,7 +19,7 @@ export async function listAvailableGatewayModels(input: {
 }) {
   return await withPlatformClient(async (client) => {
     const { rows } = await client.query<ModelListRow>(
-      `SELECT DISTINCT m.code, m.display_name, p.protocol, p.code AS provider_code,
+      `SELECT DISTINCT m.code, m.display_name, p.protocol,
               m.context_window, m.max_output_tokens, m.capabilities,
               entitlement.gateway_scopes,
               m.created_at
@@ -56,7 +55,6 @@ export async function listAvailableGatewayModels(input: {
          AND version.allowance_microusd = 0
          AND version.overage_policy = 'deny'
          AND version.effective_from IS NULL
-         AND allowance.granted_tokens - allowance.consumed_tokens - allowance.reserved_tokens > 0
          AND p.status = 'active'
          AND p.api_key_ciphertext IS NOT NULL
          AND p.api_key_iv IS NOT NULL
@@ -77,7 +75,7 @@ export async function listAvailableGatewayModels(input: {
       id: row.code,
       object: "model" as const,
       created: Math.floor(row.created_at.getTime() / 1_000),
-      owned_by: row.provider_code,
+      owned_by: "ink-memory",
       display_name: row.display_name,
       protocol: row.protocol,
       context_window: row.context_window,

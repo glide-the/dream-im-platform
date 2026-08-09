@@ -90,7 +90,7 @@ Dream 浏览器永远不持有 Gateway Key。Dream 服务凭据只来自 server-
 | `routers/claude_agent.py`、Claude Agent service/runner | 在 runner 的单一网络边界替换 provider transport | Anthropic compatible SSE、thread/resume、tool use、usage |
 | `dream_agent_message_service.py`、`dream_confirmation_service.py`、`guidance_service.py`、`dream_launch_gateway.py`、Reflection | 共用同一 runner/Gateway adapter，不逐个业务分叉 | workspace、plugin、tool confirmation、provenance、状态持久化 |
 | `picture_service.py` | 已切换 Gateway description/image alias，并删除 direct endpoint/key | media payload、失败语义与实际 usage；外部 canary 未通过时 fail closed |
-| `ModelConfigSection.tsx`、`chat-schema.ts` | 静态型号改为产品 model catalog alias | Auto 仅可表示服务端策略，不代表浏览器任意 provider routing |
+| `ModelConfigSection.tsx`、`Sidebar.tsx`、`gatewayModelsApi.ts` | 已移除静态型号；通过 Dream `/api/gateway/models` 读取 Admin 公共 Gateway `/v1/models` | 只保存平台 alias，不接受浏览器 provider routing |
 
 `backend/services/story_workspace/dream_launch_gateway.py` 是 Dream 启动协调器，不是 Admin AI Gateway。迁移不得因其文件名而跳过真正的网络边界。
 
@@ -108,11 +108,11 @@ Gateway 响应保持协议兼容，同时 Dream 只向浏览器透传安全字�
 
 ## 7. 模型选择与权限
 
-1. 浏览器从 `GET /api/product/v1/me/model-catalog` 取得 alias、label、capabilities 与可展示限制。
-2. Dream FastAPI 校验 alias 属于当前用户目录；客户端提交的 provider/model 字符串不直接执行。
-3. Gateway 再按当前 Subscription→Plan Version→Entitlement→user override 解析权限；TOCTOU 时以 Gateway 最新状态为准。
-4. Auto 由服务端策略解析为请求时 model/pricing snapshot；历史 Usage 显示实际 resolved alias/model label，而不是重新解析当前策略。
-5. catalog empty、403、503 分别表示真实无可用模型、当前状态拒绝、控制面不可用；无静态 fallback。
+1. 订阅页继续从 Product model catalog 展示权益；设置页经 Dream `GET /api/gateway/models` 调用 Admin 公共 `GET /v1/models`，取得当前用户实际可调用的 alias、label、capabilities、scope 与可展示限制。
+2. Dream FastAPI 在保存设置时再次调用公共 Gateway 目录校验 alias，只保存 `system_config.model` 平台 alias 并固定 `provider=gateway`；客户端提交的 provider/upstream model 字符串不执行。
+3. 每次 Claude Agent 新 turn 都从服务端 preference 解析 alias、刷新 `/v1/models` 资格并把该 alias 写入 Gateway-backed Claude SDK options；浏览器不再发送 `chatModel`。Gateway 随后按最新 Subscription→Plan Version→Entitlement→user override 解析权限，TOCTOU 时以 Gateway 最新状态为准。
+4. 旧 upstream 型号或已下架 alias 显示“已下架或无权限”，不会暗中改写；仅当尚未保存有效选择且部署配置的 `INK_GATEWAY_TEXT_MODEL_ALIAS` 仍在实时目录中时，作为服务端初始默认。
+5. catalog empty、402、403、429、503 分别表示真实无可用模型、Token 用尽、当前状态拒绝、限流和控制面不可用；无静态 fallback。
 
 ## 8. 流式、失败与结算语义
 

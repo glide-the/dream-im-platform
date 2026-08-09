@@ -8,7 +8,7 @@
 
 | 分层 | 范围 |
 |---|---|
-| Current / Implemented | Anthropic/OpenAI 代理、Key hash、Request/Payload、canonical user→Subscription→Entitlement→Permission→limit→Token Allowance→reserve/settlement→Token Ledger、cash-only 禁回退与终态 guard 已实现；Dream 使用 canonical-subject server client。 |
+| Current / Implemented | Anthropic/OpenAI 代理、Key hash、Request/Payload、canonical user→Subscription→Entitlement→Permission→limit→Token Allowance→reserve/settlement→Token Ledger、cash-only 禁回退与终态 guard 已实现；Dream 使用 canonical-subject server client。`GET /v1/models` 只列出当前月订阅、Entitlement、当前周期 Allowance、用户权限与有效定价共同允许的模型，并由 Dream 设置页和 Claude Agent 共用；Allowance 为 0 不把 alias 从设置中下架，调用时由 Gateway 返回 402。 |
 | Release candidate evidence | Admin `0000–0024`、66 files/313 tests、tsc/lint/build；隔离 Gateway 精确验证 reserve 40/capture 12/release 28 与 Token Ledger 顺序/幂等/不可变。Dream backend 1,679 passed/14 skipped/652 subtests、推理聚焦 61 passed，全入口禁 direct fallback，Secret/未知字段不透传。 |
 | Release Gate | 生产 Key/Secret 注入、真实 Provider stream/cancel/usage-missing 与用户级 canary；关闭 canary 后不得 direct Provider。 |
 

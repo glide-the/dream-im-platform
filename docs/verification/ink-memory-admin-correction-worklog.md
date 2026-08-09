@@ -1451,3 +1451,66 @@ Optional Enhancers:
 未执行事项及原因：
 
 - 接口审计、Schema/DTO/Service/BFF/UI/Claude Agent 改造与隔离验证必须在本 Prompt Architect 记录之后执行。
+
+### Round 48 执行结果（平台模型目录与 Claude Agent Gateway 选择闭环）
+
+- 根因确认：Dream `ModelConfigSection.tsx` 与 legacy `Sidebar.tsx` 仍硬编码 `claude-sonnet-4-20250514`、`gpt-4.1-2025-04-14`；ChatPanel/voice API 仍把浏览器 provider/model 发送给后端；Claude Agent runner 虽已覆盖 Base URL/Auth 到 Admin Gateway，但 request model 默认受旧环境开关控制而被忽略。
+- Admin 公共 `GET /v1/models` 已改为按 canonical-subject 的当前月 Subscription、published Token-only Plan Version、enabled Entitlement、当前周期 Allowance、user model permission、active Provider credential 与有效 Pricing 共同筛选；Allowance 用尽不从设置目录隐藏 alias，实际调用由 Gateway 返回 402。响应新增 `gateway_scopes`，`owned_by` 固定安全平台值，不暴露真实 Provider route 或 Secret。真实 PG 只读 SQL probe 通过，当前 catalog 链存在 1 个可资格匹配的平台模型；未写数据库。
+- Dream 新增严格 `GatewayModelCatalogClient` 与认证 BFF `GET /api/gateway/models`：使用 server-only canonical-subject JWT、`models:list` scope 和 service Key 调用 Admin `/v1/models`，只向浏览器投影 alias、display name、protocol、capabilities、scope、context/output limits；401/402/403/409/429/502/503 fail closed。
+- `PUT /api/system-config` 保存模型前会重新获取实时 Gateway catalog，只接受当前用户具有 `messages:create` 的 alias，固定内部 `provider=gateway`；浏览器不能提交 Provider 路由或任意 upstream model。旧/下架 alias 在 UI 明示不可用，不静态 fallback。
+- Claude Agent 每个新 turn 从服务端 preference 解析 alias并刷新实时目录；客户端若试图提交不同 alias 返回 409。验证后的 alias 写入 `ClaudeAgentRunRequest`，Gateway enabled 时强制赋给 Claude SDK `options.model`；SDK 的 Base URL/Auth/subject 继续在所有 project/user env overlay 后由 Admin Gateway 覆盖。assistant metadata 记录 `provider=gateway`，不记录 Provider Secret。
+- Dream 设置页与 legacy sidebar 均移除静态数组并使用真实 BFF，覆盖 loading、empty、401/402/403/429/503、下架/无权限、保存回滚和重试；ChatPanel 与 voice SSE 不再发送 `chatModel`。focused Playwright 证明页面只显示 Admin alias、PUT 仅为 `{model: alias}`、Claude/GPT 静态项不存在；与订阅回归合计 5/5 通过。
+- Dream backend focused 82/82 通过；正式 `pytest tests` 为 1,688 passed / 14 skipped / 652 subtests，受管 Python compileall 通过。一次裸 `pytest` 误收集 `data/agent-workspace/**` 内运行时第三方 skill 的 579 份同名测试而 collection error；没有删除这些用户/运行时文件，按项目正式 `tests/` 范围重跑全绿。
+- Dream frontend `tsc --noEmit`、lint（0 errors / 21 existing warnings）、production build 通过。Admin `env:check`、`tsc --noEmit`、lint、67 files/314 tests、production build 全部通过。
+- FastAPI 实际启动进入 `Application startup complete`；`GET /api/health`=200，未认证 `GET /api/gateway/models`=401。随后正常 shutdown，8765 最终无监听。未连接真实外部 Provider、未使用或输出真实 Gateway/Provider Secret。
+- 文档已同步 `README.md`、`backend/.env.example`、Dream 07 架构和 Gateway 模块 PRD，明确设置页使用 Admin 公共 `/v1/models`，订阅页继续使用 Product catalog，两者不再把静态型号或浏览器 Provider routing 当作真值。
+
+未执行事项及原因：
+
+- 本机 `backend/.env` 与 Admin `.env.local` 当前没有已配对的 canonical-subject service Key/JWT issuer/audience，且 3000 无 Admin listener；因此未对真实外部 Provider 发起 Claude turn。生产/本机部署需由 Secret 注入创建一次性 Gateway service Key并配置双方 issuer/audience，不能把明文 Key写入仓库、数据库或日志。
+- 未执行真实 Provider stream/cancel/usage-missing canary；代码、严格 DTO、synthetic Gateway、完整 Claude request model 传递和构建回归已完成，真实用户级 canary仍是带 Secret 的发布门禁。
+
+## Round 49 — Workflow Run PostgreSQL 时间类型兼容与 503 修复
+
+Optimized Prompt:
+
+作为 Ink Dream Memory 的 FastAPI、PostgreSQL 与 Workflow Run 兼容性修复负责人，处理业务表数据源切换到统一 PostgreSQL `ink-memory` 后，`GET /api/story-workspace/workflow-runs/{run_id}` 对已迁移记录返回 503 的问题。先以 Round 47 的 48 表逐主键对账为迁移完整性基线，对用户提供的 run 执行只读 existence、字段类型和 actor/workspace scoped service probe；不得把 503 误判为数据缺失，不得重灌、覆盖或重新归属数据。
+
+沿 FastAPI Router → `StoryWorkflowGateway` → `WorkflowRunService` → PostgreSQL row factory → Pydantic response 的真实调用链定位异常。修复必须同时兼容 PostgreSQL 原生 timezone-aware `datetime` 与遗留/测试边界中的 ISO-8601 字符串，统一归一化为 UTC；禁止恢复 SQLite fallback、把所有异常继续静默包装为成功、泄露业务正文或用户身份。补充成功路径与非法时间失败路径回归测试，至少覆盖 `created_at`、`source_message_time`、`started_at`、`completed_at` 的 PostgreSQL 原生类型，以及现有 ISO 字符串合同。
+
+验证应包括 focused Workflow Run tests、真实 `ink-memory` 的只读目标 run service/gateway probe 和响应 JSON 序列化；不得写共享数据库、不得调用 Provider/Payment、不得覆盖当前模型设置相关未提交文件。若启动 Uvicorn，只使用项目虚拟环境，验证后关闭 8765。最终记录根因、修改文件、测试数量、真实 run 读取结果、未执行场景与数据库无写入确认。
+
+Optional Enhancers:
+
+- 审计相邻 PostgreSQL row 时间解析器是否存在同类边界，但只在有独立回归证据且不扩大业务语义时复用安全的归一化方式。
+- 为 503 兜底日志保留不含 PII/Secret 的 exception class 与 operation 名，便于后续区分依赖故障和响应映射缺陷。
+
+范围变化：
+
+- 本轮暂停 Round 48 的模型配置扩展，只修复用户当前报告的 Workflow Run 详情 503；不修改 Admin Gateway 模型目录、订阅、支付、ACL 或数据归属。
+- 48 表迁移数据继续以 Round 47 对账结果为事实，不执行 importer、upsert、DROP、TRUNCATE、DELETE 或 owner/ACL 变更。
+
+执行证据和验证结果：
+
+- 只读查询已确认目标 run 存在于 `workflow_runs`；PostgreSQL 为其时间列返回原生 `datetime`。
+- 使用真实 actor/workspace scope 调用 `WorkflowRunService.read_run` 已稳定复现 `TypeError: fromisoformat: argument must be str`；Router 的通用异常兜底把该映射错误转换成 `DECK_RUNTIME_CONFIG_UNAVAILABLE` 503。
+- 本记录完成前尚未修改 Workflow Run 代码或执行修复后测试。
+
+未执行事项及原因：
+
+- 代码修复、回归测试和修复后真实只读 probe 必须在此 Prompt Architect 记录之后执行。
+
+### Round 49 执行结果（Workflow Run 详情恢复 200）
+
+- 根因已确认不是迁移缺行：目标 `run_b81d3731b56b4703868b66af76e7b656` 存在于 PostgreSQL `workflow_runs`。psycopg 对 `timestamptz` 返回原生 timezone-aware `datetime`，而 `WorkflowRunService._parse_datetime` 仍只接受字符串，`datetime.fromisoformat(datetime_value)` 抛出 `TypeError`；`_workflow_call` 随后将未分类异常安全包装为 `DECK_RUNTIME_CONFIG_UNAVAILABLE` 503。
+- 修复位于 Dream `backend/services/workflow/run_service.py`：时间解析器现在显式接受 PostgreSQL 原生 `datetime` 或 ISO-8601 字符串，naive 值补 UTC、带 offset 的值统一归一化为 UTC；其他类型和非法字符串继续失败，不引入 SQLite、JSON、内存或静默数据回退。
+- 回归位于 `backend/tests/test_workflow_run.py`：新增 PostgreSQL 原生时间行映射测试，覆盖 `created_at`、`source_message_time`、`started_at`、`completed_at` 和 `+08:00 → UTC`；另覆盖 `Z` 字符串兼容、非法字符串与非时间类型拒绝。
+- focused Workflow Run suite：18 passed、1 explicit skip、19 subtests passed；Story Workspace Dream API suite：23 passed、9 subtests passed；API routes suite：8 passed。合计 49 tests、28 subtests 通过，两个修改文件的 Python compileall 通过。
+- 修复后使用真实 env-file、真实 PostgreSQL row factory 和目标 actor/workspace scope 执行只读 service probe：`WorkflowRunService.read_run` 成功返回 queued run，四个时间字段均为 `datetime`/`None`，Pydantic JSON 序列化成功。
+- 修复后再通过 FastAPI `TestClient`、真实 `StoryWorkflowApplicationGateway` 与真实目标行调用原路径，`GET /api/story-workspace/workflow-runs/{run_id}` 返回 200，run ID 匹配、`created_at` 为 JSON 字符串且响应无 error envelope。
+- 本轮只执行 SELECT/rollback/连接池关闭，没有迁移、importer、upsert、业务写、owner/ACL 或数据归属修改；没有启动 Uvicorn，8765 保持无监听。现有 `.claude/worktrees/`、模型设置 E2E 未跟踪文件和用户已有截图删除状态均未触碰。
+
+未执行事项及原因：
+
+- 未运行外部 Provider、Gateway 推理或 Payment；该 503 发生在 Workflow Run 数据行映射阶段，与外部服务无关。
+- 未顺带修改其他领域的独立时间解析器；本轮只有 Workflow Run 详情具备真实复现和回归证据，避免把单点修复扩大为未经验证的跨领域重构。
