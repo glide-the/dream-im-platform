@@ -39,8 +39,22 @@ export type ProductPlanSummaryDto = {
   currency: "USD";
 };
 
-export type ProductPlanDto = ProductPlanSummaryDto & {
+export type ProductPlanDto = {
+  planCode: string;
+  planName: string;
+  eyebrow: string;
+  note: string;
+  details: string[];
   description: string | null;
+  planVersionId: string | null;
+  version: number | null;
+  versionStatus: "draft" | "published" | "retired" | null;
+  billingCycle: "monthly";
+  monthlyAllowanceTokens: number | null;
+  monthlyPriceMicrousd: number | null;
+  currency: "USD";
+  available: boolean;
+  unavailableReason: "commercial_parameters_pending" | "configuration_incomplete" | null;
   entitlements: ProductEntitlementDto[];
   eligibility: {
     eligible: boolean;

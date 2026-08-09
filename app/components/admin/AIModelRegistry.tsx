@@ -100,6 +100,9 @@ export default function AIModelRegistry() {
           const capabilities = capabilityLabels(model.capabilities);
           const modelId = String(model.id);
           const validationResult = validation[modelId];
+          const catalogReady = model.provider_ready === true
+            && model.pricing_ready === true
+            && model.published_messages_entitlement === true;
           return (
             <article key={String(model.id)} className="rounded-2xl border border-border bg-bg-surface p-5 shadow-soft">
               <div className="flex items-start justify-between gap-4">
@@ -111,6 +114,11 @@ export default function AIModelRegistry() {
                 <div><dt className="text-text-tertiary">Context / Max output</dt><dd className="mt-1 font-mono text-[11px]">{model.context_window ? Number(model.context_window).toLocaleString("zh-CN") : "—"} / {model.max_output_tokens ? Number(model.max_output_tokens).toLocaleString("zh-CN") : "—"}</dd></div>
               </dl>
               <div className="mt-4 flex min-h-8 flex-wrap gap-2">{capabilities.length ? capabilities.map((label) => <span key={label} className="rounded-full bg-bg-secondary px-2.5 py-1 text-[10px] text-text-secondary">{label}</span>) : <span className="text-xs text-text-tertiary">未声明能力</span>}</div>
+              {model.enabled ? <p className={`mt-3 text-xs ${catalogReady ? "text-success" : "text-accent-orange"}`}>
+                {catalogReady
+                  ? "公共目录可见 · 已具备可调用配置；最终资格仍按用户订阅实时判断。"
+                  : `公共目录可见 · 当前维护中${model.provider_ready !== true ? " · Provider未就绪" : ""}${model.pricing_ready !== true ? " · 缺有效定价" : ""}${model.published_messages_entitlement !== true ? " · 未绑定已发布Messages权益" : ""}`}
+              </p> : <p className="mt-3 text-xs text-text-tertiary">公共目录不可见 · 模型已停用。</p>}
               {validationResult?.message ? <p className={`mt-3 text-xs ${validationResult.status === "failed" ? "text-danger" : validationResult.status === "degraded" ? "text-accent-orange" : "text-success"}`} role="status">{validationResult.message}{validationResult.responseTimeMs !== undefined && validationResult.responseTimeMs !== null ? ` · ${validationResult.responseTimeMs} ms` : ""}{validationResult.httpStatus ? ` · HTTP ${validationResult.httpStatus}` : ""}</p> : null}
               <div className="mt-5 flex flex-wrap justify-end gap-2">
                 {access.data?.can ? <button type="button" disabled={validationResult?.pending} onClick={() => validateModel(modelId)} className="min-h-10 rounded-xl border border-border px-3 text-xs font-semibold disabled:cursor-wait disabled:opacity-60" title="发送一次非流式、最多 1 Token 的上游验证请求；不保存提示词或响应内容">{validationResult?.pending ? "验证中…" : "验证配置"}</button> : null}

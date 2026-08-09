@@ -466,9 +466,13 @@ async function createResource(
     const input = planCreateSchema.parse(body);
     const id = createPlatformId("plan");
     await client.query(
-      `INSERT INTO subscription_plans (id, code, name, description)
-       VALUES ($1, $2, $3, $4)`,
-      [id, input.code, input.name, input.description ?? null],
+      `INSERT INTO subscription_plans (
+         id, code, name, description, display_eyebrow,
+         display_note, display_details
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      [id, input.code, input.name, input.description ?? null,
+       input.displayEyebrow ?? null, input.displayNote ?? null,
+       JSON.stringify(input.displayDetails)],
     );
     return { id, action: "create" };
   }
@@ -498,12 +502,12 @@ async function createResource(
       `INSERT INTO subscription_plan_entitlements (
          id, plan_version_id, model_id, gateway_scopes,
          requests_per_minute, daily_token_limit, monthly_token_limit,
-         storage_bytes_limit, enabled
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+         storage_bytes_limit, is_default, enabled
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [id, input.planVersionId, input.modelId, input.gatewayScopes,
        input.requestsPerMinute ?? null, input.dailyTokenLimit ?? null,
        input.monthlyTokenLimit ?? null, input.storageBytesLimit ?? null,
-       input.enabled],
+       input.isDefault, input.enabled],
     );
     return { id, action: "create" };
   }
@@ -568,9 +572,16 @@ export async function handleSubscriptionUpdate(
           `UPDATE subscription_plans SET
              name = COALESCE($2, name),
              description = CASE WHEN $3::boolean THEN $4 ELSE description END,
-             status = COALESCE($5, status), updated_at = NOW()
+             display_eyebrow = CASE WHEN $5::boolean THEN $6 ELSE display_eyebrow END,
+             display_note = CASE WHEN $7::boolean THEN $8 ELSE display_note END,
+             display_details = CASE WHEN $9::boolean THEN $10::jsonb ELSE display_details END,
+             status = COALESCE($11, status), updated_at = NOW()
            WHERE id = $1`,
-          [id, value.name ?? null, value.description !== undefined, value.description ?? null, value.status ?? null],
+          [id, value.name ?? null, value.description !== undefined, value.description ?? null,
+           value.displayEyebrow !== undefined, value.displayEyebrow ?? null,
+           value.displayNote !== undefined, value.displayNote ?? null,
+           value.displayDetails !== undefined, JSON.stringify(value.displayDetails ?? []),
+           value.status ?? null],
         );
       } else if (resource === "subscription-plan-versions") {
         const value = input as z.infer<typeof planVersionUpdateSchema>;
@@ -611,14 +622,15 @@ export async function handleSubscriptionUpdate(
              daily_token_limit = CASE WHEN $5::boolean THEN $6 ELSE daily_token_limit END,
              monthly_token_limit = CASE WHEN $7::boolean THEN $8 ELSE monthly_token_limit END,
              storage_bytes_limit = CASE WHEN $9::boolean THEN $10 ELSE storage_bytes_limit END,
-             enabled = COALESCE($11, enabled), updated_at = NOW()
+             is_default = COALESCE($11, is_default),
+             enabled = COALESCE($12, enabled), updated_at = NOW()
            WHERE id = $1`,
           [id, value.gatewayScopes ?? null,
            value.requestsPerMinute !== undefined, value.requestsPerMinute ?? null,
            value.dailyTokenLimit !== undefined, value.dailyTokenLimit ?? null,
            value.monthlyTokenLimit !== undefined, value.monthlyTokenLimit ?? null,
            value.storageBytesLimit !== undefined, value.storageBytesLimit ?? null,
-           value.enabled ?? null],
+           value.isDefault ?? null, value.enabled ?? null],
         );
       }
       const after = await querySubscriptionItem(client, resource, id);

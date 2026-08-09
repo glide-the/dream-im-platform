@@ -1,5 +1,7 @@
 # 03 · Model and Gateway Experience
 
+> 2026-08-09合同修正：详细交互与Reader Testing见[06-model-catalog-and-default-subscription-plans](06-model-catalog-and-default-subscription-plans.md)。Admin `enabled=true`决定所有已登录canonical用户的可见目录；Subscription/Plan Version/Entitlement/Permission/Limit/Allowance只决定逐模型callability。无订阅不再让目录消失，也不再映射为503。
+
 > 文档状态：**Implemented client / Release candidate**（外部 Provider/user canary 待执行）
 >
 > 入口：Dream 创作/对话的模型选择器、`/story-workspace/subscription?view=models`、推理错误回执

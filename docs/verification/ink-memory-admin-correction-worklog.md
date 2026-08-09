@@ -1649,3 +1649,328 @@ Optional Enhancers:
 
 - 根因矩阵、数据库只读审计、listener/env presence、API contract 与保存 alias 调用链检查将在本 Prompt Architect 记录落盘后执行。
 - 数据 migration/seed/backfill、Admin/Dream 代码修改、Reader Testing、Playwright、真实 Provider/支付验证均未执行，因为尚未通过对应阶段门禁。
+
+### Round 51 执行结果（阶段一根因审计通过）
+
+- 新增正式证据文档 `docs/verification/ink-memory-model-catalog-default-free-root-cause.md`，包含八列问题矩阵、数据库事实、当前/目标合同、HTTP语义、七项产品问题回答、三套餐安全落点和阶段验收状态。
+- 源码根因：Admin `app/lib/gateway/models.ts` 与 Product model catalog SQL都从 `subscriptions` 起表，并把 published Version、Entitlement、Allowance、Provider credential、Pricing和user permission作为目录行过滤；Dream `GatewayModelCatalogClient` DTO没有 callability metadata，BFF又只投影含 `messages:create` 的行；`_resolve_platform_model_alias` 在集合为空时返回403 `GATEWAY_MODEL_NOT_AVAILABLE`，且保存 alias失效后仍尝试环境静态alias，而非Free Plan默认模型。
+- 本机专用 PostgreSQL `ink-memory` 只读审计：29 canonical users、29 platform projections、0缺Billing Account；仅2个用户有当前 callable Subscription，27个没有。当前catalog分布正好为2个用户各1个alias、27个用户0个alias，证明历史缺Free Subscription与目录/资格耦合是现场主因。
+- 模型事实：Admin Registry有2个enabled模型。`deepseek-v4-flash` Provider credential、active pricing、published entitlement完整；`hy-preview`已enabled但缺active pricing且未绑定任何published Plan Version。唯一保存过model alias的用户保存值仍存在、enabled且有对应权益，stale alias不是本次主因。
+- 套餐事实：数据库只有`local-gateway-e2e`与`tet`，不存在`free`、`dream`、`is-dreaming`；前者明确是本机测试身份，后者code/name不构成可靠同义映射，均不得覆盖或改名。Dream订阅页已经从真实Product BFF加载published plans，不再含静态数组，但现有DTO/SQL不能展示draft Plan身份，也没有eyebrow/note/details正式字段。
+- 服务边界：3000/8765/5173 listener均就绪；双方Gateway配置presence完整；数据库存在1个active canonical-subject service key，包含`models:list/messages:create`；故本轮不是Admin不可达或服务身份错误。Admin workspace layout继续要求Admin Session，Admin API继续服务端`requireAdminRequest(permission)`，公共catalog可独立扩展而无需削弱RBAC。
+- 数据安全：全部数据库查询在`BEGIN READ ONLY`后执行并`ROLLBACK`，没有migration、fixture、upsert、Subscription/Allowance/Event/Ledger写入；没有输出完整DSN、邮箱、JWT、Gateway/Provider Secret或正文。
+
+失败尝试及根因：
+
+- 一次进程所有权检查使用了完整command line，调试器命令行包含其自身临时adapter token；该值只出现在即时工具输出，没有写入工作日志、证据文档、代码或数据库。后续进程检查只记录PID/可执行名/工作目录，不再输出完整命令参数。
+
+未执行事项及原因：
+
+- 尚未创建三套餐、Free Plan Version/Entitlement、27个历史用户backfill，也未改Admin/Dream代码；这些属于后续实现阶段，需先完成阶段二Prompt Architect与交互设计/Reader Testing。
+- 未调用真实Provider或支付网络；阶段一只需证明本地目录/资格/订阅根因，真实推理和settlement留待最终无mock E2E。
+
+## Round 52 — 阶段二：公共模型目录与默认三套餐交互设计 / Reader Testing
+
+Optimized Prompt:
+
+作为 Ink Memory 的产品架构师与 UI/UX 设计负责人，基于 Round 51 已证明的真实根因和 Ink Dream现有页面视觉语言，完成“模型可见性与调用资格分离 + Free/Dream/is Dreaming默认套餐”的正式PRD与交互设计。在本阶段只修改文档和设计证据，不修改Schema、migration、API或运行代码，不写PostgreSQL。以现有Dream设置页、Story Workspace订阅页及其真实样式为基线；不得套用Refine默认CRUD、普通后台卡片或伪造价格/余额/支付状态。
+
+新增 `docs/design/ink-dream-memory/06-model-catalog-and-default-subscription-plans.md`，并同步更新设计索引、平台PRD、Gateway PRD、Subscription PRD及相关Dream集成架构。设计必须明确操作者、权限边界和数据真值：Admin enabled model决定Dream可见目录；Subscription/Plan Version/Entitlement/Permission/Limit/Allowance只决定callability；普通canonical用户只访问Dream BFF安全DTO，Admin Registry和CRUD继续Admin Session+RBAC。
+
+AI模型设置设计覆盖名称、alias、协议/能力、context/output限制、callable状态、当前套餐、required plan、锁定/升级、已选模型停用/失权、无可调用模型、Free修复提示，以及loading、empty、401、402、403、409、429、502、503、重试、重新选择、查看套餐和升级动作。定义键盘顺序、原生label/description/error关联、可见focus、屏幕阅读器播报和错误后焦点恢复；桌面1440×1000与移动390×844不得横向溢出。
+
+订阅页延续Dream安静、叙事化语言和`eyebrow → name → note → details`层级，设计Free、Dream、is Dreaming三张卡片的桌面/移动节奏、当前/推荐/暂不可开通差异、真实Token Allowance/Usage/周期结束、升级降级影响预览及loading/empty/error/maintenance/no-permission/network状态。Free为当前可开通基础计划；Dream与is Dreaming在商业参数未定时明确“暂不可开通”，不得显示假价格、假支付成功或把draft隐藏成不存在。所有套餐与展示字段来自Admin Product API。
+
+至少输出五张Mermaid：Canonical User→Free Subscription→Entitlement→Model Permission；Enabled Model→Visible Catalog→Callable Status；Settings Selection→Claude Agent→Gateway Eligibility→Provider；Plan Seed→Plan Version→Entitlement→User Subscription；模型失权后的重新选择/升级流程。为每个关键状态写验收文案、动作、焦点落点、HTTP语义和数据来源。
+
+完成文档草案后执行Reader Testing：以“首次登录Free用户”“无订阅历史用户”“付费/高级模型浏览者”“保存模型后模型被停用者”“键盘/屏幕阅读器用户”“移动端创作者”“Admin运营者”七类读者逐条阅读，记录歧义、遗漏、错误承诺、Secret/RBAC风险和响应式风险；修复文档后才能进入实现。Reader Testing必须是基于真实文档的可复核checklist，不得用静态页面截图冒充代码验收。
+
+Optional Enhancers:
+
+- 在新设计文档附安全DTO正反例，明确禁止字段和前端可用字段。
+- 增加桌面与移动ASCII结构草图，帮助实现时保持信息层级而不引入新视觉体系。
+- 为availability枚举建立“原因→文案→主动作→HTTP调用”的统一矩阵，减少Settings与Subscription页文案漂移。
+
+范围变化：
+
+- 阶段一已完成；本轮只做PRD/交互设计、索引同步和Reader Testing，不进入Schema/API/UI实现或数据库写入。
+- `html-design-workflow`完整图转HTML流水线仍因无外部target image不执行；本阶段借用其PRD→结构→层级→视觉的顺序，以现有Dream实现和后续真实截图为设计基线。
+
+执行证据与验证结果：
+
+- Round 51证据文档已将catalog/eligibility合同、两项enabled model现状、27个历史Free缺口和三目标Plan缺失标记为proven；阶段二输入已具备。
+- 本记录落盘前尚未修改任何PRD/设计文档或代码。
+
+失败尝试及根因：
+
+- 无；本轮尚未开始设计执行。
+
+未执行事项及原因：
+
+- 新设计文档、相关PRD/架构更新与Reader Testing必须在本Prompt Architect记录之后执行。
+- Schema/migration/seed/API/UI/Playwright仍未执行，因为实现阶段门禁尚未建立。
+
+### Round 52 执行结果（交互设计与Reader Testing通过）
+
+- 新增 `docs/design/ink-dream-memory/06-model-catalog-and-default-subscription-plans.md`，状态为Approved for implementation；覆盖安全DTO、availability优先级、Settings选择/保存/失权恢复、订阅三卡片、1440×1000/390×844、loading/empty/401/402/403/409/429/502/503、键盘/Label/focus/读屏和Admin RBAC。
+- 文档包含5张必要Mermaid：canonical user→Free→Entitlement→Permission、enabled→visible→callability、Settings→Claude Agent→Gateway→Provider、Plan seed→Version→Entitlement→Subscription、模型失权后的重选/升级。
+- 已同步Dream设计索引、Subscription/Model设计、Subscription/Model/Gateway模块PRD和Dream订阅推理集成架构，统一“enabled决定可见，资格决定callability”和三目标Plan identity合同。
+- Reader Testing覆盖首次Free、历史无订阅、高级模型浏览者、stale model、键盘/读屏、移动创作者和Admin运营者。第一轮发现并修复：Free修复不能误写503；maintenance不能伪装upgrade；stale selection不能暗中切换；disabled radio与升级动作需分离；移动端不得按当前套餐重排三卡语义；Admin enabled不等于已定价/可调用。
+- 第二轮复核通过：七类读者均可区分visible/callable；每种错误有主动作与焦点目标；paid draft明确暂不可开通且无假价/假支付；DTO禁止字段、RBAC和server-only Secret边界无歧义；双视口无溢出标准明确。
+- 文档范围`git diff --check`通过；本轮没有数据库连接、业务数据写入或代码实现。
+
+失败尝试及根因：
+
+- 首次批量patch因一个现有文档标题实际为`Model and Gateway Experience`而预期文本写成`Model & Gateway Experience`导致验证失败；该patch整体未应用。读取真实标题后拆分重做成功，没有产生半写状态。
+
+未执行事项及原因：
+
+- Admin schema/migration/seed/catalog/Product API与Free provisioning尚未实现；必须先完成Round 53 Prompt Architect记录。
+- Dream FastAPI/frontend和真实E2E留待后续独立阶段，避免在数据合同未落定前修改消费者。
+
+## Round 53 — 阶段三：Admin Schema、默认Plan Seed、Free Provisioning与公共Catalog
+
+Optimized Prompt:
+
+作为Ink Memory Admin的PostgreSQL订阅计费、AI Gateway与Next.js/TypeScript实现负责人，依据Round 51根因和Round 52 approved设计，在`/Users/dmeck/project/ink-admin-memory`实现Admin侧最小兼容闭环。保留用户现有未提交工作，不回滚Usage、Ledger、Audit、Subscription Event或历史Plan；所有新增迁移只支持PostgreSQL且可前向修复。
+
+扩展`subscription_plans`正式展示字段以保存eyebrow、note、details，details必须是严格string array；扩展Entitlement/Version以明确Free默认模型归属，published Version与其Entitlement继续不可变。新增幂等seed：稳定Plan code为`free`、`dream`、`is-dreaming`；Free创建published monthly Token-only v1、zero price、deny overage和至少一个default `messages:create` Entitlement；模型必须从当前数据库动态选择enabled、active Provider credential、active Pricing且已有可信messages能力的候选，禁止硬编码alias，候选为空必须失败并阻断发布。Free monthly Token默认值集中定义、记录依据并允许后续通过Admin新Version调整；不得从命名E2E套餐复制5,000,000 Token。Dream/is Dreaming只创建Plan identity与draft v1，在商业参数未定时不发布、不伪造可开通价格。
+
+新增Admin-owned PostgreSQL default-Free provisioning函数与新用户trigger：canonical `users`插入后依赖既有projection/account，在同一事务只为没有任何需保留非终态Subscription的用户创建Free Subscription、当前周期Allowance和append-only activation Event。为历史用户提供幂等backfill，重复执行零增量；paused/past_due/future/paid/active/cancel-at-period-end均保留，不覆盖Allowance/Usage/Ledger/Event。ID和idempotency key稳定，partial unique与生命周期guard保持成立。
+
+重写Admin公共`GET /v1/models`：从全部`ai_models.enabled=true`起表，返回安全alias/name/protocol/capabilities/context/output/enabled/callable/availability/required plan/upgrade hint；对每个canonical subject计算`included|upgrade_required|subscription_inactive|allowance_exhausted|permission_denied|maintenance`。无订阅返回200 metadata；Provider/credential/pricing缺口标maintenance；不得返回upstream model、Provider route/ID、Pricing、Secret、Gateway key或prefix。Gateway inference resolver和Subscription资格链继续实时严格校验，不以catalog缓存授权。
+
+扩展Admin Product API plans以返回三项Plan identity和正式展示字段；published Free可操作，draft paid plans返回明确unavailable状态与nullable商业字段，不能因draft从列表消失。同步TypeScript contracts/service/repository/tests、Admin Plan表单字段和AIModelRegistry readiness说明，但不削弱Admin Session/RBAC。
+
+验证至少覆盖：enabled模型对无订阅用户仍返回；callability随subscription/entitlement/permission/allowance变化；安全DTO无禁字段；三Plan seed重复执行无重复；无模型候选阻断；新用户自动Free；历史backfill幂等且不覆盖paid；published不可覆盖；Product API返回draft identities。先跑focused tests/typecheck/lint；真实本机数据库写入留到最终数据修正阶段，阶段三只在隔离PostgreSQL或事务回滚环境验证。
+
+Optional Enhancers:
+
+- 将catalog availability计算抽成repository row→pure evaluator并以表驱动测试覆盖优先级。
+- seed输出仅包含计划code、创建/复用计数和backfill数量，不输出用户ID、DSN或Secret。
+- 增加`plans:check`发布门禁，验证Free published/default entitlement与三Plan display metadata完整。
+
+范围变化：
+
+- 阶段二文档已批准；本轮只实现Admin schema/data service/catalog/Product API/Admin UI最小调整，不修改Dream消费者。
+- 本机正式`ink-memory`仍不写；迁移和backfill实跑留待最终数据库阶段，在隔离库先证明。
+
+执行证据与验证结果：
+
+- Round 52 Reader Testing无剩余设计阻断；当前Admin代码、Schema与真实数据缺口已明确。
+- 本记录完成前尚未修改Admin运行代码、schema或migration。
+
+失败尝试及根因：
+
+- 无；本阶段尚未开始实现。
+
+未执行事项及原因：
+
+- Admin实现与隔离测试必须在本Prompt Architect记录之后执行。
+- Dream FastAPI/frontend和真实本机backfill/E2E继续等待后续阶段门禁。
+
+### Round 53 执行结果（Admin数据与服务实现完成）
+
+- Schema/迁移：`subscription_plans`新增`display_eyebrow/display_note/display_details`，数据库函数+check确保details为string array；Entitlement新增`is_default`与每Version单一默认partial unique。Drizzle `0025_fancy_shadowcat.sql`只做增量ALTER/function/trigger，不重建历史表。
+- Default Free provisioning：migration新增`provision_default_free_subscription(bigint)`，以canonical user→projection为输入，advisory lock后保留trial/active/past_due/paused/cancel-at-period-end，不覆盖paid或任何非终态订阅；只为安全对象插入稳定ID的Free Subscription、周期Allowance和append-only activation Event。`zz_users_default_free_subscription`在既有projection/account trigger之后执行。
+- Seed/Release gate：新增`scripts/seed-default-dream-plans.mjs`与`pnpm plans:seed/plans:check`。Plan code固定`free/dream/is-dreaming`并严格核对展示字段；Free候选模型由enabled model + active Provider credential + active Pricing +既有published `messages:create`证据动态选择，可由非Secret alias env明确限定但不硬编码；无候选直接失败。Free v1为published monthly Token-only，default Entitlement；Dream/is Dreaming只建draft v1。Free默认10,000 Token集中为单一常量，依据当前非E2E零价有效配置，明确不复制`local-gateway-e2e`的5,000,000；可由`INK_FREE_PLAN_MONTHLY_TOKENS`在首次seed前覆盖，后续变更必须新建Admin Version。
+- 公共Catalog：`app/lib/gateway/models.ts`从全部enabled model起表，逐项计算provider/pricing/subscription/version/entitlement/permission/allowance/required plan，返回`included/upgrade_required/subscription_inactive/allowance_exhausted/permission_denied/maintenance`、callable与安全提示；不再返回gateway scopes、Provider/upstream/Pricing/Secret。top-level `default_model_alias`只在当前默认Entitlement且callable时给出。
+- Product API：Plan list只公开配置了正式display字段的active Plan identity，优先选择可用published版本，否则返回最新draft；DTO新增eyebrow/note/details、versionStatus、available/unavailableReason，draft商业数值为null且无操作。Admin Plan表单可维护展示层级，Entitlement表单可标默认alias。
+- Admin Registry：enabled模型明确显示“公共目录可见”，并分开展示Provider、Pricing和published Messages Entitlement readiness；这不改变Admin Session和`models.read/write`权限。
+- Focused验证：`pnpm exec tsc --noEmit`通过；变更文件focused ESLint通过；Gateway/Product/Subscription/API共8 files / 56 tests通过；`git diff --check`通过。
+- 本轮未连接或写正式`ink-memory`，没有执行migration/seed/backfill；真实增量仍留待最终隔离验证后执行。
+
+失败尝试及根因：
+
+- 首次`drizzle-kit generate`因历史手写migration未完全反映在旧snapshot，生成了错误的全量重建式`0025`。该文件从未执行；已立即替换为最小增量migration并保留新的完整snapshot作为后续基线，避免DROP/重建任何历史表。
+- 初版Free trigger在Plan未seed时抛错，会阻断pre-seed模型fixture和干净迁移测试。修正为trigger在Free未ready时安全no-op，发布由`pnpm plans:check`明确失败；正式部署顺序固定migration→模型配置→plans:seed/check→开放注册。
+
+未执行事项及原因：
+
+- 尚未在隔离PostgreSQL执行0025、seed两次、新用户trigger和27用户backfill；这些高风险数据验证集中到阶段五。
+- Dream strict DTO/BFF、alias resolver与前端尚未修改；需先完成Round 54 Prompt Architect记录。
+
+## Round 54 — 阶段四：Dream FastAPI严格消费、模型选择与叙事套餐前端
+
+Optimized Prompt:
+
+作为Ink Dream Memory的FastAPI/Python与React/TypeScript实现负责人，消费Round 53 Admin新合同并完成Dream侧闭环。保留当前用户未提交的PostgreSQL兼容、Gateway model API、ChatPanel和E2E文件；不得回滚或覆盖。Dream只通过server-only Gateway/Product client访问Admin，不读订阅表、不持Provider/Gateway Secret、不恢复静态model/plan数组。
+
+更新`GatewayModelCatalogClient`严格解析Admin安全DTO：alias/name/protocol/capabilities/context/output/enabled/callable/availability/required plan/upgrade hint，并解析top-level Free default alias；拒绝unknown/provider/upstream/pricing/secret字段。`GET /api/gateway/models`对所有authenticated canonical users返回全部enabled模型，正常无订阅仍200。仅Admin不可达/service identity错误为503；合同异常为502。不得再按`messages:create` scope过滤目录。
+
+更新Settings保存：可见但uncallable模型不能保存；从实时availability映射403并带required plan/upgrade hint；已选alias并发停用/失权或不存在返回409与重新选择指引。更新Claude Agent `_resolve_platform_model_alias`顺序为保存且仍callable alias→Admin top-level明确Free default alias→结构化业务错误；删除`INK_GATEWAY_TEXT_MODEL_ALIAS`静态fallback，不绕过每turn实时资格。Allowance不足路径保留402，permission保留403，stale保存保留409。
+
+更新前端Gateway Zod DTO和Settings UI：展示全部enabled模型、callable/locked状态、availability原因、protocol/capabilities/context/output/current plan/required plan；锁定项保留可见并提供查看套餐链接，不能保存。覆盖loading/empty/no-callable/401/402/403/409/429/502/503、retry、stale alias、键盘fieldset/radio/label/describedby/focus/live region和390px无overflow。
+
+更新Product API Pydantic/Zod DTO和Subscription页：三Plan identity完全来自API，使用eyebrow→name→note→details叙事卡片；published Free显示真实Token/价格/当前状态，Dream/is Dreaming draft显示“商业参数待发布/暂不可开通”，monthly fields为null时不得格式化为0或触发命令。保留当前Allowance/Usage/period与preview/execute，去除普通后台row式套餐列表。
+
+补充backend contract/router/resolver/system-config tests与frontend source/API/component tests；阶段四只执行focused unit/type/lint/build，不启动最终真实浏览器或写正式PostgreSQL。确保旧static alias、Provider fallback和STORY_WORKSPACE_DREAM_PLANS在运行代码中为零。
+
+Optional Enhancers:
+
+- 将availability→中文文案/主动作收敛为单一pure map供Settings与Subscription复用。
+- Settings成功保存后将焦点归还当前model legend并以`aria-live=polite`播报。
+- 为strict DTO增加forbidden-key递归检查，防止未来Admin误加内部字段时被浏览器透传。
+
+范围变化：
+
+- Admin数据/服务实现已完成focused验证；本轮只修改Dream消费者和页面，不执行真实migration/backfill或Provider E2E。
+
+执行证据与验证结果：
+
+- Round 53的Admin DTO/Product DTO与seed/provisioning合同已由56个focused tests和tsc/lint证明，可作为Dream实现输入。
+- 本记录落盘前尚未修改Dream本轮代码。
+
+失败尝试及根因：
+
+- 无；阶段四尚未开始。
+
+未执行事项及原因：
+
+- Dream实现与focused验证必须在本Prompt Architect记录之后执行。
+- 真实数据库与Playwright仍等待阶段五门禁。
+
+### Round 54 执行结果（Dream合同、模型选择与套餐前端完成）
+
+- Dream Gateway client严格解析Admin新目录合同和top-level `default_model_alias`，要求exact keys、enabled=true且`callable === (availability === included)`；BFF返回全部可见模型及`defaultModelAlias`，不再按Gateway scope隐藏锁定模型，也不回显Provider/upstream/Pricing/Secret。
+- Settings保存实时调用Admin目录：alias不存在/停用返回409 `GATEWAY_MODEL_SELECTION_STALE`；可见但不可调用返回403并带availability、requiredPlanCode和upgradeHint。Claude Agent解析改为“保存且仍callable alias → Admin明确Free默认alias → 结构化403/409”，删除环境静态型号fallback，仍由Gateway inference入口执行实时Subscription/Entitlement/Permission/Allowance校验。
+- 前端Gateway Zod合同与Settings/legacy Sidebar均消费全部enabled模型。Settings以可键盘操作的fieldset/radio卡片显示name/alias/capabilities/context/output、Free默认、锁定原因和查看套餐入口；stale保存值显示失效提示；无enabled与无callable为不同状态；403/409保存失败分别引导套餐与刷新重选。
+- Product Pydantic/Zod合同支持正式eyebrow/note/details、nullable draft commercial fields、versionStatus、available/unavailableReason，并以cross-field validator拒绝“draft伪装published”或“不可用但仍暴露价格/命令”。Subscription页三卡片来自Product API，改为Dream叙事化三层排版；published版本显示真实Token/价格，draft明确“商业参数待发布 · 暂不可开通”，不会触发支付或订阅命令。
+- 响应式实现：套餐desktop为三列叙事卡，860px以下单列，390px卡片min-width和detail均收敛为单列；model radio grid使用`minmax(min(100%, 16rem), 1fr)`防止alias横向溢出。锁定radio与可点击套餐链接分离，状态通过alert/status/aria-live播报。
+- Focused验证：Dream backend Gateway/Product/System Config/Claude Agent共42 tests通过（23 + 19）；frontend Gateway/Product/hook合同15 tests通过；Subscription源码合同6 tests通过；TypeScript project typecheck、focused ESLint及`pnpm build`生产构建通过（仅保留既有chunk/dynamic-import告警）；mocked Settings+Subscription desktop/mobile共5个Playwright tests通过。所有变更`git diff --check`通过。
+- 运行代码搜索确认不存在`STORY_WORKSPACE_DREAM_PLANS`或Provider型号静态fallback；该名称只保留在防回归源码测试的负断言中。
+
+失败尝试及根因：
+
+- 首次运行backend pytest使用系统Python，环境未安装pytest；改用repo `backend/.venv`。第二次从workspace root运行时旧模块导入约定需要`backend`为cwd，出现`services/database`导入错误；切换到backend cwd后23项全部通过。两次均未执行代码或数据库写入。
+- Subscription旧源码测试仍要求旧标题“可用月度套餐与操作”且禁止所有price/payment字样，与本轮正式nullable商业合同及页面已有安全payment-intent流程冲突。测试已更新为验证“商业参数缺失不伪造价格/支付状态、不暴露本地余额/ledger/checkout truth”，随后6项通过。
+
+未执行事项及原因：
+
+- 尚未在隔离PostgreSQL执行0025/seed/backfill，也未写本机`ink-memory`；需先完成Round 55 Prompt Architect并做可恢复备份、幂等和paid-preservation验证。
+- 本轮5个浏览器用例使用route fixtures，仅用于组件/响应式回归，不计最终真实E2E。最终阶段明确禁止mock Gateway catalog、Product API与推理入口。
+
+## Round 55 — 阶段五：隔离PostgreSQL验证、正式数据修正与无Mock真实E2E
+
+Optimized Prompt:
+
+作为Ink Memory的PostgreSQL发布工程师、FastAPI/Next.js集成测试负责人和Playwright QA负责人，在Round 51–54代码/设计已完成的基础上，执行“隔离库破坏性验证 → 本机专用ink-memory可恢复备份 → 正式migration/seed/backfill → 独立服务进程 → 无mock真实E2E”的发布门禁。必须使用已读取的`ink-dream-playwright-qa`项目工作流：先运行preflight并检查真实服务/认证/Console/API/overflow；但用户的PostgreSQL-only、专用真实DB和无mock要求优先于skill中旧的SQLite临时库建议。
+
+先创建明确命名、可删除的隔离PostgreSQL数据库/容器，禁止连接未知或共享数据库。全量执行Admin migration至0025；以最小真实fixture建立canonical users、platform projection/account、一个需保留paid或非终态Subscription、一个可信enabled/provider/priced/published-messages模型候选，以及无订阅历史用户。运行`plans:seed`两次并验证：三正式Plan identity各1条；Free v1 published且default entitlement唯一；Dream/is Dreaming v1 draft、商业参数不伪造；首次backfill只覆盖eligible历史用户，第二次零新增；paid Subscription/Allowance/Event指纹不变；新user trigger生成Free Subscription/Allowance/activation Event；published Version/Entitlement不可覆盖；无模型候选的`plans:check`明确失败。完成后删除仅由本轮创建的隔离容器/库，保留脱敏计数证据。
+
+隔离验证通过后，对本机localhost:5433专用`ink-memory`再次只读核对database name/host/user数量/现有财务计数，不输出DSN或Secret。使用`pg_dump`创建权限0600的时间戳备份并验证文件非空，然后只执行增量migration和幂等`plans:seed/check`；禁止DROP/TRUNCATE/bulk DELETE，禁止重写Usage/Ledger/Audit/Event。记录三Plan结果、Free backfill数量、paid保留数量和重复seed零增量。若真实数据库缺可信模型候选，停止正式写入并报告发布阻断，不硬编码或补造模型/价格。
+
+完成Admin与Dream全量验证：Admin依次运行`pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm test:run`、`pnpm build`；Dream运行backend全套pytest、frontend lint/typecheck/build和关键source tests。修复因本任务引起的失败；对既有无关失败记录证据但不回滚用户修改。
+
+以本轮独立端口启动当前修改后的Admin、Dream backend和Vite/production frontend，连接真实本机专用`ink-memory`，使用明确命名的本机测试canonical user与真实service identity；不得使用真实用户token，不得mock `/api/gateway/models`、Product BFF、Subscription API或Gateway inference。必要的测试用户/会话只能通过现有本机provision流程创建，不能创建第二套billing user实体。E2E前后用只读SQL记录Gateway Request、settled request、Allowance、Usage与Token Ledger计数/总量增量。
+
+Playwright至少验证1440×1000与390×844：普通canonical用户看到全部enabled模型；Free默认模型callable；不具真实Provider/Pricing/Entitlement readiness的模型显示真实maintenance，不得伪装upgrade；若数据库有真实高级Plan entitlement则显示upgrade_required，否则将该验收标记为商业配置阻断而非造数据；Settings保存Free alias成功；Claude Agent SSE完整结束且无error frame；三Plan来自Product API且Dream/is Dreaming显示暂不可开通；Allowance/Usage/period真实；页面无API 5xx、console.error、pageerror和横向overflow；键盘可达；普通用户访问Admin Registry被登录/RBAC拒绝。验证Admin Registry enabled与catalog同步、停用/失权409恢复可以使用事务性fixture或可回滚Admin操作，但不得破坏正式模型配置。
+
+成功后输出并落盘可复核证据：HTTP status、test数量、视口、截图绝对路径、catalog alias/callability匿名摘要、三Plan状态、backfill数量、Gateway Request/settlement/Token Ledger增量、SSE终态、RBAC结果、备份路径、数据库与Secret安全确认。真实支付渠道不在范围内，只验证draft不可开通和已有payment-intent安全合同，不调用外部支付网络。
+
+Optional Enhancers:
+
+- 为正式写入前后的关键计数生成单一JSON证据文件，只包含匿名计数、Plan code和request ID后缀，不含用户ID、邮箱或密钥。
+- 真实E2E服务均写入`tmp/round55-*`日志并在结束时只终止本轮PID，方便复核且不干扰用户已有3000/8765/5173进程。
+- 对desktop/mobile各保留一张Settings与Subscription截图，并由浏览器断言scrollWidth<=clientWidth。
+
+范围变化：
+
+- Round 54 Dream实现与生产构建已完成；本轮允许在隔离库进行fixture写入，并在备份/identity核验后对用户明确指定的本机专用`ink-memory`执行正式增量migration、seed和backfill。
+- 本轮允许启动/停止仅由本轮创建的独立服务进程和隔离PostgreSQL容器；不得终止用户现有进程。
+- 外部真实支付、补造高级Plan商业参数或修改Provider Secret仍不在范围内。
+
+执行证据与验证结果：
+
+- Round 53/54 focused合同、类型、构建与mocked组件E2E均已通过；正式数据与无mock路径尚未执行。
+- 本记录落盘前未创建隔离数据库、未备份或写入正式`ink-memory`、未启动独立服务。
+
+失败尝试及根因：
+
+- 无；阶段五尚未开始。
+
+未执行事项及原因：
+
+- 隔离PostgreSQL、正式migration/seed/backfill、全量命令和真实Playwright均必须在本Prompt Architect记录之后执行。
+- 最终完成性审计/报告属于Round 56；本轮结束前不得提前宣布完成。
+
+### Round 55 执行结果（隔离验证、正式数据修正与真实E2E完成）
+
+- 隔离 PostgreSQL：先后以两个明确命名的临时容器从 0000–0025 全量迁移。第一轮证明三 Plan 各一、首次 backfill 4/再次 0、新用户 trigger、paid Subscription/Allowance/Event 指纹不变、published mutation 被数据库拒绝、无模型候选门禁失败；第二轮证明 Free 额度从 v1 10,000 前向发布为 v2 100,000 时，2 个受管 Free Subscription 转版、旧 Subscription/Allowance/Event 全保留、重复执行 transition 0。两个容器均仅在验证完成后停止并删除。
+- 正式库发布前只读确认本机专用 `ink-memory`，29 canonical users、29 Dream projections、29 对应 Billing Accounts；创建 mode 0600、34,100,694 bytes、734 archive entries 的可恢复备份 `tmp/ink-memory-round55-pre-migration-20260809.dump`，之后只应用增量 0025 和幂等 seed，无 DROP/TRUNCATE/bulk DELETE。
+- 正式数据：首次 v1 backfill 27 个历史无有效订阅用户；命名测试用户 `codex-free-round55@ink-memory.test` 由 user trigger 自动得到第 28 个 Free；随后基于真实 Claude Agent 单请求 71,971 Token reserve 证据，将不可用的 10,000 默认值以不可变 Free v2 前向修正为 100,000，并 transition 28 个仅由 `sub_free_*` 管理的 active Free。最终 Free v1 cancelled 28/Allowance 28 原样保留，Free v2 active 28/Allowance 28；两名原有有效付费用户未覆盖；30 个 active canonical 用户中缺有效 Subscription 为 0。重复 apply 与 dry-run 均 backfill 0、transition 0。
+- 三 Plan：`free` 有 published v1 10,000 与 published v2 100,000（当前），两版均以 `deepseek-v4-flash` 为唯一 default Entitlement，scope 为 `messages:create/models:list`；`dream` 与 `is-dreaming` 各有正式 identity + draft v1，正式 eyebrow/note/details 已入 PostgreSQL，商业数值不暴露为可用，也不会创建支付结果。
+- 本机 Product service identity 新增 `scripts/provision-local-dream-product.mjs`，只向 Admin/Dream 私有 env 原子写入随机共享 Secret，文件 mode 0600，receipt 不打印 Secret。`scripts/setup-env.mjs` 已把四项 Product 变量纳入受控环境合同；未配置 Docker Product identity 时仍可校验，配置任一项时要求完整且 Secret 至少 32 bytes。Gateway 本机 provision 同时修复为使用数据库 identity sequence，不再用 `MAX(id)+1`。
+- Product 真实 503 根因修复：PostgreSQL `period_start/end` 保留微秒，Node `Date` 只保留毫秒，旧 repository 用两个时间戳精确回查 Allowance 导致合法当前周期找不到；现按唯一 `(subscription_id, plan_version_id, period_number)` 回查。修复后 Dream Product plans/context/usage 均 HTTP 200。
+- 真实服务级闭环：Admin catalog 200/2 models，Dream catalog 200/2 models（included 1、maintenance 1），Settings save 200，Product plans 200（Free published/available，Dream 与 is-dreaming draft/unavailable），Claude Agent SSE 200 且终态 `finish`、无 error frame；该成功请求使 Gateway Request +1、settled +1、Token Ledger +3（reserve/capture/release）。全库阶段前后 Gateway Request 172→175、Token Ledger 6→9；额外两条 request 为额度校准和成功后重复运行得到的结构化 402，不产生 Ledger。
+- 真实 Playwright：`frontend/e2e/model-settings-gateway-real.spec.ts` 在 1440×1000 与 390×844 共 5/5 通过，Settings catalog/save、三 Plan/Allowance、无 API 5xx/console.error/pageerror/横向 overflow、键盘 focus 与 Dream bearer 无 Admin Registry 权限均为真实 API；没有 mock Gateway catalog、Subscription/Product API 或 inference。React StrictMode 对首轮 effect 的 `net::ERR_ABORTED` 只在 dev harness 诊断器中排除，后续相同真实 endpoint 的 200 仍为硬断言。
+- 视觉 QA：按 `ink-dream-playwright-qa` 对四张全页截图复核。桌面 model grid 两列、移动单列；订阅页保持 Dream 叙事排版，移动端当前订阅/Allowance 单列；两视口无横向溢出，锁定 maintenance 模型仍可见且不可选择。截图位于 Dream `frontend/test-results/e2e-model-settings-gateway-*/` 对应 desktop/mobile 目录。
+- 全量验证：Admin `env:check`、`tsc --noEmit`、lint、67 files/323 tests、production build 全通过；Dream backend 在关闭真实 Gateway 环境耦合后 1696 passed/14 skipped/652 subtests，最新 Gateway/Product focused 42 tests通过；frontend lint 0 errors/21 既有 hook warnings、typecheck、production build、focused 15+6 tests及真实 Playwright 5/5 通过。Dream build 仅有既有 large-chunk/ineffective-dynamic-import 警告。
+
+失败尝试及根因：
+
+- 正式 test user 首次 INSERT 因旧 Gateway provision 曾以 `MAX(id)+1` 手工写 `users.id`，identity sequence 落后而 unique 冲突；失败事务无写入。只把 sequence 前向推进到当前 max，并修复 provision script 后重试成功，没有修改任何既有 user。
+- Free v1 10,000 Token 在首次真实 Claude Agent 前被 71,971 reserve 正确拒绝为 402；未放宽 Gateway 资格，而是以新 published v2 前向修正并保留 v1 历史。成功请求实际 capture 30,709；同一测试用户剩余 69,291，因此再次完整 Agent reserve 正确返回 402。
+- Dream 根目录直接 `pytest` 误收集 `backend/data/agent-workspace/**/test_basic.py`，出现 583 个 collection mismatch；限定 `backend/tests` 后，若保留真实 Gateway env，75 个旧 pure runner tests 因没有 canonical subject 失败。以 `INK_GATEWAY_ENABLED=false` 隔离 unit runner 后得到 1696 passed/14 skipped；真实 Gateway 路径由单独无 mock SSE 和 Playwright 验证。
+- 前两轮真实 Playwright 失败分别源于 harness 指向旧 8875 端口，以及上述 Product Allowance 微秒精度 503；修正同源 Vite→8765 和 repository 后，另发现不可开通文案同时有 visible 与 sr-only 节点，测试改为精确断言 2 个可见节点。最终 5/5。
+- 首次最终 `env:check` 因新 Product 变量尚未登记 allowlist 而失败；完善生成/保留/条件完整性校验后通过，没有删除或回显配置值。
+
+未执行事项及原因：
+
+- 正式高级模型 `upgrade_required` 的真实环境验收未执行：现有第二个 enabled model `hy-preview` 缺 active Pricing 与 published Entitlement，真实正确状态只能是 `maintenance`；不得伪造价格或高级 Plan 商业参数。枚举与 UI 路径已有 unit/fixture 合同覆盖，真实商业配置仍是发布阻断项。
+- 模型停用后的正式库写入/回滚未执行，避免临时改变共享真实模型配置；409 stale selection 由 backend/frontend 合同测试覆盖，当前真实 Settings 的 disabled maintenance 状态已覆盖不可保存路径。
+- 外部真实支付、checkout、webhook、退款与付费升级/降级均不执行，因为 Dream/is-dreaming 商业参数仍为 draft，页面明确暂不可开通且不伪造支付成功。
+
+## Round 56 — 阶段六：最终一致性审计与发布报告
+
+Optimized Prompt:
+
+作为不了解 Round 51–55 执行过程的独立发布审计者，对 Ink Memory 本次模型目录、默认 Free Subscription 和三套餐闭环做最终一致性审计。只依据当前 Admin/Dream git diff、正式 `ink-memory` 只读事实、工作日志、设计/PRD、测试结果和无 mock E2E receipt；不得新增产品范围、不得再次修改正式 Subscription/Allowance/Usage/Ledger/Event，也不得把未配置的高级商业参数或真实支付写成完成。
+
+逐项核对：根因报告是否能解释原 `GATEWAY_MODEL_NOT_AVAILABLE`；enabled 模型是否对所有 canonical 用户可见且 DTO 无 Provider/upstream/Pricing/Secret；callability 是否仍实时依赖 canonical user、Subscription、published Plan Version、Entitlement、Permission、RPM/daily/月 Allowance；200/402/403/409/429/502/503 语义是否一致；Admin Registry 是否仍受 Session/RBAC；Free/Dream/is-dreaming identity、display metadata、published/draft 状态、100,000 Free 当前版本、default model Entitlement、new-user trigger、27 历史 backfill 与 paid preservation 是否与数据库一致；Dream Settings/Claude resolver/Product page 是否没有静态 alias/plan/payment truth；文档与页面是否一致。
+
+检查所有本轮修改文件和 `git diff --check`，区分任务源文件、用户原有修改、私有 env/backup/test artifacts；不得回滚不明修改。用只读 SQL 复核最终用户/Plan/Version/Entitlement/Subscription/Allowance/Event/Gateway Request/settled/Token Ledger 计数与数据库名，不输出用户 token、完整 DSN、Gateway Key、Provider Secret。复核最新 Admin env/type/lint/test/build、Dream backend/frontend test/type/lint/build、Playwright 5/5 和四张截图结论。
+
+生成正式最终报告，至少包含：真实根因与处理判断；模型 visible/callable 新合同；三 Plan 数据库结果；历史 backfill 27、新用户 trigger 1、最终 Free active 28；Admin/Dream 修改文件按 Schema/Migration/Service/API/UI/Test/Docs 分组；API 状态、测试数量和两视口；Gateway Request 172→175、settled 成功增量 +1、Token Ledger 6→9；Reader Testing/视觉 QA 发现和修复；数据库备份与 Secret 安全；未执行真实支付；以及明确的剩余发布阻断——真实高级 Plan/Pricing/Entitlement 未配置，所以 `hy-preview` 正确显示 maintenance 而不是伪造 upgrade_required。只有无剩余代码/数据一致性缺陷时才把实现闭环标记为完成；不得声称全部商业验收完成。
+
+Optional Enhancers:
+
+- 在报告顶部增加“已完成 / 有意 deferred / 商业配置阻断”三态摘要，避免把安全 defer 误读成代码缺陷。
+- 附最小发布顺序：migration → model readiness → plan seed/check → service identity → smoke/E2E；以及回退时只停流量、前向修复，不删除财务历史。
+
+范围变化：
+
+- 阶段五实现和真实验证已完成；本轮只允许只读审计、文档收口和报告写入，不再修改业务 Schema/API/UI 或正式数据。
+- 高级套餐商业参数与外部支付保持 deferred；真实 `upgrade_required` 是商业配置阻断，不以 fixture 冒充完成。
+
+执行证据与验证结果：
+
+- Round 55 已提供可复核数据库计数、备份、真实 SSE、5/5 Playwright、四张截图与全量测试结果；本记录是进入最终审计的强制门禁。
+- 本记录落盘前尚未生成最终报告，也未执行最终 diff/只读一致性复核。
+
+失败尝试及根因：
+
+- 无；阶段六尚未开始。
+
+未执行事项及原因：
+
+- 最终文件清单、只读 SQL 快照、diff check、报告与完成/阻断结论必须在本 Prompt Architect 记录之后执行。
+
+### Round 56 执行结果（最终一致性审计完成）
+
+- 新增正式报告 `docs/verification/ink-memory-model-catalog-default-free-final-report.md`，以“已完成 / 有意 deferred / 商业配置阻断”三态给出根因、合同、数据库、文件、API/E2E、测试、安全、支付 defer 与解除阻断顺序。
+- 最终只读交叉验证：数据库仍为 `ink-memory`；30 canonical/30 Dream projection/30 对应 Billing Account；0 个 active canonical 缺有效 Subscription；Free v1 cancelled 28、v2 active 28；三 Plan identity、display metadata、published/draft 状态、default `deepseek-v4-flash` Entitlement 与 100,000 current Allowance 均和 PRD/UI/报告一致。
+- 实时 HTTP 复核：Dream catalog/plans/context/usage 均 200；catalog 为 `deepseek-v4-flash=included/callable`、`hy-preview=maintenance/not callable`，default alias 为 Free 模型；Dream bearer 请求 Admin Registry API 精确为 401。
+- 为避免 Playwright 默认 output cleanup 留下旧 tracked screenshot 删除，重新执行现有 Subscription regression 4/4 并生成反映新叙事卡的三张更新截图；随后以独立 `--output=test-results/round55-real` 再次执行真实用例 5/5，四张真实 desktop/mobile 截图非空且路径稳定。
+- 两仓最终 `git diff --check` 通过；Admin backup、Admin `.env.local`、Dream `backend/.env` 均 mode 0600；四张真实截图非空。Secret 扫描只命中受控环境变量名称和安全说明，没有值、完整 DSN、JWT、Gateway Key、Provider Secret或prefix。
+- 源码一致性：Dream前端与Claude resolver无静态Provider型号fallback；`INK_GATEWAY_TEXT_MODEL_ALIAS`仍存在于独立的non-Claude `GatewayInferenceModels`配置对象，但Claude Agent不读取它，且本任务的Claude选择严格由用户保存callable alias和Admin default alias决定。
+- 最终状态：代码、Schema、数据、文档、Free真实SSE和双视口E2E闭环完成，未发现剩余代码/数据一致性缺陷；真实高级模型`upgrade_required`和外部支付仍被缺少真实商业配置阻断，报告未将其伪造为完成。
+
+失败尝试及根因：
+
+- 无新的实现失败。最终审计发现默认 Playwright output曾把三张tracked旧截图标为删除；通过正常重跑对应4个回归测试更新截图，而不是使用破坏性Git恢复或覆盖用户修改。
+
+未执行事项及原因：
+
+- `hy-preview`真实upgrade场景、Dream/is-dreaming购买、支付webhook/退款/真实升级降级继续未执行；必须先由商业配置发布新的Pricing/Plan Version/Entitlement并接通支付，当前maintenance/draft是唯一安全真实状态。
+- 未提交、未stage、未push代码；用户未要求Git发布操作。

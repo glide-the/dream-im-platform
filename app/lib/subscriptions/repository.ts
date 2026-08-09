@@ -17,7 +17,8 @@ type Config = {
 
 const configs: Record<SubscriptionResource, Config> = {
   "subscription-plans": {
-    select: `p.id, p.code, p.name, p.description, p.status,
+    select: `p.id, p.code, p.name, p.description, p.display_eyebrow,
+             p.display_note, p.display_details, p.status,
              p.created_at, p.updated_at,
              (SELECT COUNT(*)::int FROM subscription_plan_versions v WHERE v.plan_id = p.id) AS version_count`,
     from: "FROM subscription_plans p",
@@ -41,7 +42,8 @@ const configs: Record<SubscriptionResource, Config> = {
     select: `e.id, e.plan_version_id, p.code AS plan_code, v.version_number,
              e.model_id, m.code AS model_code, m.display_name AS model_name,
              e.gateway_scopes, e.requests_per_minute, e.daily_token_limit,
-             e.monthly_token_limit, e.storage_bytes_limit, e.enabled,
+             e.monthly_token_limit, e.storage_bytes_limit, e.is_default,
+             e.enabled,
              e.created_at, e.updated_at`,
     from: `FROM subscription_plan_entitlements e
            JOIN subscription_plan_versions v ON v.id = e.plan_version_id

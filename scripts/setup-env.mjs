@@ -20,6 +20,10 @@ const ROOT_KEYS = new Set([
   "GATEWAY_API_KEY_PEPPER",
   "GATEWAY_SUBJECT_JWT_ISSUER",
   "GATEWAY_SUBJECT_JWT_AUDIENCE",
+  "PRODUCT_API_JWT_SECRET",
+  "PRODUCT_API_JWT_ISSUER",
+  "PRODUCT_API_JWT_AUDIENCE",
+  "PRODUCT_API_ORIGIN_ALLOWLIST",
   "AI_CREDENTIAL_ENCRYPTION_KEY",
   "AI_PROVIDER_HOST_ALLOWLIST",
   "AI_PROVIDER_ALLOW_INSECURE_LOCALHOST",
@@ -56,6 +60,10 @@ const DOCKER_KEYS = new Set([
   "GATEWAY_API_KEY_PEPPER",
   "GATEWAY_SUBJECT_JWT_ISSUER",
   "GATEWAY_SUBJECT_JWT_AUDIENCE",
+  "PRODUCT_API_JWT_SECRET",
+  "PRODUCT_API_JWT_ISSUER",
+  "PRODUCT_API_JWT_AUDIENCE",
+  "PRODUCT_API_ORIGIN_ALLOWLIST",
   "AI_CREDENTIAL_ENCRYPTION_KEY",
   "AI_PROVIDER_HOST_ALLOWLIST",
   "AI_PROVIDER_ALLOW_INSECURE_LOCALHOST",
@@ -353,6 +361,13 @@ function buildConfiguration(rootExisting, dockerExisting) {
     hasMinimumBytes,
     () => randomSecret("pepper_"),
   );
+  const productApiSecret = pairedSecret(
+    rootExisting,
+    dockerExisting,
+    "PRODUCT_API_JWT_SECRET",
+    hasMinimumBytes,
+    () => randomSecret("product_"),
+  );
   const encryptionKey = pairedSecret(
     rootExisting,
     dockerExisting,
@@ -378,6 +393,18 @@ function buildConfiguration(rootExisting, dockerExisting) {
     "ADMIN_ORIGIN_ALLOWLIST",
     (value) => value.length > 0,
     "http://localhost:3000",
+  );
+  const rootProductOriginAllowlist = configuredValue(
+    rootExisting,
+    "PRODUCT_API_ORIGIN_ALLOWLIST",
+    (value) => value.length > 0 && !/[\r\n]/.test(value),
+    "http://127.0.0.1:5173",
+  );
+  const dockerProductOriginAllowlist = configuredValue(
+    dockerExisting,
+    "PRODUCT_API_ORIGIN_ALLOWLIST",
+    (value) => value.length > 0 && !/[\r\n]/.test(value),
+    "http://127.0.0.1:5173",
   );
   const rootProviderAllowlist = configuredValue(
     rootExisting,
@@ -445,6 +472,26 @@ function buildConfiguration(rootExisting, dockerExisting) {
         "ink-memory-admin-gateway",
       ),
     ],
+    ["PRODUCT_API_JWT_SECRET", productApiSecret.root],
+    [
+      "PRODUCT_API_JWT_ISSUER",
+      configuredValue(
+        rootExisting,
+        "PRODUCT_API_JWT_ISSUER",
+        (value) => value.trim().length > 0 && !/[\r\n]/.test(value),
+        "ink-dream-memory",
+      ),
+    ],
+    [
+      "PRODUCT_API_JWT_AUDIENCE",
+      configuredValue(
+        rootExisting,
+        "PRODUCT_API_JWT_AUDIENCE",
+        (value) => value.trim().length > 0 && !/[\r\n]/.test(value),
+        "ink-memory-product-api",
+      ),
+    ],
+    ["PRODUCT_API_ORIGIN_ALLOWLIST", rootProductOriginAllowlist],
     ["AI_CREDENTIAL_ENCRYPTION_KEY", encryptionKey.root],
     ["AI_PROVIDER_HOST_ALLOWLIST", rootProviderAllowlist],
     [
@@ -533,6 +580,26 @@ function buildConfiguration(rootExisting, dockerExisting) {
         "ink-memory-admin-gateway",
       ),
     ],
+    ["PRODUCT_API_JWT_SECRET", productApiSecret.docker],
+    [
+      "PRODUCT_API_JWT_ISSUER",
+      configuredValue(
+        dockerExisting,
+        "PRODUCT_API_JWT_ISSUER",
+        (value) => value.trim().length > 0 && !/[\r\n]/.test(value),
+        "ink-dream-memory",
+      ),
+    ],
+    [
+      "PRODUCT_API_JWT_AUDIENCE",
+      configuredValue(
+        dockerExisting,
+        "PRODUCT_API_JWT_AUDIENCE",
+        (value) => value.trim().length > 0 && !/[\r\n]/.test(value),
+        "ink-memory-product-api",
+      ),
+    ],
+    ["PRODUCT_API_ORIGIN_ALLOWLIST", dockerProductOriginAllowlist],
     ["AI_CREDENTIAL_ENCRYPTION_KEY", encryptionKey.docker],
     ["AI_PROVIDER_HOST_ALLOWLIST", dockerProviderAllowlist],
     [
@@ -607,6 +674,12 @@ AI_PROVIDER_ALLOW_INSECURE_LOCALHOST=${values.get("AI_PROVIDER_ALLOW_INSECURE_LO
 GATEWAY_MIN_RESERVE_MICROUSD=${values.get("GATEWAY_MIN_RESERVE_MICROUSD")}
 GATEWAY_MAX_BODY_BYTES=${values.get("GATEWAY_MAX_BODY_BYTES")}
 
+# Dream server-to-server Product API identity. Never expose the JWT secret to browsers.
+PRODUCT_API_JWT_SECRET=${encodeValue(values.get("PRODUCT_API_JWT_SECRET"))}
+PRODUCT_API_JWT_ISSUER=${encodeValue(values.get("PRODUCT_API_JWT_ISSUER"))}
+PRODUCT_API_JWT_AUDIENCE=${encodeValue(values.get("PRODUCT_API_JWT_AUDIENCE"))}
+PRODUCT_API_ORIGIN_ALLOWLIST=${encodeValue(values.get("PRODUCT_API_ORIGIN_ALLOWLIST"))}
+
 # File storage. External credentials are never generated automatically.
 FILE_STORAGE_TYPE=${values.get("FILE_STORAGE_TYPE")}
 FILE_STORAGE_PREFIX=${encodeValue(values.get("FILE_STORAGE_PREFIX"))}
@@ -649,6 +722,11 @@ AI_PROVIDER_ALLOW_INSECURE_LOCALHOST=${values.get("AI_PROVIDER_ALLOW_INSECURE_LO
 GATEWAY_MIN_RESERVE_MICROUSD=${values.get("GATEWAY_MIN_RESERVE_MICROUSD")}
 GATEWAY_MAX_BODY_BYTES=${values.get("GATEWAY_MAX_BODY_BYTES")}
 RUN_DB_MIGRATIONS=${values.get("RUN_DB_MIGRATIONS")}
+
+PRODUCT_API_JWT_SECRET=${encodeValue(values.get("PRODUCT_API_JWT_SECRET"))}
+PRODUCT_API_JWT_ISSUER=${encodeValue(values.get("PRODUCT_API_JWT_ISSUER"))}
+PRODUCT_API_JWT_AUDIENCE=${encodeValue(values.get("PRODUCT_API_JWT_AUDIENCE"))}
+PRODUCT_API_ORIGIN_ALLOWLIST=${encodeValue(values.get("PRODUCT_API_ORIGIN_ALLOWLIST"))}
 
 FILE_STORAGE_TYPE=${values.get("FILE_STORAGE_TYPE")}
 FILE_STORAGE_PREFIX=${encodeValue(values.get("FILE_STORAGE_PREFIX"))}
@@ -722,6 +800,27 @@ function validateConfiguration(root, docker, rootParsed, dockerParsed) {
     ]) {
       if (!hasMinimumBytes(values.get(key) ?? "")) {
         errors.push(`${file}: ${key} must contain at least 32 bytes`);
+      }
+    }
+  }
+  const productKeys = [
+    "PRODUCT_API_JWT_SECRET",
+    "PRODUCT_API_JWT_ISSUER",
+    "PRODUCT_API_JWT_AUDIENCE",
+    "PRODUCT_API_ORIGIN_ALLOWLIST",
+  ];
+  for (const [file, values] of [
+    [".env.local", root],
+    ["docker/.env", docker],
+  ]) {
+    if (productKeys.some((key) => values.has(key))) {
+      if (!hasMinimumBytes(values.get("PRODUCT_API_JWT_SECRET") ?? "")) {
+        errors.push(`${file}: PRODUCT_API_JWT_SECRET must contain at least 32 bytes`);
+      }
+      for (const key of productKeys.slice(1)) {
+        if (!(values.get(key) ?? "").trim()) {
+          errors.push(`${file}: ${key} must not be empty when Product API identity is configured`);
+        }
       }
     }
   }

@@ -1,5 +1,13 @@
 # 模块 PRD：Token-only 月度订阅、套餐版本与权益
 
+## 2026-08-09 默认三套餐与Free自动资格增量
+
+- 正式Plan identity code固定为`free`、`dream`、`is-dreaming`；Plan保存`eyebrow/note/details`正式展示字段，Dream不得复制静态数组。
+- Free必须有published、monthly、Token-only Version和至少一个enabled、priced、支持`messages:create`的Entitlement；缺少合格模型时migration/startup明确失败。
+- Dream与is Dreaming缺商业参数时创建Plan identity + draft Version，Product API仍返回`available=false`和“暂不可开通”，不得虚构价格或支付。
+- canonical用户创建时自动建立platform projection、Billing Account和默认Free Subscription/Allowance/Event；历史backfill幂等，只补没有需要保留有效订阅的用户，不覆盖paid、Allowance、Usage、Ledger或Event。
+- published Plan Version及Entitlement不可覆盖更新；变更只能创建新Version。
+
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[订阅中心](../../design/modules/03-subscriptions.md)
 
 > 业务纠偏：订阅套餐面向单个用户、按其订阅周期提供 **Token 与非货币权益**，并可定义整数 micro-USD 月费。套餐月费不是 Token 金额额度或现金余额，不定义现金超额扣费，也不使用平台统一生效日期。

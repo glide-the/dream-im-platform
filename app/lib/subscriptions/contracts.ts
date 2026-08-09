@@ -8,16 +8,23 @@ const code = z
   .regex(/^[a-z0-9][a-z0-9._-]*$/);
 const safeCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const optionalLimit = safeCount.nullable().optional();
+const displayDetails = z.array(z.string().trim().min(1).max(240)).max(8);
 
 export const planCreateSchema = z.strictObject({
   code,
   name: z.string().trim().min(1).max(160),
   description: z.string().trim().max(4_000).nullable().optional(),
+  displayEyebrow: z.string().trim().min(1).max(120).nullable().optional(),
+  displayNote: z.string().trim().min(1).max(240).nullable().optional(),
+  displayDetails: displayDetails.default([]),
 });
 
 export const planUpdateSchema = z.strictObject({
   name: z.string().trim().min(1).max(160).optional(),
   description: z.string().trim().max(4_000).nullable().optional(),
+  displayEyebrow: z.string().trim().min(1).max(120).nullable().optional(),
+  displayNote: z.string().trim().min(1).max(240).nullable().optional(),
+  displayDetails: displayDetails.optional(),
   status: z.enum(["draft", "active", "retired"]).optional(),
 });
 
@@ -45,6 +52,7 @@ export const entitlementCreateSchema = z.strictObject({
   dailyTokenLimit: optionalLimit,
   monthlyTokenLimit: optionalLimit,
   storageBytesLimit: optionalLimit,
+  isDefault: z.boolean().default(false),
   enabled: z.boolean().default(true),
 });
 

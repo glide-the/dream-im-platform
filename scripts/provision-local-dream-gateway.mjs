@@ -194,7 +194,6 @@ try {
   const planVersion = versionResult.rows[0];
   if (!planVersion) throw new Error("Unable to provision a callable local E2E plan version");
 
-  await client.query("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE");
   let userResult = await client.query(
     "SELECT id::text FROM users WHERE email = $1",
     [testEmail],
@@ -202,9 +201,8 @@ try {
   let userCreated = false;
   if (!userResult.rows[0]) {
     userResult = await client.query(
-      `INSERT INTO users (id, email, password_hash, display_name, role, status)
-       SELECT COALESCE(MAX(id), 0) + 1, $1, $2, $3, 'user', 'active'
-         FROM users
+      `INSERT INTO users (email, password_hash, display_name, role, status)
+       VALUES ($1, $2, $3, 'user', 'active')
        RETURNING id::text`,
       [testEmail, "!local-e2e-login-disabled!", "Gateway E2E User"],
     );

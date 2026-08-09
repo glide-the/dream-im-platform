@@ -97,11 +97,16 @@ describe("Product read projections", () => {
               plan_code: "pro",
               plan_name: "Pro",
               description: "More model access",
+              display_eyebrow: "For active stories",
+              display_note: "More room to create",
+              display_details: ["Longer conversations"],
               plan_version_id: "planv_pro",
               version_number: 2,
+              version_status: "published",
               allowance_tokens: "2000000",
               base_price_microusd: "19000000",
               currency: "USD",
+              available: true,
             },
           ],
           entitlements: [
@@ -116,8 +121,12 @@ describe("Product read projections", () => {
       data: [
         {
           planCode: "pro",
+          eyebrow: "For active stories",
+          note: "More room to create",
+          details: ["Longer conversations"],
           billingCycle: "monthly",
           monthlyAllowanceTokens: 2_000_000,
+          available: true,
           availableActions: ["upgrade"],
           entitlements: [
             {
@@ -144,11 +153,16 @@ describe("Product read projections", () => {
                 plan_code: "unsafe plan code",
                 plan_name: "Unsafe",
                 description: null,
+                display_eyebrow: "Unsafe",
+                display_note: "Unsafe",
+                display_details: [],
                 plan_version_id: "planv_unsafe",
                 version_number: 1,
+                version_status: "published",
                 allowance_tokens: "1000",
                 base_price_microusd: "1000000",
                 currency: "USD",
+                available: true,
               },
             ],
             entitlements: [],
@@ -158,6 +172,43 @@ describe("Product read projections", () => {
         }),
       ),
     ).rejects.toMatchObject({ code: "PRODUCT_DATA_INVALID", status: 503 });
+  });
+
+  it("returns a formally seeded draft plan as visibly unavailable", async () => {
+    const result = await getProductPlans(
+      principal,
+      plansQuerySchema.parse({}),
+      baseDependencies({
+        listPlans: vi.fn().mockResolvedValue({
+          rows: [{
+            plan_code: "is-dreaming",
+            plan_name: "is Dreaming",
+            description: null,
+            display_eyebrow: "For ongoing worlds",
+            display_note: "为长期作品准备的工作台",
+            display_details: ["面向多部作品的持续创作支持"],
+            plan_version_id: "planv_is_dreaming_v1",
+            version_number: 1,
+            version_status: "draft",
+            allowance_tokens: "0",
+            base_price_microusd: "0",
+            currency: "USD",
+            available: false,
+          }],
+          entitlements: [],
+          total: 1,
+        }),
+        findSubscription: vi.fn().mockResolvedValue(current),
+      }),
+    );
+    expect(result.data[0]).toMatchObject({
+      planCode: "is-dreaming",
+      available: false,
+      unavailableReason: "commercial_parameters_pending",
+      monthlyAllowanceTokens: null,
+      monthlyPriceMicrousd: null,
+      availableActions: [],
+    });
   });
 
   it("projects canonical context and enforces Token conservation", async () => {

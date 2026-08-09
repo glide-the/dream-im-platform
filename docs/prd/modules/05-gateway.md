@@ -1,5 +1,12 @@
 # 模块 PRD：Gateway、Key、Request、Payload 与限流
 
+## 2026-08-09 Catalog / Inference边界增量
+
+- `GET /v1/models`是server-to-server canonical-subject公共目录：正常无订阅返回200并附逐模型availability；仅service identity错误、Admin/PG不可达或配置故障返回503。
+- 推理入口资格顺序保持canonical user→Subscription状态/周期→published Plan Version→Entitlement/Scope→Model Permission→RPM/Token limits→当前周期Token Allowance→reserve→Provider。
+- Token不足为402；无模型/Scope/Permission为403；保存alias在并发中停用或失权为409；Provider失败为502；限流为429。
+- Dream保存和Claude Agent不得使用静态upstream型号或绕过实时资格；解析顺序为保存且仍callable alias→Free Plan明确默认alias→结构化业务错误。
+
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[Gateway](../../design/modules/05-gateway.md)
 
 > 实现状态：**Implemented / Release candidate**；严格 canonical 校验、cash-only 退出、402 Token 单位、终态 guard 与 Dream server-only Gateway client 已通过隔离合同。真实外部 Provider/user canary 未执行。

@@ -115,6 +115,24 @@ const resources: Record<AdminResource, ResourceConfig> = {
     select: `m.id, m.provider_id, p.code AS provider_code,
              m.code, m.upstream_model, m.display_name, m.context_window,
              m.max_output_tokens, m.capabilities, m.enabled, m.metadata,
+             (p.status = 'active' AND p.api_key_ciphertext IS NOT NULL
+               AND p.api_key_iv IS NOT NULL AND p.api_key_tag IS NOT NULL)
+               AS provider_ready,
+             EXISTS (
+               SELECT 1 FROM ai_pricing_rules AS pricing
+               WHERE pricing.model_id = m.id AND pricing.status = 'active'
+                 AND pricing.effective_from <= NOW()
+                 AND (pricing.effective_to IS NULL OR pricing.effective_to > NOW())
+             ) AS pricing_ready,
+             EXISTS (
+               SELECT 1
+               FROM subscription_plan_entitlements AS entitlement
+               JOIN subscription_plan_versions AS version
+                 ON version.id = entitlement.plan_version_id
+               WHERE entitlement.model_id = m.id AND entitlement.enabled
+                 AND entitlement.gateway_scopes @> ARRAY['messages:create']::text[]
+                 AND version.status = 'published'
+             ) AS published_messages_entitlement,
              m.created_at, m.updated_at`,
     from: "FROM ai_models AS m JOIN ai_providers AS p ON p.id = m.provider_id",
     columns: {

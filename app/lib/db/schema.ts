@@ -543,6 +543,12 @@ export const subscriptionPlans = pgTable(
     code: text("code").notNull(),
     name: text("name").notNull(),
     description: text("description"),
+    display_eyebrow: text("display_eyebrow"),
+    display_note: text("display_note"),
+    display_details: jsonb("display_details")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     currency: text("currency").notNull().default("USD"),
     status: text("status").notNull().default("draft"),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
@@ -646,6 +652,7 @@ export const subscriptionPlanEntitlements = pgTable(
     daily_token_limit: bigint("daily_token_limit", { mode: "number" }),
     monthly_token_limit: bigint("monthly_token_limit", { mode: "number" }),
     storage_bytes_limit: bigint("storage_bytes_limit", { mode: "number" }),
+    is_default: boolean("is_default").notNull().default(false),
     enabled: boolean("enabled").notNull().default(true),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
@@ -659,6 +666,9 @@ export const subscriptionPlanEntitlements = pgTable(
       table.plan_version_id,
       table.model_id,
     ),
+    uniqueIndex("subscription_entitlements_one_default_uidx")
+      .on(table.plan_version_id)
+      .where(sql`${table.is_default} = TRUE`),
     index("subscription_entitlements_model_idx").on(table.model_id),
     check(
       "subscription_entitlements_rpm_check",

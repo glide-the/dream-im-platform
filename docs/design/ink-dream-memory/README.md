@@ -19,6 +19,7 @@
 | [03-model-and-gateway-experience](03-model-and-gateway-experience.md) | 模型选择、Gateway 资格、推理错误 | **Implemented client / RC**：model BFF、server-only Gateway client/canonical subject | 外部 Provider/user canary 与逐角色切流 |
 | [04-payment-adapter-states](04-payment-adapter-states.md) | Token 月订阅 Payment Intent、等待 Webhook 与错误状态 | Implemented / Release candidate | 真实渠道仍 Deferred |
 | [05-migration-maintenance-and-error-states](05-migration-maintenance-and-error-states.md) | 43+5 迁移窗口、维护、错误恢复 | **Implemented runtime / RC**：48/569/81/25、43+5 CLI、PG-only main/Notion | 真实生产源/cutover 与 owner/ACL 审批 |
+| [06-model-catalog-and-default-subscription-plans](06-model-catalog-and-default-subscription-plans.md) | enabled模型可见性、用户callability、默认Free与三套餐叙事卡片 | **Approved for implementation**：Round 51根因与Round 52 Reader Testing完成 | Schema/API/UI/真实E2E |
 
 `Implemented / Release candidate` 表示代码与隔离/focused 自动化已通过，不表示生产已上线。真实 cutover、生产服务身份、外部 Provider canary 与 credential owner rotation 仍按 Release Gate 管理。
 
@@ -35,6 +36,8 @@
 9. Usage、Audit、Subscription Event 和 Token Allowance 变更是只追加事实；Dream 没有编辑或删除历史记录的控件。
 10. 浏览器永不持有 Gateway Key、Provider Secret、Payment Secret 或服务间凭据，也不提交 canonical user ID 替换当前身份。
 11. 503、维护和无数据时禁止回退静态套餐、默认模型、假 Token 或上次成功数据冒充当前状态。
+12. `enabled model` 决定所有canonical用户的可见目录；Subscription/Entitlement/Permission/Limit/Allowance只决定逐模型callability。正常未订阅必须返回200 availability metadata，而不是空目录或503。
+13. 每个canonical用户自动拥有Billing Account；没有需要保留的有效订阅时自动获得默认Free月订阅。正式套餐code固定为`free`、`dream`、`is-dreaming`，展示字段来自Admin Product API。
 
 ## 3. 双跳 API 边界
 
@@ -46,7 +49,8 @@ Dream 前端只访问 Dream 同源 BFF。BFF 从已验证 Session 取 canonical 
 | `GET /api/story-workspace/subscription/plans` | `GET /api/product/v1/plans` | 服务端分页的已发布 Token-only 月度版本 |
 | `POST /api/story-workspace/subscription/commands` | `POST /api/product/v1/me/subscription-commands` | `phase=preview\|execute`；预览后幂等提交生命周期命令 |
 | `GET /api/story-workspace/usage` | `GET /api/product/v1/me/usage` | 当前个人周期 Token 汇总与服务端分页明细 |
-| `GET /api/story-workspace/models` | `GET /api/product/v1/me/model-catalog` | 当前用户可用 alias、capability 与 Token/RPM 限制 |
+| `GET /api/story-workspace/models` | `GET /api/product/v1/me/model-catalog` | 全部enabled alias与逐用户callability/availability |
+| `GET /api/gateway/models` | `GET /v1/models` | Settings/Claude Agent使用的安全公共目录；可见与可调用分离 |
 | `POST/GET /api/story-workspace/subscription/payment-intents/**` | `POST/GET /api/product/v1/me/payment-intents/**` | 付费首次开通/到期续费 Intent 与真实状态刷新 |
 
 Admin 端的 `me` 不是浏览器 Cookie：它是经服务间认证、签名 subject、audience、timestamp/nonce 校验后的 canonical user。Dream BFF 不转发浏览器自定义 `X-User-Id`。响应使用字段白名单，只返回安全 `requestId`。

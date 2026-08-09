@@ -1,5 +1,13 @@
 # 模块 PRD：Provider、Model 与 Pricing
 
+## 2026-08-09 可见性与调用资格合同增量
+
+- Admin Registry `enabled=true`是Dream公共目录唯一可见性条件；所有authenticated canonical用户看到全部enabled alias。
+- catalog对每项计算`callable`与`included|upgrade_required|subscription_inactive|allowance_exhausted|permission_denied|maintenance`，但实际inference仍实时校验完整资格。
+- 无Subscription或无Entitlement不能把目录变空；正常返回200 availability metadata。enabled但缺Provider route/credential/pricing/published entitlement仍可见并标为maintenance。
+- 公共DTO只含alias、display name、protocol、capability、context/output limits、enabled/callable/availability、required plan和安全升级提示；严禁upstream model、Provider route、Pricing、Secret和key prefix。
+- Admin `AIModelRegistry`继续Admin Session + `models.read/write` RBAC，公共目录不复用Admin CRUD响应。
+
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[模型供应链](../../design/modules/04-model-catalog.md)
 
 > 实现状态：Provider/Model/Pricing/Discover/目录同步已实现；用户—模型例外限制统一归入 Gateway 限流模块。

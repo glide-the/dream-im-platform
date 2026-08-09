@@ -1,5 +1,9 @@
 # Dream 订阅体验与推理 Gateway 集成
 
+## 2026-08-09 模型目录与默认Free架构增量
+
+Round 51证明当前Admin catalog把Subscription资格当作目录过滤，导致27/29 canonical用户目录为空；Round 52将合同修正为“enabled model全员可见、逐模型callability”。Dream BFF严格校验安全DTO，浏览器不接触Gateway Key/Provider route。Admin-owned provisioning在canonical用户插入和幂等backfill时建立默认Free Subscription、Allowance和Event；Dream认证服务不直接写计费表。完整交互、HTTP语义与Reader Testing见`docs/design/ink-dream-memory/06-model-catalog-and-default-subscription-plans.md`。
+
 > 文档状态：**Implemented / Release candidate**（产品 UX/BFF/Gateway client 已完成；真实外部 Provider canary 待执行）
 > 返回：[总索引](README.md)
 > 依赖：[Billing/Subscription/Gateway](06-billing-subscription-gateway-integration.md) · [页面清单](03-page-refactor-checklist.md)

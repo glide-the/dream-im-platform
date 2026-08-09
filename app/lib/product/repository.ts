@@ -32,11 +32,16 @@ export type ProductPlanRow = {
   plan_code: string;
   plan_name: string;
   description: string | null;
-  plan_version_id: string;
-  version_number: number;
-  allowance_tokens: string | number;
-  base_price_microusd: string | number;
+  display_eyebrow: string;
+  display_note: string;
+  display_details: string[];
+  plan_version_id: string | null;
+  version_number: number | null;
+  version_status: "draft" | "published" | "retired" | null;
+  allowance_tokens: string | number | null;
+  base_price_microusd: string | number | null;
   currency: "USD";
+  available: boolean;
 };
 
 export type ProductEntitlementRow = {
@@ -49,32 +54,36 @@ export type ProductEntitlementRow = {
 };
 
 const visiblePlanSql = `
-  FROM (
-    SELECT p.code AS plan_code, p.name AS plan_name, p.description, p.currency,
-           v.id AS plan_version_id, v.version_number, v.allowance_tokens,
-           v.base_price_microusd,
-           ROW_NUMBER() OVER (
-             PARTITION BY p.id ORDER BY v.version_number DESC, v.id DESC
-           ) AS version_rank
-    FROM subscription_plans AS p
-    JOIN subscription_plan_versions AS v ON v.plan_id = p.id
-    WHERE p.status = 'active'
-      AND v.status = 'published'
-      AND v.billing_period = 'monthly'
-      AND v.allowance_microusd = 0
-      AND v.overage_policy = 'deny'
-      AND v.effective_from IS NULL
-      AND v.allowance_tokens > 0
-      AND EXISTS (
-        SELECT 1
-        FROM subscription_plan_entitlements AS entitlement
-        JOIN ai_models AS model ON model.id = entitlement.model_id
-        WHERE entitlement.plan_version_id = v.id
-          AND entitlement.enabled = TRUE
-          AND model.enabled = TRUE
-      )
-  ) AS visible
-  WHERE visible.version_rank = 1`;
+  FROM subscription_plans AS plan
+  LEFT JOIN LATERAL (
+    SELECT version.*,
+      (
+        version.status = 'published'
+        AND version.billing_period = 'monthly'
+        AND version.allowance_microusd = 0
+        AND version.overage_policy = 'deny'
+        AND version.effective_from IS NULL
+        AND version.allowance_tokens > 0
+        AND EXISTS (
+          SELECT 1
+          FROM subscription_plan_entitlements AS entitlement
+          JOIN ai_models AS model ON model.id = entitlement.model_id
+          WHERE entitlement.plan_version_id = version.id
+            AND entitlement.enabled = TRUE
+            AND model.enabled = TRUE
+        )
+      ) AS available
+    FROM subscription_plan_versions AS version
+    WHERE version.plan_id = plan.id
+    ORDER BY
+      CASE WHEN version.status = 'published' THEN 0 ELSE 1 END,
+      version.version_number DESC,
+      version.id DESC
+    LIMIT 1
+  ) AS selected_version ON TRUE
+  WHERE plan.status = 'active'
+    AND plan.display_eyebrow IS NOT NULL
+    AND plan.display_note IS NOT NULL`;
 
 export async function listProductPlansOnClient(
   client: PoolClient,
@@ -84,14 +93,24 @@ export async function listProductPlansOnClient(
     `SELECT COUNT(*)::text AS total ${visiblePlanSql}`,
   );
   const plans = await client.query<ProductPlanRow>(
-    `SELECT plan_code, plan_name, description, plan_version_id,
-            version_number, allowance_tokens, base_price_microusd, currency
+    `SELECT plan.code AS plan_code, plan.name AS plan_name, plan.description,
+            plan.display_eyebrow, plan.display_note, plan.display_details,
+            selected_version.id AS plan_version_id,
+            selected_version.version_number,
+            selected_version.status AS version_status,
+            selected_version.allowance_tokens,
+            selected_version.base_price_microusd, plan.currency,
+            COALESCE(selected_version.available, FALSE) AS available
      ${visiblePlanSql}
-     ORDER BY plan_name ASC, plan_code ASC, plan_version_id ASC
+     ORDER BY CASE plan.code
+       WHEN 'free' THEN 0 WHEN 'dream' THEN 1 WHEN 'is-dreaming' THEN 2 ELSE 3
+     END, plan.name ASC, plan.code ASC
      LIMIT $1 OFFSET $2`,
     [query.pageSize, (query.page - 1) * query.pageSize],
   );
-  const versionIds = plans.rows.map((row) => row.plan_version_id);
+  const versionIds = plans.rows
+    .filter((row) => row.available && row.plan_version_id !== null)
+    .map((row) => row.plan_version_id as string);
   const entitlements = versionIds.length
     ? await client.query<ProductEntitlementRow>(
         `SELECT entitlement.plan_version_id, model.code AS model_alias,
@@ -224,14 +243,14 @@ export async function findCurrentAllowanceOnClient(
     `SELECT granted_tokens, reserved_tokens, consumed_tokens
      FROM subscription_usage_allowances
      WHERE subscription_id = $1
-       AND period_start = $2
-       AND period_end = $3
+       AND plan_version_id = $2
+       AND period_number = $3
      ORDER BY created_at DESC
      LIMIT 1`,
     [
       subscription.subscription_id,
-      subscription.current_period_start,
-      subscription.current_period_end,
+      subscription.current_plan_version_id,
+      subscription.current_period_number,
     ],
   );
   return result.rows[0] ?? null;

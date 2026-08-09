@@ -22,11 +22,13 @@
 
 页面只回答：本周期何时开始/结束、发放/预留/消耗/剩余多少 Token、允许哪些模型和 Scope、RPM/Storage 限制是什么、下周期将使用哪个套餐。
 
+Round 52补充：页面固定展示Admin Product API返回的`free`、`dream`、`is-dreaming`三项Plan identity及正式`eyebrow/name/note/details`。Free published版本可用；Dream/is Dreaming在商业参数未发布时仍显示叙事卡片并明确“暂不可开通”，不得因为版本为draft而消失，也不得把draft显示成US$0或假支付成功。新用户和确实没有需要保留订阅的历史用户由Admin自动获得Free Subscription、Allowance与activation Event；前端不自行构造Free状态。
+
 ### Release Gate
 
 当前页面 lint/build、Product API 9/9 与订阅 mocked-browser 4/4 已通过，覆盖 1440×1000、390×844、首次付费和到期续费；真实预发布 Admin API、Session/service identity、网络结果未知与生产数据冒烟仍需发布回执。
 
-- 删除静态 Plan 数组和任何 fallback；只渲染 Admin 产品 API 返回的 published 版本。
+- 删除静态 Plan 数组和任何 fallback；只渲染 Admin Product API返回的正式Plan identity。published版本可操作，draft identity只读显示“暂不可开通”。
 - canonical user 从 Dream Session 绑定；每个平台用户天然是订阅主体，不存在手工开户或独立“计费用户”。
 - DTO、DOM、控件和文案可展示真实套餐月费与 Payment Intent；仍不包含金额 allowance、cash balance、充值、金额超额或全局 `effectiveFrom/effectiveTo`。
 - 全生命周期命令、个人月度锚点、幂等重放、并发 409、网络结果未知、两视口和无障碍 E2E 通过。

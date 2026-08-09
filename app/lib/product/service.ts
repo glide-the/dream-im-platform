@@ -117,6 +117,18 @@ function safeOptionalText(value: unknown, field: string, maximum = 4_000) {
   return safeText(value, field, maximum);
 }
 
+function safeTextList(value: unknown, field: string) {
+  if (!Array.isArray(value) || value.length > 8) {
+    throw new ProductError(
+      "PRODUCT_DATA_INVALID",
+      "The Product API source data is invalid",
+      503,
+      { field },
+    );
+  }
+  return value.map((entry, index) => safeText(entry, `${field}[${index}]`, 240));
+}
+
 function safeIdentifier(value: unknown, field: string, maximum = 200) {
   const identifier = safeText(value, field, maximum);
   if (!productIdentifierPattern.test(identifier)) {
@@ -435,55 +447,65 @@ export async function getProductPlans(
       ]);
     }
     const data: ProductPlanDto[] = result.rows.map((row) => {
-      const targetTokens = safeInteger(
-        row.allowance_tokens,
-        "monthlyAllowanceTokens",
-      );
+      const targetTokens = row.available
+        ? safeInteger(row.allowance_tokens, "monthlyAllowanceTokens")
+        : null;
       let eligible = false;
-      let reasonCode: string | null = "SUBSCRIPTION_STATE_CONFLICT";
+      let reasonCode: string | null = row.available
+        ? "SUBSCRIPTION_STATE_CONFLICT"
+        : "PLAN_NOT_AVAILABLE";
       let appliesAt: string | null = null;
       let availableActions: ProductAction[] = [];
-      if (!current) {
+      if (row.available && !current) {
         eligible = true;
         reasonCode = null;
         appliesAt = asOf.toISOString();
         availableActions = ["create"];
-      } else if (current.current_plan_version_id === row.plan_version_id) {
+      } else if (row.available && current?.current_plan_version_id === row.plan_version_id) {
         reasonCode = "CURRENT_PLAN_VERSION";
       } else if (
-        ["active", "trial"].includes(current.status) &&
+        row.available
+        && current
+        && ["active", "trial"].includes(current.status) &&
         !current.pending_plan_version_id
       ) {
         eligible = true;
         reasonCode = null;
         appliesAt = current.current_period_end.toISOString();
         availableActions = [
-          targetTokens >=
+          (targetTokens ?? 0) >=
           safeInteger(current.current_allowance_tokens, "currentAllowanceTokens")
             ? "upgrade"
             : "downgrade",
         ];
-      } else if (current.pending_plan_version_id) {
+      } else if (row.available && current?.pending_plan_version_id) {
         reasonCode = "PENDING_CHANGE_EXISTS";
       }
       return {
         planCode: safeIdentifier(row.plan_code, "planCode", 80),
         planName: safeText(row.plan_name, "planName", 160),
+        eyebrow: safeText(row.display_eyebrow, "eyebrow", 120),
+        note: safeText(row.display_note, "note", 240),
+        details: safeTextList(row.display_details, "details"),
         description: safeOptionalText(row.description, "description"),
-        planVersionId: safeIdentifier(
-          row.plan_version_id,
-          "planVersionId",
-          100,
-        ),
-        version: safeInteger(row.version_number, "version"),
+        planVersionId: safeOptionalIdentifier(row.plan_version_id, "planVersionId", 100),
+        version: safeInteger(row.version_number, "version", true),
+        versionStatus: row.version_status,
         billingCycle: "monthly",
         monthlyAllowanceTokens: targetTokens,
-        monthlyPriceMicrousd: safeInteger(
-          row.base_price_microusd,
-          "monthlyPriceMicrousd",
-        ),
+        monthlyPriceMicrousd: row.available
+          ? safeInteger(row.base_price_microusd, "monthlyPriceMicrousd")
+          : null,
         currency: row.currency,
-        entitlements: (byVersion.get(row.plan_version_id) ?? []).map(
+        available: row.available,
+        unavailableReason: row.available
+          ? null
+          : row.version_status === "draft"
+            ? "commercial_parameters_pending"
+            : "configuration_incomplete",
+        entitlements: (row.plan_version_id
+          ? byVersion.get(row.plan_version_id) ?? []
+          : []).map(
           entitlementDto,
         ),
         eligibility: { eligible, reasonCode, appliesAt },

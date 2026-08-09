@@ -176,6 +176,13 @@
       "when": 1786341600000,
       "tag": "0024_paid_subscription_past_due",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786428000000,
+      "tag": "0025_fancy_shadowcat",
+      "breakpoints": true
     }
   ]
 }
