@@ -516,3 +516,39 @@ Optimized Prompt:
 Optional Enhancers:
 
 - 最终报告优先链接总索引、页面清单、PG 迁移和 Deferred 四个入口，其他模块通过总索引访问。
+
+## Round 29 — 43+5 PostgreSQL、订阅计费与 Gateway 范围重启证据审计
+
+Optimized Prompt:
+
+作为 Ink Memory 的资深产品架构师、PostgreSQL 数据迁移架构师、订阅计费与 AI Gateway 架构师及全栈审计负责人，在任何 PRD、交互设计或业务代码修改前，对 `/Users/dmeck/project/ink-dream-memory` 与 `/Users/dmeck/project/ink-admin-memory` 执行证据化只读审计，并输出 `docs/verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md`。不得依据旧文档标题、表名或历史结论推断实现；必须逐项核对真实 DDL、迁移、SQLite 元数据、PostgreSQL schema 来源、Repository、事务、Route/API、类型、页面和测试。
+
+审计必须建立 Dream 主库 43 表与 Notion Connector 5 表的完整目录，记录每表 PK、FK、unique、check、enum、trigger、JSON、时间、默认值和不可变语义；定位所有 `sqlite3.Connection`、`database.get_db()`、PRAGMA、`BEGIN IMMEDIATE`、SQLite trigger、`?` 占位符及运行时 fallback；证明 Admin 现有三表导入器的能力上限。核对 canonical PostgreSQL `users`、内部兼容 `platform_users` 与一对一 Billing Account 的实际关系，追踪“只有 QA 用户可计费”到具体查询、分页、投影、迁移或 fixture 根因，并列出修复位置。对 Admin 已有 Plan/Version/Entitlement/Subscription、Allowance/Balance、Gateway、Usage/Ledger、Payment/Webhook 能力按 Current、Planned、Implemented、Deferred 分类，禁止把规划误报为实现。
+
+处理判断必须固定新的范围决策：Dream 43+5 全量 PostgreSQL 迁移、真实订阅展示、计费协作、Gateway 接入和新推理调用链从 Deferred 重新进入 Planned/Implemented；真实第三方支付渠道仍 Deferred，仅允许标准 `PaymentAdapter`、Webhook 签名与事件幂等边界、测试环境 Fake Adapter。Dream 拥有 canonical 业务 Schema、Repository、写入和 Alembic；Admin/Gateway 拥有控制面、订阅、计费、Provider/Model/Pricing、Gateway、Usage/Ledger、Payment Adapter；双方独立 Repository、角色、迁移日志和最小权限。物理 PostgreSQL owner/ACL 只做只读检查，未经明确授权不得执行 `ALTER OWNER`、GRANT/REVOKE。
+
+文档至少包含领域矩阵、43+5 表目录、SQLite 耦合位置清单、所有权/读写边界、保留/停止使用/映射/接管/分阶段弃用决策、迁移与产品接入依赖顺序、风险、灰度、回滚和发布阻断项。审计期间不得修改业务代码、不得连接或写入共享 PostgreSQL、不得读取或输出真实 Secret、不得覆盖用户未提交修改。完成后以代码路径、行号、命令输出和机械统计复核证据；只有审计文档通过复核，才能开始 PRD/架构/交互设计阶段。
+
+Optional Enhancers:
+
+- 用可机器复核的表级 manifest 表达 43+5 schema，并为后续迁移 CLI 复用字段名。
+- 把 SQLite 方言耦合按 DDL、事务、查询、触发器和测试 fixture 分类，便于拆分 Repository/UoW 波次。
+- 对 canonical 用户投影增加大于 100 用户、分页总数和 orphan `platform_users` 的专项证据矩阵。
+
+范围变化：
+
+- 撤销 Round 24–28 中“Billing、Subscription、Gateway、新推理链路全面 Deferred”的当前范围决定；这些能力重新进入规划与实现范围。
+- 真实 Stripe、支付宝、微信支付、银行等外部支付渠道继续 Deferred；Payment Adapter 合同、Webhook 幂等存储和测试环境 Fake Adapter 进入范围。
+- 本轮授权在证据审计、PRD 与交互设计完成后修改 Admin 和 Dream 两个项目；此前 Dream 只读约束不再适用于后续实现阶段。
+
+执行证据和验证结果：
+
+- 只读 preflight：Admin `git status --short` 为空；Dream 仅存在用户既有未跟踪 `.claude/worktrees/`，已标记为禁止覆盖或清理。
+- worklog 机械检查确认既有记录到 Round 28；Round 24–28 明确把本轮重新启用能力列为 Deferred，范围矛盾成立，需在审计与后续权威文档中消除。
+- 尚未连接、迁移、清空或写入任何 PostgreSQL；尚未读取或使用任何真实 Secret。
+
+未执行事项及原因：
+
+- PRD、架构正文、交互设计和业务代码尚未修改：受本轮强制顺序约束，必须先完成并复核证据审计。
+- PostgreSQL owner/ACL、真实数据和迁移演练尚未执行：审计阶段先从仓库与可安全访问的配置/只读元数据确认目标，任何数据库操作必须另行满足隔离与授权边界。
+- 外部 Provider 与真实支付网络未调用：不属于审计需要，且真实第三方支付明确 Deferred。
