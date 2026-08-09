@@ -1,4 +1,4 @@
-# 模块交互：Provider、Model、Pricing 与模型权限
+# 模块交互：Provider、Model 与 Pricing
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[模型供应链](../../prd/modules/04-model-catalog.md)
 
@@ -20,9 +20,9 @@ Pricing 列表列 model/tier、四类价格、markup/discount、source/status/ef
 
 目录同步页显示 catalog version/hash、exact/normalized/ambiguous/unmatched 证据；只有 exact 默认选。
 
-## 3. 模型权限
+## 3. 模块边界
 
-Drawer 字段：平台用户 relation、Model relation、enabled switch、daily/monthly Token integer；当前不显示 RPM 编辑。列表按用户/模型/enabled 筛选，删除 override 的确认文案明确“恢复默认策略”。
+模型中心顶部只显示 Provider、Models、Pricing。用户—模型例外限制属于 Gateway 限流执行策略，统一在 `/admin/gateway/rate-limits#user-model-permissions-manager` 管理；旧 `/admin/models/permissions` 仅保留兼容跳转，不再渲染重复页面。
 
 ## 4. 状态、响应式与验收
 
@@ -32,4 +32,4 @@ Drawer 字段：平台用户 relation、Model relation、enabled switch、daily/
 - UI-MOD-01：历史 Secret 不进入 DOM；一次草稿显隐不持久化。
 - UI-MOD-02：Discover 失败不显示 Provider 保存失败；stale Apply 可恢复。
 - UI-MOD-03：价格单位、旧/新版本和生效时间同时可见。
-- UI-MOD-04：模型权限用户选择器覆盖所有 canonical 用户。
+- UI-MOD-04：模型中心不存在“模型权限”Tab 或侧边导航；旧路径跳转到限流策略的用户—模型例外限制区。

@@ -1,6 +1,6 @@
 # ink-dream-memory PostgreSQL 迁移方案
 
-> 状态：后续实施的正式迁移方案  
+> 文档状态：**Planned**（正式迁移方案）  
 > 返回：[总索引](README.md)  
 > 前置：[源系统基线](01-current-scope-and-source-baseline.md) · [业务接入边界](02-business-integration-and-admin-boundary.md)  
 > 配套：[发布、验证与回滚](05-release-rollout-and-rollback.md)  
@@ -17,7 +17,7 @@
 3. 不长期双写 SQLite/PG。选择多次演练 + 最终短暂停写切换。
 4. 不重新编号 `users.id` 或 TEXT 主键，不把既有 ID 改成 UUID。
 5. 不用 Admin 旧 `story_*` 平行表填充 Dream canonical 表。
-6. 不在迁移中接入计费、订阅、支付、推理服务或 Gateway。
+6. Dream 迁移只管理 43+5 canonical 业务表；不得由 Dream Alembic 修改 Admin Subscription/Billing/Gateway/Payment 控制面表。产品与 Gateway 接入按 06–08 独立门禁推进。
 7. 不把 Secret、password hash、OAuth/refresh token、Story/Chat 正文输出到控制台、回执或截图。
 
 ## 2. 目标技术方案
@@ -55,7 +55,7 @@ DATABASE_STATEMENT_TIMEOUT_MS=15000
 - 生产 `DATABASE_URL` 只能来自 Secret Manager/部署 Secret，不提交到仓库。
 - 应用启动必须执行 `SELECT current_database()` 并拒绝非预期数据库；测试迁移工具额外要求显式 `TEST_DATABASE_URL`。
 - `INK_DATABASE_PATH` 在切换后只能由 `migrate_sqlite_to_postgres.py` 显式参数使用，不能成为应用 fallback。
-- 不为本期增加 Gateway、Billing、Subscription 或 Payment 环境变量。
+- 本节只定义数据库连接配置。Gateway/Product API 的服务间认证与 Secret 合同见 [Dream 产品与推理集成](07-dream-subscription-and-inference-integration.md)，不能混入 `DATABASE_URL` 或普通业务配置。
 
 ## 3. Schema 所有权与基线接管
 
@@ -74,6 +74,14 @@ Admin `0010_story_source_canonical.sql` 已创建 `users`、`story_workspace_wor
 3. 完全兼容时写入“adopted baseline”版本，不重复建表。
 4. 存在不兼容时停止发布并输出差异；通过新的、可回滚的前向 migration 修正，不能重写 Admin 历史迁移。
 5. 所有权交接完成后，Admin migration 不再修改这些 Dream-owned 表。
+
+baseline adopt 只表示 Dream Alembic 接受经逐项验证的已存在结构，不表示接受未知 owner、ACL 或行差异。真实 owner/ACL、role membership、约束和现有数据必须先只读盘点；本文的逻辑所有权不授权执行 `ALTER OWNER`、GRANT/REVOKE。
+
+## 3.1 48 表交付矩阵硬门禁
+
+每张表在 manifest 中必须同时拥有 `ddl_owner`、`repository_owner`、`migration_wave`、`source_query`、`type_transform`、`pk_digest`、`row_digest`、`unique_checks`、`fk_checks`、`enum_json_time_checks`、`sequence_check`、`trigger_checks` 和 `rollback_boundary`。任一字段缺失，不能以“表已创建”计入完成数。
+
+主库 43 表与 Notion 5 表的准确清单见 [当前基线](01-current-scope-and-source-baseline.md#3-主库-43-表准确清单)；逐表 PK/FK/check/trigger 见 [证据化处理判断](../../verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md#3-dream-435-真实-schema-清单)。
 
 ## 4. 迁移波次与依赖顺序
 
@@ -124,17 +132,22 @@ Admin `0010_story_source_canonical.sql` 已创建 `users`、`story_workspace_wor
 建议顺序：
 
 1. `decks`、`voices`
-2. `deck_plugin_releases`、`deck_plugin_installations`
-3. `deck_runtime_plugin_locks`、`deck_plugin_bindings`、`deck_runtime_snapshots`
-4. `workflow_preflights`
-5. `runtime_plugin_materializations`、`runtime_plugin_reconcile_attempts`
-6. `runtime_load_receipts`、`runtime_load_receipt_entries`
-7. `workflow_runs`
-8. `workflow_run_token_consumptions`、`workflow_run_transitions`
-9. `agent_sessions`
-10. `claude_plugin_installations`、`claude_plugin_operations`、`deck_claude_plugin_refs`
+2. `workflow_preflights`
+3. `deck_plugin_releases`
+4. `deck_runtime_plugin_locks`
+5. `deck_plugin_installations`
+6. `deck_plugin_bindings`
+7. `deck_runtime_snapshots`
+8. `workflow_runs`
+9. `workflow_run_token_consumptions`、`workflow_run_transitions`
+10. `runtime_plugin_materializations`
+11. `runtime_plugin_reconcile_attempts`
+12. `runtime_load_receipts`
+13. `runtime_load_receipt_entries`
+14. `agent_sessions`
+15. `claude_plugin_installations`、`claude_plugin_operations`、`deck_claude_plugin_refs`
 
-此波次依赖复杂 FK、幂等键、状态版本、append-only trigger 和事务锁，是最高风险波次。它仍只是持久化迁移；不得借机切换模型 Provider/Gateway 或增加推理计费。
+这是外键拓扑，不是可任意调整的业务分组：`workflow_runs` 依赖 preflight、binding 与 lock；receipt/reconcile 依赖 run；entry/agent session 依赖 receipt；`deck_claude_plugin_refs` 同时依赖 `decks` 和 installation。`workflow_runs.retry_of_run_id` 使用 parent-first 或 manifest 明示的受控两阶段 self-FK。此波次依赖复杂 FK、partial unique、状态版本、25 个 SQLite trigger 中的大部分、append-only 事实和事务锁，是最高风险波次。
 
 ### Wave 5：Reflection 与 Event
 
@@ -144,7 +157,7 @@ Admin `0010_story_source_canonical.sql` 已创建 `users`、`story_workspace_wor
 4. `reflection_task_event`
 5. `events`
 
-Event/Task Event 的 sequence、幂等和 append-only 合同必须在 PostgreSQL trigger/权限与 service 双层验证。
+Event/Task Event 的 sequence、幂等和 append-only 合同必须在 PostgreSQL trigger/权限与 service 双层验证。`reflection_task_event` 当前 writer 的 `INSERT OR REPLACE` 不能翻译为覆盖：同 event ID + 同 canonical JSON digest 返回原事实，异 digest 必须冲突。
 
 ### Wave 6：Notion Connector 独立库
 
@@ -156,7 +169,7 @@ Event/Task Event 的 sequence、幂等和 append-only 合同必须在 PostgreSQL
 4. `connector_snapshots`
 5. `connector_chat_threads`
 
-`backend/notion/store.py` 是独立 SQLite 边界；主库成功切换不代表它已迁移。Wave 6 完成后才能声称 Dream 运行时不再依赖 SQLite。
+`backend/notion/store.py` 是独立 SQLite 边界；主库成功切换不代表它已迁移。`connector_snapshots` 当前同 version 的更新写法必须收敛为同 key+同 digest 幂等、异 digest 冲突，禁止覆盖历史快照。迁入同库后新增 `resource_connectors.user_id → users.id` 前必须先做 orphan 审计。Wave 6 完成后才能声称 Dream 运行时不再依赖 SQLite。
 
 ## 5. SQLite → PostgreSQL 类型映射
 
@@ -274,11 +287,13 @@ ORDER BY status, review_status, type;
 7. 验证认证、Story、Chat、Deck、Workflow、Plugin、Reflection、Notion（若已到 Wave 6）关键路径。
 8. 解除维护并开启 PG 写入；SQLite 快照转为受控只读归档，应用不再连接。
 
+PG cutover 与 Product API/Gateway canary 是两个可独立停止的发布阶段。PG 成为唯一业务持久化后，Gateway 仍先做 shadow eligibility（不扣费），再启用受控 reserve/capture/release，最后按 PolyAgent、Claude Agent/Chat、Dream/Workflow、image 分批切换；不得因 Gateway canary 回滚而恢复 SQLite。
+
 ## 12. 回滚边界
 
 - **开放 PG 写入前**：停止新版本，恢复旧应用和最终 SQLite 快照；PG 导入数据保留供审计，不自动删除。
 - **开放 PG 写入后但尚无业务写**：同上，须由数据库审计证明没有提交写事务。
-- **已有 PG 业务写后**：不能简单切回旧 SQLite，否则会丢数据。默认优先前向修复；若业务要求可回 SQLite，必须在上线前实现并演练 PG→SQLite delta exporter、幂等/冲突合同和完整验证，否则该回滚路径视为不可用。
+- **已有 PG 业务写后**：不能简单切回旧 SQLite，否则会丢数据。默认优先前向修复。首个 cutover 前必须有一个“旧功能集 + PostgreSQL Repository”的可部署 rollback build；若业务要求回 SQLite，还必须预先实现并演练 PG→SQLite delta exporter、幂等/冲突合同和完整验证，否则回切 SQLite 视为不可用。
 - 任何回滚都不执行共享 PG 的自动 DROP/TRUNCATE/DELETE；通过流量、应用版本和凭据切换恢复服务，保留证据。
 
 ## 13. 安全与可观察性
@@ -287,7 +302,9 @@ ORDER BY status, review_status, type;
 - 迁移日志使用 table、count、digest、duration、error code；行级 conflict 使用内部加密工件，不打印值。
 - 每批次记录 migration_run_id、source fingerprint、target DB fingerprint、schema version、actor、开始/结束、结果和审批号。
 - PostgreSQL 监控覆盖 pool wait、connection errors、lock wait、deadlock、statement timeout、transaction rollback、replication/backup 状态。
-- 本期监控不增加 Billing、Subscription、Payment、Gateway 或推理指标。
+- Product API、Gateway 和 Payment boundary 的监控在各自阶段增加，但与 48 表 migration receipt 分开：资格拒绝、reserve/capture/release、settlement_failed、Webhook replay 与 Subscription Event 均不得记录 Secret 或正文。
+- `backend/speech_recognition.py` 已提交 credential 是 P0：密钥所有者必须吊销/轮换、移除代码值并完成 secret scan。迁移脚本不得读取或复制该值。
+- `/ws/speech-recognition` 在未完成 canonical 鉴权、Origin、限流和审计前必须默认禁用；ASR Gateway 本轮仍 Deferred。
 
 ## 14. 文件级实施清单
 
@@ -312,4 +329,5 @@ Dream 后续预计新增/调整：
 - Dream 全测试、前端测试和关键 E2E 使用隔离 PostgreSQL 通过。
 - 运行时不再打开主 SQLite 或 Notion SQLite；`INK_DATABASE_PATH` 只存在于迁移 CLI。
 - Admin 仍读取同一 canonical 表，旧平行 Story 表未被重新启用。
-- 未新增计费、订阅、支付、推理服务或 Gateway 接入。
+- owner/ACL 只读盘点与任何授权变更具有独立审批回执；没有把逻辑所有权当作 DDL/GRANT 授权。
+- Payment/Subscription/Gateway 控制面表未被 Dream migration 修改；后续产品链按 06–08 和 [发布门禁](05-release-rollout-and-rollback.md) 独立验证。

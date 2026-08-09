@@ -1,153 +1,158 @@
-# Dream PostgreSQL 发布、验证与回滚清单
+# Dream PostgreSQL、产品 API 与 Gateway 发布回滚
 
-> 状态：后续发布门禁  
+> 文档状态：**Planned**  
 > 返回：[总索引](README.md)  
-> 依赖：[PostgreSQL 迁移方案](04-postgresql-migration-plan.md) · [页面清单](03-page-refactor-checklist.md)  
-> 主要读者：QA、运维、Dream 后端、发布负责人
+> 依赖：[PG 迁移](04-postgresql-migration-plan.md) · [Billing/Gateway](06-billing-subscription-gateway-integration.md) · [Dream 集成](07-dream-subscription-and-inference-integration.md) · [Payment 边界](08-payment-adapter-and-webhook-boundary.md)  
+> 主要读者：QA、运维、Dream/Admin/Gateway 后端、安全、发布负责人
 
 ## 1. 发布原则
 
-- 每个迁移波次都在隔离 PostgreSQL 完整演练，再申请生产窗口。
-- 不复用未知 `DATABASE_URL`，不因为数据库名同为 `ink-memory` 就推断可写。
-- Dream、Admin、scheduler、worker 对同一 canonical 表的写入方必须在切换表中唯一。
-- 先建立恢复能力，再开放 PG 业务写；已有 PG 写入后不能未经 delta 处理切回 SQLite。
-- 本发布不启用 Billing、Subscription、Payment、Gateway 或新推理服务。
+- 每阶段在隔离环境满足自身门禁后才进入下一阶段；文档目标不能替代代码和测试证据。
+- 所有 PG 测试只使用明确命名、可删除的临时 PostgreSQL 或显式 `TEST_DATABASE_URL`；拒绝 runtime URL、共享端口和未知数据库。
+- 43+5 cutover 不长期双写；Gateway 可做不扣费的 shadow eligibility 和用户 canary，但不能绕过资格/结算直接 Provider。
+- Dream/Admin/Gateway/Payment 使用独立 Repository、迁移日志、角色和 rollback switch；一个组件回滚不自动回滚数据库。
+- PG 已产生业务写后默认前向修复；没有演练 delta exporter 时禁止回切 SQLite。
+- 真实第三方支付渠道与 ASR Gateway明确 Deferred；不影响当前代码边界完成，但 UI 不得伪造渠道成功。
 
-## 2. 环境与阶段
+## 2. 发布依赖序列
 
-| 阶段 | 数据库 | 允许动作 | 退出门禁 |
-|---|---|---|---|
-| R0 Schema CI | 每次全新一次性 `ink-memory` | Alembic upgrade、Repository/contract tests | 空库到 head、结构/权限检查通过 |
-| R1 全量演练 | 隔离 PG + 源库只读快照副本 | 43 + 5 表抽取、转换、导入、验证 | count/PK/FK/JSON/enum/digest、API 回归通过 |
-| R2 只读影子 | 生产等价 PG，Dream 仍读写 SQLite | 对安全只读查询做结果摘要对比 | 观察窗口内无未解释差异，PG 无写入 |
-| R3 停写切换 | 明确生产 `ink-memory` | 维护、最终快照、导入、验证、部署、smoke | 所有硬门禁通过后才开放写 |
-| R4 观察 | PG 为唯一运行库 | 监控、前向修复、保留 SQLite 只读归档 | 观察期签字后关闭迁移态告警 |
-
-不使用“部分用户写 SQLite、部分用户写 PG”的业务灰度。可灰度的是只读查询、应用实例和观测，不是同一逻辑表的双写。
-
-## 3. R0/R1 必过验证
-
-### Schema 与迁移
-
-- 全新 PG 可升级到 Dream Alembic head；重复执行无额外 DDL。
-- 已存在 Admin canonical 三表时可精确 adopt，结构不兼容则 fail-closed。
-- Dream migration 不修改 Admin 控制面表；Admin migration compatibility check 通过。
-- 应用角色无 staging/Secret 表越权，Admin 角色只有批准的 canonical 权限。
-
-### 数据
-
-- 主库 43 表、Notion 5 表都有 source/target count、PK/unique、FK orphan 和 digest。
-- JSON、boolean、时间、enum、空值、identity sequence 和复合 PK 均有显式检查。
-- password hash、Token、Secret、Story/Chat 正文没有进入迁移日志或测试截图。
-- append-only/immutable 表拒绝 UPDATE/DELETE；合法 transition 和幂等写通过。
-
-### 应用
-
-- Auth：register/login/refresh/logout/OAuth/device flow。
-- Story：Workspace、Story、Character、Scene、关系、review/archive、409。
-- Session/Chat：保存、检索、排序、分页和历史消息。
-- Deck/Voice/Plugin：安装、绑定、锁、快照、回滚。
-- Workflow/Agent：preflight、start、transition、retry/cancel、receipt/session binding。
-- Reflection/Event/Notion：原有业务合同和不可变规则。
-- Storage：文件/对象存储路径不因 DB 迁移变化。
-
-## 4. 项目现有门禁与新增门禁
-
-后续 Dream 分支至少运行现有体系：
-
-```bash
-# Backend 当前 CI 基线
-docker buildx build --platform linux/amd64 -t ink-backend:pg-migration --load backend
-backend/tests/ci-smoke.sh ink-backend:pg-migration
-
-# Frontend 当前 CI 基线
-cd frontend
-npm ci
-npm run lint
-npm run build
+```mermaid
+flowchart LR
+  D["Docs + Reader Testing"] --> P["PG 48-table rehearsal"]
+  P --> C["PG cutover"]
+  C --> I["Canonical billing identity"]
+  I --> A["Admin Product API + Payment boundary"]
+  A --> U["Dream subscription UX"]
+  U --> S["Gateway shadow eligibility"]
+  S --> G["Gateway reserve/capture canary"]
+  G --> F["Role-by-role inference cutover"]
 ```
 
-还需新增 PostgreSQL 专项命令（名称由 Dream 实施时确定）：
+## 3. 阶段与退出门禁
 
-- Alembic current/upgrade/head 检查。
-- Repository contract tests：SQLite reference 与 PG adapter 使用同一领域案例，最终移除 SQLite runtime 后保留 PG contract。
-- `TEST_DATABASE_URL` 隔离集成测试。
-- full snapshot migration rehearsal 与 manifest verification。
-- focused Playwright：1440×1000、390×844、维护/503/409、旧订阅 URL 清理。
-
-命令只作为后续发布合同；本轮文档更新没有运行 Dream 构建或数据库迁移。
-
-## 5. 生产切换前检查
-
-- [ ] 变更单包含目标 host/port/database 的非敏感 fingerprint、负责人和窗口。
-- [ ] `SELECT current_database(), current_user` 与预期一致；只读盘点完成。
-- [ ] PG 备份/PITR 恢复演练在目标环境通过。
-- [ ] 最终 SQLite snapshot 路径、hash、权限和恢复步骤已验证。
-- [ ] Dream/API/scheduler/worker/Admin canonical 写入口能统一进入维护。
-- [ ] migration manifest 与源 43 + 5 表实际 inventory 一致。
-- [ ] 所有 source/target conflict 已有业务决策，脚本不会自动覆盖。
-- [ ] PG 应用版本、旧 SQLite 应用版本和配置回滚包均已准备。
-- [ ] 没有 Billing/Subscription/Payment/Gateway/inference 变更混入发布。
-
-## 6. 切换步骤与 Go/No-Go
-
-| 顺序 | 动作 | No-Go 条件 |
-|---:|---|---|
-| 1 | 开启维护，停止所有相关写入和后台任务 | 任一写入方无法确认停止 |
-| 2 | 等待事务结束，生成最终 SQLite snapshot/manifest | quick/FK check 失败或源变化 |
-| 3 | 验证目标 DB、schema version、权限、备份 | 连接归属不清或结构 drift |
-| 4 | staging 导入、转换和冲突检查 | invalid/skip/conflict 非零 |
-| 5 | 按波次提交 target import | 任一事务失败或验证不一致 |
-| 6 | 部署 PG 应用，运行只读和 rollback-only smoke | SQL/权限/类型/时区错误 |
-| 7 | 运行关键 API、前端和 Admin canonical 回归 | 401/409/503、数据或审计合同异常 |
-| 8 | 开放 PG 写入并记录高水位 | 监控、告警或回滚负责人未就绪 |
-
-任一 No-Go 都保持维护态并按 [回滚矩阵](#8-回滚矩阵) 处理，不能用“先上线再补数据”绕过。
-
-## 7. 观察与告警
-
-### 数据库
-
-- pool wait/exhaustion、连接失败、statement/lock timeout、deadlock、rollback rate。
-- 慢查询与缺索引，按 route/repository 标识，不记录 SQL 参数敏感值。
-- backup/PITR、磁盘、connection count、transaction age。
-
-### 业务
-
-- Auth 401/refresh failure、Story 409/503、Chat/Session 保存失败。
-- Workflow transition/version conflict、append-only trigger rejection、Plugin/runtime receipt mismatch。
-- SQLite 文件打开计数必须为 0；任何 runtime `sqlite3.connect` 告警为迁移未完成。
-- 不增加计费、订阅、支付、Gateway 或推理服务指标。
-
-## 8. 回滚矩阵
-
-| 时点 | 回滚方法 | 数据处理 |
+| 阶段 | 允许动作 | 退出门禁 |
 |---|---|---|
-| 导入前/导入失败 | 终止迁移，恢复写入旧应用 | 保留失败回执/staging 供审计；不清共享 PG |
-| PG 应用 smoke 失败且无 PG 写 | 切回旧版本 + 最终 SQLite snapshot | 证明 PG committed business writes=0 |
-| PG 已开放但无业务写 | 关闭流量、审计后切回 | 保存 PG 快照，不删除导入结果 |
-| PG 已有业务写 | 默认前向修复；只有已演练 delta exporter 才可回 SQLite | 必须迁回增量、解决冲突并重新全量验证 |
-| 仅前端问题 | 回滚前端；PG 后端继续 | 不切数据库，不恢复静态订阅页 |
+| R0 安全 preflight | 仓库/Schema 只读盘点、secret scan、临时 PG 建立 | 目标 fingerprint 明确；无共享 DB 写；P0 credential 有吊销/轮换负责人 |
+| R1 Schema CI | 临时 PG Alembic upgrade、baseline adopt、Repository contract | 48/48 DDL/owner/repository/validator manifest；Admin 表未被 Dream migration 修改 |
+| R2 全量 rehearsal | 只读 SQLite snapshot → staging → PG → verification | 43+5 count/PK/row digest/unique/FK/enum/JSON/time/sequence/trigger 全通过 |
+| R3 PG cutover | 短暂停写、最终 snapshot/import、PG-only deployment | runtime SQLite open=0；核心 API/页面/Admin canonical 回归通过 |
+| R4 用户/控制面闭环 | canonical projection、Billing Account、Subscription、Product API、Payment boundary | 205-user selector；orphan fail-closed；状态机/守恒/Webhook 幂等通过 |
+| R5 Dream UX | 真实 Plans/context/Usage/Ledger/model catalog、命令 preview | 无静态套餐/价格/余额/model fallback；两个视口状态通过 |
+| R6 Gateway shadow | 只执行资格与路由模拟，不 reserve、不 Provider | 资格结果与预期一致；无 Key/Secret 泄漏；cash-only 默认放行已关闭/受旗标控制 |
+| R7 Gateway canary | 内部环境→内部用户→用户级 canary，真实 reserve/capture/release | 401/402/403/409/429/502/503、取消/断流/usage 缺失终态和账本守恒通过 |
+| R8 inference cutover | PolyAgent→Claude Agent/Chat→Dream/Workflow→image 分批切换 | 既有协议/行为不回归；direct Provider path 被关闭或明确受控 legacy canary |
 
-禁止把数据库回滚等同于执行 DROP/TRUNCATE/DELETE。物理导入结果和 migration receipt 保留到变更复盘完成。
+ASR 不进入 R8；release 前仅允许“禁用 endpoint”或“canonical 鉴权 + Origin + 限流 + 审计”的安全处置。
 
-## 9. 迁移回执
+## 4. R0/R1/R2 PostgreSQL 门禁
 
-每次运行保存：
+### Schema 与所有权
 
-- `migration_run_id`、源/目标非敏感标识、Git commit、schema versions。
-- source snapshot hash/size/mtime、table inventory。
-- 每表 source/stage/target count、PK digest、异常计数、耗时。
-- FK/unique/enum/JSON/时间/boolean/append-only 验证结果。
-- conflict/quarantine 总数和受限工件位置，不含行值。
-- 操作者、审批号、开始/结束时间、最终状态、是否开放 PG 写。
-- 运行过的测试命令、通过数量、视口和未执行场景。
+- 空库可从 Dream Alembic baseline 到 head；重复检查无额外 DDL。
+- 已存在 Admin canonical 三表时只做精确 adopt；列/约束/index/owner/行差异 fail-closed。
+- Dream migration journal 与 Admin Drizzle journal 独立；每个 migration 只触及其 owner 范围。
+- 真实 owner/ACL/role/constraint 先只读盘点；任何 `ALTER OWNER`、GRANT/REVOKE 有独立批准和回执。
 
-## 10. 发布验收
+### 迁移数据
 
-- Dream 与 Admin 对 canonical 用户/Story 的读取一致；Admin 受控写仍有 Audit。
-- 所有既有核心页面和 API 回归通过，静态订阅入口已隐藏/重定向。
-- PG 是 Dream 唯一运行时业务数据库；主库和 Notion store 均无 SQLite fallback。
-- 共享/生产数据库的所有动作都有显式审批和回执；测试没有写共享数据。
-- 本次发布不包含计费、订阅、支付、Gateway 或新推理服务。
+- 主库 43 表、Notion 5 表逐表有 source/stage/target count、PK/row digest、unique、FK orphan。
+- JSON、boolean、时间、enum、NULL、identity/sequence、复合 PK、partial unique 都有显式校验。
+- 25 个业务 trigger/等价不变性全部用 mutation rejection 验证。
+- `reflection_task_event` 与 `connector_snapshots` 同 key+同 digest 幂等、异 digest 冲突，不覆盖历史。
+- password hash、OAuth/refresh token、Secret、Story/Chat 正文不进入日志、回执或截图。
 
+### 应用合同
+
+- Auth：register/login/refresh/logout/OAuth/device。
+- Story：Workspace、Story、Character、Scene、关系、review/archive、409。
+- Session/Chat、Deck/Voice/Plugin、Workflow/Agent、Reflection/Event/Notion 全部走 PG Repository。
+- maintenance/503 不回退 SQLite；所有列表有显式稳定排序。
+
+## 5. R4 控制面门禁
+
+- 所有 canonical `users` 自动获得内部 mapping 与 Billing Account；无独立计费用户 POST/UI。
+- 用户 selector 使用服务端 `q/page/pageSize/total`，至少 205 用户、跨页搜索和 selected hydration。
+- orphan `platform_users` 的 Key/Subscription/Allowance/Balance/Usage/Ledger 审计完成，隔离过程不删除财务历史。
+- Plan Version、Entitlement、Pricing 只创建版本，不覆盖生效历史。
+- Subscription create/renew/upgrade/downgrade/pause/resume/cancel、自动周期推进、期末取消和冲突合同通过。
+- Allowance reserve/capture/release 与 cash overage 在事务锁/幂等键下守恒；refund/reversal 只追加。
+- Payment event ID 唯一；签名失败不推进业务；重复 event 不重复开通或扣费；生产启动拒绝 Fake Adapter。
+
+## 6. R5–R8 Product API 与 Gateway 门禁
+
+- Product API 只从 canonical user 上下文返回真实计划、订阅、Allowance/Balance、Usage/Ledger 与 model alias；无内部控制面/Secret 列。
+- Dream command 带 idempotency key 与 expected version；409 后重取 preview，不能盲重放。
+- Gateway 固定资格顺序：service/Key → canonical user → Subscription → Plan Version → Entitlement → Model Permission → RPM/token → Allowance → cash balance → reserve → Provider。
+- Provider/Model/Pricing 使用请求时版本化 snapshot；金额以 integer micro-USD，Token 与金额单位不混用。
+- success、Provider failure、cancel、stream interruption、usage missing 都进入明确 request/usage/ledger 终态；不按零成本成功。
+- Gateway Key、Provider/Payment/System Secret 不在浏览器、Dream 普通表、响应、console、structured log 或截图中出现。
+- hardcoded Provider credential 已确认吊销/轮换并从代码移除；secret scan 通过。
+
+## 7. 错误合同验收
+
+| HTTP | 必测场景 | 结算/UX 验收 |
+|---:|---|---|
+| 401 | Session/service identity/Key 无效 | Provider 未调用；无 reserve；Dream 进入登录/安全错误 |
+| 402 | Allowance 与允许余额不足 | 单位明确；Provider 未调用；无负余额/双扣 |
+| 403 | subscription/entitlement/model permission/RBAC 拒绝 | Provider 未调用；页面保留只读状态 |
+| 404 | plan/version/subscription/model alias 不存在 | 不使用本地 fallback |
+| 409 | idempotency/version/lifecycle/settlement 冲突 | 原事务不重复；重取当前 version |
+| 429 | RPM/token/平台限流 | `Retry-After`；未调用 Provider 或结算符合已定义阶段 |
+| 502 | Provider/protocol 失败 | reserve release 或按真实已用量 capture；request 终态确定 |
+| 503 | DB/config/maintenance/settlement unavailable | 不回退 SQLite/direct Provider；不显示成功 |
+
+## 8. 项目验证命令
+
+Admin 至少运行：
+
+```bash
+pnpm env:check
+pnpm exec tsc --noEmit
+pnpm lint
+pnpm test:run
+pnpm build
+```
+
+并运行 focused Playwright：canonical 用户分页、Subscription 生命周期、Gateway 错误/结算、Payment Webhook 重放与 Secret 不回显。
+
+Dream 先以项目现有命令为准，最低覆盖：Backend unit/integration、PG Repository contract、43+5 rehearsal、frontend lint/build/unit，以及 1440×1000、390×844 focused E2E。所有持久化集成/E2E 使用显式隔离 PG，不能把 SQLite fixture 当作最终通过证据。
+
+## 9. 生产切换 checklist
+
+- [ ] 变更单记录非敏感 DB/Gateway 环境 fingerprint、Owner、窗口与 rollback owner。
+- [ ] PG owner/ACL/constraint/journal/现有行只读盘点完成；备份/PITR 恢复演练通过。
+- [ ] 最终 SQLite snapshot hash、权限和恢复步骤验证；所有写入口可统一进入维护。
+- [ ] 48 表 manifest 与真实 43+5 inventory 相同，source/target conflict 为 0 或有显式批准处置。
+- [ ] PG rollback build（旧功能集 + PG Repository）可部署；若声称能回 SQLite，delta exporter 已演练。
+- [ ] canonical projection、205-user selector、orphan 隔离、Product API与状态机门禁通过。
+- [ ] Gateway canary 开关可按环境/用户关闭；关闭后不绕到 direct Provider。
+- [ ] Fake Payment Adapter 在 production hard fail；真实渠道 UI 不出现。
+- [ ] credential 已吊销/轮换、代码移除、secret scan 通过；ASR endpoint 安全处置完成。
+- [ ] 两个视口及 Admin/Dream 全命令通过，结果/数量写入发布回执。
+
+## 10. 回滚矩阵
+
+| 组件/时点 | 回滚方法 | 数据边界 |
+|---|---|---|
+| PG 导入前/失败 | 终止，恢复旧 SQLite 写 | 保留失败 receipt/staging；不清共享 PG |
+| PG smoke 失败且 committed write=0 | 旧应用 + 最终 SQLite snapshot | 保存 PG 快照，不执行 DROP/TRUNCATE/DELETE |
+| PG 已有业务写 | 部署旧功能集 + PG Repository；默认前向修复 | 仅有已演练 delta exporter 才可回 SQLite |
+| Product API/Subscription 命令问题 | 关闭命令 flag，保持只读上下文 | 已提交 Subscription Event/Ledger 不删除；用 reversal/forward fix |
+| Dream UX 问题 | 回滚前端，保留 PG/Product API | 不恢复静态套餐或假数据 |
+| Gateway shadow/canary 问题 | 关闭对应用户 flag，停止新请求 | 已 reserve 请求必须 capture/release 到终态；不丢 request/usage/ledger |
+| Payment boundary 问题 | 禁用 Adapter intake/command，保留 event store | 不删除 event；修复后按 event ID 重放 |
+| Fake Adapter 误入生产 | 立即 fail closed、关闭入口并安全审计 | 不把 fake event 转成正式支付成功 |
+
+## 11. 监控与回执
+
+监控包含：PG pool/lock/deadlock/timeout/rollback；Subscription transition 冲突；Allowance 守恒；Gateway eligibility/latency/Provider 5xx/settlement_failed；Webhook invalid signature/replay；runtime SQLite open；ASR 匿名连接拒绝。日志均以 request/event/migration ID 关联，不记录敏感 payload。
+
+每次发布回执保存 commit、schema versions、非敏感环境 fingerprint、测试命令/通过数量/视口、migration count/digest、canary cohort、错误率、rollback decision、未执行的真实支付/外部 Provider 场景。
+
+## 12. 完成标准
+
+- 43+5 已迁入 PG 且 Dream runtime 无 SQLite/JSON DB/内存 DB fallback。
+- canonical user→Billing Account→Subscription→Entitlement→Model Permission→Allowance/Balance→Gateway→Usage→Ledger 完整闭环通过隔离验证。
+- Dream 页面只显示真实产品 API状态；既有 Agent/Workflow 不回归。
+- Payment Adapter/Webhook 边界可验证且真实支付渠道仍 Deferred；ASR Gateway 未被误报为实现。
+- P0 credential/ASR、Secret、owner/ACL 与共享 DB 安全门禁全部关闭并有证据。

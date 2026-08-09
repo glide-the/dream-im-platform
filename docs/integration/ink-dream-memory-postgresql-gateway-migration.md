@@ -5,18 +5,20 @@
 
 ## 当前决策
 
-旧方案把 PostgreSQL、计费和 Gateway 捆绑在同一次 Dream 改造中，现已拆分：
+旧方案把 PostgreSQL、计费和 Gateway 混成一份执行单，现已按所有权和 release gate 拆分：
 
-- PostgreSQL 是当前唯一实施主线，使用独立的全量迁移、验证、切换和回滚方案。
-- 计费、订阅、订阅支付、推理服务和 Gateway 全部延期；当前不得配置 Key、模型代理、Billing API 或支付变量。
+- PostgreSQL 43+5 全量迁移、计费/订阅协作、真实 Dream 订阅体验、Gateway 与新推理链均进入 Planned/Implementation scope，但必须按文档顺序逐门禁实现。
+- 真实第三方支付渠道仍 Deferred；只实现标准 Adapter、Webhook 幂等边界和测试环境 Fake Adapter。
 
 ## 当前权威入口
 
 - [Dream 后续改造总索引](../architecture/ink-dream-memory/README.md)
 - [PostgreSQL 迁移方案](../architecture/ink-dream-memory/04-postgresql-migration-plan.md)
 - [发布、验证与回滚](../architecture/ink-dream-memory/05-release-rollout-and-rollback.md)
-- [延期领域](../architecture/ink-dream-memory/90-deferred-billing-subscription-inference-payment.md)
+- [Billing / Subscription / Gateway](../architecture/ink-dream-memory/06-billing-subscription-gateway-integration.md)
+- [Dream 订阅与推理接入](../architecture/ink-dream-memory/07-dream-subscription-and-inference-integration.md)
+- [Payment Adapter 与 Webhook](../architecture/ink-dream-memory/08-payment-adapter-and-webhook-boundary.md)
 
 ## 历史处理
 
-原文件中的 SQLite→PG 研究已校正并纳入当前迁移方案；Gateway、充值、Key 和推理切换步骤已移入 Deferred 决策。旧正文仅通过 Git 历史追溯，不得作为当前命令或发布清单执行。
+原文件中的 SQLite→PG 研究已校正并纳入当前迁移方案；Gateway、Billing、Key 和推理切换由新的 06/07 文档接管，真实支付渠道由 08/90 记录为 Deferred。旧正文仅通过 Git 历史追溯，不得作为当前命令或发布清单执行。

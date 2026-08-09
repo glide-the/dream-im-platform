@@ -4,6 +4,14 @@
 
 > 实现状态：协议代理、Key、Request/Payload、订阅资格、账务预授权与限流已实现；Request Drawer 已有价格/Token/Ledger，但 Subscription/Entitlement/Allowance 富分区仍为规划能力。
 
+## 0. Current / Target / Release Gate
+
+| 分层 | 范围 |
+|---|---|
+| Current | Anthropic/OpenAI 代理、Key hash、Request/Payload、限流、reserve/capture/release 基线；auth 只 JOIN `platform_users`、cash-only 默认放行、402 Token/micro-USD 混写与 settled Request/Usage 终态 guard 仍是缺口。 |
+| Target | Dream 服务端以最小权限服务身份调用，严格执行 canonical user→Subscription→Entitlement→Permission→limit→Allowance/Balance→reserve→Provider，并冻结版本快照。 |
+| Release Gate | orphan fail-closed、cash-only canary 退出、协议流/cancel/usage-missing 与 401/402/403/404/409/429/502/503 合同通过；无浏览器 Key、Provider Secret 或跨用户共享 Key。 |
+
 ## 1. 目标与协议
 
 向 Dream 和授权客户端提供 Anthropic/OpenAI 兼容代理，并完整记录可计费、可审计的请求生命周期。支持 `/v1/messages`、`/v1/messages/count_tokens`、`/v1/chat/completions`、`/v1/models`；同协议安全透传，跨协议使用显式 Adapter。
@@ -14,7 +22,9 @@
 |---|---|---|
 | Request | `/admin/gateway/requests` | 只读查询、摘要、错误、完整 Payload 权限门 |
 | Gateway Key | `/admin/gateway/keys` | 创建一次性回执、scope、到期、revoke |
-| 限流 | `/admin/gateway/rate-limits` | 用户默认 Token、模型 override、实时窗口只读 |
+| 限流策略 | `/admin/gateway/rate-limits` | 用户默认 Token、用户—模型例外限制、套餐权益提示、实时用量窗口只读 |
+
+`/admin/gateway/rate-limits` 是限制策略的唯一管理入口。历史 `/admin/models/permissions` 永久跳转到 `#user-model-permissions-manager`；模型中心不得再展示重复 Tab 或侧边导航。
 
 权限：读取 Request/Key/限流事实使用 `gateway.read`；完整报文使用 `gateway.payloads.read`；Key 写入使用 `gateway.keys.write`；`/admin/gateway/rate-limits` 中用户默认 Token limit 与模型 override 的编辑还要求 `users.write`，实时计数始终只读。
 
@@ -22,14 +32,14 @@
 
 ```mermaid
 flowchart LR
-  K["Hashed Gateway Key"] --> Q["Scope + User"]
-  Q --> E["Subscription Entitlement"]
-  Q -. "仅从未订阅用户：当前 cash-only 兼容" .-> B
+  K["Hashed service/user Gateway Key"] --> Q["Scope + canonical User"]
+  Q --> S["Subscription + Plan Version"] --> E["Entitlement"]
   E --> M["Model Permission + Limits"]
   M --> B["Allowance / Balance Reserve"]
   B --> P["Provider Transport"]
   P --> U["Final Usage"]
   U --> C["Capture / Release + Ledger"]
+  Q -. "Current blocker only: cash-only compatibility" .-> B
 ```
 
 资格拒绝发生在上游调用前。请求创建时冻结 Subscription/Entitlement/Pricing/limit snapshot。流式响应必须支持真实增量、backpressure、client cancel 和协议正确的 SSE error；Usage 未知时不得按 0 成功结算。
@@ -39,6 +49,7 @@ flowchart LR
 - Key 明文只在创建成功显示一次；数据库仅存 hash、prefix、scopes、状态和到期。
 - 每个平台用户可有多个最小 Scope Key；revoke 保留历史 Request。
 - Anthropic/OpenAI 接入回执显示 Gateway URL、Header、alias 示例，不显示 Provider Secret/upstream model。
+- Dream 生产只通过服务端 secret provider 注入最小 scope 凭据；浏览器、用户偏好 JSON、普通数据库字段和日志均不得持有 Key。服务身份必须绑定已鉴权 canonical user，不允许全平台浏览器共享 Key。
 
 ## 5. Request 与完整报文
 
@@ -62,12 +73,15 @@ flowchart LR
 | 额度/余额 | 402 `SUBSCRIPTION_ALLOWANCE_EXHAUSTED` / `INSUFFICIENT_BALANCE` | 是，`rejected` | 展示重置时间、升级或账户处理入口；合同必须携带明确 `metric/unit`。Token 使用 `available_tokens/required_tokens`，金额使用 `available_microusd/required_microusd`，禁止混写 |
 | 预授权限流 | 429 `REQUEST_RATE_LIMIT_EXCEEDED` / `DAILY_TOKEN_LIMIT_EXCEEDED` / `MONTHLY_TOKEN_LIMIT_EXCEEDED` | 是，`rejected`，保存 limit summary/Payload | 返回 `Retry-After: 60`；Token 限额导航可编辑策略；RPM 当前仅说明未开放编辑 |
 | Idempotency | 409 `REQUEST_IN_PROGRESS` / `REQUEST_ALREADY_COMPLETED` / `STREAM_REPLAY_NOT_SUPPORTED` | 关联原 Request | 展示原 Request 状态；不得创建第二次扣费请求 |
+| Model/产品资源 | 404（Target stable code 由实现合同冻结） | 是，`rejected` | 刷新 `/api/product/v1/me/model-catalog` 或套餐投影；不静态回退已下线 alias |
 | Gateway 配置 | 503 `GATEWAY_AUTH_NOT_CONFIGURED` / `INVALID_ACCOUNT_LIMIT` / `GATEWAY_MIN_RESERVE_INVALID` 等 | 取决于发生在 Request 创建前/后 | 服务告警、复制 request ID；不切换未计费 Provider，不泄露配置值 |
 | 上游限流/失败 | 429 `UPSTREAM_RATE_LIMITED` 或 502 `UPSTREAM_*` | 是，保留 Provider/Request 状态 | 仅 retryable 错误遵循 `Retry-After`/退避；未知 Usage 不按 0 结算 |
 
 所有已创建 Request 的资格拒绝必须保存协议正确、已脱敏的 JSON 响应；认证阶段未创建 Request 时仍返回安全 `x-request-id`。429 `Retry-After` 的当前固定值是实现事实，未来若改为动态窗口必须同步更新测试和本文。
 
 当前缺口：Token allowance 不足时实现仍可能把 Token 数写入 `available_microusd/required_microusd`，且 Gateway Key auth 未反向 JOIN canonical `users`。两项均为发布阻断风险；修复前客户端只能按 `code` 展示通用额度不足，不能把错误字段格式化为 USD。
+
+已 settle Request/Usage 当前还缺数据库终态不可变 guard。Target 必须禁止对已完成/已结算事实的通用 UPDATE/DELETE，任何纠错以新 Ledger reversal/安全 Audit 表达。ASR WebSocket 在未定义 streaming-audio capability/计量/结算前不纳入本 Gateway Target，发布前必须禁用或另行完成 canonical 鉴权、Origin、限流和审计。
 
 ## 7. 验收
 
@@ -78,5 +92,7 @@ flowchart LR
 - GTW-05：Usage settle 产生唯一 Usage/Ledger 链；未知 Usage 标记 `settlement_failed`，不自动按 0。
 - GTW-06：仅从未有订阅记录的用户可进入 cash-only 兼容路径；已有任何订阅记录时必须执行 Subscription/Entitlement 校验。
 - GTW-07：Gateway Key 认证必须证明内部兼容行存在对应 canonical 用户；402 的字段名、metric 与 unit 一致，Token 值永不进入 micro-USD 字段。
+- GTW-08（Target release gate）：Dream 的 Claude Agent/Chat/Dream/Workflow 经用户级 canary 调用 Gateway，旧行为/工具/流式协议无回归；流取消、上游 5xx、usage 缺失分别产生确定 release/capture/`settlement_failed`。
+- GTW-09（Target release gate）：已 settle Request/Usage 的 UPDATE/DELETE 在数据库层失败；历史 price/entitlement/permission/limit snapshot 不因新配置变化。
 
 交互验收映射：GTW-01 → UI-GTW-01；GTW-02/05 → UI-GTW-03 + API/数据库断言；GTW-03 由协议 contract E2E；GTW-04 → UI-GTW-02/04。

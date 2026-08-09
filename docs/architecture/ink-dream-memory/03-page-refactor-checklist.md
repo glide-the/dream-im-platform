@@ -1,99 +1,101 @@
 # Dream 页面与交互改造清单
 
-> 状态：后续实施清单  
+> 文档状态：**Planned**  
 > 返回：[总索引](README.md)  
-> 依赖：[业务数据接入边界](02-business-integration-and-admin-boundary.md)  
+> 依赖：[业务边界](02-business-integration-and-admin-boundary.md) · [Dream 产品与推理集成](07-dream-subscription-and-inference-integration.md)  
+> 详细交互：[Dream 交互设计](../../design/ink-dream-memory/README.md)  
 > 主要读者：产品、Dream 前端、Dream 后端、QA
 
-## 1. 页面改造原则
+## 1. 页面状态定义
 
-PostgreSQL 迁移是持久化替换，不是 Dream 产品重做。用户、Story、Character、Scene、Dream、Execution、Chat 和 Settings 应保持现有路由、信息架构和主要操作；前端只处理兼容错误状态和删除未开发领域的误导入口。
+- **保留/回归**：主要产品行为不变，只适配 PostgreSQL 与 Gateway 错误。
+- **数据层改造**：路由/信息架构不变，真实数据源或模型目录发生改变。
+- **真实能力改造**：删除静态/虚构事实，改接 Admin 产品 API。
+- **Deferred**：当前仅真实第三方支付渠道页面和未具备 Gateway capability 的 ASR 管理。
 
-四种页面状态：
+## 2. 页面矩阵
 
-- **保留**：页面与功能不变，只做回归。
-- **仅数据层适配**：页面合同不变，后端从 SQLite 切换 PostgreSQL。
-- **隐藏/清理**：当前已有入口会造成未开发能力误解，应隐藏或重定向。
-- **延期**：本期不创建页面、Hook、API Client 或占位 CRUD。
-
-## 2. 路由与页面矩阵
-
-| 页面/路由 | 当前证据 | 本期判断 | 后续具体动作 |
+| 页面/路由 | Current | Planned 动作 | Release Gate |
 |---|---|---|---|
-| Story 列表 | `StoryWorkspaceStoriesPage.tsx` | 仅数据层适配 | 保留筛选、分页、审阅和刷新行为；验证 PG 结果顺序/总数/409 |
-| Character 列表 | `StoryWorkspaceCharactersPage.tsx` | 仅数据层适配 | 在 Character + 关系表迁移闭包完成后切换；此前不可指向 Admin 旧表 |
-| Scene 列表 | `StoryWorkspaceScenesPage.tsx` | 仅数据层适配 | 在 Scene + 关系表迁移闭包完成后切换；保留 story 可空与 order 语义 |
-| Dream 工作台 | `StoryWorkspaceDreamPage.tsx` | 保留 + 数据回归 | 不接新推理服务；只验证所依赖 Story/Workflow/Chat PG 持久化不回归 |
-| Execution/Review | `StoryWorkspaceExecutionPage.tsx` 及 episode components | 保留 + 数据回归 | 保持 deep link、run 状态、review/confirm 和错误恢复 |
-| Settings | `StoryWorkspaceSettingsPage.tsx` | 保留 | 资源、插件、模型、关于等既有分区保持现状；增加 DB 503 通用恢复仅在已有错误边界实现 |
-| AI 模型设置 | `ModelConfigSection.tsx`、`/story-workspace/settings/model` | 保留既有能力 | 不连接 Admin Model/Provider/Pricing，不新增付费模型、额度或 Gateway 状态 |
-| 静态订阅页 | `StoryWorkspaceSubscriptionPage.tsx`、`.css` | **隐藏/清理** | 删除静态三档方案和“即将开放”营销事实；未重新立项前导航不展示该入口，直接 URL 使用 replace navigation 重定向 `/story-workspace/settings/about` |
-| 订阅设置项 | `StoryWorkspaceSettingsPage.tsx` 中 `settings-subscription` | **隐藏/清理** | 从设置导航移除；不替换成真实订阅管理或“联系运营”交易入口 |
-| 订阅路由合同 | `storyWorkspacePath.ts`、`story-workspace.tsx` | 兼容清理 | 旧 URL 统一 replace 重定向 `/story-workspace/settings/about` 并补测试；不保留可点击套餐卡 |
-| Billing/Usage/Ledger/支付 | 当前无正式 Dream 页面 | **延期** | 不创建新页面、Modal、Drawer、Hook、类型或静态假数据 |
-| 推理服务/Gateway 管理 | 当前无正式 Dream 页面 | **延期** | 不创建 Key、Provider、Model Alias、请求日志或 Gateway 错误页 |
+| Story/Character/Scene | SQLite-backed 既有页面 | PG Repository 数据层适配；保持筛选、分页、审阅和显式排序 | JSON/time/total/409 与迁移前合同一致 |
+| Dream 工作台、Execution/Review | 既有 Claude Agent/Workflow 调用 | 受控 Gateway canary；保留 deep link、tool confirmation、run/review 状态 | Agent/Workflow 协议与行为回归通过 |
+| Chat | 旧 runner，模型字段可由前端提交 | 只发送已授权 alias；服务端重新解析，不信任 provider/model 字符串 | streaming/cancel/usage missing/502 结算确定 |
+| Settings / 模型 | `ModelConfigSection.tsx` 静态 Auto/Claude/GPT | `GET /api/product/v1/me/model-catalog` 驱动 alias/label/capability | empty/403/503 不使用静态 fallback；Secret 不展示 |
+| `/story-workspace/subscription` | 静态三档数组与“即将开放”，不是真实订阅 | 改为真实计划、当前订阅、周期、续费状态、Allowance、余额、Usage、预计超额入口 | 数据只来自 Admin Product API；无假价格/余额/成功 |
+| Usage / Ledger 详情 | 当前无正式页面 | 订阅页内摘要 + 可访问的明细视图；服务端分页 | 金额以 micro-USD string/int 传输，UI 格式化但不回传浮点 |
+| 生命周期影响预览 | 当前无 | 开通、续费、升级、降级、暂停、恢复、取消的服务端 quote/preview | 确认页显示生效时间、版本、额度/余额影响与冲突恢复 |
+| Payment 状态 | 当前无 | 只展示平台返回的 pending/authorized/failed/refunded/reversed；test-only 环境明确标识 | 无真实渠道时不显示“支付成功”或第三方品牌 |
+| 迁移维护 | 部分通用错误 | 全局维护/只读、409、503 和 request ID 恢复 | 不写回 SQLite、不使用本地假数据 |
+| ASR | 未鉴权 WebSocket | release 前禁用或补 canonical 鉴权/Origin/限流/审计 | ASR Gateway 管理仍 Deferred |
 
-## 3. 静态订阅入口清理文件
+## 3. `/story-workspace/subscription` 改造合同
 
-后续 Dream 实施任务应至少核对：
+需增量修改并复核：
 
-- `frontend/src/pages/story-workspace/StoryWorkspaceSubscriptionPage.tsx`
-- `frontend/src/pages/story-workspace/StoryWorkspaceSubscriptionPage.css`
-- `frontend/src/pages/story-workspace/StoryWorkspaceSettingsPage.tsx`
-- `frontend/src/pages/story-workspace/index.ts`
-- `frontend/src/router/storyWorkspacePath.ts`
-- `frontend/src/router/story-workspace.tsx`
-- 与 `subscription`/`settings-subscription` 有关的 router、settings 和 responsive tests
+- `frontend/src/pages/story-workspace/StoryWorkspaceSubscriptionPage.tsx` 与样式。
+- `frontend/src/pages/story-workspace/StoryWorkspaceSettingsPage.tsx` 的订阅入口。
+- `frontend/src/router/storyWorkspacePath.ts`、`frontend/src/router/story-workspace.tsx`。
+- 新增产品 API client/types/hooks，但不在浏览器放服务间凭据。
 
-确定合同：设置导航不显示“订阅”；旧 `/story-workspace/subscription` 不展示静态套餐，统一使用 replace navigation 返回当前已存在的 `/story-workspace/settings/about`。浏览器后退不得重新进入静态订阅页，桌面和移动入口采用同一行为。
+页面不得再重定向至 About，也不得保留静态 plan array 作为错误 fallback。进入页面后并行读取可发布 Plans 与 `me/subscription-context`；后续加载 Usage/Ledger 可渐进展示，但状态必须来自真实 API。
 
-该清理任务的目的只是避免虚构档位，不包括套餐 API、订阅状态、价格、额度、余额或支付开发。
+最低信息层级：
 
-## 4. 数据迁移期间的页面状态
+1. 当前订阅状态、Plan Version、周期起止、续费/期末取消状态。
+2. Allowance 已授予/预留/已消耗/剩余，余额与预计超额。
+3. 可用模型/权限摘要与限制。
+4. 生命周期命令和影响预览。
+5. Usage 明细和 append-only Ledger 只读入口。
 
-| 状态 | 页面表现 | 禁止行为 |
+## 4. 状态与恢复矩阵
+
+| 状态 | 页面行为 | 禁止 |
 |---|---|---|
-| 正常 | 行为与 SQLite 版本一致 | 暴露数据库类型或内部 DSN |
-| 维护窗口 | 全局只读维护提示；写按钮禁用；显示预计重试而非成功 | 写回 SQLite、排队无幂等请求、显示伪成功 |
-| 503 数据库不可用 | 保留未提交编辑草稿；提供重试；显示 request ID | 用本地假数据继续提交 |
-| 409 资源冲突 | 保留层与输入；加载最新资源后由用户确认重试 | 盲目覆盖 PG 最新值 |
-| 401 | 维持当前 Session 刷新/登录流程 | 把数据库错误伪装成登录过期 |
-| Empty | 区分真实无数据与筛选无结果 | 因迁移失败显示“暂无内容” |
+| loading | 骨架保持布局，`aria-busy`，命令按钮不可用 | 先显示静态套餐再替换 |
+| empty | 区分“无发布 Plan”“无订阅”“Usage 为空” | 把 API 失败伪装为空 |
+| 401 | Session 刷新或登录 | 把 Gateway Key 暴露给浏览器 |
+| 402 | 显示额度/余额不足及单位、保留用户输入 | 虚构充值/支付成功 |
+| 403 | 说明当前状态/权限不允许，保留只读上下文 | 隐藏全部事实或提供绕过入口 |
+| 404 | 刷新产品上下文/版本 | 回退硬编码 Plan/model |
+| 409 | 拉取当前 version，重算影响预览，再确认 | 盲目重复提交 |
+| 429 | 显示 `Retry-After` 倒计时，限制重试 | 自动高频重放 |
+| 502 | 标注上游模型失败，允许安全重试 | 误报成功/零用量 |
+| 503 | 维护/配置/数据库不可用，保留本地编辑草稿 | 写 SQLite、直接调用 Provider |
 
-## 5. 前端 API 与类型边界
+## 5. 生命周期交互门禁
 
-- 现有 `frontend/src/api/storyWorkspaceApi.ts`、Story hooks 和 contracts 保持业务字段兼容。
-- PostgreSQL `bigint/numeric/timestamptz` 不直接泄露为无法安全处理的 JS number；ID 保持当前 string/number 合同，时间继续使用 ISO 8601。
-- JSONB 响应仍按现有对象/数组 contract，不让页面解析数据库 JSON 字符串。
-- 分页排序必须由 API 返回稳定 tie-breaker；PG 与 SQLite 默认排序不同，所有列表查询应显式 ORDER BY。
-- 任何新增错误字段使用可选类型进行灰度，旧前端仍能显示安全通用错误。
-- 本期不新增 `subscriptionApi.ts`、billing types、Gateway client 或 payment SDK。
+所有 create/renew/upgrade/downgrade/pause/resume/cancel 命令必须：
 
-## 6. 现有模型与推理 UI 边界
+1. 从服务端获取影响预览与 `expected_version`，不在浏览器自行计算价格或日期。
+2. 显示立即/下周期生效、Plan Version、Allowance 调整、是否产生 overage 与不可逆影响。
+3. 用户确认后提交唯一 idempotency key；按钮进入 pending 且防重复。
+4. 409 时关闭旧确认态、保留用户意图并重新获取 preview。
+5. 只有服务端返回最终 Subscription Event 后才显示成功；Payment pending 不能显示订阅已支付成功。
 
-`frontend/src/components/dashboard/ModelConfigSection.tsx` 是 Dream 既有配置面，不属于本期新推理服务。PG 迁移只处理它所依赖的配置持久化；不得在本任务中：
+## 6. 金额、Usage 与 Secret
 
-- 禁止拉取 Admin Provider/Model/Pricing 目录；
-- 禁止展示订阅可用模型、Token 额度或付费标签；
-- 禁止注入 Gateway Key；
-- 禁止改造 Claude Agent transport；
-- 禁止新增 401/402/403/429 Gateway 业务提示。
+- API 金额以整数 micro-USD 的 JSON string 或安全 integer contract 传输；前端只在显示层格式化，不以 float 回传。
+- Token、request、storage 等不同单位分栏，不能塞入金额字段。
+- Ledger/Usage 是只读 append-only 事实；无编辑、删除或默认 CRUD action。
+- Gateway Key、Provider Secret、Payment Secret、System Secret 永不展示；不能提供“再次查看”或复制已存在 Secret。
+- request ID、model alias、token count、micro-USD 可按产品权限显示；Provider 原始凭据/响应、内部 stack 不显示。
 
-这些能力只有在 [延期领域](90-deferred-billing-subscription-inference-payment.md) 重新立项后才能进入页面 PRD。
+## 7. 响应式与可访问性
 
-## 7. 页面回归清单
+| 视口 | 结构 |
+|---|---|
+| 1440×1000 | 当前订阅/Allowance 主列，计划与操作侧列；Usage/Ledger 使用可排序表格与 sticky header |
+| 390×844 | 单列卡片；重要状态/剩余量在首屏；表格转语义化 key-value/list；底部确认区不遮挡焦点 |
 
-- Story/Character/Scene 列表、详情、筛选、分页、排序和审阅动作结果与迁移前一致。
-- Dream deep link、Execution run、Episode review、Workflow timeline、Chat 历史和 Settings 正常。
-- 页面请求不包含数据库凭据、password hash、OAuth token 或内部迁移字段。
-- 静态订阅入口从导航消失，直接 URL 不再展示虚构三档方案。
-- 不出现余额、充值、套餐、支付、用量账单、Gateway Key 或推理服务新入口。
-- 1440×1000 和 390×844 无页面级横向溢出；维护/503/409 提示键盘可达并可归焦。
+- 所有控件有可见 Label；状态不只靠颜色；金额/时间提供读屏友好文本。
+- Dialog/Drawer 打开时聚焦标题/首控件，关闭后归焦触发器；Escape 行为一致。
+- 错误摘要可聚焦并通过 `aria-describedby` 关联字段；后台刷新不抢焦点。
+- loading/empty/error/maintenance 在两个视口无横向溢出，键盘可完成完整生命周期命令。
 
-## 8. 测试文件建议
+## 8. 测试清单
 
-- 更新 router/path 单测覆盖旧 subscription URL 到 `/story-workspace/settings/about` 的 replace redirect。
-- 更新 Settings 导航测试确认无订阅入口且其他分区未丢失。
-- 为 Story/Character/Scene API hooks 增加 PG contract fixture，验证显式排序和时间/JSON 类型。
-- 后端 PostgreSQL 集成测试通过后，复跑 Story Workspace、Dream Agent、Execution、Workflow、Plugin、Session 全部既有测试。
-- Playwright 使用隔离 PostgreSQL；不得把 SQLite fixture 当作最终持久化 E2E 通过证据。
+- 静态套餐、静态模型、假余额与 About redirect 均被删除；API failure 无 fallback。
+- 1440×1000 与 390×844：loading、empty、401/402/403/404/409/429/502/503、维护、命令 preview/confirm。
+- 服务端用户/Usage/Ledger 分页总数稳定，205-user 用例不存在 QA-only 结果。
+- Gateway/Provider/Payment/System Secret 在 DOM、网络响应、Storage、console 和截图中均不存在。
+- Dream/Chat/Workflow/Agent 既有 deep link、streaming、cancel、tool confirmation 和保存行为不回归。

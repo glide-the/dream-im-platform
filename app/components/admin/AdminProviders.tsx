@@ -27,8 +27,8 @@ const resources = [
   },
   {
     name: "user-model-permissions",
-    list: "/admin/models/permissions",
-    meta: { label: "用户模型权限" },
+    list: "/admin/gateway/rate-limits#user-model-permissions-manager",
+    meta: { label: "用户—模型例外限制" },
   },
   {
     name: "story-workspaces",

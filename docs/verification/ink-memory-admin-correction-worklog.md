@@ -545,10 +545,57 @@ Optional Enhancers:
 
 - 只读 preflight：Admin `git status --short` 为空；Dream 仅存在用户既有未跟踪 `.claude/worktrees/`，已标记为禁止覆盖或清理。
 - worklog 机械检查确认既有记录到 Round 28；Round 24–28 明确把本轮重新启用能力列为 Deferred，范围矛盾成立，需在审计与后续权威文档中消除。
-- 尚未连接、迁移、清空或写入任何 PostgreSQL；尚未读取或使用任何真实 Secret。
+- 已创建 `docs/verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md`。真实 SQLite metadata 与文档逐表比对结果为主库 actual/documented `43/43`、Notion actual/documented `5/5`、差异 `0`；主库另有 25 个真实 trigger。
+- 运行时机械审计（排除 `.venv` 与 tests）记录：`sqlite3.Connection` 34 文件/115 处、`database.get_db()` 16 文件/52 处、PRAGMA 3 文件/7 处、`BEGIN IMMEDIATE` 11 文件/22 处、SQL AST 下界 42 文件/436 个字面量/1,425 个 `?` 占位符。
+- Admin importer 证据确认只覆盖 `users` 与两个 Story 表；另确认每表 JSON stdout 64 MiB、三表全量并发入内存、逐行 `await INSERT`、无分页/batch/COPY、`COUNT(*)::int` 及 sequence 只校准未复核等容量上限。
+- canonical 用户审计确认 `0015` 与 canonical-driven list 已修复主投影，但 Gateway auth 未反查 `users`、专用 selector 只取前 100、通用 RelationSelect 只取前 50/100、mutation 仍可写兼容行 email/display name，且 subscription/key/permission 命令未统一补齐 canonical account。
+- 推理审计覆盖 PolyAgent、Claude Agent/Chat、Dream/Workflow/Guidance/Reflection、Image 与 Settings 静态模型；明确 Dream `dream_launch_gateway.py` 不是 Admin 计费 Gateway。另发现 `/ws/speech-recognition` 未鉴权直连 ASR Provider。
+- P0 Secret 证据：`backend/speech_recognition.py:9` 含已提交、形似有效的 Provider credential，Git 历史可追溯到提交 `2deb4b1`。未在文档复述、未联网验证或使用；发布门禁要求密钥所有者吊销/轮换、代码移除、经批准的历史处置与 secret scan。文件名级扫描的其他两处命中为 URL/文档 slug 假阳性。
+- 无上下文 Reader Testing 首轮发现表分组计数、W5 拓扑、PG-compatible rollback build、ASR 消费面、append-only writer 冲突、canonical profile split-brain、workflow 状态数和 importer 容量等问题；逐项修订后复核结论为 `PASS`，未发现未记录的 P0/P1 处置缺口。
+- 审计期间 Admin 出现用户并行修改，范围从 Navigation/Model Permission/E2E 扩展到 Gateway/PRD/Design 等文件；均未覆盖或回滚，后续只允许基于最新 diff 增量适配。
+- `git diff --check` 通过；尚未连接、迁移、清空或写入任何 PostgreSQL，也未调用外部 Provider 或真实支付网络。
 
 未执行事项及原因：
 
-- PRD、架构正文、交互设计和业务代码尚未修改：受本轮强制顺序约束，必须先完成并复核证据审计。
+- PRD、架构正文、交互设计和业务代码尚未修改：Task 1 已完成并通过 Reader Testing；这些工作必须在下一阶段另行记录 Prompt Architect round 后开始。
 - PostgreSQL owner/ACL、真实数据和迁移演练尚未执行：审计阶段先从仓库与可安全访问的配置/只读元数据确认目标，任何数据库操作必须另行满足隔离与授权边界。
+- credential 吊销/轮换与 Git 历史 purge 未执行：需要密钥所有者和仓库协作授权；本轮只记录并阻断发布，不擅自调用 Provider 或重写共享历史。
 - 外部 Provider 与真实支付网络未调用：不属于审计需要，且真实第三方支付明确 Deferred。
+
+## Round 30 — 范围重启后的 PRD、架构与 Dream 交互设计
+
+Optimized Prompt:
+
+作为 Ink Memory 的资深产品架构师、订阅计费与 AI Gateway 架构师、PostgreSQL 迁移架构师及 UI/UX 负责人，以已经通过 Reader Testing 的 `docs/verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md` 为事实基线，在 `/Users/dmeck/project/ink-admin-memory/docs/**` 完成范围重启后的权威文档修订。先读取每个目标文件的最新工作树版本并保留用户并行未提交修改；不得用旧文档整文件覆盖新改动。
+
+更新 `docs/architecture/ink-dream-memory/README.md`、01–05、90、91，新增 06 Billing/Subscription/Gateway、07 Dream Subscription/Inference、08 Payment Adapter/Webhook。每份文档必须标注 Current、Planned、Implemented、Deferred 或 Superseded，且同一能力不得同时 Planned 与 Deferred。Round 24–28 的全面延期决定必须作为历史保留：43+5 PostgreSQL、订阅展示、计费协作、Gateway 与新推理链恢复为 Planned/Implemented；只有真实第三方支付渠道和未具备 streaming-audio capability 的 ASR Gateway 保持 Deferred。逻辑 owner 不授权物理 `ALTER OWNER`/GRANT/REVOKE。
+
+同步更新平台总 PRD、相关 `docs/prd/modules/**`、全局交互规范和 `docs/design/modules/**`。所有能力以 Current / Target / Release Gate 三层表达，覆盖唯一 canonical `users`、自动 billing identity、immutable Plan Version/Pricing/Entitlement、Subscription 状态机、Allowance/Overage/Balance、micro-USD、Gateway eligibility 与结算、Dream 产品 API、PaymentAdapter/Webhook 幂等、迁移/canary/rollback、401/402/403/404/409/429/502/503，以及可自动测试的验收标准。明确现存 hardcoded credential、未鉴权 ASR WebSocket、platform profile split-brain、前 50/100 用户选择器、cash-only compatibility 和 append-only writer 冲突均是 release blockers，禁止误报已修复。
+
+在 `docs/design/ink-dream-memory/` 建立 README 与五个正式模块：Subscription Experience、Usage/Balance/Overage、Model/Gateway、Payment Adapter States、Migration/Maintenance/Error States。逐页定义目标/操作者、真实 Admin 产品 API 数据源、字段/控件/列表/详情/状态、loading/empty/error/403/409/429/503、开通/续费/升降级/暂停/恢复/取消的影响预览、Allowance/余额/Usage/预计超额/Ledger 信息层级、Secret 永不展示、1440×1000 与 390×844、键盘/焦点/Label/读屏/错误恢复。`/story-workspace/subscription` 必须从静态数组转为真实数据合同；不得设计静态 fallback、假价格、假余额、虚假支付成功或默认 CRUD 外壳。
+
+至少提供七组可渲染 Mermaid：User→Billing Account→Subscription、Subscription→Entitlement→Model Permission、Dream Session→Gateway→Provider、Gateway Request→Allowance/Balance→Usage→Ledger、完整订阅生命周期、Payment Adapter→Webhook→Idempotency→Subscription Event、SQLite 43+5→Staging→PostgreSQL→Cutover。完成后执行相对链接、H1、状态冲突、术语、路由、错误码、micro-USD 与 Mermaid fence 机械检查，并让无上下文产品/前端/后端/QA/安全读者复核；所有有效问题修复后才能进入代码阶段。
+
+Optional Enhancers:
+
+- 为 API 合同增加 request/response 字段表、idempotency key、ETag/version 与错误恢复示例，但不虚构尚未实现的 endpoint 路径为 Current。
+- 为两个视口增加低保真信息架构 wireframe，前提是能明显帮助解释层级，而非装饰性静态 mock。
+- 将文档验收 ID 映射到后续 Admin/Dream unit、integration 与 focused Playwright 测试名称。
+
+范围变化：
+
+- 相对 Round 24–28：Billing、Subscription、Gateway、新推理链和 Dream 真实订阅体验从 Deferred 恢复为 Planned；现有 Admin 基线按真实证据标为 Implemented/Partial，不能整体标为完成。
+- 真实第三方支付渠道仍 Deferred；PaymentAdapter、Webhook event store/签名/幂等和 test-only Fake Adapter 为 Planned。
+- Speech/ASR 不在当前 Gateway 已支持能力中；未鉴权 endpoint 必须先禁用或加 canonical 鉴权，只有明确 audio streaming 计量/结算合同后才从 Deferred 转 Planned。
+- 本阶段只修改文档；Admin 与 Dream 应用代码、Schema、migration 和数据库仍不进入修改范围。
+
+执行证据和验证结果：
+
+- Task 1 决策文档已由独立无上下文 Reader Testing 判定 `PASS`，主库 43/43、Notion 5/5，差异 0。
+- 已确认 Admin 工作树存在用户并行修改，其中包括 PRD/Design 模块；本阶段必须逐文件读取最新内容并以小块 patch 增量合并。
+- 尚未开始本阶段正文修改、机械检查或读者测试。
+
+未执行事项及原因：
+
+- 架构、PRD、交互设计正文尚未修改：本 Round 记录是进入阶段前的强制门禁，完成本记录后才可开始。
+- 应用代码、数据库和外部服务不执行：必须等待本阶段文档与 Reader Testing 完成。

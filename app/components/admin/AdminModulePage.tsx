@@ -34,7 +34,6 @@ export const modelTabs = [
   { label: "Provider", href: "/admin/models/providers" },
   { label: "Models", href: "/admin/models/models" },
   { label: "Pricing", href: "/admin/models/pricing" },
-  { label: "模型权限", href: "/admin/models/permissions" },
 ];
 
 export const billingTabs = [

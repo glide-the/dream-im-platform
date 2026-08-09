@@ -281,7 +281,7 @@ Token 额度不足以覆盖整个预估请求时，不会局部消耗该 Token �
 |---|---|---|
 | 模型价格版本 | `/admin/models/pricing` | 创建／结束版本化四类 Token 价格 |
 | 用户默认 Token 上限 | `/admin/gateway/rate-limits` | 查看并进入用户默认 daily/monthly Token 上限；实时计数只读 |
-| 用户—模型 Token 覆盖 | `/admin/models/permissions` | 模型启停和 daily/monthly Token 覆盖；RPM 字段不开放 |
+| 用户—模型 Token 覆盖 | `/admin/gateway/rate-limits#user-model-permissions-manager` | 用户—模型例外禁用和 daily/monthly Token 收紧；RPM 字段不开放 |
 | 套餐与版本 | `/admin/subscriptions/plans`、`/admin/subscriptions/versions` | 管理 base price、周期额度与 overage policy |
 | 套餐模型权益 | `/admin/subscriptions/entitlements` | 配置 scope、daily/monthly Token 与 Storage 上限；RPM 字段不开放 |
 | 用户订阅生命周期 | `/admin/subscriptions/users` | 激活、renew、upgrade、downgrade、pause、resume、cancel |

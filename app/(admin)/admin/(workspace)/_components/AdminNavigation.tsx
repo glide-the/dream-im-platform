@@ -104,7 +104,6 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
       { label: "Provider", href: "/admin/models/providers", permission: "providers.read", mark: "PV" },
       { label: "Models", href: "/admin/models/models", permission: "models.read", mark: "MD" },
       { label: "Pricing", href: "/admin/models/pricing", permission: "pricing.read", mark: "PR" },
-      { label: "模型权限", href: "/admin/models/permissions", permission: "users.read", mark: "MP" },
     ],
   },
   {
