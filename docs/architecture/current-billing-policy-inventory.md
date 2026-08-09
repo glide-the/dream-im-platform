@@ -12,18 +12,18 @@
 | 概念 | 当前作用 | 是否减少本次现金余额扣费 |
 |---|---|---|
 | 用户／模型／套餐 Token 上限 | 限制某个时间窗口内最多可处理多少 Token；超限返回 429 | 否 |
-| 订阅 Token 或金额额度 | 在订阅周期内抵扣 Gateway 用户费用；额度不足时按套餐超额策略处理 | 是，由订阅额度覆盖的部分不扣现金余额 |
-| 账户余额 | 无订阅或订阅超额时用于 Gateway 预授权与实际扣费 | 否，实际费用从余额扣除 |
+| 订阅 Plan + Bonus Token 额度 | 在用户个人月度周期内覆盖 Gateway Token；不足返回 Token 专用 402 | 有效订阅请求不扣现金 |
+| 账户余额 | 仅供显式独立 cash-only Gateway／调账等兼容领域使用 | 只影响独立现金路径，不兜底订阅 Token |
 
 订阅额度抵扣的是应用 markup/discount 后的 Gateway 用户费用；Provider 原始成本仍单独记录在 Request，由平台对上游承担。
 
 最容易误解的当前行为：
 
-- 新 canonical 用户会自动获得一个 USD 计费账户，但初始可用余额是 `0`。
+- 新 canonical 用户会自动获得一个 USD 计费账户；当默认 Free Plan/Version/Entitlement 已正确发布时，还会幂等开通 Free 月度订阅和本周期 Token Allowance。
 - 新建 `platform_users` 当前默认 `daily_token_limit = 100000`，月上限默认未设置。当前窗口实际按“每用户、每模型、UTC 日”分别计数。
 - 每日 `100,000 Token` 是 429 限流上限，不是免费 Token，也不会给账户充值。
-- 因此，新用户即使尚未达到每日 Token 上限，只要没有可覆盖本次请求的订阅额度且现金余额不足，Gateway 仍会返回 `402 INSUFFICIENT_BALANCE`。
-- 订阅是否发放 Token 额度由已发布套餐版本的 `allowance_tokens` 决定；不是所有订阅都必然有 Token 额度。
+- 因此，有效订阅用户即使现金余额为正，只要当前周期 `Plan + Bonus` Token 不足，Gateway 仍返回 `402 SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`；现金不兜底。
+- 订阅基础额度由已发布套餐版本的 `allowance_tokens` 决定；管理员还可使用独立 `subscriptions.grant` 权限一次性补发当前周期 Bonus Token。
 - 当前没有“余额达到 10 元／10 美元后享受每日免费 Token”、平台补贴、每日免费 10,000 Token 或免费额度叠加策略。
 - 当前计费币种固定为 USD，金额统一存为整数 micro-USD：`1 USD = 1,000,000 micro-USD`；系统没有人民币“10 元”门槛语义。
 
@@ -33,14 +33,15 @@
 
 - canonical `users` 创建或更新时，PostgreSQL trigger 会同步内部 `platform_users` 身份。
 - 同步过程会幂等创建一条 `billing_accounts`。
+- 默认 Free 产品已经发布且具备默认模型权益时，同一用户创建事务还会幂等建立 Free 月度 Subscription、首周期 Allowance 和 activation event；产品种子未就绪时 provisioner 安全 no-op，不创建半套订阅。
 - 新计费账户默认值：
   - `currency = USD`
   - `available_microusd = 0`
   - `reserved_microusd = 0`
   - `lifetime_debited_microusd = 0`
-- 新用户不会自动获得现金充值、试用金或平台补贴。
+- 新用户不会自动获得现金充值；Free Subscription Token 不是现金，也不能从 Billing Account 提现或折算。
 - Gateway Key 也不会因为用户开户自动发放；Key 需要单独创建并授予所需 scope。
-- 因此，“新用户首次调用返回 402”以用户已经取得有效 Gateway Key，并已通过 scope、Model、Provider 和 Pricing 检查为前提。
+- 新用户首次调用若返回 402，应先核对默认 Free Subscription 是否已 provision、当前周期总额与请求预留估算；不能只看现金余额或每日安全上限。
 
 ### 2.2 用户默认 Token 上限
 
@@ -181,35 +182,24 @@ Runtime 会对以下已存在的限额取最小值：
 
 ### 6.1 套餐版本包含的计费字段
 
-已发布 Plan Version 固化：
+当前可发布 Plan Version 固化为个人月度周期，只包含整数 micro-USD 月费、trial/grace 参数和 `allowance_tokens`。`billing_period` 固定为 `monthly`，`allowance_microusd=0`、`overage_policy=deny`、`effective_from=NULL`；发布后不可覆盖，后续套餐变更必须创建新版本并在用户下一个周期边界生效。
 
-- billing period：monthly 或 annual
-- base price
-- trial days / grace period days
-- allowance tokens
-- allowance micro-USD
-- overage policy：`deny` 或 `cash_balance`
+### 6.2 订阅资格与现金边界
 
-Plan Version 发布后作为历史快照使用；后续变更应创建新版本。
-
-### 6.2 基础订阅费
-
-- 非试用激活会立即从计费账户扣除 base price。
-- 试用激活不会立即扣除 base price。
-- renew 和 upgrade 动作会按目标版本扣除 base price。
-- 基础费余额不足时返回 `402 SUBSCRIPTION_BALANCE_INSUFFICIENT`，事务不完成。
-- 当前代码中的 renew 是显式生命周期动作；本文不把它描述为已经存在的自动续费调度器。
+- Token 订阅与 Billing Account 是两个独立领域。有效 Subscription 的 Gateway 请求只使用 Token Allowance，不因现金余额为正而自动超额调用。
+- 付费版本通过 Payment Intent/Webhook 建立或续期；Gateway 不在单次请求中扣基础订阅费。
+- 无有效 Subscription 的显式 cash-only Gateway 兼容路径仍可独立存在，但不能作为 Token 套餐耗尽后的 fallback。
 
 ### 6.3 周期额度发放
 
-- 激活、renew 或 upgrade 创建当前周期 `subscription_usage_allowances`。
-- `granted_tokens` 来自 Plan Version 的 `allowance_tokens`。
-- `granted_microusd` 来自 Plan Version 的 `allowance_microusd`。
-- 额度分别维护 `granted / reserved / consumed`，并通过数据库约束保证不会超发。
-- Token 额度和金额额度是两套不同的量纲，不互相改写。
+- 激活和实际个人周期边界（包括合法 renew/续费推进）创建当前周期 `subscription_usage_allowances`；upgrade/downgrade 只排队到下周期。
+- `granted_tokens` 来自 Plan Version 的 `allowance_tokens`，在该周期内不可变。
+- `bonus_granted_tokens` 只来自管理员“补发本周期 Token”命令，单调增加且不继承到下周期。
+- 可用总额为 `granted_tokens + bonus_granted_tokens`；额度维护 `reserved / consumed`，数据库约束保证 `reserved + consumed` 不超过可用总额。
+- 补发必须使用 `subscriptions.grant`、正整数数量、原因、幂等键和 Allowance optimistic version，并同时产生不可变 `subscription_token_grants`、Subscription Event 与 Admin Audit。
+- `granted_microusd/reserved_microusd/consumed_microusd` 仅为历史兼容列，新 Token-only 流程固定为 0。
 - 一条额度记录属于“订阅 + 当前 period”，不是按 Model 或 Entitlement 分池；同一订阅下所有获准模型共享该周期额度。
-- monthly 版本的额度覆盖一个月度 period，annual 版本覆盖一个年度 period；当前没有把 annual 额度再按月重置的逻辑。
-- upgrade 会从操作时刻开始一个目标版本的新 period 并创建新额度，不做按比例折算；旧额度行保留为历史事实。downgrade 只写入 pending version，待后续 renew 时生效。
+- 额度覆盖用户自己的月度 period。upgrade/downgrade 都只写 pending version，到下个个人周期边界生效；不会重开当前周期或补发 Token。
 
 所以“订阅会不会发 Token 额度”的准确答案是：只有该订阅绑定的已发布 Plan Version 配置了大于 0 的 `allowance_tokens` 时才会发放。
 
@@ -217,19 +207,19 @@ Plan Version 发布后作为历史快照使用；后续变更应创建新版本�
 
 订阅请求当前按以下顺序选择覆盖方式：
 
-1. 若 Token 额度大于 0，且剩余 Token 足以覆盖整个 `estimated_tokens`，使用 `token_allowance`，本次不预留现金。
-2. 否则，若金额额度大于 0 且还有剩余，使用 `money_allowance`；金额额度可覆盖一部分，其余部分按超额策略处理。
-3. 否则使用 `cash_only`。
+1. 有可调用 Subscription 时，验证 Plan Version、Model Entitlement、Gateway scope 与当前个人周期。
+2. 计算 `available = granted_tokens + bonus_granted_tokens - reserved_tokens - consumed_tokens`。
+3. `available >= estimated_tokens` 时原子预留完整估算 Token；Provider 返回可靠 Usage 后 capture 实际 Token 并 release 差额。
+4. 不足时返回 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`，包含 `available_tokens/required_tokens/period_end`，不调用 Provider、不预留现金。
 
-Token 额度不足以覆盖整个预估请求时，不会局部消耗该 Token 额度；系统会继续尝试金额额度或现金路径。
+`estimated_tokens` 是请求输入估算加允许的最大输出，因此可能高于最终实际 Usage。这是防止超发的预授权规则；运营若决定承担本周期额外 Provider 成本，应使用明确的补发动作，调高每日/每月限流不会增加订阅额度。
 
-### 6.5 超额策略
+### 6.5 402 与 429 的配置边界
 
-- `deny`：只要预估仍需要现金覆盖，就返回 `402 SUBSCRIPTION_ALLOWANCE_EXHAUSTED`。
-- `cash_balance`：订阅额度覆盖一部分后，对剩余预估金额执行账户余额预授权；余额不足则返回 `402 INSUFFICIENT_BALANCE`。
-- 没有任何订阅记录的用户进入现有 cash-only 兼容路径。
-- 已存在但 paused、cancelled、expired 等不可调用订阅不会回退到 cash-only，而是返回对应 403。
-- Gateway 当前只解析该用户按创建时间排序的最新一条订阅；不会跳过最新的不可调用订阅去寻找更早订阅。
+- 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`：当前周期订阅 Token 不足。唯一额度写入口是“订阅 → 用户订阅 → 管理 → 补发本周期 Token”；限流页用户行提供携带邮箱的直达导航，但不会在限流资源上写额度。也可等待个人周期重置或安排下周期版本。
+- 429：RPM、每日 Token 或月度安全窗口达到阈值。唯一配置入口是“Gateway → 限流策略”；这些字段不是免费 Token 发放。
+- 现金余额为正不会解除 402；补发 Token 也不会抬高 429 限流窗口。
+- paused、cancelled、expired 等不可调用订阅返回对应 403，不回退现金路径。
 
 ## 7. 结算与账本模块
 
@@ -237,23 +227,21 @@ Token 额度不足以覆盖整个预估请求时，不会局部消耗该 Token �
 
 获得可靠最终 Usage 后，系统在事务中：
 
-1. 使用请求创建时的价格快照计算 Provider 成本与用户费用。
-2. 将已预留的订阅额度转为 consumed。
-3. 从现金预授权中 capture 实际现金收费。
-4. release 未使用的现金预授权。
+1. 使用请求创建时的价格快照计算 Provider 成本；订阅 Token 覆盖请求的用户现金收费固定为 0。
+2. 将已预留的订阅 Token 按可靠实际 Usage 转为 consumed。
+3. release 预留与实际 Usage 的 Token 差额。
+4. 只有显式独立 cash-only 请求才 capture/release 现金预授权。
 5. 将日/月 Token 计数从预估值修正为实际值。
 6. 写回四类 Token、Provider cost、charged、状态、延迟和上游 request ID。
-7. 写入幂等、只追加 Ledger。
+7. 写入幂等、只追加的 Token Ledger；现金 Ledger 仅属于独立现金路径。
 
-常见 Ledger 类型包括 `credit`、`reserve`、`capture`、`release`、`allowance_capture` 和 `subscription_charge`。账本记录变更前后可用／预留余额；不通过更新或删除历史条目纠错。
-
-如果实际现金收费超过预授权，额外差额仍会被记为账户扣款。账户可能变成负余额；出现 overdraft 时，活跃平台用户会被置为 `suspended`，从而阻止后续 Gateway 调用。
+Token Ledger 的新请求类型为 `reserve/capture/release`，保存请求内 sequence 和 available/reserved/consumed 前后快照；补发记录单独保存在 `subscription_token_grants`。历史金额 Ledger 保留，不把旧 `allowance_capture/subscription_charge` 继续写入新 Token-only 订阅请求。
 
 ### 7.2 Usage 不可靠或缺失
 
 - 流或非流响应缺少可靠 Usage 时，不会把 Usage 猜成 0。
 - Request 标记为 `settlement_failed`，保留错误和当前预授权，供人工调查或未来恢复实现处理；本文不假定已有自动恢复 worker。
-- 当前实现不会在该路径自动释放现金预授权、订阅预留或已占用的预估 Token 计数。
+- 当前实现不会把缺失 Usage 猜成零结算；预留保持为失败事实，交由明确的 settlement/reconciliation 路径处理。
 - 已确认“没有产生计费”的 Provider 拒绝错误会使用零 Usage 正常结算并释放预授权；当前明确包含上游限流、请求拒绝和凭据拒绝。
 - 已经获得部分或最终可计费 Usage 的失败／取消请求，会按已知 Usage 结算，而不是免费处理。
 
@@ -263,10 +251,9 @@ Token 额度不足以覆盖整个预估请求时，不会局部消耗该 Token �
 |---|---|---|---|
 | 401 | `GATEWAY_API_KEY_REQUIRED` / `GATEWAY_API_KEY_INVALID` | Gateway Key 缺失、无效、过期或已撤销 | 否 |
 | 402 | `INSUFFICIENT_BALANCE` | 需要现金预授权，但可用余额不足 | 否 |
-| 402 | `SUBSCRIPTION_ALLOWANCE_EXHAUSTED` | 订阅额度无法覆盖预估请求，且 overage 为 deny | 否 |
-| 402 | `SUBSCRIPTION_BALANCE_INSUFFICIENT` | 激活／续订／升级的基础订阅费余额不足 | 不适用 |
+| 402 | `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED` | 当前个人周期 Plan + Bonus Token 无法覆盖完整预估请求 | 否 |
 | 403 | `SUBSCRIPTION_*` / `MODEL_PERMISSION_DENIED` | 订阅状态、模型权益、scope 或模型授权不允许调用 | 否 |
-| 409 | `SUBSCRIPTION_ALLOWANCE_NOT_READY` / `SUBSCRIPTION_ALLOWANCE_CONFLICT` | 周期额度未建立或并发预留冲突 | 否 |
+| 409 | `SUBSCRIPTION_ALLOWANCE_NOT_READY` / `SUBSCRIPTION_ALLOWANCE_VERSION_CONFLICT` | 周期额度未建立，或补发/预留时额度已并发变化 | 否 |
 | 429 | `DAILY_TOKEN_LIMIT_EXCEEDED` / `MONTHLY_TOKEN_LIMIT_EXCEEDED` / `REQUEST_RATE_LIMIT_EXCEEDED` | 已配置的 Token/RPM 窗口不足以容纳本次预估请求 | 否 |
 | 502 | `UPSTREAM_USAGE_MISSING` | Provider 响应或流结束，但没有可靠最终 Usage | 是，Request 保持 settlement_failed |
 | 503 | `MODEL_PRICING_UNAVAILABLE` / `BILLING_SETTLEMENT_UNAVAILABLE` | 定价配置缺失或结算不可用 | 视阶段而定 |
@@ -282,9 +269,10 @@ Token 额度不足以覆盖整个预估请求时，不会局部消耗该 Token �
 | 模型价格版本 | `/admin/models/pricing` | 创建／结束版本化四类 Token 价格 |
 | 用户默认 Token 上限 | `/admin/gateway/rate-limits` | 查看并进入用户默认 daily/monthly Token 上限；实时计数只读 |
 | 用户—模型 Token 覆盖 | `/admin/gateway/rate-limits#user-model-permissions-manager` | 用户—模型例外禁用和 daily/monthly Token 收紧；RPM 字段不开放 |
-| 套餐与版本 | `/admin/subscriptions/plans`、`/admin/subscriptions/versions` | 管理 base price、周期额度与 overage policy |
+| 套餐与版本 | `/admin/subscriptions/plans`、`/admin/subscriptions/versions` | 管理月费快照与每周期 Plan Token；不配置 money allowance/cash overage |
 | 套餐模型权益 | `/admin/subscriptions/entitlements` | 配置 scope、daily/monthly Token 与 Storage 上限；RPM 字段不开放 |
-| 用户订阅生命周期 | `/admin/subscriptions/users` | 激活、renew、upgrade、downgrade、pause、resume、cancel |
+| 用户订阅生命周期与补发 | `/admin/subscriptions/users` | 生命周期动作；有 `subscriptions.grant` 时可补发当前周期 Bonus Token |
+| Token 流水 | `/admin/subscriptions/token-ledger` | 查看不可变补发记录及 Gateway reserve/capture/release 流水 |
 | 账户余额 | `/admin/billing/accounts` | 查看 available/reserved/lifetime debited；受控调账写 Ledger |
 | 使用与费用 | `/admin/billing/usage` | 查看 Request、Usage、Provider 成本与用户收费 |
 | 不可变账本 | `/admin/billing/ledger` | 查询 reserve/capture/release/allowance/subscription 链路 |
@@ -294,10 +282,10 @@ Token 额度不足以覆盖整个预估请求时，不会局部消耗该 Token �
 
 为避免运营、开发和客服把讨论方案误认为线上事实，当前系统**没有**以下行为：
 
-- 余额为 0 时由平台承担 Provider 成本。
+- 基于余额为 0/正数自动发放免费 Token 的条件策略。
 - 每日免费 10,000 Token 或其他平台赞助日额度。
 - 余额达到“10 元”或“10 美元”后自动解锁免费 Token。
-- 免费日额度与订阅额度叠加。
+- 自动的每日免费额度与订阅额度叠加；当前只有明确的本周期人工 Bonus grant。
 - 达到免费额度后专门返回一类“赞助额度 429”。
 - 新用户自动充值或自动发 Gateway Key。
 - 通过修改实时 `gateway_rate_limits` 计数解除限流。

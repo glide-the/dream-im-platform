@@ -7,7 +7,7 @@ export type AdminListQuery = {
   order: "asc" | "desc";
   filters: Array<{
     field: string;
-    operator: "eq" | "contains" | "in";
+    operator: "eq" | "contains" | "in" | "gte" | "lte";
     value: string;
   }>;
 };
@@ -56,7 +56,7 @@ export function parseAdminListQuery(
   const filters: AdminListQuery["filters"] = [];
   for (const [key, value] of params.entries()) {
     if (["page", "pageSize", "sort", "order"].includes(key)) continue;
-    const match = /^filter\[([^\]]+)]\[(eq|contains|in)]$/.exec(key);
+    const match = /^filter\[([^\]]+)]\[(eq|contains|in|gte|lte)]$/.exec(key);
     if (!match || !config.filterFields.includes(match[1])) {
       throw new AdminError(
         "ADMIN_FILTER_INVALID",
@@ -64,9 +64,19 @@ export function parseAdminListQuery(
         400,
       );
     }
+    if (
+      (match[2] === "gte" || match[2] === "lte") &&
+      Number.isNaN(Date.parse(value))
+    ) {
+      throw new AdminError(
+        "ADMIN_FILTER_INVALID",
+        `Filter ${match[1]} must be a valid date-time`,
+        400,
+      );
+    }
     filters.push({
       field: match[1],
-      operator: match[2] as "eq" | "contains" | "in",
+      operator: match[2] as "eq" | "contains" | "in" | "gte" | "lte",
       value,
     });
   }
@@ -100,6 +110,12 @@ export function buildAdminListClauses(
       const values = filter.value.split(",").filter(Boolean).slice(0, 50);
       where.push(`${column} = ANY(${parameter}::text[])`);
       parameters.push(values);
+    } else if (filter.operator === "gte") {
+      where.push(`${column} >= ${parameter}`);
+      parameters.push(filter.value);
+    } else if (filter.operator === "lte") {
+      where.push(`${column} <= ${parameter}`);
+      parameters.push(filter.value);
     } else {
       where.push(`${column} = ${parameter}`);
       parameters.push(filter.value);

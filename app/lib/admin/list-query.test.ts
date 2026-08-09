@@ -7,7 +7,7 @@ import {
 
 const config = {
   sortFields: ["created_at", "email"],
-  filterFields: ["status", "email"],
+  filterFields: ["status", "email", "created_at"],
   defaultSort: "created_at",
 };
 
@@ -40,5 +40,31 @@ describe("admin list query", () => {
         config,
       ),
     ).toThrowError(AdminError);
+  });
+
+  it("builds a parameterized inclusive date range for data and count queries", () => {
+    const query = parseAdminListQuery(
+      new Request(
+        "http://localhost/api/admin/users?filter[created_at][gte]=2026-08-01T00%3A00%3A00.000Z&filter[created_at][lte]=2026-08-31T23%3A59%3A59.000Z",
+      ),
+      config,
+    );
+    const clauses = buildAdminListClauses(query, {
+      columns: {
+        created_at: "u.created_at",
+        email: "u.email",
+        status: "u.status",
+      },
+    });
+
+    expect(clauses.whereSql).toBe(
+      "WHERE u.created_at >= $1 AND u.created_at <= $2",
+    );
+    expect(clauses.parameters).toEqual([
+      "2026-08-01T00:00:00.000Z",
+      "2026-08-31T23:59:59.000Z",
+      20,
+      0,
+    ]);
   });
 });

@@ -14,7 +14,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function canonicalResource(resource: string) {
-  return resource === "roles"
+  return resource === "stories"
+    ? "story-stories"
+    : resource === "roles"
     ? "admin-roles"
     : resource === "permissions"
       ? "admin-permissions"

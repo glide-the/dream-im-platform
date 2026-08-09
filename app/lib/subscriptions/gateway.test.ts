@@ -24,6 +24,7 @@ const baseRow = {
   monthly_token_limit: 1_000_000,
   allowance_id: "allow_1",
   granted_tokens: 100_000,
+  bonus_granted_tokens: 0,
   reserved_tokens: 1_000,
   consumed_tokens: 20_000,
 };
@@ -136,6 +137,32 @@ describe("subscription Gateway eligibility", () => {
       availableTokens: 0,
       requiredTokens: 1_000,
       periodEnd: "2026-09-01T00:00:00.000Z",
+    });
+  });
+
+  it("includes audited bonus grants in the reservable current-period allowance", async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [{
+        ...baseRow,
+        granted_tokens: 1,
+        bonus_granted_tokens: 1_000,
+        reserved_tokens: 0,
+        consumed_tokens: 15,
+      }],
+    });
+    const result = await resolveGatewaySubscriptionOnClient(
+      clientWith(query),
+      {
+        platformUserId: "user_1",
+        modelId: "model_1",
+        requiredScope: "messages:create",
+        estimatedTokens: 100,
+        at: new Date("2026-08-08T00:00:00.000Z"),
+      },
+    );
+    expect(result).toMatchObject({
+      coverageMode: "token_allowance",
+      allowanceReservedTokens: 100,
     });
   });
 

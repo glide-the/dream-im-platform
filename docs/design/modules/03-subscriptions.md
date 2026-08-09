@@ -79,7 +79,7 @@ Token 周期总额度只在 Version 配置，避免与 Entitlement 的安全限�
 1. 用户、状态与合法动作。
 2. 当前 Plan/Version 快照与固定“每月”。
 3. 个人周期 `[currentPeriodStart, currentPeriodEnd)` 与 cycle anchor（周期锚点，不是金额结算锚点）。
-4. 当前 Token：granted、reserved、consumed、remaining 与消耗进度；四项使用等宽 tabular nums 和明确 `tokens` 单位。
+4. 当前 Token：套餐 Token、补发 Token、可用总额、reserved、consumed、remaining 与消耗进度；数值使用等宽 tabular nums 和明确 `tokens` 单位。
 5. 有效 model/scope/RPM/Storage Entitlement。
 6. pending next version / cancel-at-period-end 与准确生效边界。
 7. recent Token Usage 与 append-only Subscription Events。
@@ -87,6 +87,8 @@ Token 周期总额度只在 Version 配置，避免与 Entitlement 的安全限�
 详情不嵌入 cash account、金额 Ledger、预计金额超额或 Payment。需要排查独立 Provider 成本/现金账务的管理员可按 permission 跳转 Billing 模块，但文案必须为“独立账务”，不能称为订阅余额。
 
 `/admin/subscriptions/token-ledger` 是 `subscriptions.read` 控制的只读审计页，按 Gateway Request 展示 `request_sequence`、reserve/capture/release、Token amount 和 available/reserved/consumed 前后快照。页面不得提供新增、编辑、删除、退款成功或支付状态控件，也不得把 Token 流水称为账单金额。
+
+当前周期免费 Token 的写入口固定为“订阅 → 用户订阅 → 管理 → 补发本周期 Token”，不得写在“Gateway → 限流策略”的资源或表单中。限流页可以提供用户行级“处理 402／补发 Token”导航：URL 携带邮箱和 `intent=grant`，目标订阅列表自动按邮箱筛选；点击“管理”后，有 `subscriptions.grant` 权限时默认选中补发动作。只有 `subscriptions.grant` 可看到并提交该动作。确认 Modal 必须显示当前剩余、补发正整数数量、明确原因，并说明“立即参与 Gateway 预授权、只对当前周期有效、不修改 429 安全限流、下周期不重复发放”。提交后刷新套餐 Token/补发 Token/可用总额，成功回执可跳转 Token 流水中的不可变补发记录。
 
 ## 4. 生命周期与影响确认
 
@@ -96,6 +98,7 @@ flowchart LR
   Current --> Upgrade["升级：排队到下一周期"]
   Current --> Downgrade["降级：排队到下一周期"]
   Current --> Pause["暂停：周期不移动"] --> Resume["恢复：不补发 Token"]
+  Current --> Grant["补发：只增加本周期 Bonus Token"]
   Current --> Cancel["期末取消"] --> Revoke["撤销取消：不续期、不补发"]
   Current --> Boundary["个人周期边界"] --> Next["应用 pending 版本并发放一次 Token"]
 ```
@@ -105,6 +108,7 @@ flowchart LR
 - 升级和降级都显示“将在 YYYY-MM-DD HH:mm（含时区）下一周期生效”；不得出现“立即升级”、proration、退款或价格差。
 - 续期由周期边界推进；运营手工重试只能在边界到达后执行。若已漏过多个边界，确认层说明“跳过已过期周期且不追溯补发 Token”，成功后定位到包含当前时刻的个人周期。提前操作禁用并说明剩余时间；服务端 409 时载入最新周期。
 - 暂停/恢复明确“不会改变本期结束时间或 Token”；期末取消明确“本期可继续使用”，撤销取消明确“不发放新额度”。
+- 补发 Token 使用独立危险能力提示和二次确认；数量、原因、Allowance version、幂等键缺一不可。409 时保留输入并要求刷新最新额度，权限不足时完全隐藏动作；普通 `subscriptions.write` 不能代替 `subscriptions.grant`。
 - 提交中禁用重复动作；同幂等结果复用原回执。409 保留 Modal、聚焦冲突摘要并提供“载入最新”，不盲写。
 
 ## 5. Token 额度不足与错误恢复

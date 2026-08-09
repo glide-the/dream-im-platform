@@ -5,6 +5,7 @@ import {
   planVersionCreateSchema,
   publishVersionSchema,
   subscriptionActionSchema,
+  subscriptionTokenGrantSchema,
 } from "./contracts";
 
 describe("subscription contracts", () => {
@@ -105,5 +106,27 @@ describe("subscription contracts", () => {
         expectedVersion: 0,
       }),
     ).toThrow();
+  });
+
+  it("requires a positive, idempotent and optimistic current-period Token grant", () => {
+    expect(
+      subscriptionTokenGrantSchema.parse({
+        amountTokens: 100_000,
+        idempotencyKey: "grant:user-1:2026-08",
+        reason: "Support recovery grant",
+        expectedAllowanceVersion: 3,
+      }),
+    ).toEqual({
+      amountTokens: 100_000,
+      idempotencyKey: "grant:user-1:2026-08",
+      reason: "Support recovery grant",
+      expectedAllowanceVersion: 3,
+    });
+    expect(() => subscriptionTokenGrantSchema.parse({
+      amountTokens: 0,
+      idempotencyKey: "grant:user-1:2026-08",
+      reason: "Invalid zero grant",
+      expectedAllowanceVersion: 3,
+    })).toThrow();
   });
 });

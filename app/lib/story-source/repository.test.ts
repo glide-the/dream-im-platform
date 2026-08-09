@@ -31,6 +31,10 @@ describe("Story PostgreSQL repository", () => {
     expect(response.meta.total).toBe(1);
     expect(response.data[0]).toMatchObject({ id: "story-1" });
     expect(query.mock.calls[0][0]).toContain("story_workspace_stories AS s");
+    expect(query.mock.calls[0][0]).toContain("LEFT JOIN users AS u");
+    expect(query.mock.calls[0][0]).toContain("LEFT JOIN platform_users AS pu");
+    expect(query.mock.calls[0][0]).toContain("char_length(s.content)");
+    expect(query.mock.calls[0][0]).not.toContain("s.type, s.content,");
     expect(query.mock.calls[0][0]).not.toContain("story_projects");
     expect(query.mock.calls[0][1]).toEqual(["pending", 20, 0]);
   });
@@ -66,5 +70,33 @@ describe("Story PostgreSQL repository", () => {
     const error = storySourceError({ code: "42P01" });
     expect(error.status).toBe(503);
     expect(error.code).toBe("STORY_SOURCE_UNAVAILABLE");
+  });
+
+  it("supports status and updated range filters without changing count predicates", async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: "workspace-1", status: "active" }] })
+      .mockResolvedValueOnce({ rows: [{ total: "1" }] });
+
+    await queryStorySourceList(
+      new Request(
+        "http://localhost/api/admin/story-workspaces?filter[status][eq]=active&filter[updated_at][gte]=2026-08-01T00%3A00%3A00.000Z",
+      ),
+      "story-workspaces",
+    );
+
+    expect(query.mock.calls[0][0]).toContain("w.status = $1");
+    expect(query.mock.calls[0][0]).toContain("w.updated_at >= $2");
+    expect(query.mock.calls[1][0]).toContain("w.status = $1");
+    expect(query.mock.calls[1][0]).toContain("w.updated_at >= $2");
+    expect(query.mock.calls[0][1]).toEqual([
+      "active",
+      "2026-08-01T00:00:00.000Z",
+      20,
+      0,
+    ]);
+    expect(query.mock.calls[1][1]).toEqual([
+      "active",
+      "2026-08-01T00:00:00.000Z",
+    ]);
   });
 });

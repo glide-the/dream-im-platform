@@ -509,6 +509,80 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     });
     expect(auditor.status()).toBe(201);
 
+    const isolatedPool = new pg.Pool({
+      connectionString: process.env.TEST_DATABASE_URL,
+    });
+    const isolatedClient = await isolatedPool.connect();
+    try {
+      await isolatedClient.query("BEGIN");
+      await isolatedClient.query("SET LOCAL session_replication_role = replica");
+      await isolatedClient.query(
+        `INSERT INTO users (id, email, password_hash, display_name, role)
+         VALUES (103, 'no-billing-identity@example.test', 'fixture-password-hash-not-a-credential', '未绑定创作者', 'user')`,
+      );
+      await isolatedClient.query(
+        `INSERT INTO story_workspace_workspaces (id, name, owner_id, settings)
+         VALUES ('workspace-no-billing-e2e', 'E2E 无计费映射空间', 103, '{"language":"zh-CN"}'::jsonb)`,
+      );
+      await isolatedClient.query(
+        `INSERT INTO story_workspace_stories (
+           id, identifier, title, description, author_id, workspace_id,
+           character_count, scene_count, agent_generated
+         ) VALUES (
+           'story-no-billing-e2e', 'story-no-billing-e2e',
+           '无计费映射仍可见剧本', '只用于隔离 PostgreSQL 可见性验收',
+           103, 'workspace-no-billing-e2e', 0, 0, 0
+         )`,
+      );
+      await isolatedClient.query("COMMIT");
+    } catch (error) {
+      await isolatedClient.query("ROLLBACK");
+      throw error;
+    } finally {
+      isolatedClient.release();
+      await isolatedPool.end();
+    }
+
+    const workspaceVisibility = await api.get(
+      `${baseURL}/api/admin/story-workspaces?sort=updated_at&order=desc`,
+    );
+    expect(workspaceVisibility.status()).toBe(200);
+    const workspaceVisibilityBody = await workspaceVisibility.json();
+    expect(workspaceVisibilityBody.meta.total).toBe(3);
+    expect(workspaceVisibilityBody.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "workspace-no-billing-e2e",
+        owner_id: "103",
+        billing_identity_bound: false,
+        relation_health: "healthy",
+      }),
+    ]));
+    const storyVisibility = await api.get(
+      `${baseURL}/api/admin/story-stories?sort=updated_at&order=desc`,
+    );
+    expect(storyVisibility.status()).toBe(200);
+    const storyVisibilityBody = await storyVisibility.json();
+    expect(storyVisibilityBody.meta.total).toBe(3);
+    expect(storyVisibilityBody.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "story-no-billing-e2e",
+        author_id: "103",
+        billing_identity_bound: false,
+        relation_health: "healthy",
+      }),
+    ]));
+    expect(storyVisibilityBody.data.every((story: Record<string, unknown>) => !("content" in story))).toBe(true);
+    const countPool = new pg.Pool({
+      connectionString: process.env.TEST_DATABASE_URL,
+    });
+    const databaseCounts = await countPool.query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM story_workspace_workspaces) AS workspaces,
+         (SELECT COUNT(*)::int FROM story_workspace_stories) AS stories`,
+    );
+    await countPool.end();
+    expect(databaseCounts.rows[0]).toMatchObject({ workspaces: 3, stories: 3 });
+
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/admin/models/providers");
     await expect(page.getByRole("heading", { name: "Provider", exact: true })).toBeVisible();
@@ -604,18 +678,94 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
       page.locator("tbody tr").filter({ hasText: "model-e2e" }).filter({ hasText: "default · models.dev" }),
     ).toBeVisible();
 
+    const storyListRequests: string[] = [];
+    page.on("request", (browserRequest) => {
+      const url = new URL(browserRequest.url());
+      if (url.pathname.includes("/api/admin/story")) storyListRequests.push(url.pathname);
+    });
     await page.goto("/admin/story/stories");
     await expect(page.getByRole("heading", { name: "剧本", exact: true }).first()).toBeVisible();
+    await expect(page.getByText("无计费映射仍可见剧本", { exact: true })).toBeVisible();
+    await expect(page.getByText("未绑定计费身份", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("3 条记录", { exact: true })).toBeVisible();
+    expect(storyListRequests).toContain("/api/admin/story-stories");
+    expect(storyListRequests).not.toContain("/api/admin/stories");
+
+    await page.getByLabel("剧本标题").fill("不存在的剧本标题");
+    await page.getByRole("button", { name: "应用", exact: true }).click();
+    await expect(page).toHaveURL(/title=/);
+    await expect(page.locator('[data-state="filter-empty"]')).toBeVisible();
+    await expect(page.getByText("没有匹配当前筛选的记录", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "清除筛选", exact: true }).first().click();
+    await expect(page).not.toHaveURL(/title=/);
+    await page.reload();
+    await expect(page.getByText("无计费映射仍可见剧本", { exact: true })).toBeVisible();
+
+    await page.route("**/api/admin/story-stories?**", async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "STORY_SOURCE_UNAVAILABLE",
+            message: "The Story PostgreSQL source is unavailable",
+            requestId: "story-source-e2e",
+          },
+        }),
+      });
+    });
+    await page.reload();
+    await expect(page.locator('[data-state="error-503"]')).toBeVisible();
+    await expect(page.getByText("PostgreSQL 数据源不可用", { exact: true })).toBeVisible();
+    await expect(page.locator('[data-state="system-empty"]')).toHaveCount(0);
+    await expect(page.locator('[data-state="filter-empty"]')).toHaveCount(0);
+    await page.unroute("**/api/admin/story-stories?**");
+    await page.route("**/api/admin/story-stories?**", async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "STORY_SOURCE_ERROR",
+            message: "The Story service failed",
+            requestId: "story-source-500-e2e",
+          },
+        }),
+      });
+    });
+    await page.reload();
+    await expect(page.locator('[data-state="error-500"]')).toBeVisible();
+    await expect(page.getByText("Story 服务发生异常", { exact: true })).toBeVisible();
+    await expect(page.locator('[data-state="system-empty"]')).toHaveCount(0);
+    await page.unroute("**/api/admin/story-stories?**");
+    await page.reload();
+    await expect(page.getByText("无计费映射仍可见剧本", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-story-desktop-1440x1000.png"), fullPage: true });
 
     await page.goto("/admin/resources/users");
     await expect(page.getByRole("heading", { name: "平台用户", exact: true }).first()).toBeVisible();
+    const unboundUserRow = page.locator("tbody tr").filter({ hasText: "no-billing-identity@example.test" });
+    await expect(unboundUserRow).toBeVisible();
+    await unboundUserRow.getByRole("link", { name: "1", exact: true }).first().click();
+    await expect(page).toHaveURL(/\/admin\/story\/workspaces\?owner_id=103/);
+    await expect(page.getByText("E2E 无计费映射空间", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "清除筛选", exact: true }).click();
+    await expect(page).not.toHaveURL(/owner_id=/);
+    await page.goto("/admin/resources/users");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-users-desktop-1440x1000.png"), fullPage: true });
 
     await page.goto("/admin/story/workspaces");
     await expect(page.getByRole("heading", { name: "工作区", exact: true }).first()).toBeVisible();
+    await expect(page.getByText("E2E 无计费映射空间", { exact: true })).toBeVisible();
+    const unboundWorkspaceRow = page.locator("tbody tr").filter({ hasText: "E2E 无计费映射空间" });
+    await expect(unboundWorkspaceRow.getByText("未绑定计费身份", { exact: true })).toBeVisible();
+    await unboundWorkspaceRow.getByRole("link", { name: "1", exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/story\/stories\?workspace_id=workspace-no-billing-e2e/);
+    await expect(page.getByText("无计费映射仍可见剧本", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "清除筛选", exact: true }).click();
+    await page.goto("/admin/story/workspaces");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-workspaces-desktop-1440x1000.png"), fullPage: true });
 
@@ -657,6 +807,11 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     await expect(page.getByRole("heading", { name: "剧本", exact: true }).first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("admin-story-mobile-390x844.png") });
+
+    await page.goto("/admin/story/workspaces");
+    await expect(page.getByRole("heading", { name: "工作区", exact: true }).first()).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("admin-workspaces-mobile-390x844.png") });
 
     await page.goto("/admin/models/providers");
     await page.getByRole("link", { name: "添加 Provider" }).click();

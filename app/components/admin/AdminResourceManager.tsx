@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   type CrudFilter,
   useCan,
@@ -71,6 +71,16 @@ export type AdminFieldDefinition = {
   };
 };
 
+type AdminFilterDefinition = {
+  field: string;
+  apiField?: string;
+  label: string;
+  operator?: "eq" | "contains" | "gte" | "lte";
+  control?: "text" | "select" | "relation" | "datetime";
+  options?: Array<{ label: string; value: string }>;
+  relation?: NonNullable<AdminFieldDefinition["relation"]>;
+};
+
 export type AdminResourceManagerProps = {
   resource: string;
   title: string;
@@ -78,12 +88,7 @@ export type AdminResourceManagerProps = {
   columns: AdminTableColumn[];
   fields: AdminFieldDefinition[];
   sections?: Array<{ id: string; title: string; description?: string }>;
-  filters?: Array<{
-    field: string;
-    label: string;
-    operator?: "eq" | "contains";
-    options?: Array<{ label: string; value: string }>;
-  }>;
+  filters?: AdminFilterDefinition[];
   defaultSort?: string;
   pageSize?: number;
   container?: "modal" | "drawer" | "fullscreen";
@@ -111,6 +116,11 @@ export type AdminResourceManagerProps = {
       record: Record<string, unknown>,
       notes: string,
     ) => Record<string, unknown>;
+  }>;
+  rowActions?: Array<{
+    label: string;
+    href: (record: Record<string, unknown>) => string;
+    tone?: "default" | "danger" | "success";
   }>;
 };
 
@@ -402,6 +412,7 @@ function RelationSelect({
       />
       <select
         id={id}
+        aria-label={field.label}
         className="admin-field text-sm"
         value={value}
         onChange={(event) => {
@@ -646,13 +657,16 @@ function relatedCellHref(resource: string, key: string, row: Record<string, unkn
   if (resource === "users" && key === "story_count") {
     return `/admin/story/stories?author_id=${encodeURIComponent(String(row.id))}`;
   }
-  if (resource === "story-workspaces" && ["owner_id", "owner_email"].includes(key)) {
+  if (resource === "story-workspaces" && ["owner_id", "owner_email", "owner_label"].includes(key)) {
     return `/admin/resources/users?email=${encodeURIComponent(String(row.owner_email ?? ""))}`;
+  }
+  if (resource === "story-workspaces" && key === "story_count") {
+    return `/admin/story/stories?workspace_id=${encodeURIComponent(String(row.id ?? ""))}`;
   }
   if (["stories", "story-stories"].includes(resource) && ["workspace_id", "workspace_name"].includes(key)) {
     return `/admin/story/workspaces?name=${encodeURIComponent(String(row.workspace_name ?? ""))}`;
   }
-  if (["stories", "story-stories"].includes(resource) && ["author_id", "author_email"].includes(key)) {
+  if (["stories", "story-stories"].includes(resource) && ["author_id", "author_email", "author_label"].includes(key)) {
     return `/admin/resources/users?email=${encodeURIComponent(String(row.author_email ?? ""))}`;
   }
   return undefined;
@@ -666,8 +680,88 @@ function renderCell(value: unknown, format?: AdminTableColumn["format"]) {
     return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("zh-CN");
   }
   if (format === "boolean") return value ? "启用" : "停用";
+  if (format === "binding") return value ? "已绑定计费身份" : "未绑定计费身份";
   if (format === "json") return Array.isArray(value) ? value.join("、") : JSON.stringify(value);
   return String(value);
+}
+
+function CopyValue({ value, label }: { value: unknown; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const text = renderCell(value);
+  return (
+    <span className="flex min-w-[150px] items-center gap-2 font-mono text-[11px]">
+      <span className="block max-w-[220px] truncate" title={text}>{text}</span>
+      <button
+        type="button"
+        className="min-h-10 shrink-0 px-2 text-[10px] font-semibold underline"
+        aria-label={`复制${label}`}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(String(value ?? ""));
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1_500);
+          } catch {
+            setCopied(false);
+          }
+        }}
+      >
+        {copied ? "已复制" : "复制"}
+      </button>
+    </span>
+  );
+}
+
+type AdminListHttpError = Error & {
+  statusCode?: number;
+  code?: string;
+  requestId?: string;
+};
+
+export function adminListErrorPresentation(error: unknown) {
+  const candidate = error as AdminListHttpError;
+  const status = Number(candidate?.statusCode ?? 500);
+  const requestId = candidate?.requestId;
+  if (status === 400) return { title: "筛选或排序字段无效", action: "重置筛选", kind: "reset" as const, requestId };
+  if (status === 401) return { title: "登录状态已失效", action: "重新登录", kind: "login" as const, requestId };
+  if (status === 403) return { title: "无权读取 Story 数据", action: "返回管理首页", kind: "home" as const, requestId };
+  if (status === 404) return { title: "关联记录不存在", action: "返回列表", kind: "reset" as const, requestId };
+  if (status === 409) return { title: "关系或状态已经变化", action: "加载最新数据", kind: "retry" as const, requestId };
+  if (status === 503 || candidate?.code === "STORY_SOURCE_UNAVAILABLE") {
+    return { title: "PostgreSQL 数据源不可用", action: "重试连接", kind: "retry" as const, requestId };
+  }
+  return { title: "Story 服务发生异常", action: "重新加载", kind: "retry" as const, requestId };
+}
+
+function draftFiltersFromParams(
+  definitions: AdminFilterDefinition[],
+  params: URLSearchParams,
+) {
+  return Object.fromEntries(
+    definitions.flatMap((filter) => {
+      const value = params.get(filter.field)?.trim();
+      return value ? [[filter.field, value]] : [];
+    }),
+  );
+}
+
+function crudFiltersFromDraft(
+  definitions: AdminFilterDefinition[],
+  draft: Record<string, string>,
+) {
+  return definitions.flatMap((filter) => {
+    const raw = draft[filter.field]?.trim();
+    if (!raw) return [];
+    const parsedDate = filter.control === "datetime" ? new Date(raw) : null;
+    const value =
+      parsedDate && !Number.isNaN(parsedDate.getTime())
+        ? parsedDate.toISOString()
+        : raw;
+    return [{
+      field: filter.apiField ?? filter.field,
+      operator: filter.operator ?? "contains",
+      value,
+    } as CrudFilter];
+  });
 }
 
 export default function AdminResourceManager(props: AdminResourceManagerProps) {
@@ -693,23 +787,30 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
     deleteLabel = "删除",
     versionedCreate = false,
     commands = [],
+    rowActions = [],
   } = props;
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const searchParamString = searchParams.toString();
+  const filterDefinitionsRef = useRef(filterDefinitions);
+  filterDefinitionsRef.current = filterDefinitions;
   const access = useCan({ resource, action: "create" });
   const invalidate = useInvalidate();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
-  const [page, setPage] = useState(1);
-  const [draftFilters, setDraftFilters] = useState<Record<string, string>>(() => Object.fromEntries(
-    filterDefinitions.flatMap((filter) => {
-      const value = searchParams.get(filter.field)?.trim();
-      return value ? [[filter.field, value]] : [];
-    }),
-  ));
-  const [appliedFilters, setAppliedFilters] = useState<CrudFilter[]>(() => filterDefinitions.flatMap((filter) => {
-    const value = searchParams.get(filter.field)?.trim();
-    return value ? [{ field: filter.field, operator: filter.operator ?? "contains", value } as CrudFilter] : [];
-  }));
+  const [page, setPage] = useState(() => {
+    const parsed = Number(searchParams.get("page") ?? 1);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
+  });
+  const [draftFilters, setDraftFilters] = useState<Record<string, string>>(() =>
+    draftFiltersFromParams(filterDefinitions, searchParams),
+  );
+  const [appliedFilters, setAppliedFilters] = useState<CrudFilter[]>(() =>
+    crudFiltersFromDraft(
+      filterDefinitions,
+      draftFiltersFromParams(filterDefinitions, searchParams),
+    ),
+  );
   const [mode, setMode] = useState<OverlayMode | null>(null);
   const [record, setRecord] = useState<Record<string, unknown> | null>(null);
   const [values, setValues] = useState<FormValues>(() => valuesFromRecord(fields, undefined, createDefaults, "create"));
@@ -723,6 +824,15 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
   const [oneTimeSecret, setOneTimeSecret] = useState("");
   const [oneTimeGatewayBaseUrl, setOneTimeGatewayBaseUrl] = useState("");
   useDialog(mode !== null, dialogRef);
+  useEffect(() => {
+    const params = new URLSearchParams(searchParamString);
+    const definitions = filterDefinitionsRef.current;
+    const nextDraft = draftFiltersFromParams(definitions, params);
+    const parsedPage = Number(params.get("page") ?? 1);
+    setDraftFilters(nextDraft);
+    setAppliedFilters(crudFiltersFromDraft(definitions, nextDraft));
+    setPage(Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1);
+  }, [searchParamString]);
   const { result, query } = useList<Record<string, unknown>>({
     resource,
     pagination: { currentPage: page, pageSize },
@@ -730,6 +840,9 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
     filters: appliedFilters,
   });
   const pages = Math.max(1, Math.ceil((result.total ?? 0) / pageSize));
+  const relationMismatch = result.data.some(
+    (row) => row.relation_health && row.relation_health !== "healthy",
+  );
   const dirty = mode === "create" || mode === "edit" ? JSON.stringify(values) !== JSON.stringify(initialValues) : false;
   const detailEntries = useMemo(() => record ? Object.entries(record).filter(([key]) => !sensitiveKeys.has(key)) : [], [record]);
 
@@ -804,13 +917,59 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
     openCreate(event, base);
   }
 
+  function replaceListLocation(
+    nextDraft: Record<string, string>,
+    nextPage = 1,
+  ) {
+    const params = new URLSearchParams();
+    for (const filter of filterDefinitionsRef.current) {
+      const value = nextDraft[filter.field]?.trim();
+      if (value) params.set(filter.field, value);
+    }
+    if (nextPage > 1) params.set("page", String(nextPage));
+    const queryString = params.toString();
+    router.replace(
+      `${window.location.pathname}${queryString ? `?${queryString}` : ""}`,
+      { scroll: false },
+    );
+  }
+
   function applyFilters(event: FormEvent) {
     event.preventDefault();
-    setAppliedFilters(filterDefinitions.flatMap((filter) => {
-      const value = draftFilters[filter.field]?.trim();
-      return value ? [{ field: filter.field, operator: filter.operator ?? "contains", value } as CrudFilter] : [];
-    }));
-    setPage(1);
+    replaceListLocation(draftFilters, 1);
+  }
+
+  function clearFilters() {
+    replaceListLocation({}, 1);
+  }
+
+  function changePage(nextPage: number) {
+    replaceListLocation(
+      draftFiltersFromParams(
+        filterDefinitionsRef.current,
+        new URLSearchParams(searchParamString),
+      ),
+      nextPage,
+    );
+  }
+
+  async function invalidateResourceGraph() {
+    const affected = new Set([resource]);
+    if (resource === "story-stories") {
+      affected.add("story-workspaces");
+      affected.add("users");
+    } else if (resource === "story-workspaces") {
+      affected.add("story-stories");
+      affected.add("users");
+    }
+    await Promise.all(
+      [...affected].map((affectedResource) =>
+        invalidate({
+          resource: affectedResource,
+          invalidates: ["list", "detail"],
+        }),
+      ),
+    );
   }
 
   async function submit(event: FormEvent) {
@@ -827,7 +986,7 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
       });
       const result = (await response.json().catch(() => ({}))) as ApiResult;
       if (!response.ok) throw new Error(result.error?.message ?? `操作失败（HTTP ${response.status}）`);
-      await invalidate({ resource, invalidates: ["list", "detail"] });
+      await invalidateResourceGraph();
       setSuccess(`${mode === "create" ? submitCreateLabel : submitUpdateLabel}成功：${String(result.data?.id ?? record?.id ?? "")}`);
       if (mode === "create" && result.data?.plaintextKey) {
         setRecord(result.data);
@@ -852,7 +1011,7 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
       const response = await fetch(`/api/admin/${resource}/${encodeURIComponent(String(record.id))}`, { method: "DELETE", headers: { accept: "application/json" } });
       const result = (await response.json().catch(() => ({}))) as ApiResult;
       if (!response.ok) throw new Error(result.error?.message ?? `${deleteLabel}失败（HTTP ${response.status}）`);
-      await invalidate({ resource, invalidates: ["list", "detail"] });
+      await invalidateResourceGraph();
       setSuccess(`${deleteLabel}成功：${String(record.id)}`);
       close(true);
     } catch (deleteError) {
@@ -891,7 +1050,7 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
           result.error?.message ?? `${activeCommand.label}失败（HTTP ${response.status}）`,
         );
       }
-      await invalidate({ resource, invalidates: ["list", "detail"] });
+      await invalidateResourceGraph();
       setSuccess(`${activeCommand.label}成功：${String(record.id)}`);
       close(true);
     } catch (commandError) {
@@ -906,28 +1065,111 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
   }
 
   const formMode = mode === "create" ? "create" : "edit";
+  const listError = query.error
+    ? adminListErrorPresentation(query.error)
+    : null;
   return (
     <section id={`${resource}-manager`} className="admin-panel min-w-0 scroll-mt-6 overflow-hidden">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-border px-4 py-5 sm:px-5">
         <div className="max-w-3xl"><h2 className="font-display text-xl font-semibold">{title}</h2><p className="mt-1 text-sm leading-6 text-text-secondary">{description}</p></div>
         <div className="flex items-center gap-3">
-          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary" aria-live="polite">{query.isFetching ? "正在同步" : `${result.total ?? 0} 条记录`}</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary" aria-live="polite">
+            {query.isLoading
+              ? "读取中"
+              : query.error
+                ? "计数不可用"
+                : query.isFetching
+                  ? `正在同步 · ${result.total ?? 0} 条`
+                  : `${result.total ?? 0} 条记录`}
+          </span>
           {canCreate && access.data?.can ? <button type="button" onClick={openCreate} className="min-h-11 bg-text-primary px-4 text-sm font-semibold text-bg-surface">{createLabel}</button> : null}
         </div>
       </header>
-      {filterDefinitions.length ? <form onSubmit={applyFilters} className="grid gap-3 border-b border-border bg-bg-secondary/45 p-4 sm:grid-cols-2 xl:grid-cols-[repeat(3,minmax(150px,1fr))_auto]">{filterDefinitions.map((filter) => <label key={filter.field} className="text-xs font-semibold text-text-secondary">{filter.label}{filter.options ? <select className="admin-field mt-1 text-sm" value={draftFilters[filter.field] ?? ""} onChange={(event) => setDraftFilters((current) => ({ ...current, [filter.field]: event.target.value }))}><option value="">全部</option>{filter.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : <input className="admin-field mt-1 text-sm" value={draftFilters[filter.field] ?? ""} onChange={(event) => setDraftFilters((current) => ({ ...current, [filter.field]: event.target.value }))} placeholder={`筛选${filter.label}`} />}</label>)}<div className="flex items-end gap-2"><button className="min-h-11 bg-text-primary px-4 text-sm font-semibold text-bg-surface">应用</button><button type="button" onClick={() => { setDraftFilters({}); setAppliedFilters([]); setPage(1); }} className="min-h-11 border border-border bg-bg-surface px-4 text-sm">清除</button></div></form> : null}
-      {query.error ? <div className="m-4 border border-danger/35 bg-danger-light p-4 text-sm text-danger" role="alert"><p className="font-semibold">数据暂时不可用</p><p className="mt-1">{query.error.message}</p><button type="button" onClick={() => query.refetch()} className="mt-3 min-h-10 underline">重新加载</button></div> : null}
+      {filterDefinitions.length ? (
+        <form onSubmit={applyFilters} className="grid gap-3 border-b border-border bg-bg-secondary/45 p-4 sm:grid-cols-2 xl:grid-cols-[repeat(3,minmax(180px,1fr))]">
+          {filterDefinitions.map((filter) =>
+            filter.control === "relation" && filter.relation ? (
+              <div key={filter.field} className="text-xs font-semibold text-text-secondary">
+                <span>{filter.label}</span>
+                <RelationSelect
+                  id={`${resource}-filter-${filter.field}`}
+                  field={{
+                    key: filter.field,
+                    label: filter.label,
+                    control: "relation",
+                    relation: filter.relation,
+                  }}
+                  value={draftFilters[filter.field] ?? ""}
+                  onChange={(value) => setDraftFilters((current) => ({ ...current, [filter.field]: value }))}
+                />
+              </div>
+            ) : (
+              <label key={filter.field} className="text-xs font-semibold text-text-secondary">
+                {filter.label}
+                {filter.options || filter.control === "select" ? (
+                  <select className="admin-field mt-1 text-sm" value={draftFilters[filter.field] ?? ""} onChange={(event) => setDraftFilters((current) => ({ ...current, [filter.field]: event.target.value }))}>
+                    <option value="">全部</option>
+                    {(filter.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    className="admin-field mt-1 text-sm"
+                    type={filter.control === "datetime" ? "datetime-local" : "text"}
+                    value={draftFilters[filter.field] ?? ""}
+                    onChange={(event) => setDraftFilters((current) => ({ ...current, [filter.field]: event.target.value }))}
+                    placeholder={`筛选${filter.label}`}
+                  />
+                )}
+              </label>
+            ),
+          )}
+          <div className="flex items-end gap-2">
+            <button className="min-h-11 bg-text-primary px-4 text-sm font-semibold text-bg-surface">应用</button>
+            <button type="button" onClick={clearFilters} className="min-h-11 border border-border bg-bg-surface px-4 text-sm">清除筛选</button>
+          </div>
+        </form>
+      ) : null}
+      {listError ? (
+        <div className="m-4 border border-danger/35 bg-danger-light p-4 text-sm text-danger" role="alert" data-state={`error-${(query.error as AdminListHttpError).statusCode ?? 500}`}>
+          <p className="font-semibold">{listError.title}</p>
+          <p className="mt-1">{query.error?.message}</p>
+          {listError.requestId ? <p className="mt-2 font-mono text-[11px]">Request ID: {listError.requestId}</p> : null}
+          <button
+            type="button"
+            onClick={() => {
+              if (listError.kind === "reset") clearFilters();
+              else if (listError.kind === "login") window.location.assign(`/admin/login?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+              else if (listError.kind === "home") window.location.assign("/admin");
+              else void query.refetch();
+            }}
+            className="mt-3 min-h-10 underline"
+          >
+            {listError.action}
+          </button>
+        </div>
+      ) : null}
+      {relationMismatch && !query.error ? (
+        <div className="m-4 border border-warning/40 bg-accent-orange-light p-4 text-sm text-text-primary" role="status" data-state="relation-mismatch">
+          <p className="font-semibold">数据源关系不一致</p>
+          <p className="mt-1 text-text-secondary">主记录已保留显示；缺失的 User 或 Workspace 关系会在详情中标注，请勿把它当作普通空数据。</p>
+        </div>
+      ) : null}
       {success ? <p className="m-4 border border-success/35 bg-success-light p-3 text-sm text-success" role="status">{success}</p> : null}
       <div className="max-w-full overflow-x-auto" tabIndex={0} aria-label={`${title}数据表，可横向滚动`}>
         <table className="min-w-full border-collapse text-left text-sm"><caption className="sr-only">{title}；{description}</caption><thead><tr className="border-b border-border bg-bg-secondary/45">{columns.map((column) => <th key={column.key} scope="col" className="whitespace-nowrap px-4 py-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">{column.label}</th>)}<th scope="col" className="whitespace-nowrap px-4 py-3 text-right font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">操作</th></tr></thead>
-          <tbody>{query.isLoading ? Array.from({ length: 5 }).map((_, index) => <tr key={index} className="border-b border-border" aria-hidden="true"><td colSpan={columns.length + 1} className="px-4 py-4"><span className="block h-4 max-w-3xl animate-pulse bg-bg-secondary" /></td></tr>) : null}{result.data.map((row, index) => <tr key={String(row.id ?? index)} className="border-b border-border last:border-0 hover:bg-bg-secondary/35">{columns.map((column) => {
-            const content = <span className={column.format === "status" ? `inline-flex whitespace-nowrap border px-2 py-1 text-xs font-semibold ${statusClass(row[column.key])}` : "block truncate"} title={renderCell(row[column.key], column.format)}>{renderCell(row[column.key], column.format)}</span>;
-            const href = relatedCellHref(resource, column.key, row);
+          <tbody aria-busy={query.isLoading}>{query.isLoading ? Array.from({ length: 5 }).map((_, index) => <tr key={index} className="border-b border-border" aria-hidden="true"><td colSpan={columns.length + 1} className="px-4 py-4"><span className="block h-4 max-w-3xl animate-pulse bg-bg-secondary" /></td></tr>) : null}{!query.error ? result.data.map((row, index) => <tr key={String(row.id ?? index)} className="border-b border-border last:border-0 hover:bg-bg-secondary/35">{columns.map((column) => {
+            const isTag = column.format === "status" || column.format === "binding";
+            const content = column.format === "copy"
+              ? <CopyValue value={row[column.key]} label={column.label} />
+              : <span className={isTag ? `inline-flex whitespace-nowrap border px-2 py-1 text-xs font-semibold ${statusClass(column.format === "binding" ? (row[column.key] ? "active" : "pending") : row[column.key])}` : "block truncate"} title={renderCell(row[column.key], column.format)}>{renderCell(row[column.key], column.format)}</span>;
+            const href = column.format === "copy"
+              ? undefined
+              : relatedCellHref(resource, column.key, row);
             return <td key={column.key} className={`max-w-[300px] px-4 py-3.5 text-text-secondary ${column.key === "id" ? "font-mono text-[11px]" : ""}`}>{href ? <Link href={href} className="underline decoration-border hover:text-text-primary">{content}</Link> : content}</td>;
-          })}<td className="whitespace-nowrap px-4 py-3 text-right"><button type="button" onClick={(event) => loadRecord(String(row.id), "detail", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold underline">查看</button>{canEdit && access.data?.can ? <button type="button" onClick={(event) => loadRecord(String(row.id), "edit", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold underline">{versionedCreate ? "关闭/停用" : "编辑"}</button> : null}{versionedCreate && access.data?.can ? <button type="button" onClick={(event) => openVersion(event, row)} className="min-h-10 px-2 text-xs font-semibold underline">创建新版本</button> : null}{commands.map((command) => <button key={command.action} type="button" onClick={(event) => openCommand(event, row, command)} className={`min-h-10 px-2 text-xs font-semibold underline ${command.tone === "danger" ? "text-danger" : command.tone === "success" ? "text-success" : ""}`}>{command.label}</button>)}{canDelete && access.data?.can ? <button type="button" onClick={(event) => loadRecord(String(row.id), "delete", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold text-danger underline">{deleteLabel}</button> : null}</td></tr>)}{!query.isLoading && !query.error && result.data.length === 0 ? <tr><td colSpan={columns.length + 1} className="px-5 py-14 text-center"><p className="font-display text-lg font-semibold">暂无匹配记录</p><p className="mt-2 text-sm text-text-tertiary">保留当前筛选；可清除筛选或等待真实数据产生。</p></td></tr> : null}</tbody>
+          })}<td className="whitespace-nowrap px-4 py-3 text-right"><button type="button" onClick={(event) => loadRecord(String(row.id), "detail", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold underline">查看</button>{canEdit && access.data?.can ? <button type="button" onClick={(event) => loadRecord(String(row.id), "edit", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold underline">{versionedCreate ? "关闭/停用" : "编辑"}</button> : null}{versionedCreate && access.data?.can ? <button type="button" onClick={(event) => openVersion(event, row)} className="min-h-10 px-2 text-xs font-semibold underline">创建新版本</button> : null}{commands.map((command) => <button key={command.action} type="button" onClick={(event) => openCommand(event, row, command)} className={`min-h-10 px-2 text-xs font-semibold underline ${command.tone === "danger" ? "text-danger" : command.tone === "success" ? "text-success" : ""}`}>{command.label}</button>)}{rowActions.map((rowAction) => <a key={rowAction.label} href={rowAction.href(row)} className={`inline-flex min-h-10 items-center px-2 text-xs font-semibold underline ${rowAction.tone === "danger" ? "text-danger" : rowAction.tone === "success" ? "text-success" : ""}`}>{rowAction.label}</a>)}{canDelete && access.data?.can ? <button type="button" onClick={(event) => loadRecord(String(row.id), "delete", event.currentTarget)} className="min-h-10 px-2 text-xs font-semibold text-danger underline">{deleteLabel}</button> : null}</td></tr>) : null}{!query.isLoading && !query.error && result.data.length === 0 ? <tr data-state={appliedFilters.length ? "filter-empty" : "system-empty"}><td colSpan={columns.length + 1} className="px-5 py-14 text-center"><p className="font-display text-lg font-semibold">{appliedFilters.length ? "没有匹配当前筛选的记录" : `尚无真实${title}数据`}</p><p className="mt-2 text-sm text-text-tertiary">{appliedFilters.length ? "当前 URL 筛选没有结果；清除后将恢复完整列表。" : "数据库查询成功，但当前结果确实为零。"}</p>{appliedFilters.length ? <button type="button" onClick={clearFilters} className="mt-4 min-h-10 underline">清除筛选</button> : null}</td></tr> : null}</tbody>
         </table>
       </div>
-      <footer className="flex items-center justify-between border-t border-border px-4 py-4"><button type="button" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="min-h-10 border border-border px-4 text-xs font-semibold disabled:opacity-40">上一页</button><span className="font-mono text-[10px] text-text-tertiary">第 {page} / {pages} 页</span><button type="button" disabled={page >= pages} onClick={() => setPage((current) => Math.min(pages, current + 1))} className="min-h-10 border border-border px-4 text-xs font-semibold disabled:opacity-40">下一页</button></footer>
+      {!query.error ? <footer className="flex items-center justify-between border-t border-border px-4 py-4"><button type="button" disabled={page <= 1} onClick={() => changePage(Math.max(1, page - 1))} className="min-h-10 border border-border px-4 text-xs font-semibold disabled:opacity-40">上一页</button><span className="font-mono text-[10px] text-text-tertiary">第 {page} / {pages} 页 · 共 {result.total ?? 0} 条</span><button type="button" disabled={page >= pages} onClick={() => changePage(Math.min(pages, page + 1))} className="min-h-10 border border-border px-4 text-xs font-semibold disabled:opacity-40">下一页</button></footer> : null}
       {mode ? <dialog ref={dialogRef} className={`admin-dialog admin-dialog--${mode === "detail" ? "drawer" : container}`} onCancel={(event) => { event.preventDefault(); close(); }} aria-labelledby={`${resource}-overlay-title`}><div className="admin-dialog-frame"><header className="admin-dialog-header"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">{mode === "detail" ? "Record detail" : mode === "create" ? "Create resource" : mode === "edit" ? "Edit resource" : "High-risk action"}</p><h2 id={`${resource}-overlay-title`} className="mt-2 font-display text-2xl font-semibold">{mode === "create" ? createLabel : mode === "delete" ? deleteLabel : mode === "command" ? activeCommand?.label : title}</h2>{record?.id ? <p className="mt-2 break-all font-mono text-[11px] text-text-tertiary">{String(record.id)}</p> : null}</div><button type="button" onClick={() => close()} className="min-h-11 border border-border px-4 text-sm">关闭</button></header><div className="admin-dialog-body">{loadingRecord ? <div className="space-y-3" aria-label="正在加载记录"><span className="block h-5 w-2/3 animate-pulse bg-bg-secondary" /><span className="block h-32 animate-pulse bg-bg-secondary" /></div> : error ? <div className="border border-danger/35 bg-danger-light p-4 text-sm text-danger" role="alert"><p className="font-semibold">操作暂时无法继续</p><p className="mt-2">{error}</p></div> : mode === "detail" && record ? <div>{oneTimeSecret && oneTimeGatewayBaseUrl ? <GatewayKeyReceipt plaintextKey={oneTimeSecret} gatewayBaseUrl={oneTimeGatewayBaseUrl} /> : null}<dl className="divide-y divide-border">{detailEntries.filter(([key]) => !["plaintextKey", "gatewayBaseUrl"].includes(key)).map(([key, value]) => <div key={key} className="grid gap-2 py-4 sm:grid-cols-[170px_minmax(0,1fr)]"><dt className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">{key}</dt><dd className={`min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-text-secondary ${typeof value === "object" ? "font-mono text-xs" : ""}`}>{formatDetailValue(value)}</dd></div>)}</dl></div> : mode === "delete" && record ? <div className="space-y-4"><p className="border border-danger/35 bg-danger-light p-4 text-sm text-danger">{deleteLabel}会移除当前覆盖记录或自定义资源；外键和内置资源保护仍由服务器强制执行。</p><dl className="border-y border-border py-3 text-sm"><dt className="text-text-tertiary">目标</dt><dd className="mt-1 font-mono">{String(record.id)}</dd></dl></div> : mode === "command" && record && activeCommand ? <div className="space-y-5"><p className={`border p-4 text-sm leading-6 ${activeCommand.tone === "danger" ? "border-danger/35 bg-danger-light text-danger" : "border-warning/40 bg-accent-orange-light text-text-primary"}`}>{activeCommand.description}</p><dl className="grid gap-2 border-y border-border py-4 text-sm sm:grid-cols-[140px_1fr]"><dt className="text-text-tertiary">目标记录</dt><dd className="font-mono">{String(record.id)}</dd><dt className="text-text-tertiary">当前状态</dt><dd>{String(record.status ?? record.review_status ?? "—")}</dd></dl><label className="block text-xs font-semibold text-text-secondary">操作说明{activeCommand.requiresNotes ? " *" : "（可选）"}<textarea className="admin-field mt-2 min-h-24 text-sm" value={commandNotes} onChange={(event) => setCommandNotes(event.target.value)} maxLength={2000} required={activeCommand.requiresNotes} /></label></div> : <form id={`${resource}-form`} onSubmit={submit} className="space-y-8">{presets.length && mode === "create" ? <section><h3 className="text-sm font-semibold">预设配置</h3><p className="mt-1 text-xs leading-5 text-text-tertiary">预设只负责填充字段，不绕过服务端校验。</p><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{presets.map((preset) => <button key={preset.label} type="button" onClick={() => setValues(valuesFromRecord(fields, undefined, { ...createDefaults, ...preset.values }, "create"))} className="border border-border bg-bg-surface p-3 text-left hover:bg-bg-secondary"><span className="block text-sm font-semibold">{preset.label}</span><span className="mt-1 block text-xs leading-5 text-text-tertiary">{preset.description}</span></button>)}</div></section> : null}{sections.map((section) => { const sectionFields = fields.filter((field) => (field.section ?? "main") === section.id && !(mode === "create" && field.updateOnly) && !(mode === "edit" && field.createOnly)); return sectionFields.length ? <fieldset key={section.id} className="border-t border-border pt-5"><legend className="font-display text-lg font-semibold">{section.title}</legend>{section.description ? <p className="mt-1 text-sm leading-6 text-text-secondary">{section.description}</p> : null}<div className="mt-4 grid gap-4 sm:grid-cols-2">{sectionFields.map((field) => <FieldControl key={field.key} field={field} value={values[field.key] ?? (field.control === "switch" ? false : "")} mode={formMode} onChange={(next) => setValues((current) => ({ ...current, [field.key]: next }))} />)}</div></fieldset> : null; })}</form>}</div>{mode !== "detail" && !loadingRecord ? <footer className="admin-dialog-footer"><button type="button" onClick={() => close()} className="min-h-11 border border-border bg-bg-surface px-4 text-sm">取消</button>{mode === "delete" ? <button type="button" disabled={pending || Boolean(error)} onClick={remove} className="min-h-11 bg-danger px-5 text-sm font-semibold text-white disabled:opacity-50">{pending ? "处理中…" : deleteLabel}</button> : mode === "command" ? <button type="button" disabled={pending || Boolean(error)} onClick={runCommand} className={`min-h-11 px-5 text-sm font-semibold text-white disabled:opacity-50 ${activeCommand?.tone === "danger" ? "bg-danger" : "bg-text-primary"}`}>{pending ? "处理中…" : activeCommand?.label}</button> : <button type="submit" form={`${resource}-form`} disabled={pending || Boolean(error)} className="min-h-11 bg-text-primary px-5 text-sm font-semibold text-bg-surface disabled:opacity-50">{pending ? "保存中…" : mode === "create" ? submitCreateLabel : submitUpdateLabel}</button>}</footer> : null}</div></dialog> : null}
     </section>
   );

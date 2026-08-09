@@ -30,7 +30,7 @@ Dream 的生产凭据只由服务端 secret provider 注入，不通过本 Admin
 
 详情桌面右侧最大 860px Drawer，移动全屏。顺序：Summary → Identity/Key → Routing → Subscription/Entitlement/Token Allowance → 独立 Price/Cost/Ledger（若该请求适用）→ Performance → Error/Limit diagnosis → Protected Payload → Audit links。两个分区不得使用同一个“额度/余额”标题。
 
-429 诊断显示 limit/current/reserve/remaining/exceeded 和未调用 Provider 说明。402 按已实现的 `metric/unit` 分域：Subscription Token 只显示 `availableTokens/requiredTokens/periodEnd`、个人周期结束时间和下期换版入口，不提供现金继续调用；只有显式独立现金模式才格式化 micro-USD。Token 限额提供用户默认上限与模型覆盖检查入口；编辑要求 `users.write`。RPM 当前只显示“请求频率策略暂未在 Admin 开放”和 user/model 上下文，不承诺可编辑入口。实时窗口只读。
+429 诊断显示 limit/current/reserve/remaining/exceeded 和未调用 Provider 说明。402 按已实现的 `metric/unit` 分域：Subscription Token 只显示 `availableTokens/requiredTokens/periodEnd`、个人周期结束时间和补发/下期换版入口，不提供现金继续调用；只有显式独立现金模式才格式化 micro-USD。Token 安全限额提供用户默认上限与模型覆盖检查入口；编辑要求 `users.write`。RPM 当前只显示“请求频率策略暂未在 Admin 开放”和 user/model 上下文，不承诺可编辑入口。实时窗口只读。
 
 404 `GATEWAY_MODEL_NOT_FOUND` 显示下线/不存在 alias 并导航到真实 model catalog；409 显示原 idempotent Request 或进行中状态；502 `GATEWAY_PROVIDER_UPSTREAM_FAILURE` 区分上游 retryable/non-retryable，不混用 Payment Adapter code；503 显示 Gateway/定价/密钥配置不可用。客户取消、流中断或 usage 缺失均显示 release/capture/settlement_failed 的真实终态，不显示 0 费用成功。
 
@@ -44,7 +44,7 @@ Dream BFF 不把 Gateway `/v1` 的 snake_case 诊断原样透传给产品页；�
 
 ## 4. 限流页面
 
-分区：用户默认 Token 上限（可编辑）→ 用户—模型例外限制（可编辑）→ 套餐权益提示（跳转订阅中心）→ 实时用量窗口（只读）。每区独立说明最终限制取值；筛选通过 URL 保持。
+首屏必须有“这里不能处理订阅 Token 不足的 402”提示与“处理 402：补发本周期 Token”按钮。分区：用户默认 429 Token 安全上限（可编辑）→ 用户—模型例外限制（可编辑）→ 套餐权益提示（跳转订阅中心）→ 实时用量窗口（只读）。每个用户行提供携带邮箱的“处理 402／补发 Token”链接；该链接只导航到订阅中心，不在限流页执行额度写入。每区独立说明最终限制取值；筛选通过 URL 保持。
 
 这是限制策略的唯一入口。模型中心不再显示“模型权限”Tab 或侧边导航；历史 `/admin/models/permissions` 永久跳转到本页 `#user-model-permissions-manager`，不得维护第二套重复页面。
 

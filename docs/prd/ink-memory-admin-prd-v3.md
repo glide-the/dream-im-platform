@@ -1,6 +1,6 @@
 # Ink Memory Admin PRD v3 — 平台总纲
 
-> 版本：3.3
+> 版本：3.4
 > 更新：2026-08-09  
 > 状态：**Implemented / Release candidate**；生产 cutover、外部 Provider canary 与安全所有者回执仍受 Release Gate 约束
 > 详细需求：[`docs/prd/modules/`](modules/)  
@@ -52,7 +52,7 @@ flowchart LR
 |---|---|---|---|
 | 平台基础与总览 | [00-platform-foundation](modules/00-platform-foundation.md) | `/admin`、登录与 Shell | Shell/登录/真实 Story 快照已实现；Gateway/计费摘要和页面级 permission guard 未完成 |
 | 平台用户 | [01-platform-users](modules/01-platform-users.md) | `/admin/resources/users` | **Implemented / RC**：canonical 投影、所有 selector 服务端搜索/分页、命令反查和 QA-only 回归已验证；生产 orphan 处置待回执 |
-| Dream 创作运营 | [02-story-operations](modules/02-story-operations.md) | `/admin/story/**` | **Implemented / RC**：Dream-owned 43+5 DDL/CLI/PG-only runtime；Admin 仍限批准读/白名单命令；生产 cutover 待执行 |
+| Dream 创作运营 | [02-story-operations](modules/02-story-operations.md) | `/admin/story/**` | **Correction in progress**：真实三表与 12 Workspace / 4 Story 已确认；列表统一 canonical Resource、关系筛选、错误/空态和 cache 合同按本轮验收；Dream-owned 43+5 PG-only runtime 与 Admin 白名单写边界不变 |
 | 订阅与权益 | [03-subscriptions](modules/03-subscriptions.md) | `/admin/subscriptions/**` | **Implemented / RC**：Token-only 个人月度周期、下一周期换版、付费开通/续费与 Product/Payment API 已验证 |
 | 模型供应链 | [04-model-catalog](modules/04-model-catalog.md) | `/admin/models/**` | Current 有 Provider/Model/Pricing；Target 保持不可覆盖快照并为 Dream 发布可用 alias |
 | Gateway | [05-gateway](modules/05-gateway.md) | `/admin/gateway/**`、`/v1/**` | **Implemented / RC**：canonical/402/终态、无 cash fallback 与 Dream server-only client 已验证；外部 Provider canary 待执行 |
@@ -61,6 +61,38 @@ flowchart LR
 | 权限与系统治理 | [08-governance](modules/08-governance.md) | `/admin/access/**`、`/admin/system/**` | 已实现；Settings 当前不在主导航 |
 
 专项历史文档继续作为证据，不是平台入口：旧版 [AI 平台控制面设计](../design/ai-platform-admin-billing-gateway-design.md) 已标记 superseded，Gateway 完整报文条款已收敛到 [Gateway PRD](modules/05-gateway.md) 与 [Gateway 交互规范](../design/modules/05-gateway.md)；v2 保留为历史基线，不再新增跨模块需求。
+
+### 3.1 Dream Workspace / Story 数据运营纠偏（2026-08-09）
+
+专项审计：[`story-workspace-data-visibility-audit.md`](../verification/story-workspace-data-visibility-audit.md)
+交互设计：[`story-workspace-data-visibility-fix-interaction-design.md`](../design/story-workspace-data-visibility-fix-interaction-design.md)
+
+产品目标：数据库存在 canonical Dream 数据时，运营列表必须显示同条件真实结果；数据库零行、筛选零行、权限错误、API 错误、数据库不可用与关系不一致不得共享同一个空表叙事。
+
+| 页面 | Canonical Resource / API / Table | 核心产品合同 |
+|---|---|---|
+| Workspace | `story-workspaces` / `/api/admin/story-workspaces` / `story_workspace_workspaces` | 以 Workspace 为主体关联 canonical `users`；展示 ID、真实 owner、status、Story 数、创建/更新时间；名称/User/status/更新时间服务端筛选 |
+| Story | `story-stories` / `/api/admin/story-stories` / `story_workspace_stories` | 禁止页面继续使用 `stories` 作为独立 cache namespace；展示 ID、Workspace、author、type、review/status、更新时间；关系与完整枚举服务端筛选 |
+
+规则：
+
+1. `users` 是 owner/author 的唯一业务身份。`platform_users` 只作 Billing/Gateway 兼容映射；缺少映射时显示“未绑定计费身份”，不得过滤 Workspace/Story。
+2. API 中 bigint User ID 与 text Workspace/Story ID 一律作为 string 返回；PostgreSQL count 与同条件 API `meta.total` 必须相等。
+3. Workspace/Story 列表不得返回 Story 正文、password hash、Secret 或不可安全展示的内部数据；Story 详情只返回安全派生摘要。
+4. URL 是筛选状态真值。应用、关系跳转与清除筛选都更新 canonical query；未知/旧参数显示可恢复的 400/重置状态，不能在刷新后复活为假空。
+5. 写操作或关系命令完成后，同时失效 canonical list/detail 以及受影响的 Workspace/Story/User 关系查询；不维护双 Resource cache。
+6. Repository 保留 canonical 主记录。关联缺失或类型冲突必须通过 relation health/404/409 明确暴露，不得用非必要 INNER JOIN 静默丢行。
+
+Workspace 验收字段：名称、可复制 ID、owner Email/显示名/真实 ID、完整状态、Story 数、创建/更新时间。Story 验收字段：标题、可复制 ID、Workspace 关系链接、author Email/显示名、type、review status、业务 status、更新时间。桌面详情使用右侧 Drawer，移动端全屏；1440×1000 与 390×844 无页面级横向溢出。
+
+纠偏验收：
+
+- SQL count 非零时，clean-filter API 与 UI 不得为 0；真实数据库证据当前为 Workspace=12、Story=4。
+- 无 Session 页面跳转登录、API 401；RBAC 403；400/404/409/500/503 有独立状态与恢复动作。
+- system empty 与 filter empty 文案、动作和自动化 selector 不同；错误状态不显示“0 条记录”结论。
+- Workspace → Story、User → Workspace → Story 导航使用 canonical query，清筛后刷新仍保持清空。
+- 无 Billing identity 的 canonical User 仍保留其 Workspace/Story，并显示非阻断式 billing mapping 状态。
+- 不新增平行业务表、不修改 Dream 代码、不引入 SQLite、不操作共享数据库真实数据。
 
 ## 4. 角色与权限原则
 

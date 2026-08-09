@@ -13,6 +13,10 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function canonicalResource(resource: string) {
+  return resource === "stories" ? "story-stories" : resource;
+}
+
 export async function POST(
   request: Request,
   context: {
@@ -35,5 +39,10 @@ export async function POST(
   if (resource === "models" && action === "validate") {
     return await handleModelValidation(request, id);
   }
-  return await handleStorySourceAction(request, resource, id, action);
+  return await handleStorySourceAction(
+    request,
+    canonicalResource(resource),
+    id,
+    action,
+  );
 }

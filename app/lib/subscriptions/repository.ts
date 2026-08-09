@@ -63,8 +63,12 @@ const configs: Record<SubscriptionResource, Config> = {
              s.current_period_start, s.current_period_end, s.trial_ends_at,
              s.grace_ends_at, s.renewal_enabled, s.paused_at, s.cancelled_at,
              s.version, s.created_at, s.updated_at,
-             a.id AS allowance_id, a.granted_tokens, a.reserved_tokens,
-             a.consumed_tokens`,
+             a.id AS allowance_id,
+             a.granted_tokens AS plan_granted_tokens,
+             a.bonus_granted_tokens,
+             a.granted_tokens + a.bonus_granted_tokens AS granted_tokens,
+             a.reserved_tokens, a.consumed_tokens,
+             a.version AS allowance_version`,
     from: `FROM subscriptions s
            JOIN platform_users u ON u.id = s.platform_user_id
            JOIN subscription_plan_versions v ON v.id = s.plan_version_id
@@ -82,7 +86,10 @@ const configs: Record<SubscriptionResource, Config> = {
   "subscription-allowances": {
     select: `a.id, a.subscription_id, s.platform_user_id, u.email,
              a.plan_version_id, a.period_number, a.period_start, a.period_end,
-             a.granted_tokens, a.reserved_tokens, a.consumed_tokens,
+             a.granted_tokens AS plan_granted_tokens,
+             a.bonus_granted_tokens,
+             a.granted_tokens + a.bonus_granted_tokens AS granted_tokens,
+             a.reserved_tokens, a.consumed_tokens,
              a.version, a.created_at, a.updated_at`,
     from: `FROM subscription_usage_allowances a
            JOIN subscriptions s ON s.id = a.subscription_id
@@ -98,6 +105,35 @@ const configs: Record<SubscriptionResource, Config> = {
     from: "FROM subscription_events e",
     columns: { id: "e.id", subscription_id: "e.subscription_id", event_type: "e.event_type", actor_type: "e.actor_type", created_at: "e.created_at" },
     filterFields: ["subscription_id", "event_type", "actor_type"],
+    defaultSort: "created_at",
+  },
+  "subscription-token-grants": {
+    select: `g.id, g.platform_user_id, u.email, g.subscription_id,
+             g.plan_version_id, g.subscription_allowance_id,
+             g.amount_tokens, g.bonus_before_tokens, g.bonus_after_tokens,
+             g.available_before_tokens, g.available_after_tokens,
+             g.idempotency_key, g.actor_type, g.actor_id, g.reason,
+             g.metadata, g.created_at`,
+    from: `FROM subscription_token_grants g
+           JOIN platform_users u ON u.id = g.platform_user_id`,
+    columns: {
+      id: "g.id",
+      platform_user_id: "g.platform_user_id",
+      email: "u.email",
+      subscription_id: "g.subscription_id",
+      plan_version_id: "g.plan_version_id",
+      subscription_allowance_id: "g.subscription_allowance_id",
+      actor_type: "g.actor_type",
+      created_at: "g.created_at",
+    },
+    filterFields: [
+      "platform_user_id",
+      "email",
+      "subscription_id",
+      "plan_version_id",
+      "subscription_allowance_id",
+      "actor_type",
+    ],
     defaultSort: "created_at",
   },
 };

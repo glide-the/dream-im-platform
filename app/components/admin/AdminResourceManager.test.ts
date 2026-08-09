@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { pricingFields, providerFields } from "./AdminResourceViews";
-import { buildPayload, valuesFromRecord } from "./AdminResourceManager";
+import {
+  adminListErrorPresentation,
+  buildPayload,
+  valuesFromRecord,
+} from "./AdminResourceManager";
+import { canonicalAdminResource } from "./providers";
 
 describe("admin resource form serialization", () => {
   it("keeps Provider secrets blank on edit and merges named config fields", () => {
@@ -93,5 +98,29 @@ describe("admin resource form serialization", () => {
       markupBps: 225,
       discountBps: 50,
     });
+  });
+
+  it("canonicalizes the legacy Story alias and classifies list failures", () => {
+    expect(canonicalAdminResource("stories")).toBe("story-stories");
+    expect(canonicalAdminResource("story-workspaces")).toBe("story-workspaces");
+    expect(
+      adminListErrorPresentation(
+        Object.assign(new Error("unavailable"), {
+          statusCode: 503,
+          code: "STORY_SOURCE_UNAVAILABLE",
+          requestId: "request-test",
+        }),
+      ),
+    ).toEqual({
+      title: "PostgreSQL 数据源不可用",
+      action: "重试连接",
+      kind: "retry",
+      requestId: "request-test",
+    });
+    expect(
+      adminListErrorPresentation(
+        Object.assign(new Error("bad filter"), { statusCode: 400 }),
+      ).kind,
+    ).toBe("reset");
   });
 });

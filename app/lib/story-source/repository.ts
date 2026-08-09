@@ -52,32 +52,52 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
     permission: "story.read",
     select: `w.id, w.name, w.owner_id::text AS owner_id,
              u.email AS owner_email, u.display_name AS owner_display_name,
-             w.settings, w.created_at, w.updated_at,
+             COALESCE(NULLIF(u.display_name, ''), u.email) AS owner_label,
+             w.status, w.settings, w.created_at, w.updated_at,
+             (pu.id IS NOT NULL) AS billing_identity_bound,
+             CASE WHEN u.id IS NULL THEN 'owner_missing' ELSE 'healthy' END AS relation_health,
              (SELECT COUNT(*)::int FROM story_workspace_stories s WHERE s.workspace_id = w.id) AS story_count`,
-    from: "FROM story_workspace_workspaces AS w JOIN users AS u ON u.id = w.owner_id",
+    from: `FROM story_workspace_workspaces AS w
+           LEFT JOIN users AS u ON u.id = w.owner_id
+           LEFT JOIN platform_users AS pu
+             ON pu.source = 'ink-dream' AND pu.external_user_id = w.owner_id::text`,
     columns: {
       id: "w.id",
       name: "w.name",
       owner_id: "w.owner_id::text",
       owner_email: "u.email",
+      status: "w.status",
       story_count: "(SELECT COUNT(*) FROM story_workspace_stories s WHERE s.workspace_id = w.id)",
       created_at: "w.created_at",
       updated_at: "w.updated_at",
     },
     defaultSort: "updated_at",
-    filterFields: ["name", "owner_id", "owner_email"],
+    filterFields: ["id", "name", "owner_id", "owner_email", "status", "updated_at"],
   },
   "story-stories": {
     permission: "story.read",
     select: `s.id, s.identifier, s.title, s.description, s.status,
-             s.review_status, s.type, s.content, s.author_id::text AS author_id,
-             u.email AS author_email, s.workspace_id, w.name AS workspace_name,
+             s.review_status, s.type, char_length(s.content)::int AS content_length,
+             s.author_id::text AS author_id, u.email AS author_email,
+             u.display_name AS author_display_name,
+             COALESCE(NULLIF(u.display_name, ''), u.email) AS author_label,
+             s.workspace_id, w.name AS workspace_name,
              s.character_count, s.scene_count, s.agent_generated,
-             s.agent_session_id, s.review_notes, s.created_at, s.updated_at,
-             s.confirmed_at, s.published_at`,
+             char_length(s.review_notes)::int AS review_notes_length,
+             s.created_at, s.updated_at,
+             s.confirmed_at, s.published_at,
+             (pu.id IS NOT NULL) AS billing_identity_bound,
+             CASE
+               WHEN u.id IS NULL AND w.id IS NULL THEN 'author_and_workspace_missing'
+               WHEN u.id IS NULL THEN 'author_missing'
+               WHEN w.id IS NULL THEN 'workspace_missing'
+               ELSE 'healthy'
+             END AS relation_health`,
     from: `FROM story_workspace_stories AS s
-           JOIN users AS u ON u.id = s.author_id
-           JOIN story_workspace_workspaces AS w ON w.id = s.workspace_id`,
+           LEFT JOIN users AS u ON u.id = s.author_id
+           LEFT JOIN story_workspace_workspaces AS w ON w.id = s.workspace_id
+           LEFT JOIN platform_users AS pu
+             ON pu.source = 'ink-dream' AND pu.external_user_id = s.author_id::text`,
     columns: {
       id: "s.id",
       identifier: "s.identifier",
@@ -105,6 +125,7 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
       "workspace_id",
       "workspace_name",
       "agent_generated",
+      "updated_at",
     ],
   },
   stories: undefined as never,

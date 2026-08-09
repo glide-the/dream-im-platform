@@ -119,7 +119,8 @@ export async function listAvailableGatewayModels(input: {
               permission.enabled AS permission_enabled,
               allowance.id AS allowance_id,
               CASE WHEN allowance.id IS NULL THEN NULL ELSE
-                allowance.granted_tokens - allowance.reserved_tokens - allowance.consumed_tokens
+                allowance.granted_tokens + allowance.bonus_granted_tokens
+                  - allowance.reserved_tokens - allowance.consumed_tokens
               END AS remaining_tokens,
               required_plan.plan_code AS required_plan_code
        FROM ai_models AS model

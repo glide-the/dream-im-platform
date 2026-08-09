@@ -29,7 +29,7 @@
 |---|---|---|
 | Request | `/admin/gateway/requests` | 只读查询、摘要、错误、完整 Payload 权限门 |
 | Gateway Key | `/admin/gateway/keys` | 创建一次性回执、scope、到期、revoke |
-| 限流策略 | `/admin/gateway/rate-limits` | 用户默认 Token、用户—模型例外限制、套餐权益提示、实时用量窗口只读 |
+| 限流策略 | `/admin/gateway/rate-limits` | 用户默认 429 Token 安全上限、用户—模型例外限制、套餐权益提示、实时用量窗口只读；用户行可直达订阅中心处理 402，但此页不发放 Token |
 
 `/admin/gateway/rate-limits` 是限制策略的唯一管理入口。历史 `/admin/models/permissions` 永久跳转到 `#user-model-permissions-manager`；模型中心不得再展示重复 Tab 或侧边导航。
 
@@ -63,7 +63,7 @@ flowchart LR
 
 `gateway_requests` 保存热摘要；`gateway_request_payloads`、`gateway_response_payloads`、`gateway_response_events` 保存脱敏完整报文/流事件。默认不加载 Payload；二次确认请求需要明确 header 并写 append-only Audit。认证、Cookie、Key、Provider Secret 固定脱敏。
 
-429 摘要必须记录 limit/current/reserve/remaining/exceeded。Token 限额链接到可实际调整的用户默认/模型覆盖/套餐权益；RPM 仅展示策略来源和“当前 Admin 未开放编辑”，不能伪造修复入口。实时 `gateway_rate_limits` 只读，不能改计数解除限流。
+429 摘要必须记录 limit/current/reserve/remaining/exceeded。Token 安全限额链接到可实际调整的用户默认/模型覆盖/套餐权益；字段与列名必须显式带“429”语义，并在页面首屏说明调高这些值不会增加订阅 Allowance。用户行提供“处理 402／补发 Token”链接，携带邮箱跳转 `/admin/subscriptions/users?email=…&intent=grant`。RPM 仅展示策略来源和“当前 Admin 未开放编辑”，不能伪造修复入口。实时 `gateway_rate_limits` 只读，不能改计数解除限流。
 
 ## 6. Gateway 拒绝与错误契约
 

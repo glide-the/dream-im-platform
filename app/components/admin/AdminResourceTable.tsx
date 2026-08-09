@@ -7,7 +7,7 @@ import GatewayRequestDetail from "./GatewayRequestDetail";
 export type AdminTableColumn = {
   key: string;
   label: string;
-  format?: "money" | "date" | "boolean" | "json" | "status";
+  format?: "money" | "date" | "boolean" | "json" | "status" | "copy" | "binding";
 };
 
 type FilterDefinition = {

@@ -21,6 +21,7 @@ type Row = {
   monthly_token_limit: string | number | null;
   allowance_id: string | null;
   granted_tokens: string | number | null;
+  bonus_granted_tokens: string | number | null;
   reserved_tokens: string | number | null;
   consumed_tokens: string | number | null;
 };
@@ -81,7 +82,8 @@ export async function resolveGatewaySubscriptionOnClient(
             e.id AS entitlement_id, e.gateway_scopes,
             e.requests_per_minute, e.daily_token_limit,
             e.monthly_token_limit, a.id AS allowance_id,
-            a.granted_tokens, a.reserved_tokens, a.consumed_tokens
+            a.granted_tokens, a.bonus_granted_tokens,
+            a.reserved_tokens, a.consumed_tokens
      FROM subscriptions s
      LEFT JOIN subscription_plan_entitlements e
        ON e.plan_version_id = s.plan_version_id
@@ -162,7 +164,8 @@ export async function resolveGatewaySubscriptionOnClient(
   }
 
   const tokenRemaining =
-    safe(row.granted_tokens, "granted_tokens") -
+    safe(row.granted_tokens, "granted_tokens") +
+    safe(row.bonus_granted_tokens, "bonus_granted_tokens") -
     safe(row.reserved_tokens, "reserved_tokens") -
     safe(row.consumed_tokens, "consumed_tokens");
   if (tokenRemaining < input.estimatedTokens) {
@@ -215,7 +218,8 @@ export async function reserveSubscriptionAllowanceOnClient(
     reserved_tokens: string | number;
     consumed_tokens: string | number;
   }>(
-    `SELECT subscription_id, plan_version_id, granted_tokens,
+    `SELECT subscription_id, plan_version_id,
+            granted_tokens + bonus_granted_tokens AS granted_tokens,
             reserved_tokens, consumed_tokens
      FROM subscription_usage_allowances
      WHERE id = $1
@@ -246,7 +250,7 @@ export async function reserveSubscriptionAllowanceOnClient(
      SET reserved_tokens = reserved_tokens + $2,
          version = version + 1, updated_at = NOW()
      WHERE id = $1
-       AND reserved_tokens + consumed_tokens + $2 <= granted_tokens`,
+       AND reserved_tokens + consumed_tokens + $2 <= granted_tokens + bonus_granted_tokens`,
     [input.allowanceId, input.allowanceReservedTokens],
   );
   if (result.rowCount !== 1) {
@@ -281,7 +285,8 @@ export async function releaseSubscriptionAllowanceOnClient(
     reserved_tokens: string | number;
     consumed_tokens: string | number;
   }>(
-    `SELECT subscription_id, plan_version_id, granted_tokens,
+    `SELECT subscription_id, plan_version_id,
+            granted_tokens + bonus_granted_tokens AS granted_tokens,
             reserved_tokens, consumed_tokens
      FROM subscription_usage_allowances
      WHERE id = $1
@@ -366,7 +371,8 @@ export async function settleSubscriptionAllowanceOnClient(
     consumed_microusd: string | number;
   }>(
     `SELECT subscription_id, plan_version_id,
-            granted_tokens, reserved_tokens, consumed_tokens,
+            granted_tokens + bonus_granted_tokens AS granted_tokens,
+            reserved_tokens, consumed_tokens,
             granted_microusd, reserved_microusd, consumed_microusd
      FROM subscription_usage_allowances WHERE id = $1 FOR UPDATE`,
     [input.allowanceId],

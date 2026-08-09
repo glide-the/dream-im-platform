@@ -77,6 +77,13 @@ export const subscriptionActionSchema = z.strictObject({
   planVersionId: z.string().trim().min(1).max(100).optional(),
 });
 
+export const subscriptionTokenGrantSchema = z.strictObject({
+  amountTokens: safeCount.positive(),
+  idempotencyKey: z.string().trim().min(8).max(128),
+  reason: z.string().trim().min(3).max(500),
+  expectedAllowanceVersion: z.number().int().positive(),
+});
+
 export const publishVersionSchema = z.strictObject({
   idempotencyKey: z.string().trim().min(8).max(128),
   reason: z.string().trim().min(3).max(500),
@@ -88,7 +95,8 @@ export type SubscriptionResource =
   | "subscription-entitlements"
   | "subscriptions"
   | "subscription-allowances"
-  | "subscription-events";
+  | "subscription-events"
+  | "subscription-token-grants";
 
 const subscriptionResources = new Set<SubscriptionResource>([
   "subscription-plans",
@@ -97,6 +105,7 @@ const subscriptionResources = new Set<SubscriptionResource>([
   "subscriptions",
   "subscription-allowances",
   "subscription-events",
+  "subscription-token-grants",
 ]);
 
 export function isSubscriptionResource(

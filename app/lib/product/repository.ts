@@ -240,7 +240,8 @@ export async function findCurrentAllowanceOnClient(
   subscription: ProductSubscriptionRow,
 ) {
   const result = await client.query<ProductAllowanceRow>(
-    `SELECT granted_tokens, reserved_tokens, consumed_tokens
+    `SELECT granted_tokens + bonus_granted_tokens AS granted_tokens,
+            reserved_tokens, consumed_tokens
      FROM subscription_usage_allowances
      WHERE subscription_id = $1
        AND plan_version_id = $2
@@ -460,7 +461,8 @@ export async function listProductModelsOnClient(
             user_permission.daily_token_limit AS user_daily_tokens,
             subscription.status AS subscription_status,
             subscription.current_period_end,
-            allowance.granted_tokens, allowance.reserved_tokens,
+            allowance.granted_tokens + allowance.bonus_granted_tokens AS granted_tokens,
+            allowance.reserved_tokens,
             allowance.consumed_tokens
      FROM subscriptions AS subscription
      JOIN subscription_plan_versions AS version

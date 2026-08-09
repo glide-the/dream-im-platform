@@ -183,6 +183,13 @@
       "when": 1786428000000,
       "tag": "0025_fancy_shadowcat",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786289375740,
+      "tag": "0026_harsh_victor_mancha",
+      "breakpoints": true
     }
   ]
 }

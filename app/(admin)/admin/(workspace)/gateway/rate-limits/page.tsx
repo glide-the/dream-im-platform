@@ -10,8 +10,8 @@ import {
 
 const policySources = [
   {
-    title: "用户默认 Token 上限",
-    detail: "可编辑每日／每月 Token，适用于该用户的所有模型。",
+    title: "用户级 429 Token 安全阈值",
+    detail: "可编辑每日／每月安全阈值，适用于该用户的所有模型；不发放订阅 Token。",
   },
   {
     title: "用户—模型例外限制",
@@ -36,10 +36,26 @@ export default function GatewayRateLimitsPage() {
     <AdminModulePage
       eyebrow="Proxy gateway / rate limits"
       title="限流策略"
-      description="在可编辑策略区调整用户、模型和套餐上限；实时窗口只记录已经发生的请求与 Token 用量。"
-      status="策略可编辑 · 计数只读"
+      description="这里只配置达到阈值后返回 429 的安全限流；实时窗口只记录已经发生的请求与 Token 用量，不负责发放订阅额度。"
+      status="429 策略可编辑 · 计数只读"
       tabs={gatewayTabs}
     >
+      <section className="border border-warning/45 bg-accent-orange-light p-5" role="alert" aria-labelledby="subscription-402-recovery-title">
+        <h2 id="subscription-402-recovery-title" className="font-display text-lg font-semibold">
+          这里不能处理订阅 Token 不足的 402
+        </h2>
+        <p className="mt-2 max-w-4xl text-sm leading-6 text-text-secondary">
+          把每日或每月安全上限改为 50,000,000，只会抬高 429 阈值，不会增加当前订阅周期的可用 Token。错误码
+          <span className="mx-1 font-mono text-xs">SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED</span>
+          必须进入用户订阅，按用户核对剩余额度并补发本周期 Token。
+        </p>
+        <Link
+          href="/admin/subscriptions/users?intent=grant#subscription-user-list"
+          className="mt-4 inline-flex min-h-11 items-center bg-text-primary px-4 text-sm font-semibold text-bg-surface"
+        >
+          处理 402：补发本周期 Token
+        </Link>
+      </section>
       <section
         className="admin-panel p-5"
         aria-labelledby="rate-limit-data-model-title"
@@ -51,8 +67,8 @@ export default function GatewayRateLimitsPage() {
           上限策略与实时计数不是同一类数据
         </h2>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-text-secondary">
-          Gateway 将当前用量与所有适用上限比较，实际生效上限取用户默认、用户—模型覆盖和订阅套餐权益中的最小值。提高一个上限后，如果另一个来源更低，429
-          仍会继续出现。
+          Gateway 将当前用量与所有适用的 429 上限比较，实际生效上限取用户默认、用户—模型覆盖和订阅套餐权益中的最小值。提高一个上限后，如果另一个来源更低，429
+          仍会继续出现；这套比较不代表当前订阅周期还有足够 Token。
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {policySources.map((item) => (

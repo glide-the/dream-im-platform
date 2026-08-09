@@ -1974,3 +1974,384 @@ Optional Enhancers:
 
 - `hy-preview`真实upgrade场景、Dream/is-dreaming购买、支付webhook/退款/真实升级降级继续未执行；必须先由商业配置发布新的Pricing/Plan Version/Entitlement并接通支付，当前maintenance/draft是唯一安全真实状态。
 - 未提交、未stage、未push代码；用户未要求Git发布操作。
+
+## Round 57 — 阶段七：参考 Allegretto 的简洁订阅页重设计
+
+Optimized Prompt:
+
+作为 Ink Dream 的产品设计负责人和 React/CSS 工程师，依据用户提供的三张 Allegretto 订阅页面截图，重新设计 `StoryWorkspaceSubscriptionPage`。目标不是复制黑色品牌皮肤，而是提取其“品牌/当前套餐摘要 → 少量清晰标签页 → 单一主题内容卡”的信息架构，并保留 Ink Dream 现有米白、棕墨、叙事化字体与设置侧栏视觉。
+
+删除当前页面对普通用户暴露的运营/计费内部信息：Plan Version ID/状态、周期序号、个人锚点、自动续订内部状态、Entitlement scope、RPM、daily Token、storage、catalog readiness、receipt/digest、复杂升级预览等。页面只保留用户需要做判断的内容：当前套餐名称、简短说明、有效期/下次重置时间、剩余/已用/总 Token、套餐权益文案、Free/Dream/is Dreaming 可选方案及真实可开通状态。
+
+采用三个标签页：`订阅信息`（默认，当前套餐和来自 Product API 的 details 权益清单）、`我的额度`（一个醒目的 Token 余额数字、使用百分比、单一进度条、已用/总量和重置日期）、`可选套餐`（来自真实 Admin Product API 的三张极简方案卡）。Dream 与 is Dreaming 商业参数仍为 draft 时显示“暂不可开通”，不得伪造价格、支付按钮或成功状态；Free 当前方案显示“当前套餐”。刷新动作保留为低干扰按钮。错误/loading/empty 使用单一短句与重试，不展示内部错误结构。
+
+实现必须继续消费现有真实 Product plans/context/usage API，不改 PostgreSQL、Admin contract 或服务资格。组件使用原生 button/tablist/tab/tabpanel 语义、方向键或清晰 Tab 顺序、可见 focus、aria-selected/controls，移动 390×844 下标签可横向滚动或等宽收敛且页面无横向溢出。桌面 1440×1000 内容宽度克制、信息密度接近参考图；减少边框、标签、数字块和重复文案。
+
+按 `html-design-workflow` 严格顺序产出 PRD、结构草图、层级逻辑和最终 UI 设计说明，再将设计落到现有 React/CSS，而不是生成脱离项目的静态 HTML/Tailwind 页面。更新相关 source/unit/Playwright 断言，执行 typecheck、lint、build、真实或现有 Product E2E，并对 1440×1000 与 390×844 截图做视觉复核。
+
+Optional Enhancers:
+
+- 用 `font-variant-numeric: tabular-nums` 保持 Token 和日期稳定，但避免后台报表式表格。
+- 进度条仅使用 Ink Dream 的低饱和墨色，不引入参考图的亮蓝色，确保品牌一致。
+- 当总额度为 0 或使用数据暂不可用时显示“额度数据暂不可用”，不计算 NaN/Infinity，也不伪造 0%。
+
+范围变化：
+
+- 本轮只修改 Dream 订阅页设计、前端组件/CSS和对应测试；不修改 Admin、PostgreSQL、Subscription/Payment API 或模型资格逻辑。
+- 用户现在提供了真实参考图片，`html-design-workflow` 从上一轮“不适用”变为强制适用；按技能要求串行委派四个专门阶段。
+
+执行证据与验证结果：
+
+- 三张参考图已提供，分别展示额度、权益和账单标签页；当前真实页面截图已证明信息密度过高，用户明确要求简化。
+- 本记录落盘前尚未修改订阅页组件、CSS或测试。
+
+失败尝试及根因：
+
+- 无；本阶段尚未开始。
+
+未执行事项及原因：
+
+- 四阶段设计工作流、当前组件审计、实现与双视口验证必须在本 Prompt Architect 记录之后执行。
+
+## Round 58 — Dream 真实 Workspace / Story 数据可见性修复
+
+Optimized Prompt:
+
+作为资深产品架构师、PostgreSQL 数据架构师、Next.js/Refine 管理后台工程师与 UI/UX 负责人，在 `/Users/dmeck/project/ink-admin-memory` 内完成 `/admin/story/workspaces` 与 `/admin/story/stories` 不显示 Dream 真实数据的问题审计、设计、修复和发布级验证。`/Users/dmeck/project/ink-dream-memory` 只允许读取，用于核对其 PostgreSQL schema、迁移和字段语义；不得修改其代码、schema、迁移、运行配置或数据。Admin 必须继续只使用唯一 PostgreSQL `DATABASE_URL` 和数据库 `ink-memory`，直接查询 canonical `users`、`story_workspace_workspaces`、`story_workspace_stories`，不得创建、复制、填充或回退到任何平行业务表、SQLite、JSON DB 或内存数据。
+
+第一阶段只读审计并生成 `docs/verification/story-workspace-data-visibility-audit.md`。从 Admin 实际加载的环境配置出发，脱敏确认 host、port、database、current schema/search_path、三张表存在性、非敏感行数、状态分布、字段类型、PK/FK 类型、Workspace owner→users、Story workspace/author 关系 orphan、时间和 JSON 类型；禁止输出密码散列、Secret、正文或敏感用户内容。逐层追踪 Story page → `StoryResourceView` → `AdminResourceManager` → Refine `useList` → Data Provider → `/api/admin/**` → repository/service SQL → PostgreSQL，并用代码位置、脱敏 SQL 结果和实际 API 合同证明 Resource 名称、旧表映射、JOIN、字段、状态筛选、URL 筛选、排序、count、snake/camel 映射、缓存、Session/RBAC、500/503 错误边界及 Server/Client 环境是否一致。根因必须落入明确分类，不得停留在“可能”。
+
+在任何页面代码修改前，更新当前主 PRD 的 Story 数据运营章节，并新增 `docs/design/story-workspace-data-visibility-fix-interaction-design.md`。定义 Workspace 与 Story 桌面 1440×1000、移动 390×844 的列表列、关系导航、可搜索关系筛选、状态/时间筛选、服务端分页、清除筛选、桌面右侧 Drawer/移动全屏详情、安全摘要和复制 ID 行为。显式区分 Loading skeleton、数据库真实零行、筛选无结果、400、401、403、404、409、500、503 及数据源/关系不一致，确保错误不会被伪装成空表，页面无 document 级横向溢出。
+
+随后在 Admin 的 repository/service 层完成最小根因修复：校正 `story-workspaces`、`story-stories`、`stories` 的 Refine/API 映射；SQL 直接以 canonical Dream 表和真实 `users` 为主体，移除会过滤业务记录的非必要 `INNER JOIN platform_users`，缺少 Billing Identity 时保留记录并显示“未绑定计费身份”；统一 bigint/UUID/text ID 的字符串 API 序列化；修复状态、时间、JSON、total、分页、排序和筛选白名单；写操作或迁移后正确失效 list/detail cache；Route Handler 只承担 Session/RBAC/Zod/Origin 与 service 编排；保留 Story 受控写边界、事务、审计、Storage、Provider、Gateway、Billing 与 append-only 账本。不得执行破坏性删表或操作真实共享数据。
+
+验证必须遵循 `ink-admin-playwright-qa`。先检查工作树和端口所有权；只读比较当前真实数据库 count 与 API total/UI 展示，不对共享数据库写入。所有写测试使用明确的一次性 PostgreSQL `ink-memory` 或 `TEST_DATABASE_URL`，应用已审阅迁移并只清理自有 fixture/容器。覆盖无 Session 跳转、API 401、RBAC 403、Workspace/Story count 与 total、至少一条关系完整真实记录、无 Platform Billing Identity 仍显示、Workspace→Story 和 User→Workspace→Story 导航、搜索、状态、排序、分页、清除筛选、残留 URL 筛选、关系错误、500、503、双视口无溢出，以及 Storage/Provider/Gateway/Billing/RBAC 与已移除 PWA 路由 404。执行 `pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm test:run`、`pnpm build`、focused Playwright 与隔离 PostgreSQL集成测试。
+
+最终只在证据充分时声明完成，并报告：真实根因；Admin 实际数据库和 schema；数据库行数/API total/UI 数量对照；Resource/API/repository/page 修改；PRD/交互稿路径；是否有迁移；精确测试命令、通过数量、视口与截图；未执行外部场景和风险。明确确认未修改 `ink-dream-memory`、未新增平行业务表、未引入 SQLite、未修改/清理共享数据库真实数据、未删除 Storage 或共享 Library。保留用户现有未提交修改，不提交、不 stage、不 push，除非用户另行要求。
+
+Optional Enhancers:
+
+- 在审计报告附一张“链路节点 → 实际 resource/URL/table → 证据 → 结论”矩阵，便于定位跨层错配。
+- 对真实数据证据只记录 count、类型、状态分布与不可逆脱敏 ID，截图中避免暴露邮箱、正文和 Secret。
+- 若当前共享数据库只允许只读验证，将关系缺失和错误态放到一次性 PostgreSQL fixture 中复现，明确区分真实证据与隔离测试证据。
+
+范围与门禁：
+
+- 当前阶段从只读审计开始；审计报告和 PRD/交互设计完成前，不修改业务页面或查询实现。
+- 本轮 Prompt Architect 记录已落盘；后续若重新规划或进入新的独立阶段，将先追加新的 Optimized Prompt 再更新计划。
+
+## Round 59 — Workspace / Story PRD 与交互设计门禁
+
+Optimized Prompt:
+
+基于已完成的 `docs/verification/story-workspace-data-visibility-audit.md`，在不修改任何业务 TS/TSX/API/Repository 代码的前提下，先更新 Ink Memory Admin 当前主 PRD `docs/prd/ink-memory-admin-prd-v3.md` 的 Dream 创作运营章节，并创建 `docs/design/story-workspace-data-visibility-fix-interaction-design.md`。设计必须把已证实的 12 Workspace / 4 Story canonical PostgreSQL 数据、`story-workspaces` / canonical `story-stories` Resource、canonical `users` 关系、服务端分页/排序/筛选和安全详情作为真实合同，不得依赖 `stories` 双 Resource、`platform_users` 主体、平行表、假数据或客户端拼接结果。
+
+Workspace 列表定义主文本名称、可复制等宽 Workspace ID、Email/显示名与真实 User ID、完整状态标签、Story 数、创建和更新时间；筛选定义名称、可搜索 User relation、完整状态、更新时间范围、清筛和服务端分页。Story 列表定义标题、可复制等宽 Story ID、可导航 Workspace、真实作者、类型、审核状态、业务状态和更新时间；筛选定义标题、可搜索 Workspace/User relation、完整 type/review/status 枚举、更新时间范围。桌面详情为右侧宽 Drawer，移动端为全屏 Drawer；Workspace 显示真实用户、Story 数、安全 settings JSON与时间，Story 只显示正文长度/结构/摘要等安全派生，不返回或回显正文与敏感内部数据。
+
+为 1440×1000 与 390×844 分别给出页面结构、列收敛、局部表格横滚、Filter Sheet/行卡降级、Drawer 尺寸、焦点归还与无 document 横向溢出要求。显式定义 Loading skeleton、数据库真实零行、筛选零行、400、401、403、404、409、500、503 和 relation/source mismatch 的独立文案、动作、aria 语义与恢复路径；失败时禁止显示“0 条记录”的确定结论。URL 应是筛选状态真值，应用和清除都同步 URL，旧/未知参数提供重置而不是永久假空。
+
+交互稿需包含页面信息架构、字段/控件矩阵、Resource/API/table 合同、筛选 URL 规范、状态机、关系导航、缓存失效、无障碍、双视口线框说明和可自动化验收条件。PRD 只描述产品目标、规则和验收，交互稿描述具体页面行为；两者互相链接，并明确本阶段完成后才能进入代码实现。
+
+Optional Enhancers:
+
+- 使用紧凑 ASCII wireframe 表达桌面列表与移动筛选/详情层级，不生成脱离现有 Refine/Tailwind 系统的静态页面。
+- 把审计中的每个确定缺陷映射到一个 PRD acceptance criterion 和一个可测试交互状态。
+
+阶段边界：
+
+- 审计已完成：共享 PostgreSQL read-only 证据为 users=30、Workspace=12、Story=4，三类 orphan=0。
+- 本阶段只写 PRD/设计文档；完成并复核前不得修改 `app/**`、`tests/**` 或数据库。
+
+## Round 60 — Canonical Story Resource、Repository 与列表状态实现
+
+Optimized Prompt:
+
+在只读审计、主 PRD v3.4 与 `docs/design/story-workspace-data-visibility-fix-interaction-design.md` 已完成的前提下，实现 Dream Workspace / Story 数据可见性修复。工作范围仅限 `/Users/dmeck/project/ink-admin-memory`；保留用户已有订阅、schema 与 migration 未提交修改，不修改 `/Users/dmeck/project/ink-dream-memory`，不写共享 PostgreSQL 5433，不新增迁移或平行业务表。
+
+首先把 Story 页面、Refine resources、Data Provider endpoint、关系控件和 cache invalidation 统一到 canonical `story-stories`；HTTP compatibility alias `stories` 如需保留，必须在 Route/Provider 边界 canonicalize，不能创建独立页面 query key。Repository 直接查询 `story_workspace_workspaces`、`story_workspace_stories` 和 canonical `users`；主表行不可因缺少 User/Billing relation 而被静默过滤。使用 LEFT JOIN 暴露 `relation_health`，Billing identity 仅显示绑定状态，缺少 `platform_users` 时返回记录并标注“未绑定计费身份”。Workspace 增加 status、owner display/id、Story count 与时间；Story 列表/详情删除正文 payload，改为安全 `content_length`/结构计数，补 author display、关系状态和字符串 ID 序列化。
+
+扩展服务端白名单筛选以支持完整 Workspace/Story status/type/review、canonical User/Workspace relation 和 `updated_at` 起止范围，data/count 复用完全相同 predicate；不接受任意 SQL字段。扩展 AdminResourceManager 的 Query Bar：关系筛选使用真实服务端分页 Resource，日期使用明确起止控件；应用、清除、分页和浏览器前进/后退同步 canonical URL，清除后 reload 不复活。Unknown/旧筛选提供重置动作。
+
+列表状态必须区分 Loading、system empty、filter empty、400、401、403、404、409、500、503 和 relation/source mismatch。请求失败时 Header 显示“计数不可用”，不渲染普通空表；错误按 HTTP/code 给出重新登录、重置筛选、返回、刷新或复制 request ID 等安全动作。新增可复制 Workspace/Story ID 和关系链接；桌面 Drawer、移动全屏与当前 Admin token/focus 体系保持一致。Story/Workspace 成功写或 confirm 后失效 canonical list/detail 及受影响 Workspace/User relation cache。
+
+补充/调整 unit 与 focused E2E 合同：Data Provider只请求 canonical endpoint；Repository LEFT JOIN、status/date、safe payload、total一致；URL清筛；错误/空态区分；无 Billing identity记录仍出现；双视口无横向溢出。此阶段只修改代码与测试，不运行破坏性或共享数据库写操作；实现完成后另开验证阶段的 Prompt Architect 记录再运行隔离 PostgreSQL与完整门禁。
+
+Optional Enhancers:
+
+- 把通用错误状态与 CopyValue 作为小型无副作用组件，避免在 JSX 中继续堆叠单行条件。
+- 兼容 alias 在 server route 中统一映射并加 unit test，便于旧链接平滑过渡后删除。
+
+实现门禁：
+
+- 审计报告、PRD v3.4 和专项交互设计已存在并通过 `git diff --check`（已清除新增 trailing whitespace）。
+- 当前共享数据库只用于已完成的 read-only 证据；后续关系异常/缺 Billing identity/503 使用 disposable PostgreSQL 或 request mock。
+
+## Round 61 — 隔离 PostgreSQL、真实 Session 与双视口发布验证
+
+Optimized Prompt:
+
+对已实现的 Workspace / Story 数据可见性修复执行发布级验证。严格遵循 `.agents/skills/ink-admin-playwright-qa/SKILL.md` 与 `references/project-workflow.md`：先复核 Git 状态、3000/5433 监听与进程所有权；共享 `localhost:5433/ink-memory` 只保留已完成的 read-only 审计，不登录、不迁移、不写入。创建精确命名、可删除的一次性 PostgreSQL 16 容器或明确 `TEST_DATABASE_URL`，数据库名使用测试安全标记且通过应用 `INK_USE_TEST_DATABASE_URL=1` 校验；应用全部已审阅 Drizzle migrations，加载 checked-in Story/control-plane fixture，并只清理自有容器/端口。
+
+用真实 bootstrap/login HttpOnly Session 运行 focused Playwright。API/SQL 对照必须证明 Workspace 与 Story 同条件 count=`meta.total`，页面只请求 canonical `/api/admin/story-stories`，旧 `/api/admin/stories` 只作 server compatibility。隔离 fixture 创建一个 canonical User/Workspace/Story，但在受控事务中禁用自动 Billing projection trigger，使其没有 `platform_users`；断言两条业务记录仍在 API/UI 显示“未绑定计费身份”，而不是被 JOIN 过滤。验证 Story payload 不含正文。
+
+浏览器覆盖：无 Session 307/login、Admin API 401、auditor写403、已有关系冲突409；Workspace/Story clean total、文本/状态/关系筛选、排序/分页、User→Workspace→Story 与 Workspace→Story 导航；Filter empty与System empty不同；清除筛选同步 URL，reload不复活；mock 500/503 显示独立 error state且无普通 empty row；Drawer详情、安全摘要与写后 canonical cache失效。捕获 console、pageerror、requestfailed、unexpected 5xx 诊断。1440×1000 与390×844分别截图 Workspace和Story，断言 document overflow≤1px；Storage、Provider、Gateway、Billing、RBAC 与移除PWA路由404继续通过。
+
+按顺序执行 `pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm test:run`、focused Playwright、必要的隔离 PostgreSQL integration、`pnpm build` 与 `git diff --check`。若发现回归，在请求范围内修复并只重跑最窄失败 lane，最后复跑完整矩阵。记录精确命令、迁移数、测试/通过数、视口、截图、数据库后置计数、失败尝试、跳过的外部场景和容器/监听清理证据。不得访问真实 Provider、不得使用用户 Token、不得修改 Dream 仓库、不得提交/stage/push。
+
+Optional Enhancers:
+
+- 保存 Story 503 状态与 Filter empty 状态截图，但确保没有真实邮箱、正文或 Secret。
+- 在隔离库后置 SQL 中同时断言缺 Billing projection 的 canonical User 数=1、其 Workspace/Story 数=1、relation health仍为healthy。
+
+验证前状态：
+
+- TypeScript、全量 lint、328/328 unit 与 `git diff --check` 已通过。
+- 共享数据库 read-only：Workspace=12、Story=4、当前关系错误=0；新 LEFT JOIN 等价查询仍返回12/4。
+
+## Round 62 — 参考图订阅页验证、Reader Testing 与双视口视觉 QA
+
+Optimized Prompt:
+
+作为 Ink Dream 的高级前端 QA、可访问性审阅者与 UI/UX Reader Tester，验证 Round 57 参考 Allegretto 重设计后的 `StoryWorkspaceSubscriptionPage`，不得新增 PostgreSQL、Admin、Subscription、Payment 或 Gateway 产品范围。先确认工作树与 5173/8765 端口归属，运行项目 Playwright QA preflight，并保留用户及其他任务已有未提交修改。
+
+对新订阅页执行三层验证。第一层检查 TypeScript、ESLint、production build 和 source contract，证明页面只加载真实 subscription context 与 Product plans，不再为这个页面读取 request-level usage/model catalog；页面无静态套餐、假价格、假余额、Gateway/model/Plan Version/request/settlement/receipt 内部字段。第二层运行 focused mocked-browser 回归，仅验证 UI 行为：默认 `订阅信息`、`我的额度` 与 `可选套餐` 单面板切换，Header 入口，ArrowLeft/ArrowRight/Home/End roving focus，进度条语义、loading/error/empty、1440×1000 与 390×844 无横向溢出。第三层运行现有真实本机 Product E2E，不 mock `/api/story-workspace/subscription/context` 或 `/plans`，验证 API 返回 Free/Dream/is-dreaming，Free published/current，两个 draft 套餐显示“暂不可开通”，真实 Allowance 可见，普通用户仍无法访问 Admin Registry。
+
+Reader Testing 必须按普通创作者而非计费工程师视角逐段阅读：首屏能否在数秒内回答“我是什么套餐、什么时候更新、还能用多少、还能选什么”；界面是否只显示一个主题面板；套餐卡是否保持 `eyebrow → name → note → details`；是否还有 Plan Version、周期序号、锚点、scope、alias、RPM、storage、usage request、settlement、digest、request ID 或假支付表达；错误文案是否短、可恢复且不暴露内部代码。对发现的问题先做最小修正再重跑。
+
+视觉复核必须查看两张最终 screenshot，而非只检查像素文件存在；桌面内容宽度、留白、Tab 下划线、单面板边框和三卡节奏应接近参考图的信息密度但继续使用 Ink Dream 米白/棕墨品牌；移动端按钮、Tab、数字和卡片不得溢出或拥挤。注册 console、pageerror、requestfailed 监听并要求 Ink Dream 应用错误为零。最终把命令、通过数量、视口、截图路径、Reader Testing 发现、失败根因、未执行真实支付原因和安全确认追加到工作日志；只有验证完成后才更新完成状态。
+
+Optional Enhancers:
+
+- 检查页面可见文本中没有 `plan version`、`gateway`、`model alias`、`rpm`、`request id`、`checkout`、`invoice` 等内部词。
+- 对 Allowance `granted=0` 做 source/unit 防 NaN 检查；对服务端 `reserved` 保留守恒合同但不在普通用户 UI 中展示。
+- 若真实高级套餐仍为 draft，只验证诚实的“暂不可开通”，不触发、模拟或声称真实付费成功。
+
+范围变化：
+
+- Round 57 设计与实现已完成；本阶段只允许前端验证、Reader Testing、必要的最小 UI/测试修正和证据记录。
+- 不修改 Admin、PostgreSQL、Product/Gateway 合同、正式套餐商业参数或真实支付状态。
+
+执行证据与验证结果：
+
+- 进入本阶段前，订阅页 TypeScript 已通过；focused source/layout 13/13 通过；frontend lint 0 errors、21 条仓库既有 Hook warnings。
+- 本记录落盘前尚未运行 production build、focused browser E2E、真实 Product E2E 或最终截图目视复核。
+
+失败尝试及根因：
+
+- 首次误尝试 `pnpm test:run`，Dream frontend 没有该 script，命令立即以 254 退出且无文件/数据副作用；改用仓库规定的 `pnpm exec playwright test` 后 source/layout 13/13 通过。
+
+未执行事项及原因：
+
+- production build、preflight、端口审计、mocked browser、真实 Product E2E、截图复核与最终日志结果必须在本 Prompt Architect 记录之后执行。
+
+### Round 62 执行结果（UI 实现验证完成；真实 Product Context 受 Admin 现状阻断）
+
+执行证据与验证结果：
+
+- `html-design-workflow` 四阶段产物已完成并保存在 Dream `.artifacts/round57-html-design/files/workspace/`：PRD、结构草图、层级逻辑、最终 UI 设计共四份；实现采用“套餐摘要 + 三个 Tab + 单一面板”并保持 Ink Dream 米白/棕墨品牌。
+- Dream 组件与 CSS 已重写；subscription hook 首屏由 context/plans/usage/models 四请求缩减为真实 context + plans 两请求。页面不再展示 Plan Version、周期序号、锚点、自动续订内部状态、Entitlement scope、model alias、RPM/daily/storage、request usage、settlement、request ID、receipt/digest 或支付内部状态。
+- `pnpm exec tsc --noEmit` 通过；focused ESLint 通过；全量 `pnpm lint` 为 0 errors、21 条既有 Hook warnings；production `pnpm build` 通过，仅保留既有 ineffective dynamic import 和 large chunk warnings；`git diff --check` 通过。
+- source/layout Playwright 13/13 通过；focused browser Playwright 2/2 通过，覆盖 1440×1000、390×844、默认信息、额度进度条、真实 plans fixture、Header 入口、ArrowLeft/ArrowRight/Home/End、focus、console/pageerror/requestfailed=0 与无横向溢出。
+- 最终目视复核四张截图：`subscription-desktop-info-1440x1000.png`、`subscription-desktop-allowance-1440x1000.png`、`subscription-desktop-1440x1000.png`、`subscription-mobile-390x844.png`。桌面为克制的 1040px 内容宽度、低干扰边框与三卡节奏；移动为单列卡片且无 document overflow。
+- Reader Testing 能在首屏直接回答当前 Free、文案和更新日期；额度 Tab 只保留 75,000 remaining、24,000/100,000 与单一进度条；套餐 Tab 保持 `eyebrow → name → note → details`。Reader Testing 发现初始异步数据到达后 h1 没有获得焦点，已用一次性就绪 focus 修复；随后发现程序化标题 focus outline 视觉噪声，保留屏幕阅读器焦点管理但移除非交互标题 outline；两项均重跑通过。
+- 真实只读证据：Dream `/api/story-workspace/subscription/plans` 返回 200，三 plan identity 与 published/draft 断言执行成功；Dream bearer 访问 Admin Registry 为 401，RBAC focused 1/1 通过。
+- 所有本轮启动的 5173、8765、3000 服务均已按 PID/会话归属关闭，最终三端口无 listener；未执行数据库写入、迁移、fixture 清理、Provider 推理或支付操作，未读取或输出 Secret/Token/完整 DSN。
+
+失败尝试及根因：
+
+- mocked browser 首轮 1/2：loading h1 被替换后，ready h1 未重新聚焦；修复只在首个非 loading 状态聚焦。次轮 1/2：测试以纯文本 `75,000` 查找带 `Token` 单位的 heading；改为语义 heading 正则。最终重复执行 2/2。
+- 真实 5-test suite 两次在首个 Gateway Settings 用例超时：第一次 Admin 被错误启动在 3010，而 Dream 的已配置本机依赖是 3000；改为 3000 后 `/v1/models` 仍返回 500，Dream `/api/gateway/models` 返回 500。
+- 单独运行真实 Product/RBAC lane 时，plans 为 200 且三 plan 断言成功，但 Admin `/api/product/v1/me/subscription-context` 当前返回 503 `PRODUCT_DEPENDENCY_UNAVAILABLE`，因此页面正确显示短错误态，无法出现 Tab；同一 Admin runtime 还可见 `/api/admin/subscriptions` 与 `/api/admin/subscription-token-grants` 500。该失败发生在另有并行修改的 Admin 工作树中，不能由本轮 Dream UI diff 解释；本轮没有覆盖或修复该 Admin 代码，也不把两者的因果关系写成已证明。
+
+未执行事项及原因：
+
+- “真实 context + plans 同时 200 后的无 mock 页面成功态”未通过，因此不得把原任务的最终真实 Product E2E 宣布为完成。解除条件是先让当前 Admin `/api/product/v1/me/subscription-context` 恢复 200，再重跑 `model-settings-gateway-real.spec.ts` 的 Product desktop/mobile 两项。
+- Dream/is-dreaming 仍为 draft；未执行真实价格、开通、支付、Webhook、退款、升级或降级。页面只显示“暂不可开通”，没有伪造价格或成功状态。
+
+## Round 63 — Product Subscription Context 503 根因修复
+
+Optimized Prompt:
+
+作为 PostgreSQL 订阅计费架构师、Admin Product API 与 Dream FastAPI BFF 工程师，修复 Dream `GET /api/story-workspace/subscription/context` 返回 `503 PRODUCT_DEPENDENCY_UNAVAILABLE` 的真实根因。先复现并保留 request ID、Dream BFF 状态和 Admin `/api/product/v1/me/subscription-context` 状态；再从 Dream session/canonical user、service JWT/issuer/audience/scope、Admin Route Handler、Product repository/service、PostgreSQL Subscription/Plan Version/Allowance/Entitlement 查询、DTO 安全防火墙和 Zod/Pydantic 合同逐层定位。不得把 503 改成静态成功、不得吞掉合同错误、不得绕过 RBAC/Entitlement、不得用 mocked context 代替真实修复。
+
+工作树存在大量并行 Admin Workspace/Story、Subscription 与 migration 修改。必须先阅读重叠文件的当前 diff，保留并适配这些修改，禁止回滚、覆盖或清理未知变更。数据库只允许只读确认本机专用 `ink-memory`；若根因是代码/查询/DTO 映射，做最小兼容修复并补 focused unit/integration contract。若必须修正数据，只能在证明本机数据库、目标行和幂等前向语义后执行，不得重写 Usage、Ledger、Subscription Event、Allowance 历史或已发布 Plan Version。
+
+验收要求：真实 Admin `/api/product/v1/me/subscription-context` 对明确本机 test canonical user 返回安全 200；Dream BFF 同一路径返回 200 且 DTO 通过严格校验；`plans` 继续 200；错误状态仍正确区分 401/403/409/503；普通 Dream bearer 访问 Admin Registry 仍为 401/403。重跑相关 Admin Product/Subscription/Gateway tests、Dream Admin Product client/BFF tests、TypeScript/Python lint或typecheck，以及真实 Playwright Product desktop/mobile。捕获 API 5xx、console、pageerror、requestfailed 与横向溢出。不得输出完整 DSN、JWT、Gateway Key、Provider Secret 或用户 Token。
+
+Optional Enhancers:
+
+- 在修复前对 Admin 503 内部失败分类加入仅服务端可见的结构化诊断，公开响应继续保持安全通用文案。
+- 若发现列表 Resource 的并行查询修改误伤 Product repository，优先在 repository 内恢复稳定列/别名合同并加 regression test，不耦合 UI Resource。
+- 同时验证 `/v1/models` 500 是否同根因；只有共享根因时一并修复，否则记录为独立未执行项。
+
+范围变化：
+
+- 本阶段由订阅页 UI 验证切换为真实 Product Context 503 后端修复；允许修改与根因直接相关的 Admin/Dream backend 文件和 focused tests。
+- 不修改订阅页视觉、不发布高级商业参数、不执行真实支付或 Provider 推理。
+
+执行证据与验证结果：
+
+- 已知真实复现：Dream `/api/story-workspace/subscription/context` 为 503 `PRODUCT_DEPENDENCY_UNAVAILABLE`；Admin `/api/product/v1/me/subscription-context` 为 503；同一身份 plans 为 200；Admin Registry RBAC 为 401。
+- 本记录落盘前尚未读取重叠 diff、定位内部异常或修改代码/数据。
+
+失败尝试及根因：
+
+- Round 62 的真实 Product Playwright 在等待 `可选套餐` Tab 时超时；页面快照显示安全 503 error state。根因尚未证明，不能仅依据公开错误文本归因。
+
+未执行事项及原因：
+
+- 内部异常定位、最小修复、focused tests 和真实 Product desktop/mobile 必须在本 Prompt Architect 记录之后执行。
+
+### Round 63 执行结果（真实 5173 Product Context 已恢复）
+
+根因与处理判断：
+
+- 真实根因是应用代码与 PostgreSQL migration 部署顺序不一致。当前 `app/lib/product/repository.ts` 的 Context/Model 查询已读取 `subscription_usage_allowances.bonus_granted_tokens`，但本机专用 `ink-memory` 仍只记录到 0025；该列和 `subscription_token_grants` 表均不存在。PostgreSQL 因 undefined column 使 Admin Context 安全映射为 503，Dream 再映射为 `PRODUCT_DEPENDENCY_UNAVAILABLE`。`plans` 不查询 Allowance，因此一直为 200；`/v1/models` 同样读取新列，因此此前为 500。该证据完整解释三个端点的不同状态。
+- 已审阅并应用事务型前向 migration `0026_harsh_victor_mancha`。它新增 `bonus_granted_tokens DEFAULT 0 NOT NULL`、append-only `subscription_token_grants`、FK/check/index/trigger 和 `subscriptions.grant` 权限；没有 DROP TABLE、TRUNCATE、DELETE、批量 UPDATE，也没有重写既有 Usage、Ledger、Subscription Event 或 Allowance 历史。
+
+执行证据与验证结果：
+
+- 迁移前只读：database=`ink-memory`、schema=`public`，bonus column=false、grant table=false，最新已应用记录为 0025。
+- `pnpm db:migrate` 首次输出 `Applied migration 0026_harsh_victor_mancha` 并事务提交；第二次幂等复跑没有重复应用。迁移后只读：Allowance=61、bonus 非零=0、Token Grant rows=0、守恒异常=0、0026 migration record=1。
+- 用户指定入口 `http://127.0.0.1:5173/api/story-workspace/subscription/context` 使用明确本机 test canonical user 的临时 bearer 实测为 200，planCode=`free`、Allowance 存在；未输出 bearer 值。8765 context=200、plans=200、gateway models=200。
+- Admin focused Vitest：4 files、38 tests 全通过（Product routes/service、Subscription contracts/Gateway）。Dream focused pytest：19 passed（Admin Product client 与 Product BFF routes）。
+- 无 mock 真实 Playwright：5/5 通过，覆盖 Gateway Settings desktop/mobile、Product plans + Free Allowance desktop/mobile、Dream bearer 无 Admin Registry 权限；视口为 1440×1000 与 390×844。
+- 当前 3000、8765、5173 均为用户/其他工具已有进程；本轮只短暂尝试启动一个 Admin dev 实例，但因 `.next/dev/lock` 立即失败退出，没有停止或替换现有 listener。
+
+失败尝试及根因：
+
+- 首次从 Dream 仓库根目录运行两个 backend pytest 时因 Python import root 不正确出现 2 个 collection errors；未修改代码或数据。切换到 `backend/` 后以 `.venv/bin/python -m pytest` 重跑，19/19 通过。
+- 尝试启动 Admin 3000 时发现已有同仓库 Next dev 持有 `.next/dev/lock`；新进程立即退出。确认现有 listener cwd 后复用，不杀未知/用户进程。
+
+未执行事项及原因：
+
+- 未执行真实 Provider 推理或真实支付；本次根因仅为本机 PostgreSQL schema 未追上已运行代码，Product/Gateway 目录和页面真实读链路已经足够验证修复。
+- 未创建、更新或删除任何 Token Grant 行；迁移后的 grant table 保持 0 行，所有既有 Allowance bonus 均为 0。
+
+## Round 64 — Enabled 模型全员可见、Free 新版本模型可选与维护状态语义修正
+
+Optimized Prompt:
+
+作为 Ink Memory 产品架构师、PostgreSQL 订阅计费与 AI Gateway 架构师、Admin Next.js 工程师和 Dream FastAPI/React 工程师，修复两个真实产品问题：管理员更新 Free Plan Version 并加入 `hy-preview` 后，Free 用户在 Dream AI 模型设置中仍无法选择；所有 canonical 登录用户必须能看到 Admin `AIModelRegistry` 中全部 enabled 平台模型，而不是只有订阅或 Entitlement 命中的用户才能看到。
+
+先审计当前 Admin/Dream 代码与本机专用 PostgreSQL `ink-memory`，不得依据截图猜测。逐项证明：`hy-preview` 的 model enabled、Provider enabled、active pricing/readiness、model permission；最新 Free Plan Version 的 status、Entitlement gateway scope/model aliases；测试用户当前 Subscription 所绑定 Plan Version；Admin public model catalog SQL/DTO 如何区分 visible、callable、availability、requiredPlanCode；Dream BFF 严格合同和 ModelConfigSection disabled/label/save 条件；`AIModelRegistry` 的 enabled 真值如何传播到公共目录。保留并适配现有未提交修改，不覆盖 Admin Workspace/Story、Token Grant、Subscription 或 Dream UI 的并行工作。
+
+实现新的明确合同：
+
+- 所有已认证 canonical 用户，包含无 Subscription、Subscription inactive、旧 Plan Version 或无对应 Entitlement 的用户，都收到所有 Admin enabled platform models；目录正常返回 `200 + availability metadata`。
+- `enabled=false` 的模型不进入 enabled public catalog；若已保存 alias 后被停用，保存/调用返回结构化 409 并要求重新选择。只有 Admin 模型未启用、Provider/上游主动维护或明确 runtime readiness 失败时才允许显示“当前维护中”。
+- “未绑定任何 Plan Version”“用户 Subscription 未包含该模型”“用户仍在旧 Plan Version”不得映射为 maintenance。若模型属于已发布套餐但当前用户无权益，显示 `upgrade_required` 和 required plan；若 enabled 模型没有任何 published Plan binding，目录仍全员可见，并给出独立、诚实且可操作的 callability 语义，不能伪装维护或从目录消失。
+- Free 新版本发布并把模型加入基础 Entitlement 后，必须定义现有 Free Subscription 的安全升级策略。若产品语义为默认 Free 自动跟随最新 published version，则实现幂等前向迁移/发布流程，生成正确 Subscription Event/Allowance 影响且不覆盖 Usage/Ledger 历史；若当前模型已存在正确 published entitlement 但用户 projection/cache 落后，则只修复 projection/cache。不得直接改写已发布 Plan Version。
+- Dream 设置页所有 enabled 模型均可见；只有真实 `callable=true` 才允许保存。不可调用状态分别显示升级、Subscription inactive、额度耗尽、permission denied 或 runtime maintenance，不再统一为“维护中”。Free Entitlement 已包含 `hy-preview` 且实时资格满足时必须可选择并保存。
+
+验证要求：Admin unit/integration 覆盖 enabled 全目录、无订阅 200、未绑定 plan 非 maintenance、Free 新版本 entitlement、旧 Free Subscription 前向策略、disabled 模型不进入目录、Registry RBAC 不变；Dream unit覆盖 DTO、标签、disabled/save 语义和 stale selection 409。只在本机专用 `ink-memory` 进行只读审计；任何数据修正必须幂等、前向、可追溯，不改写 Usage/Ledger/Audit/历史 Event。运行 Admin env/type/lint/focused tests/build、Dream backend/frontend focused tests，并用真实 Product/Gateway Playwright 在 1440×1000 与 390×844 验证：全部 enabled 模型可见，Free 当前 entitlement 模型可选，未授权模型显示准确原因，console/pageerror/API 5xx/横向溢出为零，普通用户仍不能访问 Admin Registry。
+
+Optional Enhancers:
+
+- 在公共 DTO 增加稳定的 `availabilityReason`/`requiredPlanCode` 组合测试，避免前端从文案反推业务状态。
+- 增加 Admin 发布 Free 新版本后的幂等 reconciliation command 与 dry-run 计数，明确更新多少 active Free Subscription，跳过多少 paid/inactive/冲突记录。
+- 为 model disabled 后的已保存 alias 增加端到端重新选择测试。
+
+范围变化：
+
+- 本阶段允许修改 Admin public model catalog、Free subscription reconciliation、Dream BFF/设置页及相关 tests；不改变 Admin Registry RBAC，不接真实支付，不访问 Provider 推理网络。
+- 用户明确收紧 maintenance 语义：缺少 Plan binding/Entitlement 不再等于维护；所有 enabled 模型对登录用户可见。
+
+执行证据与验证结果：
+
+- 用户截图显示 `deepseek-v4-flash` 可选，而 `hy-preview` 被禁用并显示“需要 free 套餐”；用户说明已发布/更新 Free 版本加入 hy，但当前页面仍不可选。
+- 本记录落盘前尚未审计真实 model/plan/subscription 数据或修改代码/数据。
+
+失败尝试及根因：
+
+- 无；本阶段尚未开始。
+
+未执行事项及原因：
+
+- 数据库审计、根因分类、实现、数据 reconciliation 和真实双视口验证必须在本 Prompt Architect 记录之后执行。
+
+## Round 64 — Dream Workspace/Story 可见性最终证据归档
+
+Optimized Prompt:
+
+作为资深产品架构师、PostgreSQL 数据架构师、Next.js/Refine 管理后台工程师和 UI/UX 验证负责人，对已经完成实现的 Dream Workspace/Story 数据可见性修复执行最终证据归档。范围仅限 `ink-admin-memory` 的 Story Workspace/Story 查询链路、管理页面、相关测试与文档；`ink-dream-memory` 继续只读，不得修改。保留当前工作树中其他任务的未提交修改，禁止回滚、覆盖或清理未知变更。
+
+先汇总生产配置的只读数据库证据：Admin 与 Dream 指向同一 PostgreSQL `ink-memory`，服务端 schema/search_path、`users`、`story_workspace_workspaces`、`story_workspace_stories` 的行数、状态、类型和关系完整性；不得输出完整 DSN、口令、Secret、正文或密码散列。再汇总代码证据：页面统一使用 canonical `story-workspaces`/`story-stories`，兼容 `stories` 仅在 API 边界归一化；Repository 以 Dream 真表和 `users` 为主体，计费身份只做 LEFT JOIN；列表/详情不返回正文，主外键字符串化；筛选、日期范围、分页、排序、total、URL 清理、缓存失效和错误分类保持一致。
+
+验证报告必须记录已通过的 `pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm test:run`、production build 以及专属 Docker PostgreSQL 上的 focused Playwright。Playwright 证据需包含无 Session 302/401、RBAC 403、数据库 count 与 API total 一致、缺少 Platform Billing Identity 的业务数据仍显示、关系跳转、状态/搜索/日期/分页/排序、残留 URL 清理、400/500/503 与空状态分离、受控写后缓存失效、Storage/Provider/Gateway/Billing smoke、已移除路由 404，以及 1440×1000、390×844 无页面级横向溢出。目视检查 Workspace、Story、筛选无结果和数据库不可用截图，确认数据表与诊断态清晰且没有普通空表伪装。
+
+更新 `story-workspace-data-visibility-audit.md` 的最终验证证据，并创建 `story-workspace-data-visibility-fix-verification.md`。最终报告必须明确真实根因、当前数据库/schema、生产只读行数与隔离测试 DB/API/UI 对照、修改文件、PRD/交互设计路径、是否涉及迁移、测试数量/视口、已知风险及未执行外部场景。只有在 `git diff --check` 通过、临时服务/容器清理且 3000/5433 用户进程未被触碰后，才可声明完成。
+
+Optional Enhancers:
+
+- 在报告中区分生产共享数据库只读证据与隔离测试写入证据，避免把 fixture 数量误称为生产 UI 数量。
+- 记录 Turbopack 因临时目录外部 `node_modules` 符号链接失败，随后使用 `next build --webpack` 成功，明确这是验证布局限制而非代码失败。
+- 为六张最终截图提供可点击的绝对路径，并在视觉结论中说明移动端首屏可能只显示筛选区，但 E2E 已滚动/定位真实数据且 document overflow 为零。
+
+范围变化：
+
+- 本阶段仅归档和复核，不再扩大实现范围，也不执行新的共享数据库写操作。
+- 与并行 Product Subscription Context 任务无关，不修改其代码、迁移或验证结论。
+
+执行证据与验证结果：
+
+- `pnpm env:check`、TypeScript、全量 lint 已通过；unit 为 67/67 files、328/328 tests；隔离 PostgreSQL focused Playwright 最终为 1/1 通过（44.3 秒），并覆盖 404 关系缺失与 409 关系冲突专用状态。
+- production `next build --webpack` 在临时副本通过；1440×1000、390×844 截图已生成并目视确认 Workspace/Story 真数据及 503 独立诊断态。
+- 生产共享库全程只读；隔离 PostgreSQL 最终为 Workspace=3、Story=3、关系错误=0。
+
+失败尝试及根因：
+
+- focused Playwright 首轮业务断言已走完，但开发辅助脚本 `react-grab` 的 unpkg CORS 被诊断监听器收集；使用项目既有做法在测试内 fulfill 该开发脚本后通过。
+- 临时副本默认 Turbopack build 因 `node_modules` 符号链接指向工作区根目录之外而失败；同一代码使用 Next Webpack 构建成功。
+
+未执行事项及原因：
+
+- 本阶段无剩余必做项。审计报告已回填，最终验证报告已创建，最终 TypeScript/lint/diff 校验通过；专属 55432 容器已停止并由 `--rm` 删除，3012 无 listener，临时副本已移动到系统废纸篓以便恢复。
+- 用户已有 3000 listener（PID 56133）与 Docker 5433 映射保持运行，本阶段没有停止、替换或重启它们。Dream 工作树同时存在其他任务的订阅页改动；本阶段没有写入 Dream 文件，也不把那些 diff 归入 Story 修复。
+
+## Round 65 — 指定 Dream 用户在 Admin 无数据的只读诊断
+
+Optimized Prompt:
+
+作为 PostgreSQL 数据架构师、Dream canonical identity 调试工程师和 Next.js/Refine Admin 查询链路审计者，解释为什么用户提供的指定邮箱账号在 Dream 可见业务数据，而 Admin Workspace/Story 页面显示无数据。只做证据驱动的只读诊断，不先修改代码，不写共享 PostgreSQL，不创建 Session，不修改 `ink-dream-memory`，并保留当前工作树中所有并行未提交修改。
+
+使用 Admin 实际加载的 `.env.local` 和 Dream 当前环境配置，脱敏确认两端数据库、host/port、database、schema 与 search_path。以大小写不敏感邮箱查找 canonical `users` 记录，检查是否存在重复邮箱、用户 ID 类型、Workspace `owner_id`、Story `author_id`、Story `workspace_id`、Workspace owner 与 Story author 是否一致，以及相关状态分布。分别计算“作为 Workspace owner”“作为 Story author”“位于其 Workspace 中的 Story”三种口径，避免把作者和所有者混为一谈。不得输出 password hash、Secret、正文、settings JSON 或完整 DSN。
+
+复现 Admin Repository 的无筛选查询和 `owner_id`/`author_id`/`workspace_id` 筛选 SQL，确认记录是否被 JOIN、状态、排序、分页或类型转换过滤。检查 `platform_users(source='ink-dream')` 投影是否存在，但它只能作为显示诊断，不能成为业务记录可见性的前置条件。核对当前 3000 Admin runtime 是否加载了最新代码、页面实际请求 resource 是 `story-workspaces`/`story-stories` 还是 legacy `stories`、当前 URL 是否残留筛选、API 状态是否为 200/401/403/500/503，以及 Refine cache 是否可能仍持有旧结果。若无法在不写共享库的前提下获得 authenticated 浏览器证据，明确该边界，不把未验证项写成事实。
+
+最终输出必须给出确定根因或清晰分层结论：数据库层是否确有该账号数据；关系口径是否错误；Admin 是否运行旧 bundle；页面/API 是否被 Session/RBAC/筛选/缓存阻断。每个判断引用 SQL 计数、HTTP 状态或代码位置。只有在证据证明代码缺陷且用户请求包含修复时才修改；本轮用户问“为什么”，因此默认只诊断并给出最小下一步。
+
+Optional Enhancers:
+
+- 对同一邮箱检查 Unicode/前后空格/大小写归一化和重复记录，但不要打印其他用户邮箱。
+- 若指定用户只有 Story author 数据而不是 Workspace owner 数据，明确说明两个页面的预期差异。
+- 对运行中的 Next 进程读取 cwd、启动时间和构建产物时间，判断是否需要重启，而不终止用户进程。
+
+执行证据与验证结果：
+
+- 本记录落盘前尚未查询指定账号或检查当前 3000 runtime；后续操作必须保持数据库只读。
+
+### Round 65 执行结果
+
+- Admin 与 Dream 均指向本机 5433 的 `ink-memory`/`public`；服务端 `search_path="$user", public`。全部 SQL 均在 `BEGIN READ ONLY` 中执行。
+- 指定邮箱大小写/空格归一后唯一匹配 canonical `users.id=28`，无重复身份。该用户拥有 1 个 `active` Workspace（“默认工作区”），Workspace owner 关系健康，`platform_users(source='ink-dream')` 投影存在。
+- 该用户作为 author 的 canonical Story=0；其 Workspace 内 Story=0、Character=0、Scene=0。Dream 当前可见活动对应 1 个 deck plugin binding、4 个 `queued` workflow run 和 4 个 workflow token consumption，不是 `story_workspace_stories` 记录。
+- Admin Repository 等价 Workspace LEFT JOIN + `owner_id=28` 返回 1 行；该 Workspace 按 Admin 默认 `updated_at DESC` 排名第 1，必在首屏 12 行内。Story `author_id=28` 返回 0 是正确结果。
+- 当前 3000 Next runtime cwd 为本 Admin 仓库，启动于 2026-08-10 00:07:45；`.next/dev/trace` 已出现 canonical `/api/admin/story-workspaces`、`/api/admin/story-stories`，并出现该目标 Workspace 的 get-one 请求，说明运行实例已经走新 Resource。未认证只读 HTTP 对 users/workspaces/stories 均为 401 `ADMIN_AUTH_REQUIRED`；为避免写共享 Session，没有冒用或创建 authenticated cookie。
+- 确定结论：Dream 展示的是 Workspace/queued workflow 活动，而不是已落入 canonical Story 表的剧本。Admin Story 页为 0 不是漏查；Admin Workspace 页按数据库和 Repository 必须为 1。若用户浏览器中 Workspace 仍显示 0，剩余原因限定在该浏览器的 Session/URL 筛选/短期 Query cache 或具体 API 错误，而非数据库、JOIN、分页或当前 Resource 代码。
+
+## Round 66 — Dream 页面可见“剧本”与 canonical Story 表差异追踪
+
+Optimized Prompt:
+
+作为 Dream 前端数据流调试工程师、FastAPI/PostgreSQL Repository 审计者和 Admin Story 数据架构师，回答指定账号为什么在 Dream 页面看得到“剧本”，而 Admin `/admin/story/stories` 没有数据。上一轮已经只读证明该账号拥有 1 个 Workspace、4 个 queued workflow run，但 `story_workspace_stories` 为 0；本轮不得直接把 Dream UI 数据等同于 workflow，必须继续追踪 Dream 实际页面的数据来源并给出代码与运行证据。
+
+`ink-dream-memory` 只允许读取。定位用户所见“剧本”相关路由、组件、hook、状态容器、API client、FastAPI route/service/repository 和 SQL；查明列表项来自 `story_workspace_stories`、`story_projects`、workflow/session、chat/memory、浏览器 localStorage/IndexedDB、mock fixture，还是另一个后端/数据库。核对当前 Dream frontend/backend listener 的 cwd、端口、启动环境和 API base URL，确认是否与 Admin 同一 5433/`ink-memory`。不得输出 Cookie、JWT、Secret、正文、完整 DSN 或其他用户数据。
+
+对指定账号只做 count/ID/状态级只读验证：对比 Dream 页面 API 合同中的剧本 ID/Workspace ID 与 PostgreSQL canonical Story ID；检查是否存在旧表、兼容表、JSON payload、workflow output 尚未 materialize、前端 optimistic/local draft 或缓存。若 Dream 页面从浏览器本地状态显示条目，明确其持久化 key 和同步条件；若 API 返回条目但 canonical 表为 0，继续追到真实查询源；若需要 authenticated 浏览器证据但无法安全复用用户 Session，明确该边界并用源码、运行配置和数据库证据缩小结论。
+
+同时检查 queued workflow 为什么可能被 Dream UI 命名为“剧本”，但本轮只诊断，不修改 worker、数据或代码。最终回答必须区分：Dream UI 可见对象的真实类型、Admin Story 的 canonical 定义、两者未同步/未 materialize 的准确断点，以及用户可执行的最小验证步骤。不得用“可能是缓存”替代代码或 SQL 证据。
+
+执行证据与验证结果：
+
+- 本记录落盘前已知 canonical Story=0、queued workflow=4；尚未证明 Dream UI 所见列表的具体数据源。

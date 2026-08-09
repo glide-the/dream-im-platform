@@ -22,6 +22,7 @@ const registeredResources = new Set([
   "subscriptions",
   "subscription-allowances",
   "subscription-events",
+  "subscription-token-grants",
   "token-ledger",
   "usage",
   "ledger",
@@ -38,7 +39,6 @@ const registeredResources = new Set([
   "audit-logs",
   "story-workspaces",
   "story-stories",
-  "stories",
   "story-characters",
   "story-scenes",
   "system-settings",
@@ -62,6 +62,10 @@ const resourcePermission: Record<
   subscriptions: { read: "subscriptions.read", write: "subscriptions.write" },
   "subscription-allowances": { read: "subscriptions.read", write: "subscriptions.read" },
   "subscription-events": { read: "subscriptions.read", write: "subscriptions.read" },
+  "subscription-token-grants": {
+    read: "subscriptions.read",
+    write: "subscriptions.grant",
+  },
   "token-ledger": { read: "subscriptions.read", write: "subscriptions.read" },
   usage: { read: "billing.read", write: "billing.adjust" },
   ledger: { read: "billing.read", write: "billing.adjust" },
@@ -80,14 +84,17 @@ const resourcePermission: Record<
   "audit-logs": { read: "audit.read", write: "audit.read" },
   "story-workspaces": { read: "story.read", write: "story.write" },
   "story-stories": { read: "story.read", write: "story.write" },
-  stories: { read: "story.read", write: "story.write" },
   "story-characters": { read: "story.read", write: "story.write" },
   "story-scenes": { read: "story.read", write: "story.write" },
   "system-settings": { read: "system.read", write: "system.write" },
 };
 
+export function canonicalAdminResource(resource: string) {
+  return resource === "stories" ? "story-stories" : resource;
+}
+
 function resourceEndpoint(resource: string) {
-  return `/api/admin/${resource}`;
+  return `/api/admin/${canonicalAdminResource(resource)}`;
 }
 
 type AdminIdentity = {
@@ -99,7 +106,12 @@ type AdminIdentity = {
 };
 
 type ErrorBody = {
-  error?: { code?: string; message?: string; details?: unknown };
+  error?: {
+    code?: string;
+    message?: string;
+    details?: unknown;
+    requestId?: string;
+  };
 };
 
 function assertResource(resource: string) {
@@ -125,8 +137,10 @@ async function fetchAdmin<T>(url: string, init?: RequestInit): Promise<T> {
       new Error(body.error?.message ?? "Admin API request failed"),
       {
         statusCode: response.status,
+        code: body.error?.code,
         message: body.error?.message ?? "Admin API request failed",
         errors: body.error?.details,
+        requestId: body.error?.requestId,
       },
     ) as HttpError;
   }
@@ -139,7 +153,7 @@ function appendFilter(params: URLSearchParams, filter: CrudFilter) {
       statusCode: 400,
     }) as HttpError;
   }
-  if (!["eq", "contains", "in"].includes(filter.operator)) {
+  if (!["eq", "contains", "in", "gte", "lte"].includes(filter.operator)) {
     throw Object.assign(
       new Error(`Unsupported admin filter operator: ${filter.operator}`),
       { statusCode: 400 },

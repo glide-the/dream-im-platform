@@ -450,6 +450,106 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     expect(oneTokenAllowancesAfterResponse.status()).toBe(200);
     expect(await oneTokenAllowancesAfterResponse.json()).toEqual(oneTokenAllowancesBefore);
 
+    const tokenGrantKey = "grant-tokens:one-token:e2e";
+    const tokenGrant = await api.post(
+      `${baseURL}/api/admin/subscriptions/${encodeURIComponent(oneTokenSubscriptionId)}/grant-tokens`,
+      {
+        headers,
+        data: {
+          amountTokens: 1_000,
+          expectedAllowanceVersion: Number(oneTokenSubscription.allowance_version),
+          idempotencyKey: tokenGrantKey,
+          reason: "E2E audited free Token grant",
+        },
+      },
+    );
+    expect(tokenGrant.status()).toBe(200);
+    await expect(tokenGrant.json()).resolves.toMatchObject({
+      data: {
+        id: oneTokenSubscriptionId,
+        plan_granted_tokens: "1",
+        bonus_granted_tokens: "1000",
+        granted_tokens: "1001",
+        allowance_version: 2,
+      },
+    });
+    const duplicateTokenGrant = await api.post(
+      `${baseURL}/api/admin/subscriptions/${encodeURIComponent(oneTokenSubscriptionId)}/grant-tokens`,
+      {
+        headers,
+        data: {
+          amountTokens: 1_000,
+          expectedAllowanceVersion: Number(oneTokenSubscription.allowance_version),
+          idempotencyKey: tokenGrantKey,
+          reason: "E2E audited free Token grant",
+        },
+      },
+    );
+    expect(duplicateTokenGrant.status()).toBe(200);
+    await expect(duplicateTokenGrant.json()).resolves.toMatchObject({
+      data: { bonus_granted_tokens: "1000", granted_tokens: "1001" },
+    });
+    const tokenGrantConflict = await api.post(
+      `${baseURL}/api/admin/subscriptions/${encodeURIComponent(oneTokenSubscriptionId)}/grant-tokens`,
+      {
+        headers,
+        data: {
+          amountTokens: 2_000,
+          expectedAllowanceVersion: 2,
+          idempotencyKey: tokenGrantKey,
+          reason: "E2E changed Token grant payload",
+        },
+      },
+    );
+    expect(tokenGrantConflict.status()).toBe(409);
+    await expect(tokenGrantConflict.json()).resolves.toMatchObject({
+      error: { code: "SUBSCRIPTION_IDEMPOTENCY_CONFLICT" },
+    });
+    const tokenGrants = await api.get(
+      `${baseURL}/api/admin/subscription-token-grants?filter[subscription_id][eq]=${encodeURIComponent(oneTokenSubscriptionId)}`,
+    );
+    expect(tokenGrants.status()).toBe(200);
+    await expect(tokenGrants.json()).resolves.toMatchObject({
+      meta: { total: 1 },
+      data: [expect.objectContaining({
+        amount_tokens: "1000",
+        bonus_before_tokens: "0",
+        bonus_after_tokens: "1000",
+        available_before_tokens: "1",
+        available_after_tokens: "1001",
+        reason: "E2E audited free Token grant",
+      })],
+    });
+
+    const upstreamCallsBeforeGrantedRequest = upstreamRequestCount;
+    const grantedGatewayCall = await api.post(`${baseURL}/v1/messages`, {
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": exhaustedPlaintextKey,
+        "idempotency-key": "subscription-token-granted-gateway-e2e",
+      },
+      data: {
+        model: "subscription-model",
+        max_tokens: 32,
+        messages: [{ role: "user", content: "The audited Token grant should cover this request" }],
+      },
+    });
+    expect(grantedGatewayCall.status()).toBe(200);
+    if (upstream) {
+      expect(upstreamRequestCount).toBe(upstreamCallsBeforeGrantedRequest + 1);
+    }
+    const oneTokenAllowanceAfterGrant = await api.get(oneTokenAllowancesUrl);
+    expect(oneTokenAllowanceAfterGrant.status()).toBe(200);
+    await expect(oneTokenAllowanceAfterGrant.json()).resolves.toMatchObject({
+      data: [expect.objectContaining({
+        plan_granted_tokens: "1",
+        bonus_granted_tokens: "1000",
+        granted_tokens: "1001",
+        reserved_tokens: "0",
+        consumed_tokens: "15",
+      })],
+    });
+
     const pause = await command("pause", "pause:subscription:e2e");
     expect(pause.status()).toBe(200);
     expectedVersion = Number(((await pause.json()).data as Record<string, unknown>).version);
@@ -513,9 +613,11 @@ test.describe("subscription billing on owned PostgreSQL", () => {
 
     await page.goto("/admin/subscriptions/token-ledger");
     await expect(page.getByRole("heading", { name: "Token 流水", exact: true })).toBeVisible();
+    await expect(page.getByText("免费 Token 补发记录", { exact: true })).toBeVisible();
+    await expect(page.getByText("E2E audited free Token grant", { exact: true })).toBeVisible();
     await expect(page.getByText(successfulGatewayRequestId, { exact: true }).first()).toBeVisible();
     for (const type of ["reserve", "capture", "release"]) {
-      await expect(page.getByText(type, { exact: true })).toBeVisible();
+      await expect(page.getByText(type, { exact: true }).first()).toBeVisible();
     }
     expect(await page.locator("body").innerText()).not.toMatch(/micro-?usd|付款成功|支付成功/i);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
@@ -523,6 +625,7 @@ test.describe("subscription billing on owned PostgreSQL", () => {
 
     await page.goto("/admin/subscriptions/users");
     await expect(page.getByRole("heading", { name: "用户订阅", exact: true })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "补发 Token" })).toBeVisible();
     const platformUserSelect = page.getByLabel("平台用户", { exact: true });
     await expect(platformUserSelect).toContainText("creator@example.test");
     await expect(platformUserSelect).toContainText("other@example.test");
@@ -531,6 +634,23 @@ test.describe("subscription billing on owned PostgreSQL", () => {
         .getByRole("region", { name: "用户订阅清单" })
         .getByText("creator@example.test", { exact: true }),
     ).toBeVisible();
+    await page.goto("/admin/gateway/rate-limits?email=creator%40example.test#platform-users-manager");
+    await expect(page.getByRole("heading", { name: "用户默认 429 Token 安全上限" })).toBeVisible();
+    await expect(page.getByText("这里不能处理订阅 Token 不足的 402", { exact: true })).toBeVisible();
+    await expect(page.getByText("SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED", { exact: true })).toBeVisible();
+    const recoveryLink = page.getByRole("link", { name: "处理 402／补发 Token" });
+    await expect(recoveryLink).toHaveAttribute("href", "/admin/subscriptions/users?email=creator%40example.test&intent=grant#subscription-user-list");
+    await recoveryLink.click();
+    await expect(page).toHaveURL(/\/admin\/subscriptions\/users\?email=creator%40example\.test&intent=grant#subscription-user-list$/);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByLabel("按邮箱筛选用户订阅")).toHaveValue("creator@example.test");
+    const subscriptionList = page.getByRole("region", { name: "用户订阅清单" });
+    await expect(subscriptionList.getByText("creator@example.test", { exact: true })).toBeVisible();
+    await expect(subscriptionList.getByText("other@example.test", { exact: true })).toHaveCount(0);
+    await subscriptionList.getByRole("button", { name: "管理" }).click();
+    await expect(page.locator("select[data-dialog-autofocus]")).toHaveValue("grant_tokens");
+    await expect(page.getByLabel("补发 Token 数量 *")).toBeVisible();
+    await page.getByRole("button", { name: "关闭", exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/admin/subscriptions/versions");
@@ -545,6 +665,7 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     await page.screenshot({ path: testInfo.outputPath("subscription-versions-mobile-390x844.png") });
     await page.goto("/admin/subscriptions/token-ledger");
     await expect(page.getByRole("heading", { name: "Token 流水", exact: true })).toBeVisible();
+    await expect(page.getByText("免费 Token 补发记录", { exact: true })).toBeVisible();
     await expect(page.getByText(successfulGatewayRequestId, { exact: true }).first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("subscription-token-ledger-mobile-390x844.png") });

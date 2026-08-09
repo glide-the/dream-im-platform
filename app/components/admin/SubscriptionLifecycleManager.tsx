@@ -1,6 +1,7 @@
 "use client";
 
-import { useList } from "@refinedev/core";
+import { useCan, useList } from "@refinedev/core";
+import { useSearchParams } from "next/navigation";
 import {
   useEffect,
   useMemo,
@@ -17,13 +18,19 @@ type Action =
   | "pause"
   | "resume"
   | "cancel"
-  | "revoke_cancel";
+  | "revoke_cancel"
+  | "grant_tokens";
 
 const actionOptions: Array<{
   value: Action;
   label: string;
   description: string;
 }> = [
+  {
+    value: "grant_tokens",
+    label: "补发本周期 Token",
+    description: "把免费 Token 追加到当前个人订阅周期，立即参与 Gateway 预授权；操作不会修改每日/每月安全限流，也不会在下周期重复发放。",
+  },
   {
     value: "renew",
     label: "续期",
@@ -114,13 +121,19 @@ function pendingVersionLabel(row: Row) {
 }
 
 export default function SubscriptionLifecycleManager() {
+  const searchParams = useSearchParams();
+  const grantIntent = searchParams.get("intent") === "grant";
   const [page, setPage] = useState(1);
+  const [subscriptionSearch, setSubscriptionSearch] = useState(
+    () => searchParams.get("email")?.trim() ?? "",
+  );
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [selected, setSelected] = useState<Row | null>(null);
   const [action, setAction] = useState<Action>("renew");
   const [targetVersion, setTargetVersion] = useState("");
+  const [grantAmount, setGrantAmount] = useState("");
   const [reason, setReason] = useState("");
   const [userId, setUserId] = useState("");
   const [selectedUserLabel, setSelectedUserLabel] = useState("");
@@ -130,11 +143,18 @@ export default function SubscriptionLifecycleManager() {
   const [trial, setTrial] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const manageTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const grantAccess = useCan({
+    resource: "subscription-token-grants",
+    action: "create",
+  });
 
   const subscriptions = useList<Row>({
     resource: "subscriptions",
     pagination: { currentPage: page, pageSize: 20 },
     sorters: [{ field: "updated_at", order: "desc" }],
+    filters: subscriptionSearch.trim()
+      ? [{ field: "email", operator: "contains", value: subscriptionSearch.trim() }]
+      : [],
   });
   const users = useList<Row>({
     resource: "platform-users",
@@ -154,6 +174,9 @@ export default function SubscriptionLifecycleManager() {
   const userTotal = users.result.total ?? 0;
   const userPages = Math.max(1, Math.ceil(userTotal / 50));
   const published = useMemo(() => versions.result.data ?? [], [versions.result.data]);
+  const visibleActionOptions = actionOptions.filter(
+    (option) => option.value !== "grant_tokens" || grantAccess.data?.can,
+  );
   const activeAction = actionOptions.find((option) => option.value === action)!;
 
   useEffect(() => {
@@ -217,16 +240,23 @@ export default function SubscriptionLifecycleManager() {
   async function transition(event: FormEvent) {
     event.preventDefault();
     if (!selected) return;
-    const body: Record<string, unknown> = {
-      idempotencyKey: requestKey(action),
-      reason,
-      expectedVersion: Number(selected.version),
-    };
+    const body: Record<string, unknown> = action === "grant_tokens"
+      ? {
+          idempotencyKey: requestKey("grant-tokens"),
+          reason,
+          amountTokens: Number(grantAmount),
+          expectedAllowanceVersion: Number(selected.allowance_version),
+        }
+      : {
+          idempotencyKey: requestKey(action),
+          reason,
+          expectedVersion: Number(selected.version),
+        };
     if (["upgrade", "downgrade"].includes(action)) {
       body.planVersionId = targetVersion;
     }
     const ok = await post(
-      `/api/admin/subscriptions/${encodeURIComponent(selected.id)}/${action}`,
+      `/api/admin/subscriptions/${encodeURIComponent(selected.id)}/${action === "grant_tokens" ? "grant-tokens" : action}`,
       body,
     );
     if (ok) closeActionDialog();
@@ -236,13 +266,15 @@ export default function SubscriptionLifecycleManager() {
     setSelected(null);
     setReason("");
     setTargetVersion("");
+    setGrantAmount("");
   }
 
   function openActionDialog(row: Row, trigger: HTMLButtonElement) {
     manageTriggerRef.current = trigger;
     setSelected(row);
-    setAction("renew");
+    setAction(grantIntent && grantAccess.data?.can ? "grant_tokens" : "renew");
     setTargetVersion("");
+    setGrantAmount("");
     setReason("");
     setError("");
   }
@@ -313,16 +345,40 @@ export default function SubscriptionLifecycleManager() {
       </div>
     </form>
 
-    <section className="admin-panel overflow-hidden" aria-label="用户订阅清单">
+    <section id="subscription-user-list" className="admin-panel overflow-hidden scroll-mt-24" aria-label="用户订阅清单">
+      <header className="space-y-4 border-b border-border p-5">
+        <div>
+          <h2 className="font-display text-xl font-semibold">用户订阅与当前周期 Token</h2>
+          <p className="mt-1 text-sm leading-6 text-text-secondary">按用户核对套餐 Token、补发 Token、预留、消耗和剩余；这里的补发会立即参与 Gateway 预授权，但不修改 429 安全限流。</p>
+        </div>
+        {grantIntent ? <p className="border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary" role="status">正在处理 402：请确认目标用户后点击“管理”。具备 <span className="font-mono text-xs">subscriptions.grant</span> 权限时，弹窗会直接选择“补发本周期 Token”。</p> : null}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="block max-w-xl flex-1 text-xs font-semibold text-text-secondary">按邮箱筛选用户订阅
+            <input
+              type="search"
+              className="admin-field mt-2"
+              value={subscriptionSearch}
+              onChange={(event) => {
+                setSubscriptionSearch(event.target.value);
+                setPage(1);
+              }}
+              placeholder="输入完整或部分邮箱"
+            />
+          </label>
+          {subscriptionSearch ? <button type="button" className="min-h-11 border border-border px-4 text-sm font-semibold" onClick={() => { setSubscriptionSearch(""); setPage(1); }}>清除筛选</button> : null}
+        </div>
+      </header>
       <div className="max-w-full overflow-x-auto" tabIndex={0} aria-label="用户订阅数据表，可横向滚动">
         <table className="w-full min-w-[1540px] text-left text-sm">
           <caption className="sr-only">用户个人月度订阅周期及 Token Allowance 使用情况</caption>
           <thead className="border-b border-border bg-bg-secondary font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
-            <tr>{["用户", "套餐", "状态", "个人订阅周期", "已发放 Token", "预留 Token", "已消耗 Token", "剩余 Token", "待生效版本", "操作"].map((label) => <th key={label} scope="col" className="whitespace-nowrap px-4 py-3">{label}</th>)}</tr>
+            <tr>{["用户", "套餐", "状态", "个人订阅周期", "套餐 Token", "补发 Token", "可用总额", "预留 Token", "已消耗 Token", "剩余 Token", "待生效版本", "操作"].map((label) => <th key={label} scope="col" className="whitespace-nowrap px-4 py-3">{label}</th>)}</tr>
           </thead>
           <tbody className="divide-y divide-border">
             {rows.map((row) => {
               const granted = tokenValue(row.granted_tokens);
+              const planGranted = tokenValue(row.plan_granted_tokens);
+              const bonusGranted = tokenValue(row.bonus_granted_tokens);
               const reserved = tokenValue(row.reserved_tokens);
               const consumed = tokenValue(row.consumed_tokens);
               const remaining = Math.max(0, granted - reserved - consumed);
@@ -331,6 +387,8 @@ export default function SubscriptionLifecycleManager() {
                 <td className="px-4 py-3">{String(row.plan_code)} · v{String(row.version_number)}</td>
                 <td className="px-4 py-3"><span className="admin-status">{String(row.status)}</span></td>
                 <td className="px-4 py-3 text-xs">{formatDate(row.current_period_start)} → {formatDate(row.current_period_end)}</td>
+                <td className="px-4 py-3 font-mono">{formatToken(planGranted)}</td>
+                <td className="px-4 py-3 font-mono">{formatToken(bonusGranted)}</td>
                 <td className="px-4 py-3 font-mono">{formatToken(granted)}</td>
                 <td className="px-4 py-3 font-mono">{formatToken(reserved)}</td>
                 <td className="px-4 py-3 font-mono">{formatToken(consumed)}</td>
@@ -339,7 +397,7 @@ export default function SubscriptionLifecycleManager() {
                 <td className="px-4 py-3"><button type="button" className="min-h-10 underline" onClick={(event) => openActionDialog(row, event.currentTarget)}>管理</button></td>
               </tr>;
             })}
-            {!subscriptions.query.isLoading && rows.length === 0 ? <tr><td colSpan={10} className="px-5 py-14 text-center text-text-tertiary">尚无用户订阅。请先发布包含月度 Token 额度与模型权益的套餐版本。</td></tr> : null}
+            {!subscriptions.query.isLoading && rows.length === 0 ? <tr><td colSpan={12} className="px-5 py-14 text-center text-text-tertiary">{subscriptionSearch ? "没有匹配该邮箱的用户订阅。请核对邮箱，或先为用户开通订阅。" : "尚无用户订阅。请先发布包含月度 Token 额度与模型权益的套餐版本。"}</td></tr> : null}
           </tbody>
         </table>
       </div>
@@ -361,10 +419,13 @@ export default function SubscriptionLifecycleManager() {
           {action === "renew" && new Date(String(selected.current_period_end)) <= new Date() ? <p className="border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary">如果该订阅已经漏过多个个人周期，服务端会从原始周期锚点直接定位到包含当前时刻的周期；已过期月份不会追溯补发 Token。</p> : null}
           <label className="block text-xs font-semibold text-text-secondary">操作
             <select data-dialog-autofocus className="admin-field mt-2" value={action} onChange={(event) => { setAction(event.target.value as Action); setTargetVersion(""); setError(""); }}>
-              {actionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              {visibleActionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
           <p className="border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary">{activeAction.description}</p>
+          {action === "grant_tokens" ? <label className="block text-xs font-semibold text-text-secondary">补发 Token 数量 *
+            <input required min={1} step={1} inputMode="numeric" type="number" className="admin-field mt-2 font-mono" value={grantAmount} onChange={(event) => setGrantAmount(event.target.value)} placeholder="例如 100000" />
+          </label> : null}
           {["upgrade", "downgrade"].includes(action) ? <label className="block text-xs font-semibold text-text-secondary">下周期目标版本
             <select required className="admin-field mt-2" value={targetVersion} onChange={(event) => setTargetVersion(event.target.value)}><option value="">选择已发布版本</option>{published.map((version) => <option key={version.id} value={version.id}>{String(version.plan_code)} · v{String(version.version_number)} · {formatToken(version.allowance_tokens)} Token/月</option>)}</select>
           </label> : null}

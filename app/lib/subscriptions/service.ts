@@ -22,6 +22,7 @@ import {
   publishVersionSchema,
   subscriptionActionSchema,
   subscriptionCreateSchema,
+  subscriptionTokenGrantSchema,
   type SubscriptionResource,
 } from "./contracts";
 import { monthlyCyclePeriod, monthlyCyclePeriodAt } from "./cycle";
@@ -1061,6 +1062,214 @@ export async function advanceSubscriptionPeriodOnClient(
   };
 }
 
+export async function grantSubscriptionTokensOnClient(
+  client: PoolClient,
+  input: {
+    id: string;
+    amountTokens: number;
+    idempotencyKey: string;
+    reason: string;
+    expectedAllowanceVersion: number;
+    actor: { type: "admin" | "system"; id: string };
+    at?: Date;
+  },
+) {
+  const requestDigest = subscriptionRequestDigest("token_granted", {
+    subscriptionId: input.id,
+    amountTokens: input.amountTokens,
+    reason: input.reason,
+    expectedAllowanceVersion: input.expectedAllowanceVersion,
+  });
+  const duplicate = await existingEventSubscription(
+    client,
+    input.idempotencyKey,
+    "token_granted",
+    requestDigest,
+  );
+  if (duplicate) {
+    return {
+      subscriptionId: duplicate.subscriptionId,
+      idempotent: true as const,
+      originalAfter: duplicate.originalAfter,
+      before: {},
+    };
+  }
+
+  const now = input.at ?? new Date();
+  const locked = await client.query<{
+    subscription_id: string;
+    platform_user_id: string;
+    plan_version_id: string;
+    status: string;
+    current_period_start: Date;
+    current_period_end: Date;
+    allowance_id: string | null;
+    plan_granted_tokens: string | number | null;
+    bonus_granted_tokens: string | number | null;
+    reserved_tokens: string | number | null;
+    consumed_tokens: string | number | null;
+    allowance_version: number | null;
+  }>(
+    `SELECT s.id AS subscription_id, s.platform_user_id, s.plan_version_id,
+            s.status, s.current_period_start, s.current_period_end,
+            a.id AS allowance_id,
+            a.granted_tokens AS plan_granted_tokens,
+            a.bonus_granted_tokens, a.reserved_tokens, a.consumed_tokens,
+            a.version AS allowance_version
+     FROM subscriptions AS s
+     JOIN subscription_usage_allowances AS a
+       ON a.subscription_id = s.id
+      AND a.period_start = s.current_period_start
+      AND a.period_end = s.current_period_end
+     WHERE s.id = $1
+     FOR UPDATE OF s, a`,
+    [input.id],
+  );
+  const row = locked.rows[0];
+  if (!row) {
+    throw new AdminError(
+      "SUBSCRIPTION_ITEM_NOT_FOUND",
+      "The requested subscription does not exist",
+      404,
+    );
+  }
+  if (
+    !["trial", "active", "past_due", "cancel_at_period_end"].includes(
+      row.status,
+    ) ||
+    row.current_period_start > now ||
+    row.current_period_end <= now
+  ) {
+    throw new AdminError(
+      "SUBSCRIPTION_TOKEN_GRANT_PERIOD_INVALID",
+      "Tokens can be granted only to the current callable subscription period",
+      409,
+    );
+  }
+  if (!row.allowance_id || row.allowance_version === null) {
+    throw new AdminError(
+      "SUBSCRIPTION_ALLOWANCE_NOT_READY",
+      "The current subscription allowance has not been provisioned",
+      409,
+    );
+  }
+  if (row.allowance_version !== input.expectedAllowanceVersion) {
+    throw new AdminError(
+      "SUBSCRIPTION_ALLOWANCE_VERSION_CONFLICT",
+      "The Token allowance changed concurrently; refresh before granting Tokens",
+      409,
+      {
+        expectedVersion: input.expectedAllowanceVersion,
+        actualVersion: row.allowance_version,
+      },
+    );
+  }
+
+  const planGrantedTokens = safeInteger(
+    row.plan_granted_tokens ?? 0,
+    "plan_granted_tokens",
+  );
+  const bonusBeforeTokens = safeInteger(
+    row.bonus_granted_tokens ?? 0,
+    "bonus_granted_tokens",
+  );
+  const reservedTokens = safeInteger(row.reserved_tokens ?? 0, "reserved_tokens");
+  const consumedTokens = safeInteger(row.consumed_tokens ?? 0, "consumed_tokens");
+  const bonusAfterTokens = bonusBeforeTokens + input.amountTokens;
+  const totalAfterTokens = planGrantedTokens + bonusAfterTokens;
+  if (
+    !Number.isSafeInteger(input.amountTokens) ||
+    input.amountTokens <= 0 ||
+    !Number.isSafeInteger(bonusAfterTokens) ||
+    !Number.isSafeInteger(totalAfterTokens)
+  ) {
+    throw new AdminError(
+      "SUBSCRIPTION_TOKEN_GRANT_INVALID",
+      "The Token grant is outside the supported integer range",
+      400,
+    );
+  }
+  const availableBeforeTokens =
+    planGrantedTokens + bonusBeforeTokens - reservedTokens - consumedTokens;
+  const availableAfterTokens = availableBeforeTokens + input.amountTokens;
+  const before = await querySubscriptionItem(
+    client,
+    "subscriptions",
+    input.id,
+  );
+  const updated = await client.query(
+    `UPDATE subscription_usage_allowances
+     SET bonus_granted_tokens = bonus_granted_tokens + $2,
+         version = version + 1,
+         updated_at = NOW()
+     WHERE id = $1 AND version = $3`,
+    [row.allowance_id, input.amountTokens, input.expectedAllowanceVersion],
+  );
+  if (updated.rowCount !== 1) {
+    throw new AdminError(
+      "SUBSCRIPTION_ALLOWANCE_VERSION_CONFLICT",
+      "The Token allowance changed concurrently; refresh before granting Tokens",
+      409,
+    );
+  }
+
+  const grantId = createPlatformId("tokengrant");
+  await client.query(
+    `INSERT INTO subscription_token_grants (
+       id, platform_user_id, subscription_id, plan_version_id,
+       subscription_allowance_id, amount_tokens,
+       bonus_before_tokens, bonus_after_tokens,
+       available_before_tokens, available_after_tokens,
+       idempotency_key, actor_type, actor_id, reason, metadata
+     ) VALUES (
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb
+     )`,
+    [
+      grantId,
+      row.platform_user_id,
+      row.subscription_id,
+      row.plan_version_id,
+      row.allowance_id,
+      input.amountTokens,
+      bonusBeforeTokens,
+      bonusAfterTokens,
+      availableBeforeTokens,
+      availableAfterTokens,
+      input.idempotencyKey,
+      input.actor.type,
+      input.actor.id,
+      input.reason,
+      JSON.stringify({ requestDigest }),
+    ],
+  );
+  const after = await querySubscriptionItem(
+    client,
+    "subscriptions",
+    input.id,
+  );
+  await insertEvent(client, {
+    subscriptionId: input.id,
+    eventType: "token_granted",
+    idempotencyKey: input.idempotencyKey,
+    actor: input.actor,
+    reason: input.reason,
+    before,
+    after,
+    metadata: {
+      grantId,
+      allowanceId: row.allowance_id,
+      amountTokens: input.amountTokens,
+      requestDigest,
+    },
+  });
+  return {
+    subscriptionId: input.id,
+    idempotent: false as const,
+    originalAfter: after,
+    before,
+  };
+}
+
 export async function handleSubscriptionAction(
   request: Request,
   resource: string,
@@ -1070,7 +1279,11 @@ export async function handleSubscriptionAction(
   const requestId = adminRequestId(request);
   try {
     assertAdminMutationOrigin(request);
-    const identity = await requireAdminRequest(request, "subscriptions.write");
+    const requiredPermission =
+      resource === "subscriptions" && action === "grant-tokens"
+        ? "subscriptions.grant"
+        : "subscriptions.write";
+    const identity = await requireAdminRequest(request, requiredPermission);
     if (resource === "subscription-plan-versions" && action === "publish") {
       await parseBody(request, publishVersionSchema);
       const data = await withPlatformTransaction(async (client) => {
@@ -1123,6 +1336,47 @@ export async function handleSubscriptionAction(
       return Response.json({ data }, { headers: { "cache-control": "no-store", "x-request-id": requestId } });
     }
     if (resource !== "subscriptions") throw new AdminError("SUBSCRIPTION_ACTION_NOT_FOUND", "The requested subscription action does not exist", 404);
+    if (action === "grant-tokens") {
+      const input = await parseBody(request, subscriptionTokenGrantSchema);
+      const data = await withPlatformTransaction(async (client) => {
+        const grant = await grantSubscriptionTokensOnClient(client, {
+          id,
+          amountTokens: input.amountTokens,
+          idempotencyKey: input.idempotencyKey,
+          reason: input.reason,
+          expectedAllowanceVersion: input.expectedAllowanceVersion,
+          actor: { type: "admin", id: identity.id },
+        });
+        const after = grant.originalAfter ?? await querySubscriptionItem(
+          client,
+          "subscriptions",
+          grant.subscriptionId,
+        );
+        if (!grant.idempotent) {
+          await audit(
+            client,
+            request,
+            requestId,
+            identity,
+            "grant_tokens",
+            resource,
+            grant.subscriptionId,
+            grant.before,
+            after,
+          );
+        }
+        return after;
+      });
+      return Response.json(
+        { data },
+        {
+          headers: {
+            "cache-control": "no-store",
+            "x-request-id": requestId,
+          },
+        },
+      );
+    }
     if (!["renew", "upgrade", "downgrade", "pause", "resume", "cancel", "revoke_cancel"].includes(action)) throw new AdminError("SUBSCRIPTION_ACTION_NOT_FOUND", "The requested subscription action does not exist", 404);
     const input = await parseBody(request, subscriptionActionSchema);
     const data = await withPlatformTransaction(async (client) => {

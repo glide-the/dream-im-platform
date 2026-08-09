@@ -940,6 +940,9 @@ export const subscriptionUsageAllowances = pgTable(
     granted_tokens: bigint("granted_tokens", { mode: "number" })
       .notNull()
       .default(0),
+    bonus_granted_tokens: bigint("bonus_granted_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
     reserved_tokens: bigint("reserved_tokens", { mode: "number" })
       .notNull()
       .default(0),
@@ -983,7 +986,7 @@ export const subscriptionUsageAllowances = pgTable(
     ),
     check(
       "subscription_allowances_balance_check",
-      sql`${table.granted_tokens} >= 0 AND ${table.reserved_tokens} >= 0 AND ${table.consumed_tokens} >= 0 AND ${table.reserved_tokens} + ${table.consumed_tokens} <= ${table.granted_tokens} AND ${table.granted_microusd} >= 0 AND ${table.reserved_microusd} >= 0 AND ${table.consumed_microusd} >= 0 AND ${table.reserved_microusd} + ${table.consumed_microusd} <= ${table.granted_microusd}`,
+      sql`${table.granted_tokens} >= 0 AND ${table.bonus_granted_tokens} >= 0 AND ${table.reserved_tokens} >= 0 AND ${table.consumed_tokens} >= 0 AND ${table.reserved_tokens} + ${table.consumed_tokens} <= ${table.granted_tokens} + ${table.bonus_granted_tokens} AND ${table.granted_microusd} >= 0 AND ${table.reserved_microusd} >= 0 AND ${table.consumed_microusd} >= 0 AND ${table.reserved_microusd} + ${table.consumed_microusd} <= ${table.granted_microusd}`,
     ),
   ],
 );
@@ -1565,6 +1568,90 @@ export const subscriptionTokenLedgerEntries = pgTable(
         AND ${table.reserved_after_tokens} = ${table.reserved_before_tokens}
         AND ${table.consumed_after_tokens} = ${table.consumed_before_tokens} - ${table.amount_tokens}
       )`,
+    ),
+  ],
+);
+
+export const subscriptionTokenGrants = pgTable(
+  "subscription_token_grants",
+  {
+    id: text("id").primaryKey(),
+    platform_user_id: text("platform_user_id")
+      .notNull()
+      .references(() => platformUsers.id, { onDelete: "restrict" }),
+    subscription_id: text("subscription_id")
+      .notNull()
+      .references(() => subscriptions.id, { onDelete: "restrict" }),
+    plan_version_id: text("plan_version_id")
+      .notNull()
+      .references(() => subscriptionPlanVersions.id, {
+        onDelete: "restrict",
+      }),
+    subscription_allowance_id: text("subscription_allowance_id")
+      .notNull()
+      .references(() => subscriptionUsageAllowances.id, {
+        onDelete: "restrict",
+      }),
+    amount_tokens: bigint("amount_tokens", { mode: "number" }).notNull(),
+    bonus_before_tokens: bigint("bonus_before_tokens", {
+      mode: "number",
+    }).notNull(),
+    bonus_after_tokens: bigint("bonus_after_tokens", {
+      mode: "number",
+    }).notNull(),
+    available_before_tokens: bigint("available_before_tokens", {
+      mode: "number",
+    }).notNull(),
+    available_after_tokens: bigint("available_after_tokens", {
+      mode: "number",
+    }).notNull(),
+    idempotency_key: text("idempotency_key").notNull(),
+    actor_type: text("actor_type").notNull().default("admin"),
+    actor_id: text("actor_id").notNull(),
+    reason: text("reason").notNull(),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("subscription_token_grants_idempotency_uidx").on(
+      table.idempotency_key,
+    ),
+    index("subscription_token_grants_allowance_created_idx").on(
+      table.subscription_allowance_id,
+      table.created_at,
+    ),
+    index("subscription_token_grants_subscription_created_idx").on(
+      table.subscription_id,
+      table.created_at,
+    ),
+    check(
+      "subscription_token_grants_amount_check",
+      sql`${table.amount_tokens} > 0`,
+    ),
+    check(
+      "subscription_token_grants_bonus_transition_check",
+      sql`${table.bonus_before_tokens} >= 0 AND ${table.bonus_after_tokens} = ${table.bonus_before_tokens} + ${table.amount_tokens}`,
+    ),
+    check(
+      "subscription_token_grants_available_transition_check",
+      sql`${table.available_before_tokens} >= 0 AND ${table.available_after_tokens} = ${table.available_before_tokens} + ${table.amount_tokens}`,
+    ),
+    check(
+      "subscription_token_grants_actor_check",
+      sql`${table.actor_type} IN ('admin', 'system')`,
+    ),
+    check(
+      "subscription_token_grants_reason_check",
+      sql`length(btrim(${table.reason})) BETWEEN 3 AND 500`,
+    ),
+    check(
+      "subscription_token_grants_metadata_check",
+      sql`jsonb_typeof(${table.metadata}) = 'object'`,
     ),
   ],
 );

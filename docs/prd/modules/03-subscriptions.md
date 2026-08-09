@@ -42,7 +42,8 @@
 | Plan Version | `id/plan_id/version/status/trial_days/grace_period_days/allowance_tokens/base_price_microusd/currency/published_at` | 周期固定 monthly；金额为整数 micro-USD；发布后不可修改或删除。 |
 | Entitlement | `plan_version_id/model_id/gateway_scopes/rpm_limit/storage_limit_bytes` 等非货币权益 | 与已发布 Version 一起不可覆盖；不得出现 overage money rule。 |
 | Subscription | `user_id/plan_version_id/status/cycle_anchor_at/current_period_number/current_period_start/current_period_end/cancel_at_period_end/pending_plan_version_id/version` | 一个平台用户最多一个当前订阅上下文；周期按该用户的锚点与周期序号计算。 |
-| Usage Allowance | `subscription_id/period_start/period_end/granted_tokens/reserved_tokens/consumed_tokens` | 每个订阅周期一条 Token 额度；满足 `granted_tokens >= reserved_tokens + consumed_tokens`；无金额列参与新流程。 |
+| Usage Allowance | `subscription_id/period_start/period_end/granted_tokens/bonus_granted_tokens/reserved_tokens/consumed_tokens` | 每个订阅周期一条 Token 额度；Plan grant 不可变，Bonus 只可通过审计命令单调增加；满足 `granted_tokens + bonus_granted_tokens >= reserved_tokens + consumed_tokens`；无金额列参与新流程。 |
+| Subscription Token Grant | `allowance_id/amount_tokens/bonus_before_tokens/bonus_after_tokens/available_before_tokens/available_after_tokens/reason/idempotency_key/actor` | 管理员只可向当前可调用周期补发一次性免费 Token；记录 append-only，不继承到下周期，不修改套餐或限流。 |
 | Subscription Token Ledger | `gateway_request_id/request_sequence/entry_type/amount_tokens/*_before_tokens/*_after_tokens` | reserve/capture/release 与 Allowance 同事务，只追加、Token 单位、来源一致且请求内顺序唯一；不是 Payment 或金额账本。 |
 | Subscription Event | action、前后状态、目标版本、reason、idempotency key/digest、actor、时间 | append-only；同 key 同 digest 返回原结果，同 key 异 digest 返回 409。 |
 
@@ -55,7 +56,8 @@
 | 套餐 | `/admin/subscriptions/plans` | `subscription-plans` | `subscriptions.read/write` |
 | 版本 | `/admin/subscriptions/versions` | `subscription-plan-versions` | `subscriptions.read/write` |
 | 权益 | `/admin/subscriptions/entitlements` | `subscription-entitlements` | `subscriptions.read/write` |
-| 用户订阅 | `/admin/subscriptions/users` | `subscriptions`、`subscription-allowances/events` | `subscriptions.read/write` |
+| 用户订阅 | `/admin/subscriptions/users` | `subscriptions`、`subscription-allowances/events` | `subscriptions.read/write`；补发需独立 `subscriptions.grant` |
+| Token 流水 | `/admin/subscriptions/token-ledger` | `subscription-token-grants`、`token-ledger` | `subscriptions.read` |
 
 Route Handler 只做 Session、RBAC、Origin、解析、严格 Zod 与 service 调用；月度周期、状态机、幂等、事务和 PostgreSQL 约束位于 `app/lib/subscriptions/**`。所有用户选择器查询 canonical `users`，支持服务端搜索、分页、稳定 total 和跨页已选项 hydration。
 
@@ -68,6 +70,7 @@ Route Handler 只做 Session、RBAC、Origin、解析、严格 Zod 与 service �
 - 开通：从明确的用户起始时刻建立首个周期并发放一次 Token Allowance。
 - 续期：只在 `current_period_end` 到达后推进。正常执行建立紧邻下周期；若 worker/运营重试已延迟跨过多个边界，则从原锚点直接推进到包含当前时刻的周期，只发放该当前周期的一条 Allowance，并在事件记录跳过数量，不追溯补发已过期月份。提前重复命令返回 409，不能让未来额度提前可用。
 - 升级/降级：都只写 `pending_plan_version_id`，在下一个周期边界原子生效；当前周期不重开、不按比例折算、不再次发放 Token。
+- 补发 Token：仅 `subscriptions.grant` 可向当前可调用周期追加一次性 `bonus_granted_tokens`。命令必须包含正整数数量、原因、幂等键和 Allowance optimistic version；不修改 Plan Version、用户安全限流或现金余额，下周期不会自动复制。
 - 暂停/恢复：只改变 Gateway 资格，不移动周期边界、不补发 Token。
 - 期末取消：当前周期内仍按原权益使用，到边界进入 cancelled；撤销取消只清除取消标志，不续期、不发额度。
 - `trial` 可按非支付策略进入 `active/expired`。付费 published version 到期且仍启用续费时由受控 period worker 进入 `past_due`，保持原周期且不发新 Token；只有绑定当前 Subscription version/period end 的成功续费 Webhook 才推进周期并恢复 `active`。免费版本仍可直接 renew。
@@ -90,10 +93,12 @@ stateDiagram-v2
 
 ```text
 Canonical User → Subscription → Plan Version → Entitlement → Model Permission
-→ Current-period Token Allowance → Gateway Request → Token Usage → Subscription Token Ledger
+→ Current-period Plan + Bonus Token Allowance → Gateway Request → Token Usage → Subscription Token Ledger
 ```
 
 Gateway 在调用 Provider 前锁定当前周期 Allowance，并只以 Token reserve/capture/release 维护守恒；每次变更与 `subscription_token_ledger_entries` 同事务，重放不重复记账。Token 不足返回 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`；Gateway `/v1/**` 响应使用 `metric="tokens"`、`unit="tokens"`、`available_tokens`、`required_tokens` 和 `period_end`，Dream BFF 只映射为 camelCase `availableTokens`、`requiredTokens` 和 `periodEnd`；禁止写入或显示 `availableMicrousd/requiredMicrousd`。
+
+“每日/每月 Token 安全上限（429）”不是订阅 Token 发放。运营处理 402 时进入“订阅 → 用户订阅 → 管理 → 补发本周期 Token”；限流页的每个用户行同时提供“处理 402／补发 Token”直达入口，携带邮箱筛选和 `intent=grant`，但不得在限流资源上直接写额度。目标页先展示该用户的套餐 Token、补发 Token、预留、消耗和剩余，再由独立 `subscriptions.grant` 权限提交。补发与 `subscription_token_grants`、`subscription_events`、Admin Audit 同事务；同幂等键同请求返回原结果，不同请求返回 409。Gateway、Product subscription context 和 model catalog 都以 `granted_tokens + bonus_granted_tokens` 作为周期总额。
 
 订阅用户 Token 用尽后不得由套餐隐式降级为现金超额。若未来保留独立的按量现金 Gateway 产品模式，它必须使用显式产品资格与独立合同，不能由 Plan Version 的 overage 字段开启，也不能把 Billing Account 余额描述为订阅额度。
 

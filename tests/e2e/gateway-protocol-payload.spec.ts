@@ -277,11 +277,11 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
     await policyLink.click();
     await expect(page).toHaveURL(/\/admin\/gateway\/rate-limits\?email=gateway-limited%40example\.test&model_code=anthropic-native-e2e#platform-users-manager$/);
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await expect(page.getByRole("heading", { name: "用户默认 Token 上限" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "用户默认 429 Token 安全上限" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "实时用量计数（只读）" })).toBeVisible();
     await expect(page.getByLabel("用户邮箱").first()).toHaveValue("gateway-limited@example.test");
     await page.getByRole("button", { name: "编辑" }).first().click();
-    await page.getByLabel("每日 Token 限额").fill("1000");
+    await page.getByLabel("每日安全上限（429）").fill("1000");
     await page.getByRole("button", { name: "保存更改" }).click();
     await expect.poll(async () => Number((await pool.query(`SELECT daily_token_limit FROM platform_users WHERE id = $1`, [limitedGatewayUserId])).rows[0]?.daily_token_limit)).toBe(1000);
     const retryAfterLimitChange = await fetch(`${baseURL}/v1/messages?beta=true`, { method: "POST", headers: { "content-type": "application/json", "x-api-key": limitedGatewayKey }, body: JSON.stringify({ model: "anthropic-native-e2e", max_tokens: 32, messages: [{ role: "user", content: "retry after raising user default limit" }] }) });
@@ -290,7 +290,7 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
     await expect(page.getByRole("link", { name: "模型权限", exact: true })).toHaveCount(0);
     await page.goto("/admin/models/permissions");
     await expect(page).toHaveURL(/\/admin\/gateway\/rate-limits#user-model-permissions-manager$/);
-    await expect(page.getByRole("heading", { name: "用户默认 Token 上限" }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "用户默认 429 Token 安全上限" }).first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "用户—模型例外限制" }).first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "套餐权益提示" })).toBeVisible();
     await expect(page.getByRole("link", { name: "前往套餐权益" })).toHaveAttribute("href", "/admin/subscriptions/entitlements");

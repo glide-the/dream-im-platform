@@ -41,11 +41,6 @@ const resources = [
     meta: { label: "剧本数据" },
   },
   {
-    name: "stories",
-    list: "/admin/story/stories",
-    meta: { label: "剧本" },
-  },
-  {
     name: "story-characters",
     list: "/admin/story/characters",
     meta: { label: "角色数据" },
@@ -109,6 +104,11 @@ const resources = [
     name: "subscription-events",
     list: "/admin/subscriptions/users",
     meta: { label: "订阅事件" },
+  },
+  {
+    name: "subscription-token-grants",
+    list: "/admin/subscriptions/users",
+    meta: { label: "Token 补发" },
   },
   {
     name: "token-ledger",
