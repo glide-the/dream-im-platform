@@ -18,6 +18,8 @@ const ROOT_KEYS = new Set([
   "ADMIN_BOOTSTRAP_TOKEN",
   "ADMIN_ORIGIN_ALLOWLIST",
   "GATEWAY_API_KEY_PEPPER",
+  "GATEWAY_SUBJECT_JWT_ISSUER",
+  "GATEWAY_SUBJECT_JWT_AUDIENCE",
   "AI_CREDENTIAL_ENCRYPTION_KEY",
   "AI_PROVIDER_HOST_ALLOWLIST",
   "AI_PROVIDER_ALLOW_INSECURE_LOCALHOST",
@@ -52,6 +54,8 @@ const DOCKER_KEYS = new Set([
   "ADMIN_BOOTSTRAP_TOKEN",
   "ADMIN_ORIGIN_ALLOWLIST",
   "GATEWAY_API_KEY_PEPPER",
+  "GATEWAY_SUBJECT_JWT_ISSUER",
+  "GATEWAY_SUBJECT_JWT_AUDIENCE",
   "AI_CREDENTIAL_ENCRYPTION_KEY",
   "AI_PROVIDER_HOST_ALLOWLIST",
   "AI_PROVIDER_ALLOW_INSECURE_LOCALHOST",
@@ -423,6 +427,24 @@ function buildConfiguration(rootExisting, dockerExisting) {
     ["ADMIN_BOOTSTRAP_TOKEN", adminBootstrapToken.root],
     ["ADMIN_ORIGIN_ALLOWLIST", rootOriginAllowlist],
     ["GATEWAY_API_KEY_PEPPER", gatewayPepper.root],
+    [
+      "GATEWAY_SUBJECT_JWT_ISSUER",
+      configuredValue(
+        rootExisting,
+        "GATEWAY_SUBJECT_JWT_ISSUER",
+        (value) => value.trim().length > 0 && !/[\r\n]/.test(value),
+        "ink-dream-memory",
+      ),
+    ],
+    [
+      "GATEWAY_SUBJECT_JWT_AUDIENCE",
+      configuredValue(
+        rootExisting,
+        "GATEWAY_SUBJECT_JWT_AUDIENCE",
+        (value) => value.trim().length > 0 && !/[\r\n]/.test(value),
+        "ink-memory-admin-gateway",
+      ),
+    ],
     ["AI_CREDENTIAL_ENCRYPTION_KEY", encryptionKey.root],
     ["AI_PROVIDER_HOST_ALLOWLIST", rootProviderAllowlist],
     [
@@ -493,6 +515,24 @@ function buildConfiguration(rootExisting, dockerExisting) {
     ["ADMIN_BOOTSTRAP_TOKEN", adminBootstrapToken.docker],
     ["ADMIN_ORIGIN_ALLOWLIST", dockerOriginAllowlist],
     ["GATEWAY_API_KEY_PEPPER", gatewayPepper.docker],
+    [
+      "GATEWAY_SUBJECT_JWT_ISSUER",
+      configuredValue(
+        dockerExisting,
+        "GATEWAY_SUBJECT_JWT_ISSUER",
+        (value) => value.trim().length > 0 && !/[\r\n]/.test(value),
+        "ink-dream-memory",
+      ),
+    ],
+    [
+      "GATEWAY_SUBJECT_JWT_AUDIENCE",
+      configuredValue(
+        dockerExisting,
+        "GATEWAY_SUBJECT_JWT_AUDIENCE",
+        (value) => value.trim().length > 0 && !/[\r\n]/.test(value),
+        "ink-memory-admin-gateway",
+      ),
+    ],
     ["AI_CREDENTIAL_ENCRYPTION_KEY", encryptionKey.docker],
     ["AI_PROVIDER_HOST_ALLOWLIST", dockerProviderAllowlist],
     [
@@ -559,6 +599,8 @@ ADMIN_ORIGIN_ALLOWLIST=${encodeValue(values.get("ADMIN_ORIGIN_ALLOWLIST"))}
 
 # Gateway key hashing and encrypted Provider credentials.
 GATEWAY_API_KEY_PEPPER=${encodeValue(values.get("GATEWAY_API_KEY_PEPPER"))}
+GATEWAY_SUBJECT_JWT_ISSUER=${encodeValue(values.get("GATEWAY_SUBJECT_JWT_ISSUER"))}
+GATEWAY_SUBJECT_JWT_AUDIENCE=${encodeValue(values.get("GATEWAY_SUBJECT_JWT_AUDIENCE"))}
 AI_CREDENTIAL_ENCRYPTION_KEY=${encodeValue(values.get("AI_CREDENTIAL_ENCRYPTION_KEY"))}
 AI_PROVIDER_HOST_ALLOWLIST=${encodeValue(values.get("AI_PROVIDER_HOST_ALLOWLIST"))}
 AI_PROVIDER_ALLOW_INSECURE_LOCALHOST=${values.get("AI_PROVIDER_ALLOW_INSECURE_LOCALHOST")}
@@ -599,6 +641,8 @@ ADMIN_BOOTSTRAP_TOKEN=${encodeValue(values.get("ADMIN_BOOTSTRAP_TOKEN"))}
 ADMIN_ORIGIN_ALLOWLIST=${encodeValue(values.get("ADMIN_ORIGIN_ALLOWLIST"))}
 
 GATEWAY_API_KEY_PEPPER=${encodeValue(values.get("GATEWAY_API_KEY_PEPPER"))}
+GATEWAY_SUBJECT_JWT_ISSUER=${encodeValue(values.get("GATEWAY_SUBJECT_JWT_ISSUER"))}
+GATEWAY_SUBJECT_JWT_AUDIENCE=${encodeValue(values.get("GATEWAY_SUBJECT_JWT_AUDIENCE"))}
 AI_CREDENTIAL_ENCRYPTION_KEY=${encodeValue(values.get("AI_CREDENTIAL_ENCRYPTION_KEY"))}
 AI_PROVIDER_HOST_ALLOWLIST=${encodeValue(values.get("AI_PROVIDER_HOST_ALLOWLIST"))}
 AI_PROVIDER_ALLOW_INSECURE_LOCALHOST=${values.get("AI_PROVIDER_ALLOW_INSECURE_LOCALHOST")}
@@ -713,6 +757,14 @@ function validateConfiguration(root, docker, rootParsed, dockerParsed) {
     }
     if (!(values.get("ADMIN_ORIGIN_ALLOWLIST") ?? "").trim()) {
       errors.push(`${file}: ADMIN_ORIGIN_ALLOWLIST must not be empty`);
+    }
+    for (const key of [
+      "GATEWAY_SUBJECT_JWT_ISSUER",
+      "GATEWAY_SUBJECT_JWT_AUDIENCE",
+    ]) {
+      if (!(values.get(key) ?? "").trim()) {
+        errors.push(`${file}: ${key} must not be empty`);
+      }
     }
     if (!['vercel-blob', 's3'].includes(values.get("FILE_STORAGE_TYPE") ?? "")) {
       errors.push(`${file}: FILE_STORAGE_TYPE must be vercel-blob or s3`);

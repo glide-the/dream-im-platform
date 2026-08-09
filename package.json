@@ -10,6 +10,7 @@
   "scripts": {
     "env:setup": "node scripts/setup-env.mjs",
     "env:check": "node scripts/setup-env.mjs --check",
+    "gateway:provision-local-dream": "node scripts/provision-local-dream-gateway.mjs --apply",
     "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",

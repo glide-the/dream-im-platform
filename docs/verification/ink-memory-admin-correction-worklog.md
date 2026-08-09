@@ -1470,6 +1470,53 @@ Optional Enhancers:
 - 本机 `backend/.env` 与 Admin `.env.local` 当前没有已配对的 canonical-subject service Key/JWT issuer/audience，且 3000 无 Admin listener；因此未对真实外部 Provider 发起 Claude turn。生产/本机部署需由 Secret 注入创建一次性 Gateway service Key并配置双方 issuer/audience，不能把明文 Key写入仓库、数据库或日志。
 - 未执行真实 Provider stream/cancel/usage-missing canary；代码、严格 DTO、synthetic Gateway、完整 Claude request model 传递和构建回归已完成，真实用户级 canary仍是带 Secret 的发布门禁。
 
+## Round 49 — 修复本机 `/api/gateway/models` 503 并完成真实服务链验证
+
+Optimized Prompt:
+
+作为 Ink Memory 本机集成与发布验证负责人，处理用户现场日志中 Dream `GET /api/gateway/models` 连续返回 503 的问题。不得再用 synthetic Gateway、mock catalog、单元测试或“代码已完成但 Secret 未配置”代替真实本机端到端结果。先只读确认当前 8765/3000 listener、Dream/Admin 实际 env key presence、Admin canonical-subject Gateway Key 元数据、JWT issuer/audience/client ID、当前用户 Subscription/Entitlement/Allowance/Model/Pricing/Provider eligibility 和 503 安全错误 code；不得输出任何 plaintext Key、JWT、Provider Secret、完整 DSN、用户邮箱或正文。
+
+若根因是 Admin 未启动、Dream/Admin issuer/audience 不一致或缺少 canonical-subject service Key，必须在明确本机专用 `ink-memory` 范围内完成最小配置：使用 Admin 既有 Key 生成/hash/insert 逻辑创建或轮换 `subject_mode=canonical_subject`、`service_client_id=ink-dream-memory`、scopes 至少包含 `models:list` 与 `messages:create` 的 service Key；数据库只存 hash/prefix，plaintext 只进入 mode-600 本机 Secret/env，不进入仓库、日志、命令输出或普通表。不得复用 Admin Session Secret、Provider Secret 或 Key pepper作为 service Key。写入前建立可恢复备份或精确事务边界，禁止删除既有 Key/财务历史。
+
+启动 Admin 3000 与 Dream 8765 后，用真实 Dream 登录 Session 或隔离 canonical 测试身份验证：Admin `/v1/models` 通过 canonical-subject JWT 返回当前订阅允许的真实平台 alias；Dream `/api/gateway/models` 返回 200 且严格安全投影；`PUT /api/system-config` 保存一个实际 alias 后再次读取一致；发起 Claude Agent SSE 请求并证明请求到达 Admin Gateway、使用所选 alias、完成 Provider/usage/settlement或返回真实上游错误，而不是 503 配置错误。不得虚构 Provider 成功；若外部 Provider 不可达，必须至少证明 Gateway Request/资格/alias 路由已建立并准确报告 502/429 等真实终态。
+
+验证必须记录 HTTP status、非敏感 error code、model alias、Gateway Request ID/状态、Usage/Token Ledger count delta；不得记录 prompt/response正文或 Secret。修复前后都复核 PostgreSQL migration、Key hash-only、Secret 扫描和用户数据不变。验证结束按用户当前需要决定是否保留服务；若临时启动，关闭 8765/3000并明确说明。不得覆盖用户已有未提交修改。
+
+Optional Enhancers:
+
+- 增加 `scripts/provision-local-gateway-service-key`，以无 stdout Secret、mode-600、幂等轮换和 dry-run方式降低本机配置错误。
+- 在 `/api/health` 增加不泄密的 Gateway readiness 状态，区分 disabled、missing secret、Admin unreachable、auth rejected 与 ready。
+
+范围变化：
+
+- Round 48 的代码/Mock验证保留，但其“完成”表述被现场 503 证据纠正；Round 49 必须以真实本机服务间调用为验收。
+- 不扩展真实支付或数据库迁移；只修复 Admin Gateway service identity、模型目录和 Claude Agent真实调用链。
+
+执行证据和验证结果：
+
+- 用户现场已提供 Dream `/api/gateway/models`=503、`/api/system-config`=200；这证明 Dream 本身运行但 Gateway integration 不 ready。
+
+未执行事项及原因：
+
+- listener/env/Key/eligibility审计、Secret provisioning、真实 HTTP 与 Claude SSE验证必须在本 Prompt Architect 记录之后执行。
+
+### Round 49 执行结果（本机 Gateway 503 修复与真实 E2E 通过）
+
+- 现场根因确认：审计时 3000/8765 均无 listener；Dream `backend/.env` 只有 `DATABASE_URL`，缺少全部 `INK_GATEWAY_*` 服务身份配置；Admin 没有 canonical-subject Gateway Key，双方也未配置 JWT issuer/audience。因此 `/api/system-config` 可由 Dream 本地返回 200，而 `/api/gateway/models` 必然 fail closed 为 503。Round 48 的 mocked Playwright 和 synthetic Gateway 不能作为本机 E2E 完成证据。
+- Admin 新增 `scripts/provision-local-dream-gateway.mjs` 与 `pnpm gateway:provision-local-dream`。命令强制 `--apply`，只允许 localhost/127.0.0.1/::1 上数据库名严格为 `ink-memory`；在 advisory-lock transaction 中幂等创建/复用命名 E2E canonical 用户、自动 platform/Billing Account 投影、专用 5,000,000 Token-only 月度测试 Plan/Version/Entitlement、Subscription/Allowance 和 `service_client_id=ink-dream-memory` canonical-subject Key。旧服务 Key只标记 revoked、不删除；数据库只保存 HMAC/prefix，明文只写 Admin/Dream mode-0600 env且不输出。
+- `scripts/setup-env.mjs` 已正式支持并校验 `GATEWAY_SUBJECT_JWT_ISSUER/AUDIENCE`，避免后续 `pnpm env:setup` 把服务身份配置当成未知 key 移除。Admin `.env.local`、Admin `docker/.env` 与 Dream `backend/.env` 最终 mode 均为 0600；`pnpm env:check` 通过。
+- 第一次真实 Claude SSE 暴露 10,000 Token 套餐不足，Admin 返回 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`；验证器原先只看到 `finish` 帧会误判，现已改为任意 `error` 帧立即判失败，并要求 settled request 与至少两笔 Token Ledger。没有把该次结果计为成功。随后通过取消旧命名测试订阅、追加 cancellation event、新建专用高额度月订阅保留历史，不修改既有不可变 Allowance。
+- 第二次重跑首个 Provider 请求成功，随后 SDK retry 被默认 `daily_token_limit=100000` 拒绝为 429 `DAILY_TOKEN_LIMIT_EXCEEDED`。只对命名 E2E projection 将日/月安全上限对齐专用测试 Allowance；没有修改真实用户或生产 Plan。停止无意义 retry并轮换服务 Key后重启两端。
+- 最终无 mock 服务端 E2E：Admin `GET /v1/models`=200、catalog count=1、alias=`deepseek-v4-flash`；Dream health=200、`GET /api/gateway/models`=200、catalog count=1；`PUT /api/system-config`=200；Claude thread=200、SSE=200/`text/event-stream`，帧包含 text start/delta/end、message-final、finish，error frame=0。PostgreSQL delta 为 Gateway Request +1、settled request +1、Token Ledger +3（reserve/capture/release）。验证器不读取/打印 assistant正文、JWT、Gateway/Provider Secret或完整 DSN。
+- 真实 SSE 同时暴露 Dream `list_sessions_in_range` 对 nullable PG 日期参数缺少类型，历史上下文查询被 psycopg `IndeterminateDatatype` 降级跳过。`backend/database.py` 已对四个参数显式 `CAST(... AS date)`；真实 PG `None/None` probe通过，focused backend 为 8 passed/1 opt-in skipped，Claude 最终重跑日志不再出现该异常。
+- 按仓库 `ink-dream-playwright-qa` 规范补充真实浏览器 spec：不 mock任何 `/api`，只禁用 Vite HMR；desktop 1440×1000 与 mobile 390×844 共 2/2 passed。两个视口均实际收到 `/api/gateway/models`=200，显示唯一 Admin alias，不出现静态 GPT/Claude 项、目录错误、应用 console/page/API error或横向溢出。
+- 收尾门禁：Admin `env:check`、TypeScript、focused ESLint、Gateway auth/models 8 tests 全部通过；Dream focused backend 8 passed/1 skipped、Python compile、focused frontend ESLint、production TypeScript/Vite build全部通过。最终 3000 与 8765 保持监听，便于用户继续本机验证；5173 为原有 Dream Vite进程，本轮未停止或接管。
+
+未执行事项及原因：
+
+- 未连接真实支付渠道或执行 Payment/Webhook；本轮只修复 Gateway 服务身份、模型目录和推理结算链。
+- 未把测试 Adapter 或假 Provider 当成成功。本轮使用本机 Admin 当前已配置 Provider完成真实请求；没有检查或输出 Provider响应正文。生产 Key注入、用户 canary与真实商户支付仍需目标环境独立 Release Gate。
+
 ## Round 49 — Workflow Run PostgreSQL 时间类型兼容与 503 修复
 
 Optimized Prompt:
@@ -1514,3 +1561,91 @@ Optional Enhancers:
 
 - 未运行外部 Provider、Gateway 推理或 Payment；该 503 发生在 Workflow Run 数据行映射阶段，与外部服务无关。
 - 未顺带修改其他领域的独立时间解析器；本轮只有 Workflow Run 详情具备真实复现和回归证据，避免把单点修复扩大为未经验证的跨领域重构。
+
+## Round 50 — Story Workspace Workflow Run 模块全链路 E2E 复验与修复
+
+Optimized Prompt:
+
+作为 Ink Dream Memory 的 Story Workspace Workflow Run 模块负责人和发布级 QA 工程师，纠正 Round 49 只验证 `GET /workflow-runs/{run_id}`、没有覆盖同 run 的 `/dream-files` 及模块完整路径的问题。严格遵循仓库 `ink-dream-playwright-qa` 技能：先检查工作树和 5173/8765 监听进程，运行项目 preflight；使用仓库内 `@playwright/test`，在导航前注册 API、console、pageerror 与 requestfailed 诊断；不得强制点击、不得用截图代替断言、不得调用真实模型或外部 Provider。
+
+先使用正式 `ink-memory` 对用户提供的 run 做纯只读复现，沿 Router → `StoryWorkflowApplicationGateway.get_dream_files` → `StoryWorkspaceDreamFileService` → Workflow Run/Workspace/Thread/PostgreSQL row → filesystem projection → Pydantic/JSON 的完整调用链取得真实异常，不把 503 误判为数据缺失。随后建立模块测试矩阵，至少覆盖 Workflow Run snapshot、Dream Files、Dream confirmation、episode artifacts/binding/action、Dream Agent messages/events/tool confirmation、retry/cancel、权限隔离、404、422 与安全 503；按实际页面使用链覆盖 loading、success、empty/error、刷新/轮询、无应用 console/page error 和关键移动视口。
+
+修复 PostgreSQL 切换暴露的所有同模块兼容问题，时间字段必须支持 psycopg 原生 `datetime` 与 ISO 字符串，JSONB 字段必须支持 psycopg 原生 dict/list 与遗留 JSON 字符串；文件系统路径必须保持 run/workspace actor scope，禁止绕过权限、伪造 projection、恢复 SQLite/JSON DB fallback 或吞掉非法持久化值。新增针对根因的后端回归和可重复浏览器 E2E；测试写入只能使用明确隔离、可清理的运行时，不得写正式 `ink-memory`。保留当前用户已有模型设置与其他未提交修改。
+
+验证按比例包括 focused service/router tests、Workflow Run 相关后端模块集合、真实 PostgreSQL 只读目标 run API probe、frontend source contract tests、focused Playwright browser spec、相关 lint/type/build。最终记录测试清单与通过数量、浏览器/视口、诊断、真实 `/dream-files` 状态、修改文件、未执行外部场景和清理证据；关闭本轮自有服务并确认未误停原有进程。
+
+Optional Enhancers:
+
+- 将 Workflow Run 时间/JSONB 驱动边界收敛为小型严格 decoder，减少各 service 对 SQLite 字符串形态的隐含依赖，但只在本模块回归覆盖范围内实施。
+- 为当前真实 run 增加不含正文、PII 或 Secret 的只读 endpoint matrix probe，记录 status/code/contract shape，避免未来只验证单一 endpoint。
+
+范围变化：
+
+- Round 49 的“详情 200”不再视为该模块完成证据；本轮以 `/dream-files` 503 为起点重新验收 Workflow Run 模块和页面真实调用链。
+- 不继续 Round 48 模型配置扩展，不改订阅、支付、ACL、跨账号归属或外部 Provider；正式 `ink-memory` 只允许 SELECT/rollback。
+
+执行证据和验证结果：
+
+- 用户已提供同一 run 的 `/dream-files` 503 日志，证明上一轮 endpoint 覆盖不足。
+- 已完整读取 `ink-dream-playwright-qa/SKILL.md` 与 `references/project-workflow.md`；本记录完成前尚未修改本轮代码或启动浏览器测试服务。
+
+未执行事项及原因：
+
+- preflight、真实异常复现、模块测试矩阵、代码修复、隔离 E2E、清理与最终回执必须在本记录之后执行。
+
+### Round 50 执行结果（Workflow Run / Dream Files / Episode 真实 E2E 全绿）
+
+- QA preflight 通过；5173 的现有 Vite 与 8765 的现有 VSCode/debugpy 后端均识别为用户进程，本轮未停止、重启或接管。正式 `ink-memory` 只执行 actor/workspace scoped SELECT 与 rollback；所有状态变更验证均在本轮 PostgreSQL clone `ink_memory_workflow_r50_codex_test` 或空 schema 测试库中完成。
+- `/dream-files` 503 根因不是 48 表迁移缺行。psycopg 的 actor-context SELECT 会自动开启 read transaction；`StoryWorkflowApplicationGateway` 随后在同一连接构造 `WorkflowRunService`，旧构造器把任何已开启事务都误判为非法写事务，抛出 `workflow run service requires a clean transaction boundary`，最后被路由安全包装为 `DECK_RUNTIME_CONFIG_UNAVAILABLE` 503。
+- `WorkflowRunService` 已允许只读 `read_run` 加入现有事务，同时继续在 create/retry/transition 写入口强制 clean transaction；retry/transition 的预读事务会在进入写事务前显式 rollback。真实 clone 的 cancel/replay 验证又发现 PostgreSQL `CASE WHEN` 不接受 SQLite 风格的 `0/1` smallint 参数，现已改为原生 boolean，并证明首次 cancel 只新增一条 transition、重复 cancel 幂等。
+- 真实目标 run 的只读 API matrix 已通过：run detail、`dream-files`、`episode-artifacts`、Dream runs 均为 200；不存在 run 的 `dream-files` 返回预期 404/`WORKFLOW_PERMISSION_DENIED`。`dream-files` 返回 run revision 8、characters/scenes/storyboards 三个 required stage，且 confirmation shape 有效。
+- 浏览器完整加载还暴露两个相邻 PostgreSQL 参数推断错误：`sessions/range` 与 `pictures/range` 使用未定型 nullable 日期参数，触发 `IndeterminateDatatype` 500。两处参数现显式 cast 为 date；独立空 PostgreSQL schema 的 rollback-only runtime contract 2/2 通过。修复后真实浏览器日志中 workflow run、Dream files、Dream Agent messages、Episode artifacts、sessions range 与 pictures range 全部为 200。
+- 真实 run 当前 `.dream` storyboards stage 有 canonical source files、但 `items=[]`；按现有已记录合同，这是一种合法且不得渲染死链接的状态。真实 E2E 现在同时断言 `/dream-files` 200、sourceFiles、Episode documents/22 shots/66 prompts、动态 action projection、六项产物进度和无死链接；若未来存在 storyboard host，则继续执行四个阅读入口、键盘 tab、Markdown、分镜属性与窄屏阅读器断言。确定性 mocked E2E 继续覆盖完整阅读器交互。
+- 后端模块扩大回归：794 passed、5 skipped、266 subtests passed；覆盖 Workflow Run、Story Workspace API、Deck plugin admin integration、Dream files/confirmation/launch/MCP/reentry、Dream Agent messages、Episode action/recovery/artifact/adapter/binding/guidance 与多 Episode。独立真实 PostgreSQL runtime contract 2 passed。
+- 前端 Story Workspace source contract：278 passed；确定性 Chromium Episode execution：3 passed；真实 actor + clone PostgreSQL + 5173 UI + 8766 隔离后端 Chromium：1 passed，桌面 1440×1000 与移动 390×844，Story Workspace API failure、page error、app console error、非预期 request failure 与 action POST 均为 0。E2E spec ESLint 通过，TypeScript + Vite production build 通过。
+- 本轮真实 E2E 证据写入 `output/playwright/story-workspace-real-episode-artifacts/`，包含安全 manifest/action projection 与桌面/窄屏截图；未记录 token、正文 Secret 或完整 DSN。
+- 清理复核：8766 与 55450 均无 listener，本轮精确命名 PostgreSQL 容器已不存在；5173 PID 34150 与 8765 PID 22161 仍为原有用户进程，未被本轮停止。
+
+未执行事项及原因：
+
+- 未调用真实 Provider、Gateway 推理、Payment 或 Episode action POST；本轮验证目标是 PG 数据源兼容和只读模块渲染，写操作只在隔离 clone 中验证。
+- 未改写正式 `.dream` stage 文件或为真实 run 伪造 storyboard item；当前 empty items 是合同允许的持久化事实，不能为了让旧 E2E 固定出现四个按钮而修改共享业务数据。
+
+## Round 51 — 阶段一：模型可见性、调用资格与默认订阅根因审计
+
+Optimized Prompt:
+
+作为 Ink Memory 的产品架构、PostgreSQL 订阅计费、AI Gateway、FastAPI 与 Next.js/Refine 联合审计负责人，在不修改业务数据和实现代码的前提下，对本机专用 PostgreSQL `ink-memory`、`ink-admin-memory` 与 `ink-dream-memory` 执行证据优先的根因审计，解释当前 `GATEWAY_MODEL_NOT_AVAILABLE` 的真实触发链。先确认数据库仅为本机专用实例并只读查询；不得输出完整 DSN、用户 Token、Gateway Key、Provider Secret、密码散列、用户邮箱或正文，不得执行 migration、fixture、DROP、TRUNCATE、DELETE、订阅写入或历史修订。
+
+沿 Admin `GET /v1/models` SQL/service、公共 Gateway Catalog DTO、Gateway inference eligibility、Dream `GET /api/gateway/models` BFF、`PUT /api/system-config`、`_resolve_platform_model_alias` 与 Claude Agent SSE 调用链逐层检查：enabled model 是否被 Subscription/Plan Version/Entitlement/Permission/Pricing 当作目录可见性过滤；Dream 是否把正常未订阅错误误映射为 503；已保存 alias 是否不存在、停用或失权；当前 canonical 用户是否拥有 platform projection、Billing Account、有效 Subscription、Allowance、Entitlement 和 model permission；AIModelRegistry enabled 状态与 Gateway Catalog 是否一致；是否存在 enabled 但未绑定 published Plan Version 的模型、无 Subscription 的历史 canonical 用户、只有命名测试用户可调用模型；服务端 Gateway Key、canonical-subject issuer/audience、Admin/Dream listener 是否就绪。
+
+同时审计现有 Billing schema、migration、Product API、Plan/Plan Version/Entitlement/Subscription/Allowance/Event/Ledger 约束，为 `free`、`dream`、`is-dreaming` 三个稳定套餐身份和自动 Free Subscription 找到最小兼容落点。识别同义套餐与已发布版本，禁止推测或虚构 Token 数量、价格与支付字段。明确区分：所有已认证 canonical 用户可见全部 enabled 平台模型；实际可调用资格继续实时校验 canonical user、Subscription、published Plan Version、Entitlement、Model Permission、RPM/Token 限额和当前周期 Token Allowance。正常无订阅必须是 `200 + availability metadata`，额度不足为 402，无权限为 403，保存已停用/失权模型为 409；仅 Admin 不可达或服务身份错误为 503。
+
+将结论更新到正式证据文档，至少提供“问题｜当前行为｜根因｜正确产品行为｜修改位置｜数据修复｜风险｜验证方式”矩阵，并明确回答七项产品问题：错误为何发生、属于目录/alias/订阅/权益/服务配置哪类、普通用户可见模型、逐模型调用资格、Admin RBAC 保持方式、现有与新用户 Free Subscription 建立方式、三个默认套餐如何安全进入现有模型。所有结论必须引用真实源码路径、SQL 只读计数或脱敏 HTTP/service probe；区分 proven、incomplete、blocked。阶段一证据复核完成前，不得进入交互设计、migration 或代码实现。
+
+Optional Enhancers:
+
+- 生成不含 PII/Secret 的用户资格矩阵，只展示聚合数量及命名 E2E 用户的脱敏投影链。
+- 对 Admin catalog 与 inference eligibility 分别画出当前链和目标链，标注错误耦合点与 HTTP 语义差异。
+- 对现有未提交模型目录/E2E 文件做 ownership-aware diff 审计，复用正确实现但不覆盖用户改动。
+
+范围变化：
+
+- 本轮只进入阶段一只读审计与证据文档；套餐 seed、Free backfill、API/Schema/UI 修改、Reader Testing 和真实写入型 E2E 均留待各自阶段门禁记录完成后执行。
+- 现有 Round 48–49 的模型目录与真实 Gateway E2E 结论只作为历史证据，不预设其目录可见性合同符合本轮新产品决策；必须以当前代码和 PostgreSQL 重新核验。
+- `html-design-workflow` 的完整图转 HTML 流程因缺少外部 `target_image.png` 不直接执行；交互阶段将以现有 Dream 页面和真实截图为设计基线，并保留分阶段 Reader Testing。`ink-dream-playwright-qa` 留待实现后真实 E2E 阶段执行。
+
+执行证据与验证结果：
+
+- 已完整读取两个适用技能的主说明及 Playwright 项目工作流；已确认 Admin 仓库 `AGENTS.md` 的 PostgreSQL、RBAC、Route Handler、计费历史与 Secret 约束。
+- 已检查两个工作树：Admin 的工作日志、环境脚本与本机 Gateway provision 脚本，Dream 的 PostgreSQL兼容、Gateway model API、聊天、真实模型设置 E2E 等均存在未提交修改；这些改动按用户资产保留，不回滚、不覆盖。
+- 当前尚未执行数据库连接、HTTP probe、源码调用链审计或任何业务写入；本条记录是进入阶段一的强制门禁。
+
+失败尝试及根因：
+
+- `html-design-workflow` 要求预先提供 `files/inputs/target_image.png`，而本任务没有外部目标设计图；直接启动四段图转 HTML 流程会制造伪造输入，因此本阶段不执行该流水线。
+
+未执行事项及原因：
+
+- 根因矩阵、数据库只读审计、listener/env presence、API contract 与保存 alias 调用链检查将在本 Prompt Architect 记录落盘后执行。
+- 数据 migration/seed/backfill、Admin/Dream 代码修改、Reader Testing、Playwright、真实 Provider/支付验证均未执行，因为尚未通过对应阶段门禁。
