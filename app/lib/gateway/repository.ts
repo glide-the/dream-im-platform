@@ -1,5 +1,3 @@
-import { InsufficientBalanceError } from "../billing/accounting";
-import { reserveGatewayRequestOnClient } from "../billing/repository";
 import type { InputTokenSemantics } from "../billing/types";
 import type { ResolvedBillableModel } from "../models/resolver";
 import { withPlatformTransaction } from "../platform-db";
@@ -270,7 +268,7 @@ export async function beginGatewayRequest(input: {
       estimatedTokens: input.estimatedTokens,
       at: new Date(),
     });
-    if (subscriptionEligibility && "code" in subscriptionEligibility) {
+    if ("code" in subscriptionEligibility) {
       await client.query(
         `UPDATE gateway_requests
          SET status = 'rejected', outcome = 'failed', http_status = $2,
@@ -297,10 +295,9 @@ export async function beginGatewayRequest(input: {
         periodEnd: subscriptionEligibility.periodEnd,
       };
     }
-    const subscription = subscriptionEligibility as GatewaySubscriptionContext | null;
-    if (subscription) {
-      await client.query(
-        `UPDATE gateway_requests
+    const subscription = subscriptionEligibility as GatewaySubscriptionContext;
+    await client.query(
+      `UPDATE gateway_requests
          SET subscription_id = $2, subscription_plan_version_id = $3,
              subscription_entitlement_id = $4, subscription_allowance_id = $5,
              subscription_snapshot = $6::jsonb,
@@ -308,18 +305,17 @@ export async function beginGatewayRequest(input: {
              allowance_reserved_microusd = 0,
              allowance_reserved_tokens = $8
          WHERE id = $1`,
-        [
-          requestId,
-          subscription.subscriptionId,
-          subscription.planVersionId,
-          subscription.entitlementId,
-          subscription.allowanceId,
-          JSON.stringify(subscription.snapshot),
-          subscription.coverageMode,
-          subscription.allowanceReservedTokens,
-        ],
-      );
-    }
+      [
+        requestId,
+        subscription.subscriptionId,
+        subscription.planVersionId,
+        subscription.entitlementId,
+        subscription.allowanceId,
+        JSON.stringify(subscription.snapshot),
+        subscription.coverageMode,
+        subscription.allowanceReservedTokens,
+      ],
+    );
 
     const at = new Date();
     const limiter = await lockLimitWindows({
@@ -330,15 +326,15 @@ export async function beginGatewayRequest(input: {
       estimatedTokens: input.estimatedTokens,
       requestsPerMinute: optionalMinimum(
         input.limits.requestsPerMinute,
-        subscription?.limits.requestsPerMinute,
+        subscription.limits.requestsPerMinute,
       ),
       dailyTokenLimit: optionalMinimum(
         input.limits.dailyTokenLimit,
-        subscription?.limits.dailyTokenLimit,
+        subscription.limits.dailyTokenLimit,
       ),
       monthlyTokenLimit: optionalMinimum(
         input.limits.monthlyTokenLimit,
-        subscription?.limits.monthlyTokenLimit,
+        subscription.limits.monthlyTokenLimit,
       ),
     });
     if ("window" in limiter) {
@@ -387,90 +383,52 @@ export async function beginGatewayRequest(input: {
       };
     }
 
-    if (subscription) {
-      try {
-        await reserveSubscriptionAllowanceOnClient(client, subscription);
-      } catch (error) {
-        if (
-          !(error instanceof Error) ||
-          error.message !== "SUBSCRIPTION_ALLOWANCE_CONCURRENT_CONFLICT"
-        ) throw error;
-        await client.query(
-          `UPDATE gateway_requests
+    try {
+      await reserveSubscriptionAllowanceOnClient(
+        client,
+        subscription,
+        requestId,
+      );
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.message !== "SUBSCRIPTION_ALLOWANCE_CONCURRENT_CONFLICT"
+      ) throw error;
+      await client.query(
+        `UPDATE gateway_requests
            SET status = 'rejected', outcome = 'failed', http_status = 409,
                error_code = 'SUBSCRIPTION_ALLOWANCE_CONFLICT',
                error_message = 'Subscription allowance changed concurrently',
                completed_at = NOW(), settled_at = NOW()
            WHERE id = $1`,
-          [requestId],
-        );
-        return {
-          kind: "rejected",
-          requestId,
-          code: "SUBSCRIPTION_ALLOWANCE_CONFLICT",
-          status: 409,
-          message: "Subscription allowance changed concurrently; retry the request",
-        };
-      }
-    }
-
-    const cashReservation = subscription ? 0 : input.reservationMicrousd;
-    if (cashReservation === 0) {
-      await client.query(
-        `UPDATE gateway_requests
-         SET status = 'reserved', started_at = NOW()
-         WHERE id = $1`,
-        [requestId],
-      );
-      await applyLimitReservations({
-        client,
-        platformUserId: input.principal.platformUserId,
-        modelId: input.resolved.model.id,
-        windows: limiter.windows,
-      });
-      return {
-        kind: "reserved",
-        requestId,
-        reservedMicrousd: cashReservation,
-      };
-    }
-
-    try {
-      await reserveGatewayRequestOnClient(client, {
-        platformUserId: input.principal.platformUserId,
-        gatewayRequestId: requestId,
-        amountMicrousd: cashReservation,
-      });
-      await applyLimitReservations({
-        client,
-        platformUserId: input.principal.platformUserId,
-        modelId: input.resolved.model.id,
-        windows: limiter.windows,
-      });
-      return {
-        kind: "reserved",
-        requestId,
-        reservedMicrousd: cashReservation,
-      };
-    } catch (error) {
-      if (!(error instanceof InsufficientBalanceError)) throw error;
-      await client.query(
-        `UPDATE gateway_requests
-         SET status = 'rejected', outcome = 'failed', http_status = 402,
-             error_code = 'INSUFFICIENT_BALANCE',
-             error_message = 'Account balance is insufficient for this request',
-             completed_at = NOW(), settled_at = NOW()
-         WHERE id = $1`,
         [requestId],
       );
       return {
         kind: "rejected",
         requestId,
-        code: "INSUFFICIENT_BALANCE",
-        availableMicrousd: error.availableMicrousd,
-        requiredMicrousd: error.requiredMicrousd,
+        code: "SUBSCRIPTION_ALLOWANCE_CONFLICT",
+        status: 409,
+        message: "Subscription allowance changed concurrently; retry the request",
       };
     }
+
+    await client.query(
+      `UPDATE gateway_requests
+       SET status = 'reserved', started_at = NOW()
+       WHERE id = $1`,
+      [requestId],
+    );
+    await applyLimitReservations({
+      client,
+      platformUserId: input.principal.platformUserId,
+      modelId: input.resolved.model.id,
+      windows: limiter.windows,
+    });
+    return {
+      kind: "reserved",
+      requestId,
+      reservedMicrousd: 0,
+    };
   });
 }
 

@@ -2,15 +2,15 @@
 
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[Gateway](../../design/modules/05-gateway.md)
 
-> 实现状态：协议代理、Key、Request/Payload、订阅资格、账务预授权与限流基线已有；严格 canonical 校验、cash-only 退出、402 单位、终态不可变和 Dream 推理接管未完成。
+> 实现状态：**Implemented / Release candidate**；严格 canonical 校验、cash-only 退出、402 Token 单位、终态 guard 与 Dream server-only Gateway client 已通过隔离合同。真实外部 Provider/user canary 未执行。
 
 ## 0. Current / Target / Release Gate
 
 | 分层 | 范围 |
 |---|---|
-| Current | Anthropic/OpenAI 代理、Key hash、Request/Payload、限流、reserve/capture/release 基线；auth 只 JOIN `platform_users`、cash-only 默认放行、402 Token/micro-USD 混写与 settled Request/Usage 终态 guard 仍是缺口。 |
-| Target | Dream 服务端以最小权限服务身份调用，严格执行 canonical user→Subscription→Entitlement→Permission→limit→当前周期 Token Allowance→reserve→Provider，并冻结版本快照。Subscription 不提供金额 allowance 或 cash overage。 |
-| Release Gate | orphan fail-closed、cash-only canary 退出、协议流/cancel/usage-missing 与 401/402/403/404/409/429/502/503 合同通过；无浏览器 Key、Provider Secret 或跨用户共享 Key。 |
+| Current / Implemented | Anthropic/OpenAI 代理、Key hash、Request/Payload、canonical user→Subscription→Entitlement→Permission→limit→Token Allowance→reserve/settlement→Token Ledger、cash-only 禁回退与终态 guard 已实现；Dream 使用 canonical-subject server client。 |
+| Release candidate evidence | Admin `0000–0024`、66 files/313 tests、tsc/lint/build；隔离 Gateway 精确验证 reserve 40/capture 12/release 28 与 Token Ledger 顺序/幂等/不可变。Dream backend 1,679 passed/14 skipped/652 subtests、推理聚焦 61 passed，全入口禁 direct fallback，Secret/未知字段不透传。 |
+| Release Gate | 生产 Key/Secret 注入、真实 Provider stream/cancel/usage-missing 与用户级 canary；关闭 canary 后不得 direct Provider。 |
 
 ## 1. 目标与协议
 
@@ -39,7 +39,7 @@ flowchart LR
   B --> P["Provider Transport"]
   P --> U["Final Usage"]
   U --> C["Token Capture / Release"]
-  Q -. "Current legacy only: independent cash mode" .-> P
+  Q -. "Explicit independent cash mode only" .-> P
 ```
 
 资格拒绝发生在上游调用前。请求创建时冻结 Subscription/Entitlement/Pricing/limit snapshot。订阅请求只使用 Token Allowance；Token 用尽不得隐式转为 cash。Provider Pricing、Provider cost 和显式独立按量现金模式可继续记账，但不能由套餐 overage 字段开启或称为订阅额度。流式响应必须支持真实增量、backpressure、client cancel 和协议正确的 SSE error；Usage 未知时不得按 0 成功结算。
@@ -68,7 +68,7 @@ flowchart LR
 | Key scope | 403 `GATEWAY_SCOPE_REQUIRED` | 否 | 更换具备最小必要 scope 的 Key；写部署告警 |
 | Canonical 用户 | 403 `CANONICAL_USER_REQUIRED` | 否；Key 有效但 mapping 是 orphan | 停止调用；审计 Key/余额/Usage/Ledger/Subscription 后映射或隔离，不创建第二用户/删除财务历史 |
 | 平台访问策略 | 401 `GATEWAY_AUTH_REQUIRED`（canonical 用户存在但非 active 时统一处理） | 否 | 在平台用户控制面检查访问状态；不泄露更多身份细节 |
-| 从未订阅兼容 | 无订阅错误；继续既有独立 cash-only 预授权 | 是 | 仅为 Current 迁移缺口，不代表套餐 overage 或独立计费用户；该路径无配置开关，移除需代码变更与灰度迁移 |
+| 无可调用订阅 | 403 `ENTITLEMENT_REQUIRED` / 对应订阅状态错误 | 是，`rejected` | 不进入 cash-only；独立现金模式必须由不同的显式产品资格/request mode 进入 |
 | Subscription 状态 | 403 `SUBSCRIPTION_PAUSED` / `SUBSCRIPTION_INACTIVE` / `SUBSCRIPTION_PERIOD_EXPIRED` | 是，`rejected` | 恢复、续费或重新订阅；同请求不循环重试 |
 | Entitlement | 403 `SUBSCRIPTION_MODEL_NOT_ALLOWED` / `SUBSCRIPTION_SCOPE_NOT_ALLOWED` | 是，`rejected` | 选择允许 alias/scope 或调整下一版权益 |
 | Allowance 未就绪/并发 | 409 `SUBSCRIPTION_ALLOWANCE_NOT_READY` / `SUBSCRIPTION_ALLOWANCE_CONFLICT` | 是，`rejected` | 刷新订阅/Allowance；并发冲突可按幂等边界重试 |
@@ -84,24 +84,24 @@ flowchart LR
 
 Gateway `/v1/**` 是 Anthropic/OpenAI 兼容协议面，计费诊断 details 保留已发布 snake_case（`available_tokens/required_tokens`、`available_microusd/required_microusd`）以避免破坏既有客户端；这不是 Product API JSON 命名。Dream BFF 必须通过 allowlist 映射为 Product camelCase `error.details.availableTokens/requiredTokens/availableMicrousd/requiredMicrousd` 和 `meta.requestId/retryAfterSeconds`，禁止对 Gateway 响应做原样 spread/透传。
 
-当前缺口：Token allowance 不足时实现仍可能把 Token 数写入 `available_microusd/required_microusd`，且 Gateway Key auth 未反向 JOIN canonical `users`。两项均为发布阻断风险；修复前客户端只能按 `code` 展示通用额度不足，不能把错误字段格式化为 USD。
+Token allowance 错误已使用 `available_tokens/required_tokens` 与明确 Token metric/unit；Gateway Key auth 已反向证明 canonical `users`，orphan 固定 fail-closed。生产 canary 仍需确认外部 Provider 在所有资格拒绝下均未被调用。
 
-Current 认证实现仍可能返回旧 `GATEWAY_API_KEY_REQUIRED/GATEWAY_API_KEY_INVALID`；Target 合同统一为上表 `GATEWAY_AUTH_REQUIRED`，并仅在 Key 有效但 canonical mapping orphan 时返 `CANONICAL_USER_REQUIRED`。代码、Dream 错误处理和 contract 测试未同步前不得标记 Release Gate 通过。
+认证、Dream 错误映射与 contract test 已统一 `GATEWAY_AUTH_REQUIRED`，并仅在 Key 有效但 canonical mapping orphan 时返 `CANONICAL_USER_REQUIRED`。外部 Provider canary 未执行，因此仍是 Release candidate 而非生产完成。
 
-已 settle Request/Usage 当前还缺数据库终态不可变 guard。Target 必须禁止对已完成/已结算事实的通用 UPDATE/DELETE，任何纠错以新 Ledger reversal/安全 Audit 表达。ASR WebSocket 在未定义 streaming-audio capability/计量/结算前不纳入本 Gateway Target，发布前必须禁用或另行完成 canonical 鉴权、Origin、限流和审计。
+已 settle Request/Usage 的数据库终态 guard 已实现并经隔离 PG 验证；任何纠错仍以新事实/安全 Audit 表达。ASR endpoint 已 fail-closed，且在未定义 streaming-audio capability/计量/结算前不纳入本 Gateway，继续 Deferred。
 
 ## 7. 验收
 
-- GTW-01（Target release gate）：无/错/revoked Key 均返回协议正确 401 `GATEWAY_AUTH_REQUIRED`；有效 Key + canonical orphan 返 403 `CANONICAL_USER_REQUIRED`，且 Secret 不进日志/DOM。
+- GTW-01（Implemented / release candidate）：无/错/revoked Key 均返回协议正确 401 `GATEWAY_AUTH_REQUIRED`；有效 Key + canonical orphan 返 403 `CANONICAL_USER_REQUIRED`，且 Secret 不进日志/DOM。
 - GTW-02：Scope、订阅、模型、当前周期 Token、RPM/Token limit 在 Provider 前拒绝并记录 Request；Subscription Token 用尽不进入独立现金链路。
 - GTW-03：Anthropic/OpenAI 非流与流式 contract、任意 chunk 边界、cancel、错误映射通过。
 - GTW-04：Payload 默认不加载；无 `gateway.payloads.read` 返回 403；查看产生 Audit。
-- GTW-05：Usage settle 产生唯一 Usage/Ledger 链；未知 Usage 标记 `settlement_failed`，不自动按 0。
-- GTW-06：Current 只允许从未有订阅记录的用户进入独立 cash-only 兼容路径；已有任何订阅记录时必须执行 Subscription/Entitlement/Token Allowance 校验，Target canary 关闭后无隐式现金 fallback。
+- GTW-05（Implemented / release candidate）：Usage settle 产生唯一 Usage/Subscription Token Ledger 链；未知 Usage 标记 `settlement_failed`，不自动按 0，并由幂等 worker 保守 capture。
+- GTW-06：Subscription Gateway 无隐式 cash-only fallback；独立现金模式必须使用显式资格/request mode，不能由“从未订阅”或 Token 耗尽触发。
 - GTW-07：Gateway Key 认证必须证明内部兼容行存在对应 canonical 用户；402 的字段名、metric 与 unit 一致，Token 值永不进入 micro-USD 字段。
 - GTW-08（Target release gate）：Dream 的 Claude Agent/Chat/Dream/Workflow 经用户级 canary 调用 Gateway，旧行为/工具/流式协议无回归；流取消、上游 5xx、usage 缺失分别产生确定 release/capture/`settlement_failed`。
-- GTW-09（Target release gate）：已 settle Request/Usage 的 UPDATE/DELETE 在数据库层失败；历史 price/entitlement/permission/limit snapshot 不因新配置变化。
+- GTW-09（Implemented / release candidate）：已 settle Request/Usage 的 UPDATE/DELETE 在数据库层失败；历史 price/entitlement/permission/limit snapshot 不因新配置变化。
 - GTW-10（Target release gate）：Key 轮换创建新版本且旧 Key 不可恢复；转动前后 Request 分别保存正确 key/scope snapshot，无明文重读。
-- GTW-11（Target release gate）：Gateway `/v1` snake_case 诊断经 Dream BFF 逐字段转为 Product camelCase envelope；contract test 证明 Token 值不进 micro-USD 字段、Secret/未知字段不被透传。
+- GTW-11（Implemented / release candidate）：Gateway `/v1` snake_case 诊断经 Dream BFF 逐字段转为 Product camelCase envelope；contract test 证明 Token 值不进 micro-USD 字段、Secret/未知字段不被透传。
 
 交互验收映射：GTW-01 → UI-GTW-01；GTW-02/05 → UI-GTW-03 + API/数据库断言；GTW-03 由协议 contract E2E；GTW-04 → UI-GTW-02/04。

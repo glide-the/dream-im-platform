@@ -1,26 +1,27 @@
 # Token-only Subscription、独立 Billing 与 AI Gateway 集成架构
 
-> 文档状态：**Planned**（包含 **Implemented baseline / Partial** 的当前事实）
+> 文档状态：**Implemented / Release candidate**（Admin/Product API/Gateway/Dream client 已通过隔离验证；外部 Provider canary 待执行）
 > 返回：[总索引](README.md)
 > 依赖：[业务边界](02-business-integration-and-admin-boundary.md) · [发布门禁](05-release-rollout-and-rollback.md)
 > 下游：[Dream 产品与推理集成](07-dream-subscription-and-inference-integration.md)
-> Deferred：[Payment/订阅支付边界](08-payment-adapter-and-webhook-boundary.md)
+> Payment：[Adapter/Webhook 边界](08-payment-adapter-and-webhook-boundary.md)
 > 主要读者：产品架构、Admin/Gateway 后端、Dream 后端、QA、安全
 
 ## 1. Current / Target / Release Gate
 
 | 能力 | Current | Target | Release Gate |
 |---|---|---|---|
-| 用户与内部投影 | `0015` 已做 canonical-driven mapping/account；兼容表仍复制 email/display name | `users` 是唯一平台用户及订阅主体全集；mapping/account 仅内部兼容或独立现金域 | 205-user 搜索分页；Gateway/命令反查 `users`；无“计费用户”Resource/筛选/开户 |
-| Plan/Version/Entitlement | **Admin workspace Implemented / Partial**：`0017` 保留 legacy 物理列但为新写入加 Token-only guard；strict API/DTO/UI 已移除金额与全局 effective 字段；隔离 PG 尚未执行 | Version 固定为用户月度 Token 规则；发布后不可覆盖；无币种、价格、金额额度、cash overage 或全局生效窗 | 输入/DTO/数据库 guard 均拒绝货币与 effective 字段；历史 published 行不破坏 |
-| Subscription | **Admin workspace Implemented / Partial**：已增加 `cycle_anchor_at/current_period_number`，从原始 UTC 锚点计算月末，提前续期 409，升降级只写 pending；单元/静态通过，真实事务与并发 E2E 待验证 | 每个用户以自身锚点推进月度周期；续费只在边界；升降级下周期生效 | Jan 31→Feb 28→Mar 31；提前/重复续费 409；并发/幂等属性测试 |
-| Token Allowance | **Admin workspace Implemented / Partial**：resolver 只创建 `token_allowance`，Token 覆盖请求收费为 0；仅保留已在途 legacy money settlement 分支，隔离 PG/Ledger 断言待执行 | 新请求只 reserve/capture/release 当前用户周期 Token；耗尽即拒绝，不自动切金额 | Token 守恒；新 monetary allowance/`allowance_capture`/`subscription_charge` 写入为 0 |
+| 用户与内部投影 | **Implemented / Release candidate**：canonical-driven mapping/account、服务端分页/搜索、Gateway/命令反查与 QA-only 回归已验证 | `users` 继续是唯一平台用户及订阅主体全集 | 生产历史 orphan 只读盘点与安全处置回执 |
+| Plan/Version/Entitlement | **Implemented / Release candidate**：Admin `0017–0024` Token-only guard/data cutover/Token Ledger、月费/续费、strict API/DTO/UI 与不可变合同已通过本机 PG、66 files/313 tests、tsc/lint/build 与订阅 Playwright 4/4 | 保持月度 Token 规则；月费只用于订阅 Payment，禁金额额度/cash overage/全局生效窗 | 生产历史 published 行审计与灰度回执 |
+| Subscription | **Implemented / Release candidate**：个人 UTC 月度锚点、自动 period worker、八项 preview→execute、expectedVersion/幂等回执与并发合同已验证 | 每用户续期/换版继续按个人周期 | 生产 cohort 与定时 worker 观测 |
+| Token Allowance | **Implemented / Release candidate**：只创建 token_allowance，reserve/capture/release、usage-missing recovery 与终态 guard 已通过隔离 PG | 新请求只消耗当前用户周期 Token；不自动切金额 | 外部 Provider canary 下 usage/取消/断流观测 |
+| Subscription Token Ledger | **Implemented / Release candidate**：`0021` 与 Gateway 同事务追加 reserve/capture/release；provenance、请求内顺序、幂等、守恒和 UPDATE/DELETE guard 已通过真实 PG migration 与隔离 Gateway/Playwright | 继续作为 Token 单位审计域，不进入 Dream Product DTO，不伪装金额/支付 Ledger | 外部 Provider canary 与物理最小权限矩阵 |
 | 独立 Pricing/Billing/Ledger | Provider Pricing、Billing Account、现金 reserve/capture 与 Ledger 已有基线 | 保留为显式 cash pay-as-you-go/历史域；不能成为套餐权益或 Token 耗尽兜底 | 单独入口/授权/审计；Subscription DTO 与页面无金额字段；历史账务仍 append-only |
-| Gateway | OpenAI/Anthropic 兼容路由、Key/limit/request/usage/pricing 基线 | canonical 用户、订阅、权益、模型权限、限流、Token Allowance 的固定资格链 | 401/402/403/409/429/502/503 与 Token 请求终态测试 |
-| Product API | 未实现 | Dream server-only 产品读 API 与生命周期命令 API | Session/service auth、Origin、幂等、redaction、契约测试 |
-| Payment/订阅支付 | 未实现 | **Deferred**；不实现 Adapter、Webhook、Fake、真实渠道 | 当前依赖、路由、表、环境变量、UI、测试支付入口均为 0 |
+| Gateway | **Implemented / Release candidate**：固定 canonical→Subscription→Entitlement→Permission→limit→Allowance 资格链与 settlement 已验证；Dream server-only client 已落地 | 真实外部 Provider/user canary | 生产 Key/Secret 注入与 401/402/403/409/429/502/503 观测 |
+| Product API | **Implemented / Release candidate**：Product/Payment exact routes、strict JWT/DTO、Origin/幂等/redaction 与 Dream BFF 合同已通过 | 预发布真实 Session/service identity 冒烟 | 真实环境 ETag/分页/错误/超时观测 |
+| Payment/订阅支付 | **Implemented / Release candidate**：`0022–0024`、Adapter、Fake guard、Webhook 幂等、首次开通/付费月续费 Intent 与 Dream UI | 真实渠道 **Deferred** | 生产 Fake 禁用；未接渠道不显示成功；付费到期不免费发 Token |
 
-“Implemented baseline”只说明已有代码/Schema 可复用，不表示整个产品链已完成。
+实现已形成隔离环境端到端 Release candidate；“Implemented”不等于生产已发布。尚未执行的真实外部 Provider canary、生产 cutover 与 credential owner rotation 明确保留为 Release Gate；Dream frontend lint 已通过（0 errors/21 warnings）。
 
 ## 2. 目标业务链
 
@@ -32,6 +33,8 @@ flowchart LR
   E --> P["Model Permission"]
   P --> A["User-period Token Allowance"]
   A --> G["Gateway Request"]
+  G --> U["Token Usage"]
+  U --> L["Subscription Token Ledger"]
   G --> T["Token Usage"]
 ```
 
@@ -39,12 +42,12 @@ flowchart LR
 
 ## 3. canonical 用户、mapping 与 account
 
-### Current 缺口
+### 已修复实现与生产余项
 
-- `platform_users` 仍复制 `email/display_name`，mutation 白名单若可直接修改会与 `users` 产生资料 split-brain。
-- Gateway Key 鉴权当前只 JOIN `platform_users`，没有证明对应 canonical `users` 仍存在。
-- 专用选择器加载前 100，通用 Relation selector 首批 50/100，不能代表完整用户集。
-- Subscription/Key/Permission/credit 命令尚未统一调用 canonical projection/account ensure。
+- 产品读取/选择器以 `users` 为真值并服务端分页、搜索和 hydration，不再把前 50/100 当完整用户集。
+- Gateway Key 鉴权反向证明 canonical `users`，orphan fail-closed；命令统一经过受控 projection/account ensure。
+- `platform_users.email/display_name` 仅作为 deprecated compatibility snapshot，不提供第二套产品 mutation/名册。
+- 生产历史 orphan 的 Key、余额、Usage、Ledger、Subscription 仍需只读盘点后映射或隔离；此项不能用测试 seed 代替。
 
 ### Target 合同
 
@@ -61,7 +64,7 @@ flowchart LR
 - 每个用户订阅的 `currentPeriodStart/currentPeriodEnd` 由该用户开通时的周期锚点推导。Plan Version 不提供 `effectiveFrom/effectiveTo`；`publishedAt` 只证明版本何时可被新订阅选择，不改变既有用户周期。
 - Entitlement 固定 Gateway scopes、model、RPM、daily safety limit 与 storage limit。Subscription 总额度只有当前周期 `allowanceTokens`；旧 `monthly_token_limit` 不能再按 UTC 日历月形成第二套套餐额度。
 - draft version 可编辑；published version 与其 entitlement 不可 UPDATE/DELETE。更改必须创建新 `versionNumber`，由用户自己的下一个周期边界采用。
-- Version/Entitlement 的请求、响应、表单和审计不得出现 `currency`、`basePriceMicrousd`、`allowanceMicrousd`、`overagePolicy=cash_balance`、Payment 或全局 effective window。
+- Version 的请求、响应、表单可出现 `currency/basePriceMicrousd` 月费；不得出现 `allowanceMicrousd`、`overagePolicy=cash_balance` 或全局 effective window。
 
 ### 独立 Provider Pricing 边界
 
@@ -78,7 +81,7 @@ flowchart LR
 
 ## 5. Subscription 状态机
 
-Target callable 状态：`trial`、`active`、`cancel_at_period_end`；管理状态：`paused`、`cancelled`、`expired`。物理 Schema 中既有 `past_due` 暂为历史兼容值，Token-only 命令不得新进入；没有支付就不存在“欠费恢复”语义。
+Target callable 状态：`trial`、`active`、`cancel_at_period_end`；管理/资格状态：`past_due`、`paused`、`cancelled`、`expired`。付费版本到期由 worker 原子进入 `past_due` 且不发新 Allowance；成功续费 Webhook 后进入下一周期并恢复 `active`。
 
 ```mermaid
 stateDiagram-v2
@@ -95,7 +98,7 @@ stateDiagram-v2
   cancelled --> active: explicit new activation
 ```
 
-每个 execute 命令必须携带用户域唯一 idempotency key 与 `expectedVersion`（create 可空），在事务中锁定 Subscription 与当前 Token Allowance，并写 append-only `subscription_events`。同 key+同 canonical request digest 返回原结果；同 key+异 digest 返回 409。Token-only 命令不锁 Billing Account、不写 `subscription_charge`，也不等待 Payment 事实。
+每个 execute 命令必须携带用户域唯一 idempotency key 与 `expectedVersion`（create 可空），在事务中锁定 Subscription 与当前 Token Allowance，并写 append-only `subscription_events`。付费首次开通和到期续费不由浏览器直接完成，而是等待已验证 Payment Webhook 后原子激活/续期。
 
 ### 生命周期规则
 
@@ -107,7 +110,8 @@ stateDiagram-v2
 | downgrade | 用户下周期 | 与 upgrade 同一边界原子切换；不依赖平台全局日期 |
 | pause | 即时或策略指定 | 禁止新 Gateway reserve；在途请求仍结算到终态 |
 | resume | 在允许期内 | 重检 Plan/version 可用性与用户当前周期；不额外发 Token |
-| cancel | 默认期末 | `cancel_at_period_end` 可在边界前撤销；边界后写 cancelled event |
+| cancel | 默认期末 | 写 `cancel_at_period_end`；当前周期仍可使用，边界后写 cancelled event且不发新 Token |
+| revoke_cancel | 仅取消边界前 | 只清除期末取消标志并写事件；不移动周期、不续期、不发 Token |
 
 自动 period worker 使用 claim/lock、稳定 boundary key 和可重放 event；不能依赖 UI 访问推进，也不能用不同幂等 key 连续预创建多个未来周期。
 
@@ -137,7 +141,7 @@ flowchart LR
 - `reserved_tokens + consumed_tokens <= granted_tokens`
 - `remainingTokens = grantedTokens - reservedTokens - consumedTokens`，且三个量都不小于 0。
 - 同一 request/allowance 的 reserve、capture、release 由稳定 idempotency key 关联；重复 settlement 不重复消耗。
-- Subscription Token 使用不产生 micro-USD `allowance_capture` Ledger，不改 Billing Account available/reserved，不写 subscription charge。
+- Subscription Token 使用不产生 micro-USD `allowance_capture` Ledger，不改 Billing Account available/reserved，不写 subscription charge；它在独立 `subscription_token_ledger_entries` 中按请求顺序追加 Token reserve/capture/release。
 
 Token 不足时固定 fail-closed 402；不得继续查 money allowance 或 cash balance。若平台另有显式 cash pay-as-you-go 产品模式，它必须有独立授权、API/页面、request mode、Pricing snapshot、Billing Account 与 Ledger，不得由套餐耗尽自动触发，也不属于本期 Dream Subscription 体验。
 
@@ -152,7 +156,7 @@ Token 不足时固定 fail-closed 402；不得继续查 money allowance 或 cash
 | Version `billing_period`、`effective_from` | 新 Version 固定 monthly/NULL | 不删除 Provider Pricing 的有效窗口；只处理 Subscription Version |
 | Allowance `granted/reserved/consumed_microusd` | 新周期行固定为 0 | 新 INSERT guard；旧在途/历史行只允许既有兼容结算至终态 |
 | `subscription_charge`、`allowance_capture`、`money_allowance` 历史 | 禁止新 Subscription 请求产生 | 保留 append-only 历史和 reconciliation；不得 UPDATE/DELETE/伪装成 Token |
-| `past_due` 历史 Subscription | 不作为新状态机入口 | 迁移报告列出并人工映射 paused/expired/legacy；不静默批量改共享数据 |
+| `past_due` Subscription | 付费到期的正式资格状态；不允许 Gateway 调用 | 续费 Intent 绑定 version/period end；成功 Webhook 只推进一次，历史 legacy 行先审计 provenance |
 
 兼容 migration 必须可回滚、非破坏性，先在显式 `TEST_DATABASE_URL` 验证。Schema 暂留 deprecated 列，避免 Drizzle 下一次生成误 DROP；同时新增用户周期锚点及数据库写入 guard。任何共享 `ink-memory` 上的回填或状态归一化都需要独立审批，本文件不授权执行。
 
@@ -168,25 +172,26 @@ Token 不足时固定 fail-closed 402；不得继续查 money allowance 或 cash
 6. 原子检查/增加 RPM、daily safety limit；Subscription 月额度只来自当前 period allowance，不再按 UTC calendar month重复计算。
 7. 锁定当前 Token Allowance，完成 token reserve；不足固定 402，禁止 money/cash fallback。
 8. 建立 `gateway_requests` 与 pricing/subscription snapshot 后才调用 Provider。
-9. 将 Provider usage 归一化为输入/输出/cache token；在同一结算工作流 capture/release 并追加 Token Usage/Audit。Provider 成本 snapshot 可以保留，但 Subscription 用户 charge 为 0 且不写金额 allowance Ledger。
+9. 将 Provider usage 归一化为输入/输出/cache token；在同一 PostgreSQL transaction 中 capture/release，并追加 Token Usage、Subscription Token Ledger 与 Audit。Provider 成本 snapshot 可以保留，但 Subscription 用户 charge 为 0 且不写金额 allowance Ledger。
 
 请求终态必须覆盖：success、rejected、provider_failed、cancelled、stream_interrupted、usage_missing、settlement_failed。usage missing 不能按 0 成本成功；按协议能力选择保守 capture、受控 reconciliation 或 settlement_failed，且在途 reserve 不得永久悬挂。
 
 Provider/model/pricing 的版本快照在历史请求上不可覆盖；这是运营成本/独立 Billing 事实，不是套餐价格。请求 payload/response 保存按最小化与 retention policy；Secret、Authorization header、工具敏感参数和正文默认不写日志。
 
-## 8. Dream Product API（Target，当前未实现）
+## 8. Dream Product API（Implemented / Release candidate）
 
-下列路径是统一的 **Target contract**，不是 Current endpoint：
+下列六类 exact 路径已在 Admin 与 Dream BFF 实现并通过 strict contract/focused tests；生产 Session/service identity 冒烟仍是 Release Gate：
 
 | 方法与路径 | 作用 | 核心响应/命令字段 |
 |---|---|---|
-| `GET /api/product/v1/plans` | 发布中 Token-only Plans 与 Version/Entitlement 产品投影 | plan code/name、version、`period=monthly`、allowanceTokens、capability；ETag；无 currency/price/effective window |
+| `GET /api/product/v1/plans` | 发布中 Token-only Plans 与 Version/Entitlement 产品投影 | plan code/name、version、`billingCycle=monthly`、allowanceTokens、整数 micro-USD 月费、capability；ETag；无 Provider pricing/effective window |
 | `GET /api/product/v1/me/subscription-context` | 当前用户订阅总览 | canonical user ID、subscription/version/status、period start/end、renewal/pending version、granted/reserved/consumed/remaining Tokens |
 | `GET /api/product/v1/me/usage` | 服务端分页 Token Usage | items、page/pageSize/total、input/output/cache/total tokens、request/model alias、occurredAt |
 | `GET /api/product/v1/me/model-catalog` | 当前用户实际可用模型 | alias/label/capability/limits；无 provider secret/internal ID |
 | `POST /api/product/v1/me/subscription-commands` | 单一路径的 preview/execute 生命周期命令 | `action=create|renew|upgrade|downgrade|pause|resume|cancel|revoke_cancel`、`phase=preview|execute`、targetPlanVersionId、reason；preview 返回 `previewId/digest/expiresAt`，execute 必须回传三者并携带 `Idempotency-Key`、`expectedVersion`（create 可空） |
+| `POST/GET /api/product/v1/me/payment-intents/**` | 付费首次开通/到期续费 Intent 与状态读取 | planVersionId、operation、整数 micro-USD、status、安全 nextAction；不返回 adapter secret/external reference |
 
-读 API 以 Dream 用户 Session + 服务间认证绑定 canonical user，不接受浏览器提交任意 user ID。写命令要求 CSRF/Origin；`phase=preview` 不改变状态，`phase=execute` 校验未过期 preview digest、idempotency 和 expected version 后才进入事务。响应只使用 allowlist DTO，不把 `platformUserId`、Billing Account、raw pricing rule、Gateway Key 或 Secret 暴露为套餐字段。Subscription API 不提供 Ledger、充值、Payment intent、金额 quote 或支付状态；如未来需要独立现金产品 API，必须另立 PRD 与路由命名空间。
+读 API 以 Dream 用户 Session + 服务间认证绑定 canonical user，不接受浏览器提交任意 user ID。写命令和 Payment Intent 要求 CSRF/Origin 与幂等。响应只使用 allowlist DTO，不把 `platformUserId`、Billing Account、raw pricing rule、Gateway Key 或 Secret 暴露为套餐字段；Payment DTO 仅含平台 Intent ID、金额、状态和安全 next action。
 
 ## 9. 错误合同
 
@@ -208,24 +213,24 @@ Provider/model/pricing 的版本快照在历史请求上不可覆盖；这是运
 - Route Handler：Session/RBAC、Origin、Zod、header/idempotency 解析、service 调用、错误映射。
 - Service/UoW：状态机、资格、事务锁、幂等、守恒、event/audit 编排。
 - Repository：参数化 SQL、row lock、append-only insert、版本 compare-and-swap。
-- Adapter：Provider 外部协议，不含 Subscription 状态机真值；Payment Adapter 当前 Deferred，不是此分层的实现项。
+- Adapter：Provider/Payment 外部协议边界，不持有 Subscription 状态机真值；Payment Webhook 由服务层协调领域命令。
 
 SQL、事务和领域逻辑必须位于 `app/lib/**`，不能散在 route handler 或 React 组件。
 
 ## 11. Secret 与审计
 
 - Gateway Key 只存 hash/prefix；一次性创建回执关闭后永不回显。
-- Provider/System Secret 使用 server-side secret provider/encryption，响应/日志/数据库普通字段不含明文；Deferred Payment Secret 不得提前加入配置。
+- Provider/Payment/System Secret 使用 server-side secret provider/encryption，响应/日志/数据库普通字段不含明文。
 - `system_config.env_vars` 拒绝 secret-like 名称和值；Dream 浏览器不配置 provider credentials。
-- Audit/Token Usage/Subscription Event 是 append-only 或终态不可变；独立现金 Ledger 继续 append-only。settled request/usage 需数据库 guard，不能只靠 UI 隐藏编辑。
+- Audit/Token Usage/Subscription Event 是 append-only 或终态不可变；Subscription Token Ledger 与独立现金 Ledger 分别 append-only。settled request/usage 需数据库 guard，不能只靠 UI 隐藏编辑。
 
 ## 12. 自动化验收
 
 - 所有 canonical users 都能成为订阅主体；205 用户分页与跨页搜索；无 QA-only 结果和独立计费用户入口。
 - Token-only Version/Entitlement publish mutation rejection；Subscription money/effective/cash 字段在 API、表单和新写入中为 0；Provider Pricing effective window 不受影响。
 - Subscription 生命周期、用户周期锚点、Jan-31 月末序列、提前续费、并发升降级、重复续费、撤销期末取消。
-- Token Allowance 守恒属性测试；耗尽 402 且无 Billing Account/Ledger 变化；重复 Gateway 请求、cancel/断流/Provider 5xx/usage missing。
+- Token Allowance/Token Ledger 守恒属性测试；耗尽 402 且无 Billing Account/金额 Ledger 变化；重复 Gateway 请求不重复 Token 记账，覆盖 cancel/断流/Provider 5xx/usage missing。
 - 401/402/403/404/409/429/502/503 均验证 Provider 是否被调用、Token 是否变化；Subscription 请求不产生新 monetary Ledger。
-- settled Token Usage/Audit/Subscription Event 与既有现金 Ledger 不可 UPDATE/DELETE。
+- settled Token Usage/Audit/Subscription Event、Subscription Token Ledger 与既有现金 Ledger 不可 UPDATE/DELETE。
 - Product API 五个 Target contract 的 auth、pagination、ETag/version、redaction 与错误测试；DTO 不含 currency/price/micro-USD/balance/payment/effective window。
-- Gateway/Provider/System Secret 不出现在 DB 明文字段、响应、DOM、Storage、console、structured logs 或快照；Payment 依赖为 0。
+- Gateway/Provider/Payment/System Secret 不出现在 DB 明文字段、响应、DOM、Storage、console、structured logs 或快照。

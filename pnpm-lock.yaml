@@ -32,6 +32,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.1
         version: 0.45.1(pg@8.17.2)
+      jose:
+        specifier: 5.10.0
+        version: 5.10.0
       next:
         specifier: 16.1.6
         version: 16.1.6(@babel/core@7.28.6)(@playwright/test@1.58.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)

@@ -9,7 +9,7 @@
 | 分层 | 交互边界 |
 |---|---|
 | Legacy baseline | `0014` 与历史记录仍保留金额、annual/cash overage 和 `effectiveFrom` 兼容列；只允许在受权限保护的迁移证据中审计，不再进入套餐交互。 |
-| Implemented in workspace（待隔离 PG/E2E） | Plan/Version 表单、列表和用户订阅页已只显示个人月度周期、Token 与非货币权益；strict API 与 Repository 不再返回金额或全局生效字段。静态、单元和 build 已通过，双视口真实数据验收尚未执行。 |
+| Implemented / Release candidate | Plan/Version 表单、列表、用户订阅页、只读 Token 流水页、Product/Payment API 与 Dream BFF 只显示个人月度周期、Token、月费与权益。Admin 66 files/313 tests、tsc/lint/build、Payment PG 2/2；Dream frontend lint 0 errors/21 warnings、build、Product API 9/9 与订阅 Playwright 4/4 已通过。 |
 | Target | 运营只管理 Plan identity、不可覆盖 monthly Token Version、非货币 Entitlement 和用户级生命周期；所有影响预览只显示版本、个人周期、Token 与 Gateway 资格。 |
 | Migration | 先让读取投影和表单停止暴露错误字段，再切严格 Token-only API；旧货币历史若需排障，只在受权限保护的 Legacy evidence 只读区显示，不进入套餐详情、筛选或导出。 |
 | Release Gate | 两视口、键盘和读屏测试确认没有金额/支付/全局生效控件；个人周期、下期换版、Token 守恒、402 Token 恢复和 409 并发恢复均由真实 API 驱动。 |
@@ -85,6 +85,8 @@ Token 周期总额度只在 Version 配置，避免与 Entitlement 的安全限�
 7. recent Token Usage 与 append-only Subscription Events。
 
 详情不嵌入 cash account、金额 Ledger、预计金额超额或 Payment。需要排查独立 Provider 成本/现金账务的管理员可按 permission 跳转 Billing 模块，但文案必须为“独立账务”，不能称为订阅余额。
+
+`/admin/subscriptions/token-ledger` 是 `subscriptions.read` 控制的只读审计页，按 Gateway Request 展示 `request_sequence`、reserve/capture/release、Token amount 和 available/reserved/consumed 前后快照。页面不得提供新增、编辑、删除、退款成功或支付状态控件，也不得把 Token 流水称为账单金额。
 
 ## 4. 生命周期与影响确认
 

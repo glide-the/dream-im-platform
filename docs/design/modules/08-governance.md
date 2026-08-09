@@ -8,9 +8,9 @@
 
 | 分层 | 交互边界 |
 |---|---|
-| Current | Admin/RBAC/Audit/Settings masked-marker 基线；Settings 非主导航。Dream 已提交 credential 和未鉴权 ASR 仍是 P0，不是已修复状态。 |
-| Target | Provider/Gateway/Payment/System Secret 统一只写覆盖，高风险 Subscription/Billing/Gateway/Payment/Webhook 操作产生 append-only Audit。 |
-| Release Gate | Secret 吊销/轮换/scan、匿名 ASR 拒绝、RBAC、Audit 不可变和两视口键盘/读屏验证通过。 |
+| Current | Admin/RBAC/Audit/Settings masked-marker 基线；Settings 非主导航。Dream ASR endpoint 已代码级 fail-closed，但历史 credential 的所有者吊销/轮换回执仍是 P0。 |
+| Target | Provider/Gateway/Payment/System Secret 统一只写覆盖，高风险 Subscription/Payment Webhook/独立 Billing/Gateway 操作产生 append-only Audit。只有真实支付渠道 Deferred。 |
+| Release Gate | Secret owner 吊销/轮换/scan 回执、ASR 持续 fail-closed、RBAC、Audit 不可变和两视口键盘/读屏验证通过。 |
 
 ## 1. 管理员
 
@@ -26,7 +26,7 @@ Role 列 code/name/type、permission count、admin count；自定义 Role 使用
 
 ## 3. System Settings
 
-列表按 category/key/status/secret 筛选。编辑 Drawer 当前统一使用 JSON Editor，Secret GET 只显示 masked marker，提交新 JSON 值表示覆盖，空值不清除。目标态可将 Secret 改为专用 password/secret 控件；无论控件类型，Provider/System/Payment Secret 都不得返回一次性明文回执。Webhook 签名 Secret 不放进 event payload 或普通业务 JSON。覆盖 Secret 使用危险确认并写 Audit。
+列表按 category/key/status/secret 筛选。编辑 Drawer 当前统一使用 JSON Editor，Secret GET 只显示 masked marker，提交新 JSON 值表示覆盖，空值不清除。目标态可将 Secret 改为专用 password/secret 控件；无论控件类型，Provider/System Secret 都不得返回一次性明文回执。Deferred Payment 不创建签名 Secret 或 event payload 字段。覆盖 Secret 使用危险确认并写 Audit。
 
 ## 4. Audit
 
@@ -40,5 +40,5 @@ Role 列 code/name/type、permission count、admin count；自定义 Role 使用
 - UI-GOV-02：最后 Super Admin/内置 Role/被引用 Role 危险动作有可恢复 409。
 - UI-GOV-03：Secret、密码、Session token 不进入 DOM 重读、Copy、Audit、自动化截图或遥测；人工截图验收只使用明确的脱敏测试值。
 - UI-GOV-04：Audit 只读，before/after 有明确空值语义且可追溯 request ID。
-- UI-GOV-05（Target release gate）：Payment/Webhook/Gateway 操作的 Audit 只含安全 fingerprint/reference/digest，不含 Secret、完整 payload 或一次性 Key；查看 Payload 仍经独立权限门。
+- UI-GOV-05（Target release gate）：Subscription/Payment Webhook/独立 Billing/Gateway 操作的 Audit 只含安全 fingerprint/reference/digest，不含 Secret、完整 payload 或一次性 Key；查看 Payload 仍经独立权限门。
 - UI-GOV-06（P0 release gate）：已提交 credential 未被所有者确认吊销/轮换或 ASR 匿名连接仍可用时，系统健康显示 blocking 而非 green；不展示 credential 值。

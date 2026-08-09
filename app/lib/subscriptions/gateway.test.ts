@@ -29,6 +29,25 @@ const baseRow = {
 };
 
 describe("subscription Gateway eligibility", () => {
+  it("fails closed when a canonical user has no subscription", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const result = await resolveGatewaySubscriptionOnClient(
+      clientWith(query),
+      {
+        platformUserId: "user_1",
+        modelId: "model_1",
+        requiredScope: "messages:create",
+        estimatedTokens: 1_000,
+        at: new Date("2026-08-08T00:00:00.000Z"),
+      },
+    );
+    expect(result).toEqual({
+      code: "SUBSCRIPTION_REQUIRED",
+      status: 403,
+      message: "An active Token subscription is required for Gateway access",
+    });
+  });
+
   it("reserves only the current subscription-period Token allowance", async () => {
     const query = vi.fn().mockResolvedValue({ rows: [baseRow] });
     const result = await resolveGatewaySubscriptionOnClient(
@@ -125,6 +144,8 @@ describe("subscription Gateway eligibility", () => {
       .fn()
       .mockResolvedValueOnce({
         rows: [{
+          subscription_id: "sub_1",
+          plan_version_id: "planv_1",
           granted_tokens: 100_000,
           reserved_tokens: 10_000,
           consumed_tokens: 20_000,
@@ -133,6 +154,8 @@ describe("subscription Gateway eligibility", () => {
           consumed_microusd: 0,
         }],
       })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [] });
     const result = await settleSubscriptionAllowanceOnClient(
       clientWith(query),
@@ -143,6 +166,10 @@ describe("subscription Gateway eligibility", () => {
         reservedMicrousd: 0,
         actualTokens: 2_000,
         chargeMicrousd: 30_000,
+        gatewayRequestId: "req_1",
+        platformUserId: "user_1",
+        subscriptionId: "sub_1",
+        planVersionId: "planv_1",
       },
     );
     expect(result).toEqual({
@@ -151,6 +178,15 @@ describe("subscription Gateway eligibility", () => {
       allowanceChargedTokens: 2_000,
     });
     expect(query.mock.calls[1][1]).toEqual(["allow_1", 10_000, 2_000]);
+    expect(String(query.mock.calls[2][0])).toContain(
+      "subscription_token_ledger_entries",
+    );
+    expect(query.mock.calls[2][1]).toEqual(
+      expect.arrayContaining(["req_1", "capture", 2_000, "req_1:token:capture"]),
+    );
+    expect(query.mock.calls[3][1]).toEqual(
+      expect.arrayContaining(["req_1", "release", 8_000, "req_1:token:release"]),
+    );
   });
 
   it("clamps underestimated Token usage and releases the full request reservation", async () => {
@@ -158,6 +194,8 @@ describe("subscription Gateway eligibility", () => {
       .fn()
       .mockResolvedValueOnce({
         rows: [{
+          subscription_id: "sub_1",
+          plan_version_id: "planv_1",
           granted_tokens: 100_000,
           reserved_tokens: 20_000,
           consumed_tokens: 70_000,
@@ -166,6 +204,7 @@ describe("subscription Gateway eligibility", () => {
           consumed_microusd: 0,
         }],
       })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [] });
     const result = await settleSubscriptionAllowanceOnClient(
       clientWith(query),
@@ -176,6 +215,10 @@ describe("subscription Gateway eligibility", () => {
         reservedMicrousd: 0,
         actualTokens: 30_000,
         chargeMicrousd: 50_000,
+        gatewayRequestId: "req_2",
+        platformUserId: "user_1",
+        subscriptionId: "sub_1",
+        planVersionId: "planv_1",
       },
     );
     expect(result).toEqual({
@@ -184,6 +227,10 @@ describe("subscription Gateway eligibility", () => {
       allowanceChargedTokens: 20_000,
     });
     expect(query.mock.calls[1][1]).toEqual(["allow_1", 10_000, 20_000]);
+    expect(query.mock.calls[2][1]).toEqual(
+      expect.arrayContaining(["req_2", "capture", 20_000, "req_2:token:capture"]),
+    );
+    expect(query).toHaveBeenCalledTimes(3);
   });
 
   it("settles only a legacy in-flight money reservation during rolling deploy", async () => {
@@ -191,6 +238,8 @@ describe("subscription Gateway eligibility", () => {
       .fn()
       .mockResolvedValueOnce({
         rows: [{
+          subscription_id: "sub_1",
+          plan_version_id: "planv_1",
           granted_tokens: 0,
           reserved_tokens: 0,
           consumed_tokens: 0,

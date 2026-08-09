@@ -111,6 +111,11 @@ const resources = [
     meta: { label: "订阅事件" },
   },
   {
+    name: "token-ledger",
+    list: "/admin/subscriptions/token-ledger",
+    meta: { label: "Token 流水" },
+  },
+  {
     name: "usage",
     list: "/admin/billing/usage",
     meta: { label: "Token 计费" },

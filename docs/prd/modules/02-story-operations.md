@@ -2,21 +2,21 @@
 
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[Story 运营](../../design/modules/02-story-operations.md)
 
-> 实现状态：Workspace/Story 已实现；Character/Scene 仅在真实扩展表存在时开放；Workflow 当前重定向到 Story，不是已实现列表页。
+> 实现状态：Dream **48/569/81/25 Alembic、43+5 migration CLI 与 PG-only runtime 已实现 / Release candidate**；Admin Workspace/Story 已实现，Character/Scene/Workflow 的 Admin 产品页面仍按各自入口状态开放。
 
 ## 0. Current / Target / Release Gate
 
 | 分层 | 范围 |
 |---|---|
-| Current | Admin 只对 canonical `users`、Workspace、Story 三表有已实现读/白名单更新基线；Dream 其余 40+5 表仍在 SQLite，Workflow 页重定向 Story。 |
-| Target | Dream 以 Alembic/Repository 拥有 43+5 完整 PostgreSQL 业务 Schema；Admin 只执行批准读、白名单更新或领域命令，无通用硬删。 |
+| Current / Implemented | Dream 以 Alembic/Repository/UoW 拥有 43+5 完整 PostgreSQL Schema；main/Notion runtime 为 PG-only。Admin 只对已批准资源执行读/白名单命令，无通用硬删。 |
+| Production Release Gate | 真实源 rehearsal、owner/ACL/现有数据审批与短暂停写 cutover；代码级 exact-adopt/drift fail-closed 已在 owned PG 通过。 |
 | Release Gate | 48/48 表 DDL/Repository/import/validator/owner 归属齐全，25 trigger 或等价不可变语义通过；Dream 运行时不打开 SQLite/JSON/内存回退。 |
 
 ## 1. 目标与边界
 
 内容运营在 Admin 中查询并受控维护 Dream 真实 Workspace、Story 及可用的扩展创作实体。Admin 不修改 Dream 仓库，不以旧 `story_*` 平行表或假数据替代真实表。
 
-当前主导航只开放 Workspace 与 Story。Character、Scene 仅是条件能力：真实扩展表未迁入时返回 503，不读取 deprecated 表。Workflow 当前路由直接重定向 Story，不是缺表 503 页面，也不存在可用列表/API。
+当前 Admin 主导航只开放 Workspace 与 Story。Character、Scene 表已存在于 Dream 目标 Schema，但 Admin 页面仍是条件能力，Repository/权限未批准时返回 503，不读取 deprecated 表。Workflow 当前路由直接重定向 Story，不是已实现列表/API；PG 表存在不能冒充 Admin 产品能力。
 
 ## 2. 页面
 

@@ -424,7 +424,7 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
 
     const gatewayKey = await api.post(`${baseURL}/api/admin/gateway-api-keys`, {
       headers,
-      data: { platformUserId: creatorBillingUserId, name: "one-time-e2e", scopes: ["messages:create"], expiresAt: null },
+      data: { subjectMode: "fixed_user", platformUserId: creatorBillingUserId, name: "one-time-e2e", scopes: ["messages:create"], expiresAt: null },
     });
     expect(gatewayKey.status()).toBe(201);
     const gatewayKeyBody = await gatewayKey.json();

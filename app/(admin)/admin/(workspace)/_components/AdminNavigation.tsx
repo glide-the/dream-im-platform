@@ -113,6 +113,7 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
       { label: "版本", href: "/admin/subscriptions/versions", permission: "subscriptions.read", mark: "VR" },
       { label: "权益", href: "/admin/subscriptions/entitlements", permission: "subscriptions.read", mark: "EN" },
       { label: "用户订阅", href: "/admin/subscriptions/users", permission: "subscriptions.read", mark: "SB" },
+      { label: "Token 流水", href: "/admin/subscriptions/token-ledger", permission: "subscriptions.read", mark: "TL" },
     ],
   },
   {

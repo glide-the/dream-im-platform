@@ -158,8 +158,6 @@ const pricingUpdateSchema = z.strictObject({
 });
 
 const platformUserUpdateSchema = z.strictObject({
-  email: z.email().max(320).nullable().optional(),
-  displayName: z.string().trim().min(1).max(160).nullable().optional(),
   tier: codeSchema.optional(),
   status: z.enum(["active", "suspended", "closed"]).optional(),
   dailyTokenLimit: optionalLimit,
@@ -183,14 +181,31 @@ const userModelPermissionUpdateSchema = z.strictObject({
   monthlyTokenLimit: optionalLimit,
 });
 
-const keyCreateSchema = z.strictObject({
-  platformUserId: z.string().min(1).max(100),
+const gatewayKeyCommonCreateFields = {
   name: z.string().trim().min(1).max(120),
   scopes: z
     .array(z.enum(["messages:create", "chat:create", "models:list"]))
     .min(1),
   expiresAt: z.iso.datetime().nullable().optional(),
-});
+} as const;
+
+export const gatewayKeyCreateSchema = z.discriminatedUnion("subjectMode", [
+  z.strictObject({
+    ...gatewayKeyCommonCreateFields,
+    subjectMode: z.literal("fixed_user"),
+    platformUserId: z.string().trim().min(1).max(100),
+  }),
+  z.strictObject({
+    ...gatewayKeyCommonCreateFields,
+    subjectMode: z.literal("canonical_subject"),
+    serviceClientId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(160)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
+  }),
+]);
 
 const billingAdjustmentSchema = z.strictObject({
   amountMicrousd: z.number().int().positive(),
@@ -585,21 +600,26 @@ async function insertPricing(
   };
 }
 
-async function insertGatewayKey(
+export async function insertGatewayKeyOnClient(
   client: PoolClient,
-  input: z.infer<typeof keyCreateSchema>,
+  input: z.infer<typeof gatewayKeyCreateSchema>,
 ) {
   const generated = createGatewayApiKey();
   const id = createPlatformId("gkey");
   const result = await client.query<Record<string, unknown>>(
     `INSERT INTO gateway_api_keys (
-       id, platform_user_id, name, key_prefix, key_hash, scopes, expires_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, platform_user_id, name, key_prefix, scopes, status,
-               expires_at, created_at`,
+       id, platform_user_id, subject_mode, service_client_id,
+       name, key_prefix, key_hash, scopes, expires_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING id, platform_user_id, subject_mode, service_client_id,
+               name, key_prefix, scopes, status, expires_at, created_at`,
     [
       id,
-      input.platformUserId,
+      input.subjectMode === "fixed_user" ? input.platformUserId : null,
+      input.subjectMode,
+      input.subjectMode === "canonical_subject"
+        ? input.serviceClientId
+        : null,
       input.name,
       generated.prefix,
       generated.hash,
@@ -768,7 +788,7 @@ const createConfig = {
   models: { permission: "models.write", schema: modelCreateSchema, insert: insertModel },
   "pricing-rules": { permission: "pricing.write", schema: pricingCreateSchema, insert: insertPricing },
   "user-model-permissions": { permission: "users.write", schema: userModelPermissionCreateSchema, insert: insertUserModelPermission },
-  "gateway-api-keys": { permission: "gateway.keys.write", schema: keyCreateSchema, insert: insertGatewayKey },
+  "gateway-api-keys": { permission: "gateway.keys.write", schema: gatewayKeyCreateSchema, insert: insertGatewayKeyOnClient },
   "admin-users": { permission: "access.write", schema: adminUserCreateSchema, insert: insertAdminUser },
   "admin-roles": { permission: "access.write", schema: adminRoleCreateSchema, insert: insertAdminRole },
   "system-settings": { permission: "system.write", schema: systemSettingCreateSchema, insert: insertSystemSetting },
@@ -1034,8 +1054,6 @@ async function updatePlatformUser(
   const before = await loadRowForUpdate(client, "platform_users", id);
   const values: unknown[] = [id];
   const updates: string[] = [];
-  addUpdate(updates, values, "email", input.email);
-  addUpdate(updates, values, "display_name", input.displayName);
   addUpdate(updates, values, "tier", input.tier);
   addUpdate(updates, values, "status", input.status);
   addUpdate(updates, values, "daily_token_limit", input.dailyTokenLimit);
@@ -1372,8 +1390,9 @@ export async function handleAdminResourceDelete(
     const identity = await requireAdminRequest(request, "gateway.keys.write");
     const data = await withPlatformTransaction(async (client) => {
       const before = await client.query<Record<string, unknown>>(
-        `SELECT id, platform_user_id, name, key_prefix, scopes, status,
-                expires_at, last_used_at, revoked_at, created_at
+        `SELECT id, platform_user_id, subject_mode, service_client_id,
+                name, key_prefix, scopes, status, expires_at, last_used_at,
+                revoked_at, created_at
          FROM gateway_api_keys WHERE id = $1 FOR UPDATE`,
         [id],
       );
@@ -1388,8 +1407,9 @@ export async function handleAdminResourceDelete(
         `UPDATE gateway_api_keys
          SET status = 'revoked', revoked_at = COALESCE(revoked_at, NOW())
          WHERE id = $1
-         RETURNING id, platform_user_id, name, key_prefix, scopes, status,
-                   expires_at, last_used_at, revoked_at, created_at`,
+         RETURNING id, platform_user_id, subject_mode, service_client_id,
+                   name, key_prefix, scopes, status, expires_at, last_used_at,
+                   revoked_at, created_at`,
         [id],
       );
       await recordAdminAuditOnClient(client, {

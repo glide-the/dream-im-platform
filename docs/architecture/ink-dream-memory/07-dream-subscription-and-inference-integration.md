@@ -1,33 +1,34 @@
 # Dream 订阅体验与推理 Gateway 集成
 
-> 文档状态：**Planned**
+> 文档状态：**Implemented / Release candidate**（产品 UX/BFF/Gateway client 已完成；真实外部 Provider canary 待执行）
 > 返回：[总索引](README.md)
 > 依赖：[Billing/Subscription/Gateway](06-billing-subscription-gateway-integration.md) · [页面清单](03-page-refactor-checklist.md)
-> 配套：[发布门禁](05-release-rollout-and-rollback.md) · Deferred：[Payment/订阅支付](08-payment-adapter-and-webhook-boundary.md)
+> 配套：[发布门禁](05-release-rollout-and-rollback.md) · Payment：[Adapter/Webhook 边界](08-payment-adapter-and-webhook-boundary.md)
 > 主要读者：Dream 前后端、Admin/Gateway 后端、产品、QA、安全
 
 ## 1. Current / Target / Release Gate
 
 | 面 | Current | Target | Release Gate |
 |---|---|---|---|
-| Subscription page | 静态三档数组与“即将开放”；不是真实数据 | Admin Product API 驱动的月度 Token 计划、用户周期、Token Allowance、Usage 与模型权限 | API failure 无静态 fallback；无金额/余额/支付/全局生效日期；两个视口通过 |
-| Model settings | 静态 Auto/Claude/GPT，用户模型字段与执行字段不闭合 | `me/model-catalog` 返回用户可用 alias，服务端再次校验 | 浏览器不能选未授权 provider/model；empty/403/503 真实 |
-| PolyAgent | Dream endpoint/key/model 环境配置直连 | server-only Gateway client + role alias | inspiration/echo/trait/pattern 协议与行为回归 |
-| Claude Agent/Chat/Dream/Workflow | runner/SDK/CLI 旧执行面 | 单一网络边界切 Gateway，保留 thread/resume/tool/plugin/provenance | streaming/cancel/tool confirmation/deep link 回归 |
-| Image | `picture_service.py` 直连 image endpoint/key | Gateway image capability/usage 后分批 canary | 未支持时受控 legacy server-only，不伪报已计费 |
-| ASR | 未鉴权 WebSocket 直连，存在已提交 credential P0 | endpoint 先禁用/加固；ASR Gateway **Deferred** | credential 轮换/移除/scan；匿名连接拒绝 |
+| Subscription page | **Implemented / Release candidate**：真实 Product BFF、月度 Token/周期/Usage/月费/模型权限、生命周期命令与 Payment Intent | 预发布真实 Admin API/Session 冒烟 | API failure 无静态 fallback；无假余额/假支付成功；四个 mocked-browser 场景已通过 |
+| Model settings | **Implemented / Release candidate**：model-catalog allowlist 与服务端校验边界已落地 | 真实 catalog/empty/403/503 预发布冒烟 | 浏览器不能选未授权 provider/model；无本地真值 fallback |
+| PolyAgent | `GatewayPolyAgent`、role alias 与 fail-closed 边界已实现并通过 mock contract | 外部 Provider/internal-user canary | writing/chat/analyze/echo/trait/pattern 协议与行为回归 |
+| Claude Agent/Chat/Dream/Workflow | Gateway-compatible adapter/canonical subject 与禁 direct fallback 边界已实现 | 逐角色外部 Provider canary | streaming/cancel/tool confirmation/deep link 真实环境回归 |
+| Image | `picture_service.py` 已使用 `GatewayInferenceClient` 的 description/generation alias；Dream direct endpoint/key 已删除 | 外部 image-capable Provider 分批 canary | usage/媒体响应核对；失败不得 direct fallback |
+| ASR | endpoint 已 fail-closed；历史 credential 的 owner 轮换回执未完成 | ASR Gateway **Deferred** | credential owner 吊销/轮换/scan；不得启用匿名或未计量链路 |
 
 ## 2. Dream 只消费 Token 订阅产品投影
 
-Dream 不复制或直接写 Plan、Subscription、Token Allowance 或 Usage。所有 canonical `users` 都天然是可订阅主体；Dream 不查询或展示独立“计费用户”。Provider Pricing、Billing Account 和现金 Ledger 是独立域，不进入套餐 DTO。目标调用全部由 Dream FastAPI 发起：
+Dream 不复制或直接写 Plan、Subscription、Token Allowance 或 Usage。所有 canonical `users` 都天然是可订阅主体；Dream 不查询或展示独立“计费用户”。Provider Pricing、Billing Account 和现金 Ledger 是独立域，不进入套餐 DTO。调用全部由 Dream FastAPI 发起；六类路径已实现：
 
-| Target 路径（当前未实现） | Dream 用途 |
+| Implemented 路径 | Dream 用途 |
 |---|---|
-| `GET /api/product/v1/plans` | 套餐 code/name、固定 monthly、Token 数量与非货币权益摘要；无 price/currency/effective window |
+| `GET /api/product/v1/plans` | 套餐 code/name、固定 monthly、Token 数量、整数 micro-USD 月费与非货币权益摘要；无 Provider 定价/effective window |
 | `GET /api/product/v1/me/subscription-context` | 当前订阅、用户周期起止、续费/待切版本与 Token granted/reserved/consumed/remaining |
 | `GET /api/product/v1/me/usage` | 分页 input/output/cache/total Token Usage 与周期耗用投影 |
 | `GET /api/product/v1/me/model-catalog` | 当前用户可用 alias/label/capability/limit |
 | `POST /api/product/v1/me/subscription-commands` | 生命周期 preview/execute |
+| `POST/GET /api/product/v1/me/payment-intents/**` | 付费首次开通/续费 Intent 与已验证 Webhook 后的真实状态 |
 
 浏览器 Session 只提交给 Dream。Dream 服务端根据 Session 解析 canonical `users.id`，以服务间身份调用 Product API；API 不接受浏览器可控的任意 user ID。短 cache 必须绑定 user/subscription version/ETag 并有明确 TTL，403/503 时失效而不回退静态对象。套餐发布时刻只控制是否可选；页面显示的周期始终来自该用户 `currentPeriodStart/currentPeriodEnd`。
 
@@ -53,9 +54,9 @@ sequenceDiagram
   D-->>B: final real state
 ```
 
-`action` 只能是 `create|renew|upgrade|downgrade|pause|resume|cancel|revoke_cancel`。Dream BFF 可以代理同一命令合同，但不得发明金额 quote、Payment intent 或充值 endpoint；execute 必须携带 `Idempotency-Key`，create 之外必须携带 `expectedVersion`。
+`action` 只能是 `create|renew|upgrade|downgrade|pause|resume|cancel|revoke_cancel`。Dream BFF 代理命令合同，并为付费首次开通和到期续费代理独立 Payment Intent endpoint；execute/Intent 必须携带 `Idempotency-Key`。
 
-UI 只在 Admin 返回最终 Subscription Event/当前上下文后显示成功。开通不等待支付，续费不扣款；升降级默认在该用户下一周期边界应用，不能用平台全局日期或即时重发整月 Token。页面没有“支付成功”、价格、余额或充值状态。
+UI 只在 Admin 返回最终 Subscription Event/当前上下文后显示订阅成功。付费首次开通与到期续费均等待已验证 Webhook；创建 Intent 只显示 `requires_action`，不能显示“支付成功”。页面可显示真实月费，不显示现金余额或充值。
 
 ### 用户可见信息
 
@@ -85,10 +86,10 @@ Dream 浏览器永远不持有 Gateway Key。Dream 服务凭据只来自 server-
 
 | Current 入口 | 迁移策略 | 必须保留 |
 |---|---|---|
-| `backend/server.py`、`backend/stateless_analyzer.py` 的 PolyAgent | 新增 Gateway client；为 inspiration/chat/analysis/echo/trait/pattern 配稳定 alias | 当前 JSON/文本输出、timeout、重试与错误语义 |
+| `backend/server.py`、`backend/stateless_analyzer.py` 的文本会话 | 已接 `GatewayPolyAgent`；为 writing/chat/analyze/echo/trait/pattern 配稳定 alias | 当前 JSON/文本输出、timeout、重试与错误语义 |
 | `routers/claude_agent.py`、Claude Agent service/runner | 在 runner 的单一网络边界替换 provider transport | Anthropic compatible SSE、thread/resume、tool use、usage |
 | `dream_agent_message_service.py`、`dream_confirmation_service.py`、`guidance_service.py`、`dream_launch_gateway.py`、Reflection | 共用同一 runner/Gateway adapter，不逐个业务分叉 | workspace、plugin、tool confirmation、provenance、状态持久化 |
-| `picture_service.py` | Gateway 宣布 image capability/usage/settlement 后切 image alias | media payload、失败语义、实际 usage；未支持时不伪报 Gateway 完成 |
+| `picture_service.py` | 已切换 Gateway description/image alias，并删除 direct endpoint/key | media payload、失败语义与实际 usage；外部 canary 未通过时 fail closed |
 | `ModelConfigSection.tsx`、`chat-schema.ts` | 静态型号改为产品 model catalog alias | Auto 仅可表示服务端策略，不代表浏览器任意 provider routing |
 
 `backend/services/story_workspace/dream_launch_gateway.py` 是 Dream 启动协调器，不是 Admin AI Gateway。迁移不得因其文件名而跳过真正的网络边界。
@@ -138,8 +139,10 @@ Gateway 响应保持协议兼容，同时 Dream 只向浏览器透传安全字�
 
 ## 10. canary 顺序
 
+代码级 Gateway client、canonical-subject 认证、mock Provider 合同与 canary/禁回退控制已完成；以下序列中的真实外部 Provider shadow/canary 尚未执行，不得标记为生产完成：
+
 1. 冻结现有协议、行为与 fixture；补 SSE/tool/cancel/usage contract。
-2. Product model catalog 接入，但执行仍旧路径；只比较 alias eligibility。
+2. Product model catalog 与执行 alias 已接入；生产先只比较 alias eligibility。
 3. Gateway shadow eligibility：不 reserve、不调用 Provider，比较预期拒绝/允许结果。
 4. Gateway dry settlement in isolated environment，使用 mock Provider/Fake usage。
 5. 内部用户 canary：PolyAgent role 逐个切换。
@@ -149,17 +152,19 @@ Gateway 响应保持协议兼容，同时 Dream 只向浏览器透传安全字�
 
 ## 11. P0 Secret 与 ASR
 
-- `backend/speech_recognition.py` 的已提交 credential 必须由密钥所有者吊销/轮换；删除源码值、增加启动/CI secret scan，并按审批决定 Git 历史处置。不得复述、联网验证或继续使用该值。
-- `/ws/speech-recognition` 在当前匿名状态不能发布。最低处置是默认禁用；若保留 legacy ASR，必须 canonical Session 鉴权、WebSocket Origin allowlist、连接/RPM/时长限制、取消、审计与 server-side Secret。
+- 历史已提交 credential 已从 active runtime 移除且 secret scan 通过；密钥所有者仍须确认吊销/轮换并按审批决定 Git 历史处置。不得复述、联网验证或继续使用该值。
+- `/ws/speech-recognition` 当前 fail-closed。若未来保留 legacy ASR，必须先完成 canonical Session 鉴权、WebSocket Origin allowlist、连接/RPM/时长限制、取消、审计与 server-side Secret。
 - ASR Gateway 在尚无 streaming-audio capability、输入/输出计量单位、Provider usage 与 reserve/capture 合同前保持 **Deferred**。不能把“endpoint 已加鉴权”误报为“ASR 已经 Gateway 计费”。
-- `system_config.env_vars` 必须拒绝 Provider/Gateway/System secret 名称或 secret-like 值；Deferred Payment Secret 不得提前加入。已有数据需只读审计和安全迁移，不在日志输出。
+- `system_config.env_vars` 必须拒绝 Provider/Gateway/Payment/System secret 名称或 secret-like 值。已有数据需只读审计和安全迁移，不在日志输出。
 
 ## 12. 自动化验收
+
+当前回执：Dream backend **1,679 passed / 14 skipped / 652 subtests**，推理聚焦 **61 passed**；frontend **lint 0 errors/21 warnings、build、Product API 9/9**；订阅页 mocked-browser **4/4** 覆盖 1440×1000、390×844、首次付费与到期续费。本轮未执行外部 Provider canary；warnings 需保留在发布回执中。
 
 - Subscription 页面所有数据来自五个 Target Product API contract；静态 plan/model fallback 为 0，price/currency/micro-USD/balance/payment/effective window 字段为 0。
 - 生命周期 preview/execute 的 expected version、idempotency 与 409 恢复通过；升降级按用户周期，提前续费不发 Token，月末锚点不漂移。
 - 每个现有推理角色都有旧协议 fixture + Gateway fixture；Claude Agent/Dream/Chat/Workflow 行为不回归。
 - 401/402/403/404/409/429/502/503、cancel、stream interruption、usage missing、settlement retry 覆盖。
-- Gateway Key/Provider/System Secret 不出现在前端 bundle、DOM、Storage、响应、日志、截图、普通 PG 字段；Payment 依赖/配置为 0。
+- Gateway Key/Provider/Payment/System Secret 不出现在前端 bundle、DOM、Storage、响应、日志、截图或普通 PG 字段；Fake Adapter 生产禁用。
 - 1440×1000 与 390×844 的 loading/empty/error/maintenance/移动布局通过。
 - credential 吊销/轮换有所有者确认；ASR 匿名连接被拒绝；ASR Gateway仍明确 Deferred。

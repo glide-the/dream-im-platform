@@ -1,6 +1,6 @@
 # 02 · Usage and Monthly Token Allowance
 
-> 文档状态：**Planned**
+> 文档状态：**Implemented / Release candidate**
 >
 > 正式入口：`/story-workspace/subscription?view=usage`
 >
@@ -10,10 +10,10 @@
 
 ## 1. 页面目标与边界
 
-### Current
+### Current / Implemented
 
-- Dream 尚未从 Admin 产品 API 读取个人月度 Token Allowance 或 Gateway Token Usage。
-- 既有设计把套餐 Token、现金余额、金额超额和财务 Ledger 拼在同一页面，造成“订阅套餐发放金额”的错误认知。
+- Dream 已通过同源 BFF 从 Admin Product API 读取个人月度 Token Allowance 与分页 Gateway Token Usage。
+- 页面将套餐 Token 与现金余额、金额超额、财务 Ledger 完全分域，不再造成“订阅套餐发放金额”的错误认知。
 
 ### Target
 
@@ -22,6 +22,8 @@
 现金按量计费即使在平台其他独立域保留，也不作为订阅兜底，不进入本页面的 API、筛选、摘要、详情、空状态或操作入口。
 
 ### Release Gate
+
+Token-only source tests/build 与两个 mocked-browser 视口已通过；真实生产周期大分页、并发进行中请求和外部 Provider usage 仍需 canary 回执。
 
 - `granted = reserved + consumed + remaining` 的 Token 守恒由服务端事务和属性测试保障。
 - 预留、消费、释放与 Usage 终态可按 Gateway Request 追溯；历史事实只追加，不可编辑或删除。
@@ -65,7 +67,7 @@ GET /api/story-workspace/usage
       "timezone": "Asia/Shanghai"
     },
     "allowance": {
-      "unit": "token",
+      "unit": "tokens",
       "granted": 1000000,
       "reserved": 1000,
       "consumed": 240000,
@@ -85,7 +87,7 @@ GET /api/story-workspace/usage
       "asOf": "2026-08-09T10:05:00Z",
       "sampleWindowDays": 7,
       "projectedExhaustionAt": null,
-      "projectedTokenShortfall": 0,
+      "projectedTokenShortfall": null,
       "confidence": "insufficient_data"
     },
     "items": []
@@ -99,7 +101,7 @@ GET /api/story-workspace/usage
 - `gatewayRequestId/modelAlias/gatewayScope/protocol/outcome/settlementState`；
 - `inputTokens/outputTokens/cacheReadTokens/cacheWriteTokens/totalTokens`；
 - `allowanceReservedTokens/allowanceConsumedTokens/allowanceReleasedTokens`；
-- `startedAt/completedAt/errorCategory`。
+- `occurredAt/errorCategory`；`occurredAt` 是不可变 Usage 终态事实时间，与架构 Product API 合同一致。
 
 响应不包含 prompt、response、raw headers、Provider route、价格快照、金额字段或 Secret。
 
@@ -157,7 +159,7 @@ flowchart LR
 
 - 时间：默认当前个人订阅周期，可选择服务端允许的历史周期；日期时间控件显示时区。
 - 筛选：Outcome 单选、Model alias 可搜索下拉、Gateway Scope 可搜索下拉、Settlement state 单选。
-- 排序白名单：`startedAt/totalTokens/modelAlias/outcome`；默认 `startedAt desc`。
+- 排序白名单：`occurredAt/totalTokens/modelAlias/outcome`；默认 `occurredAt desc`。
 - 分页：服务端 `page/pageSize/total`；切换筛选回到第一页并同步 URL。
 - 无批量编辑、删除、导出金额或“调整 Token”操作。未来 CSV 如启用，只导出当前用户可见 Token 白名单字段。
 

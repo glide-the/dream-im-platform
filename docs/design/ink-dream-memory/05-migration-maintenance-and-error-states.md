@@ -1,6 +1,6 @@
 # 05 · Migration, Maintenance and Error States
 
-> 文档状态：**Planned**
+> 文档状态：**Implemented runtime / Release candidate**（真实生产数据 cutover 仍 Planned）
 >
 > 入口：产品内维护 Banner、`/maintenance`（用户安全页）、隔离环境 migration receipt（发布操作员）
 >
@@ -10,11 +10,11 @@
 
 ## 1. 目标与状态分层
 
-### Current
+### Current / Implemented
 
-- Dream 运行时仍由主 SQLite 43 表和 Notion Connector SQLite 5 表驱动，并存在大量 `sqlite3.Connection`、`database.get_db()`、PRAGMA、`BEGIN IMMEDIATE`、SQLite trigger 和 `?` placeholder 耦合。
-- Admin 导入器仅覆盖 `users/story_workspace_workspaces/story_workspace_stories` 3/48 表，不是全量迁移器。
-- Dream 没有 PostgreSQL pool、Alembic-owned 48 表 DDL、Repository contract、manifest/staging/validation CLI 或 PostgreSQL-only runtime。
+- Dream main/Notion 运行时已是 PostgreSQL-only，具备 psycopg pool、UoW、独立 Alembic head 与 fail-fast；SQLite 构造仅保留在 legacy catalog、显式只读迁移 CLI 和测试边界。
+- Dream-owned 43+5 migration CLI 已覆盖只读 Online Backup、manifest、48 staging、六波 import、冲突阻断与 count/PK/FK/unique/check/JSON/time/sequence/trigger 验证；Admin 三表导入器仍只作为 3/48 安全模式参考。
+- 目标 **48 表 / 569 列 / 81 索引 / 25 trigger** 的空库、exact-adopt 与 drift fail-closed 已在 owned disposable PG 验证。
 
 ### Target
 
@@ -23,6 +23,8 @@
 - 产品用户看到准确的影响范围、预计时间、当前模式和恢复动作；发布操作员在隔离环境看到表级验证回执，但不看业务行内容/Secret。
 
 ### Release Gate
+
+代码/隔离门禁已通过 backend 1,679 passed/14 skipped + 652 subtests；frontend lint 0 errors/21 warnings、build、Product API 9/9 与订阅 Playwright 4/4。本地 `ink-memory` 已完成真实源/备份/cutover；角色矩阵在 clone 通过，其他生产环境仍须独立执行。
 
 - 43+5 每表 DDL、Repository、owner、迁移 manifest 与 row/constraint/trigger 验证完成；25 个不可变 trigger 语义重建并有 mutation rejection 测试。
 - 行数、PK/row digest、unique、FK orphan、check/enum、JSON、time、sequence/identity、partial unique、trigger 全通过；任一冲突默认阻断。

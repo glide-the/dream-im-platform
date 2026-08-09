@@ -2,13 +2,13 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[账务运营](../../prd/modules/06-billing.md)
 
-> 实现状态：Usage、账户、Ledger、报表、当前筛选 CSV 与 credit 已实现；跨域富详情及 debit/reversal 命令是后续目标。
+> 实现状态：**Implemented / Release candidate**；Usage、账户、Ledger、报表、CSV、credit、Token/金额分域、Product Usage API、PaymentAdapter/Webhook/Fake 与终态 guard 已实现。跨域富详情及独立 debit/reversal 命令是后续增强；真实支付渠道 Deferred。
 
 ## 0. Current / Target / Release Gate
 
 | 分层 | 交互边界 |
 |---|---|
-| Current | Usage/账户/Ledger/报表/CSV/credit；当前 coverage 仍可能混写 Subscription money allowance/cash overage，credit selector 预载前 100，无 debit/refund/reversal，settled Usage/Request 终态 guard 未齐。 |
+| Current / Implemented | Usage/账户/Ledger/报表/CSV/credit、canonical 服务端 selector、Subscription Token/独立 micro-USD 分域、Product Usage API 与 settled Usage/Request 终态 guard 已实现。 |
 | Target | Subscription Token Allowance 与独立现金账户明确分域；本页只呈现 Token Usage、Provider price/cost 和显式独立现金 reserve/capture/release/refund/reversal。 |
 | Release Gate | 205-user selector、Token/micro-USD 单位隔离、独立现金守恒/并发/重放、不可变与两视口 E2E 通过；订阅开通/续期/换版没有金额 UI 或 Ledger。Payment/Webhook 为 Deferred。 |
 
@@ -18,13 +18,13 @@
 
 Usage 表列 request ID、user、provider/model、四类 Token、明确的 product mode、Subscription Token coverage（若适用）、独立 cash charge（若适用）、status、time。Token 与 micro-USD 使用不同列名/单位，不能合并为 `allowance/cash charge`。详情复用 Gateway Request Drawer，Subscription Token 与独立价格/现金/Ledger 分区展示。
 
-Dream Token-only 订阅体验只消费 `GET /api/product/v1/me/usage` 的当前周期 Token 聚合，预计耗尽按 remaining tokens、真实 Usage 和 period end 计算并标注算法/更新时间；不读取 cash balance 或预计金额超额。`GET /api/product/v1/me/ledger` 若未来提供，只属于独立账务视图，不得成为 Subscription 页面依赖。两者目前均未实现，不允许假余额或当前页合计。
+Dream Token-only 订阅体验只消费已实现的 `GET /api/product/v1/me/usage` 当前周期 Token 聚合，预计耗尽按 remaining tokens、真实 Usage 和 period end 计算并标注算法/更新时间；不读取 cash balance 或预计金额超额。Dream 产品命名空间不提供现金 Ledger endpoint；独立账务只在 Admin 权限域查询，不允许假余额或当前页合计。
 
 ## 2. 计费账户
 
 列表列平台用户、currency、available、reserved、lifetime debited、version、updated；筛选 user/tier，金额 mono/tabular。标题和帮助文案固定为“独立现金账户”，不得称为“订阅余额”。详情宽 Drawer：cash → applicable Request/Price → recent Ledger/Usage → 调账入口；Subscription Token 只提供带 permission 的跳转，不嵌入金额分区。
 
-当前调账 Modal 仅为 credit：平台用户普通 Select（只预载前 100）、USD number（最多 6 位小数）+ micro-USD 换算提示、reason textarea、不可变账本确认 checkbox；幂等键由客户端提交时自动生成。当前没有 external ticket 独立字段、before/after 预览、类型 radio 或 debit/refund/reversal；也不能直接输入目标余额。服务端仍只接收整数 `amountMicrousd`。
+当前调账 Modal 仅为 credit：平台用户使用 canonical 服务端搜索 Select、USD number（最多 6 位小数）+ micro-USD 换算提示、reason textarea、不可变账本确认 checkbox；幂等键由客户端提交时自动生成。当前没有 external ticket 独立字段、before/after 预览、类型 radio 或 debit/refund/reversal；也不能直接输入目标余额。服务端仍只接收整数 `amountMicrousd`。
 
 Target refund/reversal 从原 Ledger reference 发起，确认层显示原 entry、可操作余额、本次 integer micro-USD、操作后守恒、reason、idempotency key 和反向关联。不编辑原 entry，不使用浮点传输，也不改变 Subscription Token。
 
@@ -36,16 +36,7 @@ Ledger 列 entry type、signed amount、available/reserved after、user、reques
 
 ## 4. Payment / Webhook 诊断（Deferred）
 
-本阶段不创建页面、路由、主导航、可点入口或 Test Adapter 成功态。以下内容仅保留未来独立支付域的边界，不能作为 Subscription release gate：
-
-- Payment intent/reference：只能关联未来独立订单/现金 Ledger，不得把 `subscription`、Plan Version 或 Token Allowance 作为金额容器；无 Secret/支付凭据。
-- Webhook event：仅已验签 trusted event 可显示 adapter、event ID/fingerprint、processing status/attempt、received/processed time、安全 error 与 Audit 链接；不得直接开通订阅或发 Token。
-
-未单独立项前，test/dev 也不显示 Fake Adapter。未来若实现，必须有明确水印且 production hard fail；未接真实渠道永不显示“支付成功”。
-
-未来 Payment 详情把 `authorize` 与 `capture` 显示为独立时序事件和幂等回执，不把 authorized 写成 captured/订阅已开通或 Token 已发放。所有错误不载入 payload/Secret。
-
-Payment/Webhook 错误定义为 `{error:{code,message,details?},meta:{requestId,retryAfterSeconds?}}`；错误摘要和恢复动作读 `error`，追踪/重试元数据读 `meta`，不从 payload 或旧顶层字段推测。
+本阶段不创建页面、路由、主导航、可点入口、字段、错误合同、Secret、Webhook event store 或 Test/Fake Adapter 成功态。未来如单独立项，必须由新的版本化 PRD 与交互规范重新定义；本文不保留可直接实现的 Adapter/Webhook 设计。未接真实渠道永不显示“支付成功”，Payment 也不得开通订阅或发 Token。
 
 1440×1000 以摘要 + 紧凑表 + 宽 Drawer 保持 Subscription Token Usage 与独立 cash/Ledger 分区；390×844 摘要单列、表格局部滚动，字段 label 始终带 tokens 或 micro-USD 单位。金额/Token/ID 有独立 Copy accessible name；未知结果播报“确认中”而非成功。
 

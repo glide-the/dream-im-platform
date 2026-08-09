@@ -48,6 +48,7 @@ export const subscriptionTabs = [
   { label: "版本", href: "/admin/subscriptions/versions" },
   { label: "权益", href: "/admin/subscriptions/entitlements" },
   { label: "用户订阅", href: "/admin/subscriptions/users" },
+  { label: "Token 流水", href: "/admin/subscriptions/token-ledger" },
 ];
 
 export const gatewayTabs = [

@@ -10,7 +10,14 @@ import {
 } from "react";
 
 type Row = Record<string, unknown> & { id: string };
-type Action = "renew" | "upgrade" | "downgrade" | "pause" | "resume" | "cancel";
+type Action =
+  | "renew"
+  | "upgrade"
+  | "downgrade"
+  | "pause"
+  | "resume"
+  | "cancel"
+  | "revoke_cancel";
 
 const actionOptions: Array<{
   value: Action;
@@ -44,8 +51,13 @@ const actionOptions: Array<{
   },
   {
     value: "cancel",
-    label: "取消订阅",
-    description: "取消是高风险操作；历史周期、Token Usage、事件与审计记录仍保持只读。",
+    label: "期末取消",
+    description: "当前周期仍可使用，到个人周期边界后进入已取消；不会再发放下周期 Token。",
+  },
+  {
+    value: "revoke_cancel",
+    label: "撤销期末取消",
+    description: "仅在当前周期结束前清除期末取消标记；不移动周期，也不重新发放 Token。",
   },
 ];
 
@@ -83,6 +95,16 @@ function userLabel(user: Row) {
   return email || name || user.id;
 }
 
+function userSelectionState(user: Row) {
+  const projected =
+    user.projection_ready === true || String(user.projection_ready) === "true";
+  if (!projected) return { selectable: false, suffix: "兼容投影缺失" };
+  if (user.status !== "active") {
+    return { selectable: false, suffix: `调用状态 ${String(user.status ?? "unknown")}` };
+  }
+  return { selectable: true, suffix: "" };
+}
+
 function pendingVersionLabel(row: Row) {
   if (!row.pending_plan_version_id) return "—";
   if (row.pending_version_number) {
@@ -118,12 +140,9 @@ export default function SubscriptionLifecycleManager() {
     resource: "platform-users",
     pagination: { currentPage: userPage, pageSize: 50 },
     sorters: [{ field: "email", order: "asc" }],
-    filters: [
-      { field: "status", operator: "eq", value: "active" },
-      ...(userSearch.trim()
-        ? [{ field: "email", operator: "contains" as const, value: userSearch.trim() }]
-        : []),
-    ],
+    filters: userSearch.trim()
+      ? [{ field: "email", operator: "contains", value: userSearch.trim() }]
+      : [],
   });
   const versions = useList<Row>({
     resource: "subscription-plan-versions",
@@ -201,6 +220,7 @@ export default function SubscriptionLifecycleManager() {
     const body: Record<string, unknown> = {
       idempotencyKey: requestKey(action),
       reason,
+      expectedVersion: Number(selected.version),
     };
     if (["upgrade", "downgrade"].includes(action)) {
       body.planVersionId = targetVersion;
@@ -234,7 +254,7 @@ export default function SubscriptionLifecycleManager() {
     <form onSubmit={activate} className="admin-panel space-y-5 p-5">
       <header>
         <h2 className="font-display text-xl font-semibold">为平台用户开通订阅</h2>
-        <p id="platform-user-picker-help" className="mt-1 text-sm leading-6 text-text-secondary">canonical users 是唯一平台用户全集，每个平台用户天然具备订阅身份，不存在单独的“计费用户”名册。此处仅筛选当前可开通的 active 用户。</p>
+        <p id="platform-user-picker-help" className="mt-1 text-sm leading-6 text-text-secondary">canonical users 是唯一平台用户全集，每个平台用户天然具备订阅身份，不存在单独的“计费用户”名册。缺失内部兼容投影或非 active 的用户仍会显示，以便发现投影故障，但不能误开通订阅。</p>
       </header>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto_auto] lg:items-end">
         <div className="space-y-3">
@@ -253,6 +273,7 @@ export default function SubscriptionLifecycleManager() {
           </label>
           <label className="block text-xs font-semibold text-text-secondary">平台用户
             <select
+              aria-label="平台用户"
               className="admin-field mt-2"
               required
               value={userId}
@@ -266,7 +287,10 @@ export default function SubscriptionLifecycleManager() {
             >
               <option value="">{users.query.isLoading ? "正在加载平台用户…" : "选择平台用户"}</option>
               {userId && !users.result.data?.some((user) => user.id === userId) ? <option value={userId}>{selectedUserLabel || userId}</option> : null}
-              {(users.result.data ?? []).map((user) => <option key={user.id} value={user.id}>{userLabel(user)}</option>)}
+              {(users.result.data ?? []).map((user) => {
+                const selection = userSelectionState(user);
+                return <option key={user.id} value={user.id} disabled={!selection.selectable}>{userLabel(user)}{selection.suffix ? ` · ${selection.suffix}` : ""}</option>;
+              })}
             </select>
           </label>
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-tertiary">

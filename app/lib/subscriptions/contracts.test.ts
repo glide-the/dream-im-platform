@@ -18,10 +18,19 @@ describe("subscription contracts", () => {
       }),
     ).toEqual({
       planId: "plan_pro",
+      priceMicrousd: 0,
       allowanceTokens: 1_000_000,
       trialDays: 7,
       gracePeriodDays: 3,
     });
+  });
+
+  it("accepts an integer micro-USD monthly price without adding money allowance", () => {
+    expect(planVersionCreateSchema.parse({
+      planId: "plan_pro",
+      priceMicrousd: 19_000_000,
+      allowanceTokens: 1_000_000,
+    }).priceMicrousd).toBe(19_000_000);
   });
 
   it.each([
@@ -70,13 +79,31 @@ describe("subscription contracts", () => {
       subscriptionActionSchema.parse({
         idempotencyKey: "short",
         reason: "ok",
+        expectedVersion: 1,
       }),
     ).toThrow();
     expect(
       subscriptionActionSchema.parse({
         idempotencyKey: "renew:user-1:2026-08",
         reason: "Scheduled renewal",
+        expectedVersion: 7,
       }),
-    ).toMatchObject({ reason: "Scheduled renewal" });
+    ).toMatchObject({ reason: "Scheduled renewal", expectedVersion: 7 });
+  });
+
+  it("requires a positive optimistic version for every lifecycle mutation", () => {
+    expect(() =>
+      subscriptionActionSchema.parse({
+        idempotencyKey: "pause:user-1:2026-08",
+        reason: "Pause requested by the user",
+      }),
+    ).toThrow();
+    expect(() =>
+      subscriptionActionSchema.parse({
+        idempotencyKey: "pause:user-1:2026-08",
+        reason: "Pause requested by the user",
+        expectedVersion: 0,
+      }),
+    ).toThrow();
   });
 });

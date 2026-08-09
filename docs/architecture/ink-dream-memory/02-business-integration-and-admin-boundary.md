@@ -1,11 +1,11 @@
 # Dream 业务接入与 Admin/Gateway 边界
 
-> 文档状态：**Planned**  
+> 文档状态：**Implemented / Release candidate**（逻辑边界已落地；物理 owner/ACL 与生产 cutover 待审批）
 > 返回：[总索引](README.md)  
 > 依赖：[当前基线](01-current-scope-and-source-baseline.md) · [Billing/Subscription/Gateway](06-billing-subscription-gateway-integration.md)  
 > 主要读者：Dream 后端、Admin/Gateway 后端、DBA、安全审计
 
-## 1. 目标集成拓扑
+## 1. 已实现集成拓扑
 
 ```mermaid
 flowchart LR
@@ -35,9 +35,11 @@ flowchart LR
 ```mermaid
 flowchart LR
   User["Canonical users"] -->|"automatic 1:1 projection"| Mapping["platform_users internal mapping"]
-  Mapping -->|"automatic 1:1"| Account["Billing Account"]
-  Account --> Subscription["Subscription"]
+  User --> Subscription["Token Subscription"]
+  Mapping -->|"automatic 1:1 independent cash domain"| Account["Billing Account"]
 ```
+
+`Billing Account` 继续满足 canonical user 的内部兼容投影要求，但不是 Token Subscription 的父实体、资格前置或 Token 耗尽兜底。
 
 ## 3. 领域所有权
 
@@ -48,13 +50,14 @@ flowchart LR
 | Workspace/Story/Character/Scene | 业务/Agent 完整写 | 受控读取、白名单字段和状态命令 | 直接 SQL PATCH status、通用 create/delete |
 | Workflow/Plugin/Runtime/Event | 命令与不可变事实 | 默认只读、最小披露 | UPDATE/DELETE history |
 | Plan/Subscription | 展示真实状态、提交产品命令 | 版本、状态机、幂等、审计 | Dream 复制 Plan/Entitlement 或直接写表 |
-| Billing/Usage/Ledger | 产品只读视图 | reserve/capture/release/refund/reversal、事实存储 | 浏览器浮点金额、直接改余额、覆盖历史账本 |
-| Provider/Model/Pricing/Gateway | 服务端以 stable alias 发请求 | 配置、Secret、Key、资格、限流、路由、计价、结算 | 浏览器 Key、Dream Provider Secret、日志回显 |
-| Payment | 展示真实平台状态 | Adapter、Webhook、event store、幂等、测试 Fake | 虚假成功、生产 Fake、真实渠道网络 |
+| Token Allowance/Usage | 展示当前用户周期的 Token 投影 | reserve/capture/release、不可变 Token Usage | 金额换算、现金余额兜底、覆盖 Usage |
+| 独立现金 Billing/Ledger | 不进入 Dream Token-only 产品 API/页面 | Admin 独立运营、Provider 成本与现金账务事实 | 称为订阅余额、作为 Token 耗尽兜底、向 Dream 暴露现金 Ledger |
+| Provider/Model/Pricing/Gateway | 服务端以 stable alias 发请求 | 配置、Secret、Key、资格、限流、路由、Provider 成本快照与 Token 结算 | 浏览器 Key、Dream Provider Secret、日志回显 |
+| Payment | **Deferred**；Dream 无支付状态或入口 | **Deferred**；本轮不建 Adapter、Webhook、event store 或 Fake | 虚假成功、生产 Fake、真实渠道网络、把 Payment 当 Subscription 依赖 |
 
 ## 4. Repository、角色与迁移日志
 
-目标角色：
+目标角色与最小权限合同如下；代码、独立 Repository/pool 与 migration journal 已落地，真实环境角色/ACL 尚未因本文自动变更：
 
 | 角色 | 最小权限目标 |
 |---|---|
@@ -78,17 +81,17 @@ Dream 使用独立 Alembic version table，Admin 保留 Drizzle journal；部署
 Dream 只经 [06](06-billing-subscription-gateway-integration.md) 规定的 Product API 与 Gateway：
 
 - 浏览器 Session → Dream FastAPI canonical user；服务端再绑定同一 user ID 和服务身份。
-- Product API 返回发布中的 Plan/Version/Entitlement、当前 Subscription、Allowance/Balance/Usage/Ledger 的产品投影；不返回内部 Secret 或任意控制面列。
+- Product API 只返回发布中的 Token Plan/Version/Entitlement、当前 Subscription、当前用户周期 Token Allowance/Usage 与 model catalog；不返回 Balance、现金 Ledger、Payment、内部 Secret 或任意控制面列。
 - 生命周期写操作由 Dream 提交带 idempotency key 与 expected version 的命令；Dream 不自行推演/写入最终状态。
-- Gateway request 只携带获准 model alias 和协议 payload；Gateway 负责资格、Provider 选择、pricing snapshot 和 settlement。
-- Dream 不缓存套餐/价格为长期真值；短 cache 必须有版本/ETag，503 时显示不可用而不是静态 fallback。
+- Gateway request 只携带获准 model alias 和协议 payload；Gateway 负责资格、Provider 选择、独立 Provider 成本快照和 Token settlement。
+- Dream 不缓存 Token 套餐为长期真值；短 cache 必须有版本/ETag，503 时显示不可用而不是静态 fallback。
 
 ## 7. API/领域错误合同
 
 | HTTP | 领域语义 | Dream 恢复合同 |
 |---:|---|---|
 | 401 | 浏览器 Session 或服务身份无效 | 刷新/重新登录；不伪装成余额错误 |
-| 402 | Allowance 与允许的余额均不足，单位明确 | 保留输入，展示额度/余额和可执行动作；不自动充值 |
+| 402 | 当前用户周期 Token Allowance 不足，单位明确 | 保留输入，展示可用/所需 Token 与可执行动作；不读取现金余额、不自动充值 |
 | 403 | 订阅状态、Entitlement、模型权限或 RBAC 拒绝 | 禁用对应操作并给出安全原因 |
 | 404 | Plan/version/subscription/model alias 等不存在或不可见 | 刷新产品上下文；不使用本地默认对象 |
 | 409 | idempotency、expected version、生命周期或并发冲突 | 拉取新状态并重新做影响预览 |
@@ -96,9 +99,9 @@ Dream 只经 [06](06-billing-subscription-gateway-integration.md) 规定的 Prod
 | 502 | Provider 失败或协议错误 | 显示上游失败；Gateway 必须结算到 release/capture/failed 终态 |
 | 503 | 数据库、配置、维护或结算不可确定 | 显示维护/重试；不回退 SQLite、静态计划或直接 Provider |
 
-错误体统一为 `{error:{code,message,details?},meta:{requestId,retryAfterSeconds?}}`。`details` 只允许 code 对应的白名单字段（如 `metric/unit/currentVersion/availableMicrousd/requiredMicrousd`）；字段使用 camelCase，不再同时提供顶层 snake_case 变体。不返回 SQL、DSN、Secret、内部 stack、正文或 Provider 原始敏感响应。
+错误体统一为 `{error:{code,message,details?},meta:{requestId,retryAfterSeconds?}}`。`details` 只允许 code 对应的白名单字段（如 `metric/unit/currentVersion/availableTokens/requiredTokens`）；字段使用 camelCase，不再同时提供顶层 snake_case 变体。不返回 SQL、DSN、Secret、内部 stack、正文或 Provider 原始敏感响应。
 
-## 8. Dream Repository 目标结构
+## 8. Dream Repository 实现结构
 
 ```text
 backend/
@@ -106,29 +109,31 @@ backend/
     postgres.py
     unit_of_work.py
     errors.py
-  repositories/
-    users.py
-    auth.py
-    sessions.py
-    story_workspace.py
-    chat.py
-    decks.py
-    workflow.py
-    plugins.py
-    reflections.py
-    events.py
-    notion.py
-  integrations/
-    admin_product_client.py
-    ai_gateway_client.py
+    repositories/
+  notion/
+    store.py
+  services/
+    admin_product/
+      client.py
+      identity.py
+      models.py
+    admin_gateway/
+      sdk.py
+      token.py
+  schema/
+  script/
+    migrate_legacy_to_postgres.py
+    verify_postgres_schema.py
   migrations/
     env.py
     versions/
 ```
 
-`backend/database.py` 只能暂作逐函数委托的迁移门面，最终从 runtime 删除 SQLite open。禁止建立通用 SQLite SQL→PostgreSQL 翻译层。
+`backend/database.py` 当前是 PostgreSQL-only 兼容门面，委托 pool/Repository 并在 Alembic head 不匹配时 fail-fast；Notion 也使用 PostgreSQL repository/UoW。legacy SQLite builder 与测试适配器仅服务 catalog/迁移/测试，不是运行时 fallback；禁止重新建立通用 SQLite SQL→PostgreSQL 翻译层。
 
 ## 9. 验收
+
+实现回执：Admin `0000–0024`、本机 PG migration、独立 Token Ledger、付费开通/续费、66 files/313 tests、tsc/lint/build 与隔离 PG integration；Dream 48/569/81/25、43+5 CLI、Product/Payment BFF、全入口 Gateway client，backend 1,679 passed/14 skipped/652 subtests、推理聚焦 61 passed；frontend lint 0 errors/21 warnings、build、Product API 9/9 与订阅 Playwright 4/4。角色/最小权限矩阵已在明确 clone 通过；其他生产环境、credential owner 轮换、真实角色切换与外部 Provider canary仍为 Release Gate。
 
 - 同一 `users.id` 在 Dream、Admin 产品 API、Gateway、Billing Account 和 Subscription 中含义一致。
 - Dream 与 Admin 使用独立 Repository、应用角色和 migration journal；所有权盘点与授权变更有独立回执。

@@ -1,92 +1,77 @@
-# Deferred：Payment Adapter、Webhook 与订阅支付边界
+# Payment Adapter、Webhook 与 Token 月订阅支付边界
 
-> 文档状态：**Deferred**（不是当前实现规格）  
-> 返回：[总索引](README.md)  
-> 上游：[Token-only Subscription/Gateway](06-billing-subscription-gateway-integration.md)  
-> 汇总：[延期领域说明](90-deferred-billing-subscription-inference-payment.md)  
-> 主要读者：产品、架构、QA、安全、未来支付项目负责人
+> 文档状态：**Implemented / Release candidate**
+> 更新：2026-08-09（Round 45 范围纠偏）
+> 真实第三方渠道：**Deferred**
 
-## 1. Current / Target / Migration / Release Gate
+## 1. 当前、目标与发布门禁
 
-| 维度 | 决策 |
+| 分层 | 事实 |
 |---|---|
-| Current | Admin/Dream 当前没有可证明的 `PaymentAdapter`、payment intent、Webhook event store 或真实支付渠道闭环；Subscription 现存金额字段属于待纠偏 legacy coupling，不证明支付已实现 |
-| Target（本轮） | Token-only Subscription 独立运行：套餐不含价格、币种、金额额度、cash overage 或支付状态；开通/续费/升降级不等待 Payment |
-| Migration（本轮） | 不新增 payment 表、Route、Adapter、Webhook、Secret、环境变量、SDK、Fake Adapter 或 UI；从 Subscription DTO/页面/状态机删除 Payment 依赖，保留历史账务只读追溯 |
-| Release Gate | Payment 相关新增依赖、表、路由、环境变量和 UI 入口均为 0；Token-only 生命周期、Gateway Token 资格与 43+5 PostgreSQL 迁移可在无 Payment 组件时独立通过 |
+| Current | Admin migration `0022–0024` 已创建并扩展 Payment Intent、Webhook Event 与 refund/reversal adjustment；`PaymentAdapter`、仅测试环境 Fake Adapter、签名校验、事件幂等、首次开通和付费月续费 BFF/UI 已实现。 |
+| Target | Token-only 月套餐可以具有整数 micro-USD 月费；点击开通只创建 Payment Intent，只有已验证的 `payment.succeeded` Webhook 才能原子激活 Subscription 与首期 Token Allowance。 |
+| Release Gate | 生产禁止 Fake Adapter；未配置真实渠道时不得展示支付成功；Secret/原始签名/原始 Webhook 不回显、不写日志；重复事件不重复开通或扣费。 |
+| Deferred | Stripe、支付宝、微信支付、银行等真实网络、商户配置、税务、发票、争议和生产退款网络。 |
 
-本文件替代此前“先实现渠道无关 PaymentAdapter/Fake，再接真实渠道”的 Planned 方案。旧方案只通过 Git 历史追溯，不能作为当前开发任务、Schema 合同或验收门禁。
-
-## 2. 本轮明确 Deferred
-
-- `PaymentAdapter` interface、capability discovery、payment intent、authorize/capture/cancel/refund/reversal operation。
-- Webhook endpoint、签名验证、event store、replay/reconciliation worker 与渠道 event normalization。
-- test/dev Fake Payment Adapter 及其测试支付 UI。
-- Stripe、支付宝、微信支付、银行或其他真实 SDK/API、商户配置、收银台和生产 Webhook。
-- 订阅价格、订阅扣费、自动续费扣款、欠费恢复、退款、发票、税务、争议与 chargeback。
-- Payment Secret、Webhook Secret、支付环境变量、渠道品牌和支付状态文案。
-
-“预留可插拔边界”不构成本轮创建空接口、空表或 Fake 实现的授权。Deferred 能力不得混入 Token-only Subscription release dependency。
-
-## 3. 与 Token-only Subscription 的硬隔离
+## 2. 最小闭环
 
 ```mermaid
 flowchart LR
-  U["Canonical User"] --> S["Monthly Token Subscription"]
-  S --> A["Current-period Token Allowance"]
-  A --> G["Gateway"]
-  G --> T["Token Usage"]
-  P["Payment / subscription payment"] -. "Deferred; no runtime edge" .-> S
+  U["Canonical User"] --> I["Payment Intent"]
+  I --> A["Payment Adapter"]
+  A --> W["Signed Webhook"]
+  W --> E["Webhook Event idempotency"]
+  E --> S["Subscription activation"]
+  S --> T["Monthly Token Allowance"]
 ```
 
-- 所有 canonical `users` 都是可订阅主体；不存在先创建“计费用户”或支付账户才能订阅的流程。
-- Subscription create/renew/upgrade/downgrade/pause/resume/cancel 只改变用户周期、Version、状态和 Token Allowance。
-- 新状态机不进入 `past_due`；现存值只作 legacy 审计/迁移输入，不能由支付失败触发新写入。
-- Plan/Version/Entitlement/Product API 不返回 `currency`、price、micro-USD allowance、cash overage、payment status 或平台全局 effective window。
-- Token 耗尽固定返回 Token 单位的 402；不得创建 payment intent、提示充值或自动切现金余额。
-- Provider Pricing、Billing Account、现金 reserve/capture 与 append-only Ledger 若保留，属于独立 pay-as-you-go/历史域，不是 Payment Adapter，也不构成套餐权益。
+- canonical `users` 是唯一订阅与付款主体；不创建第二套计费用户。
+- 月费真值为 `base_price_microusd` 与 `USD`，API 传整数，浏览器仅格式化显示。
+- 免费版本继续走订阅命令；价格大于零的首次开通必须走 Payment Intent。
+- 创建 Intent 不激活订阅。Fake Adapter 只返回 `requires_action/test_webhook`，页面明确等待签名测试 Webhook。
+- Webhook 签名在持久化业务事件前验证；`adapter + external_event_id` 唯一，同事件重放返回同一结果。
+- `payment.succeeded` 在同一事务内写事件、Subscription、首期 Allowance；失败或取消不激活。
+- refund/reversal 写 append-only adjustment 并撤销订阅资格；不会删除 Usage、Ledger、Webhook 或审计历史。
 
-## 4. 本轮允许的兼容工作
+## 3. Schema 与代码所有权
 
-仅允许为解除现有耦合而做以下非破坏性工作：
+| 对象 | 所有者 | 约束 |
+|---|---|---|
+| `subscription_payment_intents` | Admin Payment service | 用户域幂等、整数 micro-USD、状态机、无明文 Secret |
+| `payment_webhook_events` | Admin Payment service | 外部 event ID 唯一；只保存摘要/hash 与处理结果，payload 事实不可覆盖 |
+| `subscription_payment_adjustments` | Admin Payment service | refund/reversal 只追加、不可更新/删除 |
+| `PaymentAdapter` | Admin server | 渠道映射边界，不直接暴露给浏览器 |
+| Dream BFF/UI | Dream | 只创建/读取当前用户 Intent；不持有 Adapter、Webhook 或 Gateway Secret |
 
-1. 从 Subscription Zod、Service、Repository DTO 和 UI 移除货币/Payment 字段。
-2. 用可回滚 PostgreSQL guard 阻止新 Subscription money allowance、cash overage 与 subscription charge 写入。
-3. 保留既有金额列、Ledger 和已结算请求用于历史审计；不 UPDATE/DELETE，不伪装为 Token。
-4. 对 legacy 在途 `money_allowance` 请求保留最小终态 reconciliation，resolver 不再创建新请求；清零前必须有可观测数量。
-5. Provider Pricing 的有效窗口继续服务独立成本/现金域，不因删除 Subscription `effective_from` 而被误删。
+## 4. Fake/Test Adapter
 
-以上工作不得顺便创建 Payment Adapter、Webhook 或 Fake。
+Fake Adapter 只有同时满足以下条件才可加载：
 
-## 5. Dream 页面与 API 禁区
+1. `NODE_ENV=test`；
+2. `INK_PAYMENT_FAKE_ENABLED=1`；
+3. 配置至少 32 字节测试 Webhook Secret。
 
-Dream 当前不新增：
+生产或普通开发环境启用 Fake 必须 fail closed。Fake 不连接任何支付网络，不生成虚假成功；测试必须主动发送正确 HMAC 签名事件。
 
-- 支付方式、收银台、银行卡/二维码、充值、退款、发票或支付历史页面；
-- payment intent、payment status、Webhook receipt 或渠道 metadata 类型；
-- “支付成功”“自动续费已扣款”“待支付”“欠费恢复”等文案；
-- Stripe/支付宝/微信品牌、真实或测试渠道配置；
-- Payment/Gateway/Provider Secret 的浏览器字段。
+## 5. 错误与安全合同
 
-Subscription 页面只显示用户自己的月度周期、Token granted/reserved/consumed/remaining、耗尽预测、模型权限和生命周期操作。
+| 状态 | 含义 |
+|---|---|
+| 401 | 用户会话或服务身份无效 |
+| 403 | Origin/RBAC/Adapter 不允许 |
+| 404 | Intent、版本或 canonical 用户不存在 |
+| 409 | 幂等键冲突、已有订阅、版本/支付状态冲突 |
+| 429 | 用户或 Adapter 速率限制 |
+| 502 | 已配置真实 Adapter 的上游协议失败（当前未执行） |
+| 503 | Adapter 未配置、Fake 被生产保护拒绝或依赖不可用 |
 
-## 6. 未来重新立项条件
+Provider Secret、Gateway Key、Payment Secret、Webhook 原始签名和服务凭据不得进入 DTO、DOM、Storage、截图、结构化日志或普通数据库字段。
 
-只有以下条件全部明确，Payment 才能从 Deferred 转 Planned：
+## 6. 验证证据
 
-1. 独立 PRD 批准支付究竟服务现金按量、其他商品还是未来付费订阅；不得默认给 Token-only Plan 增加价格。
-2. 指定渠道、商户主体、币种/地区、税务/发票、退款/争议、隐私和客服责任。
-3. 完成 Adapter、Webhook、幂等、乱序、reconciliation、Secret、SLA、安全和数据保留设计。
-4. 明确 Payment 事实与产品领域命令的协调边界；Adapter 不直接 UPDATE Subscription、Allowance、Billing Account 或 Ledger。
-5. 隔离 sandbox、生产审批、密钥轮换、监控、灰度和 rollback runbook 可验证。
-6. 重新执行 Prompt Architect、PRD、交互、Reader Testing、Schema 审计和单独发布评审。
+- migrations `0022–0024` 已在本地 `ink-memory` 应用并幂等复跑；三张支付表当前真实数据均为 0。
+- 隔离数据库 `ink_memory_payment_r45_codex_test` 已验证：失败不激活、成功只激活一次、重复 Webhook 不重复写、refund 撤销资格并只写一条 adjustment。
+- Admin：66 files / 313 tests、tsc、lint、build 通过；Payment 隔离 PG activation/renewal 2/2 通过。
+- Dream：BFF/Gateway focused backend 122 passed、1 existing skip、94 subtests；frontend tsc/lint/build 与三个订阅 Playwright 场景通过。
 
-未来若决定将 Subscription 改为付费产品，这是新的产品决策，必须版本化 PRD 和迁移；不能复活本轮已弃用字段作为默认方案。
-
-## 7. Deferred 验收
-
-- `rg`/dependency/Schema/Route 检查确认当前增量没有 Payment Adapter、Webhook、Fake、payment table/route/env/secret/UI。
-- Token-only Subscription 在 Payment 组件完全不存在时通过 create、周期推进、升降级、暂停、取消和 Gateway Token 测试。
-- 页面与 API 不包含 price/currency/micro-USD allowance/balance/payment/effective window；Provider Pricing 独立接口除外。
-- 历史 monetary Subscription/Ledger 数据未被删除、覆盖或回显敏感信息。
-- 文档索引、发布门禁与 Dream 页面清单均把 Payment 标为 Deferred，而不是 Planned 或 current dependency。
+上述证据不等于真实支付渠道已上线；真实网络仍是 Deferred。

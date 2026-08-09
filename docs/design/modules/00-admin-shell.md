@@ -9,7 +9,7 @@
 | 分层 | 交互边界 |
 |---|---|
 | Current | 登录、Shell、Story 摘要；完整 Gateway/计费摘要和页面级 403 未完成。 |
-| Target | 增加 43+5 PostgreSQL 迁移健康、Dream 产品 API、Gateway 结算、Payment/Webhook 异常的真实只读摘要。 |
+| Target | 增加 43+5 PostgreSQL 迁移健康、Dream Token-only Product/Payment API 与 Gateway 结算的真实只读摘要。真实支付渠道 Deferred。 |
 | Release Gate | 两视口、页面/API 401/403、分区 502/503 与指标来源/时间窗/更新时间通过 focused E2E。 |
 
 ## 1. 页面目的
@@ -36,7 +36,7 @@
 
 ## 4. 总览布局
 
-目标顺序：数据源/迁移状态 → 产品 API 健康 → 今日 Gateway/Token/费用 → 结算失败/Provider/Webhook 异常 → Story 待办 → 最近审计。每项显示数值、时间窗、时区、更新时间、来源与跳转。当前 UI 只渲染真实用户、Workspace、Story、待审核 Story 及最近 Story/操作；虽 API 已返回模型、请求、Token、费用和结算失败，尚未展示，不能作为已验收能力。
+目标顺序：数据源/迁移状态 → 产品 API 健康 → 今日 Gateway/Token/独立 Provider 成本 → 结算失败/Provider 异常 → Story 待办 → 最近审计。每项显示数值、时间窗、时区、更新时间、来源与跳转。当前 UI 只渲染真实用户、Workspace、Story、待审核 Story 及最近 Story/操作；虽 API 已返回模型、请求、Token、费用和结算失败，尚未展示，不能作为已验收能力。
 
 Loading 保留网格；部分依赖 503 时仅对应块不可用。没有异常显示“当前无待处理项”，不显示庆祝性虚构指标。
 
@@ -52,4 +52,4 @@ Loading 保留网格；部分依赖 503 时仅对应块不可用。没有异常�
 - UI-FND-02：401/403/503 不残留上一用户或上一请求数据。
 - UI-FND-03：两视口无根横滚；移动 Drawer 锁焦并正确归焦。
 - UI-FND-04（目标）：总览每个数字均能定位到来源模块或明确不可用原因；补齐 Gateway/计费摘要前不通过。
-- UI-FND-05（Target release gate）：迁移/产品 API/Provider/Webhook 的 502/503 只使对应分区 unavailable，其他真实数据不被清零或替换为假健康。
+- UI-FND-05（Target release gate）：迁移/产品 API/Provider 的 502/503 只使对应分区 unavailable，其他真实数据不被清零或替换为假健康；不得渲染 Payment/Webhook 假健康卡片。

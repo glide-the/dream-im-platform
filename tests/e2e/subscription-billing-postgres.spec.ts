@@ -204,7 +204,9 @@ test.describe("subscription billing on owned PostgreSQL", () => {
       data: { platformUserId: billingUserId, planVersionId: versionOne, startsAt: startsAt.toISOString(), startInTrial: false, idempotencyKey: activationKey, reason: "E2E activation" },
     });
     expect(activate.status()).toBe(201);
-    const subscriptionId = (await activate.json()).data.id as string;
+    const activatedSubscription = (await activate.json()).data as Record<string, unknown>;
+    const subscriptionId = String(activatedSubscription.id);
+    let expectedVersion = Number(activatedSubscription.version);
     const duplicate = await api.post(`${baseURL}/api/admin/subscriptions`, {
       headers,
       data: { platformUserId: billingUserId, planVersionId: versionOne, startsAt: startsAt.toISOString(), startInTrial: false, idempotencyKey: activationKey, reason: "E2E activation" },
@@ -222,29 +224,33 @@ test.describe("subscription billing on owned PostgreSQL", () => {
       data: { platformUserId: billingUserId, planVersionId: versionOne, startsAt: startsAt.toISOString(), startInTrial: false, idempotencyKey: "activate:user-e2e:conflict:e2e", reason: "E2E conflict" },
     })).status()).toBe(409);
 
-    const command = async (action: string, key: string, data: Record<string, unknown> = {}) => api.post(`${baseURL}/api/admin/subscriptions/${subscriptionId}/${action}`, { headers, data: { idempotencyKey: key, reason: `E2E ${action}`, ...data } });
+    const command = async (action: string, key: string, data: Record<string, unknown> = {}) => api.post(`${baseURL}/api/admin/subscriptions/${subscriptionId}/${action}`, { headers, data: { idempotencyKey: key, reason: `E2E ${action}`, expectedVersion, ...data } });
     const versionTwo = await createVersion(120000);
     await publishVersion(versionTwo, "v2");
     const versionThree = await createVersion(150000);
     await publishVersion(versionThree, "v3");
     const downgrade = await command("downgrade", "downgrade:subscription:e2e", { planVersionId: versionTwo });
     expect(downgrade.status()).toBe(200);
-    expect((await downgrade.json()).data).toMatchObject({
+    const downgradedSubscription = (await downgrade.json()).data as Record<string, unknown>;
+    expect(downgradedSubscription).toMatchObject({
       plan_version_id: versionOne,
       pending_plan_version_id: versionTwo,
     });
+    expectedVersion = Number(downgradedSubscription.version);
     const actionIdempotencyConflict = await api.post(`${baseURL}/api/admin/subscriptions/${subscriptionId}/upgrade`, {
       headers,
-      data: { idempotencyKey: "downgrade:subscription:e2e", reason: "E2E downgrade", planVersionId: versionTwo },
+      data: { idempotencyKey: "downgrade:subscription:e2e", reason: "E2E downgrade", expectedVersion, planVersionId: versionTwo },
     });
     expect(actionIdempotencyConflict.status()).toBe(409);
     await expect(actionIdempotencyConflict.json()).resolves.toMatchObject({ error: { code: "SUBSCRIPTION_IDEMPOTENCY_CONFLICT" } });
     const upgrade = await command("upgrade", "upgrade:subscription:e2e", { planVersionId: versionThree });
     expect(upgrade.status()).toBe(200);
-    expect((await upgrade.json()).data).toMatchObject({
+    const upgradedSubscription = (await upgrade.json()).data as Record<string, unknown>;
+    expect(upgradedSubscription).toMatchObject({
       plan_version_id: versionOne,
       pending_plan_version_id: versionThree,
     });
+    expectedVersion = Number(upgradedSubscription.version);
     const targetIdempotencyConflict = await command("upgrade", "upgrade:subscription:e2e", { planVersionId: versionTwo });
     expect(targetIdempotencyConflict.status()).toBe(409);
     await expect(targetIdempotencyConflict.json()).resolves.toMatchObject({ error: { code: "SUBSCRIPTION_IDEMPOTENCY_CONFLICT" } });
@@ -259,6 +265,7 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     const renew = await command("renew", "renew:subscription:e2e");
     expect(renew.status()).toBe(200);
     const renewedSubscription = (await renew.json()).data as Record<string, unknown>;
+    expectedVersion = Number(renewedSubscription.version);
     expect(renewedSubscription).toMatchObject({
       plan_version_id: versionThree,
       pending_plan_version_id: null,
@@ -291,7 +298,7 @@ test.describe("subscription billing on owned PostgreSQL", () => {
 
     const gatewayKey = await api.post(`${baseURL}/api/admin/gateway-api-keys`, {
       headers,
-      data: { platformUserId: billingUserId, name: "subscription-e2e", scopes: ["messages:create", "models:list"], expiresAt: null },
+      data: { subjectMode: "fixed_user", platformUserId: billingUserId, name: "subscription-e2e", scopes: ["messages:create", "models:list"], expiresAt: null },
     });
     expect(gatewayKey.status()).toBe(201);
     const plaintextKey = (await gatewayKey.json()).data.plaintextKey as string;
@@ -300,9 +307,33 @@ test.describe("subscription billing on owned PostgreSQL", () => {
       data: { model: "subscription-model", max_tokens: 32, messages: [{ role: "user", content: "hello" }] },
     });
     expect(gateway.status()).toBe(200);
+    const successfulGatewayRequestId = gateway.headers()["x-request-id"];
+    expect(successfulGatewayRequestId).toBeTruthy();
     const usage = await api.get(`${baseURL}/api/admin/usage?filter[subscription_id][eq]=${encodeURIComponent(subscriptionId)}`);
     expect(usage.status()).toBe(200);
     await expect(usage.json()).resolves.toMatchObject({ data: [expect.objectContaining({ subscription_id: subscriptionId, subscription_coverage_mode: "token_allowance", allowance_charged_tokens: "15", allowance_charged_microusd: "0", reserved_microusd: "0", charged_microusd: "0" })] });
+
+    const tokenLedger = await api.get(
+      `${baseURL}/api/admin/token-ledger?sort=request_sequence&order=asc&filter[gateway_request_id][eq]=${encodeURIComponent(successfulGatewayRequestId)}`,
+    );
+    expect(tokenLedger.status()).toBe(200);
+    const tokenLedgerBody = await tokenLedger.json();
+    expect(tokenLedgerBody.meta.total).toBe(3);
+    expect(tokenLedgerBody.data.map((entry: Record<string, unknown>) => ({
+      sequence: Number(entry.request_sequence),
+      type: entry.entry_type,
+      amount: Number(entry.amount_tokens),
+      unit: entry.unit,
+    }))).toEqual([
+      { sequence: 1, type: "reserve", amount: expect.any(Number), unit: "tokens" },
+      { sequence: 2, type: "capture", amount: 15, unit: "tokens" },
+      { sequence: 3, type: "release", amount: expect.any(Number), unit: "tokens" },
+    ]);
+    expect(Number(tokenLedgerBody.data[0].amount_tokens)).toBe(
+      Number(tokenLedgerBody.data[1].amount_tokens) +
+        Number(tokenLedgerBody.data[2].amount_tokens),
+    );
+    expect(JSON.stringify(tokenLedgerBody)).not.toMatch(/microusd|payment|secret/i);
 
     const allowances = await api.get(`${baseURL}/api/admin/subscription-allowances?filter[subscription_id][eq]=${encodeURIComponent(subscriptionId)}`);
     expect(allowances.status()).toBe(200);
@@ -350,7 +381,7 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     const oneTokenSubscriptionId = String(oneTokenSubscription.id);
     const exhaustedGatewayKey = await api.post(`${baseURL}/api/admin/gateway-api-keys`, {
       headers,
-      data: { platformUserId: cashBackedBillingUserId, name: "subscription-token-exhausted-e2e", scopes: ["messages:create"], expiresAt: null },
+      data: { subjectMode: "fixed_user", platformUserId: cashBackedBillingUserId, name: "subscription-token-exhausted-e2e", scopes: ["messages:create"], expiresAt: null },
     });
     expect(exhaustedGatewayKey.status()).toBe(201);
     const exhaustedPlaintextKey = (await exhaustedGatewayKey.json()).data.plaintextKey as string;
@@ -419,7 +450,9 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     expect(oneTokenAllowancesAfterResponse.status()).toBe(200);
     expect(await oneTokenAllowancesAfterResponse.json()).toEqual(oneTokenAllowancesBefore);
 
-    expect((await command("pause", "pause:subscription:e2e")).status()).toBe(200);
+    const pause = await command("pause", "pause:subscription:e2e");
+    expect(pause.status()).toBe(200);
+    expectedVersion = Number(((await pause.json()).data as Record<string, unknown>).version);
     const pausedCall = await api.post(`${baseURL}/v1/messages`, {
       headers: { "content-type": "application/json", "x-api-key": plaintextKey },
       data: { model: "subscription-model", max_tokens: 16, messages: [{ role: "user", content: "blocked" }] },
@@ -443,15 +476,27 @@ test.describe("subscription billing on owned PostgreSQL", () => {
         response: { completion_status: "complete", http_status: 403, body_json: { type: "error", error: { code: "SUBSCRIPTION_PAUSED" } } },
       },
     });
-    expect((await command("resume", "resume:subscription:e2e")).status()).toBe(200);
+    const resume = await command("resume", "resume:subscription:e2e");
+    expect(resume.status()).toBe(200);
+    expectedVersion = Number(((await resume.json()).data as Record<string, unknown>).version);
 
     const cancel = await command("cancel", "cancel:subscription:e2e");
     expect(cancel.status()).toBe(200);
-    expect((await cancel.json()).data.status).toBe("cancel_at_period_end");
+    const cancelledSubscription = (await cancel.json()).data as Record<string, unknown>;
+    expect(cancelledSubscription.status).toBe("cancel_at_period_end");
+    expectedVersion = Number(cancelledSubscription.version);
+
+    const revokeCancel = await command(
+      "revoke_cancel",
+      "revoke-cancel:subscription:e2e",
+    );
+    expect(revokeCancel.status()).toBe(200);
+    const cancellationRevoked = (await revokeCancel.json()).data as Record<string, unknown>;
+    expect(cancellationRevoked).toMatchObject({ status: "active" });
 
     const events = await api.get(`${baseURL}/api/admin/subscription-events?filter[subscription_id][eq]=${encodeURIComponent(subscriptionId)}`);
     expect(events.status()).toBe(200);
-    expect((await events.json()).meta.total).toBe(7);
+    expect((await events.json()).meta.total).toBe(8);
     expect((await api.delete(`${baseURL}/api/admin/subscriptions/${subscriptionId}`, { headers })).status()).toBe(405);
 
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -460,12 +505,25 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     for (const forbidden of ["金额额度", "基础价格", "币种", "生效时间", "现金兜底"]) {
       await expect(page.getByText(forbidden, { exact: true })).toHaveCount(0);
     }
+    for (const forbidden of ["价格", "币种", "金额额度", "现金兜底", "支付"]) {
+      expect(await page.locator("body").innerText()).not.toContain(forbidden);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("subscription-versions-desktop-1440x1000.png"), fullPage: true });
 
+    await page.goto("/admin/subscriptions/token-ledger");
+    await expect(page.getByRole("heading", { name: "Token 流水", exact: true })).toBeVisible();
+    await expect(page.getByText(successfulGatewayRequestId, { exact: true }).first()).toBeVisible();
+    for (const type of ["reserve", "capture", "release"]) {
+      await expect(page.getByText(type, { exact: true })).toBeVisible();
+    }
+    expect(await page.locator("body").innerText()).not.toMatch(/micro-?usd|付款成功|支付成功/i);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("subscription-token-ledger-desktop-1440x1000.png"), fullPage: true });
+
     await page.goto("/admin/subscriptions/users");
     await expect(page.getByRole("heading", { name: "用户订阅", exact: true })).toBeVisible();
-    const platformUserSelect = page.getByLabel("平台用户");
+    const platformUserSelect = page.getByLabel("平台用户", { exact: true });
     await expect(platformUserSelect).toContainText("creator@example.test");
     await expect(platformUserSelect).toContainText("other@example.test");
     await expect(
@@ -480,8 +538,16 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     for (const forbidden of ["金额额度", "基础价格", "币种", "生效时间", "现金兜底"]) {
       await expect(page.getByText(forbidden, { exact: true })).toHaveCount(0);
     }
+    for (const forbidden of ["价格", "币种", "金额额度", "现金兜底", "支付"]) {
+      expect(await page.locator("body").innerText()).not.toContain(forbidden);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath("subscription-versions-mobile-390x844.png") });
+    await page.goto("/admin/subscriptions/token-ledger");
+    await expect(page.getByRole("heading", { name: "Token 流水", exact: true })).toBeVisible();
+    await expect(page.getByText(successfulGatewayRequestId, { exact: true }).first()).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("subscription-token-ledger-mobile-390x844.png") });
     expect(diagnostics).toEqual([]);
   });
 });

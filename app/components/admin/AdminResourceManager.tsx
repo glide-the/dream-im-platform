@@ -366,9 +366,11 @@ function RelationSelect({
 }) {
   const relation = field.relation!;
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [selectedLabel, setSelectedLabel] = useState("");
   const { result, query } = useList<Record<string, unknown>>({
     resource: relation.resource,
-    pagination: { currentPage: 1, pageSize: 50 },
+    pagination: { currentPage: page, pageSize: 50 },
     sorters: [{ field: relation.labelKey, order: "asc" }],
     filters: search
       ? [
@@ -380,12 +382,20 @@ function RelationSelect({
         ]
       : [],
   });
+  const total = result.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / 50));
+  const selectedOnPage = result.data.some(
+    (option) => String(option[relation.valueKey ?? "id"]) === value,
+  );
   return (
     <div className="space-y-2">
       <input
         className="admin-field text-sm"
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
+        onChange={(event) => {
+          setSearch(event.target.value);
+          setPage(1);
+        }}
         placeholder={`搜索${field.label}`}
         disabled={disabled}
         aria-label={`搜索${field.label}选项`}
@@ -394,23 +404,84 @@ function RelationSelect({
         id={id}
         className="admin-field text-sm"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          const option = result.data.find(
+            (item) =>
+              String(item[relation.valueKey ?? "id"]) === nextValue,
+          );
+          setSelectedLabel(
+            option
+              ? [
+                  option[relation.labelKey],
+                  relation.secondaryKey
+                    ? option[relation.secondaryKey]
+                    : undefined,
+                ]
+                  .filter(Boolean)
+                  .map(String)
+                  .join(" · ")
+              : "",
+          );
+          onChange(nextValue);
+        }}
         required={required}
         disabled={disabled || query.isLoading}
       >
         <option value="">{query.isLoading ? "正在加载…" : `选择${field.label}`}</option>
+        {value && !selectedOnPage ? (
+          <option value={value}>{selectedLabel || `已选择 · ${value}`}</option>
+        ) : null}
         {result.data.map((option) => {
           const label = String(option[relation.labelKey] ?? option.id);
           const secondary = relation.secondaryKey
             ? option[relation.secondaryKey]
             : undefined;
+          const isCanonicalUserRelation = relation.resource === "platform-users";
+          const projectionReady =
+            option.projection_ready === true ||
+            String(option.projection_ready) === "true";
+          const selectable =
+            !isCanonicalUserRelation ||
+            (projectionReady && option.status === "active");
+          const disabledReason = !projectionReady
+            ? "兼容投影缺失"
+            : option.status !== "active"
+              ? `调用状态 ${String(option.status ?? "unknown")}`
+              : "";
           return (
-            <option key={String(option.id)} value={String(option[relation.valueKey ?? "id"])}>
-              {label}{secondary ? ` · ${String(secondary)}` : ""}
+            <option key={String(option.id)} value={String(option[relation.valueKey ?? "id"])} disabled={!selectable}>
+              {label}{secondary ? ` · ${String(secondary)}` : ""}{disabledReason && isCanonicalUserRelation ? ` · ${disabledReason}` : ""}
             </option>
           );
         })}
       </select>
+      {relation.resource === "platform-users" ? <p className="text-xs leading-5 text-text-tertiary">选项来自 canonical users 全集；内部兼容投影缺失或非 active 的用户保留可见但不可选择。</p> : null}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-tertiary">
+        <span>
+          {query.error
+            ? "关系选项加载失败"
+            : `匹配 ${total} 项 · 第 ${page} / ${pages} 页`}
+        </span>
+        <span className="flex gap-2">
+          <button
+            type="button"
+            className="min-h-10 border border-border px-3 disabled:opacity-40"
+            disabled={disabled || page <= 1 || query.isFetching}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            上一页
+          </button>
+          <button
+            type="button"
+            className="min-h-10 border border-border px-3 disabled:opacity-40"
+            disabled={disabled || page >= pages || query.isFetching}
+            onClick={() => setPage((current) => Math.min(pages, current + 1))}
+          >
+            下一页
+          </button>
+        </span>
+      </div>
       {query.error ? (
         <p className="text-xs text-danger" role="alert">
           关系选项加载失败：{query.error.message}

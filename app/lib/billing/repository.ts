@@ -30,6 +30,7 @@ type RequestRow = {
   reserved_microusd: string | number;
   estimated_tokens: string | number;
   subscription_id: string | null;
+  subscription_plan_version_id: string | null;
   subscription_allowance_id: string | null;
   subscription_coverage_mode: string | null;
   allowance_reserved_microusd: string | number;
@@ -363,7 +364,8 @@ export async function settleGatewayRequestOnClient(
     const { rows } = await client.query<RequestRow>(
       `SELECT id, platform_user_id, model_id, status, outcome,
               reserved_microusd, estimated_tokens, subscription_id,
-              subscription_allowance_id, subscription_coverage_mode,
+              subscription_plan_version_id, subscription_allowance_id,
+              subscription_coverage_mode,
               allowance_reserved_microusd, allowance_reserved_tokens, created_at,
               settled_at, input_price_snapshot, output_price_snapshot,
               cache_read_price_snapshot, cache_write_price_snapshot,
@@ -379,7 +381,6 @@ export async function settleGatewayRequestOnClient(
       return { idempotent: true, requestId: request.id };
     }
 
-    const account = await lockAccount(client, request.platform_user_id);
     const charge = calculateCharge(input.usage, pricingFromRequest(request));
     const reserved = safeDbNumber(
       request.reserved_microusd,
@@ -399,12 +400,25 @@ export async function settleGatewayRequestOnClient(
       ),
       actualTokens,
       chargeMicrousd: charge.chargedMicrousd,
+      gatewayRequestId: request.id,
+      platformUserId: request.platform_user_id,
+      subscriptionId: request.subscription_id ?? undefined,
+      planVersionId: request.subscription_plan_version_id ?? undefined,
     });
-    const transitions = settleAccount(
-      accountSnapshot(account),
-      reserved,
-      allowance.cashChargeMicrousd,
-    );
+    const needsFinancialAccount =
+      reserved !== 0 ||
+      allowance.cashChargeMicrousd !== 0 ||
+      allowance.allowanceChargeMicrousd !== 0;
+    const account = needsFinancialAccount
+      ? await lockAccount(client, request.platform_user_id)
+      : null;
+    const transitions = account
+      ? settleAccount(
+          accountSnapshot(account),
+          reserved,
+          allowance.cashChargeMicrousd,
+        )
+      : null;
     const estimatedTokens = safeDbNumber(
       request.estimated_tokens,
       "estimated_tokens",
@@ -412,6 +426,7 @@ export async function settleGatewayRequestOnClient(
     const tokenDelta = actualTokens - estimatedTokens;
 
     if (allowance.allowanceChargeMicrousd > 0) {
+      if (!account) throw new Error("BILLING_ACCOUNT_NOT_FOUND");
       const snapshot = accountSnapshot(account);
       await insertLedgerEntry(client, {
         accountId: account.id,
@@ -449,7 +464,7 @@ export async function settleGatewayRequestOnClient(
       );
     }
 
-    if (transitions.capture) {
+    if (account && transitions?.capture) {
       await insertLedgerEntry(client, {
         accountId: account.id,
         platformUserId: request.platform_user_id,
@@ -468,7 +483,7 @@ export async function settleGatewayRequestOnClient(
         metadata: { providerCostMicrousd: charge.providerCostMicrousd },
       });
     }
-    if (transitions.release) {
+    if (account && transitions?.release) {
       await insertLedgerEntry(client, {
         accountId: account.id,
         platformUserId: request.platform_user_id,
@@ -488,7 +503,7 @@ export async function settleGatewayRequestOnClient(
       });
     }
 
-    if (reserved !== 0 || allowance.cashChargeMicrousd !== 0) {
+    if (account && transitions) {
       await updateAccount(client, account.id, transitions.final);
     }
     await client.query(
@@ -526,7 +541,7 @@ export async function settleGatewayRequestOnClient(
       ],
     );
 
-    if (transitions.overdraftMicrousd > 0) {
+    if (transitions && transitions.overdraftMicrousd > 0) {
       await client.query(
         `UPDATE platform_users
          SET status = 'suspended', updated_at = NOW()
@@ -539,8 +554,8 @@ export async function settleGatewayRequestOnClient(
       idempotent: false,
       requestId: request.id,
       charge,
-      account: transitions.final,
-      overdraftMicrousd: transitions.overdraftMicrousd,
+      account: transitions?.final ?? null,
+      overdraftMicrousd: transitions?.overdraftMicrousd ?? 0,
     };
 }
 

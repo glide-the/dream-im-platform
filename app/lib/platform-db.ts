@@ -23,6 +23,7 @@ export async function assertPlatformSchema() {
         ledger: string | null;
         admin_users: string | null;
         system_settings: string | null;
+        payment_intents: string | null;
         estimated_tokens: string | null;
       }>(
         `SELECT
@@ -31,6 +32,7 @@ export async function assertPlatformSchema() {
           to_regclass('public.billing_ledger_entries')::text AS ledger,
           to_regclass('public.admin_users')::text AS admin_users,
           to_regclass('public.system_settings')::text AS system_settings,
+          to_regclass('public.subscription_payment_intents')::text AS payment_intents,
           (
             SELECT column_name
             FROM information_schema.columns
@@ -47,6 +49,7 @@ export async function assertPlatformSchema() {
           !row.ledger ||
           !row.admin_users ||
           !row.system_settings ||
+          !row.payment_intents ||
           !row.estimated_tokens
         ) {
           throw new PlatformSchemaNotReadyError();

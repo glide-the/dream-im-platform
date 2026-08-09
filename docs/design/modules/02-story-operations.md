@@ -2,14 +2,14 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[Story 运营](../../prd/modules/02-story-operations.md)
 
-> 实现状态：Workspace/Story 交互已实现；Character/Scene 条件开放；`/admin/story/workflow-runs` 当前重定向 Story，不存在 Workflow 列表或 Drawer。
+> 实现状态：Workspace/Story 交互已实现；Dream 48/569/81/25 与 PG-only runtime 为 Release candidate。Character/Scene 仍按 Admin Repository/权限条件开放；`/admin/story/workflow-runs` 当前仍重定向 Story。
 
 ## 0. Current / Target / Release Gate
 
 | 分层 | 交互边界 |
 |---|---|
-| Current | Workspace/Story 真实表交互；Character/Scene 缺表 503，Workflow 重定向 Story。 |
-| Target | Dream 43+5 PostgreSQL cutover 后，Admin 仅对批准领域提供只读/白名单命令；页面永不回退旧平行表或 SQLite。 |
+| Current / Implemented | Workspace/Story 真实表交互；Dream 43+5 Schema/PG-only runtime 已实现。Character/Scene 未批准 Admin Repository/权限时 503，Workflow 重定向 Story。 |
+| Production Release Gate | 真实 43+5 cutover 后，Admin 仍只对批准领域提供只读/白名单命令；页面永不回退旧平行表或 SQLite。 |
 | Release Gate | 48 表演练/cutover 状态可追溯；缺表只返 503，无假数据/通用硬删；现有 Story 回归通过。 |
 
 ## 1. 操作者与层级

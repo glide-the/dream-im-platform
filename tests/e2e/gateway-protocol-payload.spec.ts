@@ -147,7 +147,7 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
     await model(anthropicProvider, "anthropic-native-e2e", "claude-mock");
     await model(openAIProvider, "openai-native-e2e", "gpt-mock");
 
-    const keyResponse = await api.post(`${baseURL}/api/admin/gateway-api-keys`, { headers: adminHeaders, data: { platformUserId: gatewayUserId, name: "gateway-contract-e2e", scopes: ["messages:create", "chat:create", "models:list"], expiresAt: null } });
+    const keyResponse = await api.post(`${baseURL}/api/admin/gateway-api-keys`, { headers: adminHeaders, data: { subjectMode: "fixed_user", platformUserId: gatewayUserId, name: "gateway-contract-e2e", scopes: ["messages:create", "chat:create", "models:list"], expiresAt: null } });
     expect(keyResponse.status()).toBe(201);
     const gatewayKey = (await keyResponse.json()).data.plaintextKey as string;
 
@@ -159,7 +159,7 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
     expect(limitedGatewayUserId).not.toBe("undefined");
     await pool.query(`UPDATE platform_users SET daily_token_limit = 1 WHERE id = $1`, [limitedGatewayUserId]);
     await pool.query(`UPDATE billing_accounts SET available_microusd = 1000000000 WHERE platform_user_id = $1`, [limitedGatewayUserId]);
-    const limitedKeyResponse = await api.post(`${baseURL}/api/admin/gateway-api-keys`, { headers: adminHeaders, data: { platformUserId: limitedGatewayUserId, name: "gateway-limited-e2e", scopes: ["messages:create"], expiresAt: null } });
+    const limitedKeyResponse = await api.post(`${baseURL}/api/admin/gateway-api-keys`, { headers: adminHeaders, data: { subjectMode: "fixed_user", platformUserId: limitedGatewayUserId, name: "gateway-limited-e2e", scopes: ["messages:create"], expiresAt: null } });
     expect(limitedKeyResponse.status()).toBe(201);
     const limitedGatewayKey = (await limitedKeyResponse.json()).data.plaintextKey as string;
     const rejectedRawBody = JSON.stringify({ model: "anthropic-native-e2e", max_tokens: 32, stream: true, messages: [{ role: "user", content: "policy-rejection-payload-marker" }] });

@@ -17,23 +17,36 @@ function usdToMicroUsd(value: string) {
 
 export default function BillingAdjustmentForm() {
   const permissions = usePermissions<string[]>({});
-  const users = useList<Record<string, unknown>>({
-    resource: "platform-users",
-    pagination: { currentPage: 1, pageSize: 100 },
-    sorters: [{ field: "email", order: "asc" }],
-  });
   const invalidate = useInvalidate();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [userPage, setUserPage] = useState(1);
   const [platformUserId, setPlatformUserId] = useState("");
+  const [selectedUserLabel, setSelectedUserLabel] = useState("");
   const [amountUsd, setAmountUsd] = useState("");
   const [reason, setReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const users = useList<Record<string, unknown>>({
+    resource: "platform-users",
+    pagination: { currentPage: userPage, pageSize: 50 },
+    sorters: [{ field: "email", order: "asc" }],
+    filters: search.trim()
+      ? [
+          {
+            field: "email",
+            operator: "contains",
+            value: search.trim(),
+          },
+        ]
+      : [],
+  });
+  const userTotal = users.result.total ?? 0;
+  const userPages = Math.max(1, Math.ceil(userTotal / 50));
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -41,11 +54,6 @@ export default function BillingAdjustmentForm() {
     if (open && !dialog.open) dialog.showModal();
     if (!open && dialog.open) dialog.close();
   }, [open]);
-
-  const matchingUsers = users.result.data.filter((user) => {
-    const needle = search.trim().toLowerCase();
-    return !needle || `${user.email ?? ""} ${user.display_name ?? ""} ${user.external_user_id ?? ""}`.toLowerCase().includes(needle);
-  });
 
   function close() {
     if ((platformUserId || amountUsd || reason) && !window.confirm("存在未提交的入账信息，确认关闭吗？")) return;
@@ -77,6 +85,7 @@ export default function BillingAdjustmentForm() {
       ]);
       setMessage(`已向 ${platformUserId} 入账 $${amountUsd}；账本条目与审计已写入。`);
       setPlatformUserId("");
+      setSelectedUserLabel("");
       setAmountUsd("");
       setReason("");
       setConfirmed(false);
@@ -111,8 +120,9 @@ export default function BillingAdjustmentForm() {
             </header>
             <div className="admin-dialog-body">
               <form id="billing-credit-form" className="space-y-5" onSubmit={submit}>
-                <label className="block text-xs font-semibold text-text-secondary">搜索平台用户<input className="admin-field mt-2 text-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Email、显示名或源用户 ID" /></label>
-                <label className="block text-xs font-semibold text-text-secondary">平台用户 *<select className="admin-field mt-2 font-mono text-xs" value={platformUserId} onChange={(event) => setPlatformUserId(event.target.value)} required disabled={users.query.isLoading}><option value="">{users.query.isLoading ? "正在加载…" : "选择平台用户"}</option>{matchingUsers.map((user) => <option key={String(user.id)} value={String(user.id)}>{String(user.email ?? user.external_user_id ?? user.id)} · {String(user.tier ?? "—")}</option>)}</select></label>
+                <label className="block text-xs font-semibold text-text-secondary">搜索平台用户<input className="admin-field mt-2 text-sm" value={search} onChange={(event) => { setSearch(event.target.value); setUserPage(1); }} placeholder="输入完整或部分 Email" /></label>
+                <label className="block text-xs font-semibold text-text-secondary">平台用户 *<select className="admin-field mt-2 font-mono text-xs" value={platformUserId} onChange={(event) => { const next = event.target.value; setPlatformUserId(next); const selected = users.result.data.find((user) => String(user.id) === next); setSelectedUserLabel(selected ? String(selected.email ?? selected.external_user_id ?? selected.id) : ""); }} required disabled={users.query.isLoading}><option value="">{users.query.isLoading ? "正在加载…" : "选择平台用户"}</option>{platformUserId && !users.result.data.some((user) => String(user.id) === platformUserId) ? <option value={platformUserId}>{selectedUserLabel || platformUserId}</option> : null}{users.result.data.map((user) => { const projectionReady = user.projection_ready === true || String(user.projection_ready) === "true"; const accountReady = user.billing_account_ready === true || String(user.billing_account_ready) === "true"; const selectable = projectionReady && accountReady && user.status === "active"; const reason = !projectionReady ? "兼容投影缺失" : !accountReady ? "现金账户投影缺失" : user.status !== "active" ? `调用状态 ${String(user.status ?? "unknown")}` : ""; return <option key={String(user.id)} value={String(user.id)} disabled={!selectable}>{String(user.email ?? user.external_user_id ?? user.id)} · {String(user.tier ?? "—")}{reason ? ` · ${reason}` : ""}</option>; })}</select><span className="mt-1 block font-normal leading-5 text-text-tertiary">这是与 Token-only 月度订阅解耦的独立现金域；canonical 用户全集均可见，缺失投影或账户的用户不可执行财务操作。</span></label>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-tertiary"><span>{users.query.error ? "平台用户加载失败" : `匹配 ${userTotal} 位 · 第 ${userPage} / ${userPages} 页`}</span><span className="flex gap-2"><button type="button" className="min-h-10 border border-border px-3 disabled:opacity-40" disabled={userPage <= 1 || users.query.isFetching} onClick={() => setUserPage((current) => Math.max(1, current - 1))}>上一页</button><button type="button" className="min-h-10 border border-border px-3 disabled:opacity-40" disabled={userPage >= userPages || users.query.isFetching} onClick={() => setUserPage((current) => Math.min(userPages, current + 1))}>下一页</button></span></div>
                 {users.query.error ? <p className="text-sm text-danger" role="alert">用户选项加载失败：{users.query.error.message}</p> : null}
                 <label className="block text-xs font-semibold text-text-secondary">入账金额（USD） *<input className="admin-field mt-2 font-mono" value={amountUsd} onChange={(event) => setAmountUsd(event.target.value)} type="number" min="0.000001" step="0.000001" placeholder="例如 25.00" required />{amountUsd ? <span className="mt-1 block font-mono text-[11px] font-normal text-text-tertiary">{(() => { try { return `${usdToMicroUsd(amountUsd)} micro-USD`; } catch { return "最多 6 位小数"; } })()}</span> : null}</label>
                 <label className="block text-xs font-semibold text-text-secondary">调整原因 *<textarea className="admin-field mt-2 min-h-28" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} placeholder="说明业务依据、工单或退款/补偿原因" required /></label>

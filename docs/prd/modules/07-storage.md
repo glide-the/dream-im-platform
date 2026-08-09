@@ -9,7 +9,7 @@
 | 分层 | 范围 |
 |---|---|
 | Current | S3/Vercel Blob API、Admin Resource、权限与删除审计已实现。 |
-| Target | 在 PostgreSQL、Subscription/Gateway/Payment 改造中继续使用原有 driver 边界；不引入 JSON/内存文件回退。 |
+| Target | 在 PostgreSQL 与 Token-only Subscription/Gateway 改造中继续使用原有 driver 边界；不引入 JSON/内存文件回退。Payment Intent/Webhook 只使用 PostgreSQL append-only/idempotent 存储，不新增文件数据库；真实渠道 Deferred。 |
 | Release Gate | 隔离 driver/MinIO 回归、Secret 不回显、路径安全与 390×844 长 key 交互通过。 |
 
 ## 1. 目标

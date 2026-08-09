@@ -25,6 +25,7 @@ export type AdminResource =
   | "billing-accounts"
   | "usage"
   | "ledger"
+  | "token-ledger"
   | "gateway-requests"
   | "gateway-api-keys"
   | "gateway-rate-limits"
@@ -47,27 +48,34 @@ type ResourceConfig = {
 const resources: Record<AdminResource, ResourceConfig> = {
   "platform-users": {
     permission: "users.read",
-    select: `u.id, u.source, su.id::text AS external_user_id,
+    select: `COALESCE(u.id, 'usr_' || md5('ink-dream:' || su.id::text)) AS id,
+             'ink-dream'::text AS source, su.id::text AS external_user_id,
              su.email, su.display_name,
              u.tier, u.status, u.daily_token_limit, u.monthly_token_limit,
-             a.id AS billing_account_id, u.created_at, u.updated_at`,
+             a.id AS billing_account_id,
+             (u.id IS NOT NULL) AS projection_ready,
+             (a.id IS NOT NULL) AS billing_account_ready,
+             COALESCE(u.created_at, su.created_at) AS created_at,
+             COALESCE(u.updated_at, su.updated_at) AS updated_at`,
     from: `FROM users AS su
-           JOIN platform_users AS u
+           LEFT JOIN platform_users AS u
              ON u.source = 'ink-dream'
             AND u.external_user_id = su.id::text
-           JOIN billing_accounts AS a ON a.platform_user_id = u.id`,
+           LEFT JOIN billing_accounts AS a ON a.platform_user_id = u.id`,
     columns: {
-      id: "u.id",
-      source: "u.source",
+      id: "COALESCE(u.id, 'usr_' || md5('ink-dream:' || su.id::text))",
+      source: "'ink-dream'::text",
       email: "su.email",
       display_name: "su.display_name",
       tier: "u.tier",
       status: "u.status",
-      created_at: "u.created_at",
-      updated_at: "u.updated_at",
+      projection_ready: "(u.id IS NOT NULL)::text",
+      billing_account_ready: "(a.id IS NOT NULL)::text",
+      created_at: "COALESCE(u.created_at, su.created_at)",
+      updated_at: "COALESCE(u.updated_at, su.updated_at)",
     },
     defaultSort: "created_at",
-    filterFields: ["source", "email", "display_name", "tier", "status"],
+    filterFields: ["source", "email", "display_name", "tier", "status", "projection_ready", "billing_account_ready"],
   },
   providers: {
     permission: "providers.read",
@@ -241,6 +249,48 @@ const resources: Record<AdminResource, ResourceConfig> = {
     defaultSort: "created_at",
     filterFields: ["account_id", "platform_user_id", "email", "gateway_request_id", "subscription_id", "entry_type", "actor_type"],
   },
+  "token-ledger": {
+    permission: "subscriptions.read",
+    select: `l.id, l.platform_user_id, canonical_user.email,
+             l.subscription_id, l.plan_version_id,
+             l.subscription_allowance_id, l.gateway_request_id,
+             l.request_sequence, l.entry_type, l.unit, l.amount_tokens,
+             l.available_before_tokens, l.available_after_tokens,
+             l.reserved_before_tokens, l.reserved_after_tokens,
+             l.consumed_before_tokens, l.consumed_after_tokens,
+             l.actor_type, l.actor_id, l.metadata, l.created_at`,
+    from: `FROM subscription_token_ledger_entries AS l
+           JOIN platform_users AS platform_user
+             ON platform_user.id = l.platform_user_id
+           LEFT JOIN users AS canonical_user
+             ON platform_user.source = 'ink-dream'
+            AND platform_user.external_user_id = canonical_user.id::text`,
+    columns: {
+      id: "l.id",
+      platform_user_id: "l.platform_user_id",
+      email: "canonical_user.email",
+      subscription_id: "l.subscription_id",
+      plan_version_id: "l.plan_version_id",
+      subscription_allowance_id: "l.subscription_allowance_id",
+      gateway_request_id: "l.gateway_request_id",
+      request_sequence: "l.request_sequence",
+      entry_type: "l.entry_type",
+      actor_type: "l.actor_type",
+      created_at: "l.created_at",
+    },
+    defaultSort: "created_at",
+    filterFields: [
+      "platform_user_id",
+      "email",
+      "subscription_id",
+      "plan_version_id",
+      "subscription_allowance_id",
+      "gateway_request_id",
+      "request_sequence",
+      "entry_type",
+      "actor_type",
+    ],
+  },
   "gateway-requests": {
     permission: "gateway.read",
     select: `r.id, r.idempotency_key, r.platform_user_id, u.email,
@@ -290,14 +340,21 @@ const resources: Record<AdminResource, ResourceConfig> = {
   },
   "gateway-api-keys": {
     permission: "gateway.read",
-    select: `k.id, k.platform_user_id, u.email, k.name, k.key_prefix,
+    select: `k.id, k.platform_user_id, canonical_user.email,
+             k.subject_mode, k.service_client_id, k.name, k.key_prefix,
              k.scopes, k.status, k.expires_at, k.last_used_at,
              k.revoked_at, k.created_at`,
-    from: "FROM gateway_api_keys AS k JOIN platform_users AS u ON u.id = k.platform_user_id",
+    from: `FROM gateway_api_keys AS k
+           LEFT JOIN platform_users AS u ON u.id = k.platform_user_id
+           LEFT JOIN users AS canonical_user
+             ON u.source = 'ink-dream'
+            AND u.external_user_id = canonical_user.id::text`,
     columns: {
       id: "k.id",
       platform_user_id: "k.platform_user_id",
-      email: "u.email",
+      email: "canonical_user.email",
+      subject_mode: "k.subject_mode",
+      service_client_id: "k.service_client_id",
       name: "k.name",
       key_prefix: "k.key_prefix",
       status: "k.status",
@@ -305,7 +362,15 @@ const resources: Record<AdminResource, ResourceConfig> = {
       created_at: "k.created_at",
     },
     defaultSort: "created_at",
-    filterFields: ["platform_user_id", "email", "name", "key_prefix", "status"],
+    filterFields: [
+      "platform_user_id",
+      "email",
+      "subject_mode",
+      "service_client_id",
+      "name",
+      "key_prefix",
+      "status",
+    ],
   },
   "gateway-rate-limits": {
     permission: "gateway.read",

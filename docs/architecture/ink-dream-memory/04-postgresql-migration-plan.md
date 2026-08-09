@@ -1,6 +1,6 @@
 # ink-dream-memory PostgreSQL 迁移方案
 
-> 文档状态：**Planned**（正式迁移方案）  
+> 文档状态：**Implemented / local cutover complete**（工具链、PG-only runtime 与本地 Admin-owned `ink-memory` 已完成；其他生产环境 cutover 仍 Planned）
 > 返回：[总索引](README.md)  
 > 前置：[源系统基线](01-current-scope-and-source-baseline.md) · [业务接入边界](02-business-integration-and-admin-boundary.md)  
 > 配套：[发布、验证与回滚](05-release-rollout-and-rollback.md)  
@@ -17,32 +17,32 @@
 3. 不长期双写 SQLite/PG。选择多次演练 + 最终短暂停写切换。
 4. 不重新编号 `users.id` 或 TEXT 主键，不把既有 ID 改成 UUID。
 5. 不用 Admin 旧 `story_*` 平行表填充 Dream canonical 表。
-6. Dream 迁移只管理 43+5 canonical 业务表；不得由 Dream Alembic 修改 Admin Subscription/Billing/Gateway/Payment 控制面表。产品与 Gateway 接入按 06–08 独立门禁推进。
+6. Dream 迁移只管理 43+5 canonical 业务表；不得由 Dream Alembic 修改 Admin Subscription/Billing/Gateway/Payment 控制面表。Token-only 产品与 Gateway 接入按 06–07 独立门禁推进；08 仅记录 Deferred Payment，不是实施阶段。
 7. 不把 Secret、password hash、OAuth/refresh token、Story/Chat 正文输出到控制台、回执或截图。
 
 ## 2. 目标技术方案
 
 ### 2.1 连接与迁移工具
 
-建议 Dream 后续实现采用：
+Dream 已实现并验证：
 
-- 应用连接：`psycopg` 3 + `psycopg_pool.ConnectionPool`，同步 Repository 与当前大量同步领域代码更接近，避免同时引入异步重写。
-- Schema 迁移：Alembic，使用独立版本表 `dream_alembic_version`；migration 只管理 Dream-owned 表。
-- 数据搬迁：Dream 仓库中的显式 CLI，SQLite 端只读快照，PostgreSQL 端使用 staging + 批量参数化 INSERT/COPY。
-- 行返回：`dict_row` 或显式 DTO，不向领域层泄露 `sqlite3.Row`/psycopg Row 差异。
+- 应用连接：`psycopg` 3 + `psycopg_pool.ConnectionPool`，由 PostgreSQL-only runtime 管理连接与事务。
+- Schema 迁移：Alembic，使用独立版本表 `dream_alembic_version`，六波 migration head 只管理 Dream-owned 48 表。
+- 数据搬迁：Dream-owned 显式 CLI，SQLite 端只读 Online Backup，PostgreSQL 端 staging + 参数化导入与冲突阻断。
+- 行返回：兼容 mapping/DTO，不向领域层恢复 SQLite driver 依赖。
 
-建议依赖边界（版本需在实施时通过 Dream CI 再确认）：
+实现依赖边界：
 
 ```text
 psycopg[binary,pool] >=3,<4
 alembic >=1,<2
 ```
 
-这是目标依赖建议，不代表 Dream 当前已安装。
+依赖已安装并由隔离 PostgreSQL contract 覆盖；生产版本锁与供应链审批仍按部署流程确认。
 
 ### 2.2 配置合同
 
-拟新增的运行配置：
+已实现的运行配置合同：
 
 ```dotenv
 DATABASE_URL=postgresql://<app-role>:<secret>@<host>:<port>/ink-memory
@@ -83,6 +83,12 @@ baseline adopt 只表示 Dream Alembic 接受经逐项验证的已存在结构�
 
 主库 43 表与 Notion 5 表的准确清单见 [当前基线](01-current-scope-and-source-baseline.md#3-主库-43-表准确清单)；逐表 PK/FK/check/trigger 见 [证据化处理判断](../../verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md#3-dream-435-真实-schema-清单)。
 
+Manifest 重算口径固定为：SQLite source 48 表 / 567 列 / 78 个显式索引 / 25 trigger；批准的 Admin current-head canonical baseline 目标为 48 表 / 569 列 / 81 个显式索引 / 25 trigger。非 baseline JSON 内容首版保留无损 `text`，`story_workspace_workspaces.settings` 按已存在 canonical baseline 精确采用 `jsonb`；不得把“所有 JSON 一律改 JSONB”作为迁移假设。
+
+Round 38 实现回执：空库、Admin canonical 三表 exact-adopt 与 drift mismatch fail-closed 均在明确命名隔离 PG 验证；目标对象数为 **48/569/81/25**。43+5 CLI 已覆盖 snapshot、manifest、48 staging tables、六波拓扑、PK/FK/unique/check/JSON/time/sequence/trigger 验证与冲突回滚。此回执不等于真实生产源数据已搬迁，也不授权 owner/ACL 变更。
+
+Round 39 本地 cutover 回执：经 Compose label、数据库名、host/port、owner 与 ACL SHA-256 只读确认，Admin-owned `localhost:5433/ink-memory` 先生成 PostgreSQL custom dump 和两个 SQLite 只读备份，再在明确命名 clone 完成 rollback/commit/production-mode 三次 rehearsal。正式库随后应用 Admin 0016–0019、Dream 六波 Alembic并导入 43+5 共 4921 源行；44 行 canonical baseline 精确匹配，4877 行新写入，最终为 83 张 public 表、Admin migration 20、Dream head `20260809_06`，Dream scoped catalog 48/569/81/25。该回执只授权并证明本地目标，不代表其他生产环境已迁移。
+
 ## 4. 迁移波次与依赖顺序
 
 每个波次必须同时包含 Schema、Repository、数据导入、API contract 和 PostgreSQL 集成测试，不能只建表后长期保留 SQLite 写入。
@@ -92,7 +98,7 @@ baseline adopt 只表示 Dream Alembic 接受经逐项验证的已存在结构�
 - 新增 PostgreSQL pool、Unit of Work、错误映射和健康检查。
 - 建立 Alembic baseline、migration version 检查和 CI 空库升级/降级验证。
 - 建立只读 SQLite snapshot、manifest、staging、验证和回执工具。
-- 为每个领域定义 Repository interface；生产仍用 SQLite，PG adapter 只在隔离测试/影子读取启用。
+- 为每个领域定义 Repository/UoW；当前应用 runtime 为 PG-only，SQLite adapter/builder 只保留在显式迁移/测试边界。
 
 ### Wave 1：身份与首批 canonical Story
 
@@ -169,7 +175,7 @@ Event/Task Event 的 sequence、幂等和 append-only 合同必须在 PostgreSQL
 4. `connector_snapshots`
 5. `connector_chat_threads`
 
-`backend/notion/store.py` 是独立 SQLite 边界；主库成功切换不代表它已迁移。`connector_snapshots` 当前同 version 的更新写法必须收敛为同 key+同 digest 幂等、异 digest 冲突，禁止覆盖历史快照。迁入同库后新增 `resource_connectors.user_id → users.id` 前必须先做 orphan 审计。Wave 6 完成后才能声称 Dream 运行时不再依赖 SQLite。
+`backend/notion/store.py` 已迁为 PostgreSQL repository/UoW 与 pool 生命周期；同 key+同 digest 幂等、异 digest 冲突，禁止覆盖历史快照。真实源 `resource_connectors.user_id → users.id` orphan 仍必须在生产导入前审计；代码级 Wave 6 与 PG-only runtime 已完成。
 
 ## 5. SQLite → PostgreSQL 类型映射
 
@@ -214,9 +220,9 @@ Event/Task Event 的 sequence、幂等和 append-only 合同必须在 PostgreSQL
 
 现有 `scripts/import-ink-dream-story-source.mjs` 只可作为前三表提取/校验参考，不直接扩展成 Dream 全库生产运行器，因为其归属 Admin 且不了解其他 40 + 5 表业务事务。
 
-## 8. Target staging、冲突和导入策略
+## 8. 已实现 staging、冲突和导入策略
 
-建议在目标库使用受限 `dream_migration_stage` schema，所有 staging 行带 `migration_run_id`。运行时角色无该 schema 权限。
+迁移 CLI 使用隔离 staging 与 `migration_run_id`，运行时角色不使用 staging。生产环境的 staging schema/临时表权限仍需 DBA 审批。
 
 导入规则：
 
@@ -302,25 +308,27 @@ PG cutover 与 Product API/Gateway canary 是两个可独立停止的发布阶�
 - 迁移日志使用 table、count、digest、duration、error code；行级 conflict 使用内部加密工件，不打印值。
 - 每批次记录 migration_run_id、source fingerprint、target DB fingerprint、schema version、actor、开始/结束、结果和审批号。
 - PostgreSQL 监控覆盖 pool wait、connection errors、lock wait、deadlock、statement timeout、transaction rollback、replication/backup 状态。
-- Product API、Gateway 和 Payment boundary 的监控在各自阶段增加，但与 48 表 migration receipt 分开：资格拒绝、reserve/capture/release、settlement_failed、Webhook replay 与 Subscription Event 均不得记录 Secret 或正文。
-- `backend/speech_recognition.py` 已提交 credential 是 P0：密钥所有者必须吊销/轮换、移除代码值并完成 secret scan。迁移脚本不得读取或复制该值。
-- `/ws/speech-recognition` 在未完成 canonical 鉴权、Origin、限流和审计前必须默认禁用；ASR Gateway 本轮仍 Deferred。
+- Product API、Gateway 与 Payment 的监控和 migration receipt 分开：资格拒绝、Token reserve/capture/release、settlement_failed、Subscription/Payment Event 均不得记录 Secret 或正文。真实支付渠道仍 Deferred。
+- `backend/speech_recognition.py` 的历史已提交 credential 是 P0：active runtime 值已移除且 secret scan 通过；密钥所有者仍须吊销/轮换并决定历史处置。迁移脚本不得读取或复制该值。
+- `/ws/speech-recognition` 当前 fail-closed；未另立 canonical 鉴权、Origin、限流、审计与 streaming-audio 计量合同前必须保持禁用，ASR Gateway 本轮仍 Deferred。
 
-## 14. 文件级实施清单
+## 14. 文件级实现映射
 
-Dream 后续预计新增/调整：
+Dream 已新增/调整以下实现面；部署配置与生产角色审批仍属于 Release Gate：
 
 - `backend/pyproject.toml`、lock/requirements：PG driver、pool、migration tool。
 - `backend/config.py`、`.env.example`、`docker-compose.yml`、CI/deploy workflow：`DATABASE_URL` 与隔离测试配置。
 - `backend/persistence/**`、`backend/repositories/**`：连接、事务、错误和领域 Repository。
 - `backend/migrations/**`：baseline 与波次 migration。
-- `backend/scripts/migrate_sqlite_to_postgres.py`、`verify_postgres_migration.py`：显式 CLI。
-- `backend/database.py`：逐步变成兼容门面并最终移除 SQLite runtime。
+- `backend/script/migrate_legacy_to_postgres.py`、`verify_postgres_schema.py`：显式 CLI。
+- `backend/database.py`：PostgreSQL-only 兼容门面，缺连接或 Alembic head 不匹配即 fail-fast。
 - 所有直接声明 `sqlite3.Connection` 或调用 `database.get_db()` 的 Router/Service/Tool。
 - `backend/notion/store.py`：独立 Wave 6。
 - `backend/tests/**`：Repository contract、PG integration、migration rehearsal、API/领域并发回归。
 
 ## 15. PostgreSQL 迁移验收
+
+已通过的门禁：48/569/81/25 空库与 exact-adopt、drift fail-closed、43+5 CLI、main/Notion PG-only contract，以及 **real-PG 21/21**；Dream backend 全套 **1673 passed / 14 explicit skips / 0 failed + 652 subtests**，frontend lint/build/tests 全通过（0 errors/21 warnings、334/334）。Round 39 另完成本地真实源/owner/ACL/备份/restore rehearsal/cutover 和真实 FastAPI startup；其他生产目标仍须重新执行同一门禁。
 
 - 空库可从 baseline 升到 head；已存在 canonical 三表可安全 adopt 或明确 fail，无隐式重建。
 - 43 + 5 表均有 manifest、DDL、Repository、数据导入和验证归属。
@@ -330,4 +338,4 @@ Dream 后续预计新增/调整：
 - 运行时不再打开主 SQLite 或 Notion SQLite；`INK_DATABASE_PATH` 只存在于迁移 CLI。
 - Admin 仍读取同一 canonical 表，旧平行 Story 表未被重新启用。
 - owner/ACL 只读盘点与任何授权变更具有独立审批回执；没有把逻辑所有权当作 DDL/GRANT 授权。
-- Payment/Subscription/Gateway 控制面表未被 Dream migration 修改；后续产品链按 06–08 和 [发布门禁](05-release-rollout-and-rollback.md) 独立验证。
+- Payment/Subscription/Gateway 控制面表未被 Dream migration 修改；后续 Token-only 产品链按 06–07 和 [发布门禁](05-release-rollout-and-rollback.md) 独立验证，08 只验证 Payment 增量为 0。

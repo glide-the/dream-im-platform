@@ -127,6 +127,55 @@
       "when": 1786294800000,
       "tag": "0017_subscription_token_only_monthly",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786320000000,
+      "tag": "0018_token_subscription_invariants",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786323600000,
+      "tag": "0019_gateway_canonical_subject_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786327200000,
+      "tag": "0020_token_only_data_cutover",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786330800000,
+      "tag": "0021_subscription_token_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786334400000,
+      "tag": "0022_subscription_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786338000000,
+      "tag": "0023_paid_subscription_renewals",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786341600000,
+      "tag": "0024_paid_subscription_past_due",
+      "breakpoints": true
     }
   ]
 }

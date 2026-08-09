@@ -8,9 +8,9 @@
 
 | 分层 | 范围 |
 |---|---|
-| Current | Admin/RBAC/Session/Settings/Audit 基线已有；Settings 非主导航，Secret 是 masked-marker + JSON 覆盖。Dream 另有已提交 Provider credential 和未鉴权 ASR WebSocket，均不能误报已修复。 |
-| Target | Provider/Gateway/Payment/System Secret 统一只写、安全注入与结构化日志脱敏；Payment/Webhook 和订阅/Gateway 高风险命令写 append-only Audit。 |
-| Release Gate | 已提交 credential 由所有者确认吊销/轮换且 secret scan 通过；ASR 发布前禁用或完成 canonical 鉴权/Origin/限流/审计；任何 Secret 不进 DB 明文、API、DOM、log、Audit 或截图。 |
+| Current | Admin/RBAC/Session/Settings/Audit 基线已有；Settings 非主导航，Secret 是 masked-marker + JSON 覆盖。Dream ASR endpoint 已代码级 fail-closed，但历史 Provider credential 的所有者吊销/轮换回执尚未完成。 |
+| Target | Provider/Gateway/Payment/System Secret 统一只写、安全注入与结构化日志脱敏；Subscription、Payment Webhook、独立 Billing/Ledger 与 Gateway 高风险命令写 append-only Audit。真实第三方支付渠道 Deferred。 |
+| Release Gate | active runtime 移除与 secret scan 已通过；仍须取得 credential owner 吊销/轮换/历史处置回执。保持 ASR fail-closed，直到另立 streaming-audio capability/计量合同；任何 Secret 不进 DB 明文、API、DOM、log、Audit 或截图。 |
 
 ## 1. 目标
 
@@ -33,7 +33,7 @@
 - 内置 Role 不可删除；自定义 Role 删除前展示关联管理员，有引用返回 409。
 - Permission code 只读，按域/风险分组；服务端每次请求重新校验。
 - System Secret 只写不读；GET 返回 masked marker；空值不清除历史 Secret。
-- Provider、Gateway、Payment 和 System Secret 共享“只写不读”不变量；Payment webhook 签名 Secret 不放进普通配置 JSON、业务表或 event payload。Gateway Key 只有创建回执一次明文，不适用于 Provider/System/Payment Secret。
+- Provider、Gateway 和 System Secret 共享“只写不读”不变量；Gateway Key 只有创建回执一次明文，不适用于 Provider/System Secret。Deferred Payment 不新增 Secret 字段、普通配置键或 event payload。
 - `admin_audit_logs` append-only，保存 actor/action/resource/request/before-after 的安全摘要，不复制 Secret/Payload 正文。
 - Session 存 hash、到期、revoked；密码使用安全 hash；登出/revoke 立即失效。
 
@@ -44,7 +44,7 @@
 - GOV-03：角色权限变更显示 before/after 和受影响管理员并写 Audit。
 - GOV-04：System Secret/API Key/密码/Session token 不回显、不进 Audit 或日志。
 - GOV-05：Audit 无 update/delete，按 actor/action/resource/time 可分页筛选并可追溯 request ID。
-- GOV-06（Target release gate）：Webhook 验签/重放/冲突、Subscription 生命周期、Allowance/Ledger reversal 与 Gateway Payload reveal 均产生不含 Secret/完整 payload 的 append-only Audit。
+- GOV-06（Target release gate）：Subscription 生命周期、Payment Webhook、Token Allowance、独立 Ledger reversal 与 Gateway Payload reveal 均产生不含 Secret/完整 payload 的 append-only Audit；真实支付渠道审计随渠道接入另行评审。
 - GOV-07（P0 release gate）：仓库 secret scan 和匿名 ASR 连接拒绝测试通过；未完成 streaming-audio 计量合同前 ASR Gateway 保持 Deferred/disabled。
 
 交互验收映射：GOV-01/02 → UI-GOV-01/02；GOV-03/04/05 → UI-GOV-03/04 + API/数据库不可变断言。

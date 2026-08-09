@@ -23,6 +23,7 @@ export const planUpdateSchema = z.strictObject({
 
 export const planVersionCreateSchema = z.strictObject({
   planId: z.string().trim().min(1).max(100),
+  priceMicrousd: safeCount.default(0),
   trialDays: z.number().int().min(0).max(365).default(0),
   gracePeriodDays: z.number().int().min(0).max(90).default(0),
   allowanceTokens: safeCount.positive().default(1),
@@ -64,6 +65,7 @@ export const subscriptionCreateSchema = z.strictObject({
 export const subscriptionActionSchema = z.strictObject({
   idempotencyKey: z.string().trim().min(8).max(128),
   reason: z.string().trim().min(3).max(500),
+  expectedVersion: z.number().int().positive(),
   planVersionId: z.string().trim().min(1).max(100).optional(),
 });
 

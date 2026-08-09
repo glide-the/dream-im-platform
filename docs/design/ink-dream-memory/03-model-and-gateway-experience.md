@@ -1,6 +1,6 @@
 # 03 · Model and Gateway Experience
 
-> 文档状态：**Planned**
+> 文档状态：**Implemented client / Release candidate**（外部 Provider/user canary 待执行）
 >
 > 入口：Dream 创作/对话的模型选择器、`/story-workspace/subscription?view=models`、推理错误回执
 >
@@ -10,11 +10,11 @@
 
 ## 1. 页面目标与状态分层
 
-### Current
+### Current / Implemented
 
-- `ModelConfigSection.tsx` 静态列出 Auto、Claude Sonnet、GPT-4.1，`chat-schema.ts` 含静态默认型号；这些值不能证明 Admin 已发布 alias 或用户有对应权益。
-- 部分 Dream 请求仍可能直接调用 Provider/Agent runtime，无法统一执行订阅、模型权限、RPM 和月度 Token Allowance。
-- 既有交互曾向 Dream 返回价格、currency、金额余额与现金兜底；这些不是 Token-only 订阅体验。
+- Dream 已实现 Product model-catalog BFF/allowlist；订阅模型体验只使用 Admin 发布给当前用户的 alias/capability，不返回价格、currency、金额余额或现金兜底。
+- server-only Gateway client、canonical-subject 服务认证、协议 adapter、canary 开关与 direct-fallback 禁止边界已实现并通过 mock/focused contract。
+- 真实外部 Provider 与 PolyAgent/Claude Agent/Chat/Dream/Workflow 的逐角色生产 canary 尚未执行；静态设置项若仍存在不得被视为可执行真值。
 
 ### Target
 
@@ -23,6 +23,8 @@
 - 订阅 Token 不足直接返 402；不在 Dream 推理路径展示或触发现金补扣、金额超额、充值或 Payment。
 
 ### Release Gate
+
+代码级 Gateway client/focused contract 已通过；本节“所有推理入口走 Gateway”仍要求外部 Provider/user canary、真实 stream/cancel/usage-missing 观测和生产 Secret 注入回执，不能由 mock 测试替代。
 
 - 静态型号与默认 fallback 被删除；Admin catalog/Gateway 不可用时显示真实 503。
 - Browser bundle、DOM、Storage、Network 与日志无 Gateway Key、Provider endpoint/secret 或服务身份。
@@ -146,7 +148,8 @@ Dream 不从客户端响应长度反算 Token，也不因请求失败删除 Usag
 | 404 | alias 不存在、已下线或对象不可见 | 清除失效选择，不自动 fallback | refetch catalog 后重选 |
 | 409 | 保存版本、幂等或状态冲突 | 保留输入与选择，显示服务器新状态 | 重新确认后提交 |
 | 429 | RPM/Token 窗口限流 | 显示 window/current/limit/remaining 与 `Retry-After` | 计时后手动重试，不自动换模型 |
-| 503 | Admin/Gateway/PG/Provider 不可安全服务 | 分区错误 + request ID；不回退直连 Provider | 按 Retry-After 重试 |
+| 502 | Provider 上游或协议失败 | 显示安全上游错误与 request ID；本地 Request/Token settlement 必须有确定终态 | 按 retryable 提示手动重试，不切换直连 Provider |
+| 503 | Admin/Gateway/PG/配置/维护不可安全服务 | 分区错误 + request ID；不回退直连 Provider | 按 Retry-After 重试 |
 | Stream unknown | 连接中断且终态未知 | 保留已收到内容并标记“结果待确认” | 用 request ID 查询；不重复发送 |
 
 402 是个人月度总额度不足；429 是短窗口限流。两者的 code、单位、文案和恢复动作不得混用。
@@ -187,5 +190,5 @@ Dream 不从客户端响应长度反算 Token，也不因请求失败删除 Usag
 - `DREAM-GTW-04`：Subscription、Entitlement、Permission、RPM、Token window、月度 Token Allowance 各阻断点返回正确 402/403/404/429，Provider 未被调用。
 - `DREAM-GTW-05`：Token 不足只返 402 token details，不检查或扣除现金，不自动切换模型。
 - `DREAM-GTW-06`：success/failure/cancel/stream interruption/unknown usage 都产生确定或明确 unknown 的 Usage 终态，UI 不将 unknown 显示 0/成功。
-- `DREAM-GTW-07`：loading/empty/401/402/403/404/409/429/503 和 stream unknown 均有恢复动作且无静态 fallback。
+- `DREAM-GTW-07`：loading/empty/401/402/403/404/409/429/502/503 和 stream unknown 均有恢复动作且无静态 fallback。
 - `DREAM-GTW-08`：1440×1000 与 390×844 下 selector/listbox/stream/error 无横向 overflow；键盘、焦点、label、live region、200% zoom 通过。

@@ -745,6 +745,168 @@ export const subscriptions = pgTable(
   ],
 );
 
+export const subscriptionPaymentIntents = pgTable(
+  "subscription_payment_intents",
+  {
+    id: text("id").primaryKey(),
+    platform_user_id: text("platform_user_id")
+      .notNull()
+      .references(() => platformUsers.id, { onDelete: "restrict" }),
+    plan_version_id: text("plan_version_id")
+      .notNull()
+      .references(() => subscriptionPlanVersions.id, { onDelete: "restrict" }),
+    subscription_id: text("subscription_id").references(() => subscriptions.id, {
+      onDelete: "restrict",
+    }),
+    operation: text("operation").notNull().default("initial_activation"),
+    expected_subscription_version: integer("expected_subscription_version"),
+    expected_period_end: timestamp("expected_period_end", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    adapter_code: text("adapter_code").notNull(),
+    external_intent_id: text("external_intent_id"),
+    amount_microusd: bigint("amount_microusd", { mode: "number" }).notNull(),
+    currency: text("currency").notNull().default("USD"),
+    status: text("status").notNull().default("creating"),
+    idempotency_key: text("idempotency_key").notNull(),
+    client_id: text("client_id").notNull(),
+    next_action: jsonb("next_action")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    failure_code: text("failure_code"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    succeeded_at: timestamp("succeeded_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    uniqueIndex("subscription_payment_intents_user_idempotency_uidx").on(
+      table.platform_user_id,
+      table.idempotency_key,
+    ),
+    uniqueIndex("subscription_payment_intents_external_uidx")
+      .on(table.adapter_code, table.external_intent_id)
+      .where(sql`${table.external_intent_id} IS NOT NULL`),
+    index("subscription_payment_intents_user_created_idx").on(
+      table.platform_user_id,
+      table.created_at,
+    ),
+    check(
+      "subscription_payment_intents_amount_check",
+      sql`${table.amount_microusd} > 0`,
+    ),
+    check("subscription_payment_intents_currency_check", sql`${table.currency} = 'USD'`),
+    check(
+      "subscription_payment_intents_status_check",
+      sql`${table.status} IN ('creating', 'requires_action', 'processing', 'succeeded', 'failed', 'cancelled', 'refunded', 'reversed')`,
+    ),
+    check(
+      "subscription_payment_intents_next_action_check",
+      sql`jsonb_typeof(${table.next_action}) = 'object'`,
+    ),
+    check(
+      "subscription_payment_intents_operation_check",
+      sql`${table.operation} IN ('initial_activation', 'renewal')`,
+    ),
+    check(
+      "subscription_payment_intents_renewal_binding_check",
+      sql`(${table.operation} = 'initial_activation' AND ${table.expected_subscription_version} IS NULL AND ${table.expected_period_end} IS NULL) OR (${table.operation} = 'renewal' AND ${table.subscription_id} IS NOT NULL AND ${table.expected_subscription_version} >= 1 AND ${table.expected_period_end} IS NOT NULL)`,
+    ),
+    uniqueIndex("subscription_payment_intents_live_renewal_uidx")
+      .on(table.subscription_id, table.expected_period_end)
+      .where(sql`${table.operation} = 'renewal' AND ${table.status} IN ('creating', 'requires_action', 'processing', 'succeeded')`),
+  ],
+);
+
+export const paymentWebhookEvents = pgTable(
+  "payment_webhook_events",
+  {
+    id: text("id").primaryKey(),
+    adapter_code: text("adapter_code").notNull(),
+    external_event_id: text("external_event_id").notNull(),
+    event_type: text("event_type").notNull(),
+    payment_intent_id: text("payment_intent_id").references(
+      () => subscriptionPaymentIntents.id,
+      { onDelete: "restrict" },
+    ),
+    payload_sha256: text("payload_sha256").notNull(),
+    payload_summary: jsonb("payload_summary")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    signature_verified: boolean("signature_verified").notNull().default(false),
+    processing_status: text("processing_status").notNull().default("received"),
+    error_code: text("error_code"),
+    received_at: timestamp("received_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    processed_at: timestamp("processed_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    uniqueIndex("payment_webhook_events_external_uidx").on(
+      table.adapter_code,
+      table.external_event_id,
+    ),
+    index("payment_webhook_events_intent_received_idx").on(
+      table.payment_intent_id,
+      table.received_at,
+    ),
+    check(
+      "payment_webhook_events_sha_check",
+      sql`${table.payload_sha256} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      "payment_webhook_events_summary_check",
+      sql`jsonb_typeof(${table.payload_summary}) = 'object'`,
+    ),
+    check(
+      "payment_webhook_events_status_check",
+      sql`${table.processing_status} IN ('received', 'processed', 'rejected', 'failed')`,
+    ),
+  ],
+);
+
+export const subscriptionPaymentAdjustments = pgTable(
+  "subscription_payment_adjustments",
+  {
+    id: text("id").primaryKey(),
+    payment_intent_id: text("payment_intent_id")
+      .notNull()
+      .references(() => subscriptionPaymentIntents.id, { onDelete: "restrict" }),
+    adjustment_type: text("adjustment_type").notNull(),
+    amount_microusd: bigint("amount_microusd", { mode: "number" }).notNull(),
+    status: text("status").notNull(),
+    external_adjustment_id: text("external_adjustment_id"),
+    idempotency_key: text("idempotency_key").notNull(),
+    reason: text("reason").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("subscription_payment_adjustments_idempotency_uidx").on(
+      table.idempotency_key,
+    ),
+    check(
+      "subscription_payment_adjustments_type_check",
+      sql`${table.adjustment_type} IN ('refund', 'reversal')`,
+    ),
+    check(
+      "subscription_payment_adjustments_amount_check",
+      sql`${table.amount_microusd} > 0`,
+    ),
+    check(
+      "subscription_payment_adjustments_status_check",
+      sql`${table.status} IN ('pending', 'succeeded', 'failed')`,
+    ),
+  ],
+);
+
 export const subscriptionUsageAllowances = pgTable(
   "subscription_usage_allowances",
   {
@@ -851,8 +1013,9 @@ export const gatewayApiKeys = pgTable(
   {
     id: text("id").primaryKey(),
     platform_user_id: text("platform_user_id")
-      .notNull()
       .references(() => platformUsers.id, { onDelete: "restrict" }),
+    subject_mode: text("subject_mode").notNull().default("fixed_user"),
+    service_client_id: text("service_client_id"),
     name: text("name").notNull(),
     key_prefix: text("key_prefix").notNull(),
     key_hash: text("key_hash").notNull(),
@@ -872,6 +1035,24 @@ export const gatewayApiKeys = pgTable(
     uniqueIndex("gateway_api_keys_hash_uidx").on(table.key_hash),
     index("gateway_api_keys_user_idx").on(table.platform_user_id),
     index("gateway_api_keys_prefix_idx").on(table.key_prefix),
+    uniqueIndex("gateway_api_keys_service_client_uidx")
+      .on(table.service_client_id)
+      .where(
+        sql`${table.subject_mode} = 'canonical_subject' AND ${table.revoked_at} IS NULL`,
+      ),
+    check(
+      "gateway_api_keys_subject_check",
+      sql`(
+        ${table.subject_mode} = 'fixed_user'
+        AND ${table.platform_user_id} IS NOT NULL
+        AND ${table.service_client_id} IS NULL
+      ) OR (
+        ${table.subject_mode} = 'canonical_subject'
+        AND ${table.platform_user_id} IS NULL
+        AND ${table.service_client_id} IS NOT NULL
+        AND length(btrim(${table.service_client_id})) > 0
+      )`,
+    ),
   ],
 );
 
@@ -1239,6 +1420,141 @@ export const billingLedgerEntries = pgTable(
     check(
       "billing_ledger_entries_reserved_after_check",
       sql`${table.reserved_after_microusd} >= 0`,
+    ),
+  ],
+);
+
+export const subscriptionTokenLedgerEntries = pgTable(
+  "subscription_token_ledger_entries",
+  {
+    id: text("id").primaryKey(),
+    platform_user_id: text("platform_user_id")
+      .notNull()
+      .references(() => platformUsers.id, { onDelete: "restrict" }),
+    subscription_id: text("subscription_id")
+      .notNull()
+      .references(() => subscriptions.id, { onDelete: "restrict" }),
+    plan_version_id: text("plan_version_id")
+      .notNull()
+      .references(() => subscriptionPlanVersions.id, {
+        onDelete: "restrict",
+      }),
+    subscription_allowance_id: text("subscription_allowance_id")
+      .notNull()
+      .references(() => subscriptionUsageAllowances.id, {
+        onDelete: "restrict",
+      }),
+    gateway_request_id: text("gateway_request_id")
+      .notNull()
+      .references(() => gatewayRequests.id, { onDelete: "restrict" }),
+    request_sequence: integer("request_sequence").notNull(),
+    entry_type: text("entry_type").notNull(),
+    unit: text("unit").notNull().default("tokens"),
+    amount_tokens: bigint("amount_tokens", { mode: "number" }).notNull(),
+    available_before_tokens: bigint("available_before_tokens", {
+      mode: "number",
+    }).notNull(),
+    available_after_tokens: bigint("available_after_tokens", {
+      mode: "number",
+    }).notNull(),
+    reserved_before_tokens: bigint("reserved_before_tokens", {
+      mode: "number",
+    }).notNull(),
+    reserved_after_tokens: bigint("reserved_after_tokens", {
+      mode: "number",
+    }).notNull(),
+    consumed_before_tokens: bigint("consumed_before_tokens", {
+      mode: "number",
+    }).notNull(),
+    consumed_after_tokens: bigint("consumed_after_tokens", {
+      mode: "number",
+    }).notNull(),
+    idempotency_key: text("idempotency_key").notNull(),
+    actor_type: text("actor_type").notNull(),
+    actor_id: text("actor_id"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("subscription_token_ledger_idempotency_uidx").on(
+      table.idempotency_key,
+    ),
+    uniqueIndex("subscription_token_ledger_request_sequence_uidx").on(
+      table.gateway_request_id,
+      table.request_sequence,
+    ),
+    index("subscription_token_ledger_allowance_created_idx").on(
+      table.subscription_allowance_id,
+      table.created_at,
+    ),
+    index("subscription_token_ledger_request_idx").on(
+      table.gateway_request_id,
+    ),
+    index("subscription_token_ledger_subscription_created_idx").on(
+      table.subscription_id,
+      table.created_at,
+    ),
+    check(
+      "subscription_token_ledger_type_check",
+      sql`${table.entry_type} IN ('reserve', 'capture', 'release', 'refund', 'reversal')`,
+    ),
+    check("subscription_token_ledger_unit_check", sql`${table.unit} = 'tokens'`),
+    check(
+      "subscription_token_ledger_amount_check",
+      sql`${table.amount_tokens} > 0`,
+    ),
+    check(
+      "subscription_token_ledger_request_sequence_check",
+      sql`${table.request_sequence} > 0`,
+    ),
+    check(
+      "subscription_token_ledger_idempotency_key_check",
+      sql`length(${table.idempotency_key}) BETWEEN 1 AND 200`,
+    ),
+    check(
+      "subscription_token_ledger_actor_type_check",
+      sql`${table.actor_type} IN ('gateway', 'system', 'admin')`,
+    ),
+    check(
+      "subscription_token_ledger_metadata_object_check",
+      sql`jsonb_typeof(${table.metadata}) = 'object'`,
+    ),
+    check(
+      "subscription_token_ledger_state_nonnegative_check",
+      sql`${table.available_before_tokens} >= 0 AND ${table.available_after_tokens} >= 0 AND ${table.reserved_before_tokens} >= 0 AND ${table.reserved_after_tokens} >= 0 AND ${table.consumed_before_tokens} >= 0 AND ${table.consumed_after_tokens} >= 0`,
+    ),
+    check(
+      "subscription_token_ledger_state_conservation_check",
+      sql`${table.available_before_tokens} + ${table.reserved_before_tokens} + ${table.consumed_before_tokens} = ${table.available_after_tokens} + ${table.reserved_after_tokens} + ${table.consumed_after_tokens}`,
+    ),
+    check(
+      "subscription_token_ledger_transition_check",
+      sql`(
+        ${table.entry_type} = 'reserve'
+        AND ${table.available_after_tokens} = ${table.available_before_tokens} - ${table.amount_tokens}
+        AND ${table.reserved_after_tokens} = ${table.reserved_before_tokens} + ${table.amount_tokens}
+        AND ${table.consumed_after_tokens} = ${table.consumed_before_tokens}
+      ) OR (
+        ${table.entry_type} = 'capture'
+        AND ${table.consumed_after_tokens} = ${table.consumed_before_tokens} + ${table.amount_tokens}
+        AND ${table.reserved_after_tokens} <= ${table.reserved_before_tokens}
+        AND ${table.available_after_tokens} <= ${table.available_before_tokens}
+      ) OR (
+        ${table.entry_type} = 'release'
+        AND ${table.available_after_tokens} = ${table.available_before_tokens} + ${table.amount_tokens}
+        AND ${table.reserved_after_tokens} = ${table.reserved_before_tokens} - ${table.amount_tokens}
+        AND ${table.consumed_after_tokens} = ${table.consumed_before_tokens}
+      ) OR (
+        ${table.entry_type} IN ('refund', 'reversal')
+        AND ${table.available_after_tokens} = ${table.available_before_tokens} + ${table.amount_tokens}
+        AND ${table.reserved_after_tokens} = ${table.reserved_before_tokens}
+        AND ${table.consumed_after_tokens} = ${table.consumed_before_tokens} - ${table.amount_tokens}
+      )`,
     ),
   ],
 );

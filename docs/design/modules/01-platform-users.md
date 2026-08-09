@@ -2,14 +2,14 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[平台用户](../../prd/modules/01-platform-users.md)
 
-> 实现状态：用户列表与限额编辑已实现；统一 Relation Selector 是 Target。当前 Subscription、credit 和 Usage 专用选择器只加载首页 100，通用 relation 只有首页 50/100；跨模块聚合详情 Drawer 也尚未实现。
+> 实现状态：**Implemented / Release candidate**；统一 canonical Relation Selector、服务端搜索/分页/hydration、超过 100/QA-only 回归已通过。跨模块聚合详情 Drawer 仍是后续增强。
 
 ## 0. Current / Target / Release Gate
 
 | 分层 | 交互边界 |
 |---|---|
-| Current | canonical 用户列表和限额编辑；Subscription/credit/Usage 各只加载首页 100，通用 relation 仅首页 50/100，跨模块详情未完成。 |
-| Target | 所有 Subscription、Gateway Key、用户—模型例外、Usage 和 credit 使用同一 canonical 服务端 typeahead/paging/hydration；UI 始终称“平台用户”。 |
+| Current / Implemented | 所有 Subscription、Gateway Key、用户—模型例外、Usage 和 credit 使用同一 canonical 服务端 typeahead/paging/hydration；UI 始终称“平台用户”。 |
+| Planned enhancement | 跨模块聚合详情 Drawer；不得为此恢复第二套计费用户实体。 |
 | Release Gate | 205 用户跨页搜索/选中/total、orphan 403/409 和 390×844 长邮箱/ID 通过；无“创建计费用户”入口。 |
 
 ## 1. 页面目的
@@ -40,7 +40,7 @@
 - 零余额、无订阅用户仍可选；不得因内部兼容行缺少运营字段而隐藏用户。
 - 浏览器提交内部兼容键，但 UI 不要求操作者理解或输入该键。
 
-当前差距：`SubscriptionLifecycleManager`、`BillingAdjustmentForm` 与 `AdminUsageDashboard` 只请求首页 100，通用 relation 无翻页/hydration。它们必须迁移到上述服务端搜索/分页合同；在完成前，空搜索结果不得显示“该用户不是计费用户”，应明确是规模化查询缺口。
+`SubscriptionLifecycleManager`、`BillingAdjustmentForm` 与 `AdminUsageDashboard` 已迁移到上述服务端搜索/分页合同。空搜索结果只表示当前查询无匹配；不得显示“该用户不是计费用户”。生产历史 orphan 的处置通过运维回执完成，不在 UI 创建第二身份。
 
 ## 4. 用户计费设置
 
@@ -50,8 +50,8 @@
 
 - 503：说明 canonical 用户表/映射迁移状态，不显示手工开户入口。
 - 409：显示完整性冲突并要求运维检查，不允许创建重复身份。
-- UI-USR-01（目标）：所有用户选择器可搜索同一 canonical 全集；不受前 100 条加载限制。
+- UI-USR-01（Implemented / release candidate）：所有用户选择器可搜索同一 canonical 全集；不受前 100 条加载限制。
 - UI-USR-02：390×844 的长邮箱/ID 换行或局部截断，不产生根横滚。
 - UI-USR-03：用户详情中账户、订阅、Usage 都是链接/只读事实，危险动作进入所属模块。
-- UI-USR-04（Target release gate）：搜索“QA”只返回匹配结果而非唯一计费名册；清搜索恢复稳定 total，orphan 不被创建第二身份“修复”。
-- UI-USR-05（Target release gate）：兼容 profile email/display_name 不提供可编辑控件，避免保存成功但 canonical 列表不可见的 split-brain。
+- UI-USR-04（Implemented / release candidate）：搜索“QA”只返回匹配结果而非唯一计费名册；清搜索恢复稳定 total，orphan 不被创建第二身份“修复”。
+- UI-USR-05（Implemented / release candidate）：兼容 profile email/display_name 不提供可编辑控件，避免保存成功但 canonical 列表不可见的 split-brain。

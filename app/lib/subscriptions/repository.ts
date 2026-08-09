@@ -28,7 +28,8 @@ const configs: Record<SubscriptionResource, Config> = {
   "subscription-plan-versions": {
     select: `v.id, v.plan_id, p.code AS plan_code, p.name AS plan_name,
              v.version_number, v.status, 'monthly'::text AS billing_period,
-             v.trial_days, v.grace_period_days, v.allowance_tokens,
+             v.base_price_microusd, p.currency, v.trial_days,
+             v.grace_period_days, v.allowance_tokens,
              v.published_at, v.created_at, v.updated_at,
              (SELECT COUNT(*)::int FROM subscription_plan_entitlements e WHERE e.plan_version_id = v.id AND e.enabled) AS entitlement_count`,
     from: "FROM subscription_plan_versions v JOIN subscription_plans p ON p.id = v.plan_id",

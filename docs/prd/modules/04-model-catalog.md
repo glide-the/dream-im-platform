@@ -8,9 +8,8 @@
 
 | 分层 | 范围 |
 |---|---|
-| Current | Provider/Model/Pricing/Discover/目录同步基线已有；用户—模型例外已收敛到 Gateway 限流唯一入口。 |
-| Target | 为 Dream 发布当前订阅真正可用的 stable alias/label/capability；每个 Gateway Request 冻结 Provider/Model/Pricing/Permission 版本快照。 |
-| Release Gate | 历史 Pricing 与已用快照无 UPDATE/DELETE；Secret 无回读/日志/DOM；未定价或未授权 alias 在 Provider 前 fail-closed。 |
+| Current / Implemented | Provider/Model/Pricing/Discover 基线与 Dream Product model-catalog allowlist 已实现；用户—模型例外收敛到 Gateway 限流唯一入口，请求冻结 Provider/Model/Pricing/Permission 快照。 |
+| Release Gate | 外部 Provider canary 验证未定价/未授权 alias 在上游前 fail-closed；历史 Pricing 无 UPDATE/DELETE，Secret 无回读/日志/DOM。 |
 
 ## 1. 目标
 
@@ -46,6 +45,6 @@
 - MOD-03：Model alias 唯一，禁用模型在 Gateway 解析阶段拒绝。
 - MOD-04：Pricing overlap/陈旧 replacement 返回 409；历史价格快照不被修改。
 - MOD-05：模型中心只保留 Provider、Models、Pricing；不得重复提供用户—模型限制入口，历史 `/admin/models/permissions` 跳转至 Gateway 限流策略。
-- MOD-06（Target release gate）：`/api/product/v1/me/model-catalog` 只返回已发布、已定价、Entitlement 允许且未被用户例外禁用的 alias；空集是真实 empty，不回退静态模型。
+- MOD-06（Implemented / release candidate）：`/api/product/v1/me/model-catalog` 只返回已发布、已定价、Entitlement 允许且未被用户例外禁用的 alias；空集是真实 empty，不回退静态模型。真实 Provider canary 仍是生产 Release Gate。
 
 交互验收映射：MOD-01 → UI-MOD-01；MOD-02 → UI-MOD-02；MOD-03/04 → UI-MOD-03；MOD-05 → UI-MOD-04。

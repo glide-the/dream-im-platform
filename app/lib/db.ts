@@ -4,7 +4,40 @@ type GlobalPool = typeof globalThis & {
   __ink_memory_pg_pool__?: Pool;
 };
 
-function validatedDatabaseUrl() {
+function parsePostgresUrl(value: string, variableName: string) {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${variableName} must be a valid PostgreSQL URL.`);
+  }
+  if (!["postgres:", "postgresql:"].includes(url.protocol)) {
+    throw new Error(`${variableName} must use PostgreSQL.`);
+  }
+  return url;
+}
+
+export function validatedDatabaseUrl() {
+  if (process.env.INK_USE_TEST_DATABASE_URL === "1") {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("TEST_DATABASE_URL is forbidden in production.");
+    }
+    const testValue = process.env.TEST_DATABASE_URL;
+    if (!testValue) {
+      throw new Error(
+        "TEST_DATABASE_URL is required when INK_USE_TEST_DATABASE_URL=1.",
+      );
+    }
+    const testUrl = parsePostgresUrl(testValue, "TEST_DATABASE_URL");
+    const databaseName = decodeURIComponent(testUrl.pathname.replace(/^\//, ""));
+    if (!/(?:^|[_-])(?:test|codex)(?:[_-]|$)/i.test(databaseName)) {
+      throw new Error(
+        "TEST_DATABASE_URL must name an explicitly isolated test/codex database.",
+      );
+    }
+    return testValue;
+  }
+
   const value = process.env.DATABASE_URL;
   if (!value) {
     throw new Error(
@@ -12,15 +45,7 @@ function validatedDatabaseUrl() {
     );
   }
 
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error("DATABASE_URL must be a valid PostgreSQL URL.");
-  }
-  if (!["postgres:", "postgresql:"].includes(url.protocol)) {
-    throw new Error("DATABASE_URL must use PostgreSQL.");
-  }
+  const url = parsePostgresUrl(value, "DATABASE_URL");
   if (url.pathname.replace(/^\//, "") !== "ink-memory") {
     throw new Error("DATABASE_URL must use the ink-memory database.");
   }

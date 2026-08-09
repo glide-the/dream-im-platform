@@ -8,8 +8,8 @@
 
 | 分层 | 交互边界 |
 |---|---|
-| Current | Provider/Model/Pricing/Discover/同步页面；用户—模型例外已移至 Gateway 限流唯一入口，RPM 编辑未开放。 |
-| Target | 为 Dream 的 `/api/product/v1/me/model-catalog` 发布已定价、Entitlement/Permission 实际允许的 stable alias/label/capability；无静态模型 fallback。 |
+| Current / Implemented | Provider/Model/Pricing/Discover/同步页面与 Dream `/api/product/v1/me/model-catalog` allowlist 已实现；用户—模型例外位于 Gateway 限流唯一入口，RPM 编辑未开放。 |
+| Release candidate | 无静态模型 fallback；真实外部 Provider canary 仍需验证未定价/未授权 alias 不调用上游。 |
 | Release Gate | 历史 Pricing 只读，Secret 无 DOM/回读，未授权/未定价 alias 不进产品 catalog，旧 permissions 路由只跳 Gateway。 |
 
 ## 1. Provider

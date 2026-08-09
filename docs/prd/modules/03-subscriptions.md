@@ -2,17 +2,17 @@
 
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[订阅中心](../../design/modules/03-subscriptions.md)
 
-> 业务纠偏：订阅套餐是面向单个用户、按其订阅周期计算的 **Token 与非货币权益规则**。套餐不发放金额，不代表现金余额，不定义现金超额扣费，也不使用平台统一生效日期。Provider Pricing、Billing Account、金额 Ledger 和未来支付能力属于独立领域。
+> 业务纠偏：订阅套餐面向单个用户、按其订阅周期提供 **Token 与非货币权益**，并可定义整数 micro-USD 月费。套餐月费不是 Token 金额额度或现金余额，不定义现金超额扣费，也不使用平台统一生效日期。
 
 ## 0. Current / Target / Migration / Release Gate
 
 | 分层 | 范围 |
 |---|---|
 | Legacy baseline | `0014` 及历史数据仍物理保留 `currency`、`base_price_microusd`、`allowance_microusd`、`cash_balance` overage、`effective_from` 和 annual 值，历史 Ledger 继续只读保留；这些字段不再是产品合同。 |
-| Implemented in workspace（待隔离 PG/E2E） | `0017`、strict contracts、Service/Repository、Gateway 与 Refine UI 已切为 Token-only：新 Plan/Version/Allowance 不接受或投影金额/全局生效字段，开通与续期不再扣 Billing Account，升降级排到个人下周期。TypeScript、lint、unit 与 build 已通过；迁移 SQL、真实事务和双视口仍需显式 `TEST_DATABASE_URL` 验证后才能发布。 |
-| Target | Plan 只定义名称/code/状态；不可覆盖 Plan Version 固定为月度，发放 `allowance_tokens` 并关联 model/scope/RPM/Storage 等非货币 Entitlement。每个 Subscription 使用自己的 `[current_period_start, current_period_end)`；升级、降级在下一周期边界生效。 |
-| Migration | 保留历史金额列和历史 Ledger 记录以便审计，不做破坏性删除；新写入合同先拒绝货币字段，再将草稿版本归一为 monthly/token-only，API 与 UI 停止读取这些字段，最后按独立迁移评估物理删列。Provider Pricing 和独立现金账户不随本纠偏删除。 |
-| Release Gate | 新套餐/版本/Allowance 无货币写入；无全局生效时间；锚点月度周期、月末计算、并发续期、下一周期升降级、Token 守恒和 402 Token 合同通过；1440×1000 与 390×844 不出现价格、金额额度、现金超额或支付入口。 |
+| Implemented / Release candidate | `0017–0024`、strict contracts、Service/Repository/worker、Gateway、Token Ledger、Product/Payment API、PaymentAdapter/Fake/Webhook 与 Dream 付费开通/续费已实现。Admin 66 files/313 tests、tsc/lint/build；本机 `ink-memory` 为 Admin migrations=25。 |
+| Target | Plan 只定义名称/code/状态；不可覆盖 Plan Version 固定为月度，定义 `allowance_tokens`、整数 `base_price_microusd` 与 model/scope/RPM/Storage Entitlement。每个 Subscription 使用自己的周期。 |
+| Migration | 保留历史 Ledger 记录，不做破坏性删除；`0022–0024` 允许 Token-only 版本带非负月费并增加续费绑定/past_due 边界，同时继续拒绝金额 allowance、cash overage 与 annual。 |
+| Release Gate | 无全局生效时间；月费整数传输；付费首次开通/到期续费等待签名 Webhook；锚点周期、Token 守恒和 402 Token 合同通过；1440×1000 与 390×844 无假支付成功。 |
 
 ## 1. 产品目标与边界
 
@@ -20,10 +20,10 @@
 
 订阅不负责以下事实：
 
-- 不保存套餐币种或基础价格，不发放 micro-USD，不向 Billing Account 充值。
+- 保存 USD 月费与整数 micro-USD 传输真值，但不发放 micro-USD、不向 Billing Account 充值。
 - 不以 `effective_from/effective_to` 规定一批用户的统一生效日；发布时间只记录版本何时发布。
 - 不以 `cash_balance` 作为 Token 用尽后的 overage，也不因开通、续期或换版产生金额 Ledger。
-- 不包含 PaymentAdapter、Webhook、Stripe、支付宝或微信支付依赖。未来支付若立项，必须是独立支付/订单域，不能把金额重新塞回套餐权益。
+- PaymentAdapter/Webhook 是订阅激活的协调边界，不是 Token 权益；Stripe、支付宝、微信等真实渠道仍 Deferred。
 - 不改变 Provider Pricing 的版本化金额快照、Provider 成本、既有现金账户和历史 Ledger；这些是独立的 Gateway 成本/按量计费事实。
 
 ## 2. 产品对象与权威字段
@@ -31,10 +31,11 @@
 | 对象 | Target 权威字段 | 核心规则 |
 |---|---|---|
 | Plan | `id/code/name/description/status` | code 创建后稳定；停用不删除历史；无 currency/price/effective date。 |
-| Plan Version | `id/plan_id/version/status/trial_days/grace_period_days/allowance_tokens/published_at` | 周期固定为 monthly，不提供周期控件；发布后不可修改或删除；`published_at` 是审计时间，不是用户生效时间。 |
+| Plan Version | `id/plan_id/version/status/trial_days/grace_period_days/allowance_tokens/base_price_microusd/currency/published_at` | 周期固定 monthly；金额为整数 micro-USD；发布后不可修改或删除。 |
 | Entitlement | `plan_version_id/model_id/gateway_scopes/rpm_limit/storage_limit_bytes` 等非货币权益 | 与已发布 Version 一起不可覆盖；不得出现 overage money rule。 |
 | Subscription | `user_id/plan_version_id/status/cycle_anchor_at/current_period_number/current_period_start/current_period_end/cancel_at_period_end/pending_plan_version_id/version` | 一个平台用户最多一个当前订阅上下文；周期按该用户的锚点与周期序号计算。 |
 | Usage Allowance | `subscription_id/period_start/period_end/granted_tokens/reserved_tokens/consumed_tokens` | 每个订阅周期一条 Token 额度；满足 `granted_tokens >= reserved_tokens + consumed_tokens`；无金额列参与新流程。 |
+| Subscription Token Ledger | `gateway_request_id/request_sequence/entry_type/amount_tokens/*_before_tokens/*_after_tokens` | reserve/capture/release 与 Allowance 同事务，只追加、Token 单位、来源一致且请求内顺序唯一；不是 Payment 或金额账本。 |
 | Subscription Event | action、前后状态、目标版本、reason、idempotency key/digest、actor、时间 | append-only；同 key 同 digest 返回原结果，同 key 异 digest 返回 409。 |
 
 数据库现有 `currency`、`base_price_microusd`、`allowance_microusd`、Allowance 金额列、`overage_policy`、`billing_period`、`effective_from` 和历史 `subscription_charge/allowance_capture` 只作为迁移期兼容证据。Repository 不得将其重新投影为 Target 产品字段。
@@ -61,7 +62,7 @@ Route Handler 只做 Session、RBAC、Origin、解析、严格 Zod 与 service �
 - 升级/降级：都只写 `pending_plan_version_id`，在下一个周期边界原子生效；当前周期不重开、不按比例折算、不再次发放 Token。
 - 暂停/恢复：只改变 Gateway 资格，不移动周期边界、不补发 Token。
 - 期末取消：当前周期内仍按原权益使用，到边界进入 cancelled；撤销取消只清除取消标志，不续期、不发额度。
-- trial、past_due 与 grace 若保留，只影响资格状态和推进时点；不得触发金额扣费。
+- `trial` 可按非支付策略进入 `active/expired`。付费 published version 到期且仍启用续费时由受控 period worker 进入 `past_due`，保持原周期且不发新 Token；只有绑定当前 Subscription version/period end 的成功续费 Webhook 才推进周期并恢复 `active`。免费版本仍可直接 renew。
 
 ```mermaid
 stateDiagram-v2
@@ -73,33 +74,34 @@ stateDiagram-v2
   active --> cancel_at_period_end: cancel
   cancel_at_period_end --> active: revoke_cancel
   cancel_at_period_end --> cancelled: personal period end
-  active --> past_due: renewal processing failure
-  past_due --> active: recover within grace
-  past_due --> expired: grace end
+  trial --> expired: trial policy ends
+  cancelled --> active: explicit new activation
 ```
 
 ## 5. Gateway 资格与 Token 消耗
 
 ```text
 Canonical User → Subscription → Plan Version → Entitlement → Model Permission
-→ Current-period Token Allowance → Gateway Request → Token Usage
+→ Current-period Token Allowance → Gateway Request → Token Usage → Subscription Token Ledger
 ```
 
-Gateway 在调用 Provider 前锁定当前周期 Allowance，并只以 Token reserve/capture/release 维护守恒。Token 不足返回 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`；Gateway `/v1/**` 响应使用 `metric="tokens"`、`unit="tokens"`、`available_tokens`、`required_tokens` 和 `period_end`，Dream BFF 只映射为 camelCase `availableTokens`、`requiredTokens` 和 `periodEnd`；禁止写入或显示 `availableMicrousd/requiredMicrousd`。
+Gateway 在调用 Provider 前锁定当前周期 Allowance，并只以 Token reserve/capture/release 维护守恒；每次变更与 `subscription_token_ledger_entries` 同事务，重放不重复记账。Token 不足返回 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`；Gateway `/v1/**` 响应使用 `metric="tokens"`、`unit="tokens"`、`available_tokens`、`required_tokens` 和 `period_end`，Dream BFF 只映射为 camelCase `availableTokens`、`requiredTokens` 和 `periodEnd`；禁止写入或显示 `availableMicrousd/requiredMicrousd`。
 
 订阅用户 Token 用尽后不得由套餐隐式降级为现金超额。若未来保留独立的按量现金 Gateway 产品模式，它必须使用显式产品资格与独立合同，不能由 Plan Version 的 overage 字段开启，也不能把 Billing Account 余额描述为订阅额度。
 
-## 6. Dream 产品投影（Target，尚未实现）
+## 6. Dream 产品投影（Implemented / Release candidate）
 
-Dream 浏览器只调用 Dream 同源 BFF；Dream 服务端用最小权限服务身份调用 Admin 产品 API，并从 session 绑定 canonical user，不信任浏览器提交的 user ID。
+Admin Product/Payment API 与 Dream 同源 BFF 已实现；Dream 服务端用最小权限服务身份调用 Admin，并从 session 绑定 canonical user，不信任浏览器提交的 user ID。生产 Session/service identity 冒烟仍是 Release Gate。
 
 | API | Token-only 投影 |
 |---|---|
-| `GET /api/product/v1/plans` | 已发布 Plan/Version 的名称、code、固定 monthly 标识、`allowanceTokens` 和非货币 Entitlement；无 price/currency/effective date/payment。 |
+| `GET /api/product/v1/plans` | 已发布版本名称、monthly 标识、`allowanceTokens`、`monthlyPriceMicrousd/currency` 与 Entitlement。 |
 | `GET /api/product/v1/me/subscription-context` | 状态、个人周期、当前/待生效版本、Token granted/reserved/consumed/remaining、合法 actions；无现金余额。 |
 | `GET /api/product/v1/me/usage` | 当前周期 Token 聚合、分页请求与 Token 消耗趋势；预计耗尽按 Token/时间计算，不是金额超额。 |
 | `GET /api/product/v1/me/model-catalog` | 当前订阅与用户例外共同允许的 stable alias/capability/limit。 |
-| `POST /api/product/v1/me/subscription-commands` | `create/upgrade/downgrade/pause/resume/cancel/revoke_cancel` 的 preview/execute；返回个人周期与 Token 影响，无金额或 Payment 状态。 |
+| `POST /api/product/v1/me/subscription-commands` | `create/renew/upgrade/downgrade/pause/resume/cancel/revoke_cancel` 的 preview/execute；返回个人周期与 Token 影响，无金额或 Payment 状态。 |
+| `POST /api/product/v1/me/payment-intents` | 为当前 canonical 用户和付费版本创建幂等 Intent；不直接激活订阅。 |
+| `GET /api/product/v1/me/payment-intents/{id}` | 只读当前用户 Intent 状态；不返回 Adapter Secret 或外部凭据。 |
 
 `phase=preview` 不写入状态，返回 `previewId/digest/expiresAt/expectedVersion`、当前→目标版本、下一周期生效时刻和 Token 差异。`phase=execute` 必须带未过期 receipt、相同 digest/expectedVersion 与 `Idempotency-Key`。预览过期或版本变化返回 409 并要求重新预览。
 
@@ -115,7 +117,7 @@ Dream 浏览器只调用 Dream 同源 BFF；Dream 服务端用最小权限服务
 
 - loading 保持页头/表头骨架；empty 区分无 Plan、无已发布 Version、无用户订阅与筛选无结果。
 - 401/403 不渲染受保护数据；404 返回对应列表；409 保留表单并显示最新 version/period；429 显示 RPM/Token 窗口；503 显示 PostgreSQL/依赖不可用且不回退假套餐。
-- 402 只用于当前周期 Token 不足；订阅 UI 不展示金额不足或支付入口。
+- 402 只用于当前周期 Token 不足；订阅支付失败使用 Payment Intent 状态，不混用 Gateway 402。
 - 任何错误响应包含安全 request ID，不返回 Secret、SQL、stack 或其他用户数据。
 
 ## 9. 可自动测试的验收标准
@@ -126,8 +128,10 @@ Dream 浏览器只调用 Dream 同源 BFF；Dream 服务端用最小权限服务
 - SUB-04：提前续期、重复续期和并发续期只有一个结果；同幂等 key 异 action/target/reason/payload 返回 409，不重复发 Token，也不重复写 Audit。
 - SUB-05：升级、降级都在下一周期边界生效，当前周期版本/结束时间/Token 不变；暂停、恢复、取消与撤销取消不补发 Token。
 - SUB-06：Allowance 始终满足 Token 守恒；Token 用尽在 Provider 前返回带正确 token 字段的 402，绝不回落到套餐现金超额。
-- SUB-07：Dream/API/Admin 不返回或渲染套餐价格、币种、金额额度、现金余额、Payment 状态或平台生效日期；预计耗尽仅使用 Token 与周期。
-- SUB-08：历史货币列和 Ledger 在迁移后仍可审计且不可改写；新流程无法产生新的订阅金额事实。
+- SUB-07：Dream/API/Admin 的月费只使用整数 micro-USD 真值并格式化展示；不返回金额额度、现金余额、Secret 或平台生效日期。
+- SUB-08：历史 Ledger 可审计且不可改写；Payment Event/adjustment 只追加，重复 Webhook 不重复激活或调整。
+- SUB-09：生产禁止 Fake Adapter；未接真实渠道时页面停在 `requires_action`，不得伪造支付成功。
+- SUB-09（Implemented / release candidate）：成功请求按顺序产生 reserve/capture/release Token Ledger；重复幂等键不重复记账，usage unknown 由 worker 保守终结，来源不一致、重复顺序、UPDATE/DELETE 均由数据库拒绝。
 - SUB-09：canonical 用户 selector 以至少 205 用户验证服务端搜索、跨页选择、稳定 total；不存在“计费用户”筛选或手工开户。
 - SUB-10：1440×1000 与 390×844 focused E2E 覆盖 loading/empty/402/403/404/409/503、键盘、焦点、label、读屏播报和无横向页面溢出。
 

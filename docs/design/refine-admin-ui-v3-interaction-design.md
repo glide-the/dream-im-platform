@@ -1,6 +1,6 @@
 # Ink Memory Admin UI v3 — 全局交互规范
 
-> 版本：3.1
+> 版本：3.2
 > 更新：2026-08-09
 > 平台 PRD：[`ink-memory-admin-prd-v3.md`](../prd/ink-memory-admin-prd-v3.md)  
 > 模块交互：[`docs/design/modules/`](modules/)  
@@ -10,10 +10,10 @@
 
 | 分层 | 交互文档规则 |
 |---|---|
-| Current | 只描述已有真实 Route/API/领域行为，并显式列出 Subscription 货币字段/全局生效日、前 50/100 selector、cash-only、402 单位、profile split-brain、append-only guard、Secret/ASR 等已知缺口。 |
-| Target | 可设计尚未实现的页面/API，但必须标注 Target，不进主导航、不画可点假按钮、不使用静态数组/假价格/假余额。 |
-| Release Gate | 页面只在真实 API、权限、幂等/冲突恢复、Secret 隐私、1440×1000 和 390×844 focused E2E 通过后标记可发布。 |
-| Deferred | 订阅支付、PaymentAdapter/Webhook、真实支付渠道与未定义 streaming-audio 计量的 ASR Gateway；不进入本期导航/订阅流程，不模拟成功。 |
+| Current / Implemented | canonical 用户 selector、Token-only Subscription/Gateway、只读 Token 流水、Product/Payment API 与 Dream 真实订阅交互已落地；Admin 66 files/313 tests、tsc/lint/build、Payment PG 2/2；Dream frontend lint 0 errors/21 warnings、build、Product API 9/9 与订阅 Playwright 4/4 通过。 |
+| Release candidate | 真实 API/权限/幂等/冲突/Secret 合同已通过隔离/focused 自动化；不等于生产 Session/服务身份、真实数据 cutover 或外部 Provider canary 已完成。 |
+| Planned release step | 生产 owner/ACL/cutover、外部 Provider/user canary、credential owner rotation；frontend lint 已通过，21 warnings 继续记入回执。 |
+| Deferred | 真实支付渠道与未定义 streaming-audio 计量的 ASR Gateway；PaymentAdapter/Webhook/Fake/付费开通与续费已实现，仍不得模拟成功。 |
 
 ## 1. 设计方向
 
@@ -73,7 +73,7 @@ Admin 使用“暖纸张上的专业运营工具”语言：高信息密度、�
 ## 5. 列表、筛选与分页
 
 - API 返回 `{data, meta:{total,page,pageSize}}`；分页、排序和白名单筛选均由服务端执行。
-- canonical 用户 relation 使用 `q/page/pageSize/total`、输入 debounce、跨页选中 hydration 和稳定 label。Current 专用 selector 前 100 与通用首页 50/100 都是发布缺口，不能用“无计费用户”的 empty 文案掩盖。
+- canonical 用户 relation 已统一使用 `q/page/pageSize/total`、输入 debounce、跨页选中 hydration 和稳定 label；超过 100/QA-only 回归已通过。生产 historical orphan 的安全处置仍由发布回执追踪，不能用“无计费用户”的 empty 文案掩盖。
 - Query Bar 依次为关键词、主要关系、状态、时间、清筛、刷新；移动端次要筛选进入 Filter Sheet。
 - 表头使用 `scope=col` 和 `aria-sort`；分页说明当前范围与总数。
 - 行主识别信息是链接；常用动作常显，破坏性/次动作进入 More menu，但不能只在 hover 出现。
@@ -92,7 +92,7 @@ Admin 使用“暖纸张上的专业运营工具”语言：高信息密度、�
 | 日期/时间 | date/datetime | 显示时区；服务端验证有效窗口 |
 | 布尔 | Switch | label 说明生效影响；危险状态不用单独 Switch |
 | JSON | JSON Editor | 仅未知扩展字段；格式化、schema、行列错误、恢复草稿 |
-| Provider/System/Payment Secret | password/secret 或当前 JSON 覆盖控件 | 只写；历史值永不加载；空值表示不轮换；不得生成明文回执 |
+| Provider/System Secret | password/secret 或当前 JSON 覆盖控件 | 只写；历史值永不加载；空值表示不轮换；不得生成明文回执；Deferred Payment 不新增 Secret 控件 |
 | ID/状态/快照 | 只读 code/status tag | 可复制；状态同时有文字 |
 
 所有字段使用稳定 `label/description/error/required` 关联。提交失败保留草稿并聚焦首错；离开脏表单前确认。
@@ -109,7 +109,7 @@ Admin 使用“暖纸张上的专业运营工具”语言：高信息密度、�
 | 404 | 返回对应列表，保留安全 request ID |
 | 409 | 保留输入，展示服务器最新状态和刷新/重载动作 |
 | 429 | 展示限制窗口、当前/本次/上限/剩余与 Retry-After；实时计数只读 |
-| 502 | 显示 Provider/Adapter 上游失败、retryable 与安全 request/event ID；未确认前不播报成功 |
+| 502 | 显示 Provider 上游失败、retryable 与安全 request ID；未确认前不播报成功；Deferred Payment 不定义 Adapter 状态 |
 | 500 | 安全错误摘要 + request ID；不显示 SQL、stack 或 Secret |
 | 503 | 说明具体依赖；提供重试；禁止回退假数据 |
 | Success | polite live region；刷新缓存；回执包含实际对象和审计/幂等结果 |
@@ -121,8 +121,8 @@ Toast 使用不透明 surface，最多两条且不抢焦点。网络结果未知
 - 停用 Provider、撤销 Gateway Key、余额调整/refund/reversal、订阅暂停/取消、管理员停用、Role 删除、Secret 覆盖必须显示对象、当前状态、影响、before/after、reason 与 request/idempotency 信息。
 - 最高风险动作要求输入对象 code 或确认短语；提交中禁止重复。
 - 409 不关闭确认层，焦点移到冲突摘要。
-- 只有 Gateway Key 创建回执显示一次明文；Copy 仅写 clipboard，不触发 analytics；离开前提示不可再次查看。Provider/System/Payment Secret 只有“已配置/已覆盖”回执，不返回或复制明文。
-- Ledger、Usage、Audit、Webhook Event、Request 历史、已发布 Plan Version/Entitlement 不提供删除或直接编辑入口。纠错以关联 refund/reversal 新事实呈现。
+- 只有 Gateway Key 创建回执显示一次明文；Copy 仅写 clipboard，不触发 analytics；离开前提示不可再次查看。Provider/System Secret 只有“已配置/已覆盖”回执，不返回或复制明文；Deferred Payment 不产生 Secret 回执。
+- Ledger、Usage、Audit、Request 历史、已发布 Plan Version/Entitlement 不提供删除或直接编辑入口。纠错以关联 refund/reversal 新事实呈现；Webhook Event 因 Payment Deferred 不存在于本期页面。
 
 ## 9. 模块交互索引
 
@@ -149,6 +149,8 @@ Toast 使用不透明 surface，最多两条且不抢焦点。网络结果未知
 - 文字放大 200% 和 `prefers-reduced-motion` 下仍能完成任务；关键动作不依赖 hover。
 
 ## 11. 全局视觉验收
+
+当前自动化回执：Admin 66 files/313 tests、tsc/lint/build、Payment 隔离 PG 2/2；Dream frontend lint 0 errors/21 warnings、build、Product API 9/9；Dream 订阅页 mocked-browser 4/4 覆盖 1440×1000、390×844、付费首次开通与到期续费。此回执不覆盖 Admin 全页面视觉巡检或真实预发布外部 Provider API。
 
 - 1440×1000 与 390×844 的 document 横向溢出 ≤1px。
 - Light/Dark 只使用集中 Token；无远程字体、Font Awesome、渐变、glow 或装饰性持续动效。

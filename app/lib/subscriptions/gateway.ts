@@ -1,5 +1,11 @@
 import type { PoolClient } from "pg";
 
+import {
+  appendSubscriptionTokenLedgerEntryOnClient,
+  tokenLedgerSnapshot,
+  type TokenAllowanceState,
+} from "./token-ledger";
+
 type Row = {
   subscription_id: string;
   plan_version_id: string;
@@ -20,6 +26,7 @@ type Row = {
 };
 
 export type GatewaySubscriptionContext = {
+  platformUserId: string;
   subscriptionId: string;
   planVersionId: string;
   entitlementId: string;
@@ -66,7 +73,7 @@ export async function resolveGatewaySubscriptionOnClient(
     estimatedTokens: number;
     at: Date;
   },
-): Promise<GatewaySubscriptionContext | GatewaySubscriptionRejection | null> {
+): Promise<GatewaySubscriptionContext | GatewaySubscriptionRejection> {
   const result = await client.query<Row>(
     `SELECT s.id AS subscription_id, s.plan_version_id,
             s.status AS subscription_status, s.current_period_start,
@@ -90,9 +97,13 @@ export async function resolveGatewaySubscriptionOnClient(
     [input.platformUserId, input.modelId],
   );
   const row = result.rows[0];
-  // Compatibility phase: users that have never been assigned a subscription
-  // continue through the existing balance-only policy.
-  if (!row) return null;
+  if (!row) {
+    return {
+      code: "SUBSCRIPTION_REQUIRED",
+      status: 403,
+      message: "An active Token subscription is required for Gateway access",
+    };
+  }
 
   const inGrace =
     row.subscription_status === "past_due" &&
@@ -168,6 +179,7 @@ export async function resolveGatewaySubscriptionOnClient(
   }
 
   return {
+    platformUserId: input.platformUserId,
     subscriptionId: row.subscription_id,
     planVersionId: row.plan_version_id,
     entitlementId: row.entitlement_id,
@@ -193,8 +205,42 @@ export async function resolveGatewaySubscriptionOnClient(
 export async function reserveSubscriptionAllowanceOnClient(
   client: PoolClient,
   input: GatewaySubscriptionContext,
+  gatewayRequestId: string,
 ) {
   if (input.allowanceReservedTokens === 0) return;
+  const locked = await client.query<{
+    subscription_id: string;
+    plan_version_id: string | null;
+    granted_tokens: string | number;
+    reserved_tokens: string | number;
+    consumed_tokens: string | number;
+  }>(
+    `SELECT subscription_id, plan_version_id, granted_tokens,
+            reserved_tokens, consumed_tokens
+     FROM subscription_usage_allowances
+     WHERE id = $1
+     FOR UPDATE`,
+    [input.allowanceId],
+  );
+  const row = locked.rows[0];
+  if (
+    !row ||
+    row.subscription_id !== input.subscriptionId ||
+    row.plan_version_id !== input.planVersionId
+  ) {
+    throw new Error("SUBSCRIPTION_ALLOWANCE_PROVENANCE_MISMATCH");
+  }
+  const beforeState: TokenAllowanceState = {
+    grantedTokens: safe(row.granted_tokens, "granted_tokens"),
+    reservedTokens: safe(row.reserved_tokens, "reserved_tokens"),
+    consumedTokens: safe(row.consumed_tokens, "consumed_tokens"),
+  };
+  const afterState: TokenAllowanceState = {
+    ...beforeState,
+    reservedTokens:
+      beforeState.reservedTokens + input.allowanceReservedTokens,
+  };
+  tokenLedgerSnapshot(afterState);
   const result = await client.query(
     `UPDATE subscription_usage_allowances
      SET reserved_tokens = reserved_tokens + $2,
@@ -206,13 +252,61 @@ export async function reserveSubscriptionAllowanceOnClient(
   if (result.rowCount !== 1) {
     throw new Error("SUBSCRIPTION_ALLOWANCE_CONCURRENT_CONFLICT");
   }
+  await appendSubscriptionTokenLedgerEntryOnClient(client, {
+    platformUserId: input.platformUserId,
+    subscriptionId: input.subscriptionId,
+    planVersionId: input.planVersionId,
+    allowanceId: input.allowanceId,
+    gatewayRequestId,
+    requestSequence: 1,
+    entryType: "reserve",
+    amountTokens: input.allowanceReservedTokens,
+    before: tokenLedgerSnapshot(beforeState),
+    after: tokenLedgerSnapshot(afterState),
+    idempotencyKey: `${gatewayRequestId}:token:reserve`,
+    metadata: { coverageMode: input.coverageMode },
+  });
 }
 
 export async function releaseSubscriptionAllowanceOnClient(
   client: PoolClient,
   input: GatewaySubscriptionContext,
+  gatewayRequestId: string,
 ) {
   if (input.allowanceReservedTokens === 0) return;
+  const locked = await client.query<{
+    subscription_id: string;
+    plan_version_id: string | null;
+    granted_tokens: string | number;
+    reserved_tokens: string | number;
+    consumed_tokens: string | number;
+  }>(
+    `SELECT subscription_id, plan_version_id, granted_tokens,
+            reserved_tokens, consumed_tokens
+     FROM subscription_usage_allowances
+     WHERE id = $1
+     FOR UPDATE`,
+    [input.allowanceId],
+  );
+  const row = locked.rows[0];
+  if (
+    !row ||
+    row.subscription_id !== input.subscriptionId ||
+    row.plan_version_id !== input.planVersionId
+  ) {
+    throw new Error("SUBSCRIPTION_ALLOWANCE_PROVENANCE_MISMATCH");
+  }
+  const beforeState: TokenAllowanceState = {
+    grantedTokens: safe(row.granted_tokens, "granted_tokens"),
+    reservedTokens: safe(row.reserved_tokens, "reserved_tokens"),
+    consumedTokens: safe(row.consumed_tokens, "consumed_tokens"),
+  };
+  const afterState: TokenAllowanceState = {
+    ...beforeState,
+    reservedTokens:
+      beforeState.reservedTokens - input.allowanceReservedTokens,
+  };
+  tokenLedgerSnapshot(afterState);
   const result = await client.query(
     `UPDATE subscription_usage_allowances
      SET reserved_tokens = reserved_tokens - $2,
@@ -223,6 +317,20 @@ export async function releaseSubscriptionAllowanceOnClient(
   if (result.rowCount !== 1) {
     throw new Error("SUBSCRIPTION_ALLOWANCE_RELEASE_INVARIANT");
   }
+  await appendSubscriptionTokenLedgerEntryOnClient(client, {
+    platformUserId: input.platformUserId,
+    subscriptionId: input.subscriptionId,
+    planVersionId: input.planVersionId,
+    allowanceId: input.allowanceId,
+    gatewayRequestId,
+    requestSequence: 2,
+    entryType: "release",
+    amountTokens: input.allowanceReservedTokens,
+    before: tokenLedgerSnapshot(beforeState),
+    after: tokenLedgerSnapshot(afterState),
+    idempotencyKey: `${gatewayRequestId}:token:release`,
+    metadata: { coverageMode: input.coverageMode },
+  });
 }
 
 export async function settleSubscriptionAllowanceOnClient(
@@ -234,6 +342,10 @@ export async function settleSubscriptionAllowanceOnClient(
     reservedMicrousd: number;
     actualTokens: number;
     chargeMicrousd: number;
+    gatewayRequestId?: string;
+    platformUserId?: string;
+    subscriptionId?: string;
+    planVersionId?: string;
   },
 ) {
   if (!input.allowanceId || !input.coverageMode) {
@@ -244,6 +356,8 @@ export async function settleSubscriptionAllowanceOnClient(
     };
   }
   const result = await client.query<{
+    subscription_id: string;
+    plan_version_id: string | null;
     granted_tokens: string | number;
     reserved_tokens: string | number;
     consumed_tokens: string | number;
@@ -251,7 +365,8 @@ export async function settleSubscriptionAllowanceOnClient(
     reserved_microusd: string | number;
     consumed_microusd: string | number;
   }>(
-    `SELECT granted_tokens, reserved_tokens, consumed_tokens,
+    `SELECT subscription_id, plan_version_id,
+            granted_tokens, reserved_tokens, consumed_tokens,
             granted_microusd, reserved_microusd, consumed_microusd
      FROM subscription_usage_allowances WHERE id = $1 FOR UPDATE`,
     [input.allowanceId],
@@ -261,12 +376,27 @@ export async function settleSubscriptionAllowanceOnClient(
   const reservedTokens = safe(row.reserved_tokens, "reserved_tokens");
   const reservedMoney = safe(row.reserved_microusd, "reserved_microusd");
   if (input.coverageMode === "token_allowance") {
+    if (
+      !input.gatewayRequestId ||
+      !input.platformUserId ||
+      !input.subscriptionId ||
+      !input.planVersionId ||
+      row.subscription_id !== input.subscriptionId ||
+      row.plan_version_id !== input.planVersionId
+    ) {
+      throw new Error("SUBSCRIPTION_TOKEN_LEDGER_PROVENANCE_REQUIRED");
+    }
     if (reservedTokens < input.reservedTokens) {
       throw new Error("SUBSCRIPTION_ALLOWANCE_SETTLEMENT_INVARIANT");
     }
+    const beforeState: TokenAllowanceState = {
+      grantedTokens: safe(row.granted_tokens, "granted_tokens"),
+      reservedTokens,
+      consumedTokens: safe(row.consumed_tokens, "consumed_tokens"),
+    };
     const availableIncludingRequest =
-      safe(row.granted_tokens, "granted_tokens") -
-      safe(row.consumed_tokens, "consumed_tokens") -
+      beforeState.grantedTokens -
+      beforeState.consumedTokens -
       (reservedTokens - input.reservedTokens);
     const allowanceChargedTokens = Math.min(
       input.actualTokens,
@@ -280,6 +410,63 @@ export async function settleSubscriptionAllowanceOnClient(
        WHERE id = $1`,
       [input.allowanceId, input.reservedTokens, allowanceChargedTokens],
     );
+    const capturedFromReservation = Math.min(
+      input.reservedTokens,
+      allowanceChargedTokens,
+    );
+    const captureState: TokenAllowanceState = {
+      grantedTokens: beforeState.grantedTokens,
+      reservedTokens: beforeState.reservedTokens - capturedFromReservation,
+      consumedTokens:
+        beforeState.consumedTokens + allowanceChargedTokens,
+    };
+    const releasedTokens = input.reservedTokens - capturedFromReservation;
+    const finalState: TokenAllowanceState = {
+      ...captureState,
+      reservedTokens: captureState.reservedTokens - releasedTokens,
+    };
+    const beforeSnapshot = tokenLedgerSnapshot(beforeState);
+    const captureSnapshot = tokenLedgerSnapshot(captureState);
+    const finalSnapshot = tokenLedgerSnapshot(finalState);
+    if (allowanceChargedTokens > 0) {
+      await appendSubscriptionTokenLedgerEntryOnClient(client, {
+        platformUserId: input.platformUserId,
+        subscriptionId: input.subscriptionId,
+        planVersionId: input.planVersionId,
+        allowanceId: input.allowanceId,
+        gatewayRequestId: input.gatewayRequestId,
+        requestSequence: 2,
+        entryType: "capture",
+        amountTokens: allowanceChargedTokens,
+        before: beforeSnapshot,
+        after: captureSnapshot,
+        idempotencyKey: `${input.gatewayRequestId}:token:capture`,
+        metadata: {
+          coverageMode: input.coverageMode,
+          actualTokens: input.actualTokens,
+        },
+      });
+    }
+    if (releasedTokens > 0) {
+      await appendSubscriptionTokenLedgerEntryOnClient(client, {
+        platformUserId: input.platformUserId,
+        subscriptionId: input.subscriptionId,
+        planVersionId: input.planVersionId,
+        allowanceId: input.allowanceId,
+        gatewayRequestId: input.gatewayRequestId,
+        requestSequence: allowanceChargedTokens > 0 ? 3 : 2,
+        entryType: "release",
+        amountTokens: releasedTokens,
+        before:
+          allowanceChargedTokens > 0 ? captureSnapshot : beforeSnapshot,
+        after: finalSnapshot,
+        idempotencyKey: `${input.gatewayRequestId}:token:release`,
+        metadata: {
+          coverageMode: input.coverageMode,
+          actualTokens: input.actualTokens,
+        },
+      });
+    }
     return {
       cashChargeMicrousd: 0,
       allowanceChargeMicrousd: 0,

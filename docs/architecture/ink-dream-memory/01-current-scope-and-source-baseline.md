@@ -1,31 +1,31 @@
 # Dream 当前范围与源系统基线
 
-> 文档状态：**Current**  
+> 文档状态：**Current / Release candidate**（审计源基线保留；实现状态已校准）
 > 返回：[总索引](README.md)  
 > 事实基线：[处理判断](../../verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md)  
 > 主要读者：产品、架构、Dream/Admin 后端、QA、安全
 
 ## 1. 当前事实与目标不得混写
 
-| 领域 | Current | Target / Planned | Release Gate |
+| 领域 | Current implementation | Target / remaining release step | Release Gate |
 |---|---|---|---|
-| Dream 持久化 | 主库 SQLite 43 表；Notion SQLite 5 表；主库 25 trigger | 单一 PostgreSQL `ink-memory`、Dream Alembic、Repository/UoW | 48/48 DDL、Repository、导入、validator、owner 归属齐全；runtime SQLite open=0 |
-| canonical 用户 | `users` 是业务用户真值；Admin 有内部 `platform_users`/account 投影 | 每个 canonical user 天然是订阅主体；内部投影不构成第二类用户 | 205 用户搜索/分页/total；Gateway 反向 JOIN `users`；无“计费用户”入口；orphan fail-closed |
-| Token Subscription / 独立 Billing | Admin Plan/Allowance baseline 仍混入金额与 cash fallback；Provider Pricing/Billing/Ledger 已存在 | Subscription 固定用户月度 Token；独立现金域不作套餐权益/兜底 | Token 周期/守恒/幂等通过；新套餐金额写入为 0；历史账务 append-only |
-| Gateway | Admin 有 Anthropic/OpenAI 兼容路由与部分结算；Dream 仍多路直连 | Dream server-only Gateway；stable model alias；严格资格顺序 | 401/402/403/409/429/502/503、流取消与 usage 缺失终态通过 |
-| Dream 订阅 UX | `/story-workspace/subscription` 是静态三档数组 | 真实产品 API 驱动的月度 Token 计划/用户周期/Allowance/Usage/模型权限页面 | 无静态 fallback、金额/余额/支付或全局生效日期 |
-| Payment/订阅支付 | 无 Adapter、intent/event store、Webhook 幂等实现 | **Deferred**：Adapter、Webhook、Fake 与真实渠道均不开发 | 本轮依赖、表、路由、环境变量和 UI 增量为 0 |
-| ASR Gateway | 未鉴权 WebSocket 直连 Provider，且源码发现已提交 credential | endpoint 先禁用/加固；Gateway audio capability 仍 **Deferred** | credential 吊销/轮换、移除、secret scan；匿名请求被拒绝 |
+| Dream 持久化 | **Implemented / Release candidate**：48/569/81/25 Alembic、baseline adopt、43+5 CLI/validator、main/Notion PG-only runtime 已在隔离 PG 验证 | 生产单一 PostgreSQL `ink-memory` | 真实源 rehearsal、owner/ACL 审批和短暂停写 cutover |
+| canonical 用户 | **Implemented / Release candidate**：`users` 唯一真值、自动 mapping/account、服务端分页/搜索、Gateway canonical 反查与 QA-only 回归已验证 | 生产历史 orphan 安全映射/隔离 | 生产只读盘点与处置回执；无破坏财务历史 |
+| Token Subscription / Token Ledger / 独立 Billing | **Implemented / Release candidate**：Admin `0000–0024`、Token-only 状态机/Allowance/Token Ledger、付费开通/续费、独立现金域与不可变 guard 已通过本机 PG、66 files/313 tests、tsc/lint/build 与订阅 Playwright 4/4 | 保持用户月度 Token/Token Ledger 与独立现金域解耦 | 生产数据审计、角色切换与灰度回执；角色矩阵已在 clone 通过 |
+| Gateway | **Implemented / Release candidate**：Admin strict eligibility/settlement 与 Dream server-only client/canonical subject 已通过 focused/real-PG 合同 | 用户级真实 Provider canary | 生产服务身份/Secret 注入、外部 Provider 终态观测 |
+| Dream 订阅 UX | **Implemented / Release candidate**：Product/Payment BFF 驱动真实月度 Token/周期/Usage/模型权限、八项 preview→execute 与付费开通/续费 | 预发布真实 Admin API 冒烟 | 无静态 fallback/假余额/假支付；订阅 Playwright 4/4 覆盖 1440×1000 与 390×844 |
+| Payment/订阅支付 | **Implemented / Release candidate**：Adapter、Intent/event store、Webhook 幂等、Fake guard、refund/reversal、首次开通/付费月续费与 Dream UI | 真实渠道 **Deferred** | `0022–0024` 已应用；生产 Fake 禁用；真实表无测试数据 |
+| ASR Gateway | endpoint 已 fail-closed 禁用；历史已提交 credential 的外部吊销/轮换未获所有者回执 | Gateway audio capability 仍 **Deferred** | credential owner 轮换/历史处置/scan；不得误报 ASR Gateway 已实现 |
 
-## 2. 当前数据源
+## 2. 当前运行时数据源
 
 | 数据存储 | Current 代码入口 | 当前连接方式 | 目标所有者 |
 |---|---|---|---|
-| Dream 主库 | `backend/database.py` | `sqlite3.connect(DB_PATH)`、`INK_DATABASE_PATH`、WAL/FK PRAGMA | Dream |
-| Notion Connector | `backend/notion/store.py` | 独立 `sqlite3.Connection` 与文件路径 | Dream |
+| Dream 主库 | `backend/database.py`、`backend/persistence/**`、Dream Alembic | `psycopg` pool；缺失/错误 head fail-fast，无 SQLite fallback | Dream |
+| Notion Connector | `backend/notion/store.py` | PostgreSQL repository/UoW 与生命周期 pool；无文件数据库 fallback | Dream |
 | Admin 控制面 | Admin `DATABASE_URL` | PostgreSQL Pool + Drizzle | Admin / Gateway |
 
-Dream 当前没有正式 PostgreSQL driver、pool、Dream Alembic 或 48 表迁移器。`backend/database.py` 同时承担建表、演进、seed/backfill、查询和事务；不能机械替换占位符完成迁移。
+历史两个 SQLite 仅由显式迁移 CLI 以只读 snapshot 输入使用；生产 FastAPI 启动路径不读取 `INK_DATABASE_PATH`/`INK_AGENT_NOTION_DB_PATH`。Dream 已具备 PostgreSQL driver/pool、独立 Alembic head、48 表 Manifest/DDL、staging/import/validator 与 PG-only runtime；真实生产数据搬迁仍需发布审批和最终 rehearsal。
 
 ## 3. 主库 43 表准确清单
 
@@ -47,9 +47,9 @@ Notion 独立库 5 表：`resource_connectors`、`connector_resources`、`connec
 
 PK、FK、unique、check/enum、JSON/time、partial unique 与 25 trigger 的逐表证据以 [处理判断第 3 节](../../verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md#3-dream-435-真实-schema-清单) 为准。关键不可变事实包括 Workflow token/transition、runtime snapshot/receipt/entry/reconcile、Event、Agent binding；目标 PG 必须重建等价 trigger/constraint/permission，而不只是搬行。
 
-## 4. SQLite 耦合下界
+## 4. 审计时 SQLite 耦合下界与当前处置
 
-排除 `.venv` 与 `backend/tests/**` 后，审计得到：
+以下计数是实现前审计下界，保留用于证明迁移规模，不再描述当前生产运行时：
 
 | 耦合 | Current 证据 |
 |---|---:|
@@ -60,7 +60,7 @@ PK、FK、unique、check/enum、JSON/time、partial unique 与 25 trigger 的逐
 | SQL string literal + `?` | 42 文件 / 436 literal / 1,425 placeholder |
 | SQLite trigger | 源码 15 个生成/显式位置；真实库 25 个 trigger |
 
-迁移必须处理 transaction lock、`INSERT OR REPLACE/IGNORE`、`last_insert_rowid()`、`datetime('now')`、driver row、LIKE/collation 和 SQLite trigger，不允许长期 SQL 翻译层。
+当前实现已将这些语义收敛到 PostgreSQL SQL、Repository/UoW、PL/pgSQL trigger 和领域冲突映射；runtime 静态边界扫描对 SQLite/PRAGMA/`BEGIN IMMEDIATE`/`?`/runtime DDL 为 0。SQLite 构造仅保留在 legacy schema/catalog、显式只读迁移 CLI 与测试兼容 fixture，不构成运行时 fallback。
 
 ## 5. Admin 三表导入器真实上限
 
@@ -72,16 +72,14 @@ PK、FK、unique、check/enum、JSON/time、partial unique 与 25 trigger 的逐
 
 它已提供只读 snapshot/fingerprint、显式 `TEST_DATABASE_URL`、拒绝共享 runtime URL/端口、dry-run、目标非空阻断、serializable 单事务、count/PK/FK/部分 JSON/enum 与 sequence 校准等安全模式。但它只覆盖 3/48，且存在每表 64 MiB stdout、三表并发全量载入内存、逐行 insert、无 staging/batch/COPY、sequence 校准未再验证等上限。它不能冒充全量迁移器。
 
-## 6. 当前推理调用面
+## 6. 推理调用面实现状态
 
-| Current 入口 | 真实行为 | Planned 接管点 |
+| 入口 | 当前实现 | 剩余 Release Gate |
 |---|---|---|
-| `server.py`、`stateless_analyzer.py` | `PolyAgent` 直接使用 Dream endpoint/key/model 配置 | server-only Gateway client + role→stable alias |
-| Claude Agent / Chat | 前端可提交模型字段，后端 runner/SDK 直达旧执行面 | 在单一 runner 网络边界接管，保留 SSE/tool/thread/resume |
-| Dream/Workflow/Guidance/Reflection | 复用 `ClaudeAgentRunRequest` 与 thread factory | 同一 Gateway 接管，避免不同业务行为分叉 |
-| `picture_service.py` | image endpoint/key/model 直连 | Gateway 有 image capability/usage 合同后 canary 切换 |
-| `ModelConfigSection.tsx` | 静态 Auto/Claude/GPT 选项 | 只渲染产品 API 返回的可用 alias |
-| `/ws/speech-recognition` | 未鉴权直连 ASR Provider | release 前禁用/加固；audio Gateway 仍 Deferred |
+| `server.py`、Claude Agent/Chat/Dream/Workflow | server-only Gateway client、canonical-subject 服务认证和 canary/禁 direct-fallback 边界已实现 | 外部 Provider canary 与逐角色生产流量切换 |
+| Product model catalog | Dream Product/Payment BFF 已实现；订阅页只消费 allowlisted alias/权限投影 | 真实预发布 Admin API/Session 冒烟 |
+| `picture_service.py` 等 capability 特定媒体 | 未声明 capability 时不得伪报 Gateway 完成 | image capability/usage 合同后另行 canary |
+| `/ws/speech-recognition` | fail-closed 禁用 | audio Gateway 仍 Deferred；credential owner 轮换回执仍开放 |
 
 Dream 的 `dream_launch_gateway.py` 是 Story Workspace 启动协调器，不是 Admin 计费 Gateway；文件名不能作为“已接入”的证据。
 
@@ -90,18 +88,18 @@ Dream 的 `dream_launch_gateway.py` 是 Story Workspace 启动协调器，不是
 - `.ink/*.json`、plugin manifest/receipt、workspace 文件可作为显式 artifact 存在，但不能作为数据库真值 fallback。
 - SSE/EventBus/confirmation store 只可保存短生命周期协调状态；需恢复的业务事实必须进入 PostgreSQL。
 - `system_config.env_vars` 不得接受 Provider/Gateway/Payment/System secret 名称或值；服务凭据只能来自服务端 secret provider。
-- 受版本控制的 `backend/speech_recognition.py` 含已提交 Provider credential。本文不复述该值；吊销/轮换、移除、历史处置与 secret scan 是 P0，不得以“改成环境变量”替代密钥轮换。
+- 历史 `backend/speech_recognition.py` 曾含已提交 Provider credential。当前 active runtime 已移除该值且 secret scan 通过；本文不复述该值。密钥所有者吊销/轮换与历史处置仍是 P0，代码修复不能替代外部轮换。
 
 ## 8. 本轮明确 Deferred
 
-- 真实 Stripe、支付宝、微信、银行等第三方支付 Adapter 与网络调用。
+- `PaymentAdapter`、Payment intent/refund/reversal contract、Webhook event store/验签/幂等、Fake/Test Adapter，以及 Stripe、支付宝、微信、银行等真实第三方渠道和网络调用。
 - 在 Gateway 尚无 streaming-audio capability、计量单位与结算合同前的 ASR Gateway 接入。
 
-Plan/Subscription/Billing、Dream 产品 API、文本/受支持媒体 Gateway、Payment Adapter/Webhook 边界均是 Planned，不得再写成 Deferred。
+Token-only 月度 Plan/Subscription、Product/Payment BFF、真实订阅页和全入口 Gateway client 已进入 **Implemented / Release candidate**；真实外部 Provider canary 与生产 cutover 仍是 Release Gate。Provider Pricing 与现金 Billing/Ledger 是独立 Current 域。PaymentAdapter/Webhook/Fake 与付费开通/续费已实现；只有真实第三方支付渠道 Deferred。
 
 ## 9. 基线验收
 
 - 43/43 主表、5/5 Notion 表、25 trigger 和 SQLite 耦合能由审计证据复核。
-- Current、Planned、Implemented、Deferred 没有混写；静态订阅页与直接推理调用未被误报为完成。
+- Current、Implemented/Release candidate、Planned release step 与 Deferred 没有混写；实现代码与尚未执行的生产 cutover/外部 Provider canary 明确分开。
 - `users` 是唯一用户全集，`platform_users` 只作内部映射；单 QA 用户结果被明确判为缺陷。
 - P0 credential/ASR、owner/ACL 未授权和共享数据库安全边界可在一次阅读中找到。
