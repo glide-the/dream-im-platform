@@ -1375,3 +1375,79 @@ Optional Enhancers:
 - 未连接 Stripe、支付宝、微信、银行或其他真实支付网络，未配置真实商户/Webhook Secret；用户未指定渠道且当前明确 Deferred。
 - 未调用真实外部文本/图片 Provider，也未使用真实 Provider/Gateway/Payment Secret；外部 Provider/user canary、生产服务身份注入和逐入口放量属于目标环境 Release Gate。
 - 未修改真实 `ink-memory` owner/ACL/role；生产最小权限切换需要独立审批和连接池 rollout。角色创建、GRANT/REVOKE 与拒绝矩阵只在明确 clone 执行。
+
+## Round 47 — 旧数据迁移真实性复核与缺口补迁
+
+Optimized Prompt:
+
+作为 Ink Memory PostgreSQL 数据迁移负责人，处理用户反馈“之前的数据看起来没有迁移到 PostgreSQL”。不得引用旧回执直接宣称完成，也不得依据表存在或总行数猜测。以当前 Dream 受管 SQLite 主库、Notion Connector SQLite 和本机专用 PostgreSQL `ink-memory` 为实时事实源，重新执行逐表、逐主键和语义 digest 对账，确认旧数据是否完整迁入，以及应用当前是否实际连接该 PostgreSQL。
+
+先只读枚举 Dream 正式数据源路径、文件 size/mtime、43+5 表清单、每表行数、PK 集合、row digest、SQLite WAL/快照状态和 PostgreSQL 对应表/sequence/Alembic head；明确排除 `.claude/worktrees`、测试 fixture、备份、缓存与临时数据库。检查 `backend/.env` 的目标 host/port/database，但不得输出密码或完整 DSN。检查 8765 是否停止，防止迁移期间源或目标继续写入。
+
+若 SQLite 与 PostgreSQL 完全一致，必须输出可复核的逐表比较结果，并继续通过真实 FastAPI Repository/API 查询证明应用读取 PG，而不是只给 catalog 计数。若存在差异，先建立 mode-600 PostgreSQL 备份和 SQLite 只读快照/manifest，在明确命名 `*_codex_test` clone 中执行现有 43+5 importer：冲突默认阻断，禁止 DROP/TRUNCATE/DELETE、隐式 upsert、覆盖已存在不一致行或修改历史 append-only 事实。只有 clone 的 count、PK、row digest、unique、FK orphan、enum/check、JSON、UTC 时间、sequence、trigger 和三张 canonical baseline exact-adopt 全部通过，才允许对本机专用 `ink-memory` 执行相同前向补迁。
+
+迁移后验证 Dream 48/48 表、每表源/目标行数和 digest、关键用户/Workspace/Story/Session/Chat/Voice/Notion 数据、Admin migrations、Dream Alembic head、canonical 用户计费投影与真实 FastAPI startup `/api/health`。不得读取或输出正文、密码哈希、Token、Secret 或用户 PII；只输出计数、摘要、ID 不可逆 digest 和状态。验证结束关闭 8765，删除本轮精确命名测试数据库；保留备份、manifest 和不含敏感数据的迁移回执。
+
+Optional Enhancers:
+
+- 生成 48 表 source/target 行数与 digest 差异矩阵，便于定位“数据不存在”是迁移缺失、应用连错库还是查询/身份过滤问题。
+- 对迁移后 Repository 增加随机表样本的只读 existence probe，只记录布尔值和摘要，不记录业务内容。
+
+范围变化：
+
+- 用户要求重新完成旧数据迁移；Round 46 的历史回执仅作为线索，不作为本轮完成证据。
+- 本轮只处理当前正式 43+5 源到本机专用 `ink-memory` 的真实性复核与必要补迁，不引入新的计费、支付或 Gateway 功能。
+
+执行证据和验证结果：
+
+- 本记录完成前尚未重新读取当前 SQLite/PG 行数、digest 或执行任何数据库写入。
+
+未执行事项及原因：
+
+- 逐表对账、clone 演练、必要补迁、应用读取验证和资源清理必须在本 Prompt Architect 记录后执行。
+
+### Round 47 执行结果（旧数据完整，无需覆盖式补迁）
+
+- 实时源 dry-run 使用只读 SQLite Online Backup 重新扫描当前正式主库与 Notion 库：43 表/4,919 行 + 5 表/2 行，48/48 表、4,921 行、64 项源 FK 检查通过；本轮回执 `runId=a74d6bcd-104f-4ae1-8833-656e4017d29c`，manifest SHA-256 为 `827dd786d10594c52325ede4cd4dc08487e3cbea3297b55516523386f0d4893c`。
+- 逐表 count、PK 集合和归一化 row digest 对账：46 表与 PostgreSQL 完全一致；`user_preferences` 的 22 个源 PK 全部存在，仅 1 行 `updated_at` 在源库停止变化后更新；`user_sessions` 的 488 个源 PK 全部存在，PG 另有 1 条源库停止变化后的新记录。总计 4,921/4,921 个源 PK 均在 PG，源记录缺失为 0。
+- 因 PG 已比 SQLite 更新，没有执行 production importer、upsert 或任何真实库写入；覆盖式重灌会破坏迁移后新状态，现有冲突阻断应保留。无需创建补迁 clone，未留下测试数据库。
+- 使用与真实 `server.py` 相同的 env-file 加载链路执行 Repository probe，确认运行时数据库为 `ink-memory`、Alembic `20260809_06`，可见 users=28、sessions=489、chat_threads=1,165、workspaces=12、stories=4、voices=443、Notion connectors=1；这也证明运行时没有读取 488 条 Session 的旧 SQLite。
+- 使用仓库 `.venv` 真实启动 Uvicorn，进入 `Application startup complete`；`GET /api/health` 返回 200，未认证 `/api/sessions` 返回预期 401。SIGINT 后 scheduler、Claude Agent factory 与应用正常 shutdown。
+- “页面看起来无数据”的根因是 canonical 用户隔离，不是迁移缺失：`/api/sessions` 和 Chat Repository 均按 JWT `user_id` 查询；28 个用户中 Session 只归属 3 个用户，Chat Thread 只归属 15 个用户。未擅自把其他账号的旧数据重新归属当前账号。
+- canonical 用户计费投影复核为缺失 0：28 个 `users` 均有 `source=ink-dream` 内部兼容映射和 Billing Account。完整 48 表矩阵及安全判断已记录到 `docs/verification/ink-dream-memory-pg-data-reconciliation-round47.md`。
+- 本轮开始时发现 VSCode/debugpy 再次占用 8765；依据用户此前明确要求和迁移一致性需要，已发送 SIGTERM 停止。最终 8765 无监听。
+
+未执行事项及原因：
+
+- 未再次迁移或覆盖任何行，因为逐主键验证已证明没有缺失，且目标有更新数据；写入式补迁既无必要又有数据回退风险。
+- 未跨账号合并数据。若用户期望另一个登录账号看到主要旧数据，需要明确源/目标身份并单独审计 OAuth、Workspace、Story、Session、Chat、Usage 与 Ledger 引用，不能把权限隔离误修成全用户数据泄漏。
+
+## Round 48 — Dream AI 模型配置接入 Admin 公共 Gateway 与 Claude Agent 完整交互
+
+Optimized Prompt:
+
+作为 Ink Memory 的 Admin Gateway、Dream/FastAPI、Claude Agent 与 Next.js 交互实现负责人，完成 Dream 设置页“AI 模型配置”的平台化改造。可选择模型的唯一真值必须来自 Admin 对 Dream 公开的 Gateway/Product API，不得保留静态模型数组、前端硬编码 Provider 模型、浏览器 Gateway Key 或 Dream 本地模型目录副本。先审计 Admin 当前公共 Gateway 模型目录、服务间认证、错误合同、模型 alias/version/permission DTO，以及 Dream 设置页、preferences persistence、Claude Agent thread/session/streaming 调用链的真实实现，按现有接口事实制定最小兼容改造。
+
+Admin 侧应提供或修正适合 Dream 服务端调用的公开模型目录接口：只返回已启用、可由当前 canonical 用户订阅与 entitlement 使用的模型，暴露稳定 platform model identifier、显示名、能力、上下文/输出限制和必要的 UI 元数据，但不返回 Provider Secret、Gateway Key、内部凭据、成本敏感字段或上游原始配置。接口必须支持 server-to-server subject authentication、明确 401/402/403/404/409/429/502/503 合同，并保持 Gateway 推理入口与模型目录的 alias 解析一致。
+
+Dream 后端新增或完善同源 BFF：从当前 JWT 取得 canonical user，使用服务端凭据调用 Admin 公共模型目录；严格校验 DTO，失败时 fail closed，不回退静态模型。用户偏好只保存平台 model identifier；读取时处理模型下架/无权限状态，不暗中切换到其他模型。Claude Agent 创建线程、继续对话、工具调用、取消、流中断和 usage 缺失必须把所选 platform model identifier 传入现有 server-only Gateway inference client，经 Admin Gateway 完成资格判断、Provider 路由、Token reserve/capture/release、Usage 与 Token Ledger；不得直连 Anthropic/OpenAI，也不得把服务凭据送到浏览器。
+
+Dream 前端设置页用真实 BFF 数据渲染 loading、empty、401/402/403/429/503、当前模型已下架/无权限和重试状态；保存后新 Claude Agent 交互使用该模型，现有会话的模型语义必须明确且可测试。保持桌面与移动交互、键盘/Label/焦点和现有 Claude Agent SSE 行为。补齐 Admin API/service tests、Dream backend contract/unit/integration、frontend unit/build/lint 和 focused Claude Agent E2E；只使用隔离 PostgreSQL、synthetic Gateway/Provider，不使用真实用户 Token、Provider Secret 或共享测试库。验证结束关闭 8765，不覆盖用户已有未提交修改。
+
+Optional Enhancers:
+
+- 为模型目录增加 ETag/短 TTL 服务端缓存，但权限变化必须及时失效，缓存键必须包含 canonical user 与 entitlement version。
+- 为 Claude Agent 流式请求记录不含正文/Secret的 model alias、request ID、settlement outcome 结构化回执，便于证明设置选择确实影响 Gateway 路由。
+
+范围变化：
+
+- 本轮只处理 Dream AI 模型选择、Admin 公共 Gateway 模型目录兼容及 Claude Agent 完整交互，不扩展真实支付渠道、数据库迁移或跨账号数据合并。
+- 既有 Token-only 月订阅、server-only Gateway 与 PostgreSQL 继续作为基础；不得把静态 UI 或 mocked Provider 误报为生产 Gateway 接入。
+
+执行证据和验证结果：
+
+- 本记录完成前尚未审计 Admin 公共模型目录合同、Dream 设置页模型来源或 Claude Agent 的当前 model identifier 传递链，也未修改相关代码。
+
+未执行事项及原因：
+
+- 接口审计、Schema/DTO/Service/BFF/UI/Claude Agent 改造与隔离验证必须在本 Prompt Architect 记录之后执行。
