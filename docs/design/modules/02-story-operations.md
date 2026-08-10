@@ -2,6 +2,8 @@
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[Story 运营](../../prd/modules/02-story-operations.md)
 
+> 完整业务与技术设计：[Admin / Dream 剧本业务最终交互与架构设计](story-business/admin-dream-interaction-design.md)
+
 > 实现状态：Workspace/Story 交互已实现；Dream 48/569/81/25 与 PG-only runtime 为 Release candidate。Character/Scene 仍按 Admin Repository/权限条件开放；`/admin/story/workflow-runs` 当前仍重定向 Story。
 
 ## 0. Current / Target / Release Gate
