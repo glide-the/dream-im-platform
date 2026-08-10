@@ -79,8 +79,8 @@ describe("public Gateway model catalog", () => {
       }),
       expect.objectContaining({
         id: "dream-premium",
-        callable: false,
-        availability: "upgrade_required",
+        callable: true,
+        availability: "included",
         required_plan_code: "dream",
       }),
     ]);
@@ -99,8 +99,6 @@ describe("public Gateway model catalog", () => {
     [{ subscription_id: null }, "subscription_inactive"],
     [{ provider_ready: false }, "maintenance"],
     [{ pricing_ready: false }, "maintenance"],
-    [{ entitlement_id: null, required_plan_code: "dream" }, "upgrade_required"],
-    [{ entitlement_id: null, required_plan_code: null }, "maintenance"],
     [{ permission_enabled: false }, "permission_denied"],
     [{ allowance_id: null }, "subscription_inactive"],
     [{ remaining_tokens: "0" }, "allowance_exhausted"],
@@ -108,6 +106,16 @@ describe("public Gateway model catalog", () => {
     expect(evaluateModelAvailability({ ...baseRow, ...patch }, now)).toEqual({
       callable: false,
       availability,
+    });
+  });
+
+  it.each([
+    { entitlement_id: null, required_plan_code: "dream" },
+    { entitlement_id: null, required_plan_code: null },
+  ])("keeps enabled models callable without a plan entitlement: %j", (patch) => {
+    expect(evaluateModelAvailability({ ...baseRow, ...patch }, now)).toEqual({
+      callable: true,
+      availability: "included",
     });
   });
 });

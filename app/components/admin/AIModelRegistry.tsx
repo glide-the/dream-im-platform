@@ -100,9 +100,8 @@ export default function AIModelRegistry() {
           const capabilities = capabilityLabels(model.capabilities);
           const modelId = String(model.id);
           const validationResult = validation[modelId];
-          const catalogReady = model.provider_ready === true
-            && model.pricing_ready === true
-            && model.published_messages_entitlement === true;
+          const runtimeReady = model.provider_ready === true
+            && model.pricing_ready === true;
           return (
             <article key={String(model.id)} className="rounded-2xl border border-border bg-bg-surface p-5 shadow-soft">
               <div className="flex items-start justify-between gap-4">
@@ -114,10 +113,10 @@ export default function AIModelRegistry() {
                 <div><dt className="text-text-tertiary">Context / Max output</dt><dd className="mt-1 font-mono text-[11px]">{model.context_window ? Number(model.context_window).toLocaleString("zh-CN") : "—"} / {model.max_output_tokens ? Number(model.max_output_tokens).toLocaleString("zh-CN") : "—"}</dd></div>
               </dl>
               <div className="mt-4 flex min-h-8 flex-wrap gap-2">{capabilities.length ? capabilities.map((label) => <span key={label} className="rounded-full bg-bg-secondary px-2.5 py-1 text-[10px] text-text-secondary">{label}</span>) : <span className="text-xs text-text-tertiary">未声明能力</span>}</div>
-              {model.enabled ? <p className={`mt-3 text-xs ${catalogReady ? "text-success" : "text-accent-orange"}`}>
-                {catalogReady
-                  ? "公共目录可见 · 已具备可调用配置；最终资格仍按用户订阅实时判断。"
-                  : `公共目录可见 · 当前维护中${model.provider_ready !== true ? " · Provider未就绪" : ""}${model.pricing_ready !== true ? " · 缺有效定价" : ""}${model.published_messages_entitlement !== true ? " · 未绑定已发布Messages权益" : ""}`}
+              {model.enabled ? <p className={`mt-3 text-xs ${runtimeReady ? "text-success" : "text-accent-orange"}`}>
+                {runtimeReady
+                  ? `公共目录可见 · 用户具备有效 Token 额度时可调用${model.published_messages_entitlement === true ? " · 已配置套餐级模型限额" : " · 未配置套餐级模型限额"}。`
+                  : `公共目录可见 · 运行配置待修复${model.provider_ready !== true ? " · Provider未就绪" : ""}${model.pricing_ready !== true ? " · 缺有效定价" : ""}`}
               </p> : <p className="mt-3 text-xs text-text-tertiary">公共目录不可见 · 模型已停用。</p>}
               {validationResult?.message ? <p className={`mt-3 text-xs ${validationResult.status === "failed" ? "text-danger" : validationResult.status === "degraded" ? "text-accent-orange" : "text-success"}`} role="status">{validationResult.message}{validationResult.responseTimeMs !== undefined && validationResult.responseTimeMs !== null ? ` · ${validationResult.responseTimeMs} ms` : ""}{validationResult.httpStatus ? ` · HTTP ${validationResult.httpStatus}` : ""}</p> : null}
               <div className="mt-5 flex flex-wrap justify-end gap-2">

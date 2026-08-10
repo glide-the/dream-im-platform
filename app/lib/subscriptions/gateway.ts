@@ -16,6 +16,7 @@ type Row = {
   grace_ends_at: Date | null;
   entitlement_id: string | null;
   gateway_scopes: string[] | null;
+  permission_enabled: boolean | null;
   requests_per_minute: number | null;
   daily_token_limit: string | number | null;
   monthly_token_limit: string | number | null;
@@ -30,7 +31,7 @@ export type GatewaySubscriptionContext = {
   platformUserId: string;
   subscriptionId: string;
   planVersionId: string;
-  entitlementId: string;
+  entitlementId: string | null;
   allowanceId: string;
   coverageMode: "token_allowance";
   allowanceReservedTokens: number;
@@ -80,6 +81,7 @@ export async function resolveGatewaySubscriptionOnClient(
             s.status AS subscription_status, s.current_period_start,
             s.current_period_end, s.trial_ends_at, s.grace_ends_at,
             e.id AS entitlement_id, e.gateway_scopes,
+            permission.enabled AS permission_enabled,
             e.requests_per_minute, e.daily_token_limit,
             e.monthly_token_limit, a.id AS allowance_id,
             a.granted_tokens, a.bonus_granted_tokens,
@@ -88,6 +90,10 @@ export async function resolveGatewaySubscriptionOnClient(
      LEFT JOIN subscription_plan_entitlements e
        ON e.plan_version_id = s.plan_version_id
       AND e.model_id = $2 AND e.enabled
+      AND e.gateway_scopes @> ARRAY[$3]::text[]
+     LEFT JOIN user_model_permissions permission
+       ON permission.platform_user_id = s.platform_user_id
+      AND permission.model_id = $2
      LEFT JOIN subscription_usage_allowances a
        ON a.subscription_id = s.id
       AND a.period_start = s.current_period_start
@@ -96,7 +102,7 @@ export async function resolveGatewaySubscriptionOnClient(
      ORDER BY s.created_at DESC
      LIMIT 1
      FOR SHARE OF s`,
-    [input.platformUserId, input.modelId],
+    [input.platformUserId, input.modelId, input.requiredScope],
   );
   const row = result.rows[0];
   if (!row) {
@@ -141,18 +147,11 @@ export async function resolveGatewaySubscriptionOnClient(
       message: "The current subscription period has expired",
     };
   }
-  if (!row.entitlement_id || !row.gateway_scopes) {
+  if (row.permission_enabled === false) {
     return {
-      code: "SUBSCRIPTION_MODEL_NOT_ALLOWED",
+      code: "SUBSCRIPTION_MODEL_PERMISSION_DENIED",
       status: 403,
-      message: "The subscription does not allow this model",
-    };
-  }
-  if (!row.gateway_scopes.includes(input.requiredScope)) {
-    return {
-      code: "SUBSCRIPTION_SCOPE_NOT_ALLOWED",
-      status: 403,
-      message: "The subscription entitlement does not allow this Gateway scope",
+      message: "This user is not permitted to call the model",
     };
   }
   if (!row.allowance_id) {
@@ -200,6 +199,7 @@ export async function resolveGatewaySubscriptionOnClient(
       periodStart: row.current_period_start.toISOString(),
       periodEnd: row.current_period_end.toISOString(),
       gatewayScopes: row.gateway_scopes,
+      entitlementSource: row.entitlement_id ? "plan" : "allowance-only",
       coverageMode: "token_allowance",
     },
   };

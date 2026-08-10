@@ -22,6 +22,7 @@ const baseRow = {
   requests_per_minute: 10,
   daily_token_limit: 100_000,
   monthly_token_limit: 1_000_000,
+  permission_enabled: null,
   allowance_id: "allow_1",
   granted_tokens: 100_000,
   bonus_granted_tokens: 0,
@@ -67,6 +68,62 @@ describe("subscription Gateway eligibility", () => {
     });
     expect(result).not.toHaveProperty("cashReservedMicrousd");
     expect(result).not.toHaveProperty("allowanceReservedMicrousd");
+  });
+
+  it("allows an enabled model without a plan entitlement and keeps allowance provenance", async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [{
+        ...baseRow,
+        entitlement_id: null,
+        gateway_scopes: null,
+        requests_per_minute: null,
+        daily_token_limit: null,
+        monthly_token_limit: null,
+      }],
+    });
+    const result = await resolveGatewaySubscriptionOnClient(
+      clientWith(query),
+      {
+        platformUserId: "user_1",
+        modelId: "model_unbound",
+        requiredScope: "messages:create",
+        estimatedTokens: 1_000,
+        at: new Date("2026-08-08T00:00:00.000Z"),
+      },
+    );
+    expect(result).toMatchObject({
+      planVersionId: "planv_1",
+      entitlementId: null,
+      allowanceId: "allow_1",
+      limits: {},
+      snapshot: {
+        entitlementSource: "allowance-only",
+        gatewayScopes: null,
+      },
+    });
+    expect(String(query.mock.calls[0][0])).toContain(
+      "e.gateway_scopes @> ARRAY[$3]::text[]",
+    );
+  });
+
+  it("still enforces an explicit per-user model denial", async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [{ ...baseRow, permission_enabled: false }],
+    });
+    const result = await resolveGatewaySubscriptionOnClient(
+      clientWith(query),
+      {
+        platformUserId: "user_1",
+        modelId: "model_1",
+        requiredScope: "messages:create",
+        estimatedTokens: 1_000,
+        at: new Date("2026-08-08T00:00:00.000Z"),
+      },
+    );
+    expect(result).toMatchObject({
+      code: "SUBSCRIPTION_MODEL_PERMISSION_DENIED",
+      status: 403,
+    });
   });
 
   it("rejects paused subscriptions before Provider dispatch", async () => {

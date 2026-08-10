@@ -59,12 +59,6 @@ export function evaluateModelAvailability(row: ModelCatalogRow, at = new Date())
   if (!subscriptionCallable) {
     return { callable: false, availability: "subscription_inactive" };
   }
-  if (!row.entitlement_id) {
-    return {
-      callable: false,
-      availability: row.required_plan_code ? "upgrade_required" : "maintenance",
-    };
-  }
   if (row.permission_enabled === false) {
     return { callable: false, availability: "permission_denied" };
   }

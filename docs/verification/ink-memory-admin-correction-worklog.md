@@ -2355,3 +2355,70 @@ Optimized Prompt:
 执行证据与验证结果：
 
 - 本记录落盘前已知 canonical Story=0、queued workflow=4；尚未证明 Dream UI 所见列表的具体数据源。
+
+## Round 67 — Enabled 模型全员可见可用与 Entitlement 解耦
+
+Optimized Prompt:
+
+作为 PostgreSQL/Token Subscription 架构师、AI Gateway 架构师、FastAPI/Python 工程师、Next.js/React 工程师和 UI 状态设计负责人，修复 Dream 模型设置中的两个真实问题：Free v3 已加入 `hy-preview`，但现有 Free v2 用户仍不能选择；Admin AIModelRegistry 中所有 `enabled=true` 的模型必须对每个已认证 canonical 用户可见，并且不能因为没有绑定某个 Subscription Plan Entitlement 就被标记为“当前维护中”或禁止 Dream 使用。
+
+采用新的明确产品合同：Subscription Plan 负责用户级月度 Token Allowance、续期与可选的模型级 RPM/日/月 Token 限制；Plan Entitlement 不再充当 Admin enabled 模型的强制白名单。公共目录以 Admin `ai_models.enabled=true` 为可见集合；在 Provider、有效定价、canonical 用户、Subscription 状态、当前周期 Token Allowance 和显式 `user_model_permissions` 均满足时，enabled 模型即为 `callable=true / included`，即使当前 Subscription Plan Version 没有该模型 Entitlement。若存在 Entitlement，继续读取其更严格的模型级限额；若不存在则使用 Subscription Allowance 与 Gateway 自身限流，不得伪造 Entitlement。Gateway Request 允许 `subscription_entitlement_id` 为空，但 Subscription、Plan Version、Allowance、reserve/capture/release 与 Token Ledger 必须继续真实记录并保持历史不可变。
+
+`maintenance` 只能表达 enabled 模型的真实运行依赖未就绪（例如 Provider Secret/路由或有效定价缺失）；“未绑定套餐”“仍在旧 Free Plan Version”“没有 Entitlement”不得映射为 maintenance。Admin Registry 对 enabled 模型始终说明“公共目录可见”；未绑定已发布 Messages Entitlement 只作为可选限额配置提示，不得称为维护或阻止 Dream 使用。`enabled=false` 不进入公共 enabled catalog；已保存 alias 后停用仍返回 409 并要求重新选择。
+
+先用只读 PostgreSQL 证据确认 `hy-preview` 的 enabled/Provider/定价、Free v1-v3 Entitlement 和现有 Subscription 指向，再最小修改 Admin `/v1/models` availability evaluator、Gateway subscription resolver、nullable Entitlement request snapshot、AIModelRegistry 文案及测试。Dream BFF 继续严格校验安全 DTO；设置页加载全部 enabled models，真实 callable 模型可保存，未授权/额度耗尽/运行依赖异常显示准确原因。不得更新现有 Subscription 的 `plan_version_id`、Allowance provenance、Usage、Ledger、Audit 或历史 Event；本轮不通过重置 Free 周期来“修复”旧用户。
+
+验收标准：只读数据库证明 `hy-preview` enabled、Provider/定价 ready、Free v3 包含它而 28 个现有 active Free Subscription 仍在 v2；修改后这些用户无需重置余额即可在 catalog 中获得 `hy-preview callable=true`，完全未绑定 Plan 的 enabled `deepseek-v4-pro` 同样可见且在资格满足时可调用；无 Subscription 为 `subscription_inactive`，额度耗尽为 402/`allowance_exhausted`，显式模型拒绝为 403/`permission_denied`，Provider/定价异常才为 `maintenance`。Admin focused tests、Dream backend/frontend tests、typecheck/lint/build 和真实本机 `/api/gateway/models`、Settings 保存、Claude Agent Gateway reserve/capture/release/Token Ledger 验证通过；普通用户仍不能访问 Admin Registry，Secret 不进入 DTO、日志或页面。
+
+Optional Enhancers:
+
+- 在 Gateway `subscription_snapshot` 中记录 `entitlementSource: "plan" | "allowance-only"`，便于审计不带 Entitlement 的调用，同时不暴露内部套餐路由给浏览器。
+- 为 enabled 但无 Plan binding 的模型增加长期回归测试，防止后续又被误映射为 maintenance。
+- 在 Admin Registry 将“已绑定套餐限额”改为独立提示，避免运营人员误以为模型可见性依赖套餐绑定。
+
+范围变化：
+
+- 用户明确取消“未绑定 Subscription Plan 就不能在 Dream 使用”的限制；本轮据此将 Entitlement 从强制模型白名单改为可选模型级限额来源。Token Allowance、Subscription 状态、显式模型权限和真实 Gateway 计量仍是强制资格。
+- 不再迁移 28 个现有 Free v2 Subscription 到 v3；这样避免重置当前周期、改写 Allowance provenance 或历史 Ledger。Free v3 仍用于新用户默认额度/默认模型与后续周期版本语义。
+
+执行证据与验证结果：
+
+- 本机专用 `ink-memory/public` 只读审计：`hy-preview` 为 enabled，Provider active 且 Secret 字段非空，active pricing ready；Free v3（published）仅绑定 `hy-preview`，但 28 个 active Free Subscription 全部仍指向 v2。Free v1 的 28 条历史 Subscription 为 cancelled。
+- enabled 模型共有 `deepseek-v4-flash`、`deepseek-v4-pro`、`hy-preview`；其中 `deepseek-v4-pro` 没有任何 published Plan binding，但 Provider/定价 ready。现有 SQL 因 `entitlement_id IS NULL` 将它映射为 maintenance，确认可见性/可调用资格与 Plan binding 被错误耦合。
+- 当前实现尚未修改；后续必须先完成本记录再进入实现。
+
+失败尝试及根因：
+
+- 首次只读 SQL 使用了不存在的 `ai_models.name`、旧 Provider/Plan 字段名，PostgreSQL 返回 42703；随后通过 `information_schema.columns` 核对真实字段为 `display_name`、Provider `status/api_key_ciphertext`、Plan Version `version_number/allowance_tokens` 后重跑成功。事务为 READ ONLY，未产生数据写入。
+
+未执行事项及原因：
+
+- 代码实现、测试、真实 Settings 保存和 Gateway 计量验证需在本 Prompt Architect 记录之后执行。
+
+### Round 67 执行结果
+
+- 根因已确认：`hy-preview` 本身为 enabled、Provider active、Secret 配置存在且 active pricing ready；Free v3（published）包含 `hy-preview`，但 28 个现有 active Free Subscription 全部仍固定在 v2。旧 catalog/推理 SQL 又把当前 Plan Version Entitlement 当作模型白名单，因此截图中的现有 Free 用户看到 `需要 free 套餐` 且不能选择；完全没有 Plan binding 的 enabled `deepseek-v4-pro` 同样被误报为 maintenance。
+- 新合同已在 catalog 与真实推理资格两处同步实现：所有 `ai_models.enabled=true` 模型进入每个 authenticated canonical 用户的目录；没有 Entitlement 时，只要 Subscription/周期/Allowance/显式 Model Permission/Provider/定价满足，返回 `included` 并允许调用。存在 Entitlement 时继续使用其 RPM、daily/monthly Token 限额；不存在时 `subscription_entitlement_id=NULL`，Gateway Request snapshot 标记 `entitlementSource=allowance-only`，Allowance、Plan Version、reserve/capture/release 和 Token Ledger 仍真实记录。
+- 没有迁移 28 个 Free v2 Subscription，也没有更新其 `plan_version_id`、Allowance grant/provenance、Usage、Ledger、Audit 或历史 Event。Free v3 继续用于新用户默认版本；本轮通过解除错误白名单耦合使当前用户立即使用 enabled 模型，避免重置月度周期或赠送第二份额度。
+- Admin Registry 文案不再把“未绑定已发布 Messages Entitlement”称为“当前维护中”；enabled + runtime ready 显示公共目录可见、有效 Token 额度可调用，并把 Plan Entitlement 仅描述为套餐级模型限额配置。disabled 模型仍不进入公共目录，Admin RBAC 未改变。
+- 真实 BFF `GET http://127.0.0.1:5173/api/gateway/models` 返回 200；命名本机测试用户收到三个 enabled 模型：`deepseek-v4-flash`、无任何 Plan binding 的 `deepseek-v4-pro`、`hy-preview` 均为 `callable=true / included`，默认 alias 保持 `deepseek-v4-flash`。DTO 未包含 upstream model、Provider 路由、密钥或定价内部字段。
+- 真实 Playwright 通过 3/3：1440×1000 与 390×844 均加载三个真实模型，`hy-preview` 可用 radio 选择并通过真实 `PUT /api/system-config` 200 保存；无 API 4xx/5xx、console error、pageerror、requestfailure 或 document 横向溢出。Dream bearer 访问 Admin model API 为 401/403。Source Playwright contract 另通过 2/2。截图保存在 `ink-dream-memory/frontend/output/playwright/round67-settings-{desktop-1440x1000,mobile-390x844}.png`（gitignored）。
+- 真实 Claude Agent 使用已保存 `hy-preview` 建立 SSE 为 HTTP 200，Gateway eligibility 成功进入 Provider：相对基线新增 8 个 `hy-preview` Gateway Request，全部 settled、`subscription_entitlement_id=NULL`、Allowance FK 非空；Token Ledger 新增 8 reserve + 8 release，金额各 352,712 Token，净占用为 0，证明缺 Entitlement 不再阻断且上游失败不会误扣额度。
+- 上述 SSE 未获得 finish frame：`hy-preview` 上游连续返回 HTTP 429 `UPSTREAM_RATE_LIMITED`，SDK 自动重试；为避免继续制造无意义请求，主动中断客户端并调用 thread stop API 200。该失败发生在真实 Provider dispatch 之后，不是目录、保存、Subscription、Entitlement、Allowance 或 Gateway settlement 回归；在上游限流解除前不得声称“真实 hy SSE 完整成功”。
+- 验证通过：Admin `pnpm env:check`；67/67 test files、330/330 tests；`pnpm exec tsc --noEmit`；`pnpm lint`；`pnpm build`。Dream backend focused 21/21；frontend source Playwright 2/2、real browser 3/3；frontend lint 0 errors（保留既有 21 warnings）与 production build 通过。两仓 `git diff --check` 通过。
+- 失败尝试：首次 BFF 复测为 Vite 502，检查确认 5173 正常而 8765/3000 无 listener；启动本轮自有 Dream backend/Admin dev 后同一请求变为 200。前端 source contract 首次误用 Vitest，因测试文件使用 `@playwright/test` 被 runner 拒绝；改用 repository-local Playwright 后 2/2。Ledger 基线首次误查不存在的 `token_delta`，核对 schema 后改为 `amount_tokens`。Playwright 默认清理 tracked `test-results`；已只恢复运行前未修改的 tracked 目录，并把本轮证据复制到 gitignored output，未覆盖其他改动。
+- 清理确认：本轮启动的 3000 Admin 与 8765 Dream backend 已停止，测试 thread stop 返回 200；用户原有 5173 listener（PID 23000）保持运行。本轮没有输出 DSN、JWT、Gateway Key 或 Provider Secret 内容。
+
+未执行事项及原因：
+
+- `hy-preview` 上游成功内容/SSE finish、capture 与 consumed Token 增量尚未完成，唯一阻断为 Provider 429。当前已有真实 eligibility、reserve、settled failure 和等额 release 证据；待上游解除限流后应只重跑命名用户的一次 Claude Agent SSE，并核对新增 request HTTP 200、capture/release 和 consumed ledger。
+- 真实支付、Dream/is Dreaming 商业开通不在本轮模型可见性修复范围内。
+
+### Round 66 执行结果
+
+- Dream 5173 frontend 与 8765 backend 均从 `ink-dream-memory` 当前仓库运行；Vite `/api` 代理到 8765，backend 指向同一 5433/`ink-memory`，排除不同数据库。
+- Dream 的“故事管理”路由确实调用 `/api/story-workspace/stories`，backend 同样查询 `story_workspace_stories WHERE author_id=<current user>`；因此该正式列表对用户 28 也应为 0，不存在另一张数据库 Story 表。
+- 用户实际可见的“剧本”来自 Dream run execution 的 Episode artifact reader：frontend 调用 `/api/story-workspace/workflow-runs/{runId}/episode-artifacts`，gateway 解析 run 的 thread workspace，然后由 `StoryWorkspaceEpisodeArtifactService` 读取工作区 `stories/<project>/episodes/EP01/script.md` 等文件。
+- 只读文件元数据证明该用户 4 个 thread workspace 中有两套非空 `EP01/script.md`（同时有 outline/storyboard/review 等 artifact）；没有读取或输出正文。PostgreSQL canonical Story/Character/Scene 仍均为 0。
+- 准确断点在 `backend/claude_agent/service.py`：常规 Agent 的完整 JSON Story bundle 会调用 `store_agent_story_output` 写入 `story_workspace_stories`，但请求带 `story_workspace_dream_context` 时 `_store_story_workspace_output` 直接 `return None`。Episode artifact 写入文件系统后没有任何现有代码把 `script.md` materialize/upsert 到 canonical Story 表；全仓库生产插入该表的代码仅在 `services/story_workspace/agent_integration.py`。
+- 确定根因：Dream execution UI 和 Admin Story 使用两套尚未桥接的持久化模型。Dream 读 thread filesystem artifact，Admin 按项目约束读 PostgreSQL canonical Story；Dream-mode persistence 被代码显式跳过，导致“Dream 有剧本文件、Admin 无 Story 行”。这不是 Admin 筛选、缓存、JOIN 或数据库连接问题。
