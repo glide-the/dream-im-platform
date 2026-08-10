@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { pricingFields, providerFields } from "./AdminResourceViews";
+import { modelFields, pricingFields, providerFields } from "./AdminResourceViews";
 import {
   adminListErrorPresentation,
   buildPayload,
+  validateJsonEditorValue,
   valuesFromRecord,
 } from "./AdminResourceManager";
 import { canonicalAdminResource } from "./providers";
@@ -71,6 +72,40 @@ describe("admin resource form serialization", () => {
 
     expect(values.config).toBe(JSON.stringify({ region: "cn" }, null, 2));
     expect(values.authMode).toBe("bearer");
+  });
+
+  it("round-trips model-specific request headers as JSON", () => {
+    const values = valuesFromRecord(modelFields, {
+      provider_id: "provider-test",
+      code: "hy3",
+      upstream_model: "hy3-preview",
+      display_name: "HY3 Preview",
+      request_headers: { "user-agent": "OpenAI/JS 6.39.1" },
+      capabilities: { chat: true },
+      enabled: true,
+    }, {}, "edit");
+
+    expect(values.requestHeaders).toBe(JSON.stringify({
+      "user-agent": "OpenAI/JS 6.39.1",
+    }, null, 2));
+    expect(buildPayload(modelFields, values, "edit")).toMatchObject({
+      requestHeaders: { "user-agent": "OpenAI/JS 6.39.1" },
+    });
+  });
+
+  it("validates and formats the model request-header JSON editor", () => {
+    expect(validateJsonEditorValue('{"User-Agent":"OpenAI/JS 6.39.1"}', "object")).toEqual({
+      valid: true,
+      parsed: { "User-Agent": "OpenAI/JS 6.39.1" },
+      formatted: '{\n  "User-Agent": "OpenAI/JS 6.39.1"\n}',
+    });
+    expect(validateJsonEditorValue('{"User-Agent":}', "object")).toMatchObject({
+      valid: false,
+    });
+    expect(validateJsonEditorValue('["User-Agent"]', "object")).toEqual({
+      valid: false,
+      error: "必须填写 JSON 对象，例如 {\"User-Agent\":\"OpenAI/JS 6.39.1\"}。",
+    });
   });
 
   it("serializes Pricing USD and percentage controls to integer micro-USD and bps", () => {

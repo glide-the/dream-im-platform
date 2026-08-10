@@ -5,6 +5,10 @@ import type {
 } from "../billing/types";
 import { GatewayError } from "../gateway/errors";
 import { withPlatformTransaction } from "../platform-db";
+import {
+  modelRequestHeadersSchema,
+  type ModelRequestHeaders,
+} from "./request-headers";
 
 type ModelProviderRow = {
   model_id: string;
@@ -14,6 +18,7 @@ type ModelProviderRow = {
   context_window: number | null;
   max_output_tokens: number | null;
   capabilities: Record<string, boolean> | null;
+  request_headers: unknown;
   provider_id: string;
   provider_code: string;
   protocol: AiProviderProtocol;
@@ -85,6 +90,7 @@ export type ResolvedBillableModel = {
     contextWindow?: number;
     maxOutputTokens?: number;
     capabilities: Record<string, boolean>;
+    requestHeaders: ModelRequestHeaders;
   };
   provider: {
     id: string;
@@ -120,7 +126,7 @@ export async function resolveBillableModel(input: {
     const { rows } = await client.query<ModelProviderRow>(
       `SELECT m.id AS model_id, m.code AS model_code, m.upstream_model,
               m.display_name, m.context_window, m.max_output_tokens,
-              m.capabilities, p.id AS provider_id, p.code AS provider_code,
+              m.capabilities, m.request_headers, p.id AS provider_id, p.code AS provider_code,
               p.protocol, p.base_url, p.api_key_ciphertext, p.api_key_iv,
               p.api_key_tag, p.timeout_ms, p.max_retries,
               p.config AS provider_config
@@ -146,6 +152,15 @@ export async function resolveBillableModel(input: {
       throw new GatewayError(
         "PROVIDER_CREDENTIAL_UNAVAILABLE",
         "The selected provider has no usable credential",
+        503,
+        "configuration_error",
+      );
+    }
+    const requestHeaders = modelRequestHeadersSchema.safeParse(row.request_headers ?? {});
+    if (!requestHeaders.success) {
+      throw new GatewayError(
+        "MODEL_REQUEST_HEADERS_INVALID",
+        "The selected model has invalid upstream request headers",
         503,
         "configuration_error",
       );
@@ -210,6 +225,7 @@ export async function resolveBillableModel(input: {
         contextWindow: row.context_window ?? undefined,
         maxOutputTokens: row.max_output_tokens ?? undefined,
         capabilities: row.capabilities ?? {},
+        requestHeaders: requestHeaders.data,
       },
       provider: {
         id: row.provider_id,

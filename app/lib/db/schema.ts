@@ -368,6 +368,10 @@ export const aiModels = pgTable(
     capabilities: jsonb("capabilities")
       .$type<Record<string, boolean>>()
       .default({}),
+    request_headers: jsonb("request_headers")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
     enabled: boolean("enabled").notNull().default(false),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
@@ -385,6 +389,10 @@ export const aiModels = pgTable(
     ),
     index("ai_models_provider_idx").on(table.provider_id),
     index("ai_models_enabled_idx").on(table.enabled),
+    check(
+      "ai_models_request_headers_check",
+      sql`jsonb_typeof(${table.request_headers}) = 'object'`,
+    ),
   ],
 );
 

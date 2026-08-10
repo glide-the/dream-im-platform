@@ -1,0 +1,2 @@
+ALTER TABLE "ai_models" ADD COLUMN "request_headers" jsonb DEFAULT '{}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_request_headers_check" CHECK (jsonb_typeof("ai_models"."request_headers") = 'object');

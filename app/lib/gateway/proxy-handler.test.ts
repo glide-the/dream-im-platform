@@ -40,7 +40,7 @@ function prepared(providerProtocol: "anthropic" | "openai") {
     effectiveMaxOutputTokens: 128,
     resolved: {
       provider: { protocol: providerProtocol, id: "p", code: "p", baseUrl: "https://example.com", encryptedCredential: { ciphertext: "x", iv: "y", tag: "z" }, timeoutMs: 1000, maxRetries: 0, config: {} },
-      model: { id: "m", code: "m", upstreamModel: "upstream", displayName: "M", capabilities: {} },
+      model: { id: "m", code: "m", upstreamModel: "upstream", displayName: "M", capabilities: {}, requestHeaders: {} },
       pricingRuleId: "price",
       pricing: { inputPriceMicrousdPerMillion: 1, outputPriceMicrousdPerMillion: 1, cacheReadPriceMicrousdPerMillion: 1, cacheWritePriceMicrousdPerMillion: 1, markupBps: 0, discountBps: 0 },
       limits: {},

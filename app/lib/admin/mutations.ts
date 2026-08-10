@@ -7,6 +7,7 @@ import { GatewayError } from "../gateway/errors";
 import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
 import { withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
+import { modelRequestHeadersSchema } from "../models/request-headers";
 import {
   CredentialConfigurationError,
   encryptCredential,
@@ -125,6 +126,7 @@ const modelCreateSchema = z.strictObject({
   contextWindow: z.number().int().positive().nullable().optional(),
   maxOutputTokens: z.number().int().positive().nullable().optional(),
   capabilities: z.record(z.string(), z.boolean()).default({}),
+  requestHeaders: modelRequestHeadersSchema.default({}),
   enabled: z.boolean().default(false),
 });
 
@@ -134,6 +136,7 @@ const modelUpdateSchema = z.strictObject({
   contextWindow: z.number().int().positive().nullable().optional(),
   maxOutputTokens: z.number().int().positive().nullable().optional(),
   capabilities: z.record(z.string(), z.boolean()).optional(),
+  requestHeaders: modelRequestHeadersSchema.optional(),
   enabled: z.boolean().optional(),
 });
 
@@ -403,10 +406,10 @@ async function insertModel(
   const result = await client.query<Record<string, unknown>>(
     `INSERT INTO ai_models (
        id, provider_id, code, upstream_model, display_name,
-       context_window, max_output_tokens, capabilities, enabled
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+       context_window, max_output_tokens, capabilities, request_headers, enabled
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10)
      RETURNING id, provider_id, code, upstream_model, display_name,
-               context_window, max_output_tokens, capabilities, enabled,
+               context_window, max_output_tokens, capabilities, request_headers, enabled,
                created_at, updated_at`,
     [
       id,
@@ -417,6 +420,7 @@ async function insertModel(
       input.contextWindow ?? null,
       input.maxOutputTokens ?? null,
       JSON.stringify(input.capabilities),
+      JSON.stringify(input.requestHeaders),
       input.enabled,
     ],
   );
@@ -980,6 +984,15 @@ async function updateModel(
     input.capabilities === undefined
       ? undefined
       : JSON.stringify(input.capabilities),
+    "::jsonb",
+  );
+  addUpdate(
+    updates,
+    values,
+    "request_headers",
+    input.requestHeaders === undefined
+      ? undefined
+      : JSON.stringify(input.requestHeaders),
     "::jsonb",
   );
   addUpdate(updates, values, "enabled", input.enabled);

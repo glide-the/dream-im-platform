@@ -33,10 +33,10 @@ describe("model validation", () => {
       expect.objectContaining({
         method: "POST",
         redirect: "manual",
-        headers: expect.objectContaining({ authorization: "Bearer fixture-credential" }),
       }),
     );
     const request = fetcher.mock.calls[0][1] as RequestInit;
+    expect(new Headers(request.headers).get("authorization")).toBe("Bearer fixture-credential");
     expect(JSON.parse(String(request.body))).toMatchObject({
       model: "deepseek-v4-pro",
       max_tokens: 1,
@@ -63,5 +63,24 @@ describe("model validation", () => {
       { fetcher: async () => { throw new TypeError("network detail"); } },
     );
     expect(unavailable).toMatchObject({ status: "failed", usable: false, message: "无法连接模型上游" });
+  });
+
+  it("uses the model-specific request headers during validation", async () => {
+    const fetcher = vi.fn(async (_input: string, _init: RequestInit) => ({ status: 200 }));
+    await validateUpstreamModel(
+      {
+        protocol: "openai",
+        baseUrl: "https://api.openai.com",
+        upstreamModel: "hy3-preview",
+        credential: "fixture-credential",
+        config: { authMode: "bearer" },
+        requestHeaders: { "user-agent": "OpenAI/JS 6.39.1" },
+      },
+      { fetcher },
+    );
+
+    const headers = new Headers(fetcher.mock.calls[0][1].headers);
+    expect(headers.get("user-agent")).toBe("OpenAI/JS 6.39.1");
+    expect(headers.get("authorization")).toBe("Bearer fixture-credential");
   });
 });

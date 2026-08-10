@@ -4,6 +4,11 @@ import type { AiProviderProtocol } from "../billing/types";
 import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
 import { withPlatformClient, withPlatformTransaction } from "../platform-db";
 import { decryptCredential } from "../security/credential-encryption";
+import {
+  applyModelRequestHeaders,
+  modelRequestHeadersSchema,
+  type ModelRequestHeaders,
+} from "../models/request-headers";
 import { recordAdminAuditOnClient } from "./audit";
 import { AdminError, adminErrorResponse } from "./errors";
 import {
@@ -16,6 +21,7 @@ type ModelValidationRow = {
   id: string;
   code: string;
   upstream_model: string;
+  request_headers: unknown;
   provider_id: string;
   provider_code: string;
   protocol: AiProviderProtocol;
@@ -83,6 +89,7 @@ export async function validateUpstreamModel(
     upstreamModel: string;
     credential: string;
     config?: Record<string, unknown>;
+    requestHeaders?: ModelRequestHeaders;
     timeoutMs?: number;
   },
   dependencies: {
@@ -107,6 +114,8 @@ export async function validateUpstreamModel(
       : { "x-api-key": input.credential }),
     ...(input.protocol === "anthropic" ? { "anthropic-version": "2023-06-01" } : {}),
   };
+  const requestHeaders = new Headers(headers);
+  applyModelRequestHeaders(requestHeaders, input.requestHeaders ?? {});
   const outputTokenParam =
     input.protocol === "openai" && input.config?.outputTokenParam === "max_completion_tokens"
       ? "max_completion_tokens"
@@ -118,7 +127,7 @@ export async function validateUpstreamModel(
   try {
     const response = await fetcher(endpoint(baseUrl, input.protocol), {
       method: "POST",
-      headers,
+      headers: requestHeaders,
       body: JSON.stringify(body),
       redirect: "manual",
       cache: "no-store",
@@ -145,7 +154,7 @@ export async function validateUpstreamModel(
 
 async function loadModel(client: PoolClient, modelId: string) {
   const { rows } = await client.query<ModelValidationRow>(
-    `SELECT m.id, m.code, m.upstream_model,
+    `SELECT m.id, m.code, m.upstream_model, m.request_headers,
             p.id AS provider_id, p.code AS provider_code, p.protocol,
             p.base_url, p.timeout_ms, p.config,
             p.api_key_ciphertext, p.api_key_iv, p.api_key_tag
@@ -175,12 +184,17 @@ export async function handleModelValidation(request: Request, modelId: string) {
       iv: model.api_key_iv!,
       tag: model.api_key_tag!,
     });
+    const requestHeaders = modelRequestHeadersSchema.safeParse(model.request_headers ?? {});
+    if (!requestHeaders.success) {
+      throw new AdminError("MODEL_REQUEST_HEADERS_INVALID", "The model has invalid upstream request headers", 409);
+    }
     const data = await validateUpstreamModel({
       protocol: model.protocol,
       baseUrl: model.base_url,
       upstreamModel: model.upstream_model,
       credential,
       config: model.config ?? {},
+      requestHeaders: requestHeaders.data,
       timeoutMs: model.timeout_ms,
     });
 

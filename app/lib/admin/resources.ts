@@ -114,7 +114,8 @@ const resources: Record<AdminResource, ResourceConfig> = {
     permission: "models.read",
     select: `m.id, m.provider_id, p.code AS provider_code,
              m.code, m.upstream_model, m.display_name, m.context_window,
-             m.max_output_tokens, m.capabilities, m.enabled, m.metadata,
+             m.max_output_tokens, m.capabilities, m.request_headers,
+             m.enabled, m.metadata,
              (p.status = 'active' AND p.api_key_ciphertext IS NOT NULL
                AND p.api_key_iv IS NOT NULL AND p.api_key_tag IS NOT NULL)
                AS provider_ready,

@@ -2782,6 +2782,291 @@ Optional Enhancers:
 
 - 尚未执行生产 dry-run、回填或 Dream 跨仓联调，均需后续明确授权或外部执行结果。
 
+## Round 75 — 指定 Dream Run 在 Admin Story 页面不可见的只读诊断
+
+Optimized Prompt:
+
+作为 ink-memory-admin 与 ink-dream-memory 的跨系统故障诊断负责人，针对用户在 Admin `AdminWorkspaceLayout` 页面中看不到 Dream URL `story-workspace/dream?run=run_b81d3731b56b4703868b66af76e7b656` 对应剧本信息的问题，执行一次只读、证据驱动的身份链路核对。本轮只诊断原因，不修改代码、不写数据库、不执行 migration/reconcile apply/backfill，也不改变 Dream Artifact。
+
+从用户给出的 React Grab 一次性组件定位 `app/(admin)/admin/(workspace)/layout.tsx:35` 开始，确认该节点只是 Admin 受保护页面框架还是实际 Story 数据组件；继续追踪 `/admin/story/stories` 的 URL 参数、Refine filter、Repository WHERE 与 UI 空态，确认 Admin 是否认识 Dream 的 `run` 查询参数。核对 Dream URL 的 `run_b81d...` 是 workflow run identity、Story identity 还是 Project identity，不能把 run ID 当 Story ID。
+
+使用只读方法检查：当前 Admin 进程的数据库/Artifact root 配置结构；PostgreSQL `story_workspace_workflow_runs` 中该 run 的 Workspace、Thread、User、状态和 source identity；`story_workspace_stories` 中是否已有 `source_run_id` 或同 Workspace+Project stable key 的 canonical Story 行；共享 Artifact Root 下该 run 的可信 episode registry、Project manifest、Episode allowlist 文件和 revisions。查询必须避免输出 DSN、Secret、Cookie、JWT、绝对线程路径或剧本正文；只报告安全 ID、状态、计数和 revision 摘要。
+
+明确区分以下可能结果并用实际证据收敛：Admin 页面没有自动消费 Dream `?run=` 参数；Dream materializer 尚未为该 run 创建 Story 索引；Admin/Dream 当前未使用同一 PostgreSQL；Admin 未挂载/配置同一 Artifact Root；已有索引但 run/project/workspace binding 不一致；migration 尚未应用导致 Artifact 索引列不存在；Artifact 文件存在但数据库 canonical row 缺失。若本机服务或数据库在系统重启后未启动，要把“运行环境不可达”与“数据确实不存在”分开报告。
+
+Acceptance Criteria:
+
+- 解释 `AdminWorkspaceLayout` 与 Story 数据加载的真实关系。
+- 对指定 run 给出 PostgreSQL Story 索引是否存在、Artifact 是否存在、身份绑定是否一致的证据；若某一层不可达，明确标为 unknown 而非猜测。
+- 说明为什么把 Dream URL 直接放到 Admin 页面不会自动显示剧本，以及正确的 Admin 入口/筛选 identity。
+- 不修改代码、共享数据或 Artifact；若用户随后要求修复，再单独提出最小变更。
+
+Optional Enhancers:
+
+- 若发现 Dream materializer 已在外部实现但 migration/服务未部署，给出最短部署顺序；不自动执行。
+- 若只缺该 run 的历史索引，先给出 dry-run 命令/预期 receipt，等待用户批准后再 apply。
+
+范围变化：
+
+- 从已完成的 Admin 实现交付切换到指定 Dream Run 的只读运行态诊断。
+- 本轮不授权任何修复、迁移或历史数据写入。
+
+执行证据与验证结果：
+
+- 当前尚未执行；必须先完成本 Prompt Architect 记录，再检查代码、服务、数据库与 Artifact 元数据。
+
+未执行事项及原因：
+
+- 尚未查询指定 run；尚未启动服务或访问共享数据库/文件。
+
+### Round 75 执行结果
+
+- React Grab 引用的 `app/(admin)/admin/(workspace)/layout.tsx:35` 只是 Admin 登录态页面框架 `admin-page-frame`，仅渲染 `{children}`，不读取 Story、Dream run 或 URL `run` 参数。
+- `/admin/story/stories` 的 `StoryResourceView` 只配置 `title/workspace/author/source_project_id/artifact status/review/status/date` 等筛选；`AdminResourceManager` 只从已声明 filter definitions 解析 query string。`run=run_b81...` 不会转成 `source_run_id` 查询，也不会把 Dream URL 当 Story identity。
+- 本机 PostgreSQL 只读查询成功：指定 run 存在，Workspace 存在，Workspace owner 与 run creator 均为用户 28；Thread、Source Message 和 Dream context 绑定存在且一致；Episode authority 指向安全 Project identity `proj-da1c690c`、EP01。
+- 该 run 当前数据库生命周期为 `queued`，`agent_session_id=NULL`、`completed_at=NULL`；但 run-scoped 文件事实存在 5 个 completion（generate prompts、plan、write、review script、review full chain），说明数据库 run lifecycle 与文件工作流事实也存在历史不一致。
+- 共享 Artifact Root 已配置且可读；对应 thread workspace、`project.yaml`、run-scoped Episode registry 和 EP01 的 `script.md`、outline、storyboard、review report 均存在。只读取文件元数据和 SHA-256 摘要，没有输出正文或绝对路径。
+- PostgreSQL `story_workspace_stories` 中 `source_run_id=run_b81d...` 的 canonical Story 行数量为 0，因此 Admin 按设计显示不到该剧本；这不是 Admin total 或 Drawer 查询错误。
+- Dream 单 run 命令 `.venv/bin/python script/reconcile_story_artifact_index.py --dry-run --run-id run_b81d...` 在只读事务中执行并 rollback，返回 `database_status=schema_unavailable`、`applied=false`，没有写数据库或文件。
+- 进一步只读核对确认：共享数据库已有全部 14 个 Artifact Story 索引列；stable identity 索引 `story_workspace_stories_artifact_identity_uidx` 是 unique partial index。Admin migration 按冻结合同故意使用 partial predicate，只约束非 NULL Artifact identity，兼容历史非 Artifact Story 行。
+- 确定的跨仓合同缺陷位于 Dream `ArtifactStoryIndexRepository.require_schema()`：它在 `artifact_story_index_repository.py:230-243` 强制 `is_full_index is True`，拒绝 canonical partial unique index。因此 completion-time materializer 与 dry-run reconcile 都 fail-closed 为 `story_index_schema_unavailable`，无法为该 run 创建 Story 行。
+
+结论：
+
+- 直接原因是 Dream Repository 的 unique-index 形态校验与 Admin canonical migration 不一致，不是共享文件系统路径错误，也不是 Admin 列表查询错误。
+- 该历史 run 已有可索引 Artifact，但尚无 PostgreSQL Story row；并且 Admin 当前没有 `source_run_id` URL 筛选，所以即使输入 Dream `?run=` 也不会自动显示。
+- 最小修复应在 Dream 仓库：让 `require_schema()` 精确接受冻结的 partial unique index及其 predicate，而不是把数据库改成 full unique index；随后先重跑单 run dry-run。实际创建历史 Story 行仍属于 reconcile apply/回填，必须等待用户明确批准。
+
+未执行事项及原因：
+
+- 未修改 Dream/Admin 代码、Schema 或 migration；未写共享数据库或 Artifact。
+- 未执行该 run 的 reconcile apply；用户本轮只询问原因，生产历史写入仍未授权。
+
+## Round 76 — 修复 Dream partial-index 合同并重建指定 Run Story 索引
+
+Optimized Prompt:
+
+作为 Dream/PostgreSQL 修复负责人，根据用户明确要求，仅修复并重建 `run_b81d3731b56b4703868b66af76e7b656` 因历史 migration/跨仓合同遗留而缺失的 canonical Story 索引。不得扩大到全库历史回填，不得修改其他 Run/Project/Artifact，不得覆盖 Dream/Admin 两仓库既有未提交修改。
+
+先修复 Dream `ArtifactStoryIndexRepository.require_schema()`：Admin canonical Drizzle migration 创建的是 `(workspace_id, artifact_source_type, source_project_id)` unique partial index，predicate 为 Artifact identity 非空。Dream 必须验证三列直接键、unique/valid、partial predicate 与冻结合同一致；不能错误要求 full index，也不能宽松接受任意 partial predicate。优先使用 `pg_get_expr(indpred, indrelid)` 并做有限 canonical normalization/等价允许，保留 fail-closed。更新 focused repository/reconcile tests，覆盖 canonical partial index accepted、full/wrong predicate/missing key rejected。
+
+修改后运行 Dream focused pytest。再执行指定 run 的只读 dry-run reconcile，要求 `database_status=available`、发现 Project/Episode、`indexes_to_create=1` 或有证据的等价结果。只有 dry-run 精确指向该 run 且无 conflict/invalid/missing relation 时，才执行一次受控单-run materialize/reconcile 写入；禁止运行全库 apply。写入必须复用 Dream Service/Repository 的幂等 upsert 与事务，不得手写 INSERT，不得修改 Artifact 文件。
+
+写入后只读验证：`story_workspace_stories` 恰有一条与该 run、Workspace、Project `proj-da1c690c` 对应的 canonical Story；revision、episode_count、artifact status/availability 与文件投影一致；重复同 revision 为 no-op；Admin list API/Repository total 能看到该 Story，公开数据不含 `source_thread_ref`、正文或绝对路径。若受控 write seam 不存在或无法证明只作用于单 run，停止并报告，不得绕过 Repository 手写生产 SQL。
+
+Acceptance Criteria:
+
+- Dream schema guard 接受 Admin canonical partial unique index并继续拒绝错误索引。
+- focused tests 通过，未覆盖无关 Dream 未提交改动。
+- 指定 run dry-run 从 `schema_unavailable` 恢复为可索引结果。
+- 仅该 run 创建/更新一条 Story；不执行全库历史回填。
+- 重复物化幂等，Admin 可见同一 Story identity/revision。
+- 不复制完整剧本正文到 PostgreSQL，不暴露路径/Secret，不修改 Artifact。
+
+Optional Enhancers:
+
+- 为 Admin migration 与 Dream schema guard 增加同一 predicate golden fixture，避免下次跨仓漂移。
+
+范围变化：
+
+- 用户已明确授权重建当前历史遗留问题；授权范围按最小解释限定为修复跨仓索引合同并重建指定 `run_b81...`，不是全库 backfill。
+- 本轮允许对该指定 run 的共享 PostgreSQL canonical Story 索引执行一次受控幂等写入；其他共享数据仍禁止修改。
+
+执行证据与验证结果：
+
+- 当前尚未执行代码修改、测试或写入；必须先完成本 Prompt Architect 记录再实施。
+
+未执行事项及原因：
+
+- 尚未修复 Dream schema guard；尚未重跑 dry-run 或 materialize 指定 run。
+
+### Round 76 执行结果
+
+- Dream 修复文件：`backend/services/story_workspace/artifact_story_index_repository.py`。Schema guard 现在要求三列 direct unique key、`indpred IS NOT NULL`，并通过 `pg_get_expr` 精确接受 canonical predicate：`artifact_source_type IS NOT NULL AND source_project_id IS NOT NULL`（允许交换 AND 两侧顺序）。full index、错误 predicate、expression/额外 key 继续 fail-closed。
+- 更新 focused tests：`test_story_workspace_artifact_story_index_postgres.py` 与 `test_story_workspace_artifact_story_index_reconcile.py`，新增 canonical partial predicate accepted、full/wrong predicate rejected 和真实 PostgreSQL catalog acceptance case。
+- Dream focused pytest：79 collected，75 passed，4 skipped。4 个 skip 是需要显式 `TEST_DATABASE_URL` 的真实 PostgreSQL integration cases；本轮真实 schema guard 随后通过共享数据库的只读 dry-run 得到运行态验证。
+- 修复后的指定 run dry-run 返回：`database_status=available`、Project=1、Episode=1、indexable Story=1、to-create=1、conflict/invalid/missing relation 均为 0。
+- 用户明确授权重建当前历史遗留问题后，通过 Dream 已有 `StoryWorkflowApplicationGateway.reconcile_story_index` 执行一次单-run、actor-authorized、If-Match revision-guarded、Repository-managed 幂等写入；没有手写 INSERT、没有运行全库 apply、没有修改 Artifact。
+- 写入前：status=`missing`、error=`story_index_row_missing`、Story ID=NULL。写入后：status=`indexed`、Story ID=`b6670ca1-b338-55f0-97ed-77738c110cf3`、Project=`proj-da1c690c`、Episode count=1，observed/indexed manifest revision 与 script revision 分别完全一致。
+- 重建后重复 dry-run 返回：`indexes_existing=1`、`indexes_unchanged=1`、`indexes_to_create=0`、`indexes_to_update=0`，证明同 revision 幂等且没有重复行。
+- Admin 侧只读 DB 核对：该 source run 恰有 1 条 canonical Story，标题“浮世行路”，Workspace/User 关系正确，`artifact_sync_status=indexed`、`artifact_available=true`、script bytes=9023，`content IS NULL=true`；完整剧本正文没有复制进 PostgreSQL。
+- 当前监听端口只有 Dream backend 8765 和 Vite frontend 5173，Admin 3000/3001 未运行，因此未声称完成当前浏览器在线 UI 点击；Admin 启动后可使用 `/admin/story/stories?source_project_id=proj-da1c690c` 查看。
+- Dream 仓库仅新增本轮 3 个目标文件的 diff（80 insertions、9 deletions），没有覆盖或回滚其他已有未提交修改；目标 diff 与 Admin worklog 均通过 `git diff --check`。
+
+未执行事项及原因：
+
+- 未执行全库 historical reconcile/backfill；授权只覆盖指定 run。
+- 未修改该历史 run 的 `queued/agent_session_id=NULL/completed_at=NULL` 生命周期事实；这是独立历史状态不一致，不影响已重建的 canonical Story，后续如需纠偏必须另行审计授权。
+
+## Round 77 — 指定 Run 重建验收与计划关闭
+
+Optimized Prompt:
+
+作为最终验收负责人，基于 Round 76 的代码、测试、dry-run、单-run受控写入和重复幂等证据，关闭本次“历史 migration 遗留导致指定 Dream Run 不进入 Admin 剧本列表”的修复计划。最终报告必须说明修复了什么、创建了哪一条 Story、如何验证无重复与正文未复制，以及用户应访问的 Admin URL。
+
+必须明确共享数据库只修改了用户明确授权的指定 run 对应 canonical Story 索引；没有全库回填、没有 Artifact 写入、没有调整 workflow run lifecycle。列出 Dream 三个修改文件和测试结果，提醒 Admin 当前未监听，需启动/刷新后查看。不得把端口未运行误报为数据仍缺失。
+
+Acceptance Criteria:
+
+- 所有计划步骤完成；Story index 恰有一条且 status indexed。
+- 重复 dry-run unchanged，DB content NULL。
+- 最终报告提供 Story ID、Project ID、正确 Admin 筛选入口和剩余独立 lifecycle 风险。
+
+Optional Enhancers:
+
+- Admin 启动后可追加一次有 Session 的 UI smoke test；不作为本次数据库重建成功的必要条件。
+
+范围变化：
+
+- 不再修改代码或数据；本轮只关闭计划并交付结果。
+
+执行证据与验证结果：
+
+- Round 76 已满足全部指定 run 重建验收条件。
+
+未执行事项及原因：
+
+- Admin 在线 UI 未验证，因为当前没有 Admin listener；数据库与 Repository 所需数据已就绪。
+
+## Round 78 — 创建其余严格可索引但缺失的 Story 索引
+
+Optimized Prompt:
+
+作为 Dream 历史 Artifact 索引恢复负责人，根据用户明确授权，对当前共享 PostgreSQL 与 Artifact Root 中“严格可索引且 canonical Story 索引缺失”的其余 Project 执行受控创建。已完成的 `run_b81d.../proj-da1c690c` 保持幂等不变；不得扩大到 invalid Artifact、missing relation、conflict、stale update 或 Workflow Run 生命周期修复。
+
+先运行 Dream 官方只读 full dry-run reconcile，使用 bounded limit/deadline 和 cursor 直到完成，记录 projects/episodes/indexable/existing/to-create/to-update/unchanged/conflicts/invalid/missing-relations。仅当 database available 且没有无法解释的 schema error 时继续。通过 PostgreSQL 只读关系与 Dream Gateway inspection 枚举 stable key 尚不存在的 run/project；每个候选必须通过 Workspace owner、Thread、Source Message、Episode authority、Project manifest、run registry 和 Artifact surface 验证。
+
+对每个 observation 为 `missing + story_index_row_missing` 的候选，调用 Dream 现有 `StoryWorkflowApplicationGateway.reconcile_story_index`，携带该 observation ETag、actor identity 与唯一 idempotency key，复用 `ArtifactStoryIndexService/Repository` 事务执行幂等 upsert。禁止手写 INSERT，禁止全库裸 SQL apply，禁止修改 Artifact 文件。若候选变为 indexed/stale/conflict/invalid，跳过并报告。
+
+完成后再次运行 full dry-run，要求 `indexes_to_create=0`；检查 stable Story 总数、每个新建 Story 的 source run/project/workspace、episode count、indexed/available/revisions、`content IS NULL`，并确认没有重复 stable identity。记录实际创建/跳过/失败列表的安全 ID，不输出绝对路径、正文、Secret 或内部 thread locator。
+
+Acceptance Criteria:
+
+- 所有严格 indexable missing Story 均通过受控 Gateway 创建；invalid/conflict/missing relation 不写入。
+- 重跑 full dry-run 的 `indexes_to_create=0`，同 revision unchanged。
+- 每个 Project 只有一个 canonical Story，正文不进入 PostgreSQL。
+- 不修改 Workflow Run status、Artifact 文件或非缺失 Story。
+- Dream focused tests仍通过，两个仓库已有未提交修改不被覆盖。
+
+Optional Enhancers:
+
+- 输出按 run/project 的安全恢复 receipt，方便 Admin 人工抽查。
+
+范围变化：
+
+- 用户明确授权从单个 run 扩展到当前所有其他缺失索引；仍限定为“create missing”，不授权 update/conflict repair 或 lifecycle 修复。
+
+执行证据与验证结果：
+
+- 当前尚未执行 full dry-run 或批量受控创建。
+
+未执行事项及原因：
+
+- 尚未确认其余 missing 数量；必须先完成只读 dry-run。
+
+### Round 78 执行结果
+
+- 全量 bounded dry-run（limit=500、deadline=60s、无 cursor）首次结果：database available、Project=2、Episode=2、indexable Story=2、existing=1、unchanged=1、to-create=1、to-update=0、conflict=0、invalid=0、missing-relations=18。
+- 通过 Dream read-only Repository/Gateway 枚举 20 个 run candidates；仅 2 个能够形成完整安全 observation，其中 `run_b81d.../proj-da1c690c` 已 indexed，唯一 missing 候选为 `run_fdd7012110c74d1db96c1ff396dd6491/proj-ccd4f2ab`。其余候选未通过可信关系/授权/Artifact 投影，不进入写入集合。
+- 对唯一 missing 候选执行 Dream `StoryWorkflowApplicationGateway.reconcile_story_index`，使用 actor 28、missing observation ETag 与唯一 idempotency key；Gateway 再次校验后由 `ArtifactStoryIndexService/Repository` 幂等创建，没有手写 INSERT 或修改 Artifact。
+- 创建结果：Story ID=`a1f4d719-8316-5ac2-b122-5ff77bffaa5b`、标题“改写规则”、Project=`proj-ccd4f2ab`、Episode=1、status=indexed、error=NULL，observed/indexed manifest revision 与 script revision 完全一致。
+- 创建后全量 dry-run：existing=2、unchanged=2、to-create=0、to-update=0、conflict=0、invalid=0、missing-relations=18。所有严格可索引 missing Story 已清零。
+- Admin 侧只读 DB 核对：当前 Dream Artifact Story 共 2 条——“改写规则”和“浮世行路”；均 indexed、available、Episode=1、`content IS NULL=true`。stable `(workspace, source type, project)` 重复数量为 0。
+- 未处理的 18 个 missing-relations 是安全关系不完整的历史 Run 数量，不等于 18 个有效剧本；没有为它们猜测路径、Project 或创建孤儿 Story。
+
+未执行事项及原因：
+
+- 未处理 stale/update/conflict/invalid 或 Workflow Run lifecycle；用户授权仅为创建缺失索引。
+- 未执行 Artifact 写入、正文复制或全库无条件 SQL backfill。
+
+## Round 79 — 全部严格 missing Story 恢复验收
+
+Optimized Prompt:
+
+作为恢复验收负责人，关闭“创建其余缺失 Story 索引”计划。最终报告必须说明实际新增 1 条、当前总计 2 条 Dream Artifact Story、全量 dry-run to-create=0、18 个 missing relation 被安全跳过，并列出两个 Story 的安全 identity/title/status。不得把关系不完整 Run 表述为漏建剧本。
+
+Acceptance Criteria:
+
+- 全量严格 indexable missing 已清零。
+- 两条 Story 唯一、indexed、available、content NULL。
+- 无全库裸写、无 Artifact 修改、无重复 identity。
+- 用户可在 Admin 服务启动后刷新剧本列表查看两条记录。
+
+Optional Enhancers:
+
+- 后续另开只读审计确认 18 个 missing relation 的历史来源；不得自动创建。
+
+范围变化：
+
+- 不再写代码或数据库；仅交付恢复结果。
+
+执行证据与验证结果：
+
+- Round 78 已满足全部验收标准。
+
+未执行事项及原因：
+
+- 18 个关系不完整 Run 未恢复，因为缺少建立 canonical Story 所需的可信身份链。
+
+## Round 80 — 对照原始 SQLite 恢复历史 Run 关系并创建 Drizzle migration
+
+Optimized Prompt:
+
+作为 PostgreSQL/SQLite 历史数据恢复架构师、Dream Workflow 身份链审计负责人和 Admin Drizzle migration 负责人，根据用户明确要求，对全量 dry-run 中报告的 18 个 missing-relations 历史 Run，使用原始 SQLite 数据库作为只读历史证据，恢复可唯一证明的 Workspace、Thread、Source Message/User 关系，并创建由 Admin `app/lib/db/schema.ts`/`drizzle/**` 管理的 PostgreSQL migration。读取 SQLite 仅用于一次性恢复审计，不得引入 SQLite runtime dependency、fallback、双写或新业务表。
+
+先只读定位并验证原始 SQLite 文件：使用 URI `mode=ro`/immutable 可用时只读打开，记录文件 hash/size/schema version，不修改 WAL/SHM、PRAGMA user data 或源文件。对 PostgreSQL 当前 18 个 missing-relations run 逐条提取安全 facts：run id、workspace id、created_by、source_voice_thread_id/source_message_id/time、binding/runtime provenance；对 SQLite 中 workflow_runs、story workspace、chat_thread、chat_message、users 的对应记录建立候选映射。映射必须按稳定 ID、owner、thread/message FK、timestamp、Dream context workflowRunId/workspaceId/threadId、source role 和 launch metadata 多因子一致，不能仅按标题、文件路径或时间近似猜测。
+
+为每个 run 输出分类：exact recoverable、already correct、ambiguous、source missing、target conflict、invalid metadata。只有 exact one-to-one mapping 才进入 migration；ambiguous/missing/conflict 必须跳过并报告。明确需要恢复的是 PostgreSQL 已有 row 的关系字段、缺失的 canonical related rows，还是仅 reconcile 查询条件错误。禁止把 SQLite 整库导回 PostgreSQL，禁止覆盖 PostgreSQL 中较新的合法数据。
+
+Schema 仍以 Admin `app/lib/db/schema.ts` 为唯一 Drizzle 来源。若无需新增列，仅创建 data-only Drizzle migration；migration 必须列出精确 run IDs 与期望旧值，通过 `UPDATE ... WHERE`/CTE/DO block 加强前置条件，验证目标 Workspace/User/Thread/Message 已存在且 owner/FK/metadata 匹配，row count 不符时 fail-closed。若确实缺 PostgreSQL canonical rows，优先复用现有表并以 deterministic IDs 插入，`ON CONFLICT` 只能接受完全相同事实，否则抛错。不得创建平行 User/Workspace/Story 表。
+
+先在 disposable PostgreSQL 上应用完整 migration 链与恢复 migration，加载经过脱敏/最小化的 fixture 验证成功、幂等、冲突失败和 rollback；运行 Dream focused reconcile tests、Admin migration/typecheck/test。然后对共享 PostgreSQL 执行 migration 前 dry-run receipt，列出 exact/skip/conflict 数。用户本轮已要求恢复并创建 migration，但如果映射存在歧义、SQLite 来源不唯一或 migration 会覆盖非空新事实，必须暂停该条；只有 exact mapping 才允许 apply。
+
+应用后重跑全量 Story reconcile dry-run；预期 missing-relations 下降，新增 indexable/missing Story 需再通过 Dream Gateway/ETag/Repository创建，不能在 migration 中手写 Story 正文或绕过 materializer。最终报告 migration、恢复条数、仍未恢复条数、Story 创建数、DB/API total、测试和 SQLite 未被修改的证据。
+
+Acceptance Criteria:
+
+- SQLite 仅只读证据，不成为运行时数据源或回退。
+- 18 个 Run 均有逐条分类；只恢复 exact one-to-one 关系。
+- Drizzle migration fail-closed、幂等、可在 disposable PostgreSQL 验证，不新增平行业务表。
+- 不覆盖 PostgreSQL 非空冲突事实，不复制完整剧本正文。
+- 应用后 full dry-run 的 missing-relations 与 Story to-create 数有可追溯对照。
+- 两仓库既有未提交修改不被覆盖。
+
+Optional Enhancers:
+
+- 生成不含 PII/路径的 recovery receipt JSON，记录 source SQLite hash、run/project 安全 ID、mapping evidence code 和 migration checksum。
+
+范围变化：
+
+- 用户明确授权读取原始 SQLite 作历史关系恢复证据，并要求创建 Drizzle migration；这不授权重新启用 SQLite runtime。
+- 本轮可对 exact mapping 应用共享 PostgreSQL migration；歧义条目仍禁止写入。
+
+执行证据与验证结果：
+
+- 当前尚未定位 SQLite 文件或审计 18 个 Run；必须先完成只读比对。
+
+未执行事项及原因：
+
+- 尚未创建/应用 migration，尚未修改共享 PostgreSQL。
+
+### Round 80 只读审计结果
+
+- 定位到唯一非空 legacy main SQLite，大小 77,856,768 bytes，SHA-256=`92df6c51724263caed2fd0d3800dfae2447d053bd54c3848a821ce6feb756f67`，integrity check=`ok`。审计前后 hash 一致；SQLite 以 `mode=ro&immutable=1` 打开且未修改。
+- SQLite 行数：workflow runs=20、Story Workspaces=12、Users=28、Chat Threads=1,165、Chat Messages=2,355。
+- PostgreSQL 与 SQLite 的 20 条 workflow run 关键字段逐条完全一致；SQLite 有而 PostgreSQL 缺少的 Run/Workspace/Thread/Message row 数为 0。
+- 7 条 Run 的 recorded source message 在 SQLite 和 PostgreSQL 中都不存在；同 Thread 的其他 SQLite message 也没有 Episode identity，无法恢复 source provenance。
+- 11 条 Run 在两库都有相同 Workspace/Thread/Source Message，metadata hash 一致，但原始 metadata 本来就没有 `story_workspace_episode_identity`；同 Thread 其他消息同样没有 Episode identity。
+- 只有 2 条 Run 有 Episode identity、run-scoped registry、Project manifest 与 workflow facts，对应已 indexed 的“浮世行路”和“改写规则”。其余 18 条没有 `episode.json` registry 或可绑定 Project/workflow facts。
+- Dream 官方 `verify-existing` 报告 source rows missing=0。唯一 target drift 是一条非 source-message 的 Agent command dispatch claim，变化字段仅 dispatch status/claim/lease；run/action identity相同且无 Episode identity，与 Story 关系恢复无关。
+- 确定判断：full reconcile 的 `missing_relations=18` 是诊断口径把历史非 Episode/未绑定 Run 混入，而不是 18 条 PostgreSQL migration omission。exact recoverable mappings=0。
+- 已创建证据文档 `docs/verification/story-artifact-sqlite-recovery-audit.md`。没有创建伪造关系的 Drizzle migration，没有修改共享 PostgreSQL。
+
+暂停原因：
+
+- 用户要求“对照原始 SQLite 恢复并创建 Drizzle”，但源库不存在可恢复关系。此时生成 data migration 会凭空构造 immutable provenance，无法满足 exact one-to-one、fail-closed 和不猜测身份的约束。
+- 推荐后续改为修正 Dream reconcile 候选/指标：18 条计为 not-applicable/ignored，`missing_relations` 只报告已证明是 Episode Artifact 但关系损坏的 Run；该修复不需要 Drizzle schema migration。
+
 ## Round 75 — 43+5 数据迁移纳入 Drizzle 与订阅默认数据初始化
 
 Optimized Prompt:
@@ -3030,3 +3315,191 @@ Optional Enhancers:
 
 - 真实第三方支付网络与外部 Provider canary 未执行：不在本轮授权范围，且没有使用真实 Provider/Gateway/Payment Secret。
 - 生产/其他预发布数据库未执行迁移：本机回执不得复用为其他环境授权；新环境仍需 owner/ACL、备份和变更审批。
+
+## Round 82 — Dream Provider 环境变量与宠物 MCP 遗留清理
+
+Optimized Prompt:
+
+作为 Ink Dream 的 Python/FastAPI、Claude Agent SDK、AI Gateway 和 MCP 架构维护者，对 `/Users/dmeck/project/ink-dream-memory` 执行证据驱动的遗留代码清理。删除已经与当前 Admin Gateway 架构冲突或无关的用户/部署环境变量入口，包括 `ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_MODEL` 的示例配置、用户可编辑白名单、部署 Secret 映射、旧直连 Provider 加载逻辑及失效文档；但保留 Admin Gateway 在启动 Claude SDK 子进程时生成临时、服务端受控认证环境的唯一内部适配边界，除非审计证明 SDK 已支持不使用这些进程变量的等价安全接口。浏览器、用户 System Config、`.env.example` 和部署平台不得再接受或持久化这些 Provider 凭据。
+
+同时删除 Pawkeyland/宠物领域遗留 MCP：`user.touch_animation`、necklace 宠物位置/行为工具、宠物共同故事 memory MCP 及其 stdio server、tool allowlist、feature flag、环境变量、exports、prompt/copy、测试和文档。必须保留当前产品必要的 Story Workspace 受控写工具、Editor MCP 和用户 Session 查询工具，不得按“MCP”关键词整体删除。
+
+先建立精确依赖图，再删除完整不可达模块与注册链并同步 exports、文档和测试。验收要求：全仓运行时搜索不再发现用户/部署可配置的三个 `ANTHROPIC_*` 变量，只允许在 Admin Gateway SDK adapter 和“覆盖用户值/不泄露”测试中出现；不存在 `touch_animation`、`mcp__necklace__*`、宠物 memory MCP 的可执行注册或导出；Story Workspace/Editor/Session MCP 保持可用。运行 backend focused/full tests、frontend lint/build、Claude Agent options 合同验证、`git diff --check` 与 Secret 搜索。保留无关未提交修改，不删除数据库数据，不触碰 Usage/Ledger/Subscription 历史，不调用真实 Provider。
+
+Optional Enhancers:
+
+- 将 Claude SDK 子进程的用户环境变量改为显式业务 allowlist，并参数化测试拒绝所有 Provider/Gateway credential 名称。
+- 在架构文档列出保留的 Story Workspace、Editor、Session MCP namespace 及用途。
+
+范围变化：
+
+- 本阶段只修改 Dream 仓库的配置、Claude Agent/MCP 遗留、相关测试与文档；Admin 除本工作日志外保持只读，不修改 PostgreSQL。
+- “删除 `ANTHROPIC_*`”指删除用户/部署直连 Provider 配置；Admin Gateway 为 Claude SDK 进程签发的短期服务端变量属于 SDK 传输实现，在没有替代接口前保留。
+
+执行证据与验证结果：
+
+- 初始搜索确认 `.env.example`、deploy setup、System Config、Settings PRD 和 Claude Agent SDK env 加载链仍含三个变量；Admin Gateway adapter 也以短期 subject token写入 SDK 进程环境。
+- 初始搜索确认 `user.touch_animation`、necklace MCP、宠物共同故事 memory MCP 仍在 exports、agent runner allowlist/stdio 注册和模块中；Story Workspace、Editor 与 Session MCP 同时存在，必须精确保留。
+- 本记录落盘前尚未删除代码或运行测试。
+
+失败尝试及根因：
+
+- 直接使用补丁写 Admin 日志因当前 managed workspace 仅授权 Dream 写入而挂起，已终止；随后改为只对该日志申请受控写权限。
+
+未执行事项及原因：
+
+- 精确依赖审计、代码删除、测试和文档同步需在本 Prompt Architect 记录之后执行。
+
+### Round 82 执行结果补记
+
+范围变化：
+
+- 审计确认除用户列出的三个变量外，`ANTHROPIC_DEFAULT_HAIKU_MODEL`、`ANTHROPIC_DEFAULT_SONNET_MODEL`、`ANTHROPIC_DEFAULT_OPUS_MODEL` 也是绕过 platform alias 的旧直连模型入口，因此一并从 Dream `.env` 模板、实际本机 `.env`、`.cloud-env` 引用、部署脚本和 SDK project/process/user overlay 删除。
+- 最终本机残留又发现非标准`ANTHROPIC_DEFAULT_SONNET_MODEL_NAME`；清理合同因此从固定名称集合收紧为拒绝/清除任意`ANTHROPIC_*`前缀，Gateway adapter随后只重建SDK transport必需的两个服务端内存字段。新增非标准key回归测试，定向套件仍为182通过。
+- 审计确认 memory MCP 是返回主人/宠物共同故事的未实现空壳，故与动画和项圈 MCP 一并删除；Claude Code 其他通用能力、Story Workspace MCP、Editor MCP 和 canonical 用户 Session 查询 MCP 均保留。
+- Admin Gateway adapter 仍在服务端内存中使用 Claude Agent SDK transport 所要求的固定字段名写入 Gateway base URL 和短期 canonical subject JWT；project/process/user env 在进入该 adapter 前会清除所有直连 Provider 值，Gateway disabled 也不会回退直连。
+
+执行证据与验证结果：
+
+- 删除8个宠物领域可执行模块/空壳：touch animation、necklace tool/server/stdio、shared-story memory tool/server/stdio、仅供该空壳使用的 policy loader；`mcp_server.py` 重写为 Session-only，运行时 `tools/list` 实测唯一工具为`get_sessions_range`。
+- `agent_runner.py`已移除宠物工具默认allowlist、低敏清单、namespace prefix、feature flag、stdio配置和启动分支；保留Story Workspace、Editor和Session MCP。
+- 最终残留审计进一步删除可执行的`PAWKEYLAND_CLAUDE_AGENT_ALLOW_REQUEST_MODEL_OVERRIDE`、`PAWKEYLAND_AGENT_ALLOWED_TOOLS`和`PAWKEYLAND_ENABLE_AGENT_USER_MCP`兼容入口；模型alias只在Gateway启用时写入SDK options，默认工具与Session MCP由产品代码固定。部署、启动和Service边界对任意旧`PAWKEYLAND_*`值做清除而非透传。
+- `.env.example`、`deploy/setup-env.sh`、`server.py`、`sdk_env.py`、`ClaudeAgentService`已形成四层清理：模板不声明、部署不透传旧值、启动清除进程旧值、DB直读与SDK overlay再次清除。实际gitignored `backend/.env`中的有效行和注释旧值，以及`.cloud-env`旧引用均已按key机械删除且未回显值；验证`backend_env_removed_keys=0`、`cloud_env_removed_refs=0`。
+- `PUT /api/system-config`继续拒绝secret/provider routing key，`GET`继续清理历史值；相关拒绝测试保留。Gateway adapter测试证明用户旧值被覆盖/删除、canonical subject、client、audience、scope和240秒有效期绑定正确。
+- 定向backend验证：`182 passed, 1 skipped, 135 subtests passed`；server启动环境清理：`2 passed`。
+- 全量backend从正确的`backend/`工作目录执行且命令级关闭本机Gateway canary：`1789 passed, 25 skipped, 89 warnings, 652 subtests passed`。相比上一轮减少2个测试来自删除的memory MCP alias测试，不是覆盖下降。
+- frontend未做本轮业务修改，但按验收执行：lint `0 errors / 21既有warnings`；production build成功。运行期间发现并保留用户/并发产生的`storyWorkspacePath`和E2E未提交修改，本轮没有覆盖或回滚。
+- `python -m compileall`、`bash -n deploy/setup-env.sh`、`git diff --check`通过；环境未安装ruff，未伪报ruff结果。
+- 文档已同步：Settings PRD删除用户Provider API配置，Claude SDK env设计改为Gateway-only合同，部署/架构/Session与工具权限文档删除宠物MCP和直连Provider陈述；过时的`user-env-injection-design.md`已删除。
+
+失败尝试及根因：
+
+- 首次定向Runner套件为`165 passed / 75 failed`：本机`.env`同时启用`INK_GATEWAY_ENABLED`，而mocked Runner单元测试没有canonical user，全部在被测逻辑前按生产规则fail closed。修复为测试基类同时显式关闭两个Gateway canary开关；Gateway行为仍由独立adapter测试覆盖，重跑通过。
+- 第一次全量backend从仓库根执行，在collection阶段因`test_admin_product_client.py`无法解析顶层`services`失败；没有改代码规避，改从项目约定的`backend/`工作目录重跑，全量通过。
+- Ruff未安装，因此仅执行compileall、pytest、shell syntax和diff检查；已明确记录而非跳过不报。
+- 残留清理后把Runner与server启动测试放进同一pytest进程时出现4个SDK stub构造失败，根因是`test_server_claude_agent` collection导入真实server/SDK后污染Runner模块stub，与业务断言无关；按现有测试隔离边界分别执行后Runner定向`182 passed, 1 skipped, 135 subtests`、startup cleanup`2 passed`。此前从`backend/`执行的正式全量顺序仍为1789通过。
+
+未执行事项及原因：
+
+- 未调用真实Provider、Admin Gateway推理、支付或外部网络：本轮是遗留配置/MCP删除，不需要真实凭据，也不得以验证名义扩权。
+- 未修改PostgreSQL、Subscription、Allowance、Usage、Ledger或财务历史；无数据库写入需求。
+- 未运行浏览器E2E：本轮没有前端产品代码改动；已用frontend lint/build验证跨层编译。现存frontend未提交路由/E2E改动属于用户或并发工作，未纳入本轮修改。
+
+## Round 83 — 恢复宠物动画、项圈与共享记忆 MCP
+
+Optimized Prompt:
+
+作为 Ink Dream Claude Agent SDK 与 MCP 维护者，按用户最新决定精确撤销 Round 82 中“删除宠物 MCP”的部分：恢复宠物动画 `mcp__user__touch_animation`、项圈 namespace 工具、主人/宠物共享记忆 memory MCP 的源模块、stdio server、Runner默认工具/低敏策略/namespace与启动注册、package exports、必要feature flag和运行配置、对应测试与当前文档。恢复必须以Round 82修改前的仓库实现为基线，不得用静态伪实现替换原代码。
+
+保留Round 82的Provider安全修正：Dream `.env`、用户System Config、部署脚本和project/process/user SDK overlay仍不得接受任意`ANTHROPIC_*`直连配置；Admin Gateway服务端短期SDK transport adapter仍是唯一推理认证边界。不得恢复`PAWKEYLAND_AGENT_ALLOWED_TOOLS`、Provider model override等与三个宠物MCP无关的隐藏运行入口，除非它们是恢复目标实际启动所必需。
+
+保留Story Workspace、Editor和Session MCP现状，不覆盖并发存在的Story Workspace路由/E2E修改。恢复后运行模块import/compile、MCP tools/list与Runner allowlist验证、focused backend tests、frontend lint/build（若文档或跨层合同有影响）、shell syntax和`git diff --check`。不得修改PostgreSQL、订阅、Usage/Ledger，不调用真实项圈、Mem0、Provider或支付服务，不回显任何Secret。
+
+Acceptance Criteria:
+
+- 删除状态的8个宠物MCP模块及policy helper按原实现恢复。
+- `user` MCP同时列出`touch_animation`与`get_sessions_range`；memory/necklace namespace重新可注册。
+- Runner默认allowlist、低敏清单、stdio启动条件和exports恢复，但Anthropic直连env仍被全前缀清除。
+- 必要Mem0/necklace环境只进入对应隔离MCP子进程，不进入浏览器或Provider SDK路由。
+- 相关测试、文档、实际本机Secret安全检查通过；用户/并发未提交修改保持原样。
+
+Optional Enhancers:
+
+- 后续可将宠物MCP统一改为`INK_*`配置并补真实上游contract test；本轮优先无损恢复现有实现，不扩大外部联调范围。
+
+范围变化：
+
+- 用户撤销Round 82的宠物MCP删除决策；Round 82的Anthropic直连环境变量清理继续有效。
+- 本轮仅恢复Dream宠物MCP实现及必要依赖，不修改Admin产品代码或PostgreSQL。
+
+执行证据与验证结果：
+
+- 本记录落盘前尚未执行恢复或测试。
+
+失败尝试及根因：
+
+- 无。
+
+未执行事项及原因：
+
+- 代码恢复、配置边界复核和测试需在本Prompt Architect记录后执行。
+
+### Round 83 执行结果补记
+
+范围变化：
+
+- 用户要求加速并明确本轮就是撤销三类 MCP 删除；因此停止扩展设计，只恢复宠物动画、项圈和主人/宠物共享记忆 MCP 及必要注册、配置、测试和文档。
+- Round 82 的任意 `ANTHROPIC_*` 直连环境变量清理继续有效，Story Workspace、Editor、Session MCP 与并发未提交修改均保留。
+
+执行证据与验证结果：
+
+- 从 Round 82 修改前的 HEAD 原样恢复 8 个删除文件：`touch_animation_tool.py`、necklace tool/server/stdio、memory tool/server/stdio、`policy_loader.py`。
+- 恢复 `mcp_server.py`、`user_mcp_stdio.py` 及 package exports；运行时 `tools/list` 实测：user 2 个（`touch_animation`、`get_sessions_range`）、memory 1 个（`recall_shared_stories`）、necklace 7 个。
+- Runner 默认 allowlist、memory/necklace namespace、低敏只读工具、stdio 配置与启动分支已恢复；动画确认 answers 在 PreToolUse 与 can_use_tool 两条通道均重新合并。
+- Dream service 继续拒绝用户/System Config 提交的 Provider、legacy Pawkeyland 和记忆身份值；共享记忆 canonical 用户 ID 与当前消息由服务端派生后仅进入 memory MCP 子进程。
+- canonical Mem0 配置重新进入 `.env.example`；启动白名单保留 `INK_AGENT_ENABLE_MEMORY_MCP` / `INK_AGENT_MEM0_*`；部署时 Mem0 API key 使用 Secret Manager，legacy `PAWKEYLAND_*` 与全部 `ANTHROPIC_*` 仍不透传。
+- 快速回归：首次组合套件 `165 passed, 1 failed, 1 skipped`，修正旧断言后关键复测 `6 passed`；最终 MCP/Runner/startup 快速套件 `7 passed`。`python -m compileall`、`bash -n deploy/setup-env.sh`、`git diff --check`通过。
+- 安全检查：`backend/.env`、`backend/.env.example`、`.cloud-env` 中 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL` 有效赋值计数均为 0；未输出 Secret 值。
+
+失败尝试及根因：
+
+- 首次直接调用 `pytest` 失败：当前 shell 无全局 pytest；改用 `backend/.venv/bin/python -m pytest`。
+- 首次组合套件唯一失败是 service 旧断言未包含恢复后由服务端派生的 `INK_AGENT_MEM0_USER_ID` 与 `INK_AGENT_USER_MESSAGE`，更新断言后通过。
+- 一次定向 pytest 节点名写错导致 collection exit 4；用实际方法名重跑通过。
+- 一次文档残留搜索因 shell 双引号内反引号造成 unmatched quote；改用单引号安全模式重跑，无残留命中。
+- 测试环境尝试连接本机 PostgreSQL 时受 managed sandbox 网络策略阻断，仅产生 warning；本轮测试不依赖数据库写入，未执行任何数据库变更。
+
+未执行事项及原因：
+
+- 未调用真实项圈、Mem0、Provider、Admin Gateway 推理或支付服务；本轮仅撤销源码删除，不需要也未获授权使用外部 Secret。
+- 未执行 PostgreSQL、Subscription、Allowance、Usage、Ledger 变更。
+- 未重跑 frontend lint/build或真实浏览器 E2E：本轮最终范围为 backend MCP 删除撤销，且 Round 82 已完成跨层 lint/build；为响应用户“速度点”要求采用 focused backend 验证。
+
+## Round 84 — 撤销 Round 83 宠物 MCP 恢复
+
+Optimized Prompt:
+
+在 `/Users/dmeck/project/ink-dream-memory` 中完整撤销 Round 83 的改动，恢复 Round 82 已验证的清理结果：删除宠物动画、项圈和主人/宠物共享记忆 MCP 源文件、stdio server、Runner allowlist/namespace/启动注册、exports、相关环境配置、测试和文档；`user` MCP 仅保留 canonical Session 查询。保留 Round 82 对任意 `ANTHROPIC_*` 用户/项目/部署直连环境变量的删除，以及 Admin Gateway 服务端短期 SDK transport 适配边界。不得改动 `_drop_unsupported_agent_env` 的 Round 82 既有逻辑之外内容，不得覆盖其他未提交修改。运行 focused backend tests、compile、shell syntax、`git diff --check` 和环境残留检查；不修改 PostgreSQL，不调用外部服务，不输出 Secret。
+
+Optional Enhancers:
+
+- 无；用户要求快速完整撤销上一轮。
+
+范围变化：
+
+- 用户再次确认宠物动画等 MCP 与当前项目无关，Round 83 的恢复决定全部撤销，回到 Round 82 清理状态。
+
+执行证据与验证结果：
+
+- 本记录落盘前尚未执行回退。
+
+失败尝试及根因：
+
+- 前一轮 Round 84 日志写入被用户中断，检查确认未落盘；本轮重新记录最终要求。
+
+未执行事项及原因：
+
+- 回退与验证需在本 Prompt Architect 记录后执行。
+
+### Round 84 执行结果补记
+
+范围变化：
+
+- 严格撤销 Round 83，不新增替代能力；`_drop_unsupported_agent_env` 恢复为 Round 82 既有实现。
+
+执行证据与验证结果：
+
+- 再次删除 8 个宠物领域模块/空壳和 Round 83 新增的 `test_pet_mcp_servers.py`。
+- `mcp_server.py`、stdio 说明、package exports、Runner allowlist/低敏清单/namespace/stdio 启动分支已恢复为 Session-only 状态。
+- 撤销 Round 83 的 service memory identity 注入、Mem0 `.env.example` 区块、部署 Secret 配置、测试断言和文档恢复陈述。
+- MCP 运行时 `tools/list` 实测：`user_tools=get_sessions_range`，没有 animation、memory 或 necklace 工具。
+- focused backend：`4 passed`；compileall、`bash -n deploy/setup-env.sh`、`git diff --check`通过。
+- `backend/.env`、`backend/.env.example`、`.cloud-env` 中 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL` 有效赋值计数均为 0；宠物 MCP Python 执行路径残留搜索为 0。
+
+失败尝试及根因：
+
+- 无代码回退失败；仅保留 FastAPI `on_event` 既有弃用 warning，不影响结果。
+
+未执行事项及原因：
+
+- 未执行数据库、外部 Provider、Mem0、项圈、支付或浏览器 E2E；本轮仅撤销上一轮 backend MCP 恢复。

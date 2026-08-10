@@ -61,6 +61,7 @@ export type AdminFieldDefinition = {
   readOnlyOnEdit?: boolean;
   omitEmptyOnUpdate?: boolean;
   excludeKeys?: string[];
+  jsonShape?: "object" | "array";
   payloadGroup?: { key: string; property: string };
   options?: Array<{ label: string; value: string }>;
   relation?: {
@@ -211,6 +212,35 @@ function formatDetailValue(value: unknown) {
   if (typeof value === "boolean") return value ? "是" : "否";
   if (typeof value === "object") return JSON.stringify(value, null, 2);
   return String(value);
+}
+
+export type JsonEditorValidation =
+  | { valid: true; parsed: unknown; formatted: string }
+  | { valid: false; error: string };
+
+export function validateJsonEditorValue(
+  value: string,
+  shape?: AdminFieldDefinition["jsonShape"],
+): JsonEditorValidation {
+  if (!value.trim()) {
+    return { valid: false, error: "请输入 JSON。" };
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (
+      shape === "object" &&
+      (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
+    ) {
+      return { valid: false, error: "必须填写 JSON 对象，例如 {\"User-Agent\":\"OpenAI/JS 6.39.1\"}。" };
+    }
+    if (shape === "array" && !Array.isArray(parsed)) {
+      return { valid: false, error: "必须填写 JSON 数组。" };
+    }
+    return { valid: true, parsed, formatted: JSON.stringify(parsed, null, 2) };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "无法解析";
+    return { valid: false, error: `JSON 格式错误：${detail}` };
+  }
 }
 
 export function valuesFromRecord(
@@ -560,6 +590,9 @@ export function FieldControl({
   const disabled = mode === "edit" && field.readOnlyOnEdit;
   const required = Boolean(field.required || (field.requiredOnCreate && mode === "create"));
   if (field.control === "hidden") return null;
+  const jsonValidation = field.control === "json"
+    ? validateJsonEditorValue(String(value ?? ""), field.jsonShape)
+    : null;
   const common = {
     id,
     required: required && !disabled,
@@ -599,8 +632,41 @@ export function FieldControl({
           <input id={id} type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} disabled={disabled} />
           <span className="text-sm font-normal text-text-primary">{value ? "启用" : "停用"}</span>
         </span>
-      ) : field.control === "textarea" || field.control === "json" ? (
-        <textarea {...common} rows={field.control === "json" ? 8 : 4} spellCheck={field.control !== "json"} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className={`${common.className} min-h-28 ${field.control === "json" ? "font-mono text-xs leading-5" : ""}`} />
+      ) : field.control === "json" ? (
+        <div className="mt-2 space-y-2">
+          <textarea
+            {...common}
+            rows={8}
+            spellCheck={false}
+            value={String(value ?? "")}
+            aria-invalid={!jsonValidation?.valid}
+            aria-describedby={`${id}-json-status`}
+            onChange={(event) => onChange(event.target.value)}
+            className={`${common.className} mt-0 min-h-28 font-mono text-xs leading-5 ${jsonValidation?.valid ? "" : "border-danger focus:border-danger"}`}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span
+              id={`${id}-json-status`}
+              role={jsonValidation?.valid ? "status" : "alert"}
+              aria-live="polite"
+              className={`font-normal leading-5 ${jsonValidation?.valid ? "text-success" : "text-danger"}`}
+            >
+              {jsonValidation?.valid ? "JSON 格式有效" : jsonValidation?.error}
+            </span>
+            <button
+              type="button"
+              disabled={disabled || !jsonValidation?.valid}
+              onClick={() => {
+                if (jsonValidation?.valid) onChange(jsonValidation.formatted);
+              }}
+              className="min-h-9 rounded-lg border border-border bg-bg-surface px-3 text-xs font-semibold text-text-secondary hover:bg-bg-secondary disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              格式化 JSON
+            </button>
+          </div>
+        </div>
+      ) : field.control === "textarea" ? (
+        <textarea {...common} rows={4} spellCheck value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className={`${common.className} min-h-28`} />
       ) : field.control === "password" ? (
         <span className="relative mt-2 block">
           <input {...common} type={revealed ? "text" : "password"} value={String(value ?? "")} placeholder={field.placeholder} autoComplete="new-password" onChange={(event) => onChange(event.target.value)} className={`${common.className} mt-0 pr-20 font-mono text-xs`} />

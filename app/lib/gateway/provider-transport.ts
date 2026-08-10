@@ -3,6 +3,7 @@ import type { ResolvedBillableModel } from "../models/resolver";
 import { GatewayError } from "./errors";
 import { resolveAnthropicAuthMode } from "./provider-auth";
 import { resolveProviderBaseUrl } from "./provider-endpoint";
+import { applyModelRequestHeaders } from "../models/request-headers";
 
 export class ProviderHttpError extends Error {
   constructor(
@@ -77,12 +78,14 @@ export async function sendProviderRequest(input: {
       const value = input.requestHeaders?.get(name);
       if (value) headers.set(name, value);
     }
+    applyModelRequestHeaders(headers, input.resolved.model.requestHeaders ?? {});
     if (resolveAnthropicAuthMode(input.resolved.provider.config) === "bearer") {
       headers.set("authorization", `Bearer ${secret}`);
     } else {
       headers.set("x-api-key", secret);
     }
   } else {
+    applyModelRequestHeaders(headers, input.resolved.model.requestHeaders ?? {});
     headers.set("authorization", `Bearer ${secret}`);
   }
   const abort = linkedAbort({ requestSignal: input.requestSignal, timeoutMs: input.resolved.provider.timeoutMs });
