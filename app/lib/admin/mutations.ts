@@ -244,23 +244,6 @@ const adminRoleUpdateSchema = adminRoleCreateSchema
   .partial()
   .strict();
 
-const jsonObjectSchema = z.record(z.string(), z.unknown());
-const storyStatusSchema = z.string().trim().min(1).max(40);
-
-const systemSettingCreateSchema = z.strictObject({
-  category: codeSchema,
-  key: codeSchema,
-  value: jsonObjectSchema,
-  description: z.string().trim().max(4_000).nullable().optional(),
-  isSecret: z.boolean().default(false),
-  status: storyStatusSchema.default("active"),
-});
-const systemSettingUpdateSchema = z.strictObject({
-  value: jsonObjectSchema.optional(),
-  description: z.string().trim().max(4_000).nullable().optional(),
-  status: storyStatusSchema.optional(),
-});
-
 async function parseBody<T extends z.ZodTypeAny>(request: Request, schema: T) {
   let body: unknown;
   try {
@@ -722,14 +705,6 @@ async function insertAdminRole(
 type CrudValue = Record<string, unknown>;
 type FieldMap = Readonly<Record<string, { column: string; json?: boolean }>>;
 
-const systemSettingFields = {
-  category: { column: "category" },
-  key: { column: "key" },
-  value: { column: "value", json: true },
-  description: { column: "description" },
-  isSecret: { column: "is_secret" },
-  status: { column: "status" },
-} as const satisfies FieldMap;
 const userModelPermissionFields = {
   platformUserId: { column: "platform_user_id" },
   modelId: { column: "model_id" },
@@ -778,15 +753,6 @@ const insertUserModelPermission = (client: PoolClient, input: CrudValue) =>
     userModelPermissionFields,
   );
 
-function maskSystemSetting(row: Record<string, unknown>) {
-  return row.is_secret ? { ...row, value: { masked: true } } : row;
-}
-
-const insertSystemSetting = async (client: PoolClient, input: CrudValue) =>
-  maskSystemSetting(
-    await insertCrudRow(client, "system_settings", "setting", input, systemSettingFields),
-  );
-
 const createConfig = {
   providers: { permission: "providers.write", schema: providerCreateSchema, insert: insertProvider },
   models: { permission: "models.write", schema: modelCreateSchema, insert: insertModel },
@@ -795,7 +761,6 @@ const createConfig = {
   "gateway-api-keys": { permission: "gateway.keys.write", schema: gatewayKeyCreateSchema, insert: insertGatewayKeyOnClient },
   "admin-users": { permission: "access.write", schema: adminUserCreateSchema, insert: insertAdminUser },
   "admin-roles": { permission: "access.write", schema: adminRoleCreateSchema, insert: insertAdminRole },
-  "system-settings": { permission: "system.write", schema: systemSettingCreateSchema, insert: insertSystemSetting },
 } as const;
 
 export async function handleAdminResourceCreate(request: Request, resource: string) {
@@ -850,7 +815,6 @@ async function loadRowForUpdate(client: PoolClient, table: string, id: string) {
     "ai_pricing_rules",
     "platform_users",
     "user_model_permissions",
-    "system_settings",
     "admin_users",
     "admin_roles",
   ]);
@@ -1255,33 +1219,6 @@ const updateConfig = {
   },
   "admin-users": { permission: "access.write", schema: adminUserUpdateSchema, update: updateAdminUser },
   "admin-roles": { permission: "access.write", schema: adminRoleUpdateSchema, update: updateAdminRole },
-  "system-settings": {
-    permission: "system.write",
-    schema: systemSettingUpdateSchema,
-    update: async (client: PoolClient, id: string, input: CrudValue) => {
-      const value = input.value;
-      const isMaskedSecretPlaceholder =
-        value !== null &&
-        typeof value === "object" &&
-        !Array.isArray(value) &&
-        Object.keys(value).length === 1 &&
-        (value as Record<string, unknown>).masked === true;
-      const safeInput = isMaskedSecretPlaceholder
-        ? Object.fromEntries(Object.entries(input).filter(([key]) => key !== "value"))
-        : input;
-      const result = await updateCrudRow(
-        client,
-        "system_settings",
-        id,
-        safeInput,
-        systemSettingFields,
-      );
-      return {
-        before: maskSystemSetting(result.before),
-        after: maskSystemSetting(result.after),
-      };
-    },
-  },
 } as const;
 
 export async function handleAdminResourceUpdate(

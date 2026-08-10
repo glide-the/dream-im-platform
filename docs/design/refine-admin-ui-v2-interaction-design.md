@@ -208,7 +208,7 @@ E5 永远在末端；先展示前置状态、影响对象、permission、审计�
 
 ### 8.2 JSON Editor
 
-- 仅用于 Workspace settings、Provider config、System Settings 等真实 JSON 字段。
+- 仅用于 Workspace settings、Provider config 等真实 JSON 字段。
 - Mono 13px/1.65；提供格式化、行列错误、复制、恢复服务器值和保存前 diff。
 - 严格 schema 拒绝未知字段；服务端错误后保留编辑内容。
 - diff 同时使用 `added/removed/changed` 文字，不只靠红绿；长行换行，不撑宽页面。
@@ -360,8 +360,6 @@ G3 运维动作：复制 Request ID、查看同类错误、返回筛选结果；
 | `gateway.keys.write` | ✓ | ✓ | — | 创建/revoke Key |
 | `access.read` | ✓ | — | ✓ | Admin/Role/Permission 读取 |
 | `access.write` | ✓ | — | — | Admin/RBAC 变更 |
-| `system.read` | ✓ | ✓ | ✓ | Setting 读取 |
-| `system.write` | ✓ | — | — | Setting/Secret 更新 |
 | `audit.read` | ✓ | — | ✓ | Audit 读取 |
 
 管理员可创建、改显示名、重置密码、分配角色、启停，不硬删；不能停用最后一个 active super_admin，竞态返回 409。
@@ -454,7 +452,7 @@ Role 硬删除仅允许自定义 Role，并要求输入 resource code；账本�
 | Gateway | `/admin/gateway/requests`、`/keys`、`/rate-limits` |
 | Resources | `/admin/resources/users`、`/storage` |
 | Access | `/admin/access/admins`、`/roles`、`/permissions` |
-| System | `/admin/system/settings`、`/audit` |
+| System | `/admin/system/audit` |
 
 页面位于 `app/(admin)/admin/**`；API 位于 `app/api/admin/**`；领域规则位于 `app/lib/admin/**`、`app/lib/billing/**`、`app/lib/gateway/**`；唯一 Drizzle schema 位于 `app/lib/db/schema.ts`。
 所有列表实现 Refine `{data, meta:{total,page,pageSize}}` 合同；400/401/403/404/409/500/503 不被折叠成通用失败文案。

@@ -1,15 +1,15 @@
-# 模块交互：Admin、RBAC、Settings 与 Audit
+# 模块交互：Admin、RBAC 与 Audit
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[系统治理](../../prd/modules/08-governance.md)
 
-> 实现状态：Admin/RBAC/Audit 与 Settings masked-marker/JSON 覆盖已实现；System Settings 当前由直接路由访问、不在主导航，专用 Secret password 控件为后续优化。
+> 实现状态：Admin/RBAC/Audit 已实现；System Settings 页面与管理 CRUD 已下线。
 
 ## 0. Current / Target / Release Gate
 
 | 分层 | 交互边界 |
 |---|---|
-| Current | Admin/RBAC/Audit/Settings masked-marker 基线；Settings 非主导航。Dream ASR endpoint 已代码级 fail-closed，但历史 credential 的所有者吊销/轮换回执仍是 P0。 |
-| Target | Provider/Gateway/Payment/System Secret 统一只写覆盖，高风险 Subscription/Payment Webhook/独立 Billing/Gateway 操作产生 append-only Audit。只有真实支付渠道 Deferred。 |
+| Current | Admin/RBAC/Audit 基线。Dream ASR endpoint 已代码级 fail-closed，但历史 credential 的所有者吊销/轮换回执仍是 P0。 |
+| Target | Provider/Gateway/Payment Secret 统一只写覆盖，高风险 Subscription/Payment Webhook/独立 Billing/Gateway 操作产生 append-only Audit。只有真实支付渠道 Deferred。 |
 | Release Gate | Secret owner 吊销/轮换/scan 回执、ASR 持续 fail-closed、RBAC、Audit 不可变和两视口键盘/读屏验证通过。 |
 
 ## 1. 管理员
@@ -24,15 +24,11 @@ Role 列 code/name/type、permission count、admin count；自定义 Role 使用
 
 内置 Role 只读/不可删除。自定义 Role 删除要求输入 code，并显示关联管理员；有引用时 409。Permission 页面只读，列 code/name/description/domain。
 
-## 3. System Settings
-
-列表按 category/key/status/secret 筛选。编辑 Drawer 当前统一使用 JSON Editor，Secret GET 只显示 masked marker，提交新 JSON 值表示覆盖，空值不清除。目标态可将 Secret 改为专用 password/secret 控件；无论控件类型，Provider/System Secret 都不得返回一次性明文回执。Deferred Payment 不创建签名 Secret 或 event payload 字段。覆盖 Secret 使用危险确认并写 Audit。
-
-## 4. Audit
+## 3. Audit
 
 高密度只读表：time、actor/type、action、resource/type/id、request ID、safe before/after。筛选 actor/action/resource/time；详情宽 Drawer 展示安全 JSON 和相关资源链接。无 create/edit/delete/export Secret 正文。
 
-## 5. 状态、响应式与验收
+## 4. 状态、响应式与验收
 
 - 角色/管理员 409 留在确认层并刷新关联计数；403 不显示矩阵内容。
 - Mobile 权限矩阵按 domain 折叠，行标签与 checkbox 保持关联；Audit JSON 自身滚动。

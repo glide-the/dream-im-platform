@@ -29,8 +29,6 @@ const PERMISSIONS = [
   "gateway.keys.write",
   "access.read",
   "access.write",
-  "system.read",
-  "system.write",
   "audit.read",
 ] as const;
 

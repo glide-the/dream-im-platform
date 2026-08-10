@@ -59,7 +59,7 @@ flowchart LR
 | Gateway | [05-gateway](modules/05-gateway.md) | `/admin/gateway/**`、`/v1/**` | **Implemented / RC**：canonical/402/终态、无 cash fallback 与 Dream server-only client 已验证；外部 Provider canary 待执行 |
 | Usage、支付与独立账务 | [06-billing](modules/06-billing.md) | `/admin/billing/**` | **Implemented / RC**：Usage/账户/Ledger、Payment Intent/Webhook/Fake 与终态 guard；真实渠道 Deferred |
 | Storage | [07-storage](modules/07-storage.md) | `/admin/resources/storage`、`/api/storage/**` | 已实现 |
-| 权限与系统治理 | [08-governance](modules/08-governance.md) | `/admin/access/**`、`/admin/system/**` | 已实现；Settings 当前不在主导航 |
+| 权限与系统治理 | [08-governance](modules/08-governance.md) | `/admin/access/**`、`/admin/system/audit` | 已实现；System Settings 页面与管理 CRUD 已下线 |
 
 专项历史文档继续作为证据，不是平台入口：旧版 [AI 平台控制面设计](../design/ai-platform-admin-billing-gateway-design.md) 已标记 superseded，Gateway 完整报文条款已收敛到 [Gateway PRD](modules/05-gateway.md) 与 [Gateway 交互规范](../design/modules/05-gateway.md)；v2 保留为历史基线，不再新增跨模块需求。
 

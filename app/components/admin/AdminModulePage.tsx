@@ -66,8 +66,3 @@ export const accessTabs = [
   { label: "角色", href: "/admin/access/roles" },
   { label: "权限", href: "/admin/access/permissions" },
 ];
-
-export const systemTabs = [
-  { label: "系统设置", href: "/admin/system/settings" },
-  { label: "审计日志", href: "/admin/system/audit" },
-];

@@ -14,7 +14,7 @@
 
 ## Resource 覆盖
 
-Story：workspaces/projects/characters/scenes/workflow-runs；Identity：platform-users/user-model-permissions/admin-users/admin-roles/admin-permissions；Model：providers/models/pricing-rules；Billing/Gateway：accounts/usage/ledger/requests/keys/rate-limit-windows；System：settings/audit。
+Story：workspaces/projects/characters/scenes/workflow-runs；Identity：platform-users/user-model-permissions/admin-users/admin-roles/admin-permissions；Model：providers/models/pricing-rules；Billing/Gateway：accounts/usage/ledger/requests/keys/rate-limit-windows；System：audit。
 
 ## 发布门槛
 

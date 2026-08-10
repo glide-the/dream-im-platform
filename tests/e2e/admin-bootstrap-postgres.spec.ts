@@ -407,21 +407,6 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(syncedPricing.status()).toBe(200);
     await expect(syncedPricing.json()).resolves.toMatchObject({ data: [expect.objectContaining({ source: "models.dev", source_version: "fixture-catalog-v1" })] });
 
-    const secretSetting = await api.post(`${baseURL}/api/admin/system-settings`, {
-      headers,
-      data: { category: "e2e", key: "masked-secret", value: { token: "never-return-me" }, description: "E2E secret", isSecret: true, status: "active" },
-    });
-    expect(secretSetting.status()).toBe(201);
-    const secretSettingBody = await secretSetting.json();
-    expect(secretSettingBody).toMatchObject({ data: { value: { masked: true } } });
-    const updateSecretMetadata = await api.patch(`${baseURL}/api/admin/system-settings/${secretSettingBody.data.id}`, {
-      headers,
-      data: { value: { masked: true }, description: "E2E secret metadata updated" },
-    });
-    expect(updateSecretMetadata.status()).toBe(200);
-    expect(await updateSecretMetadata.json()).toMatchObject({ data: { value: { masked: true }, description: "E2E secret metadata updated" } });
-    expect((await api.delete(`${baseURL}/api/admin/system-settings/${secretSettingBody.data.id}`, { headers })).status()).toBe(405);
-
     const gatewayKey = await api.post(`${baseURL}/api/admin/gateway-api-keys`, {
       headers,
       data: { subjectMode: "fixed_user", platformUserId: creatorBillingUserId, name: "one-time-e2e", scopes: ["messages:create"], expiresAt: null },

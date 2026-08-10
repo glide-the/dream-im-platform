@@ -41,7 +41,6 @@ const registeredResources = new Set([
   "story-stories",
   "story-characters",
   "story-scenes",
-  "system-settings",
 ]);
 
 const resourcePermission: Record<
@@ -86,7 +85,6 @@ const resourcePermission: Record<
   "story-stories": { read: "story.read", write: "story.write" },
   "story-characters": { read: "story.read", write: "story.write" },
   "story-scenes": { read: "story.read", write: "story.write" },
-  "system-settings": { read: "system.read", write: "system.write" },
 };
 
 export function canonicalAdminResource(resource: string) {

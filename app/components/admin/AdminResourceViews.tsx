@@ -204,18 +204,6 @@ export function AdminRolesResourceView() {
   return <AdminResourceManager resource="roles" title="角色—权限矩阵" description="权限来自真实 permission 资源；内置角色和仍在使用的角色由服务端保护。" container="fullscreen" createLabel="新增自定义角色" canDelete deleteLabel="删除自定义角色" sections={[{ id: "identity", title: "角色身份" }, { id: "permissions", title: "权限矩阵", description: "搜索并勾选最小权限集。" }]} fields={fields} createDefaults={{ permissionCodes: [] }} defaultSort="code" filters={[{ field: "code", label: "角色代码" }, { field: "name", label: "名称" }]} columns={[{ key: "code", label: "Role" }, { key: "name", label: "名称" }, { key: "description", label: "说明" }, { key: "permissions", label: "Permissions", format: "json" }]} />;
 }
 
-export function SystemSettingsResourceView() {
-  const fields: AdminFieldDefinition[] = [
-    { key: "category", label: "分类", control: "text", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true },
-    { key: "key", label: "配置键", control: "text", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true },
-    { key: "description", label: "说明", control: "textarea", section: "identity", nullable: true },
-    { key: "value", label: "JSON Value", control: "json", section: "value", required: true, help: "Secret 更新会覆盖旧值；历史值永不回填。" },
-    { key: "isSecret", sourceKey: "is_secret", label: "敏感配置", control: "switch", section: "value", createOnly: true, readOnlyOnEdit: true },
-    { key: "status", label: "状态", control: "select", section: "status", required: true, options: stateOptions },
-  ];
-  return <AdminResourceManager resource="system-settings" title="系统配置项" description="结构化设置使用 JSON Editor；Secret 只允许覆盖，系统设置不提供硬删除。" container="drawer" createLabel="新增设置" canDelete={false} sections={[{ id: "identity", title: "配置身份" }, { id: "value", title: "配置值与敏感性" }, { id: "status", title: "生命周期" }]} fields={fields} createDefaults={{ value: {}, isSecret: false, status: "active" }} defaultSort="updated_at" filters={[{ field: "category", label: "分类", operator: "eq" }, { field: "key", label: "键" }, { field: "is_secret", label: "敏感", operator: "eq", options: [{ label: "是", value: "true" }, { label: "否", value: "false" }] }, { field: "status", label: "状态", operator: "eq", options: stateOptions }]} columns={[{ key: "category", label: "分类" }, { key: "key", label: "键" }, { key: "value", label: "值", format: "json" }, { key: "is_secret", label: "敏感", format: "boolean" }, { key: "status", label: "状态", format: "status" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
-}
-
 export function GatewayKeysResourceView() {
   const fields: AdminFieldDefinition[] = [
     { key: "subjectMode", sourceKey: "subject_mode", label: "主体模式", control: "hidden", section: "identity", required: true, createOnly: true },

@@ -282,7 +282,7 @@ E01：Modal 560–620px 或 Drawer 640–720px；Mobile 全屏。E02 类型化�
 
 ### 7.3 JSON Editor
 
-- 仅 Workspace settings、Provider 未知扩展 config、Platform metadata、System value。
+- 仅 Workspace settings、Provider 未知扩展 config、Platform metadata。
 - Mono 13px/1.65；行号、格式化、schema 行列错误、Copy、Restore、before/after diff。
 - 长行默认 wrap；编辑器可独立纵滚，不成为根横滚 owner。
 - Provider 受管键从扩展 JSON 剥离，Secret 风险键服务端拒绝。

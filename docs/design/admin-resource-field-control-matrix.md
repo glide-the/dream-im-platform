@@ -438,23 +438,9 @@ Revoke Modal 显示用户、prefix、最近使用、影响说明和 reason；动
 | `created_at` | 日期 | 只读 |
 | 使用角色 | 详情关系列表 | 当前 getOne 必须补真实 Role 投影 |
 
-## 11. 系统与审计
+## 11. 系统审计
 
-### 11.1 System Setting（`system-settings`）
-
-| 字段 | 列表/详情 | 创建/编辑控件 | 数据源/校验 | Secret/生命周期 |
-|---|---|---|---|---|
-| `category` | 分类文字 | 创建 select/可搜索 code Combobox；编辑只读 | 现存分类 + code regex | 与 key 唯一 |
-| `key` | Mono | 创建 text；编辑只读 | code regex，2–80 | 409 冲突 |
-| `value` | 非 Secret 显示 JSON 摘要；Secret 显示“已配置” | JSON Editor | object；格式化、diff、恢复服务器值 | Secret 历史值永不返回；编辑是覆盖 |
-| `description` | 摘要 | textarea≤4000 | 可空 | 不放敏感值 |
-| `is_secret` | 是/否 | 创建 switch；编辑只读 | boolean | 改类型需新建设置 |
-| `status` | active/disabled | select/停用确认 | 固定枚举 | **不提供硬删除** |
-| 时间 | 更新时间 | 只读 | 服务端 | — |
-
-现有通用 DELETE 必须移除 `system-settings`；停用与覆盖写审计。Secret 覆盖 Modal 必须明确旧值不可取回，新值不进入 before/after。
-
-### 11.2 Audit Log（`audit-logs`，append-only）
+### 11.1 Audit Log（`audit-logs`，append-only）
 
 | 字段 | 列表 | 详情 | 边界 |
 |---|---|---|---|
@@ -479,7 +465,7 @@ Revoke Modal 显示用户、prefix、最近使用、影响说明和 reason；动
 | Gateway | `gateway.read` | `gateway.keys.write`；结算使用 `billing.adjust` | 不通过按钮隐藏替代服务端授权 |
 | Users | `users.read` | `users.write` | 业务源字段永远只读 |
 | Access | `access.read` | `access.write` | auditor 只读 |
-| System/Audit | `system.read`/`audit.read` | `system.write` | Audit 永远无写能力 |
+| Audit | `audit.read` | — | 永远无写能力 |
 
 ### 12.2 关键动线
 

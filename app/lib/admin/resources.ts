@@ -33,7 +33,6 @@ export type AdminResource =
   | "admin-users"
   | "admin-roles"
   | "admin-permissions"
-  | "system-settings"
   | "audit-logs";
 
 type ResourceConfig = {
@@ -510,24 +509,6 @@ const resources: Record<AdminResource, ResourceConfig> = {
     },
     defaultSort: "code",
     filterFields: ["code", "name"],
-  },
-  "system-settings": {
-    permission: "system.read",
-    select: `s.id, s.category, s.key,
-             CASE WHEN s.is_secret THEN '{\"masked\":true}'::jsonb ELSE s.value END AS value,
-             s.description, s.is_secret, s.status, s.created_at, s.updated_at`,
-    from: "FROM system_settings AS s",
-    columns: {
-      id: "s.id",
-      category: "s.category",
-      key: "s.key",
-      is_secret: "s.is_secret::text",
-      status: "s.status",
-      created_at: "s.created_at",
-      updated_at: "s.updated_at",
-    },
-    defaultSort: "updated_at",
-    filterFields: ["category", "key", "is_secret", "status"],
   },
   "audit-logs": {
     permission: "audit.read",

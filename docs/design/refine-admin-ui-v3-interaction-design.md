@@ -136,7 +136,7 @@ Toast 使用不透明 surface，最多两条且不抢焦点。网络结果未知
 | Gateway | [05-gateway](modules/05-gateway.md) |
 | Usage / 独立 Account / Ledger（Payment Deferred） | [06-billing](modules/06-billing.md) |
 | Storage | [07-storage](modules/07-storage.md) |
-| RBAC / Audit / Settings | [08-governance](modules/08-governance.md) |
+| RBAC / Audit | [08-governance](modules/08-governance.md) |
 
 ## 10. 键盘、焦点与读屏
 

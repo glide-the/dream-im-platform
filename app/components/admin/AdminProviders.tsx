@@ -171,11 +171,6 @@ const resources = [
     meta: { label: "文件存储" },
   },
   {
-    name: "system-settings",
-    list: "/admin/system/settings",
-    meta: { label: "系统设置" },
-  },
-  {
     name: "audit-logs",
     list: "/admin/system/audit",
     meta: { label: "审计日志" },
