@@ -651,7 +651,11 @@ export function FieldControl({
               aria-live="polite"
               className={`font-normal leading-5 ${jsonValidation?.valid ? "text-success" : "text-danger"}`}
             >
-              {jsonValidation?.valid ? "JSON 格式有效" : jsonValidation?.error}
+              {jsonValidation?.valid
+                ? "JSON 格式有效"
+                : jsonValidation && "error" in jsonValidation
+                  ? jsonValidation.error
+                  : "请输入 JSON。"}
             </span>
             <button
               type="button"

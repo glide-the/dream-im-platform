@@ -3503,3 +3503,62 @@ Optional Enhancers:
 未执行事项及原因：
 
 - 未执行数据库、外部 Provider、Mem0、项圈、支付或浏览器 E2E；本轮仅撤销上一轮 backend MCP 恢复。
+
+## Round 85 — Story Business Admin + Dream 跨系统交互设计
+
+Optimized Prompt:
+
+你是一名资深产品架构师、PostgreSQL/Drizzle 数据架构师、文件型 Artifact 系统架构师、Next.js/Refine 管理后台工程师、FastAPI/Python 工程师和 UI/UX 设计负责人。基于 `/Users/dmeck/project/ink-admin-memory` 与 `/Users/dmeck/project/ink-dream-memory` 的当前真实代码、现有设计文档、PostgreSQL `5433/ink-memory` 的只读 SQL 结果、SQLite 对照审计记录，以及共享 Artifact Root 中两条 canonical Story 的只读 metadata/文件证据，为 Ink Memory 的“剧本业务”编写一份完整、可评审、不过度设计的 Admin + Dream 跨系统交互设计稿。
+
+本阶段仅允许：只读复核、问题判断、产品与交互设计、业务时序设计、目标符合性评估，以及更新本工作日志和创建主设计 Markdown 文档。禁止修改 Admin/Dream 业务代码、Drizzle schema、migration、PostgreSQL、SQLite、共享 Artifact；禁止恢复、伪造或推断不存在的 Episode identity、Project binding、provenance 或 Story。设计完成后必须暂停，等待用户审核。
+
+已知架构边界必须作为设计不变量：Dream 是 Artifact 与 Story metadata 索引的唯一业务写入方；PostgreSQL `story_workspace_stories` 是 canonical Story metadata 索引；共享 Artifact Root 是 script、outline、storyboard、review report 内容真源；Admin 仅从 PostgreSQL 读取运营索引，并通过服务端 allowlist reader 只读预览共享 Artifact。Admin 不扫描任意目录发现 Story、不写 Artifact、不接收浏览器绝对路径、不直接 materialize Story。
+
+先用代码、SQL、SQLite 对照和 Artifact metadata 证据回答：18 个历史 Run 是否创建 Story；`missing_relations` 是否错误包含非 Episode Artifact Run；是否需恢复 SQLite；是否需新 migration；Admin 为何不能用 Dream `?run=` 直接看到 Story；Workspace、Project、Story、Episode、Workflow Run、Artifact 的正确身份关系；当前问题属于数据缺失、候选过滤、状态命名还是 UI 导航；哪些属于代码修复，哪些属于交互/文案修复。结论必须明确，不使用“可能”。重点验证：18 个 Run 属于 `not_applicable`/`ignored`；`missing_relations` 仅用于已证实 Episode Artifact Run 且可信关系损坏；无 Episode authority/registry/Project binding 不创建 Story；无真实 schema 变化或精确一对一 mapping 不创建 migration。
+
+创建 `/Users/dmeck/project/ink-admin-memory/docs/design/story-business-admin-dream-interaction-design.md`，至少包含：执行摘要与问题处理判断；产品目标和非目标；身份与数据所有权模型；Dream execution 双轨 Artifact/Index 状态交互；Dream 到 Admin 的 `/admin/story/stories?source_run_id={runId}` 最小深链；Admin Story 列表、Workflow Run 入口、Run 上下文提示和安全只读 Drawer；`indexed`、`missing_index`、`stale`、`invalid_artifact`、`broken_relation`、`not_applicable`、`conflict` 的严格 reconcile 分类、判定优先级和动作；系统/筛选/指定 Run 空态；Artifact/Index/revision/权限/依赖错误状态；401、403、404、409、413、422、500、503 文案与恢复动作；Drizzle migration 判断；当前实现/本期改造/Deferred 对照；验收标准、风险与待审核决策；目标符合性和不过度设计评审矩阵。
+
+文档必须明确：一个 Project 对应一个 canonical Story，多 Episode 聚合在同一 Story；stable key 为 `workspace_id + artifact_source_type + source_project_id`；`source_run_id` 只是当前索引 provenance 和查询入口，不是 Story stable identity；同 Project 新 Run 幂等更新同一 Story；`source_thread_ref`、绝对路径与 thread root 仅限服务端；文件写入成功和 Story 索引成功是独立状态；Artifact 不是独立 Story；Admin 在数据库无 Story 行时不得伪造列表记录；Artifact reader 不可用时仍展示数据库 metadata；索引异常优先链接回 Dream 处理，不建设新的跨服务写 Gateway。
+
+至少提供三张 Mermaid 时序/流程图：正常 Dream 生成、幂等 materialize、Admin 深链与安全预览；Artifact 写入成功但 PostgreSQL 索引失败后用同 revision 安全重试；历史 Run 先验证 Episode authority/registry，再分类 `not_applicable`、`broken_relation`、`missing_index`、`stale`、`indexed`。另提供 Dream/Admin 交互状态矩阵、桌面和移动低保真线框图、共享 Story Index Status JSON golden fixture、`source_run_id` 深链 URL/空态/权限验收用例。
+
+Drizzle 结论默认：`0027_young_stark_industries.sql` 已覆盖 Story Artifact Schema；`source_run_id` 精确筛选优先做 Repository/API/UI 改造；仅在真实规模与 `EXPLAIN` 证明必要时才新增查询索引；禁止空 migration，禁止借 migration 给 18 个历史 Run 构造关系。
+
+Acceptance Criteria:
+
+- 所有事实性结论均附当前代码路径/符号、SQL/审计文档或 Artifact metadata 证据，可被复核。
+- 明确将当前 18 个历史 Run 定义为 `not_applicable`，并解释为何不是迁移遗漏或 `broken_relation`。
+- Dream 与 Admin 的双状态、深链、空态、错误态和恢复动作完整且一致。
+- 三张 Mermaid 图可渲染，并严格遵守唯一写入方与 Admin 只读边界。
+- 目标评审逐项覆盖不扫描目录、不复制正文、不伪造关系、不新增平行表/SQLite runtime/服务 JWT/跨服务 Gateway/消息队列/无必要 migration。
+- 明确本期最小范围、Deferred 能力、风险和需要用户批准的决策。
+- 仅产生工作日志与主设计文档变更；设计完成后停止，不实施任何业务改造。
+
+Verification:
+
+- 只读检查相关 Admin/Dream 代码、迁移、测试、设计/审计文档、SQL 查询结果与两条 canonical Artifact metadata。
+- 用 `rg`/结构化查询建立结论到证据的映射；核对 20 Run、18 个非适用候选、2 条 canonical Story、`content IS NULL`、episode count、revision 一致性等已知事实。
+- 检查 Markdown 表格、链接、Mermaid 语法、状态词一致性和设计边界；使用无对话上下文的 reader review 检查歧义与矛盾。
+- 最终运行 `git diff --check`，并确认差异仅包含允许的文档文件。
+
+Optional Enhancers:
+
+- 低保真线框以实现约束为导向，分别覆盖桌面 Drawer 与移动全屏详情。
+- JSON golden fixture 仅定义跨系统显示/测试合同，不宣称本期新增持久化 schema 或强制跨服务 API。
+- 将“当前实现 / 本期改造 / Deferred”并列表达，防止服务 JWT、Gateway、队列等提前进入首版。
+
+范围变化：
+
+- 本轮进入 Story Business 跨系统产品与交互设计阶段，只交付证据驱动的设计结论，不实施代码或数据变更。
+
+执行证据与验证结果：
+
+- 本记录落盘前尚未执行代码、数据库、Artifact 或审计证据复核。
+
+失败尝试及根因：
+
+- 无。
+
+未执行事项及原因：
+
+- 只读审计、主设计稿编写与 reader review 必须在本 Prompt Architect 记录后执行。
