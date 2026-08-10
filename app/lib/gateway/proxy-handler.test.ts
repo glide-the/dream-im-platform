@@ -76,7 +76,8 @@ describe("true gateway streaming proxy", () => {
     const response = await proxyStreaming({ request: new Request("http://gateway/v1/messages"), externalProtocol: "anthropic", prepared: prepared("anthropic"), body: { model: "alias", messages: [], max_tokens: 128, stream: true } });
     const body = await response.text();
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-cache");
+    expect(response.headers.get("cache-control")).toBe("no-cache, no-transform");
+    expect(response.headers.get("x-accel-buffering")).toBe("no");
     expect(body.indexOf("message_start")).toBeLessThan(body.indexOf("content_block_delta"));
     expect(body).toContain("event: message_stop");
     expect(mocks.finalizeKnown).toHaveBeenCalledWith(expect.objectContaining({ usage: expect.objectContaining({ inputTokens: 7, outputTokens: 2 }) }));
@@ -107,16 +108,19 @@ describe("true gateway streaming proxy", () => {
   });
 
   it("propagates downstream cancellation to the upstream controller", async () => {
-    let upstreamController: ReadableStreamDefaultController<Uint8Array> | undefined;
-    const result = transport(new Response(new ReadableStream<Uint8Array>({ start(controller) { upstreamController = controller; controller.enqueue(new TextEncoder().encode('data: {"id":"chat_1","model":"gpt","choices":[{"delta":{"content":"hi"}}]}\n\n')); } }), { headers: { "content-type": "text/event-stream" } }));
+    const upstreamCancelled = vi.fn();
+    const result = transport(new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode('data: {"id":"chat_1","model":"gpt","choices":[{"delta":{"content":"hi"}}]}\n\n')); },
+      cancel: upstreamCancelled,
+    }), { headers: { "content-type": "text/event-stream" } }));
     mocks.send.mockResolvedValue(result);
     const response = await proxyStreaming({ request: new Request("http://gateway/v1/chat/completions"), externalProtocol: "openai", prepared: prepared("openai"), body: { model: "alias", messages: [], stream: true } });
     const reader = response.body!.getReader();
     await reader.read();
     await reader.cancel();
     expect(result.abort.abort).toHaveBeenCalledOnce();
+    expect(upstreamCancelled).toHaveBeenCalledOnce();
     expect(mocks.completePayload).toHaveBeenCalledWith(expect.objectContaining({ status: "cancelled" }));
-    upstreamController?.close();
   });
 
   it("flushes the first valid upstream event before the upstream stream closes", async () => {
@@ -136,6 +140,75 @@ describe("true gateway streaming proxy", () => {
     upstreamController!.enqueue(new TextEncoder().encode('event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n'));
     upstreamController!.close();
     while (!(await reader.read()).done) { /* drain */ }
+  });
+
+  it("does not wait for response capture persistence before flushing the first event", async () => {
+    let releaseCapture: (() => void) | undefined;
+    mocks.startPayload.mockImplementationOnce(() => new Promise<void>((resolve) => { releaseCapture = resolve; }));
+    let upstreamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    mocks.send.mockResolvedValue(transport(new Response(new ReadableStream<Uint8Array>({
+      start(controller) { upstreamController = controller; },
+    }), { headers: { "content-type": "text/event-stream" } })));
+    const response = await proxyStreaming({ request: new Request("http://gateway/v1/messages"), externalProtocol: "anthropic", prepared: prepared("anthropic"), body: { model: "alias", messages: [], max_tokens: 32, stream: true } });
+    const reader = response.body!.getReader();
+    const firstRead = reader.read();
+    upstreamController!.enqueue(new TextEncoder().encode('event: message_start\ndata: {"type":"message_start","message":{"id":"msg_capture_pending","model":"claude","usage":{"input_tokens":2,"output_tokens":0}}}\n\n'));
+    const first = await Promise.race([
+      firstRead,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("capture persistence blocked first event")), 100)),
+    ]);
+    expect(new TextDecoder().decode(first.value)).toContain("msg_capture_pending");
+    releaseCapture?.();
+    upstreamController!.enqueue(new TextEncoder().encode('event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n'));
+    upstreamController!.close();
+    while (!(await reader.read()).done) { /* drain */ }
+  });
+
+  it("keeps two concurrent request streams isolated", async () => {
+    const controllers = new Map<string, ReadableStreamDefaultController<Uint8Array>>();
+    mocks.send.mockImplementation(async ({ body }: { body: Record<string, unknown> }) => {
+      const marker = String((body.messages as Array<{ content?: string }>)[0]?.content);
+      return transport(new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controllers.set(marker, controller); },
+      }), { headers: { "content-type": "text/event-stream" } }));
+    });
+    const requestA = proxyStreaming({ request: new Request("http://gateway/v1/messages"), externalProtocol: "anthropic", prepared: { ...prepared("anthropic"), requestId: "req_a" }, body: { model: "alias", messages: [{ role: "user", content: "A" }], max_tokens: 32, stream: true } });
+    const requestB = proxyStreaming({ request: new Request("http://gateway/v1/messages"), externalProtocol: "anthropic", prepared: { ...prepared("anthropic"), requestId: "req_b" }, body: { model: "alias", messages: [{ role: "user", content: "B" }], max_tokens: 32, stream: true } });
+    const [responseA, responseB] = await Promise.all([requestA, requestB]);
+    const readerA = responseA.body!.getReader();
+    const readerB = responseB.body!.getReader();
+    const firstA = readerA.read();
+    const firstB = readerB.read();
+    controllers.get("A")!.enqueue(new TextEncoder().encode('event: message_start\ndata: {"type":"message_start","message":{"id":"msg_A","model":"claude","usage":{"input_tokens":1,"output_tokens":0}}}\n\n'));
+    controllers.get("B")!.enqueue(new TextEncoder().encode('event: message_start\ndata: {"type":"message_start","message":{"id":"msg_B","model":"claude","usage":{"input_tokens":1,"output_tokens":0}}}\n\n'));
+    const [chunkA, chunkB] = await Promise.all([firstA, firstB]);
+    const textA = new TextDecoder().decode(chunkA.value);
+    const textB = new TextDecoder().decode(chunkB.value);
+    expect(textA).toContain("msg_A");
+    expect(textA).not.toContain("msg_B");
+    expect(textB).toContain("msg_B");
+    expect(textB).not.toContain("msg_A");
+    for (const marker of ["A", "B"]) {
+      controllers.get(marker)!.enqueue(new TextEncoder().encode('event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n'));
+      controllers.get(marker)!.close();
+    }
+    await Promise.all([
+      (async () => { while (!(await readerA.read()).done) { /* drain */ } })(),
+      (async () => { while (!(await readerB.read()).done) { /* drain */ } })(),
+    ]);
+  });
+
+  it("cancels the upstream reader after an OpenAI DONE terminator", async () => {
+    const cancelled = vi.fn();
+    mocks.send.mockResolvedValue(transport(new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"id":"chat_done","model":"gpt","choices":[],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}\n\ndata: [DONE]\n\n'));
+      },
+      cancel: cancelled,
+    }), { headers: { "content-type": "text/event-stream" } })));
+    const response = await proxyStreaming({ request: new Request("http://gateway/v1/chat/completions"), externalProtocol: "openai", prepared: prepared("openai"), body: { model: "alias", messages: [], stream: true } });
+    expect(await response.text()).toContain("data: [DONE]");
+    expect(cancelled).toHaveBeenCalledOnce();
   });
 
   it("fails an otherwise complete stream when reliable final usage is missing", async () => {

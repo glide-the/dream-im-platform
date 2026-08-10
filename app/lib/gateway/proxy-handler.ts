@@ -25,6 +25,7 @@ import {
   parseOpenAIChatResponse,
 } from "./usage";
 import { markGatewayRequestStreaming } from "./repository";
+import { BoundedTaskQueue } from "./bounded-task-queue";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -36,7 +37,7 @@ export type ReadyGatewayRequest = {
 
 function responseHeaders(requestId: string, streaming = false) {
   return new Headers({
-    "cache-control": streaming ? "no-cache" : "no-store",
+    "cache-control": streaming ? "no-cache, no-transform" : "no-store",
     "x-request-id": requestId,
     ...(streaming
       ? {
@@ -253,16 +254,11 @@ export async function proxyStreaming(input: {
 
   const headers = responseHeaders(input.prepared.requestId, true);
   let captureFailed = false;
-  let captureChain: Promise<unknown> = startGatewayResponsePayload({ requestId: input.prepared.requestId, status: 200, headers }).catch(async (error) => {
+  const captureQueue = new BoundedTaskQueue(32, async (error) => {
     captureFailed = true;
     await markGatewayPayloadCaptureFailure(input.prepared.requestId, error).catch(() => undefined);
   });
-  const queueCapture = (operation: () => Promise<unknown>) => {
-    captureChain = captureChain.then(operation).catch(async (error) => {
-      captureFailed = true;
-      await markGatewayPayloadCaptureFailure(input.prepared.requestId, error).catch(() => undefined);
-    });
-  };
+  await captureQueue.enqueue(() => startGatewayResponsePayload({ requestId: input.prepared.requestId, status: 200, headers }));
   const iterator = parseSseStream(upstream.body, transport.abort.signal)[Symbol.asyncIterator]();
   const adapter = createProtocolStreamAdapter({ externalProtocol: input.externalProtocol, providerProtocol: input.prepared.resolved.provider.protocol, requestedModel: String(input.body.model) });
   let usage = emptyUsage(input.externalProtocol);
@@ -280,7 +276,7 @@ export async function proxyStreaming(input: {
     return responseHash.digest("hex");
   };
 
-  const emit = (controller: ReadableStreamDefaultController<Uint8Array>, data: JsonRecord | "[DONE]") => {
+  const emit = async (controller: ReadableStreamDefaultController<Uint8Array>, data: JsonRecord | "[DONE]") => {
     const eventType = data === "[DONE]" ? "done" : input.externalProtocol === "anthropic" ? String(data.type ?? "message") : "message";
     const serialized = serializeSse({ protocol: input.externalProtocol, data, eventType });
     responseHash.update(serialized.rawEvent);
@@ -290,19 +286,19 @@ export async function proxyStreaming(input: {
       if (firstTokenAt === undefined && containsFirstToken(input.externalProtocol, data)) firstTokenAt = Date.now();
     }
     const currentSequence = sequence++;
-    queueCapture(() => recordGatewayResponseEvent({ requestId: input.prepared.requestId, sequence: currentSequence, eventType: serialized.eventType, rawData: serialized.rawData, rawEvent: serialized.rawEvent, startedAt }));
+    await captureQueue.enqueue(() => recordGatewayResponseEvent({ requestId: input.prepared.requestId, sequence: currentSequence, eventType: serialized.eventType, rawData: serialized.rawData, rawEvent: serialized.rawEvent, startedAt }));
   };
 
   const finish = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
     if (terminal) return;
     terminal = true;
-    for (const output of adapter.finish()) emit(controller, output);
+    for (const output of adapter.finish()) await emit(controller, output);
     const finalError = await settleStream({ requestId: input.prepared.requestId, protocol: input.externalProtocol, usage, startedAt, firstTokenAt, outcome: cancelled ? "cancelled" : "succeeded" });
-    if (finalError && !cancelled) emit(controller, publicErrorBody(input.externalProtocol, finalError, input.prepared.requestId) as JsonRecord);
-    else if (input.externalProtocol === "openai" && !cancelled) emit(controller, "[DONE]");
+    if (finalError && !cancelled) await emit(controller, publicErrorBody(input.externalProtocol, finalError, input.prepared.requestId) as JsonRecord);
+    else if (input.externalProtocol === "openai" && !cancelled) await emit(controller, "[DONE]");
     transport.abort.cleanup();
-    queueCapture(() => completeGatewayStreamPayload({ requestId: input.prepared.requestId, status: cancelled ? "cancelled" : finalError ? "failed" : "complete", providerRequestId: upstreamHeaderRequestId ?? usage.upstreamRequestId, sha256: finishResponseHash(), captureError: captureFailed ? "One or more stream payload writes failed" : undefined }));
-    await captureChain;
+    await captureQueue.enqueue(() => completeGatewayStreamPayload({ requestId: input.prepared.requestId, status: cancelled ? "cancelled" : finalError ? "failed" : "complete", providerRequestId: upstreamHeaderRequestId ?? usage.upstreamRequestId, sha256: finishResponseHash(), captureError: captureFailed ? "One or more stream payload writes failed" : undefined }));
+    await captureQueue.drain();
     if (!cancelled) controller.close();
   };
 
@@ -313,6 +309,7 @@ export async function proxyStreaming(input: {
         while (!terminal) {
           const next = await iterator.next();
           if (next.done || next.value.data === "[DONE]") {
+            if (!next.done) await iterator.return?.(undefined);
             await finish(controller);
             return;
           }
@@ -320,16 +317,16 @@ export async function proxyStreaming(input: {
           try { providerEvent = parseProviderJson(next.value.data); }
           catch (error) { throw new GatewayError("UPSTREAM_SSE_INVALID", "The upstream provider returned an invalid SSE event", 502, "upstream_error"); }
           const outputs = adapter.push(next.value.event, providerEvent);
-          for (const output of outputs) emit(controller, output);
+          for (const output of outputs) await emit(controller, output);
           if (outputs.length) return;
         }
       } catch (error) {
         terminal = true;
         const mapped = await settleStream({ requestId: input.prepared.requestId, protocol: input.externalProtocol, usage, startedAt, firstTokenAt, outcome: cancelled || input.request.signal.aborted ? "cancelled" : "failed", error });
-        if (!cancelled) emit(controller, publicErrorBody(input.externalProtocol, mapped ?? toGatewayError(error), input.prepared.requestId) as JsonRecord);
+        if (!cancelled) await emit(controller, publicErrorBody(input.externalProtocol, mapped ?? toGatewayError(error), input.prepared.requestId) as JsonRecord);
         transport.abort.cleanup();
-        queueCapture(() => completeGatewayStreamPayload({ requestId: input.prepared.requestId, status: cancelled ? "cancelled" : "interrupted", providerRequestId: upstreamHeaderRequestId ?? usage.upstreamRequestId, sha256: finishResponseHash(), captureError: captureFailed ? "One or more stream payload writes failed" : undefined }));
-        await captureChain;
+        await captureQueue.enqueue(() => completeGatewayStreamPayload({ requestId: input.prepared.requestId, status: cancelled ? "cancelled" : "interrupted", providerRequestId: upstreamHeaderRequestId ?? usage.upstreamRequestId, sha256: finishResponseHash(), captureError: captureFailed ? "One or more stream payload writes failed" : undefined }));
+        await captureQueue.drain();
         if (!cancelled) controller.close();
       }
     },
@@ -340,8 +337,8 @@ export async function proxyStreaming(input: {
       transport.abort.abort();
       await iterator.return?.(undefined);
       await settleStream({ requestId: input.prepared.requestId, protocol: input.externalProtocol, usage, startedAt, firstTokenAt, outcome: "cancelled", error: new DOMException("Downstream client cancelled", "AbortError") });
-      queueCapture(() => completeGatewayStreamPayload({ requestId: input.prepared.requestId, status: "cancelled", providerRequestId: upstreamHeaderRequestId ?? usage.upstreamRequestId, sha256: finishResponseHash(), captureError: captureFailed ? "One or more stream payload writes failed" : undefined }));
-      await captureChain;
+      await captureQueue.enqueue(() => completeGatewayStreamPayload({ requestId: input.prepared.requestId, status: "cancelled", providerRequestId: upstreamHeaderRequestId ?? usage.upstreamRequestId, sha256: finishResponseHash(), captureError: captureFailed ? "One or more stream payload writes failed" : undefined }));
+      await captureQueue.drain();
       transport.abort.cleanup();
     },
   });

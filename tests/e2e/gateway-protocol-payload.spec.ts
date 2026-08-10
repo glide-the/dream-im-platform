@@ -19,6 +19,8 @@ let upstream: Server | undefined;
 let upstreamUrl = "";
 let observedClaudeCodeSystemRole = false;
 let observedClaudeCodeBeta = false;
+let realtimeStreamCompleted = false;
+let realtimeStreamRequests = 0;
 
 function diagnostics(page: Page) {
   const errors: string[] = [];
@@ -41,6 +43,23 @@ function anthropicStream(response: import("node:http").ServerResponse) {
   ];
   response.write(frames[0].slice(0, 47));
   setTimeout(() => { response.write(frames[0].slice(47) + frames[1] + frames[2].slice(0, 61)); setTimeout(() => response.end(frames[2].slice(61) + frames.slice(3).join("")), 10); }, 10);
+}
+
+function anthropicRealtimeStream(response: import("node:http").ServerResponse) {
+  realtimeStreamRequests += 1;
+  realtimeStreamCompleted = false;
+  response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", "request-id": "provider-anthropic-realtime" });
+  response.write('event: message_start\ndata: {"type":"message_start","message":{"id":"msg_realtime","type":"message","role":"assistant","model":"claude-mock","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":0}}}\n\n');
+  setTimeout(() => {
+    response.end([
+      'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"first request streamed"}}\n\n',
+      'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":3}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ].join(""));
+    realtimeStreamCompleted = true;
+  }, 300);
 }
 
 function openAIStream(response: import("node:http").ServerResponse) {
@@ -71,6 +90,7 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
         if (pathname === "/v1/messages") {
           observedClaudeCodeSystemRole ||= Array.isArray(body.messages) && body.messages.some((message: { role?: string }) => message?.role === "system");
           observedClaudeCodeBeta ||= String(request.headers["anthropic-beta"] ?? "").includes("claude-code");
+          if (body.stream && JSON.stringify(body.messages).includes("first-request-realtime-marker")) return anthropicRealtimeStream(response);
           if (body.stream) return anthropicStream(response);
           response.writeHead(200, { "content-type": "application/json", "request-id": "provider-anthropic-json" });
           response.end(JSON.stringify({ id: "msg_json", type: "message", role: "assistant", model: "claude-mock", content: [{ type: "text", text: "anthropic json" }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 8, output_tokens: 3, cache_read_input_tokens: 1 } }));
@@ -141,15 +161,81 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
       const modelId = (await response.json()).data.id as string;
       const pricing = await api.post(`${baseURL}/api/admin/pricing-rules`, { headers: adminHeaders, data: { modelId, userTier: "free", inputPriceMicrousdPerMillion: 1000, outputPriceMicrousdPerMillion: 2000, cacheReadPriceMicrousdPerMillion: 100, cacheWritePriceMicrousdPerMillion: 200, markupBps: 0, discountBps: 0, status: "active", effectiveFrom: new Date(Date.now() - 60_000).toISOString() } });
       expect(pricing.status()).toBe(201);
+      return modelId;
     }
     const anthropicProvider = await provider("gateway-anthropic-e2e", "anthropic");
     const openAIProvider = await provider("gateway-openai-e2e", "openai");
-    await model(anthropicProvider, "anthropic-native-e2e", "claude-mock");
-    await model(openAIProvider, "openai-native-e2e", "gpt-mock");
+    const anthropicModelId = await model(anthropicProvider, "anthropic-native-e2e", "claude-mock");
+    const openAIModelId = await model(openAIProvider, "openai-native-e2e", "gpt-mock");
+
+    const planResponse = await api.post(`${baseURL}/api/admin/subscription-plans`, {
+      headers: adminHeaders,
+      data: { code: "gateway-contract-plan", name: "Gateway Contract Plan", description: "Gateway protocol E2E allowance" },
+    });
+    expect(planResponse.status()).toBe(201);
+    const planId = (await planResponse.json()).data.id as string;
+    const versionResponse = await api.post(`${baseURL}/api/admin/subscription-plan-versions`, {
+      headers: adminHeaders,
+      data: { planId, allowanceTokens: 100_000 },
+    });
+    expect(versionResponse.status()).toBe(201);
+    const planVersionId = (await versionResponse.json()).data.id as string;
+    for (const modelId of [anthropicModelId, openAIModelId]) {
+      const entitlement = await api.post(`${baseURL}/api/admin/subscription-entitlements`, {
+        headers: adminHeaders,
+        data: { planVersionId, modelId, gatewayScopes: ["messages:create", "chat:create", "models:list"], dailyTokenLimit: 50_000, monthlyTokenLimit: 100_000, enabled: true },
+      });
+      expect(entitlement.status()).toBe(201);
+    }
+    const publish = await api.post(`${baseURL}/api/admin/subscription-plan-versions/${planVersionId}/publish`, {
+      headers: adminHeaders,
+      data: { idempotencyKey: "publish:gateway-contract:e2e", reason: "Gateway contract E2E" },
+    });
+    expect(publish.status()).toBe(200);
+    async function activateSubscription(platformUserId: string, suffix: string) {
+      const response = await api.post(`${baseURL}/api/admin/subscriptions`, {
+        headers: adminHeaders,
+        data: { platformUserId, planVersionId, startInTrial: false, idempotencyKey: `activate:gateway-contract:${suffix}:e2e`, reason: "Gateway contract E2E" },
+      });
+      expect(response.status()).toBe(201);
+    }
+    await activateSubscription(gatewayUserId, "primary");
 
     const keyResponse = await api.post(`${baseURL}/api/admin/gateway-api-keys`, { headers: adminHeaders, data: { subjectMode: "fixed_user", platformUserId: gatewayUserId, name: "gateway-contract-e2e", scopes: ["messages:create", "chat:create", "models:list"], expiresAt: null } });
     expect(keyResponse.status()).toBe(201);
     const gatewayKey = (await keyResponse.json()).data.plaintextKey as string;
+
+    // This is the first successful streaming /v1/messages call in the test.
+    // Its first event must arrive while the mock Provider stream is still
+    // open, before any /api/hello probe or second Messages request exists.
+    const firstStream = await fetch(`${baseURL}/v1/messages?beta=true`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": gatewayKey },
+      body: JSON.stringify({ model: "anthropic-native-e2e", max_tokens: 32, stream: true, messages: [{ role: "user", content: "first-request-realtime-marker" }] }),
+    });
+    expect(firstStream.status).toBe(200);
+    expect(firstStream.headers.get("content-type")).toContain("text/event-stream");
+    expect(firstStream.headers.get("cache-control")).toBe("no-cache, no-transform");
+    expect(firstStream.headers.get("content-encoding")).toBeNull();
+    expect(firstStream.headers.get("x-accel-buffering")).toBe("no");
+    const firstReader = firstStream.body!.getReader();
+    const firstEvent = await firstReader.read();
+    expect(new TextDecoder().decode(firstEvent.value)).toContain("event: message_start");
+    expect(realtimeStreamCompleted).toBe(false);
+    expect(realtimeStreamRequests).toBe(1);
+    let firstStreamRaw = new TextDecoder().decode(firstEvent.value);
+    while (true) {
+      const chunk = await firstReader.read();
+      if (chunk.done) break;
+      firstStreamRaw += new TextDecoder().decode(chunk.value);
+    }
+    expect(firstStreamRaw).toContain("first request streamed");
+    expect(realtimeStreamCompleted).toBe(true);
+    expect(realtimeStreamRequests).toBe(1);
+
+    const helloProbe = await fetch(`${baseURL}/api/hello`, { method: "HEAD" });
+    expect(helloProbe.status).toBe(404);
+    expect(realtimeStreamRequests).toBe(1);
 
     // A policy rejection is still a complete application-layer exchange. It
     // must preserve the request and protocol-correct response instead of
@@ -159,6 +245,7 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
     expect(limitedGatewayUserId).not.toBe("undefined");
     await pool.query(`UPDATE platform_users SET daily_token_limit = 1 WHERE id = $1`, [limitedGatewayUserId]);
     await pool.query(`UPDATE billing_accounts SET available_microusd = 1000000000 WHERE platform_user_id = $1`, [limitedGatewayUserId]);
+    await activateSubscription(limitedGatewayUserId, "limited");
     const limitedKeyResponse = await api.post(`${baseURL}/api/admin/gateway-api-keys`, { headers: adminHeaders, data: { subjectMode: "fixed_user", platformUserId: limitedGatewayUserId, name: "gateway-limited-e2e", scopes: ["messages:create"], expiresAt: null } });
     expect(limitedKeyResponse.status()).toBe(201);
     const limitedGatewayKey = (await limitedKeyResponse.json()).data.plaintextKey as string;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseSseStream } from "./sse";
 
 function fragmented(parts: string[]) {
@@ -28,5 +28,30 @@ describe("incremental SSE parser", () => {
     const events = [];
     for await (const event of parseSseStream(fragmented(["event: error\r\ndata: line1\r\ndata: line2\r\n\r\n"]))) events.push(event);
     expect(events[0]).toMatchObject({ event: "error", data: "line1\nline2" });
+  });
+
+  it("decodes UTF-8 characters split across byte chunks", async () => {
+    const encoded = new TextEncoder().encode('data: {"text":"梦境"}\n\n');
+    const splitAt = encoded.indexOf(0xe6) + 1;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoded.slice(0, splitAt));
+        controller.enqueue(encoded.slice(splitAt));
+        controller.close();
+      },
+    });
+    const events = [];
+    for await (const event of parseSseStream(stream)) events.push(event.data);
+    expect(events).toEqual(['{"text":"梦境"}']);
+  });
+
+  it("cancels a pending reader when the request signal aborts", async () => {
+    const cancelled = vi.fn();
+    const stream = new ReadableStream<Uint8Array>({ cancel: cancelled });
+    const controller = new AbortController();
+    const reading = parseSseStream(stream, controller.signal).next();
+    controller.abort(new DOMException("client disconnected", "AbortError"));
+    await expect(reading).rejects.toMatchObject({ name: "AbortError" });
+    expect(cancelled).toHaveBeenCalledOnce();
   });
 });

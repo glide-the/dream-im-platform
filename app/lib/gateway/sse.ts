@@ -27,10 +27,21 @@ export async function* parseSseStream(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let completed = false;
+  let rejectAborted: ((reason?: unknown) => void) | undefined;
+  const aborted = signal
+    ? new Promise<never>((_, reject) => { rejectAborted = reject; })
+    : undefined;
+  const onAbort = () => rejectAborted?.(
+    signal?.reason ?? new DOMException("Aborted", "AbortError"),
+  );
+  signal?.addEventListener("abort", onAbort, { once: true });
   try {
     while (true) {
       if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
-      const { done, value } = await reader.read();
+      const { done, value } = aborted
+        ? await Promise.race([reader.read(), aborted])
+        : await reader.read();
       buffer += decoder.decode(value, { stream: !done });
       buffer = buffer.replaceAll("\r\n", "\n");
       let boundary: number;
@@ -40,13 +51,20 @@ export async function* parseSseStream(
         const event = parseBlock(raw);
         if (event) yield event;
       }
-      if (done) break;
+      if (done) {
+        completed = true;
+        break;
+      }
     }
     if (buffer.trim()) {
       const event = parseBlock(buffer);
       if (event) yield event;
     }
   } finally {
+    signal?.removeEventListener("abort", onAbort);
+    if (!completed) {
+      await reader.cancel(signal?.reason).catch(() => undefined);
+    }
     reader.releaseLock();
   }
 }
