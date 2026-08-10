@@ -9,6 +9,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { AdminCollapsibleFilters, AdminListHeader, countActiveFilterValues } from "./AdminListChrome";
 
 type Row = Record<string, unknown> & { id: string };
 type Action =
@@ -346,12 +347,9 @@ export default function SubscriptionLifecycleManager() {
     </form>
 
     <section id="subscription-user-list" className="admin-panel overflow-hidden scroll-mt-24" aria-label="用户订阅清单">
-      <header className="space-y-4 border-b border-border p-5">
-        <div>
-          <h2 className="font-display text-xl font-semibold">用户订阅与当前周期 Token</h2>
-          <p className="mt-1 text-sm leading-6 text-text-secondary">按用户核对套餐 Token、补发 Token、预留、消耗和剩余；这里的补发会立即参与 Gateway 预授权，但不修改 429 安全限流。</p>
-        </div>
-        {grantIntent ? <p className="border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary" role="status">正在处理 402：请确认目标用户后点击“管理”。具备 <span className="font-mono text-xs">subscriptions.grant</span> 权限时，弹窗会直接选择“补发本周期 Token”。</p> : null}
+      <AdminListHeader title="用户订阅与当前周期 Token" description="按用户核对套餐 Token、补发 Token、预留、消耗和剩余；补发会立即参与 Gateway 预授权，但不修改 429 安全限流。" />
+      {grantIntent ? <p className="border-b border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary" role="status">正在处理 402：请确认目标用户后点击“管理”。具备 <span className="font-mono text-xs">subscriptions.grant</span> 权限时，弹窗会直接选择“补发本周期 Token”。</p> : null}
+      <AdminCollapsibleFilters activeCount={countActiveFilterValues({ subscriptionSearch })}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="block max-w-xl flex-1 text-xs font-semibold text-text-secondary">按邮箱筛选用户订阅
             <input
@@ -367,7 +365,7 @@ export default function SubscriptionLifecycleManager() {
           </label>
           {subscriptionSearch ? <button type="button" className="min-h-11 border border-border px-4 text-sm font-semibold" onClick={() => { setSubscriptionSearch(""); setPage(1); }}>清除筛选</button> : null}
         </div>
-      </header>
+      </AdminCollapsibleFilters>
       <div className="max-w-full overflow-x-auto" tabIndex={0} aria-label="用户订阅数据表，可横向滚动">
         <table className="w-full min-w-[1540px] text-left text-sm">
           <caption className="sr-only">用户个人月度订阅周期及 Token Allowance 使用情况</caption>

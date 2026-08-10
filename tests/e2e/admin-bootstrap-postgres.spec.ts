@@ -691,6 +691,8 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     expect(storyListRequests).toContain("/api/admin/story-stories");
     expect(storyListRequests).not.toContain("/api/admin/stories");
 
+    await expect(page.getByLabel("剧本标题")).not.toBeVisible();
+    await page.getByRole("button", { name: "展开筛选", exact: true }).click();
     await page.getByLabel("剧本标题").fill("不存在的剧本标题");
     await page.getByRole("button", { name: "应用", exact: true }).click();
     await expect(page).toHaveURL(/title=/);
@@ -750,6 +752,7 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     await unboundUserRow.getByRole("link", { name: "1", exact: true }).first().click();
     await expect(page).toHaveURL(/\/admin\/story\/workspaces\?owner_id=103/);
     await expect(page.getByText("E2E 无计费映射空间", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /展开筛选/ }).click();
     await page.getByRole("button", { name: "清除筛选", exact: true }).click();
     await expect(page).not.toHaveURL(/owner_id=/);
     await page.goto("/admin/resources/users");
@@ -764,6 +767,7 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     await unboundWorkspaceRow.getByRole("link", { name: "1", exact: true }).click();
     await expect(page).toHaveURL(/\/admin\/story\/stories\?workspace_id=workspace-no-billing-e2e/);
     await expect(page.getByText("无计费映射仍可见剧本", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /展开筛选/ }).click();
     await page.getByRole("button", { name: "清除筛选", exact: true }).click();
     await page.goto("/admin/story/workspaces");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);

@@ -4,6 +4,7 @@ import { type CrudFilter, useCan, useList } from "@refinedev/core";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { AdminCollapsibleFilters, AdminListHeader, countActiveFilterValues } from "./AdminListChrome";
 
 type ReachabilityState = {
   pending?: boolean;
@@ -139,18 +140,7 @@ export default function AIProviderRegistry() {
   return (
     <div className="space-y-6">
       <section className="admin-panel overflow-hidden">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border p-4 sm:p-5">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">Provider registry · proxy supply</p>
-            <h2 className="mt-2 font-display text-2xl font-semibold">供应商</h2>
-            <p className="mt-1 text-sm text-text-secondary">按 cc-switch 卡片列表组织；每个 Provider 是代理上游，不向调用方分发 Secret。</p>
-          </div>
-          {access.data?.can ? (
-            <Link href="/admin/models/providers/new" className="inline-flex min-h-12 items-center rounded-2xl bg-accent px-5 text-sm font-semibold text-white shadow-soft hover:brightness-95">
-              ＋ 添加 Provider
-            </Link>
-          ) : null}
-        </header>
+        <AdminListHeader eyebrow="Provider registry · proxy supply" title="供应商" description="按 cc-switch 卡片列表组织；每个 Provider 是代理上游，不向调用方分发 Secret。" actions={access.data?.can ? <Link href="/admin/models/providers/new" className="inline-flex min-h-11 items-center bg-accent px-4 text-sm font-semibold text-white hover:brightness-95">＋ 添加 Provider</Link> : null} />
 
         {automaticDiscoveryFailed ? (
           <div className="border-b border-warning/40 bg-accent-orange-light px-4 py-3 text-sm text-text-secondary" role="status">
@@ -164,22 +154,24 @@ export default function AIProviderRegistry() {
           </div>
         ) : null}
 
-        <div className="grid gap-3 border-b border-border bg-bg-secondary/35 p-4 lg:grid-cols-[minmax(220px,1fr)_auto_auto]">
-          <label className="relative block">
-            <span className="sr-only">搜索 Provider</span>
-            <input className="admin-field min-h-12 rounded-2xl bg-bg-surface pl-4 text-sm" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="搜索名称或 Code" />
-          </label>
-          <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl bg-bg-secondary p-1" aria-label="协议筛选">
-            {[["", "全部"], ["anthropic", "Anthropic"], ["openai", "OpenAI"]].map(([value, label]) => (
-              <button key={label} type="button" onClick={() => { setProtocol(value); setPage(1); }} className={`min-h-10 whitespace-nowrap rounded-xl px-4 text-sm font-semibold ${protocol === value ? "bg-bg-surface text-text-primary shadow-soft" : "text-text-tertiary"}`}>{label}</button>
-            ))}
+        <AdminCollapsibleFilters activeCount={countActiveFilterValues({ search, protocol, status })}>
+          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_auto_auto]">
+            <label className="relative block">
+              <span className="sr-only">搜索 Provider</span>
+              <input className="admin-field pl-4 text-sm" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="搜索名称或 Code" />
+            </label>
+            <div className="flex max-w-full gap-1 overflow-x-auto bg-bg-secondary p-1" aria-label="协议筛选">
+              {[["", "全部"], ["anthropic", "Anthropic"], ["openai", "OpenAI"]].map(([value, itemLabel]) => (
+                <button key={itemLabel} type="button" onClick={() => { setProtocol(value); setPage(1); }} className={`min-h-10 whitespace-nowrap px-4 text-sm font-semibold ${protocol === value ? "bg-bg-surface text-text-primary shadow-soft" : "text-text-tertiary"}`}>{itemLabel}</button>
+              ))}
+            </div>
+            <select className="admin-field text-sm" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} aria-label="运行状态筛选">
+              <option value="">全部状态</option>
+              <option value="active">启用</option>
+              <option value="disabled">停用</option>
+            </select>
           </div>
-          <select className="admin-field min-h-12 rounded-2xl bg-bg-surface text-sm" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} aria-label="运行状态筛选">
-            <option value="">全部状态</option>
-            <option value="active">启用</option>
-            <option value="disabled">停用</option>
-          </select>
-        </div>
+        </AdminCollapsibleFilters>
 
         {query.error ? (
           <div className="m-4 border border-danger/35 bg-danger-light p-4 text-sm text-danger" role="alert">

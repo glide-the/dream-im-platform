@@ -3,6 +3,12 @@
 import { type CrudFilter, useList } from "@refinedev/core";
 import { FormEvent, useMemo, useState } from "react";
 import GatewayRequestDetail from "./GatewayRequestDetail";
+import {
+  AdminCollapsibleFilters,
+  AdminListHeader,
+  countActiveFilterValues,
+  haveFilterValuesChanged,
+} from "./AdminListChrome";
 
 export type AdminTableColumn = {
   key: string;
@@ -79,6 +85,7 @@ export default function AdminResourceTable({
 }) {
   const [page, setPage] = useState(1);
   const [draftFilters, setDraftFilters] = useState<Record<string, string>>({});
+  const [appliedFilterValues, setAppliedFilterValues] = useState<Record<string, string>>({});
   const [appliedFilters, setAppliedFilters] = useState<CrudFilter[]>(defaultFilters);
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
   const { result, query } = useList<Record<string, unknown>>({
@@ -95,6 +102,13 @@ export default function AdminResourceTable({
 
   function applyFilters(event: FormEvent) {
     event.preventDefault();
+    const nextFilterValues = Object.fromEntries(
+      filterDefinitions.flatMap((filter) => {
+        const value = draftFilters[filter.field]?.trim();
+        return value ? [[filter.field, value]] : [];
+      }),
+    );
+    setAppliedFilterValues(nextFilterValues);
     setAppliedFilters([
       ...defaultFilters,
       ...filterDefinitions.flatMap((filter) => {
@@ -107,42 +121,46 @@ export default function AdminResourceTable({
 
   function clearFilters() {
     setDraftFilters({});
+    setAppliedFilterValues({});
     setAppliedFilters(defaultFilters);
     setPage(1);
   }
 
   return (
     <section className="admin-panel min-w-0 overflow-hidden">
-      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-border px-4 py-5 sm:px-5">
-        <div className="max-w-3xl">
-          <h2 className="font-display text-xl font-semibold text-text-primary">{title}</h2>
-          <p className="mt-1 text-sm leading-6 text-text-secondary">{description}</p>
-        </div>
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary" aria-live="polite">
+      <AdminListHeader
+        title={title}
+        description={description}
+        meta={<span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary" aria-live="polite">
           {query.isFetching ? "正在同步" : `${result.total ?? 0} 条记录`}
-        </span>
-      </header>
+        </span>}
+      />
 
       {filterDefinitions.length ? (
-        <form onSubmit={applyFilters} className="grid gap-3 border-b border-border bg-bg-secondary/45 p-4 sm:grid-cols-2 xl:grid-cols-[repeat(3,minmax(150px,1fr))_auto]">
-          {filterDefinitions.map((filter) => (
-            <label key={filter.field} className="text-xs font-semibold text-text-secondary">
-              {filter.label}
-              {filter.options ? (
-                <select className="admin-field mt-1 block text-sm" value={draftFilters[filter.field] ?? ""} onChange={(event) => setDraftFilters((value) => ({ ...value, [filter.field]: event.target.value }))}>
-                  <option value="">全部</option>
-                  {filter.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              ) : (
-                <input className="admin-field mt-1 block text-sm" value={draftFilters[filter.field] ?? ""} onChange={(event) => setDraftFilters((value) => ({ ...value, [filter.field]: event.target.value }))} placeholder={`筛选${filter.label}`} />
-              )}
-            </label>
-          ))}
-          <div className="flex items-end gap-2">
-            <button type="submit" className="min-h-11 bg-text-primary px-4 text-sm font-semibold text-bg-surface">应用</button>
-            <button type="button" onClick={clearFilters} className="min-h-11 border border-border bg-bg-surface px-4 text-sm text-text-secondary">清除</button>
-          </div>
-        </form>
+        <AdminCollapsibleFilters
+          activeCount={countActiveFilterValues(appliedFilterValues)}
+          dirty={haveFilterValuesChanged(draftFilters, appliedFilterValues)}
+        >
+          <form onSubmit={applyFilters} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(3,minmax(150px,1fr))_auto]">
+            {filterDefinitions.map((filter) => (
+              <label key={filter.field} className="text-xs font-semibold text-text-secondary">
+                {filter.label}
+                {filter.options ? (
+                  <select className="admin-field mt-1 block text-sm" value={draftFilters[filter.field] ?? ""} onChange={(event) => setDraftFilters((value) => ({ ...value, [filter.field]: event.target.value }))}>
+                    <option value="">全部</option>
+                    {filter.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                ) : (
+                  <input className="admin-field mt-1 block text-sm" value={draftFilters[filter.field] ?? ""} onChange={(event) => setDraftFilters((value) => ({ ...value, [filter.field]: event.target.value }))} placeholder={`筛选${filter.label}`} />
+                )}
+              </label>
+            ))}
+            <div className="flex items-end gap-2 xl:justify-end">
+              <button type="submit" className="min-h-11 bg-text-primary px-4 text-sm font-semibold text-bg-surface">应用</button>
+              <button type="button" onClick={clearFilters} className="min-h-11 border border-border bg-bg-surface px-4 text-sm text-text-secondary">清除</button>
+            </div>
+          </form>
+        </AdminCollapsibleFilters>
       ) : null}
 
       {query.error ? (

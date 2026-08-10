@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useCan } from "@refinedev/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AdminCollapsibleFilters, AdminListHeader, countActiveFilterValues, haveFilterValuesChanged } from "./AdminListChrome";
 
 type StorageObject = {
   id: string;
@@ -128,14 +129,14 @@ export default function StorageManager() {
     </section>
 
     <section className="admin-panel min-w-0 overflow-hidden">
-      <header className="border-b border-border p-4 sm:p-5">
-        <h2 className="font-display text-xl font-semibold">文件列表</h2>
-        <form className="mt-4 grid gap-3 sm:grid-cols-[minmax(220px,1fr)_200px_auto]" onSubmit={(event) => { event.preventDefault(); setQueryText(draftQuery.trim()); setPage(1); }}>
+      <AdminListHeader title="文件列表" description="按对象 Key、文件名或类型定位 Storage 对象。" />
+      <AdminCollapsibleFilters activeCount={countActiveFilterValues({ queryText, mime })} dirty={haveFilterValuesChanged({ queryText: draftQuery, mime }, { queryText, mime })}>
+        <form className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_200px_auto]" onSubmit={(event) => { event.preventDefault(); setQueryText(draftQuery.trim()); setPage(1); }}>
           <label className="text-xs font-semibold text-text-secondary">对象 Key 或文件名<input className="admin-field mt-1 block text-sm" value={draftQuery} onChange={(event) => setDraftQuery(event.target.value)} placeholder="搜索对象" /></label>
           <label className="text-xs font-semibold text-text-secondary">文件类型<select className="admin-field mt-1 block text-sm" value={mime} onChange={(event) => { setMime(event.target.value); setPage(1); }}><option value="">全部</option><option value="image/">图片</option><option value="video/">视频</option><option value="audio/">音频</option><option value="application/pdf">PDF</option><option value="text/">文本</option></select></label>
           <button type="submit" className="min-h-11 self-end bg-text-primary px-5 text-sm font-semibold text-bg-surface">筛选</button>
         </form>
-      </header>
+      </AdminCollapsibleFilters>
       {query.error ? <div className="m-4 border border-danger/35 bg-danger-light p-4 text-sm text-danger" role="alert"><p className="font-semibold">文件资源暂时不可用</p><p className="mt-1">{query.error.message}</p><button type="button" onClick={() => query.refetch()} className="mt-3 min-h-10 underline">重新加载</button></div> : null}
       <div className="max-w-full overflow-x-auto">
         <table className="min-w-[860px] w-full text-left text-sm">

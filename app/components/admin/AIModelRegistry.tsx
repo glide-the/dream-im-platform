@@ -4,6 +4,7 @@ import { type CrudFilter, useCan, useList } from "@refinedev/core";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
+import { AdminCollapsibleFilters, AdminListHeader, countActiveFilterValues } from "./AdminListChrome";
 
 type ValidationState = {
   pending?: boolean;
@@ -78,21 +79,14 @@ export default function AIModelRegistry() {
 
   return (
     <section className="admin-panel overflow-hidden">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border p-4 sm:p-5">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">Model alias registry</p>
-          <h2 className="mt-2 font-display text-2xl font-semibold">模型</h2>
-          <p className="mt-1 text-sm text-text-secondary">外部请求只使用稳定 alias；上游型号留在 Provider 路由内部。</p>
+      <AdminListHeader eyebrow="Model alias registry" title="模型" description="外部请求只使用稳定 alias；上游型号留在 Provider 路由内部。" actions={access.data?.can ? <Link href={`/admin/models/models/new${providerId ? `?providerId=${encodeURIComponent(providerId)}` : ""}`} className="inline-flex min-h-11 items-center bg-accent px-4 text-sm font-semibold text-white">＋ 添加模型</Link> : null} />
+      <AdminCollapsibleFilters activeCount={countActiveFilterValues({ search, providerId, enabled })}>
+        <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,320px)_180px]">
+          <label><span className="sr-only">搜索模型</span><input className="admin-field text-sm" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="搜索名称、alias 或上游型号" /></label>
+          <select className="admin-field text-sm" value={providerId} onChange={(event) => { setProviderId(event.target.value); setPage(1); }} aria-label="Provider 筛选"><option value="">全部 Provider</option>{providers.result.data.map((provider) => <option key={String(provider.id)} value={String(provider.id)}>{String(provider.name)} · {String(provider.code)}</option>)}</select>
+          <select className="admin-field text-sm" value={enabled} onChange={(event) => { setEnabled(event.target.value); setPage(1); }} aria-label="模型状态筛选"><option value="">全部状态</option><option value="true">启用</option><option value="false">停用</option></select>
         </div>
-        {access.data?.can ? (
-          <Link href={`/admin/models/models/new${providerId ? `?providerId=${encodeURIComponent(providerId)}` : ""}`} className="inline-flex min-h-12 items-center rounded-2xl bg-accent px-5 text-sm font-semibold text-white shadow-soft">＋ 添加模型</Link>
-        ) : null}
-      </header>
-      <div className="grid gap-3 border-b border-border bg-bg-secondary/35 p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,320px)_180px]">
-        <label><span className="sr-only">搜索模型</span><input className="admin-field min-h-12 rounded-2xl bg-bg-surface text-sm" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="搜索名称、alias 或上游型号" /></label>
-        <select className="admin-field min-h-12 rounded-2xl bg-bg-surface text-sm" value={providerId} onChange={(event) => { setProviderId(event.target.value); setPage(1); }} aria-label="Provider 筛选"><option value="">全部 Provider</option>{providers.result.data.map((provider) => <option key={String(provider.id)} value={String(provider.id)}>{String(provider.name)} · {String(provider.code)}</option>)}</select>
-        <select className="admin-field min-h-12 rounded-2xl bg-bg-surface text-sm" value={enabled} onChange={(event) => { setEnabled(event.target.value); setPage(1); }} aria-label="模型状态筛选"><option value="">全部状态</option><option value="true">启用</option><option value="false">停用</option></select>
-      </div>
+      </AdminCollapsibleFilters>
       {query.error ? <div className="m-4 border border-danger/35 bg-danger-light p-4 text-sm text-danger" role="alert"><p className="font-semibold">模型注册表暂不可用</p><p className="mt-1">{query.error.message}</p></div> : null}
       <div className="grid gap-4 p-4 sm:p-5 xl:grid-cols-2">
         {query.isLoading ? Array.from({ length: 4 }).map((_, index) => <span key={index} className="h-56 animate-pulse rounded-2xl border border-border bg-bg-secondary" />) : null}

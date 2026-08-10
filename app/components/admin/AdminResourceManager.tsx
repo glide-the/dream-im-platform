@@ -20,6 +20,12 @@ import {
 } from "react";
 import type { AdminTableColumn } from "./AdminResourceTable";
 import GatewayKeyReceipt from "./GatewayKeyReceipt";
+import {
+  AdminCollapsibleFilters,
+  AdminListHeader,
+  countActiveFilterValues,
+  haveFilterValuesChanged,
+} from "./AdminListChrome";
 
 export type AdminFieldControl =
   | "text"
@@ -930,6 +936,10 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
     filters: appliedFilters,
   });
   const pages = Math.max(1, Math.ceil((result.total ?? 0) / pageSize));
+  const appliedFilterValues = draftFiltersFromParams(
+    filterDefinitions,
+    new URLSearchParams(searchParamString),
+  );
   const relationMismatch = result.data.some(
     (row) => row.relation_health && row.relation_health !== "healthy",
   );
@@ -1160,10 +1170,10 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
     : null;
   return (
     <section id={`${resource}-manager`} className="admin-panel min-w-0 scroll-mt-6 overflow-hidden">
-      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-border px-4 py-5 sm:px-5">
-        <div className="max-w-3xl"><h2 className="font-display text-xl font-semibold">{title}</h2><p className="mt-1 text-sm leading-6 text-text-secondary">{description}</p></div>
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary" aria-live="polite">
+      <AdminListHeader
+        title={title}
+        description={description}
+        meta={<span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary" aria-live="polite">
             {query.isLoading
               ? "读取中"
               : query.error
@@ -1171,53 +1181,57 @@ export default function AdminResourceManager(props: AdminResourceManagerProps) {
                 : query.isFetching
                   ? `正在同步 · ${result.total ?? 0} 条`
                   : `${result.total ?? 0} 条记录`}
-          </span>
-          {canCreate && access.data?.can ? <button type="button" onClick={openCreate} className="min-h-11 bg-text-primary px-4 text-sm font-semibold text-bg-surface">{createLabel}</button> : null}
-        </div>
-      </header>
+          </span>}
+        actions={canCreate && access.data?.can ? <button type="button" onClick={openCreate} className="min-h-11 bg-text-primary px-4 text-sm font-semibold text-bg-surface">{createLabel}</button> : null}
+      />
       {filterDefinitions.length ? (
-        <form onSubmit={applyFilters} className="grid gap-3 border-b border-border bg-bg-secondary/45 p-4 sm:grid-cols-2 xl:grid-cols-[repeat(3,minmax(180px,1fr))]">
-          {filterDefinitions.map((filter) =>
-            filter.control === "relation" && filter.relation ? (
-              <div key={filter.field} className="text-xs font-semibold text-text-secondary">
-                <span>{filter.label}</span>
-                <RelationSelect
-                  id={`${resource}-filter-${filter.field}`}
-                  field={{
-                    key: filter.field,
-                    label: filter.label,
-                    control: "relation",
-                    relation: filter.relation,
-                  }}
-                  value={draftFilters[filter.field] ?? ""}
-                  onChange={(value) => setDraftFilters((current) => ({ ...current, [filter.field]: value }))}
-                />
-              </div>
-            ) : (
-              <label key={filter.field} className="text-xs font-semibold text-text-secondary">
-                {filter.label}
-                {filter.options || filter.control === "select" ? (
-                  <select className="admin-field mt-1 text-sm" value={draftFilters[filter.field] ?? ""} onChange={(event) => setDraftFilters((current) => ({ ...current, [filter.field]: event.target.value }))}>
-                    <option value="">全部</option>
-                    {(filter.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
-                ) : (
-                  <input
-                    className="admin-field mt-1 text-sm"
-                    type={filter.control === "datetime" ? "datetime-local" : "text"}
+        <AdminCollapsibleFilters
+          activeCount={countActiveFilterValues(appliedFilterValues)}
+          dirty={haveFilterValuesChanged(draftFilters, appliedFilterValues)}
+        >
+          <form onSubmit={applyFilters} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(3,minmax(180px,1fr))]">
+            {filterDefinitions.map((filter) =>
+              filter.control === "relation" && filter.relation ? (
+                <div key={filter.field} className="text-xs font-semibold text-text-secondary">
+                  <span>{filter.label}</span>
+                  <RelationSelect
+                    id={`${resource}-filter-${filter.field}`}
+                    field={{
+                      key: filter.field,
+                      label: filter.label,
+                      control: "relation",
+                      relation: filter.relation,
+                    }}
                     value={draftFilters[filter.field] ?? ""}
-                    onChange={(event) => setDraftFilters((current) => ({ ...current, [filter.field]: event.target.value }))}
-                    placeholder={`筛选${filter.label}`}
+                    onChange={(value) => setDraftFilters((current) => ({ ...current, [filter.field]: value }))}
                   />
-                )}
-              </label>
-            ),
-          )}
-          <div className="flex items-end gap-2">
-            <button className="min-h-11 bg-text-primary px-4 text-sm font-semibold text-bg-surface">应用</button>
-            <button type="button" onClick={clearFilters} className="min-h-11 border border-border bg-bg-surface px-4 text-sm">清除筛选</button>
-          </div>
-        </form>
+                </div>
+              ) : (
+                <label key={filter.field} className="text-xs font-semibold text-text-secondary">
+                  {filter.label}
+                  {filter.options || filter.control === "select" ? (
+                    <select className="admin-field mt-1 text-sm" value={draftFilters[filter.field] ?? ""} onChange={(event) => setDraftFilters((current) => ({ ...current, [filter.field]: event.target.value }))}>
+                      <option value="">全部</option>
+                      {(filter.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      className="admin-field mt-1 text-sm"
+                      type={filter.control === "datetime" ? "datetime-local" : "text"}
+                      value={draftFilters[filter.field] ?? ""}
+                      onChange={(event) => setDraftFilters((current) => ({ ...current, [filter.field]: event.target.value }))}
+                      placeholder={`筛选${filter.label}`}
+                    />
+                  )}
+                </label>
+              ),
+            )}
+            <div className="flex items-end gap-2 xl:justify-end">
+              <button className="min-h-11 bg-text-primary px-4 text-sm font-semibold text-bg-surface">应用</button>
+              <button type="button" onClick={clearFilters} className="min-h-11 border border-border bg-bg-surface px-4 text-sm">清除筛选</button>
+            </div>
+          </form>
+        </AdminCollapsibleFilters>
       ) : null}
       {listError ? (
         <div className="m-4 border border-danger/35 bg-danger-light p-4 text-sm text-danger" role="alert" data-state={`error-${(query.error as AdminListHttpError).statusCode ?? 500}`}>

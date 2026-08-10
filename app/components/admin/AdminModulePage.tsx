@@ -17,7 +17,7 @@ export default function AdminModulePage({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <AdminPageHeader eyebrow={eyebrow} title={title} description={description} status={status} />
       {tabs ? <AdminSectionTabs label={`${title}子导航`} items={tabs} /> : null}
       {children}

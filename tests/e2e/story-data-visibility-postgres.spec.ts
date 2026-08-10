@@ -180,6 +180,9 @@ test.describe("Dream Story data visibility with isolated PostgreSQL", () => {
     await expect(page.getByText("无计费映射仍显示的剧本", { exact: true })).toBeVisible();
     await expect(page.getByText("未绑定计费身份", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("3 条记录", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("剧本标题")).not.toBeVisible();
+    await page.getByRole("button", { name: "展开筛选", exact: true }).click();
+    await expect(page.getByRole("button", { name: "收起筛选", exact: true })).toHaveAttribute("aria-expanded", "true");
     expect(storyRequests).toContain("/api/admin/story-stories");
     expect(storyRequests).not.toContain("/api/admin/stories");
     await noDocumentOverflow(page);
@@ -263,6 +266,7 @@ test.describe("Dream Story data visibility with isolated PostgreSQL", () => {
     await unboundUserRow.getByRole("link", { name: "1", exact: true }).first().click();
     await expect(page).toHaveURL(/\/admin\/story\/workspaces\?owner_id=103/);
     await expect(page.getByText("无计费映射工作区", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /展开筛选/ }).click();
     await page.getByRole("button", { name: "清除筛选", exact: true }).click();
 
     await page.goto("/admin/story/workspaces");
@@ -271,6 +275,7 @@ test.describe("Dream Story data visibility with isolated PostgreSQL", () => {
     await unboundWorkspaceRow.getByRole("link", { name: "1", exact: true }).click();
     await expect(page).toHaveURL(/workspace_id=workspace-no-billing-story/);
     await expect(page.getByText("无计费映射仍显示的剧本", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /展开筛选/ }).click();
     await page.getByRole("button", { name: "清除筛选", exact: true }).click();
 
     await page.goto("/admin/story/workspaces");
@@ -286,6 +291,15 @@ test.describe("Dream Story data visibility with isolated PostgreSQL", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/admin/story/stories");
     await expect(page.getByText("无计费映射仍显示的剧本", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /展开筛选/ }).click();
+    const mobileFilters = page.getByRole("dialog", { name: "筛选" });
+    await expect(mobileFilters).toBeVisible();
+    await mobileFilters.getByLabel("剧本标题").fill("移动端未应用草稿");
+    await mobileFilters.getByRole("button", { name: "关闭筛选" }).click();
+    await expect(page.getByText("有未应用更改", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /展开筛选/ }).click();
+    await expect(page.getByRole("dialog", { name: "筛选" }).getByLabel("剧本标题")).toHaveValue("移动端未应用草稿");
+    await page.getByRole("dialog", { name: "筛选" }).getByRole("button", { name: "关闭筛选" }).click();
     await noDocumentOverflow(page);
     await page.screenshot({
       path: testInfo.outputPath("story-data-mobile-390x844.png"),

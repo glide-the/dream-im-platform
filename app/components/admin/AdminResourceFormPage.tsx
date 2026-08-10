@@ -294,7 +294,7 @@ export default function AdminResourceFormPage({
   return (
     <section className="admin-ai-form-page fixed inset-0 z-[80] flex min-h-[100dvh] flex-col overflow-hidden bg-bg-primary">
       <header className="z-20 shrink-0 border-b border-border bg-bg-surface/95 backdrop-blur">
-        <div className="mx-auto flex min-h-20 max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6">
+        <div className="mx-auto flex min-h-16 max-w-[1180px] items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-4">
             <button
               type="button"
@@ -305,10 +305,10 @@ export default function AdminResourceFormPage({
               ←
             </button>
             <div className="min-w-0">
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">
+              <p className="hidden font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary sm:block">
                 {eyebrow}
               </p>
-              <h1 className="mt-1 truncate font-display text-2xl font-semibold sm:text-3xl">
+              <h1 className="truncate font-display text-xl font-semibold sm:mt-0.5 sm:text-2xl">
                 {title}
               </h1>
             </div>
@@ -323,7 +323,7 @@ export default function AdminResourceFormPage({
         <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto grid max-w-[1180px] gap-6 px-4 py-7 sm:px-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:py-10">
           <div className="min-w-0 space-y-8">
-            <section className="border-b border-border pb-6">
+            <section className="border-b border-border pb-4">
               <p className="max-w-3xl text-sm leading-7 text-text-secondary">
                 {description}
               </p>
