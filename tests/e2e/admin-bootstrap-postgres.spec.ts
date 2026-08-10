@@ -767,7 +767,11 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
     await page.goto("/admin/gateway/keys");
     await expect(page.getByRole("heading", { name: "Gateway Key", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "异常结算" })).toHaveCount(0);
-    await page.getByRole("button", { name: "发放 Gateway Key" }).click();
+    const keyModeComparison = page.getByRole("region", { name: "两种 Key 的业务区别" });
+    await expect(keyModeComparison).toContainText("Dream 服务 Client，不绑定用户");
+    await expect(keyModeComparison).toContainText("创建时绑定一个平台用户，有效期内不能切换");
+    await expect(keyModeComparison).toContainText("不用于 Dream 多用户正式流量");
+    await page.getByRole("button", { name: "发放固定用户 Key" }).click();
     await page.getByRole("combobox", { name: "平台用户 *" }).selectOption(creatorBillingUserId);
     await page.getByLabel("Key 名称 *").fill("gateway-ui-e2e");
     await page.getByRole("button", { name: "创建并显示接入配置" }).click();
