@@ -140,6 +140,27 @@ pnpm db:migrate   # 按 journal 顺序执行尚未应用的 SQL migration
 pnpm db:push      # 仅限明确的本地开发场景
 ```
 
+Dream 的 43+5 张 SQLite 表不是静态 SQL seed。`drizzle/data/` 负责可审计的数据迁移编排，实际快照、staging、校验和写入仍由 Dream migration CLI 执行。全新数据库必须按以下顺序初始化，避免 Admin 对 canonical Story 表的后续扩展早于 Dream baseline adopt：
+
+```bash
+node scripts/migrate.mjs --through 0026_harsh_victor_mancha
+# 在 Dream 项目执行 Alembic upgrade 到 20260809_06
+pnpm db:migrate
+pnpm db:data:legacy -- \
+  --main-sqlite /absolute/path/to/ink-and-memory.db \
+  --notion-sqlite /absolute/path/to/notion-connectors.db \
+  --mode execute --record
+pnpm db:data:subscriptions -- --apply
+```
+
+对已经承载 Dream 写入的 PostgreSQL，不得重新覆盖导入。先以 `--mode verify-existing` 严格核对；只有全部源 PK 都存在，且差异行的 PostgreSQL `updated_at` 严格晚于源 SQLite 时，才可显式加 `--accept-post-cutover-changes --record` 采纳现状。两个 runner 的回执登记在 append-only 的 `drizzle.data_migration_*` 表中，只保存表级 count/digest 和状态，不保存 SQLite 路径、DSN、Secret 或业务正文。
+
+默认订阅 runner 初始化 `Free`、`Dream`、`is Dreaming` 三个 Plan 及展示元数据；每个 canonical User 的 Free Subscription 由既有投影逻辑自动补齐。它不会默认切换已有 Subscription 的 Plan Version，也不会覆盖已经发布的 Free Token 额度。完整的 4,921 行迁移、重复运行、冲突阻断和 append-only 验证使用一次性 PostgreSQL：
+
+```bash
+pnpm test:data-migration:e2e
+```
+
 应用没有嵌入式数据库回退。启动数据库容器后，可使用以下命令确认状态：
 
 ```bash
@@ -164,7 +185,7 @@ app/
 │   ├── security/        # Provider 凭据加密
 │   └── db/              # PostgreSQL schema
 └── v1/                  # 模型兼容网关 Route Handlers
-drizzle/                 # 版本化 PostgreSQL migrations
+drizzle/                 # 版本化 PostgreSQL migrations 与可审计 data runners
 scripts/                 # 环境初始化与迁移脚本
 tests/e2e/               # Playwright 管理后台验收
 docker/                  # 应用 + PostgreSQL 生产化 Compose

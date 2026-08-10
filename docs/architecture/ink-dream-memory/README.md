@@ -1,7 +1,7 @@
 # ink-dream-memory PostgreSQL、Token 订阅与 Gateway 改造总索引
 
 > 文档状态：**Current / Release candidate**（权威入口；实现已完成，生产发布门禁仍开放）
-> 更新：2026-08-09  
+> 更新：2026-08-10
 > 目标项目：`/Users/dmeck/project/ink-dream-memory`  
 > 编写位置：`/Users/dmeck/project/ink-admin-memory/docs/architecture/ink-dream-memory/`  
 > 事实基线：[处理判断](../../verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md)
@@ -21,10 +21,10 @@ Round 29–30 已替代 Round 24–28 的“全面延期”决定。当前主线
 
 | 能力 | 当前状态 | 目标状态 | 权威文档 |
 |---|---|---|---|
-| Dream PostgreSQL 43+5 | **Implemented / local cutover complete**：除隔离 PG 外，Admin-owned `localhost:5433/ink-memory` 已完成 Admin 0016–0019、Dream head `20260809_06`、43+5/4921 行导入与 48/569/81/25 只读 catalog 验证；main/Notion runtime 为 PG-only | **Release Gate**：其他预发布/生产环境仍须独立 owner/ACL、备份、最终源 rehearsal 与变更审批，不复用本地回执 | [01](01-current-scope-and-source-baseline.md)、[04](04-postgresql-migration-plan.md) |
-| Admin canonical 三表 | **Implemented**：Admin `0000–0024` 与 Dream exact baseline-adopt 已在本地 `ink-memory` 完成；旧三表 importer 仍只作为 3/48 安全模式参考 | **Release Gate**：其他环境 owner/ACL/现有数据只读盘点与迁移审批 | [04](04-postgresql-migration-plan.md) |
+| Dream PostgreSQL 43+5 | **Implemented / local cutover complete**：Admin-owned `localhost:5433/ink-memory` 已完成 Dream head `20260809_06`、43+5/4,921 源 PK 采纳与 Drizzle append-only 回执；4,919 行精确一致，2 行确认是更新的 PG 写入，缺失 0，运行时为 PG-only | **Release Gate**：其他预发布/生产环境仍须独立 owner/ACL、备份、最终源 rehearsal 与变更审批，不复用本地回执 | [01](01-current-scope-and-source-baseline.md)、[04](04-postgresql-migration-plan.md) |
+| Admin canonical 三表 | **Implemented**：Admin `0000–0028`、Dream exact baseline-adopt、0027 批准的 Story 扩展及 0028 数据迁移 registry 已在本地 `ink-memory` 完成；旧三表 importer 仍只作为 3/48 安全模式参考 | **Release Gate**：其他环境 owner/ACL/现有数据只读盘点与迁移审批 | [04](04-postgresql-migration-plan.md) |
 | 用户与内部投影 | **Implemented / Release candidate**：canonical-driven projection、Gateway 反查、服务端用户分页/搜索及 QA-only 回归均已修复验证 | **Release Gate**：生产历史 orphan 只读盘点、映射/隔离回执 | [02](02-business-integration-and-admin-boundary.md)、[06](06-billing-subscription-gateway-integration.md) |
-| Token Subscription/Gateway | **Implemented / Release candidate**：Admin `0017–0024`、Product/Payment API、个人月度状态机、Token Allowance/Token Ledger/Gateway 结算与 Dream BFF/client 已通过 Admin 66 files/313 tests、隔离 PG 与 Dream full/real-PG 合同 | **Release Gate**：真实外部 Provider canary、生产角色切换/凭据注入与用户级流量切换；角色矩阵已在 clone 通过 | [06](06-billing-subscription-gateway-integration.md) |
+| Token Subscription/Gateway | **Implemented / Release candidate**：Admin `0017–0028`、Product/Payment API、个人月度状态机、Token Allowance/Token Ledger/Gateway 结算、三套餐 seed 与 Dream BFF/client 已通过 Admin 69 files/340 tests、隔离 PG 与 Dream full/real-PG 合同 | **Release Gate**：真实外部 Provider canary、生产角色切换/凭据注入与用户级流量切换；角色矩阵已在 clone 通过 | [06](06-billing-subscription-gateway-integration.md) |
 | 独立 Provider Pricing/现金计费 | **Implemented baseline / Partial** | 与 Subscription 解耦保留；不得在 Token 耗尽时自动兜底，也不进入 Dream 套餐 DTO | [06](06-billing-subscription-gateway-integration.md) |
 | Dream 订阅与 Usage 页面 | **Implemented / Release candidate**：真实 Product BFF 数据、月度 Token/周期/月费/模型权限、生命周期预览与付费首次开通/到期续费；无静态价格或假余额 | **Release Gate**：真实预发布 Admin API 冒烟与生产 Session/服务身份配置 | [03](03-page-refactor-checklist.md)、[07](07-dream-subscription-and-inference-integration.md) |
 | Dream 推理链 | **Implemented / Release candidate**：server-only Gateway clients、canonical-subject 服务认证、Claude Agent、writing/chat/analyze/echo/traits/patterns 与图片描述/生成均已禁用 direct fallback；61 项聚焦测试通过 | **Planned release step**：外部 Provider canary 与逐角色生产流量切换尚未执行 | [07](07-dream-subscription-and-inference-integration.md) |
@@ -81,7 +81,7 @@ flowchart LR
 
 ## 6. 实现证据与剩余发布阻断项
 
-当前 Release candidate 证据：Admin `0000–0024` 已应用到本地 `ink-memory`，**66 files / 313 tests、tsc/lint/build** 通过；Payment 隔离 PG 已验证首次开通、付费到期不免费发 Token、renewal Intent 复用、签名成功、失败不激活、重复事件幂等和 refund 撤销。Dream 48/569/81/25 Alembic、43+5 migration CLI、PG-only runtime、Product BFF 与全入口 Gateway client 已实现；backend **1,679 passed / 14 skipped / 652 subtests**，推理聚焦 61 passed，前端 lint/build、Product API 9/9 与订阅 Playwright 4/4 通过。角色/最小权限 clone 矩阵通过；真实 startup `/api/health`=200 后已关闭 8765。
+当前 Release candidate 证据：Admin `0000–0028` 已应用到本地 `ink-memory`，**69 files / 340 tests、tsc/lint/build** 通过；一次性 PostgreSQL 数据迁移 E2E 完整导入 48 表/4,921 行、初始化 3 个 Plan 与 28 个 canonical User Subscription，并验证重复运行、冲突阻断和 append-only。Dream Alembic、43+5 migration CLI、PG-only runtime、Product BFF 与全入口 Gateway client 已实现；backend **1,791 passed / 25 skipped / 652 subtests**，迁移聚焦 **19 passed / 2 skipped**，前端 lint 0 errors/21 warnings 与 build 通过。角色/最小权限 clone 矩阵通过；本轮没有启动持久后台进程。
 
 - 本地 Admin-owned `localhost:5433/ink-memory` 已完成真实源快照、owner/ACL 指纹、备份、六波 Alembic 与 43+5 cutover；其他预发布/生产环境尚未执行，不能借用本地回执。
 - 外部 Provider canary、生产 Gateway 服务身份/Secret 注入和逐角色真实流量切换尚未执行。

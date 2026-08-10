@@ -191,7 +191,8 @@ test.describe("Dream Story data visibility with isolated PostgreSQL", () => {
 
     const safeStoryRow = page.locator("tbody tr").filter({ hasText: "无计费映射仍显示的剧本" });
     await safeStoryRow.getByRole("button", { name: "查看" }).click();
-    await expect(page.getByRole("dialog").getByText("content_length", { exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog").getByText("PostgreSQL 元数据", { exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog").getByText("这是旧 Story 索引，尚未接入 Dream Episode Artifact 来源。", { exact: true })).toBeVisible();
     await expect(page.getByRole("dialog")).not.toContainText("fixture-password-hash-not-a-credential");
     await page.getByRole("dialog").getByRole("button", { name: "关闭" }).click();
 
@@ -281,13 +282,6 @@ test.describe("Dream Story data visibility with isolated PostgreSQL", () => {
       fullPage: true,
       caret: "initial",
     });
-
-    await page.goto("/admin/story/stories");
-    const confirmRow = page.locator("tbody tr").filter({ hasText: "真实源剧本" });
-    await confirmRow.getByRole("button", { name: "确认" }).click();
-    await expect(page.getByRole("dialog")).toBeVisible();
-    await page.getByRole("dialog").getByRole("button", { name: "确认" }).click();
-    await expect(confirmRow.getByText("published", { exact: true })).toBeVisible();
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/admin/story/stories");

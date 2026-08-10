@@ -34,9 +34,30 @@ describe("Story PostgreSQL repository", () => {
     expect(query.mock.calls[0][0]).toContain("LEFT JOIN users AS u");
     expect(query.mock.calls[0][0]).toContain("LEFT JOIN platform_users AS pu");
     expect(query.mock.calls[0][0]).toContain("char_length(s.content)");
+    expect(query.mock.calls[0][0]).toContain("s.artifact_sync_status");
+    expect(query.mock.calls[0][0]).not.toContain("s.source_thread_ref");
     expect(query.mock.calls[0][0]).not.toContain("s.type, s.content,");
     expect(query.mock.calls[0][0]).not.toContain("story_projects");
     expect(query.mock.calls[0][1]).toEqual(["pending", 20, 0]);
+  });
+
+  it("filters and counts Artifact health from PostgreSQL only", async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: "story-1", artifact_sync_status: "indexed" }] })
+      .mockResolvedValueOnce({ rows: [{ total: "1" }] });
+
+    const response = await queryStorySourceList(
+      new Request(
+        "http://localhost/api/admin/story-stories?filter[artifact_sync_status][eq]=indexed&filter[artifact_available][eq]=true&sort=artifact_indexed_at&order=desc",
+      ),
+      "story-stories",
+    );
+
+    expect(response.meta.total).toBe(1);
+    expect(query.mock.calls[0][0]).toContain("s.artifact_sync_status = $1");
+    expect(query.mock.calls[0][0]).toContain("s.artifact_available::text = $2");
+    expect(query.mock.calls[1][0]).toContain("s.artifact_sync_status = $1");
+    expect(query.mock.calls[1][1]).toEqual(["indexed", "true"]);
   });
 
   it("never selects the source password hash", async () => {

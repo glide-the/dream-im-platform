@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "idx": 0,
+      "migrationKey": "dream-legacy-43-plus-5-v1",
+      "runner": "legacy-43-plus-5.mjs",
+      "dependsOn": [
+        "Dream Alembic 20260809_06",
+        "Admin Drizzle 0028_dream_data_migration_registry"
+      ]
+    },
+    {
+      "idx": 1,
+      "migrationKey": "default-dream-plans-v1",
+      "runner": "default-dream-plans.mjs",
+      "dependsOn": [
+        "dream-legacy-43-plus-5-v1",
+        "configured Provider/Model/Pricing/Entitlement"
+      ]
+    }
+  ]
+}

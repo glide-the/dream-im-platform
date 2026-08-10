@@ -3,6 +3,16 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 
+const cliArguments = process.argv.slice(2);
+let throughTag;
+if (cliArguments.length > 0) {
+  if (cliArguments.length !== 2 || cliArguments[0] !== "--through"
+    || !/^\d{4}_[a-z0-9_]+$/.test(cliArguments[1])) {
+    throw new Error("Usage: node scripts/migrate.mjs [--through <exact-journal-tag>]");
+  }
+  throughTag = cliArguments[1];
+}
+
 function parseEnvValue(text, name) {
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -63,8 +73,17 @@ async function readMigrations() {
     throw new Error("Drizzle migration journal does not contain entries");
   }
 
+  let entries = journal.entries;
+  if (throughTag) {
+    const boundary = entries.findIndex((entry) => entry?.tag === throughTag);
+    if (boundary < 0) {
+      throw new Error(`Drizzle migration boundary ${throughTag} does not exist`);
+    }
+    entries = entries.slice(0, boundary + 1);
+  }
+
   return Promise.all(
-    journal.entries.map(async (entry) => {
+    entries.map(async (entry) => {
       if (
         !entry ||
         typeof entry.tag !== "string" ||

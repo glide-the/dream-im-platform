@@ -2,7 +2,7 @@
 
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -29,6 +29,8 @@ const ROOT_KEYS = new Set([
   "AI_PROVIDER_ALLOW_INSECURE_LOCALHOST",
   "GATEWAY_MIN_RESERVE_MICROUSD",
   "GATEWAY_MAX_BODY_BYTES",
+  "ARTIFACT_WORKSPACE_ROOT",
+  "ARTIFACT_PREVIEW_MAX_FILE_BYTES",
   "FILE_STORAGE_TYPE",
   "FILE_STORAGE_PREFIX",
   "BLOB_READ_WRITE_TOKEN",
@@ -70,6 +72,8 @@ const DOCKER_KEYS = new Set([
   "GATEWAY_MIN_RESERVE_MICROUSD",
   "GATEWAY_MAX_BODY_BYTES",
   "RUN_DB_MIGRATIONS",
+  "ARTIFACT_WORKSPACE_ROOT",
+  "ARTIFACT_PREVIEW_MAX_FILE_BYTES",
   "FILE_STORAGE_TYPE",
   "FILE_STORAGE_PREFIX",
   "BLOB_READ_WRITE_TOKEN",
@@ -521,6 +525,24 @@ function buildConfiguration(rootExisting, dockerExisting) {
         "20971520",
       ),
     ],
+    [
+      "ARTIFACT_WORKSPACE_ROOT",
+      configuredValue(
+        rootExisting,
+        "ARTIFACT_WORKSPACE_ROOT",
+        (value) => isAbsolute(value) && !/[\r\n]/.test(value),
+        resolve(defaultProjectRoot, "../ink-dream-memory/backend/data/agent-workspace"),
+      ),
+    ],
+    [
+      "ARTIFACT_PREVIEW_MAX_FILE_BYTES",
+      configuredValue(
+        rootExisting,
+        "ARTIFACT_PREVIEW_MAX_FILE_BYTES",
+        (value) => isInteger(value, 1, 33_554_432),
+        "8388608",
+      ),
+    ],
     ...storageConfiguration(rootExisting, {
       endpoint: "http://localhost:9000",
       minioPassword: minioPassword.root,
@@ -633,6 +655,24 @@ function buildConfiguration(rootExisting, dockerExisting) {
       "RUN_DB_MIGRATIONS",
       firstValid([dockerExisting], "RUN_DB_MIGRATIONS", isBoolean) ?? "true",
     ],
+    [
+      "ARTIFACT_WORKSPACE_ROOT",
+      configuredValue(
+        dockerExisting,
+        "ARTIFACT_WORKSPACE_ROOT",
+        (value) => isAbsolute(value) && !/[\r\n]/.test(value),
+        "/artifacts",
+      ),
+    ],
+    [
+      "ARTIFACT_PREVIEW_MAX_FILE_BYTES",
+      configuredValue(
+        dockerExisting,
+        "ARTIFACT_PREVIEW_MAX_FILE_BYTES",
+        (value) => isInteger(value, 1, 33_554_432),
+        "8388608",
+      ),
+    ],
     ...storageConfiguration(dockerExisting, {
       endpoint: "http://minio:9000",
       minioPassword: minioPassword.docker,
@@ -673,6 +713,10 @@ AI_PROVIDER_HOST_ALLOWLIST=${encodeValue(values.get("AI_PROVIDER_HOST_ALLOWLIST"
 AI_PROVIDER_ALLOW_INSECURE_LOCALHOST=${values.get("AI_PROVIDER_ALLOW_INSECURE_LOCALHOST")}
 GATEWAY_MIN_RESERVE_MICROUSD=${values.get("GATEWAY_MIN_RESERVE_MICROUSD")}
 GATEWAY_MAX_BODY_BYTES=${values.get("GATEWAY_MAX_BODY_BYTES")}
+
+# Shared Dream Artifact workspace. Admin must receive this mount read-only.
+ARTIFACT_WORKSPACE_ROOT=${encodeValue(values.get("ARTIFACT_WORKSPACE_ROOT"))}
+ARTIFACT_PREVIEW_MAX_FILE_BYTES=${values.get("ARTIFACT_PREVIEW_MAX_FILE_BYTES")}
 
 # Dream server-to-server Product API identity. Never expose the JWT secret to browsers.
 PRODUCT_API_JWT_SECRET=${encodeValue(values.get("PRODUCT_API_JWT_SECRET"))}
@@ -722,6 +766,8 @@ AI_PROVIDER_ALLOW_INSECURE_LOCALHOST=${values.get("AI_PROVIDER_ALLOW_INSECURE_LO
 GATEWAY_MIN_RESERVE_MICROUSD=${values.get("GATEWAY_MIN_RESERVE_MICROUSD")}
 GATEWAY_MAX_BODY_BYTES=${values.get("GATEWAY_MAX_BODY_BYTES")}
 RUN_DB_MIGRATIONS=${values.get("RUN_DB_MIGRATIONS")}
+ARTIFACT_WORKSPACE_ROOT=${encodeValue(values.get("ARTIFACT_WORKSPACE_ROOT"))}
+ARTIFACT_PREVIEW_MAX_FILE_BYTES=${values.get("ARTIFACT_PREVIEW_MAX_FILE_BYTES")}
 
 PRODUCT_API_JWT_SECRET=${encodeValue(values.get("PRODUCT_API_JWT_SECRET"))}
 PRODUCT_API_JWT_ISSUER=${encodeValue(values.get("PRODUCT_API_JWT_ISSUER"))}

@@ -2422,3 +2422,611 @@ Optional Enhancers:
 - 只读文件元数据证明该用户 4 个 thread workspace 中有两套非空 `EP01/script.md`（同时有 outline/storyboard/review 等 artifact）；没有读取或输出正文。PostgreSQL canonical Story/Character/Scene 仍均为 0。
 - 准确断点在 `backend/claude_agent/service.py`：常规 Agent 的完整 JSON Story bundle 会调用 `store_agent_story_output` 写入 `story_workspace_stories`，但请求带 `story_workspace_dream_context` 时 `_store_story_workspace_output` 直接 `return None`。Episode artifact 写入文件系统后没有任何现有代码把 `script.md` materialize/upsert 到 canonical Story 表；全仓库生产插入该表的代码仅在 `services/story_workspace/agent_integration.py`。
 - 确定根因：Dream execution UI 和 Admin Story 使用两套尚未桥接的持久化模型。Dream 读 thread filesystem artifact，Admin 按项目约束读 PostgreSQL canonical Story；Dream-mode persistence 被代码显式跳过，导致“Dream 有剧本文件、Admin 无 Story 行”。这不是 Admin 筛选、缓存、JOIN 或数据库连接问题。
+
+## Round 68 — Dream Artifact 与 PostgreSQL Story 索引只读审计
+
+Optimized Prompt:
+
+以资深跨系统产品架构师、PostgreSQL 数据架构师、文件型 Artifact 系统架构师、Next.js/Refine 与 FastAPI/Python 工程负责人身份，对 `/Users/dmeck/project/ink-admin-memory` 和 `/Users/dmeck/project/ink-dream-memory` 执行严格只读、证据驱动的 Story Artifact → PostgreSQL 索引同步审计。本阶段只允许读取源代码、配置、Git 状态、文件元数据和对本机 `localhost:5433/ink-memory` 的只读 SQL；除本工作记录和目标审计文档外，不修改代码、schema、migration、Artifact 或数据库，不执行 materialization、reconcile、import、backfill、清理或任何共享数据写入。
+
+完整追踪 Dream execution 链路：`useStoryWorkspaceEpisodeArtifacts` → `/api/story-workspace/workflow-runs/{runId}/episode-artifacts` → `StoryWorkflowGateway` → `StoryWorkspaceEpisodeArtifactService` → thread filesystem 中 `script.md`、`episode-outline.md`、`storyboard.yaml`、`review-report.md`；以及 Admin 链路：`StoryResourceView` → `AdminResourceManager` → Refine `useList` → `/api/admin/story-stories` → story-source repository → `story_workspace_stories`。每个结论必须引用精确文件与行号，并记录关键请求、字段、身份和错误传播方式。
+
+通过配置与只读运行证据确认两应用是否连接同一 PostgreSQL、Dream frontend API base URL/Vite proxy、Artifact Workspace Root、以及 User/Workspace/Story/Run/Thread/Project/Episode 的真实身份关系。追踪 `script.md`、project manifest、episode manifest 与 revision 的实际生成和读取来源，列举所有会 INSERT/UPDATE/UPSERT `story_workspace_stories` 的代码，解释 `story_workspace_dream_context` 为何跳过 `store_agent_story_output`，并搜索其他自动同步、reconcile、import 或 materialization 路径。比较 Workflow Run 状态与 Artifact 状态，判断同一 Project 多 Episode 到 canonical Story 行的幂等映射，以及现有 `content` 字段的兼容边界。
+
+在不输出正文、绝对线程目录、Secret、JWT、Provider Key、密码散列或个人数据的前提下，对 PostgreSQL 和受控 Artifact 元数据做只读盘点：现有 Story 行数量、可发现 Project/Episode 数量、文件存在但无索引、索引存在但文件缺失、revision 不一致、一对多、重复、稳定身份冲突、缺失 Workspace/User/Run 关系。若配置或权限不足以安全关联，明确写出已验证事实、阻断点和不能宣称的数量，不以猜测代替证据。不得跟随不受信任 symlink 或将用户输入拼接为文件路径。
+
+将结果写入 `docs/verification/story-artifact-index-sync-audit.md`，明确回答：根因是否为 Artifact materialization 缺失而非 Admin 查询错误；文件系统与 PostgreSQL 的权威边界；推荐同步写、异步 reconcile 或组合方案；是否需要扩展 canonical `story_workspace_stories` 并生成 Drizzle migration；是否需要一次性历史 dry-run/回填；Dream 与 Admin 各自的实现责任。报告包含证据表、现状数据流、身份映射、差异计数与置信度、风险、后续设计输入和“本阶段未修改共享数据”的确认。
+
+Acceptance Criteria:
+
+- 两条端到端链路均有文件/符号/行号证据，无关键跳步。
+- 数据库、frontend proxy、Workspace Root 与身份关系都有配置或只读运行证据。
+- 所有 Story 索引写入点与 Dream context 跳过逻辑已穷举搜索并分类。
+- 差异数量来自只读 SQL 与安全文件元数据；无法验证者明确标为 blocked/unknown。
+- 形成同步策略、schema migration、历史回填和仓库职责的确定性判断及理由。
+- 不修改业务代码、两个仓库既有未提交修改、Artifact 或共享 PostgreSQL 数据。
+
+Optional Enhancers:
+
+- 为未来对象存储迁移记录 `ArtifactGateway` 可移植接口所需的资源 ID、revision、allowlist、ETag 与分段读取合同，但不在审计阶段实现。
+- 用脱敏哈希或计数关联 Artifact 与索引，避免在审计文档中泄露内部路径和 Story 正文。
+
+执行证据与验证结果：
+
+- 已创建 `docs/verification/story-artifact-index-sync-audit.md`，逐段追踪 Dream Episode Artifact 与 Admin Story PostgreSQL 两条链路，并引用当前源码位置。
+- 根因确定为 Dream Artifact metadata materialization 缺失：Dream context 在 `backend/claude_agent/service.py` 解析 Story JSON 前直接跳过旧 `store_agent_story_output`，而 Episode Artifact completion 没有替代 projector/reconcile；Admin list 与 total 都直接查询同一 `story_workspace_stories`。
+- 两应用配置均指向本机 5433/`ink-memory`；Dream Vite `/api` 代理 8765，Artifact Workspace Root 由 `AGENT_CWD` 指向仓库内 `backend/data/agent-workspace`。
+- 安全文件元数据盘点：1,196 个 thread 目录、7 个 project manifest（5 合法/2 无效）、5 个缺 manifest 的 project 目录、39 个 Episode 目录、3 个非空 script、3 个合法 v1 Episode binding、3 个可安全读取的 bound surface、3 个不同 script/manifest revision；canonical Artifact 位置 symlink 为 0。未读取或输出正文、run/thread/project identity 或绝对线程路径。
+- 实时 PostgreSQL差异 SQL 被当前基础设施阻断：Docker 端口仍监听 5433，但 PostgreSQL handshake 在 3 秒超时。报告将当前 DB Story/mismatch/orphan 标为 unknown，并只把 Round 66 已成功记录的指定用户 Story=0、文件存在证据标为历史证据，不冒充当前快照。
+- 审计判断需要扩展 canonical `story_workspace_stories` 并由 `app/lib/db/schema.ts` 生成 migration；新 Artifact-sourced 行不复制完整 `script.md` 到 `content`；同步采用 completion 后立即幂等 upsert + 启动/定时/显式 reconcile 的组合方案。
+- `git diff --check` 通过；本阶段只修改工作记录和审计文档，没有修改业务代码、Schema、Migration、Artifact 或共享 PostgreSQL 数据。
+
+未执行事项及原因：
+
+- 未完成当前 PostgreSQL总 Story、文件/索引 mismatch、revision conflict 与 orphan 的实时数值，因为共享 5433 当前连接超时，且本阶段禁止启动/修复共享数据库。
+- 未执行 Schema、migration、materializer、reconcile、Admin Artifact client、UI、测试写入或历史回填；这些属于设计审核通过后的实现阶段。
+
+## Round 69 — Story Artifact/Index 跨系统 PRD、架构与交互设计
+
+Optimized Prompt:
+
+作为资深产品架构师、PostgreSQL 数据架构师、文件型 Artifact Gateway 架构师、Next.js/Refine 管理后台设计负责人、FastAPI/Python 服务架构师和响应式 UI/UX 负责人，在 Round 68 只读审计已经证明“Dream 文件 Artifact 可见、canonical PostgreSQL Story 索引 materialization 缺失”的基础上，只完成可供用户审核的 PRD、跨系统架构和 Admin/Dream 交互设计。设计完成后立即暂停，禁止进入 Schema、migration、业务代码、测试 fixture、共享数据库写入或历史回填。
+
+先更新主 PRD `docs/prd/ink-memory-admin-prd-v3.md` 中 Story 数据运营相关章节，清晰区分 Current、Target、Release Gate：文件/对象存储 Artifact 是 script、outline、storyboard、review 的内容真源；`story_workspace_stories` 是可检索、可关联、可审计、可分页的 metadata index；Dream 是 Artifact 与索引唯一业务写入方；Admin 是 PostgreSQL index 与受控 Artifact preview 的只读运营入口，只保留经过领域边界确认的审核命令。不得把设计状态写成 Implemented。
+
+创建并完成：
+
+1. Admin `docs/architecture/story-artifact-index-sync-architecture.md`：定义 User/Workspace/Run/Thread/Project/Episode/Story identity、稳定 upsert key、最小 Story schema 扩展、revision/status state machine、同步触发、file-success/DB-failure recovery、启动/定时/显式 reconcile、dry-run/backfill、崩溃恢复、审核历史保护、服务间鉴权、错误合同、安全边界和可迁移 `ArtifactGateway` 接口。禁止第二张 Story 表、正文复制、绝对路径和 Admin 直读 filesystem。
+2. Admin `docs/design/story-artifact-admin-interaction-design.md`：定义 `/admin/story/workspaces`、`/admin/story/stories` 的列表、筛选、排序、total、独立 DB/Artifact loading、Detail Drawer、Episode/allowlist artifact selector、分段预览、ETag/304、diagnostics/retry intent、401/403/404/409/413/422/500/503、Dream/FS unavailable、1440×1000 与 390×844、键盘/焦点/屏幕阅读器/无横向溢出。Admin 不编辑正文、路径、真实文件关系或 Dream run directory。
+3. Dream `docs/design/story-artifact-index-sync-design.md`：定义 execution 页的双状态反馈（文件生成与索引同步分离）、indexed/stale/missing/failed/retry 状态、materializer/reconcile 入口、internal Artifact read API、service identity、Range/cursor/ETag、allowlist/size/path/symlink/TOCTOU/cross-tenant 防护，以及历史 dry-run UX/CLI receipt。不得把“文件写入成功”显示为“后台已同步”。
+
+PostgreSQL设计优先扩展现有 `story_workspace_stories`，明确字段类型、nullability、default、check、index/unique/FK、public exposure 与写入方；至少评估 artifact source、source run/internal thread ref、project identity/slug、episode count、manifest/script revision、sync status、indexed timestamp、安全错误码、size/availability、reconcile version。稳定 Story identity 使用 Workspace + canonical project identity，重复相同 revision 为 no-op，新 revision 更新同一 Story，不因 run/thread/Episode 重复插入；多个 Episode 聚合为一行 Project Story。
+
+明确文件与 DB 无法原子提交的处理顺序和失败矩阵：安全落盘、计算 revision、解析 metadata、持久化 file-side sync intent、幂等 DB upsert、记录成功/失败、前端分别返回 artifact/index status。设计同 revision 去重、并发锁、CAS/optimistic guard、新 revision 不破坏审核历史、DB down 时文件仍可读、file missing 时 index 显示 degraded、revision mismatch 返回 409、Dream service down 时 Admin DB 仍可用。
+
+设计必须给出端到端 API/DTO 样例，但不得包含 absolute path、thread root、Secret、JWT、Provider Key、stack 或正文。Route Handler 只承担 Session/RBAC/service auth/Zod/编排；SQL/事务/文件安全/同步逻辑位于 Service/Repository。为 Artifact Gateway 定义本地 FS 与未来 S3 兼容接口：resource IDs、revision、allowlist artifact enum、metadata stat/list、byte slice/cursor、ETag/If-None-Match、Range 与错误映射。
+
+验收前对四份文档执行一致性复核：职责表、字段表、状态机、序列图、API错误、Admin/Dream页面文案和测试映射不得相互矛盾；明确列出实现阶段文件计划、migration预期、25项测试追踪、dry-run acceptance、未执行生产回填和需要用户审核的决策。完成设计后更新 Round 69 执行结果并暂停，向用户提交文档链接和关键决策清单，等待明确批准；不得自行进入代码实现。
+
+Acceptance Criteria:
+
+- 主 PRD、跨系统架构、Admin 交互、Dream 同步/交互四份文档完成且状态标为 Target/Proposed，不冒充实现。
+- 单一 canonical Story 表、Dream 唯一业务写入、Admin 受控只读、Artifact 内容真源边界无矛盾。
+- Schema 字段/约束、稳定 identity、状态机、sync+reconcile、file-side recovery intent 与历史 dry-run 有可实现合同。
+- Admin/Dream DTO 不暴露路径或 Secret；Artifact API 有 service auth、allowlist、ETag、Range/分页、大小和 tenant guards。
+- 25项测试与双视口验收逐条映射到设计入口。
+- 设计完成后停止，不修改业务代码、Schema、migration、测试数据或共享数据库。
+
+Optional Enhancers:
+
+- 增加 ADR 风格的备选方案比较，解释为何不选“Admin 扫目录”“完整正文入库”“只做定时扫描”或“每 Episode 一行 Story”。
+- 为未来对象存储切换增加 capability matrix，确保 local filesystem 与 S3 adapter 对 resource identity/revision/Range/ETag 语义一致。
+
+范围变化：
+
+- 用户明确要求在 Admin 与 Dream 后续改造方案设计完成后暂停审核；本 Round 将交付边界固定在文档设计，不进入代码实现。
+
+执行证据与验证结果：
+
+- 当前尚未执行；必须先完成本 Prompt Architect 记录和更新计划。
+
+未执行事项及原因：
+
+- Schema、migration、Dream/Admin代码、隔离PostgreSQL、Playwright、历史回填和生产数据操作全部等待用户审核设计后再决定。
+
+### Round 69 执行结果
+
+- 已将 `docs/prd/ink-memory-admin-prd-v3.md` 更新为 v3.5，并把 Story Artifact/Index 改造标记为 `Proposed / Awaiting review`。PRD 明确区分旧的列表可见性纠偏与本轮 materialization 缺口，新增 Current/Target/Release Gate、双层权威边界、字段/页面目标、历史计数时效和“审核前不得实现”的门禁。
+- 已创建 `docs/architecture/story-artifact-index-sync-architecture.md`。方案确定文件/未来对象存储为内容真源，`story_workspace_stories` 为唯一 metadata index；Dream 唯一写 Artifact/index，Admin 不解析目录或直写来源字段。稳定键为 Workspace + `dream_episode` + canonical Project identity，一 Project 多 Episode 聚合为一 Story；相同 revision no-op，新 revision 更新同一行且不覆盖 review/status/history。
+- 架构方案定义了现有 Story 表的最小扩展、nullable 旧行兼容、部分唯一索引、revision/check/index、确定性 Story ID、`content=NULL`、文件侧 durable sync receipt、即时 materialize + recovery/scheduled/explicit reconcile、崩溃矩阵、dry-run/apply digest 门禁、服务 JWT、allowlist/Range/ETag、安全错误与 25 项验证映射。没有新增第二张 Story 表。
+- 已创建 `docs/design/story-artifact-admin-interaction-design.md`。Admin Story 列表以 PostgreSQL total 为唯一列表计数，展示 Project/Episode/Artifact/revision/index/review/business 状态；详情使用“PostgreSQL 索引 / Artifact 内容”双轨事实条，DB 与 Dream 内容独立加载，按 Episode/allowlist 文件有界预览。定义了 401/403/404/409/413/422/500/503、Dream/文件系统不可用、last-good、cache invalidation、键盘/读屏以及 1440×1000、390×844 布局。
+- 已在 Dream 仓库创建 `docs/design/story-artifact-index-sync-design.md`。Dream execution 明确区分文件生成和后台索引状态；文件提交后持久化 receipt 并触发新 metadata materializer，旧 `store_agent_story_output` 可继续跳过完整 JSON/content，但不能绕过新 projector。方案包含 Project 聚合 revision、Repository upsert、reconcile、internal Artifact API、服务/用户双身份、安全文件读取、重试/轮询、Stories 待同步分区和隔离测试计划。
+- 按 `frontend-design` 指引复用现有暖纸色运营工作台语言，没有引入新的装饰性设计系统；将“双轨事实条”作为本模块的高辨识度、非装饰性核心组件，用于同时表达 DB index 与 Artifact content 两条事实。
+- 补充 ADR 备选判断，明确拒绝 Admin 扫目录、完整正文入库、仅请求内同步、仅定时全盘扫描和一 Episode 一 Story；补充 Local filesystem/S3 adapter 在 identity、revision、Range、原子提交与 receipt 方面的 capability matrix。
+- 一致性复核覆盖权威所有权、字段、状态、revision、错误码、服务身份、Path traversal/Symlink/TOCTOU/大小/跨租户、dry-run、25 项测试和双视口。Admin/Dream/架构均使用 `syncing/indexed/stale/missing/failed` DB 状态，并把 DB 完全不可用时的 pending/failed 事实保存在文件侧 receipt。
+- `git diff --check` 与对 4 个未跟踪新文档的 `git diff --no-index --check` 均通过。文档共 2,042 行（PRD 183、审计 268、架构 556、Admin 交互 407、Dream 设计 628）；仅做文档静态校对，没有运行不适用于文档阶段的 build/测试。
+- 当前待用户评审的主要决策：是否增加 `reviewed_script_revision`；默认 64 KiB/单次最大 256 KiB/单 Artifact 1 MiB 的预览上限；Operator 或仅 Super Admin 拥有 reconcile；移动端摘要行；首版纯文本还是安全 Markdown；receipt 逻辑位置/保留期与 reconcile 扫描预算。
+
+未执行事项及原因：
+
+- 按用户要求已在 Admin/Dream 后续改造方案完成后暂停。没有修改业务代码、`app/lib/db/schema.ts`、migration、测试 fixture、Artifact 或共享 PostgreSQL；没有执行 reconcile、import、backfill 或任何数据写入。
+- 没有重新尝试或修复共享 5433 PostgreSQL；Round 68 中 DB 联合 dry-run 数量仍为 unknown，文件侧只读基线保持 5 个有效 Project manifest、39 个 Episode 目录、3 个严格可索引 Story 候选。
+- Dream 仓库既有未跟踪 `.claude/worktrees/` 保持原状，没有覆盖或回滚两仓已有修改。
+- 下一步必须等待用户对 PRD、跨系统架构与两端交互方案的明确审核结论；未获批准不得进入实现阶段。
+
+## Round 70 — 共享 Artifact Root 的简化同步方案与两端实现
+
+Optimized Prompt:
+
+作为资深产品架构师、PostgreSQL/Drizzle 数据架构师、共享文件系统安全架构师、FastAPI/Python 工程师、Next.js/Refine 工程师和 UI/UX 负责人，根据用户的最新评审结论，把 Round 69 的跨服务 Artifact API 方案收敛为“Admin 与 Dream 读取同一个 Artifact Root；Dream 对文件系统读写，Admin 仅以操作系统权限只读；两端连接同一个 PostgreSQL canonical Story 表”的最小可靠架构，并实现、测试和验证。用户的最新指示覆盖此前“Admin 必须通过 Dream 服务 JWT/API 读取”的设计选择，但不放宽浏览器不得提交任意路径、不得暴露绝对路径/Thread Root/Secret、不得新增平行 Story 表、不得操作共享真实数据等安全约束。
+
+先更新 Round 69 的主 PRD、跨系统架构、Admin 交互和 Dream 设计，使其明确：共享 `ARTIFACT_WORKSPACE_ROOT`/等价配置是部署前提；Dream runtime 对根目录拥有 read-write，Admin runtime 只拥有 read-only；PostgreSQL 只保存 stable identity、内部相对 Artifact locator、revision、Episode count、availability/status 和安全诊断；浏览器只提交 Story ID、Episode ID、ArtifactKind，不接收或拼接路径。删除首版服务间 Artifact HTTP API、服务 JWT、独立 Gateway deployment、S3 adapter、durable receipt 状态机和复杂跨服务缓存；保留可迁移接口为 Deferred，而非本轮实现。
+
+实现最小一致性链：Dream 使用 canonical Workspace + Project identity 生成稳定 Story ID，安全原子写入/确认 Project/Episode Artifact 后计算 manifest/script revision，并幂等 upsert 现有 `story_workspace_stories`。相同 revision no-op，新 revision 更新同一 Story，多 Episode 聚合一行，新 Artifact Story 的 `content` 为 NULL；projector 不覆盖 review status、business status、review notes、confirmed/published 时间或历史 Audit。文件成功但 DB upsert 失败时，Project/Episode manifest 本身作为恢复依据，Dream UI 返回 `artifact=available/index=failed`；实现有界 startup/explicit/periodic reconcile，从 canonical Run/Workspace/Thread 关系发现 manifest，并补建 missing/stale index，不新增 file-side receipt。
+
+Admin 扩展唯一 Drizzle 来源 `app/lib/db/schema.ts` 并生成 PostgreSQL migration，只修改现有 `story_workspace_stories`。最小列至少包含 `artifact_source_type`、`source_run_id`、`source_thread_ref`（server-only）、`source_project_id`、`source_story_slug`、`artifact_relative_key`（server-only relative locator）、`episode_count`、`artifact_manifest_revision`、`script_revision`、`artifact_sync_status`、`artifact_indexed_at`、`artifact_last_checked_at`、`artifact_sync_error_code`、`script_size_bytes`、`artifact_available`、`reconcile_version`，以及经评审采用的 `reviewed_script_revision`。增加 stable-key partial unique index、revision/status/count/size checks 与查询索引，旧行 nullable 兼容；不写绝对路径、不复制正文。
+
+在 Admin Service/Repository 层实现共享文件系统只读 Artifact Reader。Route Handler 只做 Session/RBAC、Zod 输入和编排；Reader 根据已查询 Story 行、受控共享 root、server-only relative locator、Episode ID 和 ArtifactKind allowlist 定位文件，逐级拒绝 traversal/symlink escape，防 TOCTOU，限制文件/分段大小并计算 ETag/revision。Admin 列表继续只读 PostgreSQL，支持 Artifact health/project/revision/index time 的筛选、排序与准确 total；详情 Drawer 分开加载 DB metadata 和本机只读 Artifact surface/preview。禁止通用 Story metadata PATCH；保留的审核命令必须绑定 expected script revision、写 `reviewed_script_revision` 与 Audit，不能修改文件或来源关系。
+
+在 Dream frontend execution 与 stories 页面实现文件/索引双状态，不把文件成功显示为后台同步成功；支持 indexed/stale/missing/failed、revision mismatch、受控 retry。Admin 使用现有运营后台设计语言和“双轨事实条”，覆盖 loading、DB empty/filter empty、文件未索引、索引文件缺失、409、413、422、500、503；桌面 1440×1000 和移动 390×844 无页面级横向溢出。
+
+所有写测试只能使用显式 `TEST_DATABASE_URL`、disposable PostgreSQL、临时共享 Artifact Root 和专用 User/Workspace/Run/Project/Episode。禁止迁移、补写、清理本机共享 `5433/ink-memory`，禁止生产历史 backfill。先实现 dry-run reconcile 并报告可发现/可索引/已有/新增/更新/冲突/无效/关系缺失；本轮不得对真实数据 apply。
+
+验证 Dream：focused backend pytest、frontend typecheck/lint/build/focused Playwright。验证 Admin：`pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、focused/full unit、`pnpm build`、隔离 PostgreSQL API/E2E、1440×1000 与 390×844 Playwright。检查 Storage、Provider、Gateway、Subscription、Billing、RBAC 不回归；两仓 `git diff --check` 通过。若完整环境依赖阻断，继续完成所有可验证部分并把环境阻断与代码失败分开报告，不得用共享数据库绕过。
+
+Acceptance Criteria:
+
+- Round 69 文档已收敛为共享文件系统方案，不再把服务 JWT/跨服务 Artifact API 作为首版必需组件。
+- Dream 文件完成后能幂等创建/更新唯一 canonical Story index；相同 revision no-op、多 Episode 一 Story、`content=NULL`。
+- Admin 与 Dream 使用同一 server-side relative locator/root 合同读取同一文件；Dream read-write、Admin read-only，浏览器/API 不出现绝对路径。
+- Admin 列表只依赖 PostgreSQL；详情由本机只读 Reader 安全访问 allowlist Artifact，DB 与文件错误独立。
+- 文件成功/DB 失败能由 manifest + reconcile 恢复，无 file-side receipt 状态机。
+- Path traversal、symlink、TOCTOU、超大文件、非法 manifest、跨 Workspace/User/Run、ETag/304、409、413、422、503 均有测试。
+- 只扩展 `story_workspace_stories`，提交 Drizzle migration，不新增平行 Story/User/Workspace 表、不引入 SQLite、不复制完整正文。
+- 所有写验证均在隔离 PostgreSQL/临时 Artifact Root；生产回填未执行。
+
+Optional Enhancers:
+
+- 把 Python 与 TypeScript 的 path/manifest/revision 合同做成同一组 JSON golden fixtures，避免两端因语言不同发生 locator 或 revision 漂移。
+- 将未来 S3/Object Store adapter 保留为接口注释和 Deferred ADR，不在共享文件系统首版增加运行时复杂度。
+
+范围变化：
+
+- 用户审核后明确选择“共同读取一个文件系统，路径与表记录相同”。本轮取消 Round 69 的跨服务 Artifact API、服务 JWT、独立 Gateway 和 durable receipt 首版要求，改为共享 root + Dream RW/Admin RO + manifest reconcile。
+- 用户已明确要求按照简化方案更新设计稿并实现对应代码；本轮获准进入代码、Schema、migration 与隔离测试阶段，但仍未授权共享真实数据 backfill。
+
+执行证据与验证结果：
+
+- 当前尚未执行；必须先完成本 Prompt Architect 记录再更新计划和开始代码审计/实现。
+
+未执行事项及原因：
+
+- 尚未修改 Round 69 文档、Schema、migration、Dream/Admin 代码或测试；尚未执行任何数据库或 Artifact 写入。
+
+## Round 71 — Dream 共享文件系统同步方案并行执行交接
+
+Optimized Prompt:
+
+作为 Dream 仓库的资深 FastAPI/Python 架构师、PostgreSQL Repository 工程师、文件型 Artifact 安全工程师、React/Vite 交互工程师和测试负责人，先仅产出一份可复制到另一执行环境的 Dream 独立实施方案，使另一位工程执行者能够与 Admin 改造并行工作。此轮不修改 Dream/Admin 业务代码、Schema 或 migration；不启动测试或写任何数据库/Artifact。方案必须采用用户已确认的简化前提：Dream 与 Admin 挂载同一个 Artifact Workspace Root；Dream 对文件系统 read-write，Admin 仅 read-only；两端连接同一个 PostgreSQL，使用同一 `story_workspace_stories` 行和同一 server-only relative locator；不建设首版跨服务 Artifact HTTP API、服务 JWT、独立 Gateway、S3 adapter 或 durable receipt 状态机。
+
+给出 Dream 分层实现清单和建议文件所有权：Artifact commit 完成点、共享 locator/revision 合同、metadata projector、stable Story ID、PostgreSQL repository 幂等 upsert、manifest-based startup/periodic/explicit reconcile、dry-run CLI/API、execution/stories 双状态 UI、受控 retry、错误映射与 focused tests。Route 只负责身份/输入/编排；SQL/事务在 Repository，文件安全/manifest/revision 在 Service。Dream context 可继续跳过旧完整 JSON `store_agent_story_output`，但必须调用新的 metadata materializer。
+
+定义与 Admin 并行开发的冻结合同：Admin Drizzle migration 将扩展同一 Story 表；Dream 在 migration 未应用时要 fail-closed/feature-gated，不能自行创建表或运行 DDL。列出字段名、类型、nullability、stable partial unique key、revision 格式、ArtifactKind 枚举、相对 locator 格式、状态与错误码。Dream 不得写 Admin 审核/业务字段，不得把 `script.md` 复制进 `content`，不得向浏览器返回 absolute path、thread root 或 `source_thread_ref`。
+
+文件同步顺序必须最小可靠：安全原子提交文件/manifest，重新通过安全 fd 读取并计算 revision，构造 projection，幂等 upsert PostgreSQL，返回 artifact/index 独立状态。文件成功而 DB 失败时，canonical Project/Episode manifest 本身是恢复依据；execution 显示文件可读/索引失败；reconcile 从数据库授权 Run/Workspace/Thread 范围出发有界扫描 manifest，补建 missing/stale 行。相同 revision no-op，不改变 `updated_at`；新 revision 更新同一 stable Story；多 Episode 聚合一 Story；projector 保留 review/status/history。
+
+测试必须只使用显式 disposable PostgreSQL 与临时共享 Artifact Root，覆盖成功、相同 revision、新 revision、多 Episode、DB 失败、reconcile 恢复、missing/mismatch、非法 manifest、超大文件、traversal、symlink、TOCTOU、跨 User/Workspace/Run、409/413/422/503、前端双状态和两视口。不得连接或补写共享 `5433/ink-memory`，不得执行生产 backfill。
+
+输出格式必须适合直接交给另一位 Codex/工程师：目标与非目标、冻结跨仓合同、建议文件/类、实施顺序、伪代码、API/DTO、状态矩阵、测试命令、完成回传清单、并行冲突规避。明确 Admin 与 Dream 的所有权边界，要求执行者不修改 Admin 仓库、不生成 Drizzle migration、不覆盖现有未提交修改，并在完成后回传 commit/diff、migration 前置条件、测试数量和 dry-run 结果。
+
+Acceptance Criteria:
+
+- Dream 方案可单独复制执行，无需读取本对话才能理解目标和约束。
+- 使用共享 Artifact Root 与同一 PostgreSQL Story 行，不包含跨服务 Artifact API/JWT 首版工作。
+- 明确列出 Dream 所需 Story 列、stable identity、locator、revision、status/error contract，能与 Admin 并行实现。
+- 文件写入、幂等 upsert、manifest reconcile 和 UI 双状态有具体文件/类/伪代码/测试入口。
+- 不授权真实数据写入、生产 backfill、Admin schema 修改或新增平行 Story 表。
+
+范围变化：
+
+- 用户要求先提供 Dream 方案，交给其他执行环境并行处理。本轮暂停 Admin/Dream 本地代码实现，只交付 Dream handoff 方案；后续 Admin 实现等待用户继续指示。
+
+执行证据与验证结果：
+
+- 当前尚未执行；必须先完成本 Prompt Architect 记录，再输出 Dream 独立实施方案。
+
+未执行事项及原因：
+
+- 未修改 Dream/Admin 业务代码、Schema、migration、测试或共享数据；用户当前只要求先交付 Dream 方案。
+
+### Round 71 执行结果
+
+- 已完成 Dream 后端与前端的只读实施落点复核，并形成可复制的并行执行交接方案；本轮没有修改 Dream 仓库。
+- 后端主触发点确定为 `backend/libs/claude_agent_kit/server/story_workspace_tool.py` 的 `_record_episode_workflow_completion` 统一成功尾部，而不是 Claude Agent turn 结束。现有 replay 早退必须收敛到同一 materializer tail，确保“文件成功、DB 失败”后重复 completion 可以补索引。
+- 复用现有 `StoryWorkspaceEpisodeArtifactService` 的 real directory/inode pin、`openat`、`O_NOFOLLOW`、大小上限、SHA-256 与 canonical binding；复用 `StoryWorkspaceEpisodeBindingService` 的 Project ID/slug 与 v1/v2 Episode registry，不另写弱路径读取器。
+- Dream 新增 Projector、Repository、Materializer、manifest-based Reconcile 与 dry-run CLI；不新增跨服务 Admin→Dream Artifact API、服务 JWT、独立 Gateway、S3 adapter 或 durable receipt。旧 Dream context 继续跳过完整 JSON `store_agent_story_output`，但 completion tail 必须调用新 metadata materializer。
+- 前端索引状态使用独立 Dream 用户态 `GET/POST /workflow-runs/{runId}/story-index`，不混入现有 Episode Artifact ETag。原因是 Artifact ETag 同时用于文件 304 和 Episode action `If-Match`；混入 DB index 状态会让索引变化错误干扰创作 CAS，或被文件 304 掩盖。
+- 冻结首版语义：一 Workspace + Project 一 Story；`source_thread_ref + source_project_id` 在共享 root 下派生 canonical 文件位置，不额外保存绝对路径；Story 行的 script/manifest revision 指最近成功 materialize 的 bound Episode，`episode_count` 来自 registry 实际条目数，首版不扫描最多 99 Episode 计算全 Project aggregate hash。
+- 识别到 migration rollout 的 P0 风险：Dream 当前 `/stories` 使用 `SELECT *` 并直接 `_row_to_dict`，新增 `source_thread_ref` 等内部列后会自动泄露给浏览器。Dream 执行者必须先改为显式 public column allowlist，再允许 Admin migration 上线。
+- Admin 仍是唯一 Drizzle migration 来源。Dream 执行者不得生成另一套 migration；Admin migration 未就绪时 materializer/reconcile fail-closed，但文件读取继续工作。Admin migration 提供后，Dream 可同步更新严格 schema baseline/generated mirror 以通过 contract verification，但这些镜像不成为 DDL 来源。
+- 已给出建议文件、API/DTO、状态/错误、实现顺序、focused tests、隔离要求、并行冲突规避和完成回传清单；等待用户把方案交给另一执行环境。
+
+未执行事项及原因：
+
+- 未修改 Dream/Admin 业务代码、Schema、migration、测试或共享数据；未执行 PostgreSQL/Artifact 写入、reconcile apply、build 或 Playwright。
+- Admin 本地实现仍暂停，等待用户完成 Dream 方案交接或明确要求继续。
+
+## Round 72 — Admin 共享 Artifact Root 索引与只读文件访问实现
+
+Optimized Prompt:
+
+作为 ink-memory-admin 的资深 Next.js/Refine 工程师、PostgreSQL/Drizzle 数据架构师、共享文件系统安全工程师和 UI/UX 负责人，在 Dream 独立方案已交给另一执行环境的前提下，只实现 Admin 仓库部分，并与冻结的 Dream 合同保持一致。部署模型为：Dream 与 Admin 挂载同一个 Artifact Workspace Root；Dream read-write，Admin 操作系统身份 read-only；两端连接同一个 PostgreSQL，Dream 写 `story_workspace_stories` Artifact 索引字段，Admin 只读索引和文件。禁止建设 Admin→Dream HTTP Artifact API、服务 JWT、独立 Gateway、S3 adapter 或 durable receipt。
+
+先把 Round 69 文档收敛为共享文件系统首版并明确跨服务方案 Deferred，再修改代码。更新唯一 Drizzle 来源 `app/lib/db/schema.ts`，仅扩展 `story_workspace_stories`，生成并提交 PostgreSQL migration。与 Dream 冻结字段一致：`artifact_source_type`、`source_run_id`、`source_thread_ref`（server-only）、`source_project_id`、`episode_count`、`artifact_manifest_revision`、`script_revision`、`artifact_sync_status`、`artifact_indexed_at`、`artifact_sync_error_code`、`script_size_bytes`、`artifact_available`、`reconcile_version`、`reviewed_script_revision`。增加 stable-key partial unique index、status/revision/count/size/reconcile check 与查询索引；旧行全部 nullable 兼容。不得保存绝对路径、完整正文或新增平行 Story 表。
+
+扩展 Story Repository 的显式 public projection、list/detail DTO、Artifact health/project/revision/indexedAt 的服务端筛选排序和准确 total。公开 API 严禁返回 `source_thread_ref`、`content` 或任何路径；内部 Artifact Service 只能从已鉴权查询得到的 Story internal record 读取 server-only thread/project/run identity。Admin 不写 Dream-owned `artifact_*`、`source_*`、revision 或文件关系；移除/禁止通用 Story metadata PATCH。若保留受控 confirm/reject/archive 审核命令，必须用 expected `script_revision` CAS，确认时写 `reviewed_script_revision` 与 Audit，不得修改文件。
+
+实现 server-only `StoryArtifactReader`：根目录来自 `ARTIFACT_WORKSPACE_ROOT`（或明确的单一 Admin env），必须是存在的真实目录；按 `<root>/<source_thread_ref>` 定位 Thread Workspace，再按固定 `stories/<source_project_id>` 与 run-scoped `.dream/runtime/runs/<source_run_id>/episode.json` 读取。浏览器只提交 Story ID、Episode ID 和 `ArtifactKind` 枚举，不提交 thread/project/path。Reader 校验每个 segment、安全 manifest、Project ID==slug、Episode registry v1/v2 归属、allowlist 文件名；逐层 lstat/realpath containment，最终文件以 `O_RDONLY|O_NOFOLLOW` 打开并在 read 前后核对 inode/dev/size/mtime，限制单文件与 chunk 大小，计算 SHA-256 ETag，拒绝 traversal、symlink、special file、TOCTOU 替换、超大文件和跨 Story/Workspace/User。Node 无 `openat` 时必须记录并通过“逐段无 symlink + containment + O_NOFOLLOW + pre/post inode/realpath”实现可验证的最强本机防线；若无法证明严格敌手并发目录替换，文档明确残余风险，不得伪称等同 Dream Python `openat`。
+
+新增 Admin Artifact Route Handler，只做 Session/RBAC、Zod、调用 service 与 HTTP 映射。建议 `GET /api/admin/story-stories/{storyId}/artifact-surface` 和 `GET /api/admin/story-stories/{storyId}/artifacts?episodeId=&kind=&offset=&limit=`；也可按现有路由组织选择等价路径。surface 返回安全 Project/Episode/Artifact 逻辑树；preview 返回有界 UTF-8 chunk、revision/etag、offset/nextOffset/totalBytes/truncated/updatedAt，不返回路径。支持 If-None-Match→304、expected revision mismatch→409、过大→413、合同无效→422、存储不可用→503；Story/Workspace/权限错误映射 401/403/404。
+
+更新 Admin Story 列表和 Detail Drawer：列表显示 title/ID/Workspace/author/Project/Episode count/Artifact status/script revision/indexed time/review/business/updatedAt，使用 PostgreSQL total；Drawer 先独立加载 DB detail，再懒加载共享 FS surface/preview。保留 Round 69 的“PostgreSQL 索引 / Artifact 内容”双轨事实条，但删除 Dream service/JWT 文案；显示 indexed/stale/missing/failed、revision mismatch、文件系统不可用。Episode selector 和 `script/episode_outline/storyboard/review_report` allowlist tabs 使用有界 preview；无编辑器、路径输入、下载任意文件或目录浏览。Dream/DB 不再是两个网络依赖；DB 失败为页面错误，文件系统失败只降级 Artifact 区。
+
+采用现有暖纸色运营工作台 token，不创建新的通用设计系统；双轨事实条是唯一 signature。桌面 1440×1000 使用右侧 Drawer，移动 390×844 全屏并无页面级横向溢出。Loading、system empty、filter empty、401/403/404/409/413/422/500/503 文案独立，错误不冒充 0。
+
+测试必须覆盖 Schema/migration、Repository mapping/filter/sort/total、public DTO 不泄露内部列、Reader 正常/多 Episode/ETag/304/chunk、traversal/symlink/special file/TOCTOU/oversize/invalid manifest/cross-story、Route 401/403/404/409/413/422/503、Drawer DB-first/FS-degraded 和双视口。所有持久化测试只允许明确 `TEST_DATABASE_URL`/disposable PostgreSQL；文件测试只用临时 Artifact Root。不得迁移、写入、清理共享 `5433/ink-memory`，不得执行真实历史 backfill。
+
+运行 Admin：`pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、focused/full `pnpm test:run`、`pnpm build`、focused Playwright。执行浏览器前完整读取 `ink-admin-playwright-qa/references/project-workflow.md`，检查 listener ownership 和 Git 状态；截图 1440×1000、390×844。若 disposable PostgreSQL 或浏览器环境不可用，继续完成所有纯单元/静态验证并把环境阻断与代码失败分开报告，不得绕到共享数据库。
+
+Acceptance Criteria:
+
+- 主 PRD/架构/Admin 交互已改为共享 Artifact Root 首版，服务 JWT/跨服务 Artifact API 标为 Deferred。
+- 只扩展 `story_workspace_stories` 并提交 Drizzle migration；字段与 Dream handoff 一致。
+- Admin public list/detail 不返回 source_thread_ref/content/path，内部 Reader 只能使用数据库解析出的资源身份。
+- Admin 列表只读 PostgreSQL；Drawer 通过本机共享文件系统只读同一 Artifact，浏览器不提交路径。
+- allowlist、manifest/binding、containment、symlink、TOCTOU、大小、ETag/chunk 与跨租户边界有测试。
+- DB metadata 与 Artifact 区独立加载，文件系统 503 时仍显示 DB 索引。
+- 1440×1000 与 390×844 验证通过，无页面级横向溢出。
+- 未新增平行 Story 表、SQLite、服务 JWT或正文副本；未操作共享真实数据或生产回填。
+
+Optional Enhancers:
+
+- 将 shared locator/revision 规则固定为跨语言 JSON golden fixtures，供 Dream Python 与 Admin TypeScript 同时验证。
+- 为 Node 文件 Reader 的并发目录替换残余风险增加 feature flag；高威胁部署可切回 Dream `openat` reader，而不改变浏览器 DTO。
+
+范围变化：
+
+- Dream 实现已交由另一执行环境；本轮只修改 Admin 仓库，不编辑 Dream 文件。
+- 用户已明确说“继续”，视为批准开始 Admin 设计收敛、Schema/migration、Repository、共享文件 Reader、API/UI 与隔离测试；仍未授权生产 backfill。
+
+执行证据与验证结果：
+
+- 当前尚未执行；必须先完成本 Prompt Architect 记录，再更新计划和实施。
+
+未执行事项及原因：
+
+- 尚未修改 Admin Schema/migration/业务代码或测试；尚未执行任何数据库或 Artifact 写入。
+
+## Round 73 — Admin 共享根目录实现的最终验证与交付审计
+
+Optimized Prompt:
+
+作为 ink-memory-admin 的最终验收负责人，在不扩展既定范围的前提下，对已经完成的共享 Artifact Root Admin 实现执行一次可复现的完成性、安全性和隔离性验证。不得修改 Dream 仓库，不得连接、迁移、写入或清理共享 `5433/ink-memory`，不得执行历史 reconcile apply 或生产回填；所有 PostgreSQL 写入验证只能使用脚本创建且在结束后销毁的 disposable PostgreSQL，所有 Artifact 只能位于临时 Workspace Root。
+
+先复核最新 Story 命令可见性改动能够通过 TypeScript 和 ESLint，并确认它只影响 UI 命令呈现，不削弱服务端 RBAC、revision CAS 或审核事务边界。随后检查 git diff 与 public DTO：不得泄露 `source_thread_ref`、绝对路径、`content`、Secret 或异常堆栈；不得新增平行 Story 表、SQLite、Admin 文件写入口或任意路径参数；Route Handler 继续只做鉴权、解析和编排。
+
+按项目要求执行 `pnpm env:check`、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm test:run` 和精确 `pnpm build`。构建必须使用仓库已确定的 Next.js Webpack 路径，记录默认 Turbopack 在当前环境挂起的工程原因，但不得把挂起误报为业务构建失败。再次运行 `node scripts/run-story-artifact-e2e.mjs`：脚本必须建立随机 loopback 端口的临时 PostgreSQL、应用 migration 0000–0027、创建临时 Artifact Root、运行 focused Playwright，并在成功或失败后停止和移除容器及临时文件。
+
+Playwright 验收必须覆盖 PostgreSQL list total 与实际 count 一致、公开 API 不泄露 server-only identity、Artifact surface/preview、ETag/304、422、review revision CAS、文件系统 503 时数据库索引仍可见，以及 1440×1000、390×844 两个视口无页面级横向溢出。保存并人工查看两张截图，确认桌面 Drawer 双轨事实区和移动全屏布局可读；将路径写入交付记录。
+
+最终检查 `git diff --check`、工作树修改列表、migration 文件、测试数量和隔离容器清理。明确区分本仓库已验证的 Admin 实现与外部环境中的 Dream 实现；不得声称 Dream 测试已由本轮验证。历史 dry-run 仅报告已有只读审计基线，不编造 PostgreSQL 对照数量；生产回填必须继续标记为未执行并等待用户明确批准。
+
+Acceptance Criteria:
+
+- Admin env/typecheck/lint/full unit/build 全部通过，结果和测试数量可追溯。
+- focused isolated E2E 通过，migration 仅应用于 disposable PostgreSQL，容器与临时 Artifact Root 已清理。
+- 桌面与移动截图存在并经人工查看，两视口无横向溢出。
+- public Story DTO/Artifact API 不泄露内部 thread locator、正文、绝对路径或 Secret。
+- 未新增平行 Story 表、SQLite、跨服务 JWT/Gateway、Admin Artifact 写入或共享数据操作。
+- 最终报告分别列出 Admin 已完成内容、Dream 外部执行边界、migration、测试命令、截图、未执行的生产回填与已知 Node `openat` 残余风险。
+
+Optional Enhancers:
+
+- 在最终交付中把桌面和移动截图作为本地可点击图片展示，方便用户直接审核。
+- 后续由 Dream 执行环境回传同一 Story identity/revision 的 golden fixture 结果后，再做跨仓合同最终签收。
+
+范围变化：
+
+- 本轮仅做 Admin 实现的最终验证、必要的小范围修正和交付记录；不再新增产品能力。
+- Dream 改造仍由用户安排的其他执行环境负责，本轮只陈述冻结合同和未验证状态。
+
+执行证据与验证结果：
+
+- 当前尚未执行；必须先完成本 Prompt Architect 记录，再开始最终验证。
+
+未执行事项及原因：
+
+- 尚未执行本轮最终命令和交付审计；共享数据库与生产历史回填明确不在授权范围内。
+
+### Round 73 执行结果
+
+- `pnpm env:check`：通过；环境结构有效。
+- `pnpm exec tsc --noEmit`：通过；最新 Story command visibility 与 Artifact Drawer 类型检查无错误。
+- `pnpm lint`：通过；ESLint 无错误。
+- `git diff --check`：通过；无 whitespace/error marker。
+- `pnpm test:run`：69 个 test files、340 项 tests 全部通过；未运行被显式排除的持久化 integration tests。
+- `pnpm build`：通过；`next build --webpack` 3.9 秒完成编译，随后 TypeScript、静态页生成和 build traces 均成功；构建路由包含 `/api/admin/story-stories/[id]/artifact-surface` 与 `/api/admin/story-stories/[id]/artifacts`。
+- `node scripts/run-story-artifact-e2e.mjs`：通过。脚本启动一次性 PostgreSQL 16 容器，应用 migration 0000–0027，使用临时 Artifact Root 运行 `tests/e2e/story-artifact-shared-root.spec.ts`，Chromium 1/1 通过（9.1 秒），最后停止并移除容器。额外只读 `docker ps -a` 验证没有同名遗留容器。
+- Playwright 覆盖 PostgreSQL total、公开 API internal locator 不泄露、surface/preview、ETag/304、422、审核 revision CAS、Artifact root 503 时数据库事实保留，以及桌面/移动无横向溢出。
+- 人工查看截图通过：`test-results/story-artifact-shared-root-4e384-e-across-desktop-and-mobile-chromium/story-artifact-desktop-1440x1000.png` 与 `story-artifact-mobile-390x844.png`。桌面为右侧双轨 Drawer，移动为 390px 全宽单列；两者未出现页面级横向溢出。
+- 安全交付扫描只在内部 Repository/Reader 与测试中发现 `sourceThreadRef`；public projection 测试明确断言 SQL 不选择 `s.source_thread_ref`，UI/API 未接收路径。依赖 lock 中的 SQLite optional peer 字样不是本项目依赖或回退；应用代码继续明确只支持 PostgreSQL。
+- 在只读审计报告顶部补充后续架构决策说明：审计时的跨服务 Gateway 建议已被用户确认的共享 Artifact Root 架构取代，避免历史建议与当前实现产生歧义。
+- 本轮没有连接、迁移或修改共享 `5433/ink-memory`，没有执行 reconcile apply/生产回填，也没有修改 Dream 仓库。
+
+未执行事项及原因：
+
+- Dream projector/reconcile 与 Dream UI 由用户安排的另一执行环境负责；本轮未验证其代码和测试。
+- 文件侧历史 dry-run 仍为 5 个 discoverable Project、39 个 Episode 目录、3 个 strict indexable Story、2 个 invalid manifest、5 个 missing-manifest project directory；数据库 existing/new/update/conflict/orphan 数仍为 unknown，未对共享数据库补做查询。
+- 生产历史索引回填未执行，等待用户明确批准。
+
+## Round 74 — Admin 交付签收与计划关闭
+
+Optimized Prompt:
+
+作为最终交付负责人，基于 Round 73 已通过的静态、单元、构建、隔离 PostgreSQL E2E 和双视口证据，关闭本轮 Admin 共享 Artifact Root 实现计划并向用户提交自包含的中文验收报告。报告必须以结果为先，分别列出 Admin 已完成的 Schema/migration、Repository/API、安全 Reader、Story 列表/Drawer、审核 CAS、测试结果；单独说明 Dream 改造由其他执行环境负责且本轮未验证，避免把冻结方案误报为已完成代码。
+
+列出真实根因、核心修改文件、migration 名称、dry-run 文件侧数量、DB/API/UI 对照测试结论、精确测试命令与数量、1440×1000 和 390×844 截图链接、未执行的生产回填及已知风险。明确确认：没有新增平行 Story 表、没有引入 SQLite 回退、没有复制完整剧本正文到 PostgreSQL、没有暴露绝对路径或 Secret、没有赋予 Admin 文件写入能力、没有操作共享真实数据。
+
+已知风险必须包含 Node.js 缺少 Python `openat(dir_fd=...)` 等价 API，因此 Admin Reader 采用逐段 `lstat`、realpath containment、最终 `O_NOFOLLOW`、pre/post inode/size/mtime/path revalidation 的本机最强防线；高敌手并发目录替换场景仍存在残余风险，生产部署还必须通过 OS/container read-only mount 与最小权限降低风险。
+
+Acceptance Criteria:
+
+- 计划所有 Admin 步骤标记完成，最终报告不遗漏隔离边界和 Dream 外部执行状态。
+- 文件链接使用绝对本地路径，截图可直接打开。
+- 不声称生产数据数量已核对或历史回填已执行。
+- 报告足够让用户审核是否接受 Admin 实现，并明确下一步只有 Dream 合同联调与经批准的生产 dry-run/apply。
+
+Optional Enhancers:
+
+- 用户审核通过后，可再单独执行 Dream/Admin golden fixture 合同联调；该动作不属于本轮自动授权。
+
+范围变化：
+
+- 不再修改实现；本轮只关闭计划并交付验收报告。
+
+执行证据与验证结果：
+
+- Round 73 已提供完整证据；本轮将在计划关闭后输出最终报告。
+
+未执行事项及原因：
+
+- 尚未执行生产 dry-run、回填或 Dream 跨仓联调，均需后续明确授权或外部执行结果。
+
+## Round 75 — 43+5 数据迁移纳入 Drizzle 与订阅默认数据初始化
+
+Optimized Prompt:
+
+作为 Ink Memory PostgreSQL 数据迁移、Drizzle、Dream Alembic 与订阅控制面负责人，落实用户要求：当前正式 SQLite 43+5 表、4,921 条源记录的迁移能力必须成为可版本化、可审计、可重复演练的 Drizzle 发布资产，同时 Free、Dream、is Dreaming 三项 Token-only 月订阅策略及默认 Free 用户资格必须通过 PostgreSQL 初始化进入同一发布流程。不得把 4,921 条环境业务记录直接硬编码进通用 DDL migration，不得重复创建 Dream-owned canonical schema，也不得用当前三表 Admin importer 冒充 43+5 全量导入器。
+
+先审计 Dream Alembic 20260809_01–06、`backend/script/migrate_legacy_to_postgres.py`、Admin Drizzle 0000–0027、`scripts/migrate.mjs`、`scripts/seed-default-dream-plans.mjs`、Drizzle journal、真实 48 表映射和当前本机专用 `ink-memory` migration/data 状态。明确区分：Dream-owned 48 表 canonical DDL 仍由 Dream Alembic拥有；Admin Drizzle只能以 baseline/adopt/assertion 与发布编排记录其依赖，不能复制第二份漂移 DDL；4,921 条数据必须由 Drizzle 版本所调用或登记的受控 external data migration runner 执行 SQLite只读快照→manifest→staging→冲突阻断导入→digest/FK/sequence/trigger验证，而不是静态 INSERT。
+
+在 Admin Drizzle新增单调 migration：建立只追加 data-migration registry/run/table-result/checkpoint（若当前 schema 尚无等价表），登记稳定 migration key、43+5 manifest contract、源 fingerprint、runner version、状态、每表 source/inserted/existing/conflict count与digest。migration本身不得访问开发机绝对路径；`scripts/migrate.mjs`应用 DDL后，由显式命令或受控开关调用 Dream全量 runner，且只有明确 `--apply`、本机/显式 TEST_DATABASE_URL、安全数据库名和 source paths齐全时才写数据。重复运行同一 source fingerprint必须幂等返回既有成功回执；source变化必须新 run；冲突默认阻断，禁止隐式 upsert覆盖。
+
+同时把 Free、Dream、is Dreaming 三项默认 Plan identity、展示 metadata、版本化 Token-only规则、Entitlement和历史无订阅用户Free backfill纳入可重复初始化。优先复用现有 `seed-default-dream-plans.mjs`，但必须由 Drizzle migration/registry记录 seed version，确保迁移新库后自动具备默认订阅数据；不得覆盖published Plan Version、已有付费订阅、Allowance、Usage、Ledger、Audit或Subscription Event。若商业Token/价格仍未指定，只有Free可依据现有正式配置发布并自动发放；Dream/is Dreaming创建identity与draft version，前端不得伪造可购买状态。
+
+在明确命名的 disposable PostgreSQL中从空库演练：应用Dream Alembic canonical DDL、应用Admin Drizzle、执行43+5 data runner和subscription seed，验证48/48表、4,921/4,921源记录、逐表PK/row digest、unique/FK orphan、JSON/enum/check/time/sequence/trigger、Alembic head、Drizzle journal、三套餐唯一性、Free subscription backfill、重复运行幂等和冲突阻断。不得对共享或未知数据库执行fixture、DROP/TRUNCATE/DELETE；本机专用 `ink-memory` 在clone全部通过前只读，是否apply必须基于当前source/target差异，已有4,921源PK完整时只能登记adopted/verified回执，不得覆盖目标较新的行。
+
+更新架构、迁移Runbook、README和验证回执，明确新库bootstrap顺序：Dream Alembic schema → Admin Drizzle control plane/registry → 43+5受控data migration → default subscription seed → verification → cutover。补充Admin Node tests、Dream migration tests、isolated integration和CLI contract；最终报告列出migration编号、runner、48表/4,921行结果、订阅seed结果、幂等/冲突证据、未执行生产apply及安全边界。不得引入SQLite运行时fallback、JSON DB、第二套users或真实支付渠道，不得覆盖用户已有未提交修改。
+
+Optional Enhancers:
+
+- 为data migration registry生成只读Admin状态页，但不得允许浏览器提交源路径或触发生产导入。
+- 增加shadow digest comparison与表级恢复点，失败后默认前向修复。
+- 为Free backfill增加canonical user创建/并发seed属性测试。
+
+范围变化：
+
+- 用户明确要求把43+5迁移脚本和订阅默认数据初始化纳入Drizzle发布资产；本轮允许修改Admin Drizzle/scripts和Dream migration runner，但Dream canonical schema所有权仍属于Alembic。
+- 真实4,921行数据已在既有审计中证明完整进入PG；本轮重点是让全量迁移与seed成为新库可重放的正式发布流程，不执行无意义覆盖式重灌。
+
+执行证据与验证结果：
+
+- 当前只确认Dream存在6个Alembic版本、Admin存在0000–0027 Drizzle migration、全量runner与默认套餐seed脚本；尚未验证它们是否被Drizzle journal/发布命令统一编排。
+
+未执行事项及原因：
+
+- 代码审计、migration设计、隔离PG演练和必要实现必须在本Prompt Architect记录之后执行。
+
+## Round 76 — Drizzle 数据迁移执行面与既有 PG 安全 Adoption
+
+Optimized Prompt:
+
+作为 Ink Memory 数据发布负责人，基于只读证据完成 43+5 SQLite 数据迁移的 Drizzle 正式执行面，并处理本机 PostgreSQL 已迁移、随后已有新写入但缺少 Drizzle 回执的状态。已验证正式源为 `ink-and-memory.db` 的 43 表 4,919 行与 `notion-connectors.db` 的 5 表 2 行，合计 48 表/4,921 行、64 个源外键检查通过；当前本机 `ink-memory` 已有更多目标行（例如 `chat_thread` 1,181 对源 1,165，`chat_message` 2,377 对源 2,355），且 Free、Dream、is Dreaming 已存在，因此禁止覆盖式重灌或以目标总行数等于源行数作为 adoption 条件。
+
+在 Admin `drizzle/` 中增加单调 migration 与 data journal：建立最小、只追加的数据迁移定义、运行回执和逐表结果结构，登记 `ink-dream-legacy-postgres-import-v1` 48 表 contract 与 `default-dream-plans-v1` 订阅 seed；不得存储 SQLite 绝对路径、DSN、Secret 或业务字段值。提供位于 `drizzle/data/` 的显式 runner，由它调用 Dream canonical importer 和现有套餐 seed，而不是复制 Dream Alembic DDL或把4,921行硬编码为SQL。
+
+为 Dream importer 增加安全的 `verify-existing/adopt` 路径：仍执行 SQLite只读在线快照、manifest、临时 staging、目标 catalog/PK/FK/unique/check/index/trigger 校验和逐表PK/row digest；允许目标表存在迁移完成后的额外行，但要求每一个源PK在PG存在且内容完全一致。任何 missing、mismatch 或 source schema drift 必须阻断；验证模式不得插入、更新、校准sequence或改变业务表。成功后，Admin runner才可把安全摘要和48条表级结果追加到Drizzle data journal；相同source fingerprint重复执行应返回既有成功回执，不能重复导入。
+
+新库路径仍使用现有冲突阻断式execute：Dream Alembic → Admin Drizzle → 43+5 import → 三套餐seed → verification。订阅seed必须创建/核对 Free、Dream、is Dreaming展示信息；Free只有在存在可用Provider/Model/Pricing/Entitlement证据时发布并为canonical users补齐默认Token-only月订阅，Dream/is Dreaming在商业Token/价格未定时保持draft。不得改写已发布版本、既有订阅、Allowance、Usage、Ledger或Audit。
+
+补充CLI和registry测试，并在明确命名的隔离PG中验证 fresh import、48/4,921 digest、重复执行、冲突阻断、subscription seed；对本机 `ink-memory` 只允许只读 verify-existing 与追加迁移回执，禁止DROP/TRUNCATE/DELETE。最终文档给出可复制命令、执行顺序、当前 adoption 证据与未执行的生产支付/Provider边界。
+
+Acceptance Criteria:
+
+- Drizzle journal含新的单调migration，`drizzle/data/`含43+5与subscription初始化执行资产。
+- 源清点稳定为48表/4,921行；PG subset逐表missing=0、mismatch=0才允许adopt。
+- fresh database使用Dream importer实际写入4,921行，非静态SQL；重复执行不覆盖业务数据。
+- 三项Plan identity/展示metadata可重复初始化，canonical users的默认Free订阅不重复发放。
+- 所有回执无源路径、DSN、Secret和业务值；未覆盖用户未提交修改。
+
+Optional Enhancers:
+
+- 后续可增加只读迁移状态页和shadow comparison仪表盘，但浏览器不得触发迁移。
+
+范围变化：
+
+- 审计证明本机PG已有43+5迁移后的数据和增量写入，因此本机处理从“重新导入”改为“逐源PK/digest验证后adopt登记”；fresh/隔离库仍执行完整导入。
+- 订阅三项默认Plan已存在，但仍需纳入Drizzle data journal，成为新库正式bootstrap步骤。
+
+执行证据与验证结果：
+
+- `.venv/bin/python backend/script/migrate_legacy_to_postgres.py` source-dry-run通过：main 43表/4,919行，Notion 5表/2行，总计48表/4,921行、64个外键检查，manifest SHA-256为`827dd786d10594c52325ede4cd4dc08487e3cbea3297b55516523386f0d4893c`。
+- 本机PG只读审计：88张public表；users 30、story workspaces 12、stories 4、chat_thread 1,181、chat_message 2,377、voices 443、Notion 2行；三项默认Plan存在；Drizzle历史表有27条记录，但没有43+5 data migration registry。
+
+未执行事项及原因：
+
+- 尚未修改代码、应用新migration、写入adoption回执或执行隔离PG演练；必须在本Round记录完成后进入实现阶段。
+
+## Round 77 — 保留 Cutover 后新值的受控 Adoption
+
+Optimized Prompt:
+
+作为 43+5 数据迁移验收负责人，处理 strict source-subset digest 在本机PG发现的真实post-cutover变化：完整48表验证中source PK缺失为0，仅`user_preferences`有2行mismatch；schema/count-only证据显示两行目标`updated_at`都严格晚于SQLite源，变化列为`updated_at` 2行与`system_config_json` 1行。不得为追求源digest一致而覆盖这些较新的PG用户设置，也不得把任意mismatch无条件标记为成功。
+
+保留`verify-existing`默认严格语义：任何missing或mismatch继续失败。新增显式`--accept-post-cutover-changes` adoption开关，仅允许和`--verify-existing`一起使用，并继续要求精确数据库name/host/port/owner与`VERIFY-43+5-IN:<database>`审批。受控adoption只有在48表全部source PK存在、每张drift表具有`updated_at`、且每个mismatched行的目标`updated_at`严格晚于staging源值时成功；任何missing、同时间/更旧target或无时间证据必须阻断。
+
+成功回执必须区分`exactMatchedRows`、`postCutoverChangedRows`、`targetExtraRows`，逐表只记录table/source count/target count/digest/changed column count/newer count，不记录业务值。Drizzle data registry将运行状态登记为`adopted_with_post_cutover_changes`，同时保留源manifest和snapshot fingerprint；不得声称较新PG行仍与源row digest相等。fresh隔离库仍必须走完整execute并验证4,921行exact digest，不能借用adoption放宽新库导入验收。
+
+Acceptance Criteria:
+
+- strict verify对当前2行变化仍返回`TARGET_ROW_VERIFICATION_FAILED`。
+- 显式adoption对当前库返回48表source PK完整、missing=0、postCutoverChangedRows=2，并始终rollback临时staging事务。
+- 修改任一目标行为更旧/同时间或删除源PK时，adoption失败。
+- registry清楚区分`committed`、`adopted_exact`与`adopted_with_post_cutover_changes`。
+
+Optional Enhancers:
+
+- 后续为业务表定义字段级可变性清单；当前时间单调证据仍是adoption的最低门槛。
+
+范围变化：
+
+- 原Round 76要求mismatch一律阻断，现根据完整证据增加显式、时间单调的post-cutover adoption；默认strict行为不变。
+- 本机不重新导入4,921行，只登记“所有source PK存在且2行已被较新PG值取代”；fresh库仍全量导入。
+
+执行证据与验证结果：
+
+- strict verify完整扫描48表：missing=0、mismatched=2；唯一drift表`user_preferences`，`postCutoverNewer=2`，`changedColumns={system_config_json:1,updated_at:2}`。
+- 当前未对PG执行任何业务写入；每次比较均使用temporary staging并rollback。
+
+未执行事项及原因：
+
+- 尚未实现显式adoption开关、Drizzle registry或写入回执；需在本Round记录后继续。
+
+## Round 78 — Fresh PG Baseline Adopt 的迁移分段顺序
+
+Optimized Prompt:
+
+作为 Ink Memory fresh PostgreSQL bootstrap负责人，修复隔离E2E发现的真实迁移顺序阻断：Admin 0027会在canonical `story_workspace_stories`上增加后续Artifact扩展列；若空库先一次性应用Admin 0000–0028，再运行Dream Alembic 20260809_01，Dream严格baseline contract会因额外列返回`story_workspace_stories column contract drift`并拒绝adopt。这不是放宽baseline校验的理由，也不能删除/跳过0027。
+
+实现受控、单调的Drizzle migration prefix能力：`scripts/migrate.mjs --through <exact-journal-tag>`只能应用journal从起点到指定tag，必须验证tag存在且参数无歧义；默认无参数仍应用全部migration。fresh bootstrap固定顺序为：Admin Drizzle 0000–0026建立精确canonical baseline → 计算owner/ACL只读指纹 → Dream Alembic 20260809_01–06精确adopt并建齐48表 → Admin Drizzle继续0027–0028添加批准扩展与data registry → 43+5 data import → subscription seed。不得修改Dream baseline contract来接受未知扩展，也不得把0027排除在最终Schema之外。
+
+更新隔离E2E按该顺序执行，验证第一次prefix migration、Alembic head、第二次full migration的hash/idempotency；随后继续48表/4,921行import、registry、三套餐和Free subscription测试。所有失败容器必须自动移除，不得触碰本机`ink-memory`。
+
+Acceptance Criteria:
+
+- `--through 0026_harsh_victor_mancha`只应用0000–0026；未知tag或多余参数失败。
+- Dream Alembic在该baseline上通过owner/ACL/columns/PK/FK/check/index精确adopt。
+- 第二次默认`db:migrate`只补0027–0028，最终Drizzle记录29条。
+- 完整E2E继续验证4,921行与订阅，不以规避0027换取通过。
+
+Optional Enhancers:
+
+- 后续可把fresh bootstrap封装为单一release命令，但仍保留两阶段边界和每阶段回执。
+
+范围变化：
+
+- fresh bootstrap顺序从笼统的“Dream Alembic→Admin Drizzle”修正为Admin baseline prefix→Dream adopt→Admin extensions；这是由真实contract依赖决定。
+
+执行证据与验证结果：
+
+- disposable PG首次运行Admin 0000–0028后，Dream Alembic在20260809_01明确失败：`BaselineAdoptionError: story_workspace_stories column contract drift`。
+- 失败发生在数据导入前；唯一命名Docker容器已由finally停止并删除，本机`ink-memory`未操作。
+
+未执行事项及原因：
+
+- 尚未实现`--through`或重跑E2E；必须在本Round记录后继续。
+
+## Round 79 — Importer 对批准 Admin Canonical 扩展的精确兼容
+
+Optimized Prompt:
+
+作为 Dream canonical importer 与 Admin schema extension兼容负责人，处理两阶段bootstrap后43+5 importer的`TARGET_TABLE_CONTRACT_MISMATCH`：Admin 0027在`story_workspace_stories`上新增14个nullable Artifact索引字段、3个命名索引和8个check；这些字段不属于SQLite 43+5源，不应由legacy importer填充，但它们属于已审计的Admin/Dream共享canonical extension，不能使最终Schema永远无法导入历史数据。
+
+在Dream importer建立最小固定allowlist：仅允许`story_workspace_stories`按0027定义追加精确的14列及PostgreSQL类型、3个索引名称/unique属性、8个附加check。目标catalog验证仍要求完整列顺序、PK/FK、Dream原有unique/check/index/trigger和owner/ACL一致；任何未知列、类型/顺序变化、索引缺失/新增或check数量漂移继续返回稳定错误。staging、INSERT、PK/row digest与source comparison只覆盖43+5 manifest旧字段；批准扩展列必须nullable且由其领域后续写入，legacy importer不得虚构Artifact数据。
+
+补充focused test证明allowlist仅扩展expected target catalog，不进入source row transform或INSERT column list。重跑disposable E2E，最终Schema必须包含0027扩展、0028 registry，且仍实际导入4,921行、验证48表digest、订阅seed与幂等/冲突。
+
+Acceptance Criteria:
+
+- 0027最终Schema通过importer catalog验证；额外任意第15列/第4索引仍失败。
+- legacy Story source row只写原19列，14个Artifact列保持NULL，不生成假provenance。
+- fresh隔离PG完成29条Drizzle、Alembic 20260809_06、48/4,921 import。
+
+Optional Enhancers:
+
+- 未来新的canonical extension必须增加独立migration和显式allowlist更新，不得改成“允许任意额外列”。
+
+范围变化：
+
+- Dream importer从“目标48表绝对无扩展”调整为“允许唯一已批准的0027精确扩展”；source/insert/digest语义不变。
+
+执行证据与验证结果：
+
+- 第二次disposable E2E已通过Admin prefix、Dream adopt和Admin 0027–0028，随后在importer target catalog阶段失败为`TARGET_TABLE_CONTRACT_MISMATCH`；容器已删除。
+- 0027审计：14列全部nullable；3索引为artifact identity partial unique、artifact status、workspace/project；8个check限制source type/status/revision/count/size/version。
+
+未执行事项及原因：
+
+- 尚未修改importer allowlist或完成第三次E2E；必须在本Round记录后继续。
+
+## Round 80 — Default Free Seed 的现有模型优先幂等修复
+
+Optimized Prompt:
+
+作为 Token-only subscription seed负责人，修复本机dry-run发现的多模型幂等缺陷：`selectFreeModel`当前从所有enabled/priced/routable且曾被published entitlement引用的模型中按code排序，可能选择与最新Free published default entitlement不同的模型；随后`ensureFreeVersion`用该错误候选校验已有Free version并抛出`Existing Free Plan Version is not a valid published default snapshot`。当前只读证据为最新Free v3默认模型`hy-preview`，而全局字典序候选为`deepseek-v4-flash`。
+
+调整候选排序：在未显式配置`INK_FREE_PLAN_MODEL_ALIAS`时，优先选择当前active Free plan最新published version的enabled default `messages:create` entitlement模型，且仍要求Provider credential完整、active Pricing有效；只有不存在有效Free默认模型时才回退其他已证明routable的published模型。若显式alias存在则必须严格选择该alias，并按不可覆盖版本规则创建新Free version，不可静默忽略操作员选择。
+
+补充单元/集成断言覆盖多模型排序、现有Free幂等dry-run、显式alias变更。重新运行本机dry-run，必须复用Free v3而不创建版本；随后apply只允许补缺失canonical user subscription或记录seed receipt，不改变已有published version、Allowance/Usage/Ledger。
+
+Acceptance Criteria:
+
+- 无alias时选择`hy-preview`并复用最新Free v3；dry-run成功。
+- 现有Free模型不可用时才回退其他候选。
+- 显式alias继续具有最高优先级且冲突/不可用时失败。
+- apply后registry新增或复用`default-dream-plans-v1`，不重复订阅。
+
+Optional Enhancers:
+
+- 后续在Admin UI显示Free默认模型切换预览；本轮不自动切换。
+
+范围变化：
+
+- subscription seed增加“现有有效Free默认模型优先”规则，以保证多模型平台幂等。
+
+执行证据与验证结果：
+
+- 本机0027/0028已应用；43+5 adoption registry已记录。
+- subscription dry-run在事务内失败并rollback，没有改写Plan/Subscription。
+- 只读关系证据：Free最新v3 default=`hy-preview`；`deepseek-v4-flash`仍被Free旧v1/v2等published version引用，导致旧查询错误优先。
+
+未执行事项及原因：
+
+- 尚未修改model排序或执行seed apply；必须在本Round记录后继续。
+
+## Round 81 — 43+5 Drizzle 迁移交付文档与最终一致性验收
+
+Optimized Prompt:
+
+作为 Ink Memory 迁移交付负责人，在代码、隔离E2E和本机adoption已完成后更新权威文档与最终工作日志，使README、PostgreSQL migration plan、release/rollback和evidence map准确反映当前状态。明确列出fresh bootstrap两阶段顺序、Drizzle 0028、`drizzle/data` journal/runners、Dream `verify-existing`与`--accept-post-cutover-changes`安全条件、subscription seed幂等语义，以及本机4,921行不是重新覆盖导入而是4,921 PK完整/4,919 exact/2 newer PG changes/43 target extras的adoption。
+
+文档必须给出可复制命令但不得包含DSN、Secret或绝对环境凭据；说明默认subscription seed只补没有非终态订阅的canonical users，不自动切换已有subscription Plan Version，不覆盖用户自定义Free Token；只有显式`INK_FREE_PLAN_MONTHLY_TOKENS`和生命周期命令才创建/迁移新版本。记录Admin/Dream测试数量、disposable E2E、当前PG只读验收和21个既有frontend lint warnings。
+
+更新Round 75–81执行结果，标明三次隔离演练发现并修复的真实阻断：baseline extension顺序、0027 catalog extension allowlist、多模型Free seed。完成git diff/secret/path/destructive statement审计，确认未回滚用户未提交修改、未使用真实Provider/支付Secret、未留下Docker容器、未引入SQLite runtime fallback。
+
+Acceptance Criteria:
+
+- 权威文档能独立指导fresh和existing PG两种路径。
+- Current/Implemented/Deferred状态不误报：43+5 migration与seed Implemented；真实支付/外部Provider联调不属于本轮。
+- 最终worklog包含所有执行命令、通过数、失败原因和安全边界。
+
+Optional Enhancers:
+
+- 后续可为registry提供只读Admin状态页；本轮不增加UI触发入口。
+
+范围变化：
+
+- 不再增加产品能力；本轮只做文档、最终审计与必要的低风险一致性修正。
+
+执行证据与验证结果：
+
+- disposable PG E2E最终通过：48表/4,921行、3默认Plan、28 fresh user active subscriptions、2 registry runs、48 table results、幂等、冲突阻断、append-only 55000、容器删除。
+- 本机PG：29 Drizzle、Alembic 20260809_06、2 registry runs、48/4,921 adoption、30 users/projections/accounts、0 users without subscription、3 default Plans、14批准Story extension列。
+- Admin：env/tsc/lint/build通过，69 files/340 tests通过。Dream：migration focused 19 passed/2 skipped；Gateway开关命令级禁用后全套1791 passed/25 skipped/652 subtests；frontend lint 0 errors/21既有warnings，build通过。
+- README、04 PostgreSQL migration plan、05 release/rollback、91 evidence map 与总索引已更新；fresh/existing PG 两条路径、0028 registry、data runner、adoption 与 seed 幂等边界已同步。
+- seed最终修改后重新执行`pnpm test:data-migration:e2e`仍通过；`pnpm exec tsc --noEmit`、`pnpm lint`与全部新增MJS `node --check`通过。两个仓库`git diff --check`通过；无遗留`ink-data-migration-e2e-*`容器，8765无监听进程。
+
+未执行事项及原因：
+
+- 真实第三方支付网络与外部 Provider canary 未执行：不在本轮授权范围，且没有使用真实 Provider/Gateway/Payment Secret。
+- 生产/其他预发布数据库未执行迁移：本机回执不得复用为其他环境授权；新环境仍需 owner/ACL、备份和变更审批。

@@ -159,6 +159,23 @@ export const storyWorkspaceStories = pgTable(
     agent_generated: integer("agent_generated").notNull().default(1),
     agent_session_id: text("agent_session_id"),
     review_notes: text("review_notes"),
+    artifact_source_type: text("artifact_source_type"),
+    source_run_id: text("source_run_id"),
+    source_thread_ref: text("source_thread_ref"),
+    source_project_id: text("source_project_id"),
+    episode_count: integer("episode_count"),
+    artifact_manifest_revision: text("artifact_manifest_revision"),
+    script_revision: text("script_revision"),
+    artifact_sync_status: text("artifact_sync_status"),
+    artifact_indexed_at: timestamp("artifact_indexed_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    artifact_sync_error_code: text("artifact_sync_error_code"),
+    script_size_bytes: bigint("script_size_bytes", { mode: "number" }),
+    artifact_available: boolean("artifact_available"),
+    reconcile_version: integer("reconcile_version"),
+    reviewed_script_revision: text("reviewed_script_revision"),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
       .defaultNow(),
@@ -196,6 +213,23 @@ export const storyWorkspaceStories = pgTable(
       table.updated_at,
     ),
     index("story_workspace_stories_title_idx").on(table.title),
+    uniqueIndex("story_workspace_stories_artifact_identity_uidx")
+      .on(
+        table.workspace_id,
+        table.artifact_source_type,
+        table.source_project_id,
+      )
+      .where(
+        sql`${table.artifact_source_type} IS NOT NULL AND ${table.source_project_id} IS NOT NULL`,
+      ),
+    index("story_workspace_stories_artifact_status_idx").on(
+      table.artifact_sync_status,
+      table.artifact_indexed_at,
+    ),
+    index("story_workspace_stories_workspace_project_idx").on(
+      table.workspace_id,
+      table.source_project_id,
+    ),
     check(
       "story_workspace_stories_status_check",
       sql`${table.status} IN ('draft', 'published', 'archived')`,
@@ -219,6 +253,38 @@ export const storyWorkspaceStories = pgTable(
     check(
       "story_workspace_stories_scene_count_check",
       sql`${table.scene_count} >= 0`,
+    ),
+    check(
+      "story_workspace_stories_artifact_source_type_check",
+      sql`${table.artifact_source_type} IS NULL OR ${table.artifact_source_type} = 'dream_episode'`,
+    ),
+    check(
+      "story_workspace_stories_artifact_sync_status_check",
+      sql`${table.artifact_sync_status} IS NULL OR ${table.artifact_sync_status} IN ('syncing', 'indexed', 'stale', 'missing', 'failed')`,
+    ),
+    check(
+      "story_workspace_stories_manifest_revision_check",
+      sql`${table.artifact_manifest_revision} IS NULL OR ${table.artifact_manifest_revision} ~ '^sha256:[0-9a-f]{64}$'`,
+    ),
+    check(
+      "story_workspace_stories_script_revision_check",
+      sql`${table.script_revision} IS NULL OR ${table.script_revision} ~ '^sha256:[0-9a-f]{64}$'`,
+    ),
+    check(
+      "story_workspace_stories_reviewed_revision_check",
+      sql`${table.reviewed_script_revision} IS NULL OR ${table.reviewed_script_revision} ~ '^sha256:[0-9a-f]{64}$'`,
+    ),
+    check(
+      "story_workspace_stories_episode_count_check",
+      sql`${table.episode_count} IS NULL OR ${table.episode_count} >= 0`,
+    ),
+    check(
+      "story_workspace_stories_script_size_check",
+      sql`${table.script_size_bytes} IS NULL OR ${table.script_size_bytes} >= 0`,
+    ),
+    check(
+      "story_workspace_stories_reconcile_version_check",
+      sql`${table.reconcile_version} IS NULL OR ${table.reconcile_version} >= 1`,
     ),
   ],
 );

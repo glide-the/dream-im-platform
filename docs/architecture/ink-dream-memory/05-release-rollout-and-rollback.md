@@ -3,7 +3,7 @@
 > 文档状态：**Current release plan**（R1–R4 与本地 R5 已完成；其他生产 R0/R5 及 R6–R8 仍开放）
 > 返回：[总索引](README.md)
 > 依赖：[PG 迁移](04-postgresql-migration-plan.md) · [Token-only Subscription/Gateway](06-billing-subscription-gateway-integration.md) · [Dream 集成](07-dream-subscription-and-inference-integration.md)
-> Deferred：[Payment/订阅支付](08-payment-adapter-and-webhook-boundary.md)
+> Payment 边界：[Payment/订阅支付](08-payment-adapter-and-webhook-boundary.md)（Adapter/Webhook/Fake 已实现；真实渠道 Deferred）
 > 主要读者：QA、运维、Dream/Admin/Gateway 后端、安全、发布负责人
 
 ## 1. 发布原则
@@ -35,10 +35,10 @@ flowchart LR
 |---|---|---|---|
 | R0 安全 preflight | **Partial**：隔离 PG、active runtime credential 移除/scan 与 ASR fail-closed 完成；owner 轮换/历史处置未确认 | 仓库/Schema 只读盘点、credential 处置、secret scan、ASR 加固、临时 PG 建立 | 目标 fingerprint 明确；无共享 DB 写；P0 credential 已由所有者确认吊销/轮换。任何生产部署不得早于本门禁 |
 | R1 Schema CI | **Passed in isolation**：48/569/81/25、空库/exact-adopt/drift fail-closed | 临时 PG Alembic upgrade、baseline adopt、Repository contract | 48/48 DDL/repository/validator manifest；Admin 表未被 Dream migration 修改；生产 owner/ACL 仍另审 |
-| R2 全量 rehearsal | **Passed / local source complete**：43+5 CLI、backend 1,679 passed/14 skipped + 652 subtests；本地真实源 4,921 行 rollback/commit/production-mode rehearsal 全通过 | 只读 SQLite snapshot → staging → PG → verification | 每个新环境重新验证 count/PK/row digest/unique/FK/enum/JSON/time/sequence/trigger |
-| R3 用户/控制面闭环 | **Passed locally/in isolation**：Admin `0000–0024`、Token Ledger、付费月续费、66 files/313 tests、tsc/lint/build、订阅 Playwright 4/4 | canonical projection、Token-only Subscription/Product/Payment API 与本机 schema migration 已完成 | 生产 historical orphan 处置、角色 rollout 与 dark-deploy receipt；clone 角色矩阵已通过 |
+| R2 全量 rehearsal | **Passed / local source complete**：43+5 CLI、backend 1,791 passed/25 skipped + 652 subtests；一次性 PG 实际导入 48 表/4,921 行并验证重复运行、冲突阻断、append-only | 只读 SQLite snapshot → staging → PG → verification | 每个新环境重新验证 count/PK/row digest/unique/FK/enum/JSON/time/sequence/trigger |
+| R3 用户/控制面闭环 | **Passed locally/in isolation**：Admin `0000–0028`、Token Ledger、三套餐 seed、付费月续费、69 files/340 tests、tsc/lint/build | canonical projection、Token-only Subscription/Product/Payment API 与本机 schema/data migration 已完成 | 生产 historical orphan 处置、角色 rollout 与 dark-deploy receipt；clone 角色矩阵已通过 |
 | R4 Dream UX | **Passed with mocked BFF**：真实页面、frontend lint 0 errors/21 warnings、build、Product API 9/9、订阅 Playwright 4/4 | 预发布完成真实 Token Plans/context/Usage/model catalog、Payment Intent 与 command preview/execute | 真实预发布 Session/服务身份/Admin API 冒烟；无静态/假 Payment fallback |
-| R5 PG cutover | **Local complete / other environments Planned**：`localhost:5433/ink-memory` 已完成 Admin 25 migrations + Dream `20260809_06`、4,921 行迁移、catalog 与 startup；其他目标无回执 | 短暂停写、最终 43+5 snapshot/import、PG-only deployment | runtime SQLite open=0；全部领域 API/页面/Admin canonical 回归通过 |
+| R5 PG cutover | **Local complete / other environments Planned**：`localhost:5433/ink-memory` 已完成 Admin 29 migrations + Dream `20260809_06`；4,921 个源 PK 已采纳（4,919 exact + 2 newer PG writes），Drizzle registry 与三套餐 seed 已登记；其他目标无回执 | 短暂停写、最终 43+5 snapshot/import、PG-only deployment | runtime SQLite open=0；全部领域 API/页面/Admin canonical 回归通过 |
 | R6 Gateway shadow | **Implemented client/control; production shadow Planned** | 只执行资格与路由模拟，不 reserve、不 Provider | 真实 cohort 资格结果一致；无 Key/Secret 泄漏；无 cash fallback |
 | R7 Gateway canary | **Planned external step** | 内部环境→内部用户→用户级 canary，真实 Token reserve/capture/release | 外部 Provider 下错误/取消/断流/usage 缺失终态和 Token 守恒通过 |
 | R8 inference cutover | **Code implemented / production rollout planned** | 文本 PolyAgent、Claude Agent/Chat、Dream/Workflow、image 均已接 Gateway；按入口分批 canary | 既有协议/行为不回归；direct Provider path 保持删除/fail-closed |
@@ -61,6 +61,9 @@ ASR 不进入 R8；release 前仅允许“禁用 endpoint”或“canonical 鉴�
 - 25 个业务 trigger/等价不变性全部用 mutation rejection 验证。
 - `reflection_task_event` 与 `connector_snapshots` 同 key+同 digest 幂等、异 digest 冲突，不覆盖历史。
 - password hash、OAuth/refresh token、Secret、Story/Chat 正文不进入日志、回执或截图。
+- 全新环境固定执行 Admin `0000–0026` → Dream Alembic → Admin `0027–0028` → legacy data runner → subscription data runner；顺序不满足即阻断。
+- 已有 PG 写入的环境只执行 `verify-existing`；源 PK 缺失、时间无法证明 PG 行更新或任一 constraint/digest 冲突均阻断，禁止隐式 upsert。
+- `drizzle.data_migration_*` 回执只追加；重复 fingerprint 复用原 run，UPDATE/DELETE 必须返回 SQLSTATE `55000`。
 
 ### 应用合同
 
@@ -77,7 +80,7 @@ ASR 不进入 R8；release 前仅允许“禁用 endpoint”或“canonical 鉴�
 - Subscription Plan/Version/Entitlement 只保存月度 Token/非货币权益；API/新写入不含 price/currency/micro-USD allowance/cash overage/全局 effective window。Provider Pricing 独立版本历史不受影响。
 - Subscription create/renew/upgrade/downgrade/pause/resume/cancel/revoke_cancel、用户周期锚点、自动周期推进、期末取消/撤销和冲突合同通过；Jan 31→Feb 末→Mar 31，无提前/重复续费发 Token。
 - Token Allowance reserve/capture/release 在事务锁/幂等键下守恒；耗尽 402，不读取 Billing Account，不写 `subscription_charge`/`allowance_capture`。
-- PaymentAdapter/Webhook/Fake/真实渠道的依赖、表、Route、环境变量和 UI 增量为 0。
+- PaymentAdapter/Webhook/Test Adapter 的隔离合同与生产 fail-closed 通过；真实支付渠道的依赖、凭据和网络调用增量为 0。
 
 ## 6. R4–R8 Product API 与 Gateway 门禁
 
@@ -153,7 +156,7 @@ Dream 仍没有 package-level `frontend unit` script；本轮完成 frontend lin
 - [ ] PG rollback build（旧功能集 + PG Repository）可部署；若声称能回 SQLite，delta exporter 已演练。
 - [ ] canonical projection、205-user selector、orphan 隔离、Token-only Product API 与用户月度状态机门禁通过。
 - [ ] Gateway canary 开关可按环境/用户关闭；关闭后不绕到 direct Provider。
-- [ ] PaymentAdapter/Webhook/Fake/真实渠道依赖、表、Route、env 和 UI 均未加入。
+- [ ] PaymentAdapter/Webhook/Test Adapter 隔离门禁通过；生产 Fake fail-closed，真实渠道依赖、Secret 和网络调用均未加入。
 - [x] active runtime credential 移除、secret scan 与 ASR fail-closed 已完成。
 - [ ] credential owner 吊销/轮换与历史处置回执完成。
 - [ ] 两个视口及 Admin/Dream 全命令通过，结果/数量写入发布回执。
@@ -165,6 +168,8 @@ Dream 仍没有 package-level `frontend unit` script；本轮完成 frontend lin
 | PG 导入前/失败 | 终止，恢复旧 SQLite 写 | 保留失败 receipt/staging；不清共享 PG |
 | PG smoke 失败且 committed write=0 | 旧应用 + 最终 SQLite snapshot | 保存 PG 快照，不执行 DROP/TRUNCATE/DELETE |
 | PG 已有业务写 | 部署旧功能集 + PG Repository；默认前向修复 | 仅有已演练 delta exporter 才可回 SQLite |
+| Drizzle data runner 校验失败 | 停止后续 seed/cutover，修正源或以前向 migration 修复目标后重新 verify | registry 保留失败/阻断证据；不更新、不删除回执，不覆盖业务行 |
+| 默认 Plan/Subscription seed 问题 | 停止 seed；通过新 Plan Version/显式状态机命令前向修复 | 不覆盖历史 Plan Version，不默认批量切换现有 Subscription |
 | Product API/Subscription 命令问题 | 关闭命令 flag，保持只读上下文 | 已提交 Subscription Event/Token Usage 不删除；用 forward fix，不恢复 monetary plan 写入 |
 | Dream UX 问题 | 回滚前端，保留 PG/Product API | 不恢复静态套餐或假数据 |
 | Gateway shadow/canary 问题 | 关闭对应用户 flag，停止新请求 | 已 reserve 请求必须 capture/release 到终态；不丢 request/usage/ledger |

@@ -26,6 +26,17 @@ type StoryResourceConfig = {
   filterFields: string[];
 };
 
+export type StoryArtifactSourceRecord = {
+  id: string;
+  workspaceId: string;
+  authorId: string;
+  sourceType: "dream_episode";
+  sourceRunId: string;
+  sourceThreadRef: string;
+  sourceProjectId: string;
+  indexedScriptRevision: string | null;
+};
+
 const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
   "source-users": {
     permission: "users.read",
@@ -84,6 +95,12 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
              s.workspace_id, w.name AS workspace_name,
              s.character_count, s.scene_count, s.agent_generated,
              char_length(s.review_notes)::int AS review_notes_length,
+             s.artifact_source_type, s.source_run_id, s.source_project_id,
+             s.episode_count, s.artifact_manifest_revision, s.script_revision,
+             s.artifact_sync_status, s.artifact_indexed_at,
+             s.artifact_sync_error_code, s.script_size_bytes,
+             s.artifact_available, s.reconcile_version,
+             s.reviewed_script_revision,
              s.created_at, s.updated_at,
              s.confirmed_at, s.published_at,
              (pu.id IS NOT NULL) AS billing_identity_bound,
@@ -109,6 +126,12 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
       author_email: "u.email",
       workspace_id: "s.workspace_id",
       workspace_name: "w.name",
+      source_project_id: "s.source_project_id",
+      episode_count: "s.episode_count",
+      artifact_sync_status: "s.artifact_sync_status",
+      artifact_indexed_at: "s.artifact_indexed_at",
+      artifact_available: "s.artifact_available::text",
+      script_revision: "s.script_revision",
       agent_generated: "s.agent_generated::text",
       created_at: "s.created_at",
       updated_at: "s.updated_at",
@@ -124,6 +147,12 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
       "author_email",
       "workspace_id",
       "workspace_name",
+      "source_project_id",
+      "episode_count",
+      "artifact_sync_status",
+      "artifact_indexed_at",
+      "artifact_available",
+      "script_revision",
       "agent_generated",
       "updated_at",
     ],
@@ -499,6 +528,65 @@ export async function queryStorySourceItem(
         );
       }
       return await enrichStorySourceItem(client, resource, result.rows[0]);
+    });
+  } catch (error) {
+    throw storySourceError(error);
+  }
+}
+
+export async function queryStoryArtifactSourceRecord(
+  storyId: string,
+): Promise<StoryArtifactSourceRecord> {
+  try {
+    return await withStoryClient(async (client) => {
+      const result = await client.query<{
+        id: string;
+        workspace_id: string;
+        author_id: string;
+        artifact_source_type: string | null;
+        source_run_id: string | null;
+        source_thread_ref: string | null;
+        source_project_id: string | null;
+        script_revision: string | null;
+      }>(
+        `SELECT id, workspace_id, author_id::text AS author_id,
+                artifact_source_type, source_run_id, source_thread_ref,
+                source_project_id, script_revision
+         FROM story_workspace_stories
+         WHERE id = $1
+         LIMIT 1`,
+        [storyId],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        throw new AdminError(
+          "STORY_SOURCE_ITEM_NOT_FOUND",
+          "The requested Story item does not exist",
+          404,
+        );
+      }
+      if (
+        row.artifact_source_type !== "dream_episode" ||
+        !row.source_run_id ||
+        !row.source_thread_ref ||
+        !row.source_project_id
+      ) {
+        throw new AdminError(
+          "STORY_ARTIFACT_SOURCE_UNAVAILABLE",
+          "This Story does not have a readable Dream Artifact source",
+          404,
+        );
+      }
+      return {
+        id: row.id,
+        workspaceId: row.workspace_id,
+        authorId: row.author_id,
+        sourceType: "dream_episode",
+        sourceRunId: row.source_run_id,
+        sourceThreadRef: row.source_thread_ref,
+        sourceProjectId: row.source_project_id,
+        indexedScriptRevision: row.script_revision,
+      };
     });
   } catch (error) {
     throw storySourceError(error);

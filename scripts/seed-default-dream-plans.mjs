@@ -4,6 +4,9 @@ import pg from "pg";
 config({ path: ".env.local", quiet: true });
 
 const APPLY = process.argv.includes("--apply");
+const TRANSITION_MANAGED_FREE = process.argv.includes(
+  "--transition-managed-free-subscriptions",
+);
 // Matches the existing canonical-user daily default and exceeds the measured
 // Claude Agent initial reservation (71,971 Token for the current Free model).
 const DEFAULT_FREE_MONTHLY_TOKENS = 100_000;
@@ -32,19 +35,30 @@ const PLAN_DEFINITIONS = [
 ];
 
 function databaseUrl() {
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL is required");
+  const useTestDatabase = process.env.INK_USE_TEST_DATABASE_URL === "1";
+  const raw = useTestDatabase
+    ? process.env.TEST_DATABASE_URL
+    : process.env.DATABASE_URL;
+  if (!raw) throw new Error(useTestDatabase
+    ? "TEST_DATABASE_URL is required"
+    : "DATABASE_URL is required");
   const parsed = new URL(raw);
   const localHosts = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-  if (!localHosts.has(parsed.hostname) || parsed.pathname.slice(1) !== "ink-memory") {
-    throw new Error("Default Dream plan seed only accepts local ink-memory PostgreSQL");
+  const databaseName = decodeURIComponent(parsed.pathname.slice(1));
+  const testMarkers = new Set(databaseName.toLowerCase().split(/[^a-z0-9]+/));
+  if (!localHosts.has(parsed.hostname)
+    || (useTestDatabase
+      ? !["codex", "test", "tests", "tmp", "temp", "ci", "sandbox"]
+        .some((marker) => testMarkers.has(marker))
+      : databaseName !== "ink-memory")) {
+    throw new Error("Default Dream plan seed rejected the database safety identity");
   }
   return raw;
 }
 
-function freeMonthlyTokens() {
+function requestedFreeMonthlyTokens() {
   const raw = process.env.INK_FREE_PLAN_MONTHLY_TOKENS;
-  if (!raw) return DEFAULT_FREE_MONTHLY_TOKENS;
+  if (!raw) return null;
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new Error("INK_FREE_PLAN_MONTHLY_TOKENS must be a positive safe integer");
@@ -90,6 +104,22 @@ async function selectFreeModel(client) {
     `SELECT model.id, model.code
      FROM ai_models AS model
      JOIN ai_providers AS provider ON provider.id = model.provider_id
+     LEFT JOIN LATERAL (
+       SELECT version.version_number
+       FROM subscription_plan_entitlements AS entitlement
+       JOIN subscription_plan_versions AS version
+         ON version.id = entitlement.plan_version_id
+       JOIN subscription_plans AS plan ON plan.id = version.plan_id
+       WHERE entitlement.model_id = model.id
+         AND entitlement.enabled = TRUE
+         AND entitlement.is_default = TRUE
+         AND entitlement.gateway_scopes @> ARRAY['messages:create']::text[]
+         AND version.status = 'published'
+         AND plan.code = 'free'
+         AND plan.status = 'active'
+       ORDER BY version.version_number DESC
+       LIMIT 1
+     ) AS current_free ON TRUE
      WHERE model.enabled = TRUE
        AND provider.status = 'active'
        AND provider.api_key_ciphertext IS NOT NULL
@@ -113,7 +143,9 @@ async function selectFreeModel(client) {
            AND entitlement.gateway_scopes @> ARRAY['messages:create']::text[]
            AND version.status = 'published'
        )
-     ORDER BY model.code ASC
+     ORDER BY
+       CASE WHEN $1::text IS NULL THEN current_free.version_number END DESC NULLS LAST,
+       model.code ASC
      LIMIT 1`,
     [configuredAlias],
   );
@@ -140,6 +172,35 @@ async function ensureFreeVersion(client, planId, model, allowanceTokens) {
   );
   if (existing.rows[0]) {
     const row = existing.rows[0];
+    const managedDraft = row.status === "draft"
+      && row.id === "planv_default_free_v1"
+      && Number(row.version_number) === 1
+      && Number(row.allowance_tokens) > 0
+      && (allowanceTokens === null
+        || Number(row.allowance_tokens) === allowanceTokens);
+    if (managedDraft) {
+      if (row.model_id === null) {
+        await client.query(
+          `INSERT INTO subscription_plan_entitlements (
+             id, plan_version_id, model_id, gateway_scopes,
+             is_default, enabled
+           ) VALUES ($1,$2,$3,$4,TRUE,TRUE)`,
+          ["ent_default_free_v1", row.id, model.id, ["messages:create", "models:list"]],
+        );
+      } else if (row.model_id !== model.id
+        || row.is_default !== true
+        || !Array.isArray(row.gateway_scopes)
+        || !row.gateway_scopes.includes("messages:create")) {
+        throw new Error("Managed Free draft has a conflicting Entitlement");
+      }
+      await client.query(
+        `UPDATE subscription_plan_versions
+         SET status = 'published', published_at = NOW(), updated_at = NOW()
+         WHERE id = $1 AND status = 'draft'`,
+        [row.id],
+      );
+      return row.id;
+    }
     if (row.status !== "published"
       || Number(row.allowance_tokens) <= 0
       || row.model_id !== model.id
@@ -148,20 +209,22 @@ async function ensureFreeVersion(client, planId, model, allowanceTokens) {
       || !row.gateway_scopes.includes("messages:create")) {
       throw new Error("Existing Free Plan Version is not a valid published default snapshot");
     }
-    if (Number(row.allowance_tokens) === allowanceTokens) return row.id;
+    if (allowanceTokens === null
+      || Number(row.allowance_tokens) === allowanceTokens) return row.id;
   }
 
   const versionNumber = existing.rows[0]
     ? Number(existing.rows[0].version_number) + 1
     : 1;
   const versionId = `planv_default_free_v${versionNumber}`;
+  const versionAllowanceTokens = allowanceTokens ?? DEFAULT_FREE_MONTHLY_TOKENS;
   await client.query(
     `INSERT INTO subscription_plan_versions (
        id, plan_id, version_number, status, billing_period,
        base_price_microusd, allowance_tokens, allowance_microusd,
        overage_policy, effective_from
      ) VALUES ($1,$2,$3,'draft','monthly',0,$4,0,'deny',NULL)`,
-    [versionId, planId, versionNumber, allowanceTokens],
+    [versionId, planId, versionNumber, versionAllowanceTokens],
   );
   await client.query(
     `INSERT INTO subscription_plan_entitlements (
@@ -263,13 +326,19 @@ try {
     client,
     planIds.get("free"),
     model,
-    freeMonthlyTokens(),
+    requestedFreeMonthlyTokens(),
   );
-  const transitionedFreeSubscriptions = await transitionManagedFreeSubscriptions(
-    client,
-    planIds.get("free"),
-    freeVersionId,
+  const freeVersion = await client.query(
+    `SELECT allowance_tokens FROM subscription_plan_versions WHERE id = $1`,
+    [freeVersionId],
   );
+  const transitionedFreeSubscriptions = TRANSITION_MANAGED_FREE
+    ? await transitionManagedFreeSubscriptions(
+        client,
+        planIds.get("free"),
+        freeVersionId,
+      )
+    : 0;
   await ensureDraftVersion(client, planIds.get("dream"), "dream");
   await ensureDraftVersion(client, planIds.get("is-dreaming"), "is-dreaming");
 
@@ -287,7 +356,7 @@ try {
     plans: PLAN_DEFINITIONS.map(({ code }) => code),
     freePlanVersion: freeVersionId,
     freeModelAlias: model.code,
-    freeMonthlyTokens: freeMonthlyTokens(),
+    freeMonthlyTokens: Number(freeVersion.rows[0].allowance_tokens),
     backfilledSubscriptions: backfill.rows[0]?.count ?? 0,
     transitionedFreeSubscriptions,
   };

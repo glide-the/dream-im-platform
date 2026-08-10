@@ -27,11 +27,6 @@ const workspacePatchSchema = nonEmptyPatch({
   name: z.string().trim().min(1).max(180).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
 });
-const storyPatchSchema = nonEmptyPatch({
-  title: z.string().trim().min(1).max(240).optional(),
-  description: z.string().trim().max(20_000).nullable().optional(),
-  type: z.enum(["short", "long", "script", "outline"]).optional(),
-});
 const characterPatchSchema = nonEmptyPatch({
   name: z.string().trim().min(1).max(180).optional(),
   identity: z.string().trim().max(20_000).nullable().optional(),
@@ -49,6 +44,10 @@ const scenePatchSchema = nonEmptyPatch({
 });
 const reviewActionSchema = z.strictObject({
   reviewNotes: z.string().trim().min(1).max(2_000).optional(),
+  expectedScriptRevision: z
+    .string()
+    .regex(/^sha256:[0-9a-f]{64}$/)
+    .optional(),
 });
 
 type PatchConfig = {
@@ -69,17 +68,6 @@ const patchConfigs: Partial<Record<StorySourceResource, PatchConfig>> = {
       settings: { column: "settings", json: true },
     },
   },
-  "story-stories": {
-    table: "story_workspace_stories",
-    permission: "story.write",
-    schema: storyPatchSchema,
-    fields: {
-      title: { column: "title" },
-      description: { column: "description" },
-      type: { column: "type" },
-    },
-  },
-  stories: undefined as never,
   "story-characters": {
     table: "story_workspace_characters",
     permission: "story.write",
@@ -106,8 +94,6 @@ const patchConfigs: Partial<Record<StorySourceResource, PatchConfig>> = {
     },
   },
 };
-
-patchConfigs.stories = patchConfigs["story-stories"];
 
 async function parseBody<T extends z.ZodTypeAny>(request: Request, schema: T) {
   let body: unknown;
@@ -324,6 +310,7 @@ async function transitionReview(
   id: string,
   action: "confirm" | "reject" | "archive",
   reviewNotes?: string,
+  expectedScriptRevision?: string,
 ) {
   const table = actionTable(resource);
   if (!table) {
@@ -333,13 +320,55 @@ async function transitionReview(
       405,
     );
   }
-  const before = await loadRowForUpdate(client, table, id);
+  const isStory = resource === "story-stories" || resource === "stories";
+  const before = await loadRowForUpdate(
+    client,
+    table,
+    id,
+    isStory
+      ? `id, identifier, title, status, review_status, type,
+         author_id, workspace_id, agent_generated, review_notes,
+         script_revision, reviewed_script_revision, confirmed_at,
+         published_at, updated_at`
+      : "*",
+  );
   if (!["1", "true"].includes(String(before.agent_generated))) {
     throw new AdminError(
       "STORY_SOURCE_ACTION_DENIED",
       "Only Agent-generated Story assets use Admin review transitions",
       409,
     );
+  }
+  if (isStory) {
+    if (action === "archive") {
+      throw new AdminError(
+        "STORY_SOURCE_ACTION_DENIED",
+        "Admin cannot change the canonical Story business status",
+        405,
+      );
+    }
+    if (!before.script_revision) {
+      throw new AdminError(
+        "STORY_ARTIFACT_REVISION_REQUIRED",
+        "The Story has no indexed script revision to review",
+        409,
+      );
+    }
+    if (!expectedScriptRevision) {
+      throw new AdminError(
+        "STORY_ARTIFACT_EXPECTED_REVISION_REQUIRED",
+        "expectedScriptRevision is required for Story review actions",
+        400,
+      );
+    }
+    if (expectedScriptRevision !== before.script_revision) {
+      throw new AdminError(
+        "STORY_ARTIFACT_REVISION_CONFLICT",
+        "The Story script revision changed; reload the Artifact before reviewing",
+        409,
+        { currentRevision: before.script_revision },
+      );
+    }
   }
 
   if (action === "archive") {
@@ -367,14 +396,12 @@ async function transitionReview(
       );
     }
     if (action === "confirm") {
-      const storyPublishing =
-        resource === "story-stories" || resource === "stories"
-          ? "status = 'published', published_at = CURRENT_TIMESTAMP,"
-          : "";
       await client.query(
         `UPDATE ${table}
-         SET review_status = 'confirmed', ${storyPublishing}
-             confirmed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         SET review_status = 'confirmed',
+             confirmed_at = CURRENT_TIMESTAMP,
+             ${isStory ? "reviewed_script_revision = script_revision," : ""}
+             updated_at = CURRENT_TIMESTAMP
          WHERE id = $1`,
         [id],
       );
@@ -388,7 +415,17 @@ async function transitionReview(
       );
     }
   }
-  const after = await loadRowForUpdate(client, table, id);
+  const after = await loadRowForUpdate(
+    client,
+    table,
+    id,
+    isStory
+      ? `id, identifier, title, status, review_status, type,
+         author_id, workspace_id, agent_generated, review_notes,
+         script_revision, reviewed_script_revision, confirmed_at,
+         published_at, updated_at`
+      : "*",
+  );
   return { before, after };
 }
 
@@ -424,6 +461,7 @@ export async function handleStorySourceAction(
         id,
         action as "confirm" | "reject" | "archive",
         body.reviewNotes,
+        body.expectedScriptRevision,
       );
       await auditSourceMutation(client, {
         request,

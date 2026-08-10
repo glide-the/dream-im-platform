@@ -15,14 +15,14 @@
 | SQLite 深耦合 | 34 文件/115 `sqlite3.Connection`；16/52 `get_db`；42 文件/436 SQL literal/1,425 `?` | 证明需要 Repository/UoW；不是完成进度 |
 | Admin 三表 importer | `scripts/import-ink-dream-story-source.mjs`、`scripts/lib/story-source-import.mjs` | 只覆盖 `users/workspaces/stories` 3/48，不能冒充全量迁移器 |
 | canonical billing projection | `drizzle/0015–0019`、canonical relation/projection services/tests | 自动 mapping/account、服务端分页/搜索与 Gateway canonical 反查已验证；生产 orphan 处置另需回执 |
-| Subscription/Product API | `drizzle/0014–0024`、`app/lib/subscriptions/**`、`app/lib/payments/**`、`app/api/product/v1/**` | Token-only 月度状态机、Product/Payment API、独立 Token Ledger 与 strict contract 已通过本机 PG、66 files/313 tests、tsc/lint/build、订阅 Playwright 4/4 |
+| Subscription/Product API | `drizzle/0014–0028`、`drizzle/data/default-dream-plans.mjs`、`app/lib/subscriptions/**`、`app/lib/payments/**`、`app/api/product/v1/**` | Token-only 月度状态机、三项默认 Plan、Product/Payment API、独立 Token Ledger 与 strict contract 已通过本机 PG、69 files/340 tests、tsc/lint/build |
 | Gateway | `app/lib/gateway/**`、OpenAI/Anthropic routes、Dream `backend/services/admin_gateway/**` | strict eligibility/settlement 与 server-only client/canonical subject 已验证；外部 Provider canary未执行 |
 | Dream 订阅页 | `StoryWorkspaceSubscriptionPage.tsx`、product client/hook/BFF/tests | 真实 Token-only 页面已实现；frontend lint 0 errors/21 warnings、build、Product API 9/9 与订阅 Playwright 4/4 |
-| Dream PG migration/runtime | `backend/migrations/**`、`schema/**`、`script/migrate_legacy_to_postgres.py`、main/Notion runtime | 48/569/81/25、43+5 CLI、backend 1,679 passed/14 skipped + 652 subtests；本地 43+5/4,921 行 cutover，但不证明其他生产环境 |
+| Dream PG migration/runtime | Dream `backend/migrations/**`、`schema/**`、`script/migrate_legacy_to_postgres.py`；Admin `0028`、`drizzle/data/legacy-43-plus-5.mjs`、data E2E | 43+5/4,921 源记录全量导入 E2E、现存 PG 安全采纳、48 条表级 append-only 回执；Dream 1,791 passed/25 skipped + 652 subtests，但不证明其他生产环境 |
 | Payment 边界已实现 | Admin `0022–0024`、`app/lib/payments/**`、Product/internal routes 与 Dream BFF/UI | Adapter/Intent/Webhook/Fake guard、首次开通与付费月续费 **Implemented**；真实渠道 **Deferred** |
 | P0 credential/ASR | Dream 历史 `speech_recognition.py`、当前 fail-closed route、Git history search | active runtime 移除与 scan 已完成；仍证明需 owner 吊销/轮换与历史处置；本文不保存 Secret 值 |
 
-最初审计读取 SQLite 使用只读/query-only 方式，文件 size/mtime/inode 不变。后续实现验证只写明确命名、可删除的 owned disposable PostgreSQL 并事务回滚/隔离；没有写共享/生产数据库，也没有调用外部 Provider 或支付网络。
+最初审计读取 SQLite 使用只读/query-only 方式，文件 size/mtime/inode 不变。实现验证使用明确命名、可删除的 owned disposable PostgreSQL；经本地目标归属与现状复核后，显式应用 Admin 0027–0028，并以回滚 verification transaction 采纳已存在的 4,921 个源 PK，未覆盖业务行。没有写未知/共享生产数据库，也没有调用外部 Provider 或支付网络。
 
 ## 2. 权威证据层级
 
@@ -64,9 +64,9 @@
 | 状态 | 需要的证据 | 当前示例 |
 |---|---|---|
 | Current | 可重复只读代码/Schema 证据 | PG-only runtime、48/569/81/25、Product/Payment BFF 与真实订阅页 |
-| Implemented / Release candidate | 代码 + migration + full/isolated tests，生产发布门禁仍可开放 | Admin 66 files/313 tests + Payment PG 2/2；Dream backend 1,679/14 skips/652 subtests + 推理 61；frontend lint 0 errors/21 warnings + build + Product API 9/9 + 订阅 Playwright 4/4 |
+| Implemented / Release candidate | 代码 + migration + full/isolated tests，生产发布门禁仍可开放 | Admin 69 files/340 tests + 43+5 data E2E；Dream backend 1,791/25 skips/652 subtests + migration 19/2 skips；frontend lint 0 errors/21 warnings + build |
 | Planned release step | 实现存在，但真实生产/外部依赖步骤尚未执行 | owner/ACL/真实数据 cutover、credential owner rotation、外部 Provider/user canary |
-| Deferred | 当前禁止实施且有未来触发条件 | PaymentAdapter、Webhook、Fake、真实支付渠道、ASR Gateway capability |
+| Deferred | 当前禁止实施且有未来触发条件 | 真实支付渠道、ASR Gateway capability |
 | Superseded | 当前权威入口已替代，正文仅追溯 | 旧全面 Deferred 与 PG/Gateway 混合方案 |
 
 ## 6. 已知风险与历史偏差

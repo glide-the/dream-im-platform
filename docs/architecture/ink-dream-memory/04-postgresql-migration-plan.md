@@ -17,7 +17,7 @@
 3. 不长期双写 SQLite/PG。选择多次演练 + 最终短暂停写切换。
 4. 不重新编号 `users.id` 或 TEXT 主键，不把既有 ID 改成 UUID。
 5. 不用 Admin 旧 `story_*` 平行表填充 Dream canonical 表。
-6. Dream 迁移只管理 43+5 canonical 业务表；不得由 Dream Alembic 修改 Admin Subscription/Billing/Gateway/Payment 控制面表。Token-only 产品与 Gateway 接入按 06–07 独立门禁推进；08 仅记录 Deferred Payment，不是实施阶段。
+6. Dream 迁移只管理 43+5 canonical 业务表；不得由 Dream Alembic 修改 Admin Subscription/Billing/Gateway/Payment 控制面表。Token-only 产品与 Gateway 接入按 06–07 独立门禁推进；08 的 Adapter/Webhook/Fake 边界已实现，只有真实支付渠道仍 Deferred。
 7. 不把 Secret、password hash、OAuth/refresh token、Story/Chat 正文输出到控制台、回执或截图。
 
 ## 2. 目标技术方案
@@ -88,6 +88,22 @@ Manifest 重算口径固定为：SQLite source 48 表 / 567 列 / 78 个显式�
 Round 38 实现回执：空库、Admin canonical 三表 exact-adopt 与 drift mismatch fail-closed 均在明确命名隔离 PG 验证；目标对象数为 **48/569/81/25**。43+5 CLI 已覆盖 snapshot、manifest、48 staging tables、六波拓扑、PK/FK/unique/check/JSON/time/sequence/trigger 验证与冲突回滚。此回执不等于真实生产源数据已搬迁，也不授权 owner/ACL 变更。
 
 Round 39 本地 cutover 回执：经 Compose label、数据库名、host/port、owner 与 ACL SHA-256 只读确认，Admin-owned `localhost:5433/ink-memory` 先生成 PostgreSQL custom dump 和两个 SQLite 只读备份，再在明确命名 clone 完成 rollback/commit/production-mode 三次 rehearsal。正式库随后应用 Admin 0016–0019、Dream 六波 Alembic并导入 43+5 共 4921 源行；44 行 canonical baseline 精确匹配，4877 行新写入，最终为 83 张 public 表、Admin migration 20、Dream head `20260809_06`，Dream scoped catalog 48/569/81/25。该回执只授权并证明本地目标，不代表其他生产环境已迁移。
+
+### 3.2 Drizzle 数据迁移交付（Implemented，2026-08-10）
+
+Admin `0028_dream_data_migration_registry.sql` 与 `drizzle/data/` 现在承载数据迁移编排和安全回执，但不接管 Dream Schema 所有权：Dream Alembic 仍负责 48 张 canonical 表的 DDL，Dream importer 仍负责只读 SQLite snapshot、staging、转换和逐表验证。Drizzle registry 只追加保存 migration definition、run 与 48 张表的 count/digest 结果；UPDATE/DELETE 由 trigger 以 SQLSTATE `55000` 拒绝，且不登记源路径、DSN、Secret 或业务正文。
+
+全新数据库的固定顺序是：
+
+1. Admin Drizzle `0000–0026`；
+2. Dream Alembic upgrade 到 `20260809_06`，精确 adopt canonical 三表；
+3. Admin Drizzle `0027–0028`，应用批准的 Story 扩展与数据迁移 registry；
+4. `drizzle/data/legacy-43-plus-5.mjs --mode execute --record` 导入 43+5；
+5. 配置 Provider/Model 后，`drizzle/data/default-dream-plans.mjs --apply` 初始化 `Free`、`Dream`、`is Dreaming` 及 canonical User 的默认订阅投影。
+
+对已经产生 PG 业务写的数据库只允许 `verify-existing`。严格模式发现行差异即阻断；`--accept-post-cutover-changes` 只有在源 PK 缺失为 0，且每个差异目标行的 `updated_at` 严格晚于源行时才允许采纳，仍然整笔回滚 verification transaction，不写业务表。Plan seed 默认不改变已有 Subscription 的 Plan Version，不覆盖已发布的 Free Token 额度；任何批量版本迁移必须另加显式 transition flag。
+
+Round 81 本地采纳回执：源 manifest 为 48 表/4,921 行，4,921 个源 PK 全部存在，4,919 行精确匹配，`user_preferences` 中 2 行是更新的 PG 写入，源 PK 缺失 0，目标额外 post-cutover 行 43，导入写入 0。registry run `82a1d29a-44fb-4bd1-ab90-41bc1e608edc` 已登记 48 条 table result；重复运行复用相同 fingerprint。订阅 seed 登记 run `e508c0c6-124a-4cf9-96bc-52864a4e01e8`，本地 `users/platform_users/billing_accounts` 均为 30，缺 Subscription 为 0，三项默认 Plan 均存在。以上仅是本机已授权环境回执。
 
 ## 4. 迁移波次与依赖顺序
 
