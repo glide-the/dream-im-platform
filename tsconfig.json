@@ -38,7 +38,17 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-e2e-dream-business-b4e34a593ce9/types/**/*.ts",
+    ".next-e2e-dream-business-b4e34a593ce9/dev/types/**/*.ts",
+    ".next-e2e-gateway-sse-20260810/types/**/*.ts",
+    ".next-e2e-gateway-sse-20260810/dev/types/**/*.ts",
+    ".next-e2e-gateway-build-20260810/types/**/*.ts",
+    ".next-e2e-gateway-build-20260810/dev/types/**/*.ts",
+    ".next-e2e-dream-business-a3fd5bbf6b9b/types/**/*.ts",
+    ".next-e2e-dream-business-a3fd5bbf6b9b/dev/types/**/*.ts",
+    ".next-e2e-subscription-c195535f117d/types/**/*.ts",
+    ".next-e2e-subscription-c195535f117d/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

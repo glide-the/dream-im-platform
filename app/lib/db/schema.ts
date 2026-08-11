@@ -164,6 +164,7 @@ export const storyWorkspaceStories = pgTable(
     source_thread_ref: text("source_thread_ref"),
     source_project_id: text("source_project_id"),
     episode_count: integer("episode_count"),
+    artifact_status: text("artifact_status"),
     artifact_manifest_revision: text("artifact_manifest_revision"),
     script_revision: text("script_revision"),
     artifact_sync_status: text("artifact_sync_status"),
@@ -173,7 +174,6 @@ export const storyWorkspaceStories = pgTable(
     }),
     artifact_sync_error_code: text("artifact_sync_error_code"),
     script_size_bytes: bigint("script_size_bytes", { mode: "number" }),
-    artifact_available: boolean("artifact_available"),
     reconcile_version: integer("reconcile_version"),
     reviewed_script_revision: text("reviewed_script_revision"),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
@@ -260,7 +260,11 @@ export const storyWorkspaceStories = pgTable(
     ),
     check(
       "story_workspace_stories_artifact_sync_status_check",
-      sql`${table.artifact_sync_status} IS NULL OR ${table.artifact_sync_status} IN ('syncing', 'indexed', 'stale', 'missing', 'failed')`,
+      sql`${table.artifact_sync_status} IS NULL OR ${table.artifact_sync_status} IN ('syncing', 'indexed', 'stale', 'failed')`,
+    ),
+    check(
+      "story_workspace_stories_artifact_status_check",
+      sql`${table.artifact_status} IS NULL OR ${table.artifact_status} IN ('generating', 'available', 'missing', 'invalid')`,
     ),
     check(
       "story_workspace_stories_manifest_revision_check",
@@ -276,7 +280,7 @@ export const storyWorkspaceStories = pgTable(
     ),
     check(
       "story_workspace_stories_episode_count_check",
-      sql`${table.episode_count} IS NULL OR ${table.episode_count} >= 0`,
+      sql`${table.episode_count} IS NULL OR ${table.episode_count} BETWEEN 1 AND 99`,
     ),
     check(
       "story_workspace_stories_script_size_check",
@@ -284,7 +288,67 @@ export const storyWorkspaceStories = pgTable(
     ),
     check(
       "story_workspace_stories_reconcile_version_check",
-      sql`${table.reconcile_version} IS NULL OR ${table.reconcile_version} >= 1`,
+      sql`${table.reconcile_version} IS NULL OR ${table.reconcile_version} = 1`,
+    ),
+    check(
+      "story_workspace_stories_artifact_identity_check",
+      sql`(
+        ${table.artifact_source_type} IS NULL
+        AND ${table.source_run_id} IS NULL
+        AND ${table.source_thread_ref} IS NULL
+        AND ${table.source_project_id} IS NULL
+        AND ${table.episode_count} IS NULL
+        AND ${table.artifact_status} IS NULL
+        AND ${table.artifact_manifest_revision} IS NULL
+        AND ${table.script_revision} IS NULL
+        AND ${table.artifact_sync_status} IS NULL
+        AND ${table.artifact_indexed_at} IS NULL
+        AND ${table.artifact_sync_error_code} IS NULL
+        AND ${table.script_size_bytes} IS NULL
+        AND ${table.reconcile_version} IS NULL
+      ) OR (
+        ${table.artifact_source_type} = 'dream_episode'
+        AND ${table.source_run_id} IS NOT NULL
+        AND ${table.source_thread_ref} IS NOT NULL
+        AND ${table.source_project_id} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
+        AND octet_length(${table.source_project_id}) BETWEEN 1 AND 80
+        AND ${table.episode_count} BETWEEN 1 AND 99
+        AND ${table.artifact_status} IS NOT NULL
+        AND ${table.artifact_sync_status} IS NOT NULL
+        AND ${table.reconcile_version} = 1
+      )`,
+    ),
+    check(
+      "story_workspace_stories_artifact_revision_state_check",
+      sql`${table.artifact_source_type} IS NULL OR ${table.artifact_status} <> 'available' OR (
+        ${table.artifact_manifest_revision} IS NOT NULL
+        AND ${table.script_revision} IS NOT NULL
+        AND ${table.script_size_bytes} IS NOT NULL
+      )`,
+    ),
+    check(
+      "story_workspace_stories_review_integrity_check",
+      sql`${table.artifact_source_type} IS NULL OR (
+        (${table.review_status} = 'pending' AND ${table.reviewed_script_revision} IS NULL AND ${table.confirmed_at} IS NULL)
+        OR (${table.review_status} = 'confirmed' AND ${table.reviewed_script_revision} IS NOT NULL AND ${table.confirmed_at} IS NOT NULL)
+        OR (${table.review_status} = 'rejected' AND ${table.reviewed_script_revision} IS NOT NULL AND ${table.confirmed_at} IS NULL)
+      )`,
+    ),
+    check(
+      "story_workspace_stories_business_review_check",
+      sql`${table.artifact_source_type} IS NULL OR (
+        ((${table.status} = 'published' AND ${table.published_at} IS NOT NULL)
+          OR (${table.status} <> 'published' AND ${table.published_at} IS NULL))
+        AND (
+          ${table.status} <> 'published' OR (
+            ${table.review_status} = 'confirmed'
+            AND ${table.reviewed_script_revision} = ${table.script_revision}
+            AND ${table.script_revision} IS NOT NULL
+            AND ${table.artifact_status} = 'available'
+            AND ${table.artifact_sync_status} = 'indexed'
+          )
+        )
+      )`,
     ),
   ],
 );

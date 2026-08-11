@@ -311,6 +311,7 @@ async function transitionReview(
   action: "confirm" | "reject" | "archive",
   reviewNotes?: string,
   expectedScriptRevision?: string,
+  requestId?: string,
 ) {
   const table = actionTable(resource);
   if (!table) {
@@ -369,6 +370,36 @@ async function transitionReview(
         { currentRevision: before.script_revision },
       );
     }
+    if (action === "reject" && !reviewNotes?.trim()) {
+      throw new AdminError(
+        "STORY_ARTIFACT_REVIEW_NOTES_REQUIRED",
+        "reviewNotes is required when rejecting a Story revision",
+        400,
+      );
+    }
+    const replayStatus = action === "confirm" ? "confirmed" : "rejected";
+    if (before.review_status === replayStatus) {
+      const exactState =
+        before.reviewed_script_revision === expectedScriptRevision &&
+        (action !== "reject" || before.review_notes === reviewNotes);
+      const priorAudit = requestId
+        ? await client.query(
+            `SELECT 1 FROM admin_audit_logs
+             WHERE request_id = $1 AND action = $2
+               AND resource_type = $3 AND resource_id = $4
+             LIMIT 1`,
+            [requestId, action, resource, id],
+          )
+        : { rows: [] };
+      if (exactState && priorAudit.rows[0]) {
+        return { before, after: before, replayed: true };
+      }
+      throw new AdminError(
+        "STORY_SOURCE_REVIEW_CONFLICT",
+        "The Story review command conflicts with an existing result",
+        409,
+      );
+    }
   }
 
   if (action === "archive") {
@@ -409,6 +440,7 @@ async function transitionReview(
       await client.query(
         `UPDATE ${table}
          SET review_status = 'rejected', review_notes = $2,
+             ${isStory ? "reviewed_script_revision = script_revision, confirmed_at = NULL," : ""}
              updated_at = CURRENT_TIMESTAMP
          WHERE id = $1`,
         [id, reviewNotes ?? null],
@@ -426,7 +458,7 @@ async function transitionReview(
          published_at, updated_at`
       : "*",
   );
-  return { before, after };
+  return { before, after, replayed: false };
 }
 
 export async function handleStorySourceAction(
@@ -454,6 +486,7 @@ export async function handleStorySourceAction(
     }
     const identity = await requireAdminRequest(request, "story.write");
     const body = await parseBody(request, reviewActionSchema);
+    let replayed = false;
     await withStoryTransaction(async (client) => {
       const changed = await transitionReview(
         client,
@@ -462,21 +495,31 @@ export async function handleStorySourceAction(
         action as "confirm" | "reject" | "archive",
         body.reviewNotes,
         body.expectedScriptRevision,
-      );
-      await auditSourceMutation(client, {
-        request,
         requestId,
-        identity,
-        action,
-        resource,
-        id,
-        ...changed,
-      });
+      );
+      replayed = changed.replayed;
+      if (!changed.replayed) {
+        await auditSourceMutation(client, {
+          request,
+          requestId,
+          identity,
+          action,
+          resource,
+          id,
+          ...changed,
+        });
+      }
     });
     const data = await queryStorySourceItem(resource, id);
     return Response.json(
       { data },
-      { headers: { "cache-control": "no-store", "x-request-id": requestId } },
+      {
+        headers: {
+          "cache-control": "no-store",
+          "x-request-id": requestId,
+          ...(replayed ? { "idempotency-replayed": "true" } : {}),
+        },
+      },
     );
   } catch (error) {
     return adminErrorResponse(storySourceError(error), requestId);

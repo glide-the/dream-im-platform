@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { GatewayError } from "./errors";
 import {
+  deriveGatewayIdempotencyKey,
   estimateJsonTokens,
   parseGatewayJson,
   readIdempotencyKey,
@@ -47,5 +48,23 @@ describe("gateway request body", () => {
       readIdempotencyKey(new Headers({ "idempotency-key": "has spaces" })),
     ).toThrowError(GatewayError);
     expect(estimateJsonTokens({ text: "hello" })).toBeGreaterThan(0);
+  });
+
+  it("derives stable per-provider-request keys from one Dream turn root", () => {
+    const headers = new Headers({
+      "x-ink-turn-idempotency-key": `dream-turn-${"a".repeat(64)}`,
+    });
+    const first = deriveGatewayIdempotencyKey(headers, '{"messages":["first"]}');
+    expect(first).toMatch(/^turn-[a-f0-9]{24}-request-[a-f0-9]{64}$/);
+    expect(deriveGatewayIdempotencyKey(headers, '{"messages":["first"]}')).toBe(first);
+    expect(deriveGatewayIdempotencyKey(headers, '{"messages":["tool-result"]}')).not.toBe(first);
+  });
+
+  it("rejects ambiguous direct and turn-root idempotency headers", () => {
+    const headers = new Headers({
+      "idempotency-key": "direct-request",
+      "x-ink-turn-idempotency-key": "dream-turn-root",
+    });
+    expect(() => deriveGatewayIdempotencyKey(headers, "{}")).toThrowError(GatewayError);
   });
 });

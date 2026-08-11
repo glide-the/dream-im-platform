@@ -36,6 +36,18 @@ describe("Anthropic gateway handler orchestration", () => {
     expect(mocks.streaming).toHaveBeenCalledOnce();
   });
 
+  it("derives a distinct reservation key for each body in one Dream turn", async () => {
+    const headers = {
+      "content-type": "application/json",
+      "x-ink-turn-idempotency-key": `dream-turn-${"a".repeat(64)}`,
+    };
+    const body = JSON.stringify({ model: "claude-writing", max_tokens: 128, stream: true, messages: [{ role: "user", content: "hello" }] });
+    await handleAnthropicMessages(new Request("http://localhost/v1/messages", { method: "POST", headers, body }));
+    expect(mocks.prepare).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: expect.stringMatching(/^turn-[a-f0-9]{24}-request-[a-f0-9]{64}$/),
+    }));
+  });
+
   it("accepts Claude Code message-level system control entries", async () => {
     const response = await handleAnthropicMessages(new Request("http://localhost/v1/messages?beta=true", {
       method: "POST",

@@ -121,6 +121,132 @@ describe("Story source mutations", () => {
     );
   });
 
+  it("rejects the current Story revision and clears confirmed_at", async () => {
+    const revision = `sha256:${"c".repeat(64)}`;
+    storyQuery
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "story-2",
+          agent_generated: 1,
+          review_status: "pending",
+          status: "draft",
+          script_revision: revision,
+          reviewed_script_revision: null,
+          confirmed_at: null,
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "story-2",
+          review_status: "rejected",
+          status: "draft",
+          script_revision: revision,
+          reviewed_script_revision: revision,
+          confirmed_at: null,
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [{ id: "story-2", review_status: "rejected", status: "draft" }],
+      });
+
+    const response = await handleStorySourceAction(
+      new Request("http://localhost/api/admin/story-stories/story-2/reject", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expectedScriptRevision: revision,
+          reviewNotes: "结构冲突需重写",
+        }),
+      }),
+      "story-stories",
+      "story-2",
+      "reject",
+    );
+
+    expect(response.status).toBe(200);
+    expect(storyQuery.mock.calls[1][0]).toContain(
+      "reviewed_script_revision = script_revision",
+    );
+    expect(storyQuery.mock.calls[1][0]).toContain("confirmed_at = NULL");
+    expect(storyQuery.mock.calls[3][0]).toBe("INSERT AUDIT");
+  });
+
+  it("requires review notes when rejecting a Story", async () => {
+    const revision = `sha256:${"d".repeat(64)}`;
+    storyQuery.mockResolvedValueOnce({
+      rows: [{
+        id: "story-3",
+        agent_generated: 1,
+        review_status: "pending",
+        status: "draft",
+        script_revision: revision,
+      }],
+    });
+
+    const response = await handleStorySourceAction(
+      new Request("http://localhost/api/admin/story-stories/story-3/reject", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedScriptRevision: revision }),
+      }),
+      "story-stories",
+      "story-3",
+      "reject",
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe(
+      "STORY_ARTIFACT_REVIEW_NOTES_REQUIRED",
+    );
+    expect(storyQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays an exact Story review request without a second mutation or audit", async () => {
+    const revision = `sha256:${"e".repeat(64)}`;
+    storyQuery
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "story-4",
+          agent_generated: 1,
+          review_status: "confirmed",
+          status: "draft",
+          script_revision: revision,
+          reviewed_script_revision: revision,
+          review_notes: null,
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [{ exists: 1 }] })
+      .mockResolvedValueOnce({
+        rows: [{ id: "story-4", review_status: "confirmed", status: "draft" }],
+      });
+
+    const response = await handleStorySourceAction(
+      new Request("http://localhost/api/admin/story-stories/story-4/confirm", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-request-id": "review-replay-1",
+        },
+        body: JSON.stringify({ expectedScriptRevision: revision }),
+      }),
+      "story-stories",
+      "story-4",
+      "confirm",
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("idempotency-replayed")).toBe("true");
+    expect(storyQuery.mock.calls[1][0]).toContain("admin_audit_logs");
+    expect(storyQuery.mock.calls.map((call) => call[0])).not.toContain(
+      "INSERT AUDIT",
+    );
+    expect(storyQuery.mock.calls.map((call) => call[0]).join("\n")).not.toContain(
+      "UPDATE story_workspace_stories",
+    );
+  });
+
   it("rejects Story metadata PATCH because Dream owns the canonical Story", async () => {
     const response = await handleStorySourceUpdate(
       new Request("http://localhost/api/admin/story-stories/story-1", {

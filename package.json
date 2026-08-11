@@ -23,6 +23,7 @@
     "test:coverage": "vitest run --coverage --exclude \"**/*.integration.test.ts\"",
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",
+    "test:subscription-billing:e2e": "node scripts/run-subscription-billing-e2e.mjs",
     "test:data-migration:e2e": "node scripts/run-dream-data-migration-e2e.mjs",
     "test:all": "pnpm test:run && pnpm test:e2e",
     "db:generate": "drizzle-kit generate",

@@ -3562,3 +3562,1076 @@ Optional Enhancers:
 未执行事项及原因：
 
 - 只读审计、主设计稿编写与 reader review 必须在本 Prompt Architect 记录后执行。
+
+## 2026-08-10 — Dream 剧本生产主链完整性审计、交互设计、实现与发布级验收
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的业务架构师、交互设计负责人、全栈工程师与发布级 E2E QA 负责人。对 Dream 剧本生产主链执行一个证据驱动、fail-closed、可回滚、可追踪的完整闭环：先只读审计并建立真值与覆盖矩阵，在证据支持下输出问题处理判断；再编写不制造第二套业务状态的交互设计稿；随后以 TDD 实施最小安全修复并扩大回归；最后用 Mock 与隔离 PostgreSQL 真实运行时完成桌面/移动真实浏览器验收和资源清理。不得把单元测试、Mock 成功、截图或单接口 200 等同于业务 E2E 完整。
+
+工作目录与证据入口：
+
+- Dream 仓库：`/Users/dmeck/project/ink-dream-memory`
+- Admin 架构入口：`/Users/dmeck/project/ink-admin-memory/docs/architecture/ink-dream-memory`
+- 修正记录：`/Users/dmeck/project/ink-admin-memory/docs/verification/ink-memory-admin-correction-worklog.md`
+
+阶段 A — 只读审计（在完成前禁止修改业务代码）：
+
+1. 枚举登录/canonical user、订阅、Plan Version、Entitlement、Allowance、公共模型目录、platform model identifier 保存、Workflow Run 创建/重入、Dream Agent、服务端 Gateway alias/资格/Provider 路由、Token reserve/capture/release、受控 Dream 产物写入、Workflow/Dream Files/Agent Messages/Episode Binding/Artifacts/Action Projection 一致性、刷新/重入/响应式恢复和安全错误呈现的端到端数据流。
+2. 对每一步记录入口、调用者、DTO/API、持久层、真值所有者、权限边界、幂等/并发合同、失败状态与现有测试证据；不得从 DOM、按钮或浏览器 session state 反推服务端真值。
+3. 建立覆盖矩阵，至少包含：无订阅、无模型权限、Allowance 耗尽、Gateway 未配置/不可达、模型下架/无权/alias 失效、目录加载/空/重试/保存、Run 创建/重入/刷新/隔离、Agent SSE/取消/重试/工具确认、人物/场景/剧本/分镜/审阅/Prompt/渲染指引、workflow detail/dream-files/messages/episode-artifacts、Token 幂等、Provider/usage/流式失败、psycopg 原生类型、404/409/422/429/502/503、1440×1000 与 390×844、键盘/焦点/ARIA/loading/empty/error/last-good、浏览器诊断零非预期错误和敏感信息不泄露。
+4. 输出已有覆盖、缺失覆盖、用户故障、根因/触发/范围、真值归属、必须修复/应改进/可延期、缺陷分类、最小安全方案、不应采用方案及分阶段发布风险。根因不预设；证据不足时明确标记未知。
+
+阶段 B — 交互设计：
+
+在仓库既有设计文档目录新增设计稿，覆盖背景/目标/非目标、用户影响、角色任务、完整旅程、模型—订阅—Token—Workflow 关系、信息架构、全状态交互、桌面/移动、键盘/焦点/ARIA、继续/取消/重试/幂等、Mermaid 状态机与时序、API/DTO/ETag/revision/idempotency/error contract、truth ownership、安全隐私边界、E2E 双向追踪矩阵、验收/风险/回滚/诚实遗留。模型目录只来自 Admin 公共 Gateway；浏览器只持有 platform model identifier；计费与资格只由服务端拥有。
+
+阶段 C — TDD 实施：
+
+1. 先加入能稳定复现经审计确认问题的失败测试，并记录红灯证据。
+2. 实施满足设计与现有架构的最小修复；不放宽断言、不吞异常、不硬编码当前数据、不引入 SQLite/JSON/内存 fallback。
+3. 严格兼容 psycopg datetime、dict/list、boolean、nullable；保留 actor/workspace/run/story/episode 隔离；所有写请求具备幂等与并发冲突处理；Gateway/Provider/计费失败 fail closed。
+4. 不覆盖用户未提交修改；禁止 DROP、TRUNCATE、生产库测试写入、跨账号数据重归属和破坏性 Git 操作。
+
+阶段 D — 验证与发布门禁：
+
+1. 依照仓库 Playwright 与 `ink-dream-playwright-qa` 执行 preflight/端口归属；在导航前注册 response/requestfailed/console/pageerror；不停止未知归属服务。
+2. Mock Chromium 验证确定性边界；真实 E2E 使用明确隔离的 PostgreSQL clone 和本轮自有后端端口；共享真实数据库仅 SELECT/rollback；没有明确授权时不调用收费 Provider。
+3. 断言业务事实和跨服务一致性，截图/trace 仅作辅助；覆盖 1440×1000 与 390×844、刷新/重入、错误合同、可访问性和敏感信息边界。
+4. 执行 backend focused、Dream/Workflow/Episode 扩大回归、PostgreSQL runtime integration、frontend source contract、Mock Chromium E2E、真实浏览器 E2E、ESLint、TypeScript、production build、`git diff --check`。
+5. 结束后仅关闭本轮确认归属的服务，删除精确命名的测试资源，确认无未授权数据库写入，并把命令、环境、准确 pass/fail/skip 数量和清理结果追加回本 worklog。
+
+最终交付必须包含：修复结论、证据化根因、设计文档与修改文件、需求—测试—API—代码双向追踪、每组测试准确计数、真实浏览器视口与关键接口状态、Token reserve/capture/release 一致性证据、未执行的真实外部场景、数据库无未授权写入确认、服务/资源清理、遗留风险和发布门禁。任何未完成项必须明确说明；不得以“代码已实现”或“Mock 已通过”宣称业务完整。
+
+### Optional Enhancers
+
+- 为关键 E2E 保存 Playwright trace、网络摘要与脱敏截图，并在矩阵中关联证据文件。
+- 为每项缺陷增加 severity、likelihood、detectability 与 rollout/rollback owner。
+- 增加 mutation/negative-path 检查，证明 401/402/403/409/422/429/502/503 不会被包装为成功。
+
+### 本轮问题与用户影响
+
+Dream 模型、订阅计费与 Admin Gateway 已接入，但目前尚未以跨边界证据证明用户能够从资格/模型选择完成剧本生产、读取后续产物，并在刷新、重入、失败和移动端场景下维持服务端事实一致。潜在影响包括虚假成功、错误资格提示、Token 账实不符、Run 与 Episode 产物漂移、失败后不可恢复、跨权限读取和敏感信息泄露。本轮先验证这些风险是否真实存在，不预设根因。
+
+### 事实来源和真值所有者
+
+- 身份与权限：canonical actor/workspace 解析及服务端授权结果。
+- 订阅与计费：Subscription、Plan Version、Entitlement、Allowance、Token Ledger 服务及 PostgreSQL 记录。
+- 模型与推理：Admin 公共 Model Gateway 的目录、alias、资格校验、Provider 路由和脱敏错误合同。
+- 流程：Workflow Run 持久化状态、revision/ETag 与动作投影。
+- Dream 业务：Dream Files、Agent Messages、story/run/episode binding。
+- 最终产物：Episode artifacts 和受控文件产物；文件存在本身不得覆盖数据库绑定与权限真值。
+- 浏览器：仅拥有临时展示、焦点和 last-good UI 状态，不拥有资格、余额、流程完成或产物真值。
+
+### 修改范围与明确不修改范围
+
+范围：Dream 仓库中经审计证明确有必要的后端、前端、数据库适配、合同测试、Playwright、设计文档与测试辅助设施；Admin 仓库仅追加本 worklog 和读取架构材料。非范围：生产数据迁移、真实收费 Provider 调用、Admin 平台无关模块重构、视觉品牌全面改版、跨账号数据修复、为通过测试而放宽合同或建立前端影子状态。
+
+### 测试矩阵
+
+矩阵维度包括：资格（无订阅/无 entitlement/余额不足/有效）、模型（正常/空/下架/无权/alias 失效）、Gateway/Provider（未配置/不可达/限流/错误/usage 缺失/流中断）、Run（创建/重入/刷新/取消/重试/冲突/隔离）、产物（人物/场景/剧本/分镜/审阅/Prompt/渲染指引及 Episode artifacts）、数据类型（datetime/JSONB/bool/null）、错误合同、幂等计费、桌面/移动、键盘/ARIA、浏览器诊断、安全脱敏。每个单元格标注现有/新增测试、环境、断言和证据。
+
+### 完成标准
+
+只有在审计报告、交互设计、TDD 修复、指定静态/单元/集成/浏览器测试、跨服务事实断言、准确测试计数、worklog 回执和资源清理均完成后，才能宣称本轮完成。因环境或授权无法执行的外部场景必须作为明确发布门禁，不得推定通过。
+
+### 风险、回滚与资源清理要求
+
+风险包括错误修改既有合同、覆盖用户工作树、误连共享/生产数据库、误停他人服务、计费重放、Provider 成本和敏感信息泄露。实施需保持小提交面和兼容边界；回滚以逐文件最小代码回退/功能开关/恢复既有 UI 路径为主，不执行破坏性 Git。测试使用精确命名的隔离数据库/资源和自有端口；结束时确认关闭自有进程、删除本轮资源、无悬挂 reservation、无未授权数据库写入、无凭据进入日志/trace/截图。
+
+### 执行结果补记
+
+#### 结论与根因
+
+- 已修复一个真实跨入口一致性缺陷：标准 Chat 路由会解析服务端模型 alias，但 Dream launch、Dream guidance、Dream Agent 内部 turn 可绕过该路由并将空模型交给 runner。现在所有 Dream-context turn 在 runner 组装前都重新读取 Admin 公共目录和服务端保存的 platform alias；浏览器 alias 只能与服务端选择相符，不能覆盖；已下架/无权的已保存 alias 返回 409，不静默切换默认模型。
+- 已修复一个虚假挂起缺陷：launch 后台 SSE 原先丢弃所有 frame，Agent 终止错误不会落盘，Run 可长期停在 queued 且 source 已标 dispatched。现在识别 allowlist 错误码或通用终止错误，使用新连接和合法 WorkflowRunService 转移 `queued -> failed`，写入 `failed_step=dream_agent_dispatch` 及脱敏错误，并同步 source metadata 为 failed。
+- 已修复两个交互真值问题：模型目录刷新失败不再清空 last-good；Workflow Run `failed` 不再因 durable confirmation 被显示为“继续执行”，而呈现明确失败、重读和返回动作，重读 Promise 失败不会形成未处理异常。
+- `queued -> running` 仍必须有 Runtime Load Receipt 与 Agent Session，不能通过 UI 或 launch 路由伪造。本轮没有证据证明完整剧本生产到 Episode artifacts 的真实跨服务成功链，因此不能给出“业务 E2E 完整”结论。
+
+#### 交付文件
+
+- 审计：`/Users/dmeck/project/ink-dream-memory/docs/design/story-workspace/2026-08-10-dream-production-main-chain-integrity-audit.md`
+- 交互设计：`/Users/dmeck/project/ink-dream-memory/docs/design/story-workspace/design_012_dream-production-main-chain-integrity.md`
+- 核心实现：`backend/services/admin_gateway/selection.py`、`backend/claude_agent/service.py`、`backend/routers/claude_agent.py`、`backend/services/story_workspace/dream_launch_gateway.py`、`backend/services/story_workspace/guidance_service.py`、`frontend/src/components/dashboard/ModelConfigSection.tsx`、`frontend/src/pages/story-workspace/StoryWorkspaceDreamPage.tsx`、`frontend/src/pages/story-workspace/dreamViewModel.ts`、`frontend/vite.config.ts`。
+- 核心测试：`backend/tests/test_admin_gateway_model_selection.py`、`backend/tests/test_claude_agent_service.py`、`backend/tests/test_story_workspace_dream_launch_api.py`、`frontend/e2e/model-settings-gateway.spec.ts`、`frontend/e2e/story-workspace-episode-execution.spec.ts`、`frontend/e2e/dream-model-postgres-real.spec.ts`、Dream view-model source contract。
+
+#### TDD 与回归证据
+
+- RED：selection module 不存在导致 collection error；Dream launch eligibility 注入参数缺失导致 TypeError；stream consumer 不接受可注入 factory/failure handler；模型目录 503 后 last-good 文案/选项缺失；failed lifecycle 仍被推导为 continuing。对应最小实现后均转绿。
+- 后端最终扩大矩阵：`316 passed, 4 skipped, 158 subtests passed`。覆盖 Admin Gateway models/inference/selection、Gateway adapter、Product BFF、Claude Agent service、Dream launch/messages/confirmation/files、Episode artifacts 与 Workflow Run。
+- 后端最终聚焦复测：`42 passed, 1 skipped, 28 subtests passed`。新增原生 psycopg JSONB dict 复制解析、alias 冲突/下架/无资格、Dream turn alias、launch precheck/SSE/durable failure。
+- PostgreSQL runtime integration：`3 passed`；Story Index PostgreSQL adapter：`36 passed, 1 skipped`，唯一 skip 明确为 Admin Story Index migration 是 schema prerequisite。测试使用隔离 clone 并以 rollback/空库断言约束写入。
+- Admin Gateway/Token focused Vitest：`8 test files passed, 34 tests passed`。覆盖 subscription gateway、Token ledger、Anthropic/OpenAI stream handler、SSE/usage、settlement worker 与 settlement route 的 reserve/capture/release/失败合同。
+- 前端 source contracts：`365 passed`。
+- Mock Chromium：`7 passed`，包含模型目录正常与 last-good 503、订阅桌面 `1440x1000`、移动 `390x844`、Episode revision 恢复、Dream Agent 工具确认与运行标识。
+- 真实 Chromium：`1 passed`，桌面 `1440x1000` 保存后切换到移动 `390x844` 刷新恢复；链路为 Vite `4177` -> Dream FastAPI `18765` -> PostgreSQL clone `127.0.0.1:55439/ink_memory_dream_empty_codex_test` -> 本地确定性 catalog stub `18103`。关键 `GET /api/gateway/models`、`GET/PUT /api/system-config` 均为 200；请求体仅 `{model: dream-fast}`，无 Provider Secret、Token、API key 或 DSN。
+- 真实浏览器后只读数据库证据：`savedModel=dream-fast`、`savedProvider=gateway`、`workflowRuns=0`、`chatMessages=0`、`events=0`。该 canary 只证明真实 BFF/psycopg/catalog/alias 保存与恢复，不伪造 Agent、Workflow 或 Episode 成功。
+- ESLint：退出 0，`0 errors, 21 warnings`；warning 为既有 React Hook dependency 告警。TypeScript + production build：退出 0，2758 modules；仅有既有 dynamic-import/chunk-size warning。最终 `git diff --check` 通过。
+
+#### 诊断失败与处理
+
+- 一次后端 pytest 从仓库根运行导致 `database` 模块路径缺失；selection 增加 package-import fallback，并从 backend 正确工作目录复跑通过。
+- 一次误用临时下载的 Vitest 执行 Playwright source tests，因两套 `@playwright/test` 报 49 suite collection errors、0 tests；改用仓库真实 `npx playwright test src`，365/365 通过。该失败不计为产品测试失败。
+- Mock E2E 首次带 `--project=chromium` 未执行任何测试，因为仓库默认项目未命名；移除无效参数后 7/7 通过。
+- 真实 E2E 首次未传 clone DSN，按 fail-closed 在令牌生成前拒绝；第二次因测试令牌与旧测试后端签名不一致返回 401。没有读取旧进程 Secret，而是关闭本轮自有后端并以全新临时测试配置重启。
+- 真实 E2E 重放时，隔离用户已是 `dream-fast`，对已选 radio `check()` 不触发 PUT 并超时；测试增加隔离 clone 内显式重置 `dream-balanced`，再切换到 `dream-fast`，最终 1/1 通过。这是测试可重放性修复，不放宽业务断言。
+- Mock 扩大测试早期出现 3 个失败：预期失败资源被 console 诊断计入、Episode fixture 未覆盖现有 Story Index 请求；修正诊断 allowlist 和 fixture/ETag 后最终 7/7 通过。
+
+#### 数据、计费与安全边界
+
+- 未连接或写入共享/生产 PostgreSQL；所有 runtime 写入只发生在精确命名的隔离 clone。PostgreSQL integration 采用 rollback；真实 UI canary 只创建隔离用户偏好并最终保存 alias。没有 Run、Message 或 Event 写入。
+- Token reserve/capture/release 本轮证据来自 Admin 的 34 个聚焦合同测试；没有运行 Admin PostgreSQL billing E2E，也没有跨服务关联某个 Dream turn 与真实 ledger row。因此没有声称真实计费闭环完整，也没有悬挂 reservation 证据需要清理。
+- 未调用收费 Provider、真实 Admin Gateway、真实订阅/支付服务或外部 canary；catalog 为本地确定性 stub。请求/页面/报告未记录真实 Token、Secret、完整 DSN 或 Provider 凭据。
+
+#### 清理与回滚
+
+- 已关闭本轮自有 Vite `4177`、Dream FastAPI `18765`、Gateway stub `18103`；三端口最终均 closed。未知归属的 `5173/8765` 未触碰。
+- 已停止并删除精确容器 `ink-dream-round-20260810-pg`；已删除 stub 文件及 `ink-dream-round-20260810-{source-contract,mock-e2e,real-e2e}-final` 临时目录。最终没有同前缀容器或 `/private/tmp` 资源。
+- 恢复了被 Playwright 默认 output 误覆盖的已跟踪 `frontend/test-results` 基线；未覆盖用户/并发产生的 Admin 未跟踪设计稿，也未执行破坏性 Git 操作。
+- 回滚可按新增共享 resolver、Dream failure persistence、last-good/failed UI 和 Vite test proxy seam 分块逐文件回退；不需要数据库 migration 或数据修复。
+
+#### 未完成项与发布门禁
+
+- 必须补齐隔离 Admin PostgreSQL billing E2E，真实证明无订阅、无 entitlement、Allowance 耗尽、reserve/capture/release、幂等重放、usage 缺失和流式中断；当前只有单元/合同证据。
+- 必须建立 Dream turn/run/correlation id 到 Admin Gateway settlement/Token ledger 的可审计关联，并在一个隔离跨服务环境断言账实一致。
+- 必须让真实 Dream launch 获得 Runtime Load Receipt 与 Agent Session，再验收 `queued -> running -> completed/failed/cancelled`，并读取 Dream Files、Agent Messages、Episode Binding、Episode artifacts 与 Action Projection；当前 canary 不执行 Provider，也没有 Run。
+- 真实收费 Provider canary 需单独明确授权、成本上限和安全凭据；本轮未执行。
+- Story Index PostgreSQL integration 仍有 1 个 schema prerequisite skip；发布环境必须先证明对应 Admin migration 存在且版本一致。
+- 21 条 ESLint warning 与 bundle chunk/dynamic-import warning 不阻塞本轮修复，但属于诚实遗留；发布前应按仓库性能/质量门禁决定是否治理。
+
+综上，本轮代码缺陷和交互缺陷已修复并通过分层验证；“模型目录/alias 的真实浏览器 PostgreSQL 链”已证实，但“订阅计费 -> 真实模型推理 -> 完整 Dream 剧本与 Episode 产物”的发布级跨服务 E2E 仍未完成，必须保持发布门禁。
+
+## 2026-08-10 — Dream 完整业务 E2E 发布门禁收口
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的业务架构师、分布式系统测试负责人、全栈工程师和发布级 E2E QA 负责人。继续上一轮未完成的 Dream 剧本生产完整性目标，不重复已证实的模型目录/alias canary，而是以当前工作树、当前 Admin/Dream 架构与真实运行时为唯一事实，关闭剩余发布门禁：订阅资格与 Token ledger 的隔离 PostgreSQL 证据、Dream turn 到 Gateway settlement 的 correlation、合法 Workflow Run 生命周期、Dream Agent 消息与 SSE 失败/取消/重试、Dream Files 与 Episode Binding/Artifacts/Action Projection 的跨层一致性，以及桌面/移动刷新重入后的真实状态恢复。
+
+执行顺序必须为：先只读完成 requirement-to-evidence completion audit，逐项判断现有实现、测试和运行环境能否证明目标；再为缺失证据新增稳定失败测试；随后实施最小且架构一致的修复/测试夹具；最后运行分层单元、Admin/Dream PostgreSQL integration、Mock Chromium 和隔离真实浏览器 E2E。不得把上一轮 green、Mock、单接口 200、源代码存在或本地 stub 单独等同于完整业务成功。
+
+本轮必须重点验证并尽可能完成：
+
+1. 在精确命名的隔离 Admin PostgreSQL 与 Dream PostgreSQL 环境中，证明 canonical user 的订阅、Plan Version、Entitlement、Allowance 与模型 callability 一致；无订阅、无权限、额度耗尽必须分别保留 401/402/403/409/429/503 等真实安全合同，且 Provider 不被调用。
+2. 对一个隔离 Dream turn 建立稳定 correlation/idempotency key，证明 Gateway reserve -> Provider/stub usage -> capture，或失败/流中断时 release/settlement；重放不得重复扣减。不得调用收费 Provider，除非已有显式安全 canary 授权；允许使用协议真实、确定性的本地 Provider stub，但必须明确其证明边界。
+3. 使用正式 PostgreSQL schema 和合法服务，不绕过 Workflow 状态机：创建 Run，绑定 Runtime Load Receipt、Agent Session 与所需 preflight/lock，验证 queued -> running -> completed/failed/cancelled 的允许转移与冲突；不得直接 SQL 篡改业务状态。
+4. 从真实 API/浏览器验证 Dream Agent message/SSE、tool confirmation、取消、重试、幂等和错误落盘；401/402/403/409/422/429/502/503 不得被包装为成功。
+5. 验证人物、场景、剧本、分镜、审阅、Prompt、渲染指引等 Dream Files 与 Workflow Run、Episode Binding、Episode artifacts、Story Index、Action Projection 的 identity/revision/ETag 一致性；若当前正式架构没有可生成这些事实的本地确定性执行器，必须定位精确缺口并实现最小可验证 seam，不能用 DOM/fixture 文件伪造服务端完成状态。
+6. 真实 Chromium 覆盖 1440×1000 与 390×844、刷新、重新进入、last-good、键盘/焦点/ARIA、loading/empty/error；导航前注册 response/requestfailed/console/pageerror，最终要求零非预期应用诊断。
+7. 运行 backend focused 与扩大回归、Admin Gateway/Token tests、Admin/Dream PostgreSQL runtime integration、frontend source contracts、Mock Chromium、真实 Chromium、ESLint、TypeScript、production build、`git diff --check`。给出准确 pass/fail/skip 数量。
+
+约束：模型目录仅来自 Admin 公共 Gateway；浏览器仅保存 platform model identifier；Subscription/Entitlement/Allowance/Token Ledger 为服务端真值；PostgreSQL 是正式数据源，不允许 SQLite/JSON/内存 fallback；兼容 psycopg 原生 datetime/JSONB/bool/null；所有写入有幂等/并发合同；Gateway/Provider/计费失败 fail closed；不写共享/生产库，不调用真实收费 Provider，不泄露 Token/Secret/完整 DSN/绝对产物路径，不停止未知归属服务，不覆盖并发或用户未提交修改，不使用 DROP/TRUNCATE/破坏性 Git。
+
+Acceptance Criteria:
+
+- 每个原始要求均映射到代码/API/DB/浏览器的权威证据，并标注 proved、contradicted、missing 或 blocked；不能以“未发现问题”代替证明。
+- 至少一个隔离跨服务场景证明订阅/模型资格、Gateway 请求、Token settlement 与 Dream turn/run 使用同一 canonical actor/correlation；至少一个失败场景证明 release/no-charge 和 Provider 未被错误调用。
+- 至少一个合法 Workflow Run 完成或终止场景通过服务 API/状态机产生，并与 Dream messages/files/Episode facts 保持一致；若客观架构缺口阻止完成，必须继续实现可生产等价的最小 seam，而不是缩小目标。
+- Mock 与真实浏览器均有业务断言、桌面/移动/刷新证据和零非预期应用诊断；截图不能代替断言。
+- 所有隔离数据库、容器、端口、临时用户/ledger/resource 均精确清理；共享数据库仅 SELECT/rollback；最终 worklog 记录准确结果、未执行外部场景和诚实发布门禁。
+
+Rollback and Cleanup:
+
+- 新增测试 seam 必须默认关闭、仅显式测试环境启用；生产路径保持 fail-closed。
+- 修复按模型资格、settlement correlation、Workflow lifecycle、artifact consistency、UI recovery 分块可回退，不新增无必要 migration 或第二套业务状态。
+- 使用精确命名的本轮容器、数据库、端口和临时目录；结束时关闭仅本轮自有进程，删除精确资源，检查端口/容器/数据库残留并恢复误写的测试生成物。
+
+### Optional Enhancers
+
+- 保存脱敏 Playwright trace 与跨服务 correlation 摘要，建立 requirement -> API -> DB row -> test -> code 的双向追踪。
+- 对 reserve/capture/release 和 Workflow 状态机增加 mutation/duplicate/reorder 测试，证明幂等与乱序安全。
+
+### 本轮问题与用户影响
+
+上一轮已修复真实缺陷，但完整业务仍缺“订阅资格与真实 ledger -> Gateway -> Dream Run -> Agent/Files -> Episode artifacts”的单次可审计证据。若直接发布，仍可能出现资格判断正确但扣费错误、推理已失败但 Run/产物显示成功、重试重复扣费、Run 与 Episode revision 漂移，或刷新后浏览器恢复成非权威状态。
+
+### 事实来源和真值所有者
+
+- canonical actor/workspace：Dream/Auth 服务端与数据库授权查询。
+- Subscription/Plan Version/Entitlement/Allowance/Token ledger/settlement：Admin 服务与其 PostgreSQL。
+- 模型目录、alias、Provider 路由与 usage：Admin Gateway；Dream 只保存 alias 偏好。
+- Workflow lifecycle、preflight、runtime receipt、agent session：Dream Workflow 服务与 PostgreSQL。
+- Dream messages/files/binding/actions：Dream 服务及其正式 PostgreSQL/受控 artifact store。
+- Episode artifacts/Story Index：Episode/Dream artifact owner 与 canonical metadata；浏览器不得成为真值。
+
+### 修改范围与明确不修改范围
+
+范围：为关闭上述门禁所必需的 Dream/Admin 测试、隔离运行脚本、最小生产代码修复、浏览器 specs、设计/审计/worklog 补充。非范围：真实收费调用、生产/shared DB 写入、跨账号数据重归属、视觉全面重构、SQLite fallback、浏览器计费推导、硬编码当前数据库记录或无证据 migration。
+
+### 测试矩阵
+
+资格矩阵（有效/无订阅/无 entitlement/额度耗尽/模型下架）；settlement 矩阵（成功 capture/Provider 失败 release/usage 缺失/流中断/幂等重放/并发）；Workflow 矩阵（创建/合法 running/completed/failed/cancelled/冲突/重入）；产物矩阵（Dream Files 各 stage/Episode binding/artifacts/Story Index/action projection/revision）；浏览器矩阵（1440×1000、390×844、刷新、重入、键盘、ARIA、last-good、错误合同、零诊断）；类型与安全矩阵（datetime/JSONB/bool/null、脱敏、权限隔离、无外部收费）。
+
+### 完成标准
+
+只有 requirement-to-evidence 审计中所有明确要求都有权威通过证据，且隔离跨服务成功/失败/重放、合法 Workflow lifecycle、产物一致性、真实浏览器、静态/构建检查和资源清理全部完成，才能标记完整目标完成。任何真实外部 Provider 或现有架构无法验证的项必须继续作为活动发布门禁，不能据此缩小成功定义。
+
+### 风险、回滚与资源清理要求
+
+主要风险是测试 seam 泄漏到生产、跨库 actor/correlation 不一致、重复 settlement、直接篡改 Workflow 状态、误连共享库和残留 reservation/容器。所有测试能力默认关闭并带隔离数据库安全检查；失败时逐模块回退代码，不回滚用户数据；结束时确认无共享写入、无悬挂 reservation、自有端口关闭、精确容器/临时目录删除、敏感值未进入日志或报告。
+
+### 执行状态
+
+- 本 Prompt Architect 记录已先于本轮代码审计与修改落盘。
+- completion audit、TDD、跨服务验证和清理结果待本轮执行后补记。
+
+## 2026-08-10 — 以 Admin–Dream 业务设计稿为准的 Dream E2E 追踪与验收
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的业务架构师、需求追踪负责人、全栈工程师与发布级 E2E QA 负责人。以 `/Users/dmeck/project/ink-admin-memory/docs/design/modules/story-business/admin-dream-interaction-design.md` 为本轮业务交互与需求定义的首要设计真值，对改造后的 Dream 剧本业务执行 requirement-driven、evidence-based 的完整 E2E 审计、缺口修复与真实浏览器验收。不得继续依据泛化假设扩展范围；必须逐条读取该设计稿的角色、页面、状态、动作、API、数据库所有权、错误合同、桌面/移动、可访问性、幂等/并发、安全与验收要求，并建立“设计条款 -> 用户场景 -> API/DTO -> 真值所有者 -> 代码 -> 自动化测试 -> 运行证据”的双向追踪矩阵。
+
+执行流程：
+
+1. 完整读取设计稿及其直接引用的必要架构/合同文件；列出所有显式需求、非目标、不变量、状态机、时序、错误与验收标准。每项标注权威证据等级：proved、contradicted、missing、not-applicable 或 externally-gated。
+2. 对照当前 Dream/Admin 工作树与现有测试，确认哪些测试真正覆盖设计交互，哪些只验证 Mock、单接口或旧交互；不得用源代码存在或历史截图替代当前运行证据。
+3. 对 contradicted/missing 项先增加稳定失败测试，再实施最小修复。不得创造第二套 Story/Workflow/Subscription/Token/Artifact 状态，不得静态模型目录、浏览器计费推导、DOM 反推 Workflow、直接 SQL 篡改业务结果或恢复 SQLite fallback。
+4. 真实业务验收必须覆盖设计稿定义的 Admin 与 Dream 入口、跨系统深链/上下文、订阅资格、模型选择、Gateway/Token settlement、Dream Run 创建/重入/失败恢复、Dream Files、Episode Binding/Artifacts/Action Projection/Story Index，以及 1440×1000、390×844、刷新、键盘、焦点、ARIA、loading/empty/error/last-good。
+5. 使用明确隔离 PostgreSQL、一次性自有端口与本地确定性 Provider/Gateway stub；不调用收费 Provider。所有诊断监听在导航前注册，最终应用 console/pageerror/requestfailed/非预期 API failure 必须为零。
+6. 运行设计稿追踪到的 backend/Admin unit、PostgreSQL integration、source contracts、Mock Chromium、真实 Chromium、ESLint、TypeScript、production build、`git diff --check`，记录准确 pass/fail/skip 数量与每项未执行原因。
+
+Acceptance Criteria:
+
+- 设计稿中的每条用户可见交互、状态、API、真值边界和验收条款都有唯一追踪 ID，并至少关联一个可执行断言或明确的外部门禁；没有未解释空白。
+- 至少一个隔离成功链和一个失败/重试链从 canonical user、订阅/模型资格、Gateway/Token settlement 到 Dream Run/产物读取保持相同 identity/correlation/revision；失败不得显示成功或重复扣费。
+- Admin 与 Dream 页面/深链遵循设计稿，不制造数据库不存在的 Story/Artifact；文件成功与索引成功保持独立状态。
+- 桌面与移动真实浏览器均通过设计定义的关键任务、可访问性、刷新/重入与零应用诊断。
+- 任何与设计稿矛盾的既有实现或测试均被修复或明确作为发布阻断，不能通过改写验收标准掩盖。
+- 隔离数据库、容器、端口、测试用户、ledger/reservation 和临时文件全部精确清理；共享/生产数据库无写入。
+
+Rollback and Cleanup:
+
+- 测试 seam 默认关闭，只能在显式隔离 E2E 环境启用；生产路径始终 fail-closed。
+- 修复按设计追踪 ID 分块可回退；不执行 DROP/TRUNCATE、跨账号重归属、破坏性 Git 或无必要 migration。
+- 结束时关闭仅本轮自有服务，删除精确命名容器/distDir/Playwright 输出，确认无悬挂 reservation 与未知端口受影响。
+
+### Optional Enhancers
+
+- 输出设计需求—测试—API—数据库—代码的双向追踪表，并为关键跨系统时序保存脱敏 correlation 摘要。
+- 对设计状态机执行 mutation/duplicate/reorder 测试，证明非法状态与重复命令 fail-closed。
+
+### 本轮问题与用户影响
+
+若不以指定设计稿逐条验收，现有测试即使数量很多，也可能验证旧页面、Mock 数据或与业务定义不一致的流程，导致 Admin/Dream 深链、订阅资格、Run/Artifact 状态和移动端交互在发布后偏离产品设计。
+
+### 事实来源和真值所有者
+
+- 交互与需求：指定 `admin-dream-interaction-design.md`。
+- 身份/订阅/Gateway/Token：服务端 canonical user 与 Admin PostgreSQL。
+- Workflow/Dream Files/Agent/Episode：Dream 服务端 PostgreSQL 与受控 artifact owner。
+- Story Index/Admin 展示：canonical metadata 与 Admin 只读边界；浏览器只拥有临时 UI 状态。
+
+### 修改范围与明确不修改范围
+
+范围：设计稿直接要求的 Dream/Admin 代码、测试、隔离 runner、追踪文档与 worklog。非范围：设计稿未要求的视觉重构、真实收费 Provider、生产/shared DB 写入、第二套业务状态、硬编码历史数据、无证据 migration。
+
+### 测试矩阵
+
+按设计稿解析后生成，至少包含角色/入口、Admin-Dream 深链、订阅/模型/Token、Run 生命周期、文件与索引双状态、Episode artifacts/actions、错误/恢复、桌面/移动、键盘/ARIA、幂等/冲突、安全脱敏与资源清理。
+
+### 完成标准
+
+只有指定设计稿的 requirement-to-evidence 矩阵全部得到当前可执行证据，且真实隔离业务链、失败链、浏览器矩阵、静态/构建检查和资源清理完成，才能宣称本目标完成。任何 missing/contradicted 项继续保持活动发布门禁。
+
+### 风险、回滚与资源清理要求
+
+主要风险是把历史实现误当设计真值、为了 green 放宽条款、跨系统 identity/revision 漂移、重复 Token settlement、误写共享库或误停已有服务。所有修改必须最小、可追踪、可回退；只使用精确命名隔离资源并最终销毁。
+
+### 执行状态
+
+- 本记录已先于读取和分析指定设计稿落盘。
+- 设计条款解析、追踪矩阵、代码/测试调整和最终验收待执行。
+
+## 2026-08-10 — 三份业务设计合同驱动的 Dream 剧本 E2E 完整性验收
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的业务架构师、跨服务契约测试负责人、全栈工程师和发布级 E2E QA 负责人。以以下三份文档共同构成的现行业务合同为唯一需求基线，对模型服务与订阅计费网关接入后的 Dream 剧本主链执行完整、可追踪、证据驱动的 E2E 审计、缺口修复和发布验收：
+
+- `/Users/dmeck/project/ink-admin-memory/docs/design/modules/story-business/admin-dream-interaction-design.md`
+- `/Users/dmeck/project/ink-dream-memory/docs/design/model-service/07-model-service-integration-design.md`
+- `/Users/dmeck/project/ink-dream-memory/docs/design/subscription/06-subscription-business-design.md`
+
+先完整读取三份设计及其为理解合同所必需的直接引用，提取带稳定 ID 的需求、不变量、状态机、时序、API/DTO、真值所有者、错误合同、响应式和可访问性要求。建立 `requirement -> user journey -> API/DTO -> PostgreSQL/artifact truth -> code -> automated assertion -> runtime evidence` 双向追踪矩阵，并将每项标记为 `proved | contradicted | missing | externally-gated | not-applicable`。不得用既有测试数量、Mock 成功、单接口 200、源码存在或截图代替运行证据。
+
+完整成功链必须证明：canonical user 登录和权限解析；Subscription/Plan Version/Entitlement/Allowance 与模型使用资格一致；Dream 仅从 Admin 公共 Gateway 获取并保存 platform model identifier；Run 创建/重入遵守 Workflow 状态机；Dream Agent 使用服务端验证后的 alias 调用 Gateway；Gateway 完成 alias、资格和 Provider 路由；Token reserve 后在成功 usage 上 capture、失败/中断时 release，重复请求不重复扣费；Dream 写入并安全读取设计规定的 Episode Artifact/Story Index；Admin 与 Dream 对 Project/Story/Run/Episode identity、revision、review freshness、artifact/index 双状态保持一致；桌面与移动在刷新、重入、错误和恢复后仍显示服务端真值。
+
+失败矩阵至少覆盖：无订阅、无模型 entitlement、Allowance 耗尽、目录空/失败/last-good、模型下架或 alias 失效、Gateway 未配置/不可达、401/402/403/404/409/413/422/429/502/503、Provider usage 缺失、流式中断、取消/重试/工具确认、幂等重放、Workflow 非法转移、Artifact 文件成功但索引失败、revision 冲突、非 Artifact Run、Artifact store 503、UTF-8/路径/symlink/TOCTOU 安全边界。失败必须 fail closed、不得调用不应调用的 Provider、不得伪造成功或泄露 Token、Secret、DSN、路径和内部 identity。
+
+按 TDD 实施：先为 contradicted/missing 项增加稳定失败测试，再做最小、架构一致的修复，最后扩大回归。PostgreSQL 是正式数据源；兼容 psycopg 原生 datetime、JSONB、boolean 和 nullable；浏览器不得拥有订阅、计费、Workflow、Artifact 或 Story 真值；Dream 是 Artifact/Story index 唯一业务写入方；Admin 只读 Artifact 并仅通过受控 CAS 写审核。不得恢复 SQLite/JSON/内存 fallback，不得建立第二套状态、静态模型目录、扫描文件列表、DOM 反推业务事实、直接 SQL 篡改状态或放宽断言。
+
+真实验收使用明确隔离的 PostgreSQL clone、临时 Artifact Root、自有动态端口和确定性本地 Provider stub；不调用真实收费 Provider。运行前执行 Playwright preflight/端口归属检查，导航前注册 response/requestfailed/console/pageerror；覆盖 1440×1000 与 390×844、键盘、焦点恢复、ARIA、loading/empty/error/degraded/last-good；断言业务事实、响应合同、DB ledger/revision 和无页面级横向溢出，截图/trace 仅作辅助证据。运行 backend focused/expanded、Dream/Admin PostgreSQL integration、source contracts、Mock Chromium、隔离真实 Chromium、ESLint、TypeScript、production build、`git diff --check`，报告每组准确 pass/fail/skip。
+
+Acceptance Criteria:
+
+- 三份设计文档每条当前适用的用户可见交互、跨服务合同、状态/错误、安全与数据所有权要求都有追踪 ID 和至少一个可执行断言；任何空白都明确保持发布门禁。
+- 至少一个隔离成功链和失败/重放链以同一 canonical actor、workspace、run、project、correlation/idempotency identity 串联 Subscription、model alias、Gateway、Token ledger、Workflow、Agent、Episode Artifact 与 Story Index；reserve/capture/release 守恒且无悬挂 reservation。
+- 至少一个真实浏览器场景验证 Dream 主任务和 Admin 只读/审核交互，桌面与移动刷新重入后状态一致，零非预期 console/pageerror/request failure；Mock 不得代替此证据。
+- Story identity、Episode registry、manifest/script revision、Artifact/Index/Review/Business 状态符合 Admin–Dream 设计，不把 Run 当 Story identity，不把 filesystem 503 降格为 missing。
+- 所有隔离数据库、容器、进程、端口、临时目录、测试用户与 token reservations 精确清理；共享/生产数据库无写入，未知服务未被停止。
+
+Rollback and Cleanup:
+
+- 测试 seam 默认关闭且仅在显式隔离环境启用；生产路径始终 fail closed。
+- 修改按追踪 ID 分块可回退；禁止 DROP/TRUNCATE、生产库写入、跨账号重归属、破坏性 Git、覆盖用户已有修改或无必要架构扩展。
+- 失败后只关闭本轮创建的 PID/容器和精确命名资源，删除独立 dist/output/artifact root，检查端口、数据库、reservation 和临时凭据无残留；敏感值不得进入报告。
+
+### Optional Enhancers
+
+- 保存脱敏 Playwright trace、关键 DB 查询摘要和 correlation timeline，作为断言之外的辅助证据。
+- 对 Token settlement、Workflow lifecycle、Story materialization 和 review CAS 增加 duplicate/reorder/concurrency mutation tests。
+
+### 本轮问题与用户影响
+
+Dream 改造后缺少由三份现行设计共同约束的完整业务测试。现有模型、订阅、Workflow 或 Artifact 测试即使分别为绿，也不能证明跨服务 identity、资格、扣费、状态机和最终剧本产物在同一次用户旅程中一致；发布后可能出现模型可选但不可调用、失败仍扣费、Run 完成却无可读产物、Admin/Dream 对同一 Story 认知不一致或移动端恢复错误。
+
+### 事实来源和真值所有者
+
+- Admin–Dream Story/Artifact/Review 交互：`admin-dream-interaction-design.md`；Dream 是 Artifact/Story index 写入者，Admin 为 PostgreSQL 查询与只读 Artifact/审核 CAS。
+- 模型目录、platform model identifier、alias、Gateway 与 Provider 路由：`07-model-service-integration-design.md` 及服务端 Gateway。
+- Subscription/Plan Version/Entitlement/Allowance/Token ledger：`06-subscription-business-design.md` 及 Admin PostgreSQL。
+- Workflow/Agent/Episode 运行事实：Dream PostgreSQL、正式 Workflow/Agent 服务与受控 Artifact Root；浏览器仅拥有瞬时界面状态。
+
+### 修改范围与明确不修改范围
+
+范围：三份设计直接要求的 Dream/Admin 测试、隔离 runner、最小缺陷修复、需求追踪文档和 worklog。非范围：真实收费 Provider、生产/shared DB 写入、文档未要求的全面视觉重构、新微服务/队列/第二套数据库状态、历史数据硬编码、任意 Artifact 文件浏览或破坏性迁移。
+
+### 测试矩阵
+
+身份与权限；订阅/Plan/Entitlement/Allowance；模型目录/选择/alias；Gateway/Provider/Token settlement；Workflow lifecycle/重入/取消/重试；Agent messages/SSE/tool confirmation；Episode registry/artifacts/Story materialization；Admin list/detail/preview/review CAS；artifact/index/review/business 双轨状态；桌面/移动/键盘/ARIA；并发/幂等/错误/安全脱敏；PostgreSQL 原生类型和资源清理。
+
+### 完成标准
+
+只有三文档追踪矩阵中所有当前适用要求均为权威 `proved`，或被诚实标记为仍阻断发布的 external gate，且隔离成功/失败/重放链、真实双视口浏览器、数据库守恒、静态/构建检查与资源清理全部完成，才能宣称 Dream E2E 业务完整。
+
+### 风险、回滚与资源清理要求
+
+主要风险是用分散绿测替代跨链证明、测试 seam 泄漏生产、Actor/Run/Project identity 漂移、Token 重复结算、文件与索引状态混同、误连共享库和停止未知服务。所有测试资源必须动态且精确归属；失败时按模块回退代码而非回滚用户数据，并确认无悬挂 reservation、容器、端口、临时 artifact 或凭据。
+
+### 执行状态
+
+- 本 Prompt Architect 记录已在读取和分析新增两份设计文档前落盘。
+- 三文档条款解析、追踪矩阵、缺口 TDD、真实验收与最终清理回执待执行。
+
+### 最终执行回执（2026-08-10）
+
+#### 结论
+
+本轮关闭了模型 capability allowlist、Dream Agent turn 稳定 Gateway 幂等关联以及 Agent Story 持久化虚假成功三个缺陷，并建立了可重复的统一隔离 PostgreSQL + Admin Gateway + Dream FastAPI + Dream Vite + 本地无费用 Provider + Chromium runner。模型选择、真实 Agent SSE、Gateway 路由、Token settlement、消息和可重读 Story bundle 已在同一 canonical actor/turn 上得到证据。
+
+Dream 完整剧本生产仍不满足发布标准。最终 Admin–Dream Story 合同要求的 `artifact_status`、无 `artifact_available`、sync 状态域和条件约束尚未落地；合法 Workflow Run → Episode Artifact → Story Index 的同链真实浏览器验收也尚未完成。该项保持发布阻断，不把本轮 legacy Story bundle 或既有手写 Artifact Reader 用例冒充 Episode 完成。
+
+#### TDD 与根因证据
+
+- Model capability strict allowlist：新增失败测试后首次 `1 failed, 2 passed`；收紧为 `chat/json/tools/vision/streaming` 后 `3 passed`。
+- Gateway turn correlation：新增 deterministic idempotency/custom-header/injection 测试首次 `3 failed`；实现后相关组合 `23 passed, 17 subtests passed`。
+- Agent Story transaction：真实 Chromium 首先观察到 SSE `story-workspace-output`，但紧随其后的 Story GET 返回空。代码根因是同步包装层释放 SAVEPOINT 后未 commit，连接归还池时回滚，造成虚假成功。事务测试修复前 `2 failed, 17 deselected`，最小 commit/rollback 修复后 `2 passed, 17 deselected`；真实浏览器随后可重读 1 条 Story、2 人物、2 场景。
+- 最终 Story schema contract：`1 file failed / 2 tests failed`，准确缺口为 `artifact_status` 不存在、`artifact_available` 仍存在，以及 `artifact_status/identity/revision-state/review-integrity/business-review` 五组约束缺失。直接改共享 schema 会影响既有数据与两仓库兼容，未在没有 forward migration/数据证明的情况下强行写入。
+
+#### 真实跨服务与浏览器证据
+
+- 统一 runner：`/Users/dmeck/project/ink-dream-memory/scripts/run-dream-business-e2e.mjs`。
+- Schema 顺序：Admin migrations through `0026_harsh_victor_mancha` → Dream Alembic head（校验 owner/ACL）→ Admin remaining migrations；一次性数据库名带 `_test` 隔离标记。
+- Chromium 模型目录/保存/恢复：`1 passed (1.7s)`；1440×1000 保存 `dream-fast`，390×844 reload 后仍由 PostgreSQL 恢复，浏览器写请求只有 `{model: "dream-fast"}`。
+- Chromium Agent/Gateway/SSE/Story：`1 passed (4.1s)`；SSE 事件顺序为 message metadata、text、message-final、story-workspace-output、finish(stop)，无非预期 console/pageerror/requestfailed/API error。
+- 同一 turn Gateway：`gatewayRequests=1`，请求 alias `dream-fast`，Provider route `dream-upstream-fast`，input/output usage `17/73`，charged Tokens `90`。
+- Token Ledger：reserve `41343`、capture `90`、release `41253`，`reserve = capture + release`，最终 `reservedTokens=0`；稳定 idempotency key 为 `dream-turn-<sha256(canonicalUserId,threadId,messageId)>`。
+- Provider：本轮本地 Provider 仅 1 次调用，真实外部 Provider 调用 `0`。
+- Mock Chromium：模型加载/last-good retry 与 Episode 交互/工具确认/Agent 布局共 `5 passed (8.4s)`。
+- Admin Subscription/Token 隔离 Chromium（本轮前置 runner 当前工作树证据）：`1 passed (17.6s)`；4 Gateway requests（2 succeeded/2 failed）、6 ledger entries、0 conservation mismatch、reserved Tokens 0，并证明 402 不调用 Provider/不使用现金兜底。
+
+#### 扩大回归与静态门禁
+
+- Dream backend focused + Agent/Story/Artifact PostgreSQL/API/Tool 扩大回归：`188 passed, 3 skipped, 48 subtests passed`。
+- Dream Story Workspace source-contract/browser-harness：`219 passed (4.2s)`。第一次沙箱运行在动态端口 harness 阶段停滞并由本轮中止（exit 130），获得回环监听权限后完整重跑，不能把第一次 206/219 计为通过。
+- Dream ESLint：exit 0，`0 errors / 21 warnings`（既有 React Hook warnings）。
+- Dream TypeScript + production Vite build：`tsc -b && vite build` exit 0；保留 chunk size 与 ineffective dynamic import warnings。
+- Admin ESLint：exit 0。
+- Admin TypeScript：首次因 sandbox 无权写 `tsconfig.tsbuildinfo` 退出 2；授权仓库本地缓存写入后 `pnpm exec tsc --noEmit` exit 0。
+- Admin production build：使用独立 `.next-e2e-dream-audit-build` 执行 `next build --webpack`，compiled、TypeScript、7 个 static pages 与全部 route collection 成功，exit 0；独立 dist 已删除，Next 自动加入的 tsconfig include 已恢复。
+- Admin final Story schema test：`2 failed`，作为发布门禁保留。
+- Dream 与 Admin `git diff --check`：均 exit 0。
+
+#### 真值、未执行项与发布门禁
+
+- 已证明真值：canonical actor projection、Plan Version/Entitlement/default alias、Dream alias preference、Gateway alias/Provider route、Token ledger、Agent message和 legacy Story bundle均来自服务端/PostgreSQL；浏览器未承担订阅、计费或 Workflow 真值。
+- 未执行真实收费 Provider canary：无明确授权与预算；本地 stub 只能证明协议、usage/settlement 和错误边界，不能证明外部 Provider 计量真实性。
+- 未完成：同一合法 Workflow Run 的 receipt/session `queued→running→completed|failed|cancelled`、完整 Dream Files/Episode Binding/Episode Artifacts/Action Projection、最终 UUIDv5 Story materialization，以及 Admin final camelCase Story DTO/review CAS 的真实双应用链。
+- PostgreSQL 写入仅发生在每轮一次性 Docker clone；共享/生产数据库无测试写入。未执行 DROP/TRUNCATE、跨账号重归属或破坏性 Git 操作。
+
+#### 资源清理与回滚
+
+- 每次 runner 均在 `finally` 中关闭本轮 Admin/Dream/Vite 进程、停止精确命名 Docker 容器、删除独立 Next dist、Playwright output 与 Agent workspace；最终 `docker ps` 无 `ink-dream-business-e2e-*` 或 `ink-admin-subscription-e2e-*` 容器，4177 自有 Vite 已关闭。
+- 一次 source-contract Playwright 启动误清理仓库内 tracked 历史截图，已只恢复精确删除文件；未覆盖用户代码或未跟踪文件。
+- 回滚边界：Story transaction commit/rollback、Gateway idempotency header、capability allowlist 可独立回退；但回退会重新打开虚假成功、重复结算关联缺失或不安全 DTO，因此发布前不建议回退。
+
+## 2026-08-10 — 最终 Story/Artifact Schema 与 Workflow→Episode 生产链收口
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的跨仓库数据架构师、Dream Workflow/Artifact 负责人、Admin Story API 负责人和发布级 E2E QA。基于三份现行业务设计合同与上一轮追踪矩阵，关闭仍阻断 Dream 剧本完整 E2E 的最终门禁：以安全、可演进的 forward migration 将 Story/Artifact 状态模型升级为最终合同，同步 Dream 与 Admin 的 repository/API/UI，并通过生产等价服务路径证明一个合法 Workflow Run 从创建、Agent 执行、Episode Artifact 写入、Story Index materialization 到 Dream/Admin 读取与审核的一致性。
+
+必须首先以当前 PostgreSQL schema、现有 migration journal、Dream Alembic head、现存 repository DTO 与隔离测试数据为事实，不直接删除或改名共享字段。为 `artifact_status`、sync 状态域、Episode 1–99、artifact identity、revision state、review freshness/business review 等最终不变量设计分阶段 migration：expand（新增 nullable/可回填字段与兼容读写）、backfill/验证（明确旧值映射和冲突检测）、contract（仅在所有 reader/writer 已切换且隔离数据验证后移除 `artifact_available`/旧 `missing` 语义）。若当前轮无法安全完成 contract 阶段，必须保留兼容字段但让新生产路径只写最终状态，并把删除阶段作为明确发布步骤，不能强行破坏现有数据。
+
+实施按 TDD：先让 schema/repository/API 的最终合同测试稳定失败，再增加 forward migration 和双读/单写兼容层，随后修正 Dream projector/repository、Admin Story list/detail/filter、Artifact Reader、review CAS 与 UI。Dream 必须是 Artifact/Story Index 唯一业务写入者；Admin 不得直接制造 Story 或 Artifact，只能读取 PostgreSQL/只读 Artifact，并通过受控 revision CAS 更新审核。不得直接 SQL 伪造 completed Workflow/Story 作为最终 E2E 结果；测试 fixture 只能用于前置身份、模型、订阅与 runtime 配置。
+
+建立生产等价完整链：canonical actor 与 workspace → Admin Subscription/Entitlement/default alias → Dream Workflow launch/preflight → Runtime Load Receipt 与 Agent Session → Gateway turn/Token settlement → Dream 受控工具写入 Episode registry、outline、script、storyboard、review、prompts、render guide → completion validator → 同步 Story Index materialization → Dream Files/Agent Messages/Episode Artifacts/Action Projection/Story Index → Admin Story list/detail/Artifact preview/review CAS。所有 identity（actor/workspace/run/thread/project/episode/story）、revision、ETag、idempotency/correlation 必须可追踪且一致。成功、Provider/Gateway 失败、Artifact 写成功但 Index 失败、review revision 冲突和幂等重放都必须 fail closed、无虚假成功、无重复扣费和无悬挂 reservation。
+
+真实验收使用一次性 PostgreSQL clone、临时 Artifact Root、自有动态端口和本地无费用 Provider；不写共享数据库、不调用真实收费 Provider。Playwright 导航前注册 response/requestfailed/console/pageerror；覆盖 1440×1000 与 390×844、刷新/重入、键盘、焦点、ARIA、loading/empty/error/last-good。运行 backend/Admin unit、PostgreSQL migration/runtime integration、source contracts、Mock Chromium、真实 Dream/Admin Chromium、ESLint、TypeScript、production builds、`git diff --check`，记录准确 pass/fail/skip。
+
+Acceptance Criteria:
+
+- forward migration 在空库、旧 0027 schema 数据和重复执行三种场景均安全；发现无法映射的旧数据时 fail closed 并输出不含敏感值的冲突计数，不静默丢失或重归属。
+- 新生产路径具有独立 `artifact_status` 与 `artifact_sync_status`，不再以 boolean 推导 Artifact；sync 不持久化 `missing`，Episode 为 1–99，五组最终约束有数据库与代码双重验证。
+- Dream 是唯一 Story index writer；Admin E2E 的最终业务证据来自 Dream producer，不再用直接 SQL/手写文件冒充。
+- 至少一个同链成功、失败与重放场景关联 Subscription、alias、Gateway ledger、合法 Workflow 状态、Agent、Episode Artifact、Story Index 和 Admin read/review；reserve/capture/release 守恒且最终 reserved=0。
+- Dream/Admin 双视口真实浏览器刷新重入一致，零非预期应用诊断；任何尚未完成的 contract-drop 或真实外部 Provider canary明确保持发布门禁。
+- 所有本轮容器、端口、临时数据库、Artifact Root、Next/Vite/Playwright 输出与 reservation 精确清理；未知服务不停止，用户已有修改不覆盖。
+
+Rollback and Cleanup:
+
+- migration 按 expand/backfill/contract 独立可回退；contract-drop 不在缺少数据证明或跨仓库读写切换完成前执行。
+- production reader 在 expand 期间可双读但必须以 `artifact_status` 优先；production writer 只写最终状态并同步必要兼容投影，禁止产生新 `missing` sync 值。
+- 不执行 DROP/TRUNCATE、生产库写入、跨账号重归属、破坏性 Git 或 broad recursive cleanup；只删除精确命名的本轮资源。
+
+### Optional Enhancers
+
+- 增加 migration property tests，覆盖旧状态组合、重复执行、并发 materialization 与 review CAS reorder。
+- 保存脱敏的 run→message→gateway request→ledger→episode→story revision timeline，作为业务断言之外的审计证据。
+
+### 本轮问题与用户影响
+
+上一轮已证明模型、Gateway、Token 与 legacy Story bundle，但最终 Story schema 仍有 boolean 第二真值、`missing` sync 语义和缺失约束；Workflow/Episode/Story materialization 也未在同一真实链路中证明。若发布，用户可能在 Artifact 文件成功、索引失败或审核 revision 漂移时看到错误状态，Admin 与 Dream 可能对同一 Story 得出不同结论。
+
+### 事实来源和真值所有者
+
+- schema/migration：Admin Drizzle journal、Dream Alembic 与隔离 PostgreSQL catalog。
+- Workflow/Agent/Episode/Artifact/Story materialization：Dream 服务与其 PostgreSQL/受控 Artifact Root。
+- Subscription/model/Gateway/Token：Admin Gateway 与 Admin PostgreSQL。
+- Admin Story/Artifact/review：PostgreSQL read projection、只读 Artifact Reader 与 revision CAS；浏览器只拥有瞬时 UI 状态。
+
+### 修改范围与明确不修改范围
+
+范围：Story/Artifact forward migration、Dream/Admin repository/API/UI、Workflow/Episode producer、隔离 runner、合同测试与追踪/worklog。非范围：真实收费 Provider、共享/生产数据库写入、无关视觉重构、新数据库/队列、SQLite fallback、硬编码当前数据或一次性破坏性 schema 替换。
+
+### 测试矩阵
+
+空库/旧 schema/重复 migration；Artifact/Index/Review/Business 状态组合；Episode 1/99/0/100；UUIDv5 identity；revision/ETag/CAS；Workflow合法与非法转移；writer成功/index失败；成功/失败/重放 Token settlement；Dream/Admin desktop/mobile/refresh/reentry/accessibility；权限隔离、路径/UTF-8/TOCTOU和敏感信息边界；资源清理。
+
+### 完成标准
+
+只有 final-contract schema、Dream唯一写入、合法 Workflow→Episode→Story 同链、Admin只读/审核、成功/失败/重放账实一致、真实双应用浏览器、静态/构建检查和清理全部有当前可执行证据，才能解除发布门禁。
+
+### 风险、回滚与资源清理要求
+
+主要风险是旧数据无法映射、两仓库部署顺序不兼容、双写漂移、直接 SQL fixture 冒充业务结果、review revision 被覆盖、误连共享库或误停服务。必须以 expand/backfill/contract 顺序和隔离 clone 降低风险；失败时回退应用读写切换而不删除用户数据，并销毁精确本轮资源。
+
+### 执行状态
+
+- 本 Prompt Architect 记录已先于本轮 schema/代码分析和修改落盘。
+- migration 设计、TDD、双仓库改造和完整链验收待执行。
+
+### 阶段执行回执（2026-08-10）
+
+#### 已完成
+
+- Admin 新增 forward expand migration `0030_dream_artifact_status_expand`：只新增 nullable `artifact_status`、按旧只读事实确定性回填，并以 `NOT VALID → VALIDATE` 启用状态枚举约束；未删除或改名任何共享列。
+- 隔离 PostgreSQL 在 0029 后预置一条 legacy Artifact Story，再应用 0030；回执为 `artifact_status=available`、legacy compatibility boolean `true`、约束 `convalidated=true`。
+- Dream projector/repository/service 已切为 `artifact_status` 优先；写入时仍双写 legacy boolean 作为滚动发布兼容投影，公共兼容布尔值由 status 派生，ETag 与 index 判定不再依赖旧布尔列。
+- 真实 PostgreSQL 揭示并修复 schema gate 根因：设计/0027 使用精确 partial unique identity index，但 repository 错误要求 full unique index，导致真实 materialization 返回 `story_index_schema_unavailable`。现在只接受 `(artifact_source_type IS NOT NULL) AND (source_project_id IS NOT NULL)` 的精确谓词和三个直接列，继续拒绝不完整谓词、表达式列或全表索引。
+- Dream focused Story Artifact：`73 passed, 3 skipped`；skip 为没有显式 TEST_DATABASE_URL 的运行。统一隔离 runner 随后在 owned PostgreSQL clone 中执行 `61 passed`，无 skip。
+- 真实 Chromium：模型保存/移动恢复 `1 passed (1.7s)`；Gateway-backed Agent/Story `1 passed (4.1s)`。同一 turn 为 1 个 Gateway request，alias `dream-fast → dream-upstream-fast`，usage `17/73`，charge `90`；reserve `41343`、capture `90`、release `41253`，最终 reserved `0`，外部收费 Provider 调用 `0`。
+- 一次 legacy backfill fixture 最初放在主测试 actor 下，真实浏览器正确显示两条 actor-scoped Story，暴露测试错误地假定列表长度为 1；fixture 改用第二 actor 后重跑通过，没有放宽业务断言。
+- 每次成功/失败 runner 均通过 `finally` 清理精确命名容器、动态端口、临时 PostgreSQL、Artifact Root、Next dist 与 Playwright output；read-only cleanup probe 未发现残留 owned 容器或监听。
+
+#### 仍阻断 contract phase
+
+- Admin final schema contract 仍为 `2 failed`：物理/Drizzle 兼容映射仍保留 `artifact_available`，且 artifact identity、revision-state、review-integrity、business-review 四组最终约束尚未应用。
+- 两次尝试直接切换/批量回填审核与发布状态均被安全审查拒绝：这些操作会改写既有 review/published/revision 事实并影响跨仓库 rolling deploy。在获得针对这些数据语义变更的明确批准与逐行冲突审计前，不执行 contract-drop、状态重归类或约束替换。
+- 本阶段未声称完成 Workflow launch → Episode artifact producer → Story Index → Admin review 的同一真实生产链；当前真实 Chromium 证明的是模型/Gateway/Token/Agent/legacy Story bundle，Story Artifact PostgreSQL 证明来自 repository/runtime integration。该缺口继续是发布门禁。
+
+#### Contract guard 最终回执
+
+- 共享 PostgreSQL 只读审计并 rollback：2 条 Artifact Story 均可无损映射，全部 identity/revision/review/business 冲突计数为 0；共享库尚未部署 `artifact_status`。
+- 新增 0031 脱敏 preflight、滚动兼容 trigger 与最终约束；Admin 应用 schema 不再映射旧布尔列。final schema test `2 passed`。
+- 约束实测发现并修复 Script revision 更新后未回退 published 的缺陷；保留 Admin-owned review facts。focused `73 passed, 3 skipped`，owned PostgreSQL `61 passed`。
+- 最终真实 Chromium：模型 `1 passed`，Gateway Agent `1 passed`；reserve `41343 = capture 90 + release 41253`，reserved `0`。真实持久化 Episode run 的 Run/Dream Files/Messages/Artifacts 均 200，但 Story Index 因共享库未部署 0030/0031 准确返回 503，故只读用例诚实为 `1 failed`。
+- Admin TypeScript、focused ESLint、production build 与双仓 `git diff --check` 均 exit 0；共享库无写入，精确临时资源已清理。当前发布门禁是部署 0030/0031 后重跑该只读真实 run。
+
+## 2026-08-10 — 只读源库克隆后的真实 Workflow/Episode/Story/Admin 闭环
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的 PostgreSQL 灾备/迁移验证工程师、Dream Workflow/Artifact 全栈负责人、Admin Story 审核负责人和发布级 Playwright QA。关闭“共享 PostgreSQL 未获写权限，无法验证 0030/0031 后真实持久化 Workflow/Episode/Story 链”的门禁：以共享数据库为只读源，通过受控 dump/restore 创建动态命名、一次性 owned PostgreSQL clone；在 clone 上应用当前 Admin/Dream migration，启动本轮自有 Dream/Admin/Vite 服务，并对现存真实 Workflow Run、Dream Files、Agent Messages、Episode Artifacts、Story Index、Admin Story 查询/Artifact preview/review CAS 执行生产等价验证。
+
+严格遵循：源库连接只执行读取，禁止 migration、DDL、DML、锁定写、触发器副作用或测试账号创建；所有 restore、migration、review CAS、幂等重放只发生在 `_test` clone。dump/restore 不把 DSN、Secret、Provider credential、正文或路径写入日志；临时 dump 使用精确随机目录、权限收紧并在 finally 删除。先执行 Playwright preflight、端口/PID 归属和源/目标数据库身份校验；任何 source/target 相同、目标名无 test marker、dump/restore 非零或 schema hash 不匹配均 fail closed。
+
+验收必须证明：0030 legacy backfill 与 0031 constraints 在真实数据 clone 上通过；目标 run 的 Workflow/Dream Files/Messages/Episode Artifacts/Story Index 均返回正确 2xx/ETag/revision；Dream 与 Admin 对 stable Story UUID、workspace/project/run、episode count、artifact/index/review/business 状态一致；Admin review confirm/reject 使用 expected revision、If-Match/idempotency、冲突重放并写审计，且不修改 Artifact 正文或 locator；1440×1000 与 390×844 刷新/重入无非预期 console/pageerror/requestfailed。模型/Gateway/Token 证据与该 run 若无法在同一历史 correlation 上证明，必须明确保留而不能拼接成同链成功。
+
+运行 focused backend、clone migration/runtime integration、Admin API tests、Mock/real Chromium、ESLint、TypeScript、production build 和 `git diff --check`。完成后停止精确本轮服务/容器，删除 clone、dump、浏览器 output 与临时 Artifact；确认源库零写入、无悬挂 reservation。不得通过忽略 503、直接 SQL 制造 Story/Review 成功、复制手写 Artifact 或修改共享库让用例变绿。
+
+Acceptance Criteria:
+
+- 只读源库快照可恢复到 owned `_test` PostgreSQL，0030/0031 在真实数据组合上成功并完成全部 convalidated 检查；源库写入计数为 0。
+- 真实 persisted run 在 clone 上的 Run/Dream Files/Messages/Episode Artifacts/Story Index 全部通过，Story Index 不再因 schema gate 返回 503。
+- Dream/Admin Story identity、revision、artifact/index/review/business facts 一致；review CAS 成功、冲突和幂等重放有数据库审计证据，Artifact 文件与 Dream-owned 字段未被 Admin 覆盖。
+- 双视口浏览器与诊断门禁通过；任何无法关联到同一 Gateway/Token 历史 turn 的事实明确列为剩余门禁。
+- clone、dump、端口、服务、Playwright output 和临时凭据精确清理；不覆盖用户未提交修改。
+
+Rollback and Cleanup:
+
+- 源库始终只读，无需数据回滚；clone 上失败即销毁精确容器/数据库并保留脱敏计数。
+- 不执行共享库 migration、DROP/TRUNCATE、跨账号重归属或 destructive Git；不停止未知服务。
+- 若真实数据包含无法通过 contract preflight 的组合，输出聚合冲突计数并停止，不自动改写 review/published/revision。
+
+### Optional Enhancers
+
+- 记录脱敏 source snapshot hash、migration hashes、run→story→revision→audit timeline。
+- 增加 clone 恢复重复执行与 review CAS 并发 property tests。
+
+### 本轮问题与用户影响
+
+当前真实 persisted run 的 Artifact 可读，但 Story Index 因共享库尚未部署 0030/0031 返回 503；仅凭空库/fixture clone 不能证明真实数据升级后业务闭环。用户会看到真实产物存在而 Story 状态不可恢复，Admin 也无法安全审核。
+
+### 事实来源和真值所有者
+
+- 源事实：共享 PostgreSQL 只读 snapshot 与真实 Artifact Root；源库不接受本轮写入。
+- 升级后事实：owned PostgreSQL clone + 当前 migration journal。
+- Artifact/Story writer：Dream；Admin 只读 Artifact/PostgreSQL 并通过 review CAS 写 Admin-owned 字段。
+- 浏览器仅拥有瞬时视图/输入，不能制造 Workflow、计费或 Story 状态。
+
+### 修改范围与明确不修改范围
+
+范围：clone runner、只读真实 run Playwright、必要的最小 API/contract 修复、review CAS 测试、worklog。非范围：共享/生产 DB 写入、真实收费 Provider、物理删除 legacy column、手写业务终态或无关 UI 重构。
+
+### 测试矩阵
+
+dump/restore/identity guard；0030/0031 migration；real Run/Dream Files/Messages/Episode Artifacts/Story Index；Admin list/detail/preview/review success/conflict/replay；desktop/mobile/refresh/accessibility；console/network/security；cleanup/source-zero-write。
+
+### 完成标准
+
+真实数据 clone 上的 post-migration Dream/Artifact/Story/Admin 闭环全部有权威断言，或准确暴露新的发布门禁；不得以 isolated fixture 成功替代真实 persisted run。
+
+### 风险、回滚与资源清理要求
+
+主要风险为误连源库写入、dump 泄密、restore 目标混淆、Admin review 覆盖 Dream 字段、端口/容器残留。所有目标动态命名且带 test marker，源/目标身份必须不同；失败销毁精确 owned 资源并记录脱敏回执。
+
+### 执行状态
+
+- 本 Prompt Architect 记录已先于本轮 clone/preflight/代码分析落盘。
+- preflight、clone runner、真实浏览器、Admin review CAS 与清理待执行。
+
+### 最终执行回执（2026-08-10）
+
+#### 只读 clone 与 migration 事实
+
+- `ink-dream-playwright-qa` preflight 通过；执行前 5173/8765 均完成端口归属检查，本轮 runner 始终使用动态自有端口。
+- 新增 `/Users/dmeck/project/ink-dream-memory/scripts/run-dream-cloned-production-e2e.mjs`：源连接仅用于 `PGOPTIONS=-c default_transaction_read_only=on` 的 `pg_dump` 与显式 `BEGIN READ ONLY` 查询；目标为随机 `ink_memory_dream_clone_<suffix>_test`、精确命名 PostgreSQL 18 容器。DSN、密码、正文和绝对 Artifact locator 未写入日志。
+- 第一次 runner 使用 PostgreSQL 16，因 pg_dump 18 生成的 `transaction_timeout` 参数不兼容而在 restore 阶段 fail closed；改为 PostgreSQL 18 后恢复成功。该失败没有触达业务服务或源库写入。
+- clone 恢复 2 条真实 Artifact Story，目标 `run_b81d3731b56b4703868b66af76e7b656` 可解析；0030/0031 应用成功，`artifact_status/identity/revision-state/review-integrity/business-review` 五组约束全部 `convalidated=true`。
+
+#### 真实双应用浏览器
+
+- Dream persisted Workflow/Episode/Story Chromium：`1 passed (3.2s)`（前一成功重跑为 4.8s）。目标 Run detail、`dream-files`、`dream-agent/messages`、`episode-artifacts` 与 Story Index 均通过真实 FastAPI/PostgreSQL/Artifact Root，覆盖 1440×1000、390×844、刷新与重入，无非预期 post-auth response/console/pageerror/requestfailed。
+- Admin Artifact/review Chromium：最终 `1 passed (10.2s)`。第一次到达全部业务断言后仅因外部 React Grab 请求和登录前预期 401 被错误并入 post-auth diagnostics 而失败；诊断分段并确定性 fulfill 外部开发辅助资源后通过，没有放宽业务断言。
+- Admin 用源 project 过滤真实 Story，读取 Artifact surface/preview；旧 revision 返回 409；confirm 成功；同一 `x-request-id` 的完全相同重放返回 200、`idempotency-replayed:true` 且只有 1 条 audit；第二条 Story reject 成功且强制非空 notes。审核前后 Dream-owned run/project/workspace/episode/revision/locator 均未变化。
+- 修复 Admin reject contract：reject 写入当前 `reviewed_script_revision`、清空 `confirmed_at`，无 notes 返回 `STORY_ARTIFACT_REVIEW_NOTES_REQUIRED` 400。新增 exact review replay guard，不重复 mutation/audit。
+
+#### 历史 Run 与 Gateway/Token 关联审计
+
+- 源库显式 `BEGIN READ ONLY / ROLLBACK` 查询：目标 Run 由 canonical actor `28` 于 2026-08-06 创建，仍为 `queued`；同一 thread 中有 16 条 `story-workspace-dream-agent-user` 消息，均持久化为 `dispatch_status=dispatched`。
+- 该 actor 的 platform user 存在且 active，但其 120 条 Gateway request 最早为 2026-08-09，晚于目标 Run/Artifact 生产；历史请求中 `dream-turn-*` 数为 0。
+- 按当前服务端唯一算法 `dream-turn-<sha256(canonical user + thread + persisted message id)>` 对该 thread 全部 message 重建候选键，Gateway 匹配数为 0、对应 Token Ledger 匹配数为 0。因此该历史 Workflow/Episode/Story 链不能被声明为经过现行 Gateway/Token 计费。
+- 另一条 owned fresh runner 已独立证明模型目录、Agent SSE、Gateway route 和 Token 守恒：1 个本地 Provider request，usage 17/73、capture 90，reserve 41343 = capture 90 + release 41253，最终 reserved 0，外部 Provider 调用 0。但它没有生产本历史 Run 的 Episode artifacts；两条链没有被拼接成伪造的同链成功。
+
+#### 测试与静态门禁
+
+- Admin Story review/schema focused：2 files、`12 passed`（10 mutation + 2 schema），0 failed/0 skipped。
+- Dream Story Index/Dream API/Episode Artifact focused：`191 passed, 3 skipped, 9 subtests passed`；3 skip 仅为该 focused 命令未注入 owned `TEST_DATABASE_URL`。owned PostgreSQL runner 中同组 runtime integration 为 `61 passed`、0 skipped。
+- Dream frontend Playwright source contracts：`365` tests 启动并全部完成，命令 exit 0、无失败；直接 `npm exec vitest` 因仓库未安装 Vitest且沙箱网络不可达而在启动前失败，随后误用 `node --test` 产生 42 个 runner/import 失败，这两次均不计为业务测试结果，最终使用仓库实际的 Playwright test runner。
+- Dream ESLint：exit 0，0 errors / 21 existing React Hook warnings；Dream `tsc -b && vite build` exit 0，保留 chunk-size 和 ineffective dynamic-import warnings。
+- Admin ESLint、`pnpm exec tsc --noEmit` 均 exit 0；独立 `.next-e2e-final-dream-audit` production build compiled、TypeScript、7 static pages 与 route collection 全部成功，随后精确删除 dist 并移除 Next 自动写入 tsconfig 的随机 include。
+- Dream/Admin `git diff --check` 均 exit 0。
+
+#### 数据安全、清理与发布门禁
+
+- 共享/源 PostgreSQL 本轮没有 DDL/DML、migration、测试账号或审核写入；所有 restore、migration、Admin review、audit 仅发生在 owned `_test` clone。没有 DROP/TRUNCATE、跨账号重归属或真实收费 Provider 调用。
+- 最终无 `ink-dream-clone-e2e-*`、`ink-dream-business-e2e-*`、`ink-admin-subscription-e2e-*` owned 容器，无 clone 临时目录或 Admin `.next-e2e-*`。Playwright source-contract 默认清空的 tracked 历史截图已精确恢复，本轮新建的 4 个结果目录已删除。
+- 清理探针发现 5173 为 17:21 启动的既有 Vite，8765 为 20:19 启动的 VS Code debugpy 后端；二者不是本轮动态端口服务，按归属规则保留且未停止。
+- 当前最终门禁不是 clone/Artifact/Admin 合同，而是缺少一条**同一新 Workflow Run**从现行 Subscription/Model → Gateway/Token → Dream Agent 工具生产完整 Episode artifacts → Story Index → Admin review 的生产等价成功/失败/重放证据。历史 Run 早于 Gateway，fresh Gateway runner 又未生产 Episode artifacts；在补齐该 producer chain 前不得宣称 Dream 剧本业务 E2E 完整，也不得把真实外部 Provider canary（仍未授权）计为已执行。
+
+## 2026-08-10 — 同一新 Run 的 Gateway/Token→Episode Producer 最终闭环
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的 Dream Workflow/Agent 工具执行架构师、Admin Gateway/Subscription 计费工程师、Episode Artifact producer 负责人、Admin Story 审核工程师和发布级 Playwright QA。基于现有真实数据 clone 已证明的 Workflow/Episode/Story/Admin 读取链，以及独立 fresh runner 已证明的 Model/Gateway/Token 链，关闭最后一个不可拼接的发布门禁：在一个全新、同一 canonical actor/workspace/thread/message/Workflow Run 上，通过生产等价服务路径完成 Subscription/Plan Version/Entitlement/Allowance → Admin model catalog/default alias → Dream 保存 platform model identifier → Dream launch/preflight/runtime receipt/session → Dream Agent 经服务端 Gateway 推理 → Token reserve/capture/release → 服务端受控 Episode 工具写入完整 outline/script/storyboard/review/prompts/render guide → completion/action projection → Story Index materialization → Dream 刷新重入读取 → Admin Artifact preview 与 revision CAS review，并为成功、失败和完全相同重放建立可重复的同链证据。
+
+不得把历史 Artifact、直接 SQL 业务终态、手写文件或另一 Run 的 Gateway 账本接入本链。允许 SQL/fixture 仅创建测试身份、Subscription/Plan/Entitlement/Allowance、模型/Provider、Deck/runtime 等前置控制面事实；Workflow、Agent message、Episode artifacts、Action Projection、Story Index 和 review 必须分别由其权威业务 API/服务产生。确定性本地无费用 Provider 必须返回真实协议事件/usage，并通过受控 tool-call/episode-action 接口触发 producer；不得绕过 Dream Agent 直接调用 repository 伪造完成。真实外部 Provider 无明确授权时保持 0 调用。
+
+先做当前代码与 runner 的只读差距审计：追踪 Dream Agent SSE 中 tool use/confirmation、Episode action preview/confirm/execute、Workflow 状态转换、completion validator、Story Index projector 及 Gateway correlation/idempotency。对缺失链路先增加失败测试，再做最小实现。若现有 Workflow `queued/running/completed` 状态机无法由真实 producer 合法推进，必须修正状态真值或增加明确的服务端协调步骤，禁止浏览器或测试 SQL直接改状态。所有写请求使用稳定 idempotency key、expected revision/If-Match；重复完全相同请求只能 replay，语义冲突返回 409；Provider/Gateway/usage/settlement/tool/index 失败 fail closed，Token reservation 最终归零，Artifact/Story 不得虚假完成。
+
+使用一次性 PostgreSQL 18 `_test` clone、临时 Artifact Root、自有动态端口、真实 Dream FastAPI/Vite/Admin Next 与本地 Provider。导航前注册 response/requestfailed/console/pageerror；覆盖 1440×1000 与 390×844、刷新、重新进入、键盘/焦点/ARIA、loading/error/last-good。至少执行：同 Run 成功；Gateway/Provider 失败且 release；成功请求完全相同重放且 Provider/ledger/artifact/audit 不重复；revision/idempotency 冲突；Story Index 或 review CAS 失败保持 Dream-owned facts。每个场景都必须输出脱敏 run→message→gateway request→ledger→episode revisions→story→review audit timeline。
+
+Acceptance Criteria:
+
+- 同一新 Run 的 actor/workspace/thread/message/platform user/model alias/Gateway request/Token ledger/Episode/Story identity 可双向追踪，不借用历史 Run 或跨 actor 数据。
+- Gateway 仅路由 Admin catalog 中服务端验证后的 alias；浏览器仅保存 platform model identifier；Provider secret、API key、DSN、路径和正文不进入日志或请求断言。
+- 成功场景产生真实 outline、script、storyboard、review、prompts、render guide 与 Action Projection；completion validator 合法推进 Workflow `queued→running→completed`，Story Index 与 Artifact revision一致。
+- Token `reserve = capture + release`，最终 reserved=0；完全相同重放 Provider 调用仍为 1、Gateway request 为 1、capture 为 1，Artifact/Story/Admin audit 不重复。
+- 失败场景准确呈现 402/403/409/422/429/502/503 之一，不产生虚假 message-final/completed/Story published；Provider 已触达但失败或 usage 缺失时 reservation 被 release，未触达时不产生 Provider 调用。
+- Dream/Admin desktop/mobile/refresh/reentry 全部从 PostgreSQL/Artifact 恢复权威状态，零非预期 application diagnostics；Mock 只验证确定性边界，不替代真实浏览器/数据库事实。
+- focused backend、PostgreSQL runtime integration、frontend source contract、Mock/real Chromium、ESLint、TypeScript、production build、`git diff --check` 全部给出准确 pass/fail/skip；未授权 external canary 明确未执行。
+- 本轮容器、数据库、端口、进程、Artifact Root、Next/Vite/Playwright output、临时凭据和 reservation 精确清理；未知服务不停止，源/共享数据库零写入，用户未提交修改不覆盖。
+
+Rollback and Cleanup:
+
+- 修改按 Gateway correlation、Workflow lifecycle、tool producer、Story projector、Admin review 分模块可独立回退；回退不能改写或删除用户数据。
+- runner 任何阶段失败都在 finally 停止精确 owned 服务/容器并删除动态 `_test` DB、临时 Artifact/输出；保留脱敏失败阶段和守恒计数。
+- 禁止 DROP/TRUNCATE 共享库、生产库测试写、跨账号重归属、真实收费 Provider、破坏性 Git、吞异常、放宽断言或硬编码当前历史数据。
+
+### Optional Enhancers
+
+- 为同一 Run 输出 machine-readable trace manifest，并由独立 verifier 检查所有 identity/revision/idempotency/ledger 边。
+- 增加 Provider 流式中断、usage 缺失、Artifact 写成功但 Story Index 失败的故障注入与恢复测试。
+- 保存 Playwright trace 和关键双视口截图作为辅助证据，但仍以 API/数据库/文件断言为准。
+
+### 本轮问题与用户影响
+
+当前只有一条现行 Model/Gateway/Token/Agent/legacy Story 成功链和一条历史 Workflow/Episode/Story/Admin 成功链；历史 Run 早于 Gateway 且仍为 queued。若把两者拼接发布，用户可能被扣费但 Episode 未生产，或看到完整 Artifact 却得到错误 Workflow 状态，刷新和 Admin 审核无法证明同一次执行。
+
+### 事实来源和真值所有者
+
+- Subscription/Plan/Entitlement/Allowance、model catalog/Gateway/Token Ledger：Admin PostgreSQL 与 Gateway 服务。
+- Workflow/receipt/session/Agent message/tool action/Action Projection：Dream PostgreSQL 与服务端协调器。
+- Episode artifacts：受控 Artifact Root + manifest/revision；Story Index：Dream projector 写入 PostgreSQL。
+- Admin：只读 Dream-owned facts，仅以 revision CAS 写 review/audit；浏览器仅拥有瞬时交互状态。
+
+### 修改范围与明确不修改范围
+
+范围：统一 owned runner、确定性 Provider tool response、Dream Agent/tool/workflow 协调、Story projector、Admin review、TDD/E2E/trace/worklog。非范围：真实收费 Provider、共享数据库写入、无关 UI 重构、新持久化系统、SQLite/JSON fallback、直接 SQL 业务终态或历史数据硬编码。
+
+### 测试矩阵
+
+同 Run success/failure/replay/conflict；subscription eligible/ineligible/exhausted；model allowed/removed；Provider error/usage missing/stream abort；tool confirmation/cancel/retry；完整六类 Episode artifacts；Workflow legal transitions；Story index success/failure/retry；Admin review success/stale/replay/reject；desktop/mobile/refresh/reentry/accessibility；PostgreSQL datetime/JSONB/boolean/nullable；diagnostics/security/cleanup。
+
+### 完成标准
+
+只有一个全新 Run 在生产等价服务路径上同时证明现行 Subscription/Model、Gateway/Token、Dream Agent 工具、完整 Episode、Workflow completion、Story Index 和 Admin review，并且失败/重放、双视口、守恒、静态门禁与清理全部通过，才可解除 Dream 剧本生产 E2E 发布门禁。
+
+### 风险、回滚与资源清理要求
+
+主要风险为本地 Provider 事件不符合真实协议、工具调用绕过 Agent、Workflow 状态被测试伪造、重复 settlement/artifact、跨 Run identity 漂移和服务残留。必须以服务端 correlation、数据库约束、独立 trace verifier、finally cleanup 和 no-external-call 断言降低风险；任何无法证明的边保持失败而非降级。
+
+### 执行状态
+
+- 本 Prompt Architect 记录已先于本轮代码/runner 差距分析和修改落盘。
+- 同 Run producer trace 审计、失败测试、最小实现、真实浏览器与最终清理待执行。
+
+## 2026-08-10 — Dream Agent 完成后的权威状态刷新与同 Run E2E 收口
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的 Dream 交互状态架构师、React 数据同步工程师、Workflow/Episode 全栈工程师和发布级 Playwright QA。基于上一阶段已通过真实隔离 PostgreSQL/Chromium 证明的登录、模型目录、Dream Run `201 Created`、Gateway/Provider 9 次受控 tool loop 与 Dream 确认 `202 Accepted`，修复当前剩余的确定性业务缺口：Agent 已完成并由服务端写入最新 `dream-files`/Workflow 状态后，Dream 页面仍可能保留中途读取的 last-good 旧快照，导致“确认并继续”错误保持 disabled，或确认后的后续执行入口不出现。
+
+先只读追踪 Dream 页面从 launch、SSE/Agent message、Workflow Run detail、`dream-files` 到 reducer/query state 的完整刷新触发链，确认真实竞态、触发条件、真值所有者和既有测试缺口。不得用延长超时、强制点击、DOM 推导完成状态、乐观伪造 revision、吞掉 409/422/503、固定轮询睡眠或硬编码本地 Provider 时序解决。先增加稳定失败的 source contract 或 Mock Chromium 测试，证明在首次 `dream-files` 返回 partial/last-good 后，Agent terminal/server revision 变化必须触发重新读取并采用 PostgreSQL/Artifact 权威快照；再实施最小修复，保留 loading/error/last-good、取消、重入和权限隔离语义。
+
+修复后继续同一新 Run 的真实隔离 E2E：Subscription/Entitlement/Allowance → Admin model catalog → platform alias 保存 → Dream launch → Gateway/Token → runtime receipt/session → controlled Dream files → confirmation → first Episode binding recovery → 九个 Episode actions → outline/script/storyboard/review/prompts/render guide → Workflow completed → refresh/mobile reentry。所有断言以 API、PostgreSQL、Token ledger、Artifact revision 和浏览器可见状态交叉验证；真实外部收费 Provider 保持 0 调用。
+
+Acceptance Criteria:
+
+- 可重复测试先复现“首次 partial `dream-files` 后 Agent 完成但页面不再刷新”的 disabled stale-state 问题，并在修复后转绿。
+- 刷新由可信 SSE/Agent terminal、Workflow revision 或明确的服务端状态变化驱动；浏览器不创建第二套 Workflow/计费/Artifact 真值。
+- 正常、loading、partial、last-good、error、取消、刷新和重入保持既有安全合同；无无限轮询、无重复确认、无额外写请求。
+- 真实 Chromium 中 launch 为 201、confirmation 为 202，确认入口和后续执行入口可靠出现；同一 Run 完成所有 Episode actions 与受控 artifacts。
+- Gateway request、Provider request、Token reserve/capture/release 和完全相同重放满足幂等与守恒；失败不产生虚假 completed。
+- 覆盖 1440×1000、390×844、键盘焦点、ARIA 和零非预期 console/pageerror/requestfailed；截图仅作辅助。
+- focused frontend/backend、PostgreSQL integration、Mock/real Chromium、ESLint、TypeScript、production build、`git diff --check` 给出准确 pass/fail/skip。
+- finally 停止仅本轮自有服务/容器并清理精确临时 PostgreSQL、Artifact Root、Playwright output 和凭据；保留既有 5173/8765 与共享数据库不动。
+
+Rollback and Cleanup:
+
+- 前端刷新触发改动必须可独立回退，不改 API truth ownership、Gateway/计费合同或持久化模型。
+- 若修复导致请求风暴、last-good 丢失或重复 confirmation，回退该触发器并保留新增失败测试与证据。
+- 禁止停止未确认归属进程、DROP/TRUNCATE 共享库、生产库写入、真实收费调用和破坏性 Git；失败后精确清理本轮动态资源。
+
+### Optional Enhancers
+
+- 增加 revision/SSE 事件到 `dream-files` refetch 的时序图与 request-count 上限断言。
+- 在最终 trace manifest 中记录首次 partial、terminal event、refetch、confirmation 和 Episode completion 的单调 revision 时间线。
+
+### 本轮问题与用户影响
+
+服务端已能创建 Run 并完成受控 Agent tool loop，但浏览器可能停留在过期 partial/last-good 快照，用户看到按钮不可用并误以为服务仍为 401/失败，阻断确认和 Episode 生产。
+
+### 事实来源和真值所有者
+
+- Workflow 状态与 revision：Dream PostgreSQL；Dream stages/artifacts：受控 Artifact Root 与服务端 projection。
+- Agent 终态/SSE：Dream Agent message/event 服务；模型/Token：Admin Gateway 与 Admin PostgreSQL。
+- 浏览器仅拥有展示缓存、loading/error/last-good 和焦点状态，不拥有完成状态。
+
+### 修改范围与明确不修改范围
+
+范围：Dream 页面相关 hook/reducer/refetch 触发、对应 source/Mock/real Playwright 测试、必要的同链服务端缺陷与 runner 诊断。非范围：无关 UI 重构、静态模型目录、浏览器计费推导、SQLite fallback、共享服务重启或真实外部 Provider。
+
+### 测试矩阵
+
+partial→terminal refetch、last-good+error、重复 terminal 去重、取消/失败不确认、refresh/reentry、desktop/mobile、键盘/ARIA；真实同 Run launch/confirm/Episode actions/artifacts；Gateway/Token 守恒与重放；console/pageerror/requestfailed/security/cleanup。
+
+### 完成标准
+
+只有稳定复现测试转绿，真实浏览器同一新 Run 从订阅/模型到完整 Episode artifacts、Workflow completed、刷新/移动重入与 Token 守恒全部通过，并完成静态门禁和资源清理，才宣称本轮完成。
+
+### 风险、回滚与资源清理要求
+
+主要风险为 refetch 风暴、竞态覆盖 newer state、重复 confirmation、SSE 断线时永不恢复和测试 Provider 时序硬编码。以 revision 单调性、请求上限、last-good 语义、幂等写合同、隔离 PostgreSQL 和 finally cleanup 控制；不能证明的边保持未完成。
+
+### 执行状态
+
+- 本 Prompt Architect 记录已先于本轮代码分析、规划和修改落盘。
+- stale-state 只读追踪完成：Agent terminal 原本只对账 `dream-agent/messages`，未显式失效同 Run `dream-files`/Workflow；确认 202 后也未主动重连 continuation Agent transport。
+- TDD 红灯为 1 failed / 22 passed；最小修复加入 terminal durable reconciliation 后的去重 invalidation，并在 confirmation accepted 后重连 Agent。focused frontend 最终 44 passed，相关 ESLint 0 error / 0 warning。
+- 后端 focused 回归：133 passed、1 skipped、23 subtests passed；另一次既有主链相关组合为 82 passed、2 skipped、55 subtests passed。Story Artifact PostgreSQL clone 每轮 61 passed。
+- 静态门禁：全量 ESLint 0 error、23 个既有 warning（本轮 Dream 文件已清零）；TypeScript + production build 通过；`git diff --check` 通过。Provider harness Node test 1 passed。
+- 真实 Chromium 已证明：模型目录/alias 保存与 390×844 恢复 1 passed；同一新 Run 的 launch 201、9 次初始 Provider tool、confirmation 202、后续入口、Episode binding、outline/script/script review/asset refresh/storyboard/prompts 均曾推进到 `review_full_chain`；Gateway 请求均 200/settled。
+- Token 证据：代表性 24 次 Gateway 请求全部 succeeded/settled；reserve 1,271,121 = capture 890 + release 1,270,231，最终 reservedTokens=0；真实收费 Provider 调用 0。
+- 真实全链仍未通过，发布门禁保持：初始 Agent 第 9 个工具完成后偶发延迟到 120 秒测试边界，页面未稳定进入 canConfirm；另一次推进到 `review_full_chain` 后尚未完成 full-chain review/validate/render/Workflow completed/Story Index/reentry 的同 Run 总验收。不得把阶段性成功报告为业务 E2E 完整。
+- 测试合同已纠正但未放宽：Episode projection 使用服务端 ETag + nextAction，Agent 下一动作还必须等待 `lifecycle=idle`、`activeTurnId=null`、`canSend=true`；不再读取不存在的 `workflow.revision` 或把产物出现当成 Agent 空闲。
+- 每轮自有 PostgreSQL 容器、动态 Dream/Admin/Vite/Provider 端口、Artifact Root、Next/Playwright output 均由 finally 清理；现存仅预先存在的 5173(PID 83170)、8765(PID 27303)、`ink-memory-postgres` 与 `ink-memory-minio`，均未停止或改写。共享数据库未用于测试写入。
+
+## 2026-08-10 — Dream 初始终态确定性与 Episode 完整链发布门禁收口
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的 Workflow/Agent 并发架构师、Episode Artifact 合同工程师、Gateway/Token 一致性工程师和发布级 Playwright QA。继续上一轮未完成的同一新 Run 真实 E2E，不重新定义成功：查明并修复初始 Dream Agent 在第九个受控工具调用后偶发不能及时产生 durable terminal/完整 `dream-files` 投影的问题，并完成 `review_full_chain → validate_episode → prepare_render_guide → Workflow completed → Story Index → desktop/mobile refresh/reentry` 全链验收。
+
+先用现有隔离 runner、服务端快照、Provider tool-result evidence、PostgreSQL activity、Gateway request/Token ledger 和受控 Artifact 文件证明卡点属于 Agent runtime、tool completion、projection read、review contract、测试 fixture 或浏览器刷新中的哪一层。不得用延长超时、sleep、强制点击、吞 409/422、跳过 action、预写完成事实、直接 SQL 改终态或降低断言解决。任何 action 的完成必须同时满足：请求 202；Provider/tool 真实执行；Episode ETag 改变；nextAction 离开已提交 action；Dream Agent `lifecycle=idle`、`activeTurnId=null`、`canSend=true`；Token settlement 守恒。
+
+若 full-chain review 被拒绝，读取公开 `DREAM_WRITE_REJECTED` reason 和服务端 canonical source revisions，修正本地非计费 Provider fixture 使其生成完全符合现行 review contract 的 `review-report.md`，不得放宽 completion validator。若初始 terminal 不稳定，增加可重复的后台/浏览器失败测试，修复真实生命周期或投影同步边界，保留 fail-closed、幂等、actor/workspace/run/thread/session 权限与 last-good 语义。
+
+完成后运行 owned PostgreSQL clone、真实 Dream/Admin/Vite、本地无收费 Provider 和真实 Chromium。证明同一 Run 从 Subscription/Entitlement/Allowance、Admin model catalog、platform alias、Dream launch、Gateway/Token、Dream files、confirmation、Episode binding、九个 Episode actions、所有受控 artifacts、Workflow completed、Story Index 到刷新/移动重入一致；外部 Provider 调用必须为 0。
+
+Acceptance Criteria:
+
+- 初始 9 个工具后 bounded terminal reconciliation 可重复成功；`dream-files` 从 422/partial/last-good 恢复到完整可确认投影，不产生请求风暴或虚假完成。
+- full-chain review 的 `reviewed_files` 与 `source_revisions` 精确覆盖当前 outline、script、storyboard 和全部 Prompt source artifacts；validator 合法推进 review/validate/render。
+- 九个 Episode actions 按服务端 Action Projection 执行；每步 202、ETag 单调变化、nextAction 变化、Agent idle send gate 恢复，409/422 不被包装成功。
+- Workflow Run 最终 completed；`dream-files`、Agent messages、Episode binding/artifacts、Action Projection、Story Index 与同一 Run/actor/workspace/thread 对齐。
+- Gateway request 全部使用服务端 alias；Token `reserve = capture + release` 且最终 reserved=0；幂等重放不重复 Provider、ledger 或 artifacts。
+- 1440×1000 与 390×844 的真实 Chromium 完成刷新/reentry、键盘/ARIA/overflow 与零非预期 application diagnostics；截图仅为辅助。
+- focused backend、PostgreSQL integration、frontend source/Mock Chromium、real Chromium、ESLint、TypeScript、production build、`git diff --check` 均记录准确 pass/fail/skip。
+- finally 清理本轮精确命名 PostgreSQL 容器、动态端口、Artifact Root、Next/Vite/Playwright output 和凭据；不停止既有 5173/8765，不写共享数据库，不调用真实收费 Provider。
+
+Rollback and Cleanup:
+
+- Agent terminal、review fixture、E2E contract 分别可独立回退；不得回退已验证的鉴权、Gateway、Token、Workflow PostgreSQL 原生类型或权限修复。
+- 若改动造成重复 dispatch、重复 settlement、session 归属漂移、last-good 丢失或请求风暴，回退对应最小改动并保留失败测试和脱敏证据。
+- 禁止 DROP/TRUNCATE 共享库、生产库测试写、跨账号重归属、破坏性 Git、遗留容器/端口或输出含 Token/Secret/DSN/绝对 Artifact 路径。
+
+### Optional Enhancers
+
+- 输出 machine-readable 的 run→message→gateway request→ledger→artifact ETag→workflow fact→story index trace manifest。
+- 为 review contract 增加 fixture 自检，在浏览器启动前用正式 parser/validator 验证 source revisions。
+
+### 本轮问题与用户影响
+
+401 已消失且主链可推进，但初始 Agent terminal 偶发晚于 120 秒，用户会看到完整工具已执行却无法确认；另一条运行已到 `review_full_chain`，尚未证明 review/validate/render/completed，同 Run 发布结论仍不成立。
+
+### 事实来源和真值所有者
+
+- Agent lifecycle/session/tool result：Dream Agent runtime 与 Dream PostgreSQL；Workflow 状态：Workflow Run PostgreSQL。
+- Episode 文件/review revisions/ETag：受控 Artifact Root、正式 parser/validator；Action Projection：Dream 服务端 resolver。
+- Model/entitlement/allowance/Gateway/Token：Admin Gateway 与 Admin PostgreSQL；浏览器只拥有瞬时缓存、loading/error/last-good/focus。
+
+### 修改范围与明确不修改范围
+
+范围：初始 Agent terminal/投影同步的真实缺陷、full-chain review fixture/validator 对齐、同 Run E2E 严格等待合同、安全诊断与回归。非范围：无关页面重构、真实 Provider、静态模型目录、浏览器计费推导、新持久化系统、共享服务重启、历史数据硬编码。
+
+### 测试矩阵
+
+初始 422/partial→terminal→complete；重复 terminal 去重；confirmation continuation；每个 Episode action 的 202/ETag/nextAction/Agent idle；review revision mismatch/valid；validate/render/completed；Story Index；refresh/reentry；desktop/mobile；Gateway/Token 守恒；console/pageerror/requestfailed/security；失败清理。
+
+### 完成标准
+
+只有同一新 Run 在真实隔离 PostgreSQL/Chromium 中完成所有九个 Episode actions、全部受控产物、Workflow completed、Story Index、刷新与移动重入，并证明 Gateway/Token 守恒、零外部收费调用、全部静态/回归门禁和资源清理，才宣称目标完成。
+
+### 风险、回滚与资源清理要求
+
+主要风险为测试把 artifact 出现误当 Agent idle、review fixture revision 过期、terminal 竞态、重复 dispatch/settlement、诊断泄密和隔离资源残留。以双重服务端门禁、正式 parser/validator、自有动态端口、脱敏诊断、精确 finally cleanup 控制；未证明项保持失败。
+
+### 执行状态
+
+- 本 Prompt Architect 记录已先于本轮代码分析、规划和修改落盘。
+- 初始 terminal 与 full-chain review 的根因复现、TDD 修复、完整真实浏览器复验待执行。
+
+## 2026-08-11 — Dream runtime materialization 补证与现有服务复验
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的业务架构师、全栈工程师与发布级 E2E QA。只处理用户现场暴露的 Dream SDK 初始化失败：`StoryWorkspaceDreamRuntimeActivationError: Dream runtime materialization evidence is incomplete`。先验证当前 8765 服务是否已加载最新代码；使用只读 PostgreSQL 证据比较目标 queued Run 的 frozen runtime lock、artifact-set hash、materialization identity/policy/environment/node 与 SDK init 工具投影。不得把 SDK tools 存在或某次隔离 E2E 通过视为已修复。
+
+复现并验证以下最小安全方案：Dream launch materialization identity 必须绑定完整 `artifact_set_hash`；旧 materialization 必须作为不可变历史保留，不得原地改写受数据库触发器保护的 identity；同一 actor/workspace/idempotency key 的 queued Run 重放必须重新 provision 其 frozen runtime evidence，同时保持原 Run、source message、binding 与权限归属不变。激活仍须 fail closed，禁止放宽 `_load_evidence` 完整性断言或从 SDK 工具列表伪造数据库证据。
+
+采用 TDD：保留现场 mismatch 的脱敏只读证据；先证明旧实现下 queued replay 不补证；再验证新 identity key 与 replay provisioning；运行 Dream launch/runtime activation/Agent focused tests、PostgreSQL 原生类型集成、Mock Chromium、隔离 PostgreSQL + 自有 Gateway/Token + 本地零收费 Provider 的真实 Chromium 主链。真实浏览器必须注册 response/requestfailed/console/pageerror 诊断，覆盖 1440×1000、390×844、刷新、重入、Workflow/Dream Files/Agent Messages/Episode artifacts/Story Index 一致性以及 401/409/422/503 不得伪装成功。
+
+不得停止或替换未确认归属的 5173/8765 服务；若 8765 属于用户 VS Code debugpy，会先确认它是否已重启加载新代码，未经授权不杀进程。共享 PostgreSQL 仅 SELECT/rollback，不为测试写入；真实验证使用精确命名的隔离 clone、自有动态端口并在 finally 清理。不得调用收费 Provider、泄露 Token/Secret/DSN/绝对产物路径、覆盖用户未提交改动或进行破坏性 Git 操作。
+
+验收标准：目标 queued Run 的 mismatch 根因有数据库证据；新代码在隔离 PostgreSQL 中为 frozen lock 生成唯一 current-hash materialization，并在同 key replay 后可完成 SDK activation；完整 Dream→Episode 同 Run Chromium 链通过；Gateway 请求均 succeeded/settled，Token `reserve = capture + release` 且 `reserved_tokens = 0`；静态门禁、扩大回归与资源清理通过。若现有 8765 未加载新代码或共享 Run 未获授权修复，必须明确列为运行态发布门禁，不得声称服务已经正常。
+
+### Optional Enhancers
+
+- 输出脱敏的 `run → frozen lock hash → materialization id/hash → runtime receipt → agent session` 追踪摘要。
+- 增加旧 materialization-key 兼容迁移的只读审计命令与运维 runbook，但不自动修改共享数据库。
+
+### 本轮问题与用户影响
+
+现场 Run 保持 queued，SDK 已暴露 Dream 工具却因 frozen lock hash 与唯一 materialization hash 不一致而 fail closed；用户无法开始剧本生产，偶发隔离 E2E 成功不能证明现有服务正常。
+
+### 事实来源和真值所有者
+
+- frozen lock、materialization、runtime receipt、Agent Session、Workflow Run：Dream PostgreSQL。
+- SDK init tools/session：Dream Agent runtime；只作为进程启动证据，不能替代 PostgreSQL materialization。
+- 服务代码加载状态与端口归属：8765 监听进程；浏览器只拥有瞬时 UI 状态。
+
+### 修改范围与明确不修改范围
+
+范围：Dream launch materialization identity、queued replay provisioning、对应测试/诊断/E2E。非范围：模型目录、订阅价格、无关 UI、共享库数据修复、用户 VS Code 调试进程、真实收费 Provider。
+
+### 测试矩阵
+
+旧 hash/当前 frozen hash mismatch；current hash identity；不可变 identity；queued same-key replay；actor/workspace/binding 权限；SDK activation/replay；PostgreSQL datetime/JSONB/boolean/nullable；完整浏览器主链；409/422/503；Token 守恒；桌面/移动/刷新/重入；资源清理。
+
+### 完成标准
+
+代码、数据库事实、进程加载状态与真实浏览器四层证据一致；现有服务或明确隔离的替代服务完成主链，且所有失败与未授权动作诚实披露。
+
+### 风险、回滚与资源清理要求
+
+风险包括错误改写 immutable materialization、replay 改绑 Run、重复 dispatch/计费、误杀 debugpy、共享库写入和测试资源残留。回滚仅限 materialization-key/replay provisioning 最小代码改动；保留失败测试。清理自有服务、容器、临时数据库、Playwright 输出；不清理用户服务或数据。
+
+### 执行状态
+
+- 本 Prompt Architect 记录已先于本轮规划、代码分析和运行态修改落盘。
+- 现场只读证据确认目标 Run `run_fdd7012110c74d1db96c1ff396dd6491` 为 queued，冻结 lock 的 canonical artifact-set hash 为 `sha256:9781e162…eb58`；唯一历史 materialization 为 `sha256:45ee83e2…ee55`。旧值与“完整 runtime lock JSON 直接 SHA-256”完全一致，证明根因是历史/现行两套 artifact-set hash 算法，而非插件内容变化。
+- 插件复制链已逐层验真：`ink-dream-story@platform-builtin` v1.0.0 的源码目录、不可变 artifact store、workspace packed copy、launch manifest 和数据库安装记录均为 `sha256:af53e0fb…e78`；`drama-forge@drama-studio` v1.0.1 保持用户已验证的 `sha256:ee54155b…42fd2`。源/复制件均只有受控文件；canonical digest 已排除 `.in_use/`、`.git/`、`.DS_Store`、`._*`、`Thumbs.db`、`desktop.ini`，真实内容/版本 manifest 不排除。
+- TDD 红灯已保留：queued replay 删除 materialization 后不能补证；SDK init 未调用 frozen evidence provisioner；Admin materialization 仍产生 full-lock hash；同 hash 的 Admin policy 行会污染 Dream activation。未放宽激活完整性断言。
+- 最小修复：Dream materialization identity 绑定 canonical artifact-set hash；queued launch replay和 SDK init resume 均按 Run 冻结 lock、已验证不可变安装补建新 identity；历史 `45ee…` 行不原地更新；Admin Gateway 统一 canonical hash/key；Dream activation 仅接收 `dream-launch/v1` policy，防止 `deck-admin/v1` 行混入。
+- focused 回归：53 passed、1 skipped、30 subtests passed；插件复制/管理/SDK init 扩大 focused：73 passed、1 skipped、44 subtests passed；Dream/Workflow/runtime 扩大回归：296 passed、4 skipped、195 subtests passed；`git diff --check` 通过。
+- 用户授权后已停止旧 VS Code debugpy PID 26034，并以仓库 `.venv` 启动加载新代码的后台 PID 66277；`GET /api/health` 为 200。既有前端 5173/PID 83170 未停止。后台为用户明确要求持续运行的交付服务，未作为测试残留清理。
+- 共享 PostgreSQL 审计只执行 SELECT/rollback，未手工修复、未写测试数据；canonical materialization 将只在用户正常 resume 请求中由业务服务创建。当前日志尚未观察到目标 thread 的新 resume，因此共享 Run 从 queued→running 的最终现场证据仍待真实请求触发；不得把单元/隔离回归替代该现场断言。
+
+## 2026-08-11 — Dream 订阅/模型/Gateway/剧本生产完整 E2E 发布验收
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的业务架构师、全栈工程师、模型与订阅计费一致性工程师和发布级 Playwright QA。基于以下权威设计，继续当前工作树并完成 Dream 剧本生产主链的证据驱动 E2E 发布验收，不得把已经修复的 runtime materialization、已有单元测试、Mock 成功或单接口 200 当作完整业务结论：
+
+- Admin Dream 交互设计：`/Users/dmeck/project/ink-admin-memory/docs/design/modules/story-business/admin-dream-interaction-design.md`
+- Dream 模型服务接入设计：`docs/design/model-service/07-model-service-integration-design.md`
+- Dream 订阅业务设计：`docs/design/subscription/06-subscription-business-design.md`
+
+先从三份设计逐条提取用户旅程、状态机、truth ownership、API/DTO、错误合同、幂等/并发和安全边界，并与现有设计稿、实现、测试及 `scripts/run-dream-business-e2e.mjs` 双向追踪。重点证明同一隔离用户、workspace、deck、thread、Workflow Run 和 Episode 从订阅/Entitlement/Allowance、Admin 公共模型目录、platform model identifier 保存、Dream launch、SDK runtime activation、Gateway alias/Provider、Token reserve/capture/release、Dream Files/Agent Messages、确认、Episode binding/actions/artifacts、Workflow completed、Story Index 到桌面/移动刷新重入保持一致。
+
+采用 TDD 和分层证据：先运行 preflight/端口归属检查并保留用户明确要求持续运行的 5173/8765；检查现有 runner 的最后失败和诊断，不预设根因。若真实隔离 Chromium 仍返回 401、402、403、409、422、429、502 或 503，必须定位服务端真值和请求合同，增加稳定失败测试后做最小修复；禁止延长 sleep、强制点击、吞错、放宽断言、硬编码当前数据、直接 SQL 推进状态或从 DOM 推导 Workflow/计费事实。
+
+真实 E2E 必须使用本轮精确命名的隔离 PostgreSQL clone、自有 Dream/Admin/Vite/local-provider 动态端口与 Artifact Root；真实共享 PostgreSQL 仅 SELECT/rollback。Provider 必须是本地零收费实现，且要证明外部 Provider 调用为 0。导航前注册 response、requestfailed、console、pageerror；断言 1440×1000 和 390×844 的 loading/empty/error/last-good、键盘/焦点/ARIA、刷新/重入，无非预期应用诊断。所有写请求验证 idempotency/revision/ETag 与冲突合同。
+
+Acceptance Criteria:
+
+- 需求—场景—API—代码—断言矩阵覆盖三份设计的全部 Dream 相关条款；缺失或矛盾项明确修复或列为发布门禁。
+- 新用户无订阅、有订阅无模型权限、Allowance 耗尽、Gateway 不可达、模型下架/alias 失效、目录空/重试/保存均有 source/Mock/服务端证据，错误不伪装成功。
+- 同一真实隔离 Run 完成 Dream 初始人物/场景/剧本/分镜/审阅/Prompt/渲染指引，确认后完成全部 Episode actions 和 artifacts；Workflow completed、Dream Files、Agent Messages、Episode Binding、Action Projection、Story Index 同源一致。
+- 每次 Gateway 请求均使用服务端选定 alias、成功或安全失败并 settled；Token `reserve = capture + release`、最终 `reserved_tokens = 0`，幂等重放不重复 Provider、ledger、消息或产物。
+- PostgreSQL runtime integration 覆盖原生 datetime、JSONB、boolean、nullable；actor/workspace/run/story/episode 权限隔离和 404/409/422/503 安全合同通过。
+- backend focused/expanded、frontend source、Mock Chromium、真实 Chromium、ESLint、TypeScript、production build、`git diff --check` 均给出准确 pass/fail/skip；截图/trace 仅辅助断言。
+- finally 关闭并清理本轮自有容器、动态端口、数据库、Artifact Root、浏览器和输出；不停止用户要求持续运行的 5173/8765，不写共享库，不泄露 Token/Secret/DSN/绝对 artifact 路径。
+
+Rollback and Cleanup:
+
+- 每项修复可按服务端合同、前端同步或测试 fixture 独立回退；保留失败测试，不回退已验证的 canonical materialization、鉴权、Gateway、Token、Workflow PostgreSQL 和权限边界。
+- 若出现重复 dispatch/settlement、旧 revision 覆盖新状态、跨 Run/账号归属、last-good 丢失或请求风暴，立即回退对应最小改动并保持发布门禁失败。
+- 禁止 DROP/TRUNCATE 共享库、生产库测试写入、跨账号数据重归属、破坏性 Git 或清理非本轮资源。
+
+### Optional Enhancers
+
+- 生成 machine-readable `requirement → browser step → request → PostgreSQL fact → artifact digest/ETag → assertion` trace manifest。
+- 保存 Playwright trace 和桌面/移动关键截图，但最终结论仍以业务断言、数据库和计费守恒为主。
+
+### 本轮问题与用户影响
+
+runtime materialization 根因已修复且后台已启动，但完整目标仍未证明：此前隔离真实链在最终 Dream 页面重入出现 422，且三份设计到测试/接口/状态事实的逐条闭环尚未完成。用户仍可能在剧本产物已生成后刷新/重入失败，或订阅、模型、Token、Workflow 与 Episode 事实不一致。
+
+### 事实来源和真值所有者
+
+- Subscription/Plan/Entitlement/Allowance/model catalog/Gateway/Token ledger：Admin Gateway 与 Admin PostgreSQL。
+- Workflow Run/Agent session/messages/Dream Files/Episode binding/actions/index：Dream PostgreSQL 与对应服务。
+- 剧本及 Episode 文件：受控 Artifact Root；浏览器只拥有临时展示缓存、loading/error/last-good/focus。
+
+### 修改范围与明确不修改范围
+
+范围：三份设计的 Dream 条款追踪、现有隔离 runner/真实 Chromium 最后失败、必要的同链 TDD 修复、完整回归与证据。非范围：无关 UI/业务重构、静态模型目录、浏览器计费推导、新持久化 fallback、真实收费 Provider、共享数据库修数、用户持续运行的 5173/8765。
+
+### 测试矩阵
+
+订阅/Entitlement/Allowance 正反态；模型目录/alias/保存/下架；Gateway/Provider/Token 成功、缺 usage、流中断、幂等；Dream launch/runtime/Agent SSE/取消/重试/确认；Dream Files/人物/场景/剧本/分镜/审阅/Prompt/渲染；Episode actions/artifacts/index；刷新/重入/desktop/mobile；权限隔离；404/409/422/503；PostgreSQL 原生类型；console/pageerror/requestfailed/敏感信息；cleanup。
+
+### 完成标准
+
+只有三份设计逐条追踪无未解释缺口、同一新隔离 Run 的真实 Chromium 完整通过、Gateway/Token/Workflow/Artifacts 数据事实一致、所有静态与回归门禁通过且资源清理完成，才可标记目标完成。
+
+### 风险、回滚与资源清理要求
+
+主要风险为旧 runner 隐藏真实错误、E2E fixture 与正式 validator 漂移、重入 422、重复计费/dispatch、共享服务误停和资源残留。用正式 DTO/validator、数据库与 ledger 断言、动态自有端口、fail-closed、finally cleanup 和诚实发布门禁控制。
+
+### 执行状态
+
+- 本 Prompt Architect 记录已先于本轮设计审计、代码分析、测试规划和修改落盘。
+- 三份权威设计已核对并形成双向追踪与完整性审计：Dream 仓库新增主链完整性审计、三合同 E2E 追踪和 `design_012` 交互/状态/时序/API/truth ownership 设计；未引入静态模型目录、浏览器计费真值或第二套 Workflow 状态。
+- 用户现场基础故障根因一：Dream runtime lock 只包含 Dream adapter，而 workspace frozen manifest 还包含合法的 Deck 插件；旧校验错误要求两者集合完全相等。最小修复保持每个 runtime lock 条目必须按 package/version/digest/manifest 精确匹配并拒绝重复，只允许额外的 digest-verified frozen Deck 插件共存。现场两项证据保持为 `drama-forge@drama-studio` v1.0.1 / `sha256:ee54155b…42fd2` 与 `ink-dream-story@platform-builtin` v1.0.0 / `sha256:af53e0fb…e78`。
+- 用户现场基础故障根因二：`GET dream-agent/messages` 会恢复 `pending`，而 dispatch 异常又把消息释放回 `pending`，3 秒轮询因此重复触发同一推理。修复后 dispatch 异常持久化为 terminal `failed`（安全错误码、失败时间、lease=0）；仅过期 `dispatching` lease 和一次性 legacy pending 可恢复。目标消息已成为 terminal failed，页面恢复 `lifecycle=idle`、`canSend=true`，重复 GET 未再产生 SDK init/Provider 调用。
+- 用户现场 401 根因：静态 Gateway subject JWT 为 240 秒，而 Agent 工具确认允许等待 300 秒；后续 tool-loop Provider 请求会携带过期 token。修复改用 Claude Code 原生 `apiKeyHelper`，由服务端环境和 canonical subject 即时签发短期 JWT，移除静态 `ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_API_KEY`，并保留 Gateway base URL、service key header、turn idempotency root 和 fail-closed preflight。真实已安装 Claude CLI 对本机伪 Gateway 的首个 401 会重新调用 helper，以不同 jti 重试并获得 200；外部 Provider 调用 0。
+- 现场 runtime activation 已创建 Agent Session `as_db707d9730e642e29d1f17d13e0af07c` 与 receipt `rlr_d521cb20c3cc40ab9c78885fef5cc529`，证明插件修复生效。旧用户消息不伪造成功、保持 terminal failed；用户可重新发送。因未授权收费 canary，没有自动重放该消息。
+- 后端 focused：107 passed、1 skipped、94 subtests passed；后端正式测试目录扩大回归（排除会直连 8765 写数据的 legacy manual smoke）为 1835 passed、18 skipped、656 subtests passed。第一次误运行该 manual smoke 创建的精确测试 Deck/Voice 已按 owner/name/id 核对并删除，GET 复核 404；不碰其他数据。
+- legacy smoke 还暴露 `fork_voice` 将 PostgreSQL BOOLEAN 写成整数 `0/1` 的 500；最小修复改为 psycopg 原生 `False/True` 参数并增加 rollback-only clone 集成断言。PostgreSQL runtime integration 最终 4 passed；Story Artifact PostgreSQL 61 passed；隔离 clone 同时验证 legacy artifact status backfill/check constraint、原生 datetime/JSONB/boolean/nullable 合同。
+- 第一次最终链复跑诚实捕获生成中 `dream-files` 422：页面在 Agent streaming 且没有 durable assistant history 时提前探测严格 output contract。没有把 422 加入白名单；前端现在先读取 Agent snapshot，无历史的新 turn 等 idle terminal 后才加载 files，已有 assistant history 的重入可显示 last-good，但 streaming 期间暂停轮询/SSE invalidation，terminal revision 再刷新，避免无意义请求和 422 噪声。
+- 前端 source contract 370 passed；确定性 Mock Chromium 7 passed；Provider harness 2 passed；ESLint 0 errors、21 个既有 Hooks warnings；独立 TypeScript、production build 与 `git diff --check` 均 exit 0。
+- 完整真实 Chromium（隔离 PostgreSQL clone、自有 Dream/Admin/Vite/本地零收费 Provider）最终通过：模型选择/390×844 恢复 1 passed；同一新 Run 的 Gateway 计费 Episode 全链与重入 1 passed；Admin 按 revision 读取同一生成 Story 1 passed。最终浏览器阶段用时分别为 1.7s、27.5s、6.5s，覆盖 1440×1000 与 390×844，断言无非预期 console/pageerror/requestfailed。
+- Gateway/Token 一致性：32 个 Gateway requests 全部 HTTP 200、succeeded、settled；32 个 provider observations 全部 run-bound，唯一 upstream model 为 `dream-producer-upstream-fast`；reserve 32 次 / 1,836,876 tokens，capture 32 次 / 1,180，release 32 次 / 1,835,696，满足 capture + release = reserve，最终 reservedTokens=0；外部收费 Provider 调用 0。
+- 资源与服务：本轮精确命名 PostgreSQL 容器、动态端口、Artifact Root、临时 Agent workspace、Mock 截图输出均已清理；无 `ink-dream-business-e2e-*` 容器残留。既有前端 5173/PID 83170 未停止；按用户要求由本轮管理的后台 8765 已用最终代码重启为 PID 59958 并保持运行，`/api/health=200`，未认证 `/api/decks=401` 符合鉴权合同。
+- 数据边界：真实业务 E2E 仅写隔离 PostgreSQL clone；未手工修改共享 Run 或跨账号重归属。现场 authenticated GET 曾按正常业务语义触发目标 pending 消息恢复并写入 session/receipt/terminal failed，之后只读复核；legacy smoke 的精确测试资源已清理。未执行真实收费 Provider、安全 canary 或生产库测试写入。
+- 发布结论：Dream Agent 重复请求、runtime 插件误拒绝和长等待后 Gateway 401 已修复；三设计约束下的完整隔离业务链、Gateway/Token 守恒、桌面/移动重入与静态门禁通过。诚实遗留为旧现场消息不会自动重放为成功，需用户主动重新发送；真实收费 Provider canary 仍是发布环境门禁而非本轮完成项。
+
+## 2026-08-11 — Dream Agent 与剧本业务 E2E 完成性逐条审计
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的发布审计负责人。对当前工作树和当前运行态执行一次不依赖既往结论的 requirement-by-requirement 完成性审计，目标是判断“先修复 Dream Agent 错误重复发起请求，再按 Admin Dream 交互、模型服务和订阅业务三份设计完成 Dream 剧本生产 E2E 完整性验证”是否已经真实完成。以当前文件、当前进程、当前测试合同、隔离 PostgreSQL/本地 Provider/真实 Chromium 证据和 correction worklog 为准；既往回答、单元测试绿灯、Mock 成功或单接口 200 都不能单独证明完成。
+
+权威输入：Admin Dream 交互设计、Dream 模型服务设计、Dream 订阅业务设计；当前完整性审计、三合同追踪矩阵、`design_012`；Dream Agent runtime activation/message dispatch/Gateway helper/Dream files gate；`scripts/run-dream-business-e2e.mjs` 及其真实浏览器 specs。逐条建立 requirement → truth owner → API/代码 → test assertion → current evidence 映射，并将每项判定为 proved、contradicted、weak 或 missing。
+
+先执行 `ink-dream-playwright-qa` preflight、`git status --short` 和 5173/8765 端口归属；不停止用户前端，保持用户要求运行的最终后台。复核目标 Run 的旧消息已 terminal failed、重复 GET 不再重新 dispatch、runtime 插件 digest/version 匹配、Gateway 401 使用 refreshable helper 而不是延长 token。复核订阅/Plan Version/Entitlement/Allowance、Admin 模型目录和 alias 保存、Dream launch/confirm/Agent、Gateway/Provider/Token、Workflow/Episode/actions/artifacts/Story Index、刷新/重入、1440×1000/390×844、键盘/ARIA、错误/last-good、敏感信息和资源清理的直接证据。
+
+若发现缺口，先增加稳定失败测试再做最小同链修复；禁止放宽断言、吞 401/409/422/503、硬编码当前 Run、从 DOM 推导服务端完成、共享 PostgreSQL 测试写、真实收费 Provider、破坏性 Git 或覆盖用户未提交修改。真实验证只使用精确命名的隔离 PostgreSQL clone、自有动态端口和本地零收费 Provider；导航前注册 response/requestfailed/console/pageerror；finally 清理自有资源。
+
+Acceptance Criteria:
+
+- Dream Agent 重复请求根因、terminal failure 语义、runtime activation 和 Gateway token refresh 都有代码、测试及当前运行态直接证据；旧失败不得伪装成功。
+- 三份设计的所有 Dream 相关需求都能追踪到 truth owner、接口、实现和至少一个覆盖正确边界的断言；任何缺失必须修复或保持目标未完成。
+- 同一隔离 Run 在真实 Chromium 中完成订阅/模型、Dream 初始产物、确认、Episode binding/actions/artifacts、Workflow completed、Story Index 与桌面/移动刷新重入，且零非预期应用诊断。
+- Gateway 请求全部使用服务端 alias 并 settled；Token reserve = capture + release、reserved=0；幂等重放不重复 Provider/ledger/artifacts；外部 Provider 调用 0。
+- PostgreSQL 原生 datetime/JSONB/boolean/nullable、actor/workspace/run/story/episode 权限、404/409/422/503 和 last-good/恢复合同有直接测试证据。
+- backend focused/expanded、PostgreSQL integration、frontend source、Mock Chromium、real Chromium、ESLint、TypeScript、production build、`git diff --check` 的最终数字对应当前代码；资源清理和端口归属复核无残留。
+- 只有所有明确要求均为 proved 且无 required work 残留，才把 active goal 标记 complete；否则继续修复，不以报告代替完成。
+
+Rollback and Cleanup:
+
+- 本轮原则上只读；若补修，按 Dream Agent、Gateway、Dream files gate、PostgreSQL 合同或测试 fixture 独立回退并保留红灯测试。
+- 若出现重复 dispatch/settlement、旧 revision 覆盖新状态、last-good 丢失、额外 422/401、跨账号归属或诊断泄密，回退对应最小改动并保持 goal active。
+- 清理本轮精确容器、动态端口、Artifact Root、Playwright output 和临时文件；不删除宽泛目录、不停止非本轮服务、不改共享数据库。
+
+### Optional Enhancers
+
+- 输出一张精简的 requirement/evidence/status 表，并对每个真实浏览器断言链接到对应 spec。
+- 保存 machine-readable trace manifest，但不得以其替代数据库和浏览器断言。
+
+### 本轮问题与用户影响
+
+既往已有完整绿灯与修复结论，但 active goal 要求再次确认每个显式需求都由当前证据证明；若某个负向订阅状态、重复请求边界、真实浏览器重入或清理只由间接证据支持，用户仍可能在发布后遇到 401、422、重复计费或卡住的 Agent。
+
+### 事实来源和真值所有者
+
+- Dream Agent/session/message/runtime receipt：Dream PostgreSQL 与 Agent runtime；Subscription/model/Gateway/Token：Admin PostgreSQL 与 Gateway。
+- Workflow/Episode/Story Index：Dream PostgreSQL 服务；受控剧本文件：隔离 Artifact Root；浏览器只拥有展示缓存、focus 和 last-good 呈现。
+- 运行态：当前 5173/8765 监听进程和 API；测试证据：当前 specs/runner 输出而非历史口述。
+
+### 修改范围与明确不修改范围
+
+范围：完成性审计、证据补强及审计发现的最小同链缺陷。非范围：无关 UI、真实收费 Provider、共享库修数、静态模型目录、浏览器计费推导、新 fallback、非本轮服务和用户未提交改动。
+
+### 测试矩阵
+
+Agent failure/recovery/repeat poll/tool wait；插件 version/digest；订阅正反态、Allowance、模型目录/alias；Gateway/Token/idempotency/provider failures；Dream launch/files/confirm/messages；Episode actions/artifacts/index；desktop/mobile/refresh/reentry；401/409/422/503/last-good；PostgreSQL native types/permissions；console/pageerror/requestfailed/security/cleanup。
+
+### 完成标准
+
+上述矩阵与三设计逐项有当前强证据，真实同 Run 全链和 Token 守恒通过，基础服务保持健康、无重复 dispatch，静态门禁与资源清理通过，无 required gap。
+
+### 风险、回滚与资源清理要求
+
+主要风险是把既往成功当当前证据、误把 Mock 当业务 E2E、漏掉负向合同、重复触发共享数据写入或为绿灯过滤错误。使用只读审计、隔离 runner、精确诊断与 finally cleanup 控制；证据不足即保持未完成。
+
+### 执行状态
+
+- 本 Prompt Architect 记录已先于本轮完成性审计、计划更新和任何新增修改落盘。
+- 当前运行态复核：5173 仍由用户前端 PID 83170 持有；8765 为最终 Dream 后台 PID 59958，沙箱外 `GET /api/health` 为 200，后台本轮新增日志只有 health 200，没有新的 Dream SDK init/repeated dispatch。preflight 依赖检查通过；其端口探针受沙箱隔离显示 FREE，已以沙箱外 `lsof`/`curl` 真值覆盖。
+- 旧的三合同追踪文档仍标记多项 `missing/contradicted`，与当前 migration、runtime lifecycle 和真实 Dream-owned Story 链相矛盾；已重写为当前 `requirement → truth owner → implementation → direct assertion → status` 矩阵。除未授权真实收费 Provider canary 为 `externally-gated` 外，用户显式 Dream 范围全部为 `proved`。
+- 本轮补强测试一：模型目录空响应在 1440×1000 Mock Chromium 中必须显示“平台尚未启用可展示的模型”，radio=0、PUT=0、诊断=0；模型设置 focused 为 3 passed。完整 Mock Chromium 最终 8 passed（11.3s），覆盖 catalog success/last-good/empty、Subscription desktop/mobile 与 Episode/Agent/focus/ARIA。
+- 本轮补强测试二：Dream launch model eligibility precheck 对 401、402、403、409、429、502、503 逐项保留安全状态，并逐项断言 Workflow Run=0、source message=0、Agent dispatch=0；focused 为 1 passed、7 subtests passed。旧失败消息仍是 terminal failed，不会因 GET polling 回到 pending 或伪装成功。
+- 当前 Admin 定向 Subscription/Gateway/Token/settlement Vitest：10 files、63 tests 全部通过；Story schema/review：2 files、12 tests 全部通过。覆盖无订阅、paused/future period、显式模型 deny、Allowance 402、missing usage、流中断、abort、401 token refresh、watchdog、confirm/reject/revision/audit/replay。
+- 当前一次性 PostgreSQL Subscription Chromium：1 passed（13.6s）；4 Gateway requests = 2 succeeded + 2 failed，6 Token ledger entries，0 conservation mismatch，reservedTokens=0。Allowance exhausted 返回 402，Provider request count不增加，已有现金余额/现金 ledger 不变，无 cash fallback。
+- Dream backend 正式目录明确排除会直连 8765 写共享库的 legacy manual `tests/test_api_endpoints.py` 后：1835 passed、18 skipped、89 warnings、663 subtests passed（74.66s）。frontend source contracts：370 passed（11.0s）。Provider harness：2 passed。ESLint exit 0（0 errors、21 existing Hooks warnings）；TypeScript、production build（2758 modules）和 `git diff --check` 均 exit 0。
+- 本轮未修改生产 runtime 代码；此前同一当前 runtime code 的完整隔离真实 Chromium 证据继续有效：模型保存/390×844恢复 1 passed；同一新 Run 完成 EP01/刷新/重入 1 passed；Admin读取并按 revision确认同一 Dream Story 1 passed。32 Gateway requests全部 200/succeeded/settled；reserve 1,836,876 = capture 1,180 + release 1,835,696，reserved=0，external Provider calls=0。
+- 诊断回执：合并 Mock 套件前两次遗漏正确的 `INK_E2E_WEB_BASE`，各得到 5 passed/3 `ERR_CONNECTION_REFUSED :4177`，改用明确 5173 后 8/8通过；未放宽业务断言。一次沙箱内 backend full run仅因本机临时 Gateway bind被禁止而 1 failed，其余 1827 passed/26 skipped/663 subtests；一次沙箱内 frontend source因 Chromium MachPort权限失败并已停止。尝试沙箱外无排除项 full pytest被安全审查在进程启动前拒绝，原因是 legacy smoke可能写共享库；随后使用明确 `--ignore=tests/test_api_endpoints.py` 的正式边界通过。上述均为环境/命令边界失败，不计产品 green，也未触发共享写入。
+- 清理复核：Dream/Subscription精确命名 Docker containers为0；`/private/tmp` 无本轮 Dream/Admin E2E roots；Mock临时 output 与 `frontend/test-results/.last-run.json` 已删除。删除本轮 01:02 创建并遗漏的精确 Admin `.next-e2e-dream-business-a3fd5bbf6b9b`；更早的 Admin `html/playwright-report/test-results` 非本轮资源，未动。用户5173/8765按要求保留。
+- 数据边界：本轮新增验证只写一次性 PostgreSQL containers或测试内存/临时目录；共享 PostgreSQL 未写入，未执行真实收费 Provider、生产库测试写或跨账号重归属。
+- 最终判断：Dream Agent runtime materialization误拒绝、消息重复请求和长等待后 Gateway 401 已有直接代码/测试/运行态证据；三设计 Dream 范围、负向矩阵、同 Run Workflow/Episode/Story/Token一致性和发布门禁均完成。真实收费 Provider usage canary仍需部署环境单独授权，不以本地 stub冒充。
+
+## 2026-08-11 — Dream Agent 与业务 E2E 相关文件提交
+
+### Optimized Prompt
+
+你是 Ink Dream Memory 的发布提交负责人。将已经完成并验证的 Dream Agent 重复请求修复、runtime materialization、Gateway subject token refresh、server-owned model selection、Token/Workflow/Episode/Story 一致性、PostgreSQL 合同、Dream Files恢复门禁、设计文档、隔离 E2E runner及其测试，按仓库边界整理成可审计 Git commit。
+
+先只读检查 Dream 与 Admin 两个仓库的 status、diff/stat 和文件归属。只 stage 本目标直接相关且已通过验证的文件；明确排除用户既有的 `frontend/test-results` 删除、历史报告输出、缓存、构建产物、Secret、临时资源和无法证明归属的改动。不得使用 `git add -A`、破坏性 Git、amend、reset、checkout 或 push。若同一文件同时包含相关与无关改动，先核对 hunk；无法安全拆分时不得擅自覆盖。
+
+分别在 Dream 与 Admin 仓库提交，因为它们是独立 Git repository。提交前运行 staged diff检查、敏感信息扫描和 `git diff --check`；提交信息准确描述业务结果，不宣称真实收费 Provider canary。提交后复核 commit、剩余未提交文件和两个仓库工作树，确保未误纳无关文件。
+
+Acceptance Criteria:
+
+- Dream commit只含 Dream runtime/Agent/Gateway/model/Workflow/Artifact/UI/tests/design/E2E相关文件。
+- Admin commit只含统一 Story Artifact schema/review/Gateway支持、correction worklog和必要的隔离测试基础设施。
+- `frontend/test-results` 既有删除、旧 html/playwright报告、构建/缓存与临时文件不进入 commit。
+- staged diff无 Token、service key、Provider credential、完整 DSN、绝对 Artifact 路径或测试生成的真实认证材料。
+- 两仓 commit成功且给出 commit hash；不 push。
+
+Rollback and Cleanup:
+
+- commit前发现误 stage时仅用非破坏性 `git restore --staged <exact files>`；不改工作树内容。
+- commit后若发现范围错误，停止并报告，不自动 amend/rebase/reset。
+- 不启动或停止服务，不创建数据库/容器，不删除用户文件。
+
+### Optional Enhancers
+
+- 在最终回执中列出两个 commit的文件数量和剩余未提交路径类别。
+
+### 本轮问题与用户影响
+
+实现与验收已完成但尚未形成可审计提交；若直接全量 stage，会把用户既有测试截图删除或无关配置带入发布历史。
+
+### 事实来源和真值所有者
+
+- 文件归属与提交边界：两个仓库当前 `git status`、diff和历史；测试结论：本 worklog与三合同追踪文档。
+- Git index/commit是提交事实；工作树未提交内容仍归用户，不因本轮整理改变所有权。
+
+### 修改范围与明确不修改范围
+
+范围：筛选、stage、检查并提交本目标相关文件。非范围：重写实现、修改测试结论、清理用户改动、push、PR或发布。
+
+### 测试矩阵
+
+两仓 status/diff归属；staged diff check；敏感信息扫描；commit后 show/status；未纳入文件核对。
+
+### 完成标准
+
+两个仓库的相关文件形成独立、可审计 commit，hash和剩余未提交改动明确，无无关文件或敏感信息进入提交。
+
+### 风险、回滚与资源清理要求
+
+主要风险为误纳用户删除、混入缓存/Secret、跨仓库提交遗漏或用破坏性命令清理。仅精确 stage，提交前后双重核对；本轮不产生运行资源。
+
+### 执行状态
+
+- 本 Prompt Architect 记录已先于本轮 Git status/diff审计、stage和commit落盘。
+- 提交前当前代码复核：Dream 后端聚焦回归 231 passed、1 skipped，唯一沙箱失败为临时 `127.0.0.1:0` bind 权限；该真实 Claude CLI/Gateway 401 refresh 测试在允许本地端口的环境单独复跑 1 passed，因此对应集合为 232 passed、1 skipped，另有 115 subtests passed。
+- Dream 前端完整 source Chromium 381 passed；其中新增 Dream→Chat SSE 重连与 ordinary Chat continuation 测试 1 passed。ESLint exit 0（0 errors、21 个既有 Hooks warnings），TypeScript project check 与 production build exit 0。
+- Admin Story Artifact/Gateway 定向 Vitest 4 files、22 tests 全部通过；Dream/Admin staged `git diff --check` 均通过。
+- `frontend/test-results` 运行产物和既有删除继续排除；本轮未 push、未 amend、未修改共享 PostgreSQL、未调用真实收费 Provider，也未启动或停止业务服务。
+- Dream 仓库相关范围已提交为 `b5b986c`（`fix(dream): stabilize agent runtime and production workflow`，99 files）；Admin 仓库按独立 repository 边界随后提交。

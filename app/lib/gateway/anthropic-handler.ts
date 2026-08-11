@@ -4,7 +4,7 @@ import { gatewayErrorResponse, toGatewayError } from "./errors";
 import { prepareGatewayRequest, preparationErrorResponse } from "./prepare";
 import { createAnthropicProviderClient, toProviderGatewayError } from "./provider-clients";
 import { anthropicCountTokensSchema, anthropicMessageSchema } from "./protocols";
-import { estimateJsonTokens, parseGatewayJson, parseGatewayJsonCapture, readIdempotencyKey } from "./request-body";
+import { deriveGatewayIdempotencyKey, estimateJsonTokens, parseGatewayJson, parseGatewayJsonCapture } from "./request-body";
 import { gatewayProtocolErrorResponse, proxyNonStreaming, proxyStreaming } from "./proxy-handler";
 import { resolveBillableModel } from "../models/resolver";
 
@@ -18,7 +18,7 @@ export async function handleAnthropicMessages(request: Request) {
       protocol: "anthropic",
       requestedModel: body.model,
       isStreaming: body.stream,
-      idempotencyKey: readIdempotencyKey(request.headers),
+      idempotencyKey: deriveGatewayIdempotencyKey(request.headers, captured.rawBody),
       estimatedInputTokens: estimateJsonTokens({ messages: body.messages, system: body.system, tools: body.tools }),
       requestedMaxOutputTokens: body.max_tokens,
       requestCapture: { request, rawBody: captured.rawBody, body: captured.body },

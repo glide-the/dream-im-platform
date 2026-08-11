@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { GatewayError } from "./errors";
 
@@ -93,4 +94,44 @@ export function readIdempotencyKey(headers: Headers) {
     );
   }
   return value;
+}
+
+function sha256(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+/**
+ * Resolve the reservation key for a provider request.
+ *
+ * Claude Code accepts only static custom headers for a whole Agent turn, but
+ * a tool loop performs a new provider request after every tool result. Dream
+ * therefore supplies a stable turn root and the Gateway, which owns billing
+ * idempotency, derives the request key from that root and the exact captured
+ * body. Exact retries reuse one key; a changed tool-result body gets a new
+ * reservation. Direct Idempotency-Key clients retain their existing contract.
+ */
+export function deriveGatewayIdempotencyKey(
+  headers: Headers,
+  rawBody: string,
+) {
+  const direct = readIdempotencyKey(headers);
+  const turnRoot = headers.get("x-ink-turn-idempotency-key")?.trim();
+  if (!turnRoot) return direct;
+  if (direct) {
+    throw new GatewayError(
+      "IDEMPOTENCY_HEADER_CONFLICT",
+      "Use either Idempotency-Key or X-Ink-Turn-Idempotency-Key, not both",
+      400,
+      "invalid_request_error",
+    );
+  }
+  if (turnRoot.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(turnRoot)) {
+    throw new GatewayError(
+      "TURN_IDEMPOTENCY_KEY_INVALID",
+      "X-Ink-Turn-Idempotency-Key must be 1-128 URL-safe characters",
+      400,
+      "invalid_request_error",
+    );
+  }
+  return `turn-${sha256(turnRoot).slice(0, 24)}-request-${sha256(rawBody)}`;
 }
