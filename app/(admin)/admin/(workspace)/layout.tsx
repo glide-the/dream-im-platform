@@ -31,8 +31,8 @@ export default async function AdminWorkspaceLayout({
           permissions: identity.permissions,
         }}
       />
-      <main className="min-w-0 lg:pl-[248px]">
-        <div className="admin-page-frame mx-auto w-full max-w-[1480px] px-4 py-6 sm:px-6 lg:px-9 lg:py-8">
+      <main className="min-w-0 lg:pl-[264px]">
+        <div className="admin-page-frame mx-auto w-full max-w-[1600px] px-5 py-9 sm:px-8 lg:px-12 lg:py-14 xl:px-16">
           {children}
         </div>
       </main>

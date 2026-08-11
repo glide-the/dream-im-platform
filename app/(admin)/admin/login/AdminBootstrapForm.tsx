@@ -5,7 +5,7 @@ import { useState } from "react";
 const MIN_PASSWORD_LENGTH = 14;
 
 const inputClass =
-  "mt-2 min-h-12 w-full rounded-xl border border-border bg-bg-primary px-4 text-sm text-text-primary outline-none transition placeholder:text-text-tertiary focus:border-accent focus:ring-4 focus:ring-accent-light";
+  "mt-2 min-h-12 w-full rounded-xl bg-bg-primary px-4 text-sm text-text-primary outline-none transition placeholder:text-text-tertiary focus:bg-accent-light focus:ring-2 focus:ring-accent/20";
 
 export default function AdminBootstrapForm({
   onAlreadyInitialized,
@@ -103,7 +103,7 @@ export default function AdminBootstrapForm({
           aria-describedby="initial-password-note"
         />
       </div>
-      <p id="initial-password-note" className="border border-warning/40 bg-accent-orange-light px-4 py-3 text-xs leading-5 text-text-secondary">
+      <p id="initial-password-note" className="rounded-xl bg-accent-orange-light px-4 py-3 text-xs leading-5 text-text-secondary">
         使用至少 14 个字符的独立密码；页面没有开发默认账号或默认密码。
       </p>
 

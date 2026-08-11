@@ -14,7 +14,7 @@ export default function AdminPageHeader({
   status?: string;
 }) {
   return (
-    <header className="border-b border-border pb-3">
+    <header>
       {breadcrumb?.length ? (
         <nav aria-label="面包屑" className="mb-2 flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
           {breadcrumb.map((item, index) => (
@@ -27,11 +27,11 @@ export default function AdminPageHeader({
       ) : null}
       <div className="flex min-h-14 flex-wrap items-end justify-between gap-3">
         <div className="min-w-0 max-w-3xl">
-          <p className="font-mono text-[10px] uppercase leading-4 tracking-[0.18em] text-text-tertiary">{eyebrow}</p>
-          <h1 className="mt-1 font-display text-[clamp(1.75rem,3vw,2rem)] font-semibold leading-tight tracking-[-0.02em]">{title}</h1>
-          <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-text-secondary sm:line-clamp-1 sm:text-sm" title={description}>{description}</p>
+          {eyebrow ? <p className="font-mono text-[10px] uppercase leading-4 tracking-[0.18em] text-text-tertiary">{eyebrow}</p> : null}
+          <h1 className={`${eyebrow ? "mt-2" : ""} font-display text-[clamp(2.25rem,4vw,3.5rem)] font-semibold leading-tight tracking-[-0.04em]`}>{title}</h1>
+          {description ? <p className="mt-3 max-w-2xl text-sm leading-6 text-text-secondary" title={description}>{description}</p> : null}
         </div>
-        {status ? <span className="inline-flex min-h-9 items-center border border-border bg-bg-surface px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-secondary">{status}</span> : null}
+        {status ? <span className="inline-flex min-h-9 items-center font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">{status}</span> : null}
       </div>
     </header>
   );

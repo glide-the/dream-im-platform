@@ -41,7 +41,7 @@ export default function AdminLoginForm() {
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          className="mt-2 min-h-12 w-full rounded-xl border border-border bg-bg-primary px-4 text-sm outline-none transition focus:border-accent"
+          className="mt-2 min-h-12 w-full rounded-xl bg-bg-primary px-4 text-sm outline-none transition focus:bg-accent-light focus:ring-2 focus:ring-accent/20"
         />
       </label>
       <label className="block">
@@ -52,7 +52,7 @@ export default function AdminLoginForm() {
           required
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className="mt-2 min-h-12 w-full rounded-xl border border-border bg-bg-primary px-4 text-sm outline-none transition focus:border-accent"
+          className="mt-2 min-h-12 w-full rounded-xl bg-bg-primary px-4 text-sm outline-none transition focus:bg-accent-light focus:ring-2 focus:ring-accent/20"
         />
       </label>
       {error ? (

@@ -61,15 +61,15 @@ function ThemeToggle() {
       onClick={toggleTheme}
       aria-label={`切换至${isDark ? "浅色" : "深色"}主题`}
       aria-pressed={isDark}
-      className="mt-3 flex min-h-10 w-full items-center justify-between border border-border bg-bg-primary px-3 text-xs font-semibold text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]"
+      className="mt-4 flex min-h-10 w-full items-center justify-between text-xs font-semibold text-[var(--color-admin-nav-muted)] transition-colors hover:text-[var(--color-admin-nav-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]"
     >
       <span className="inline-flex items-center gap-2">
-        <span aria-hidden="true" className="font-mono text-[11px]">
+        <span aria-hidden="true" className="font-mono text-[11px] text-[var(--color-admin-nav-muted)]">
           {isDark ? "●" : "○"}
         </span>
         主题
       </span>
-      <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-tertiary">
+      <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--color-admin-nav-muted)]">
         {isDark ? "深色" : "浅色"}
       </span>
     </button>
@@ -181,26 +181,27 @@ function NavContent({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border px-5 py-5">
-        <Link href="/admin" onClick={close} className="flex min-w-0 items-center gap-3" aria-label="Ink Memory 运营控制台首页">
-          <span className="grid h-9 w-9 shrink-0 place-items-center border border-text-primary font-mono text-[10px] font-semibold tracking-[-0.08em]">INK</span>
+      <div className="flex items-center justify-between px-7 pb-12 pt-9">
+        <Link href="/admin" onClick={close} className="flex min-w-0 items-start gap-4" aria-label="Ink Memory 运营控制台首页">
+          <span className="pt-1 font-mono text-[10px] font-semibold tracking-[0.12em] text-[var(--color-admin-nav-active-text)]">INK</span>
           <span className="min-w-0">
-            <span className="block truncate font-display text-sm font-semibold">Ink Memory</span>
-            <span className="block font-mono text-[9px] uppercase tracking-[0.18em] text-text-tertiary">Operations console</span>
+            <span className="block truncate font-display text-sm font-semibold text-[var(--color-admin-nav-text)]">Ink Memory</span>
+            <span className="block font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--color-admin-nav-muted)]">Operations console</span>
           </span>
         </Link>
-        {close ? <button type="button" onClick={close} className="min-h-11 px-2 text-sm" aria-label="关闭导航">关闭</button> : null}
+        {close ? <button type="button" onClick={close} className="min-h-11 px-2 text-sm text-[var(--color-admin-nav-muted)] hover:text-[var(--color-admin-nav-text)]" aria-label="关闭导航">关闭</button> : null}
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4" aria-label="管理后台主导航">
+      <nav className="admin-nav-scroll min-h-0 flex-1 overflow-y-auto px-7 pb-10" aria-label="管理后台主导航">
         {identity.permissions.includes(dashboard.permission) ? (
           <Link
             href={dashboard.href}
             onClick={close}
             aria-current={isActive(pathname, dashboard.href) ? "page" : undefined}
-            className={`mb-4 flex min-h-10 items-center gap-3 border-l-2 px-3 text-sm ${isActive(pathname, dashboard.href) ? "border-text-primary bg-accent-light font-semibold text-text-primary" : "border-transparent text-text-secondary hover:bg-bg-secondary"}`}
+            className={`mb-9 flex min-h-10 items-center gap-3 text-sm transition-all ${isActive(pathname, dashboard.href) ? "translate-x-1 font-semibold text-[var(--color-admin-nav-active-text)]" : "text-[var(--color-admin-nav-text)] hover:translate-x-1 hover:text-[var(--color-admin-nav-hover)]"}`}
           >
-            <span className="font-mono text-[9px] text-text-tertiary">{dashboard.mark}</span>{dashboard.label}
+            <span className={`w-5 font-mono text-[9px] ${isActive(pathname, dashboard.href) ? "text-[var(--color-admin-nav-active-muted)]" : "text-[var(--color-admin-nav-muted)]"}`}>{dashboard.mark}</span>
+            {dashboard.label}
           </Link>
         ) : null}
 
@@ -208,9 +209,9 @@ function NavContent({
           const items = group.items.filter((item) => identity.permissions.includes(item.permission));
           if (!items.length) return null;
           return (
-            <section key={group.label} className="mb-5">
-              <h2 className="px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-text-tertiary">{group.label}</h2>
-              <div className="mt-2 space-y-0.5">
+            <section key={group.label} className="mb-9">
+              <h2 className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-admin-nav-muted)]">{group.label}</h2>
+              <div className="mt-3 space-y-1">
                 {items.map((item) => {
                   const active = isActive(pathname, item.href);
                   return (
@@ -219,9 +220,9 @@ function NavContent({
                       href={item.href}
                       onClick={close}
                       aria-current={active ? "page" : undefined}
-                      className={`flex min-h-10 items-center gap-3 border-l-2 px-3 text-sm transition-colors ${active ? "border-text-primary bg-accent-light font-semibold text-text-primary" : "border-transparent text-text-secondary hover:bg-bg-secondary hover:text-text-primary"}`}
+                      className={`flex min-h-9 items-center gap-3 text-sm transition-all ${active ? "translate-x-1 font-semibold text-[var(--color-admin-nav-active-text)]" : "text-[var(--color-admin-nav-text)] hover:translate-x-1 hover:text-[var(--color-admin-nav-hover)]"}`}
                     >
-                      <span className="w-5 font-mono text-[9px] text-text-tertiary">{item.mark}</span>
+                      <span className={`w-5 font-mono text-[9px] ${active ? "text-[var(--color-admin-nav-active-muted)]" : "text-[var(--color-admin-nav-muted)]"}`}>{item.mark}</span>
                       <span>{item.label}</span>
                     </Link>
                   );
@@ -232,11 +233,11 @@ function NavContent({
         })}
       </nav>
 
-      <div className="border-t border-border px-5 py-4">
-        <p className="truncate text-xs font-semibold">{identity.name}</p>
-        <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-[0.12em] text-text-tertiary">{identity.roles.join(" · ")}</p>
+      <div className="px-7 pb-7 pt-5">
+        <p className="truncate text-xs font-semibold text-[var(--color-admin-nav-text)]">{identity.name}</p>
+        <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--color-admin-nav-muted)]">{identity.roles.join(" · ")}</p>
         <ThemeToggle />
-        <button type="button" onClick={logout} className="mt-3 min-h-10 text-xs font-semibold text-text-secondary underline decoration-border">退出管理后台</button>
+        <button type="button" onClick={logout} className="mt-2 min-h-10 text-xs font-semibold text-[var(--color-admin-nav-muted)] hover:text-[var(--color-admin-nav-text)]">退出管理后台</button>
       </div>
     </div>
   );
@@ -252,22 +253,22 @@ export default function AdminNavigation({
 
   return (
     <>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] border-r border-border bg-bg-surface lg:block">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[264px] bg-[var(--color-admin-nav-bg)] lg:block">
         <NavContent identity={identity} pathname={pathname} />
       </aside>
 
-      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-bg-surface px-4 lg:hidden">
+      <header className="sticky top-0 z-20 flex h-20 items-center justify-between bg-bg-primary px-5 lg:hidden">
         <Link href="/admin" className="flex items-center gap-3" aria-label="Ink Memory 运营控制台首页">
-          <span className="grid h-8 w-8 place-items-center border border-text-primary font-mono text-[9px] font-semibold">INK</span>
+          <span className="font-mono text-[9px] font-semibold tracking-[0.12em] text-accent">INK</span>
           <span className="font-display text-sm font-semibold">运营控制台</span>
         </Link>
-        <button type="button" onClick={() => setOpen(true)} className="min-h-11 border border-border px-4 text-sm font-semibold" aria-expanded={open} aria-controls="admin-mobile-nav">菜单</button>
+        <button type="button" onClick={() => setOpen(true)} className="min-h-11 px-1 text-sm font-semibold" aria-expanded={open} aria-controls="admin-mobile-nav">菜单</button>
       </header>
 
       {open ? (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="管理后台导航">
           <button type="button" className="absolute inset-0 bg-black/35" onClick={() => setOpen(false)} aria-label="关闭导航遮罩" />
-          <aside id="admin-mobile-nav" className="absolute inset-y-0 left-0 w-[min(88vw,340px)] bg-bg-surface shadow-medium">
+          <aside id="admin-mobile-nav" className="absolute inset-y-0 left-0 w-[min(88vw,340px)] bg-[var(--color-admin-nav-bg)] shadow-medium">
             <NavContent identity={identity} pathname={pathname} close={() => setOpen(false)} />
           </aside>
         </div>
