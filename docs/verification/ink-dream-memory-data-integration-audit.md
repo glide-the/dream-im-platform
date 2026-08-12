@@ -99,7 +99,7 @@ Story 枚举实值：status 为 draft 3/published 1；review_status 为 pending 
 
 ### 5.3 Workflow Run
 
-源 `workflow_runs` 保存 Deck/Plugin/runtime/preflight 不可变 provenance、幂等键、状态版本和创建者，状态枚举为 `preflight/queued/running/output_validating/pending_review/confirmed/rejected/continuing/completed/failed/cancelled`。Admin 的 `story_workflow_runs` 没有这些关键字段，却虚构了 `project_id`、`workflow_code/version`、`input/output`。该表不能继续作为运行记录来源。
+源 `workflow_runs` 保存 Deck/Plugin/runtime/preflight 不可变 provenance、幂等键、状态版本和创建者，状态枚举为 `preflight/queued/running/output_validating/pending_review/confirmed/rejected/completed/failed/cancelled`。Admin 的 `story_workflow_runs` 没有这些关键字段，却虚构了 `project_id`、`workflow_code/version`、`input/output`。该表不能作为运行记录来源。
 
 ## 6. API 与写操作安全边界
 
@@ -240,7 +240,7 @@ flowchart LR
 | `story_workspace_scenes` | `id,identifier,name,description,story_id,author_id,workspace_id,character_count,order_index,review_status,agent_generated,created_at,updated_at,status,review_notes,confirmed_at,archived_at` | PK `id`；story 可空 FK；author/workspace FK | review 同上；status `active/archived`；agent `0/1` |
 | `story_workspace_story_characters` | `story_id,character_id,role_type,created_at` | 复合 PK；Story/Character FK | 关系事实，不是独立 CRUD 实体 |
 | `story_workspace_scene_characters` | `scene_id,character_id,created_at` | 复合 PK；Scene/Character FK | 关系事实，不是独立 CRUD 实体 |
-| `workflow_runs` | run provenance、status、error、retry、runtime/preflight、source message、idempotency、hash、version 与时间 | PK `id`；retry/binding/runtime/preflight FK；三列 idempotency unique | `preflight/queued/running/output_validating/pending_review/confirmed/rejected/continuing/completed/failed/cancelled` |
+| `workflow_runs` | run provenance、status、error、retry、runtime/preflight、source message、idempotency、hash、version 与时间 | PK `id`；retry/binding/runtime/preflight FK；三列 idempotency unique | `preflight/queued/running/output_validating/pending_review/confirmed/rejected/completed/failed/cancelled` |
 | `workflow_run_token_consumptions` / `workflow_run_transitions` | Token digest/消费来源；状态转换序列与 actor/reason/error | PK/unique/FK；Dream trigger 禁止 UPDATE/DELETE | append-only |
 
 Dream REST 的实际写边界没有变化：Workspace 仅 PATCH name/settings；Story/Character/Scene 仅白名单 PATCH 与显式 confirm/reject/archive（按资源支持情况）；Workflow 使用命令式 preflight/start/retry/cancel，而不是通用 CRUD。Admin 不得自行扩充业务状态或删除能力。

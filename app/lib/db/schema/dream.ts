@@ -761,7 +761,7 @@ export const workflow_runs = pgTable("workflow_runs", {
 		}).onDelete("restrict"),
 	unique("uq_workflow_runs_workspace_id_created_by_idempotency_key").on(table.workspace_id, table.idempotency_key, table.created_by),
 	check("ck_workflow_runs_3", sql`status_version >= 1`),
-	check("ck_workflow_runs_1", sql`status = ANY (ARRAY['preflight'::text, 'queued'::text, 'running'::text, 'output_validating'::text, 'pending_review'::text, 'confirmed'::text, 'rejected'::text, 'continuing'::text, 'completed'::text, 'failed'::text, 'cancelled'::text])`),
+	check("ck_workflow_runs_1", sql`status = ANY (ARRAY['preflight'::text, 'queued'::text, 'running'::text, 'output_validating'::text, 'pending_review'::text, 'confirmed'::text, 'rejected'::text, 'completed'::text, 'failed'::text, 'cancelled'::text])`),
 	check("ck_workflow_runs_2", sql`binding_revision >= 1`),
 ]);
 

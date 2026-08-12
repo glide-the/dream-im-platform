@@ -184,7 +184,7 @@ Run 是过程身份，不能唯一代表长期 Story；用户路径不是授权�
 
 | 状态域 | 权威事实 | 取值 |
 |---|---|---|
-| Workflow Run lifecycle | `workflow_runs.status` | `preflight`、`queued`、`running`、`output_validating`、`pending_review`、`confirmed`、`rejected`、`continuing`、`completed`、`failed`、`cancelled` |
+| Workflow Run lifecycle | `workflow_runs.status` | `preflight`、`queued`、`running`、`output_validating`、`pending_review`、`confirmed`、`rejected`、`completed`、`failed`、`cancelled` |
 | Artifact availability | Dream 文件投影；Story 行保存最近观测摘要 | `generating`、`available`、`missing`、`invalid` |
 | Story Index | Dream materializer/observation | `syncing`、`indexed`、`stale`、`missing`、`failed` |
 | Review | Admin 受控审核命令 | `pending`、`confirmed`、`rejected` |
@@ -637,7 +637,7 @@ URL 参数：
 
 ### 8.1 Workflow Run lifecycle
 
-沿用 `workflow_runs.status`：`preflight → queued → running → output_validating → pending_review → confirmed/continuing → completed`；`rejected`、`failed`、`cancelled` 为终止分支。Run 状态不推导 Artifact 或 Story Index 成功。
+沿用 `workflow_runs.status`：`preflight → queued → running → output_validating → pending_review → confirmed → completed`；`rejected`、`failed`、`cancelled` 为终止分支。确认后的工具执行仍属于同一 `confirmed` 业务阶段，不建立额外 lifecycle 状态。Run 状态不推导 Artifact 或 Story Index 成功。
 
 ### 8.2 Artifact availability
 

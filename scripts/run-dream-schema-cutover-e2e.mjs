@@ -155,6 +155,85 @@ async function applyLegacy06(name) {
   });
 }
 
+async function stageLegacyContinuingFixture(name) {
+  await withClient(name, async (client) => {
+    await client.query("BEGIN");
+    try {
+      // The disposable fixture isolates the state-label correction itself.
+      // FK targets are intentionally omitted and ALL triggers are disabled
+      // only around fixture setup/cleanup; production 0033 never disables
+      // constraint triggers.
+      await client.query("ALTER TABLE workflow_runs DISABLE TRIGGER ALL");
+      await client.query("ALTER TABLE workflow_run_transitions DISABLE TRIGGER ALL");
+      await client.query(`
+        INSERT INTO workflow_runs (
+          id, workspace_id, deck_plugin_id, deck_plugin_version,
+          workflow_definition_ref, deck_runtime_snapshot_id, status,
+          deck_plugin_manifest_hash, deck_plugin_binding_id, binding_revision,
+          runtime_plugin_lock_id, workflow_preflight_id, idempotency_key,
+          input_hash, semantic_fingerprint, status_version, created_by
+        ) VALUES (
+          'run_legacy_continuing_fixture', 'workspace_fixture', 'plugin_fixture',
+          '1.0.0', 'workflow-fixture', 'snapshot_fixture', 'continuing',
+          'sha256:fixture', 'binding_fixture', 1, 'lock_fixture',
+          'preflight_fixture', 'fixture-key', 'sha256:input',
+          'sha256:semantic', 8, 'fixture-actor'
+        )
+      `);
+      await client.query(`
+        INSERT INTO workflow_run_transitions (
+          id, workflow_run_id, transition_seq, from_status, to_status, actor_id
+        ) VALUES
+          ('transition_fixture_1', 'run_legacy_continuing_fixture', 7,
+           'confirmed', 'continuing', 'fixture-actor'),
+          ('transition_fixture_2', 'run_legacy_continuing_fixture', 8,
+           'continuing', 'completed', 'fixture-actor')
+      `);
+      await client.query("ALTER TABLE workflow_run_transitions ENABLE TRIGGER ALL");
+      await client.query("ALTER TABLE workflow_runs ENABLE TRIGGER ALL");
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
+  });
+}
+
+async function verifyAndRemoveLegacyContinuingFixture(name) {
+  await withClient(name, async (client) => {
+    const corrected = await client.query(`
+      SELECT
+        (SELECT status FROM workflow_runs
+          WHERE id='run_legacy_continuing_fixture') AS run_status,
+        array_agg(from_status || '>' || to_status ORDER BY transition_seq) AS transitions
+      FROM workflow_run_transitions
+      WHERE workflow_run_id='run_legacy_continuing_fixture'
+    `);
+    if (corrected.rows[0]?.run_status !== "confirmed"
+      || JSON.stringify(corrected.rows[0]?.transitions) !== JSON.stringify([
+        "confirmed>confirmed",
+        "confirmed>completed",
+      ])) {
+      throw new Error("0033 did not normalize the legacy continuing fixture");
+    }
+    await client.query("BEGIN");
+    try {
+      await client.query("ALTER TABLE workflow_run_transitions DISABLE TRIGGER USER");
+      await client.query(
+        "DELETE FROM workflow_run_transitions WHERE workflow_run_id='run_legacy_continuing_fixture'",
+      );
+      await client.query("ALTER TABLE workflow_run_transitions ENABLE TRIGGER USER");
+      await client.query(
+        "DELETE FROM workflow_runs WHERE id='run_legacy_continuing_fixture'",
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
+  });
+}
+
 async function verifySuccess(name, { expectedLegacyHead = null, sampleUser = false } = {}) {
   await withClient(name, async (client) => {
     const contract = await captureDreamSchemaContract(client, tableNames);
@@ -166,6 +245,19 @@ async function verifySuccess(name, { expectedLegacyHead = null, sampleUser = fal
          (SELECT count(*)::int FROM drizzle.__drizzle_migrations) AS receipts,
          (SELECT count(DISTINCT hash)::int FROM drizzle.__drizzle_migrations) AS distinct_receipts,
          (SELECT count(*)::int FROM drizzle.schema_capabilities) AS capabilities,
+         (SELECT count(DISTINCT contract_sha256)::int
+            FROM drizzle.schema_capabilities) AS capability_hashes,
+         (SELECT version FROM drizzle.schema_capabilities
+           WHERE capability='dream.workflow.no-continuing.v1') AS lifecycle_capability,
+         (SELECT count(*)::int FROM workflow_runs
+           WHERE status='continuing') AS continuing_runs,
+         (SELECT count(*)::int FROM workflow_run_transitions
+           WHERE from_status='continuing' OR to_status='continuing') AS continuing_transitions,
+         position(
+           'continuing' IN pg_get_functiondef(
+             'public.dream_guard_workflow_runs_joint_session_binding_guard()'::regprocedure
+           )
+         ) AS continuing_guard_position,
          to_regclass('public.dream_alembic_version')::text AS legacy_table,
          (SELECT count(*)::int FROM users WHERE email='cutover-proof@example.invalid') AS proof_users`,
     );
@@ -175,8 +267,12 @@ async function verifySuccess(name, { expectedLegacyHead = null, sampleUser = fal
       : (await client.query(
           "SELECT version_num FROM public.dream_alembic_version",
         )).rows[0]?.version_num ?? null;
-    if (row.receipts !== 33 || row.distinct_receipts !== 33
-      || row.capabilities !== 3 || legacyHead !== expectedLegacyHead
+    if (row.receipts !== 34 || row.distinct_receipts !== 34
+      || row.capabilities !== 4 || row.capability_hashes !== 1
+      || row.lifecycle_capability !== 1
+      || row.continuing_runs !== 0 || row.continuing_transitions !== 0
+      || row.continuing_guard_position !== 0
+      || legacyHead !== expectedLegacyHead
       || row.proof_users !== (sampleUser ? 1 : 0)) {
       throw new Error("Successful cutover evidence is incomplete");
     }
@@ -304,6 +400,14 @@ try {
   await verifySuccess(fresh);
   await checkMigrations(fresh);
 
+  const legacyContinuing = databaseName("legacy_continuing");
+  await createDatabase(legacyContinuing);
+  await migrate(legacyContinuing, "0032_dream_schema_authority_cutover");
+  await stageLegacyContinuingFixture(legacyContinuing);
+  await migrate(legacyContinuing);
+  await verifyAndRemoveLegacyContinuingFixture(legacyContinuing);
+  await verifySuccess(legacyContinuing);
+
   await migrate(legacy06);
   await verifySuccess(legacy06, { expectedLegacyHead: "20260809_06", sampleUser: true });
   await migrate(legacy06Missing);
@@ -333,13 +437,13 @@ try {
 
   console.log(JSON.stringify({
     status: "passed",
-    successModes: ["fresh", "alembic_06_existing_index", "alembic_06_missing_index", "alembic_07"],
+    successModes: ["fresh", "legacy_continuing", "alembic_06_existing_index", "alembic_06_missing_index", "alembic_07"],
     failureModes: ["partial", "unknown_head"],
     idempotent: true,
     migrationCheck: true,
     concurrentMigrators: 2,
-    receipts: 33,
-    capabilities: 3,
+    receipts: 34,
+    capabilities: 4,
     legacyV1ReceiptReused: true,
     catalogSha256: expectedContract.catalogSha256,
     disposablePostgresRemoved: true,

@@ -6974,7 +6974,7 @@
           },
           {
             "name": "workflow_runs_joint_session_binding_guard",
-            "function": "CREATE OR REPLACE FUNCTION public.dream_guard_workflow_runs_joint_session_binding_guard()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  IF (NEW.runtime_load_receipt_id IS NULL) != (NEW.agent_session_id IS NULL)\n    OR (\n    OLD.runtime_load_receipt_id IS NULL\n    AND OLD.agent_session_id IS NULL\n    AND NEW.runtime_load_receipt_id IS NOT NULL\n    AND NOT (OLD.status = 'queued' AND NEW.status = 'running')\n    )\n    OR (\n    OLD.runtime_load_receipt_id IS NOT NULL\n    AND (\n    OLD.runtime_load_receipt_id IS DISTINCT FROM NEW.runtime_load_receipt_id\n    OR OLD.agent_session_id IS DISTINCT FROM NEW.agent_session_id\n    )\n    )\n    OR (\n    NEW.status IN (\n    'running', 'output_validating', 'pending_review', 'confirmed',\n    'rejected', 'continuing', 'completed'\n    )\n    AND NEW.runtime_load_receipt_id IS NULL\n    )\n    OR (\n    NEW.status IN ('preflight', 'queued')\n    AND NEW.runtime_load_receipt_id IS NOT NULL\n    )\n    OR (\n    NEW.agent_session_id IS NOT NULL\n    AND (\n    NEW.agent_session_id = NEW.source_voice_thread_id\n    OR NEW.agent_session_id = NEW.source_message_id\n    )\n    )\n    OR (\n    NEW.agent_session_id IS NOT NULL\n    AND OLD.agent_session_id IS NULL\n    AND NOT EXISTS (\n    SELECT 1 FROM agent_sessions AS session\n    WHERE session.agent_session_id = NEW.agent_session_id\n    AND session.workflow_run_id = NEW.id\n    AND session.runtime_load_receipt_id = NEW.runtime_load_receipt_id\n    AND session.runtime_plugin_lock_id = NEW.runtime_plugin_lock_id\n    AND session.status = 'active'\n    )\n    ) THEN\n    RAISE EXCEPTION USING ERRCODE = '55000', MESSAGE = 'workflow run receipt and session binding is invalid';\n  END IF;\n  IF TG_OP = 'DELETE' THEN\n    RETURN OLD;\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+            "function": "CREATE OR REPLACE FUNCTION public.dream_guard_workflow_runs_joint_session_binding_guard()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  IF (NEW.runtime_load_receipt_id IS NULL) != (NEW.agent_session_id IS NULL)\n    OR (\n      OLD.runtime_load_receipt_id IS NULL\n      AND OLD.agent_session_id IS NULL\n      AND NEW.runtime_load_receipt_id IS NOT NULL\n      AND NOT (OLD.status = 'queued' AND NEW.status = 'running')\n    )\n    OR (\n      OLD.runtime_load_receipt_id IS NOT NULL\n      AND (\n        OLD.runtime_load_receipt_id IS DISTINCT FROM NEW.runtime_load_receipt_id\n        OR OLD.agent_session_id IS DISTINCT FROM NEW.agent_session_id\n      )\n    )\n    OR (\n      NEW.status IN (\n        'running', 'output_validating', 'pending_review', 'confirmed',\n        'rejected', 'completed'\n      )\n      AND NEW.runtime_load_receipt_id IS NULL\n    )\n    OR (\n      NEW.status IN ('preflight', 'queued')\n      AND NEW.runtime_load_receipt_id IS NOT NULL\n    )\n    OR (\n      NEW.agent_session_id IS NOT NULL\n      AND (\n        NEW.agent_session_id = NEW.source_voice_thread_id\n        OR NEW.agent_session_id = NEW.source_message_id\n      )\n    )\n    OR (\n      NEW.agent_session_id IS NOT NULL\n      AND OLD.agent_session_id IS NULL\n      AND NOT EXISTS (\n        SELECT 1\n        FROM agent_sessions AS session\n        WHERE session.agent_session_id = NEW.agent_session_id\n          AND session.workflow_run_id = NEW.id\n          AND session.runtime_load_receipt_id = NEW.runtime_load_receipt_id\n          AND session.runtime_plugin_lock_id = NEW.runtime_plugin_lock_id\n          AND session.status = 'active'\n      )\n    ) THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '55000',\n      MESSAGE = 'workflow run receipt and session binding is invalid';\n  END IF;\n  IF TG_OP = 'DELETE' THEN\n    RETURN OLD;\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
             "definition": "CREATE TRIGGER workflow_runs_joint_session_binding_guard BEFORE UPDATE ON workflow_runs FOR EACH ROW EXECUTE FUNCTION dream_guard_workflow_runs_joint_session_binding_guard()"
           },
           {
@@ -7003,7 +7003,7 @@
             "name": "ck_workflow_runs_1",
             "type": "c",
             "validated": true,
-            "definition": "CHECK (status = ANY (ARRAY['preflight'::text, 'queued'::text, 'running'::text, 'output_validating'::text, 'pending_review'::text, 'confirmed'::text, 'rejected'::text, 'continuing'::text, 'completed'::text, 'failed'::text, 'cancelled'::text]))"
+            "definition": "CHECK (status = ANY (ARRAY['preflight'::text, 'queued'::text, 'running'::text, 'output_validating'::text, 'pending_review'::text, 'confirmed'::text, 'rejected'::text, 'completed'::text, 'failed'::text, 'cancelled'::text]))"
           },
           {
             "name": "ck_workflow_runs_2",
@@ -7057,6 +7057,6 @@
       }
     ]
   },
-  "catalogSha256": "2af3173e5d90a0571d0bbb1f98735074aef56092e4e385657cad3eb15c3e9f6e",
-  "contractSha256": "9e45329cb043a9e90f07886b6b9d31db4415238f5561410db58e986cf1ad4c1a"
+  "catalogSha256": "97208671d7519979982ed819e2397bba12403a500e14a938165254a64132f0cb",
+  "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
 }

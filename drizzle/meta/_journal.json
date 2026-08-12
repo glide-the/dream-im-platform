@@ -232,6 +232,13 @@
       "when": 1786513696194,
       "tag": "0032_dream_schema_authority_cutover",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1786521109200,
+      "tag": "0033_remove_dream_continuing_status",
+      "breakpoints": true
     }
   ]
 }

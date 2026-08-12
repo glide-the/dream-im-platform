@@ -3657,7 +3657,7 @@ Dream 模型、订阅计费与 Admin Gateway 已接入，但目前尚未以跨�
 
 #### TDD 与回归证据
 
-- RED：selection module 不存在导致 collection error；Dream launch eligibility 注入参数缺失导致 TypeError；stream consumer 不接受可注入 factory/failure handler；模型目录 503 后 last-good 文案/选项缺失；failed lifecycle 仍被推导为 continuing。对应最小实现后均转绿。
+- RED：selection module 不存在导致 collection error；Dream launch eligibility 注入参数缺失导致 TypeError；stream consumer 不接受可注入 factory/failure handler；模型目录 503 后 last-good 文案/选项缺失；failed lifecycle 曾被错误推导为活跃状态。对应最小实现后均转绿。
 - 后端最终扩大矩阵：`316 passed, 4 skipped, 158 subtests passed`。覆盖 Admin Gateway models/inference/selection、Gateway adapter、Product BFF、Claude Agent service、Dream launch/messages/confirmation/files、Episode artifacts 与 Workflow Run。
 - 后端最终聚焦复测：`42 passed, 1 skipped, 28 subtests passed`。新增原生 psycopg JSONB dict 复制解析、alias 冲突/下架/无资格、Dream turn alias、launch precheck/SSE/durable failure。
 - PostgreSQL runtime integration：`3 passed`；Story Index PostgreSQL adapter：`36 passed, 1 skipped`，唯一 skip 明确为 Admin Story Index migration 是 schema prerequisite。测试使用隔离 clone 并以 rollback/空库断言约束写入。
