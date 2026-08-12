@@ -50,7 +50,7 @@
 - Schema migration 不承载大规模业务数据搬迁；数据迁移必须使用 `drizzle/data/**` 的显式、可审计 runner。
 - 非一次性隔离数据库禁止 `db:push`。
 - 应用启动只检查 capability，不执行 migration。
-- 所有数据库写入测试必须证明目标是明确命名、可删除的隔离 PostgreSQL。
+- migration、回填、破坏性测试和可重复执行的持久化自动化测试必须证明目标是明确命名、可删除的隔离 PostgreSQL；真实业务测试按下方“本机真实业务测试协议”执行。
 
 ## 常用命令
 
@@ -68,7 +68,7 @@ pnpm db:migrate
 
 - API/领域变更至少覆盖成功路径与一个失败路径。
 - 关键管理交互使用 `tests/e2e/*.spec.ts`。
-- 持久化 E2E 必须使用明确的隔离 PostgreSQL，禁止迁移或清理未知数据库。
+- migration、回填、破坏性和可重复持久化 E2E 必须使用明确的隔离 PostgreSQL，禁止迁移或清理未知数据库；用户明确要求的真实业务 E2E 使用本机真实数据。
 - 提交前至少通过 typecheck、lint、unit 与 focused Playwright；高风险改动再跑 build。
 
 ## 单一运行路径与 Harness 协议
@@ -78,6 +78,14 @@ pnpm db:migrate
 - 测试 harness 的差异只能存在于 `tests/**` 或明确命名的验证脚本中，并通过依赖注入、明确命名的隔离 PostgreSQL、fake/real provider 选择、显式 capability、显式 secret 与可控 clock 配置；禁止在生产模块中放置 test-only fallback、固定测试密钥或“非测试环境直接 return”的分支。
 - Harness 必须调用公开生产入口和真实 DTO/协议，不得复制测试专用 API、Gateway、migration runner、状态机或 Agent runtime。真实 provider 测试必须显式限定模型与调用次数，保护正文、凭证和 DSN，并清理自有进程、端口、容器、volume 与临时目录。
 - 缺少 migration credential、schema capability、provider entitlement、账本余额或权限时，由对应边界 fail closed；不得通过笼统环境标签推断这些事实。
+
+## 本机真实业务测试协议
+
+- 凡用户要求或任务标记为“真实业务测试”“真实数据测试”或“真实模型验收”，必须使用本机正常运行的 Admin、Gateway、Dream 和当前本机真实 PostgreSQL 数据，全部业务步骤走公开生产入口。
+- 必须使用用户指定的现有真实账户和已有业务实体；禁止用数据库 clone/snapshot、影子账户、clone-only Deck、临时订阅、隔离账本、随机端口 Admin 或替代 Gateway 冒充真实业务链路。
+- 测试产生的 Dream Run、Thread、Gateway request、Token 结算和失败记录必须写入正常业务数据库，并能在用户日常使用的 Admin 后台中查询；不可见于正常 Admin 的隔离回执不能作为真实业务验收证据。
+- 真实业务测试只执行与普通用户相同的可见操作和必要业务写入。除非用户明确要求清理，否则保留本轮 Run 与日志供复核；不得修改无关账户、历史正文、订阅或账本。
+- 隔离数据库仅用于 migration、回填、破坏性、故障注入和可重复的 Provider-free 技术合同测试；此类结果必须明确标注为技术验证，禁止汇报为真实业务测试或真实模型验收。
 
 ## 命名与提交
 
