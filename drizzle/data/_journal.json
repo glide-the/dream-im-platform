@@ -15,9 +15,20 @@
       "migrationKey": "default-dream-plans-v1",
       "runner": "default-dream-plans.mjs",
       "dependsOn": [
-        "dream-legacy-43-plus-5-v1",
+        "a committed dream-legacy-43-plus-5-v1 or dream-legacy-43-plus-5-v2-drizzle receipt",
         "configured Provider/Model/Pricing/Entitlement"
       ]
+    },
+    {
+      "idx": 2,
+      "migrationKey": "dream-legacy-43-plus-5-v2-drizzle",
+      "runner": "legacy-43-plus-5.mjs",
+      "dependsOn": [
+        "dream.schema.unified.v1",
+        "Admin Drizzle 0032_dream_schema_authority_cutover"
+      ],
+      "supersedes": "dream-legacy-43-plus-5-v1",
+      "reusePolicy": "Reuse an existing successful v1 receipt with the same source fingerprint; otherwise record v2."
     }
   ]
 }

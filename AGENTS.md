@@ -24,6 +24,17 @@
 6. Provider 密钥和 Gateway Key 不得明文落库或回显。
 7. Story 表属于本项目 PostgreSQL 控制面，修改 schema 必须生成 Drizzle 迁移。
 
+## 统一数据库版本协议
+
+- `drizzle/**` 是共享 PostgreSQL 唯一 Schema/DDL 版本历史。
+- Dream、Admin、Gateway、Billing 等领域不得建立第二套 Alembic、runtime DDL 或自动建表机制。
+- 已进入 journal 或已应用的 SQL、snapshot、tag、when 和 hash 永久不可修改；修复必须新增前向 migration。
+- Schema 变更必须使用 expand → application compatibility → backfill → validate → contract。
+- Schema migration 不承载大规模业务数据搬迁；数据迁移必须使用 `drizzle/data/**` 的显式、可审计 runner。
+- 非一次性隔离数据库禁止 `db:push`。
+- 应用启动只检查 capability，不执行 migration。
+- 所有数据库写入测试必须证明目标是明确命名、可删除的隔离 PostgreSQL。
+
 ## 常用命令
 
 ```bash

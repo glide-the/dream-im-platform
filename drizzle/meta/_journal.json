@@ -225,6 +225,13 @@
       "when": 1786364400000,
       "tag": "0031_dream_artifact_contract_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786513696194,
+      "tag": "0032_dream_schema_authority_cutover",
+      "breakpoints": true
     }
   ]
 }

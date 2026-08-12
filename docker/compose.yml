@@ -7,6 +7,7 @@ services:
       - "${APP_PORT:-3000}:3000"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:?Run pnpm env:setup from the repository root}@postgres:5432/${POSTGRES_DB:-ink-memory}
+      MIGRATION_DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:?Run pnpm env:setup from the repository root}@postgres:5432/${POSTGRES_DB:-ink-memory}
       ADMIN_CONSOLE_ENABLED: ${ADMIN_CONSOLE_ENABLED:-true}
       ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:?Run pnpm env:setup from the repository root}
       ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:?Run pnpm env:setup from the repository root}

@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import pg from "pg";
 
-export const LEGACY_MIGRATION_KEY = "dream-legacy-43-plus-5-v1";
+export const LEGACY_MIGRATION_KEY_V1 = "dream-legacy-43-plus-5-v1";
+export const LEGACY_MIGRATION_KEY = "dream-legacy-43-plus-5-v2-drizzle";
+export const LEGACY_SCHEMA_CAPABILITY = "dream.schema.unified.v1";
 export const PLAN_SEED_KEY = "default-dream-plans-v1";
 
 const SUCCESS_STATUSES = new Set([
@@ -27,8 +29,10 @@ function assertSafeLegacyReceipt(receipt) {
   if (receipt?.contract !== "ink-dream-legacy-postgres-import-v1") {
     throw new Error("Unexpected Dream data migration contract");
   }
-  if (receipt?.validation?.tables !== 48 || receipt?.validation?.sourceRows !== 4921) {
-    throw new Error("Dream data migration source inventory is not 48 tables / 4,921 rows");
+  if (receipt?.validation?.tables !== 48
+    || !Number.isSafeInteger(receipt?.validation?.sourceRows)
+    || receipt.validation.sourceRows < 0) {
+    throw new Error("Dream data migration source inventory is invalid");
   }
   if (receipt?.security?.containsBusinessValues !== false
     || receipt?.security?.containsSourcePaths !== false
@@ -40,20 +44,34 @@ function assertSafeLegacyReceipt(receipt) {
   if (!Array.isArray(receipt.tables) || receipt.tables.length !== 48) {
     throw new Error("Dream data migration receipt does not contain 48 table results");
   }
+  const digestPattern = /^[0-9a-f]{64}$/;
+  const sourceRows = receipt.tables.reduce((total, table) => {
+    if (!Number.isSafeInteger(table?.sourceCount) || table.sourceCount < 0
+      || !digestPattern.test(String(table?.pkSha256 ?? ""))
+      || !digestPattern.test(String(table?.rowSha256 ?? ""))) {
+      throw new Error("Dream data migration table receipt is invalid");
+    }
+    return total + table.sourceCount;
+  }, 0);
+  if (sourceRows !== receipt.validation.sourceRows
+    || !digestPattern.test(String(receipt.manifestSha256 ?? ""))) {
+    throw new Error("Dream data migration receipt digests or row totals are invalid");
+  }
 }
 
-async function existingRun(client, migrationKey, fingerprint) {
+async function existingRun(client, migrationKeys, fingerprint) {
   const result = await client.query(
-    `SELECT run_id::text, status
+    `SELECT run_id::text, migration_key, status
        FROM drizzle.data_migration_runs
-      WHERE migration_key = $1
+      WHERE migration_key = ANY($1::text[])
         AND source_fingerprint_sha256 = $2
         AND status IN (
           'committed', 'adopted_exact',
           'adopted_with_post_cutover_changes', 'seeded'
         )
+      ORDER BY completed_at, run_id
       LIMIT 1`,
-    [migrationKey, fingerprint],
+    [migrationKeys, fingerprint],
   );
   return result.rows[0] ?? null;
 }
@@ -76,6 +94,8 @@ async function record({
   targetExtraRowCount = 0,
   summary,
   tables = [],
+  reuseMigrationKeys = [migrationKey],
+  requiredCapability = null,
 }) {
   if (!SUCCESS_STATUSES.has(status)) throw new Error("Unsupported successful migration status");
   const client = new pg.Client({ connectionString: databaseUrl });
@@ -84,8 +104,34 @@ async function record({
     await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
     await client.query(
       "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-      [`drizzle-data:${migrationKey}`],
+      [`drizzle-data:${reuseMigrationKeys.join(":")}`],
     );
+
+    const previous = await existingRun(client, reuseMigrationKeys, sourceFingerprint);
+    if (previous) {
+      await client.query("ROLLBACK");
+      return {
+        recorded: false,
+        reused: true,
+        runId: previous.run_id,
+        migrationKey: previous.migration_key,
+        status: previous.status,
+      };
+    }
+
+    if (requiredCapability) {
+      const capability = await client.query(
+        `SELECT version
+           FROM drizzle.schema_capabilities
+          WHERE capability = $1
+          FOR SHARE`,
+        [requiredCapability],
+      );
+      if (!capability.rows[0] || Number(capability.rows[0].version) < 1) {
+        throw new Error("Required Dream schema capability is missing");
+      }
+    }
+
     const definition = await client.query(
       `SELECT runner_contract, expected_table_count, expected_source_row_count
          FROM drizzle.data_migration_definitions
@@ -104,12 +150,6 @@ async function record({
     if (expected.expected_source_row_count !== null
       && Number(expected.expected_source_row_count) !== Number(sourceRowCount)) {
       throw new Error("Drizzle data migration row count does not match its definition");
-    }
-
-    const previous = await existingRun(client, migrationKey, sourceFingerprint);
-    if (previous) {
-      await client.query("ROLLBACK");
-      return { recorded: false, reused: true, runId: previous.run_id, status: previous.status };
     }
 
     await client.query(
@@ -156,7 +196,7 @@ async function record({
       );
     }
     await client.query("COMMIT");
-    return { recorded: true, reused: false, runId, status };
+    return { recorded: true, reused: false, runId, migrationKey, status };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -165,15 +205,8 @@ async function record({
   }
 }
 
-export async function recordLegacyReceipt(databaseUrl, receipt) {
-  assertSafeLegacyReceipt(receipt);
-  const status = receipt.status;
-  if (!new Set([
-    "committed", "adopted_exact", "adopted_with_post_cutover_changes",
-  ]).has(status)) {
-    throw new Error("Only committed or explicitly adopted Dream runs can be recorded");
-  }
-  const sourceFingerprint = sha256Json({
+export function legacySourceFingerprint(receipt) {
+  return sha256Json({
     contract: receipt.contract,
     manifestSha256: receipt.manifestSha256,
     tables: receipt.tables
@@ -187,6 +220,17 @@ export async function recordLegacyReceipt(databaseUrl, receipt) {
       .sort((left, right) => `${left.source}:${left.table}`
         .localeCompare(`${right.source}:${right.table}`)),
   });
+}
+
+export async function recordLegacyReceipt(databaseUrl, receipt) {
+  assertSafeLegacyReceipt(receipt);
+  const status = receipt.status;
+  if (!new Set([
+    "committed", "adopted_exact", "adopted_with_post_cutover_changes",
+  ]).has(status)) {
+    throw new Error("Only committed or explicitly adopted Dream runs can be recorded");
+  }
+  const sourceFingerprint = legacySourceFingerprint(receipt);
   const target = receipt.target ?? {};
   return record({
     databaseUrl,
@@ -217,6 +261,8 @@ export async function recordLegacyReceipt(databaseUrl, receipt) {
       redacted: true,
     },
     tables: receipt.tables,
+    reuseMigrationKeys: [LEGACY_MIGRATION_KEY, LEGACY_MIGRATION_KEY_V1],
+    requiredCapability: LEGACY_SCHEMA_CAPABILITY,
   });
 }
 

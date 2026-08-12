@@ -1,5 +1,8 @@
 # ink-dream-memory PostgreSQL 迁移方案
 
+> **状态：Superseded DDL design / historical data requirements retained（2026-08-12）**
+> 本文的 Alembic DDL 所有权和交错初始化顺序已被 [统一 PostgreSQL Schema 权威](../database-schema-authority.md)替代。43+5 源数据语义、snapshot、冲突阻断、digest、FK/sequence/trigger 验证仍是有效业务要求。
+
 > 文档状态：**Implemented / local cutover complete**（工具链、PG-only runtime 与本地 Admin-owned `ink-memory` 已完成；其他生产环境 cutover 仍 Planned）
 > 返回：[总索引](README.md)  
 > 前置：[源系统基线](01-current-scope-and-source-baseline.md) · [业务接入边界](02-business-integration-and-admin-boundary.md)  

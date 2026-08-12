@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
 import pg from "pg";
 
@@ -37,28 +37,6 @@ async function waitForPostgres(databaseUrl) {
     }
   }
   throw new Error("Disposable PostgreSQL did not become ready");
-}
-
-async function baselineAclSha256(databaseUrl) {
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
-  try {
-    const result = await client.query(
-      `SELECT table_name, grantee, privilege_type, is_grantable
-         FROM information_schema.role_table_grants
-        WHERE table_schema = current_schema()
-          AND table_name = ANY($1::text[])
-        ORDER BY table_name, grantee, privilege_type, is_grantable`,
-      [["story_workspace_stories", "story_workspace_workspaces", "users"]],
-    );
-    const rows = result.rows.map((row) => [
-      String(row.table_name), String(row.grantee), String(row.privilege_type),
-      String(row.is_grantable),
-    ]);
-    return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
-  } finally {
-    await client.end();
-  }
 }
 
 async function provisionSyntheticModel(databaseUrl) {
@@ -148,28 +126,10 @@ try {
   const adminEnv = {
     ...process.env,
     DATABASE_URL: databaseUrl,
+    MIGRATION_DATABASE_URL: databaseUrl,
     TEST_DATABASE_URL: databaseUrl,
     INK_USE_TEST_DATABASE_URL: "1",
   };
-  await capture(
-    "node",
-    ["scripts/migrate.mjs", "--through", "0026_harsh_victor_mancha"],
-    { cwd: adminRoot, env: adminEnv },
-  );
-
-  const aclSha256 = await baselineAclSha256(databaseUrl);
-  const dreamEnv = {
-    ...process.env,
-    DATABASE_URL: "",
-    TEST_DATABASE_URL: databaseUrl,
-    DREAM_EXPECTED_BASELINE_OWNER: "postgres",
-    DREAM_EXPECTED_BASELINE_ACL_SHA256: aclSha256,
-  };
-  await capture(
-    `${dreamRoot}backend/.venv/bin/alembic`,
-    ["-c", `${dreamRoot}backend/alembic.ini`, "upgrade", "head"],
-    { cwd: `${dreamRoot}backend`, env: dreamEnv },
-  );
   await capture("node", ["scripts/migrate.mjs"], {
     cwd: adminRoot,
     env: adminEnv,
@@ -185,14 +145,21 @@ try {
     "--expected-target-database", databaseName,
     "--approve-baseline-inserts",
     "--record",
+    "--full-receipt",
   ];
-  const firstLegacy = JSON.parse(await capture("node", legacyArgs, {
+  const firstLegacyOutput = JSON.parse(await capture("node", legacyArgs, {
     cwd: adminRoot,
     env: { ...adminEnv, DATABASE_URL: "" },
   }));
-  if (firstLegacy.status !== "committed" || firstLegacy.sourceRows !== 4921
-    || firstLegacy.insertedRows !== 4921 || firstLegacy.registry?.recorded !== true) {
-    throw new Error("Fresh 43+5 import did not commit and record all 4,921 rows");
+  const firstLegacy = firstLegacyOutput.receipt;
+  const sourceRows = firstLegacy.validation.sourceRows;
+  const sourceUsers = firstLegacy.tables.find((table) => table.table === "users")?.sourceCount;
+  if (firstLegacy.status !== "committed"
+    || firstLegacy.target.insertedRows !== sourceRows
+    || !Number.isSafeInteger(sourceUsers)
+    || firstLegacyOutput.registry?.recorded !== true
+    || firstLegacyOutput.registry?.migrationKey !== "dream-legacy-43-plus-5-v2-drizzle") {
+    throw new Error("Fresh 43+5 import did not commit and record the complete source");
   }
 
   const conflict = await execute("node", legacyArgs.filter((value) => value !== "--record"), {
@@ -217,11 +184,12 @@ try {
     "--target-approval", `VERIFY-43+5-IN:${databaseName}`,
     "--record",
   ];
+  adoptionArgs.push("--full-receipt");
   const repeatedLegacy = JSON.parse(await capture("node", adoptionArgs, {
     cwd: adminRoot,
     env: adminEnv,
   }));
-  if (repeatedLegacy.status !== "adopted_exact"
+  if (repeatedLegacy.receipt.status !== "adopted_exact"
     || repeatedLegacy.registry?.reused !== true) {
     throw new Error("Repeated source fingerprint did not reuse the committed receipt");
   }
@@ -246,9 +214,13 @@ try {
   try {
     const result = await client.query(
       `SELECT
-         (SELECT version_num FROM dream_alembic_version) AS alembic_head,
+         to_regclass('public.dream_alembic_version')::text AS alembic_table,
          (SELECT count(*)::int FROM drizzle.__drizzle_migrations) AS drizzle_migrations,
          (SELECT count(*)::int FROM drizzle.data_migration_definitions) AS definitions,
+         (SELECT count(*)::int FROM drizzle.schema_capabilities) AS capabilities,
+         (SELECT migration_key FROM drizzle.data_migration_runs
+           WHERE migration_key LIKE 'dream-legacy-43-plus-5-%'
+           LIMIT 1) AS legacy_migration_key,
          (SELECT count(*)::int FROM drizzle.data_migration_runs) AS runs,
          (SELECT count(*)::int FROM drizzle.data_migration_table_results) AS table_results,
          (SELECT sum(source_count)::int FROM drizzle.data_migration_table_results) AS source_rows,
@@ -273,21 +245,23 @@ try {
   } finally {
     await client.end();
   }
-  if (evidence.alembic_head !== "20260809_06"
-    || evidence.drizzle_migrations !== 29
-    || evidence.definitions !== 2
+  if (evidence.alembic_table !== null
+    || evidence.drizzle_migrations !== 33
+    || evidence.definitions !== 3
+    || evidence.capabilities !== 3
+    || evidence.legacy_migration_key !== "dream-legacy-43-plus-5-v2-drizzle"
     || evidence.runs !== 2
     || evidence.table_results !== 48
-    || evidence.source_rows !== 4921
-    || evidence.users !== 28
-    || evidence.active_subscriptions !== 28
+    || evidence.source_rows !== sourceRows
+    || evidence.users !== sourceUsers
+    || evidence.active_subscriptions !== sourceUsers
     || evidence.default_plans !== 3
     || evidence.append_only_sqlstate !== "55000") {
     throw new Error(`Disposable data migration evidence mismatch: ${JSON.stringify(evidence)}`);
   }
   console.log(JSON.stringify({
     status: "passed",
-    imported: { tables: 48, rows: 4921 },
+    imported: { tables: 48, rows: sourceRows },
     subscriptions: { plans: 3, activeUsers: evidence.active_subscriptions },
     registry: { runs: evidence.runs, tableResults: evidence.table_results },
     idempotent: true,

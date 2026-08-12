@@ -94,6 +94,7 @@ pnpm docker:down
 | 变量 | 用途 | 初始化策略 |
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL 连接；本地默认连接 `localhost:5433/ink-memory` | 自动配置 |
+| `MIGRATION_DATABASE_URL` | 唯一 Schema runner 的显式连接；生产必须使用专用 migrator 账户 | 本地自动配置；生产由 Secret Manager 注入 |
 | `ADMIN_SESSION_SECRET` | 管理员 Session HMAC | 自动生成，至少 32 bytes |
 | `ADMIN_BOOTSTRAP_TOKEN` | 首次设置页面的一次性初始化授权 | 自动生成，至少 32 bytes；不发送给页面，需手工粘贴 |
 | `ADMIN_ORIGIN_ALLOWLIST` | 管理写操作允许的 Origin，逗号分隔 | 本地默认 `http://localhost:3000` |
@@ -135,17 +136,19 @@ Storage 的核心接口、驱动实现、Key 校验与内容转换位于 `app/li
 ## 数据库与迁移
 
 ```bash
-pnpm db:generate  # 修改 app/lib/db/schema.ts 后生成迁移
-pnpm db:migrate   # 按 journal 顺序执行尚未应用的 SQL migration
-pnpm db:push      # 仅限明确的本地开发场景
+pnpm db:generate        # 修改 app/lib/db/schema/** 后生成前向 migration
+pnpm db:migrate:status  # 只读显示已应用连续前缀和待执行 migration
+pnpm db:migrate         # 唯一 Schema/DDL 迁移入口
+pnpm db:migrate:check   # 要求 journal、hash、数据库 receipt 全部 current
 ```
 
-Dream 的 43+5 张 SQLite 表不是静态 SQL seed。`drizzle/data/` 负责可审计的数据迁移编排，实际快照、staging、校验和写入仍由 Dream migration CLI 执行。全新数据库必须按以下顺序初始化，避免 Admin 对 canonical Story 表的后续扩展早于 Dream baseline adopt：
+`drizzle/**` 是共享 PostgreSQL 表、字段、索引、约束、函数和触发器的唯一版本历史。Dream 启动只检查 `drizzle.schema_capabilities`，不执行 Alembic 或 runtime DDL。`MIGRATION_DATABASE_URL` 必须显式提供；runner 不会回退复用 `DATABASE_URL`。生产应将 migration 连接配置为专用账户，并由单实例发布步骤执行。
+
+Dream 的 43+5 张 SQLite 表不是静态 SQL seed。`drizzle/data/` 只在 Schema 已具备 `dream.schema.unified.v1` 后运行可审计的数据迁移；快照、staging、转换和业务完整性验证仍由 Dream 领域 importer 负责。全新数据库只需一个 Schema 命令：
 
 ```bash
-node scripts/migrate.mjs --through 0026_harsh_victor_mancha
-# 在 Dream 项目执行 Alembic upgrade 到 20260809_06
 pnpm db:migrate
+pnpm db:migrate:check
 pnpm db:data:legacy -- \
   --main-sqlite /absolute/path/to/ink-and-memory.db \
   --notion-sqlite /absolute/path/to/notion-connectors.db \
@@ -153,13 +156,23 @@ pnpm db:data:legacy -- \
 pnpm db:data:subscriptions -- --apply
 ```
 
+`0032_dream_schema_authority_cutover` 在同一事务内完成 preflight、DDL/adoption、完整 catalog postflight、capability 与 migration receipt。它支持全新三表 baseline，以及经精确验证的历史 Dream Alembic `20260809_06`/`20260811_07`；部分表、未知 head 或对象漂移会原子失败。已发布的 Alembic 与 Drizzle 历史均不重写。
+
+Dream 仓库不再包含 Alembic runner、revision 或 PostgreSQL DDL 生成器。
+原 `20260809_01–20260811_07` revision 文本冻结在
+`drizzle/legacy/dream-alembic/`，只用于审计和旧库状态解释，不可执行；
+`20260811_07` 的业务要求由 0032 与
+`dream.workflow.thread-lookup.v1` 正式承接。
+
 对已经承载 Dream 写入的 PostgreSQL，不得重新覆盖导入。先以 `--mode verify-existing` 严格核对；只有全部源 PK 都存在，且差异行的 PostgreSQL `updated_at` 严格晚于源 SQLite 时，才可显式加 `--accept-post-cutover-changes --record` 采纳现状。两个 runner 的回执登记在 append-only 的 `drizzle.data_migration_*` 表中，只保存表级 count/digest 和状态，不保存 SQLite 路径、DSN、Secret 或业务正文。
 
-默认订阅 runner 初始化 `Free`、`Dream`、`is Dreaming` 三个 Plan 及展示元数据；每个 canonical User 的 Free Subscription 由既有投影逻辑自动补齐。它不会默认切换已有 Subscription 的 Plan Version，也不会覆盖已经发布的 Free Token 额度。完整的 4,921 行迁移、重复运行、冲突阻断和 append-only 验证使用一次性 PostgreSQL：
+默认订阅 runner 初始化 `Free`、`Dream`、`is Dreaming` 三个 Plan 及展示元数据；每个 canonical User 的 Free Subscription 由既有投影逻辑自动补齐。它不会默认切换已有 Subscription 的 Plan Version，也不会覆盖已经发布的 Free Token 额度。真实 43+5 源数据、重复运行、冲突阻断和 append-only 验证使用一次性 PostgreSQL：
 
 ```bash
 pnpm test:data-migration:e2e
 ```
+
+完整接管合同、发布顺序和回滚边界见 [统一数据库 Schema 权威](docs/architecture/database-schema-authority.md)。`db:push` 仅允许显式命名的一次性本地数据库，并要求 `ALLOW_EPHEMERAL_DB_PUSH=1`；共享、集成和生产数据库禁止使用。
 
 应用没有嵌入式数据库回退。启动数据库容器后，可使用以下命令确认状态：
 

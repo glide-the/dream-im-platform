@@ -1,5 +1,7 @@
 # Dream 业务接入与 Admin/Gateway 边界
 
+> **Schema 权威更新（2026-08-12）**：本文关于独立 Alembic/Drizzle DDL 账本的设计已由 [统一 PostgreSQL Schema 权威](../database-schema-authority.md)替代。Dream 业务数据、权限、repository 和领域写边界继续有效。
+
 > 文档状态：**Implemented / Release candidate**（逻辑边界已落地；物理 owner/ACL 与生产 cutover 待审批）
 > 返回：[总索引](README.md)  
 > 依赖：[当前基线](01-current-scope-and-source-baseline.md) · [Billing/Subscription/Gateway](06-billing-subscription-gateway-integration.md)  

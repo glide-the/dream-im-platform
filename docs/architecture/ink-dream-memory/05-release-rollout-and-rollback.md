@@ -1,5 +1,7 @@
 # Dream PostgreSQL、产品 API 与 Gateway 发布回滚
 
+> **Schema 发布更新（2026-08-12）**：Alembic 命令与交错初始化顺序已由 [统一 PostgreSQL Schema 权威](../database-schema-authority.md)替代；本文其他产品/Gateway 灰度要求继续有效。
+
 > 文档状态：**Current release plan**（R1–R4 与本地 R5 已完成；其他生产 R0/R5 及 R6–R8 仍开放）
 > 返回：[总索引](README.md)
 > 依赖：[PG 迁移](04-postgresql-migration-plan.md) · [Token-only Subscription/Gateway](06-billing-subscription-gateway-integration.md) · [Dream 集成](07-dream-subscription-and-inference-integration.md)
@@ -11,7 +13,7 @@
 - 每阶段在隔离环境满足自身门禁后才进入下一阶段；文档目标不能替代代码和测试证据。
 - 所有 PG 测试只使用明确命名、可删除的临时 PostgreSQL 或显式 `TEST_DATABASE_URL`；拒绝 runtime URL、共享端口和未知数据库。
 - 43+5 cutover 不长期双写；Gateway 可做不扣费的 shadow eligibility 和用户 canary，但不能绕过资格/结算直接 Provider。
-- Dream/Admin/Gateway 使用独立 Repository、迁移日志、角色和 rollback switch；一个组件回滚不自动回滚数据库。
+- Dream/Admin/Gateway 使用独立 Repository、业务权限和 rollback switch，但共享 Schema 只有 Admin Drizzle 一个迁移日志；一个组件回滚不自动回滚数据库。
 - PG 已产生业务写后默认前向修复；没有演练 delta exporter 时禁止回切 SQLite。
 - PaymentAdapter、Webhook、Fake guard 与付费开通已实现；真实第三方支付渠道与 ASR Gateway 明确 Deferred。生产 Fake 必须 fail closed，UI 不得伪造成功。
 
@@ -34,11 +36,11 @@ flowchart LR
 | 阶段 | 当前状态 | 允许动作 | 退出门禁 |
 |---|---|---|---|
 | R0 安全 preflight | **Partial**：隔离 PG、active runtime credential 移除/scan 与 ASR fail-closed 完成；owner 轮换/历史处置未确认 | 仓库/Schema 只读盘点、credential 处置、secret scan、ASR 加固、临时 PG 建立 | 目标 fingerprint 明确；无共享 DB 写；P0 credential 已由所有者确认吊销/轮换。任何生产部署不得早于本门禁 |
-| R1 Schema CI | **Passed in isolation**：48/569/81/25、空库/exact-adopt/drift fail-closed | 临时 PG Alembic upgrade、baseline adopt、Repository contract | 48/48 DDL/repository/validator manifest；Admin 表未被 Dream migration 修改；生产 owner/ACL 仍另审 |
-| R2 全量 rehearsal | **Passed / local source complete**：43+5 CLI、backend 1,791 passed/25 skipped + 652 subtests；一次性 PG 实际导入 48 表/4,921 行并验证重复运行、冲突阻断、append-only | 只读 SQLite snapshot → staging → PG → verification | 每个新环境重新验证 count/PK/row digest/unique/FK/enum/JSON/time/sequence/trigger |
+| R1 Schema CI | **Passed in isolation**：Admin 0032 已验证 fresh、Alembic 06/07 adoption 与 drift fail-closed | `pnpm db:migrate`、capability、Repository contract | Dream core 48/569/82/25、物理 48/584/85/28；生产 owner/ACL 仍另审 |
+| R2 全量 rehearsal | **Passed / current source complete**：一次性 PG 实际导入 48 表/4,930 行并验证重复运行、冲突阻断、append-only | 只读 SQLite snapshot → staging → PG → verification | 每个新环境重新验证 count/PK/row digest/unique/FK/enum/JSON/time/sequence/trigger |
 | R3 用户/控制面闭环 | **Passed locally/in isolation**：Admin `0000–0028`、Token Ledger、三套餐 seed、付费月续费、69 files/340 tests、tsc/lint/build | canonical projection、Token-only Subscription/Product/Payment API 与本机 schema/data migration 已完成 | 生产 historical orphan 处置、角色 rollout 与 dark-deploy receipt；clone 角色矩阵已通过 |
 | R4 Dream UX | **Passed with mocked BFF**：真实页面、frontend lint 0 errors/21 warnings、build、Product API 9/9、订阅 Playwright 4/4 | 预发布完成真实 Token Plans/context/Usage/model catalog、Payment Intent 与 command preview/execute | 真实预发布 Session/服务身份/Admin API 冒烟；无静态/假 Payment fallback |
-| R5 PG cutover | **Local complete / other environments Planned**：`localhost:5433/ink-memory` 已完成 Admin 29 migrations + Dream `20260809_06`；4,921 个源 PK 已采纳（4,919 exact + 2 newer PG writes），Drizzle registry 与三套餐 seed 已登记；其他目标无回执 | 短暂停写、最终 43+5 snapshot/import、PG-only deployment | runtime SQLite open=0；全部领域 API/页面/Admin canonical 回归通过 |
+| R5 PG cutover | **Capability-only implementation complete / environment rollout Planned**：Admin 0032 与 Dream capability-only runtime 已实现；真实一次性 43+5 V2 E2E 通过 | 备份/PITR、维护窗口或保留当前版本、单实例 0032、验证 capability、部署当前 Dream | runtime SQLite/DDL open=0；全部领域 API/页面/Admin canonical 回归通过 |
 | R6 Gateway shadow | **Implemented client/control; production shadow Planned** | 只执行资格与路由模拟，不 reserve、不 Provider | 真实 cohort 资格结果一致；无 Key/Secret 泄漏；无 cash fallback |
 | R7 Gateway canary | **Planned external step** | 内部环境→内部用户→用户级 canary，真实 Token reserve/capture/release | 外部 Provider 下错误/取消/断流/usage 缺失终态和 Token 守恒通过 |
 | R8 inference cutover | **Code implemented / production rollout planned** | 文本 PolyAgent、Claude Agent/Chat、Dream/Workflow、image 均已接 Gateway；按入口分批 canary | 既有协议/行为不回归；direct Provider path 保持删除/fail-closed |
@@ -49,9 +51,9 @@ ASR 不进入 R8；release 前仅允许“禁用 endpoint”或“canonical 鉴�
 
 ### Schema 与所有权
 
-- 空库可从 Dream Alembic baseline 到 head；重复检查无额外 DDL。
-- 已存在 Admin canonical 三表时只做精确 adopt；列/约束/index/owner/行差异 fail-closed。
-- Dream migration journal 与 Admin Drizzle journal 独立；每个 migration 只触及其 owner 范围。
+- 空库只运行 Admin `pnpm db:migrate`；重复检查无额外 DDL。
+- 三表 fresh baseline、完整 Alembic 06/07 旧库均由 0032 精确验证；partial/未知 head/对象漂移 fail-closed。
+- `drizzle/**` 是唯一 Schema journal；Dream 启动只读检查 capability。
 - 真实 owner/ACL/role/constraint 先只读盘点；任何 `ALTER OWNER`、GRANT/REVOKE 有独立批准和回执。
 
 ### 迁移数据
@@ -61,7 +63,7 @@ ASR 不进入 R8；release 前仅允许“禁用 endpoint”或“canonical 鉴�
 - 25 个业务 trigger/等价不变性全部用 mutation rejection 验证。
 - `reflection_task_event` 与 `connector_snapshots` 同 key+同 digest 幂等、异 digest 冲突，不覆盖历史。
 - password hash、OAuth/refresh token、Secret、Story/Chat 正文不进入日志、回执或截图。
-- 全新环境固定执行 Admin `0000–0026` → Dream Alembic → Admin `0027–0028` → legacy data runner → subscription data runner；顺序不满足即阻断。
+- 全新环境固定执行 Admin `pnpm db:migrate` → legacy data runner → subscription data runner；Schema capability 不满足即阻断。
 - 已有 PG 写入的环境只执行 `verify-existing`；源 PK 缺失、时间无法证明 PG 行更新或任一 constraint/digest 冲突均阻断，禁止隐式 upsert。
 - `drizzle.data_migration_*` 回执只追加；重复 fingerprint 复用原 run，UPDATE/DELETE 必须返回 SQLSTATE `55000`。
 
@@ -125,8 +127,9 @@ Dream 实现/发布 receipt 命令使用当前已落盘入口；所有 PG 命令
 # Current backend suite；PG tests 必须显式读取 TEST_DATABASE_URL
 backend/.venv/bin/python -m pytest backend/tests -q
 
-# Schema/Repository/43+5 rehearsal receipt
-backend/.venv/bin/python -m alembic -c backend/alembic.ini upgrade head
+# Schema/Repository/43+5 rehearsal receipt（在 Admin 仓库）
+MIGRATION_DATABASE_URL="$TEST_DATABASE_URL" pnpm db:migrate
+MIGRATION_DATABASE_URL="$TEST_DATABASE_URL" pnpm db:migrate:check
 backend/.venv/bin/python backend/script/migrate_legacy_to_postgres.py \
   --main-sqlite "$(pwd)/backend/data/ink-and-memory.db" \
   --notion-sqlite "$(pwd)/backend/data/notion-connectors.db" \

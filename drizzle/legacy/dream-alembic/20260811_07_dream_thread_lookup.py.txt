@@ -1,0 +1,42 @@
+"""Add the canonical Dream-thread lookup index without masking schema drift."""
+
+from alembic import op
+from sqlalchemy import inspect
+
+from schema.migration import IrreversibleDreamSchemaError
+
+
+revision = "20260811_07"
+down_revision = "20260809_06"
+branch_labels = None
+depends_on = None
+
+INDEX_NAME = "idx_workflow_runs_source_voice_thread"
+TABLE_NAME = "workflow_runs"
+COLUMNS = ("source_voice_thread_id",)
+
+
+def upgrade() -> None:
+    """Create for upgraded databases; validate the manifest-created index on fresh ones."""
+
+    indexes = {
+        str(index["name"]): index
+        for index in inspect(op.get_bind()).get_indexes(TABLE_NAME)
+    }
+    existing = indexes.get(INDEX_NAME)
+    if existing is None:
+        op.create_index(INDEX_NAME, TABLE_NAME, list(COLUMNS), unique=False)
+        return
+    if (
+        tuple(existing.get("column_names") or ()) != COLUMNS
+        or bool(existing.get("unique"))
+        or (existing.get("dialect_options") or {}).get("postgresql_where")
+        is not None
+    ):
+        raise RuntimeError(f"{INDEX_NAME} exists with an incompatible definition")
+
+
+def downgrade() -> None:
+    raise IrreversibleDreamSchemaError(
+        "Dream thread lookup migration is forward-only; use a reviewed forward repair"
+    )

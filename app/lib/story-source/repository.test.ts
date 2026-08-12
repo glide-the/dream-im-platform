@@ -55,7 +55,7 @@ describe("Story PostgreSQL repository", () => {
 
     expect(response.meta.total).toBe(1);
     expect(query.mock.calls[0][0]).toContain("s.artifact_sync_status = $1");
-    expect(query.mock.calls[0][0]).toContain("s.artifact_available::text = $2");
+    expect(query.mock.calls[0][0]).toContain("(s.artifact_status = 'available')::text = $2");
     expect(query.mock.calls[1][0]).toContain("s.artifact_sync_status = $1");
     expect(query.mock.calls[1][1]).toEqual(["indexed", "true"]);
   });

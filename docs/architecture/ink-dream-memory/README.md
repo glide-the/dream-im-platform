@@ -6,6 +6,8 @@
 > 编写位置：`/Users/dmeck/project/ink-admin-memory/docs/architecture/ink-dream-memory/`  
 > 事实基线：[处理判断](../../verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md)
 
+> **Schema 权威更新（2026-08-12）**：本文中关于“Dream Alembic 拥有 DDL”以及 `Admin 0000–0026 → Dream Alembic → Admin 0027+` 的内容已被 [统一 PostgreSQL Schema 权威](../database-schema-authority.md)替代。历史数据与发布回执仍按原时点保留。
+
 ## 1. 当前范围决策
 
 Round 29–30 已替代 Round 24–28 的“全面延期”决定。当前主线同时包含：
@@ -21,8 +23,8 @@ Round 29–30 已替代 Round 24–28 的“全面延期”决定。当前主线
 
 | 能力 | 当前状态 | 目标状态 | 权威文档 |
 |---|---|---|---|
-| Dream PostgreSQL 43+5 | **Implemented / local cutover complete**：Admin-owned `localhost:5433/ink-memory` 已完成 Dream head `20260809_06`、43+5/4,921 源 PK 采纳与 Drizzle append-only 回执；4,919 行精确一致，2 行确认是更新的 PG 写入，缺失 0，运行时为 PG-only | **Release Gate**：其他预发布/生产环境仍须独立 owner/ACL、备份、最终源 rehearsal 与变更审批，不复用本地回执 | [01](01-current-scope-and-source-baseline.md)、[04](04-postgresql-migration-plan.md) |
-| Admin canonical 三表 | **Implemented**：Admin `0000–0028`、Dream exact baseline-adopt、0027 批准的 Story 扩展及 0028 数据迁移 registry 已在本地 `ink-memory` 完成；旧三表 importer 仍只作为 3/48 安全模式参考 | **Release Gate**：其他环境 owner/ACL/现有数据只读盘点与迁移审批 | [04](04-postgresql-migration-plan.md) |
+| Dream PostgreSQL 43+5 | **Capability-only implemented**：Admin `0032` 已成为 48 表 DDL 接管点；Dream runtime 只接受 capabilities，仓库无 Alembic/DDL generator；真实一次性 E2E 当前导入 4,930 行 | **Release Gate**：盘点并采纳各预发布/生产环境，确认 PITR/回滚窗口 | [统一 Schema 权威](../database-schema-authority.md) |
+| 共享 Schema 版本 | **Admin/Drizzle sole authority**：空库只需 `pnpm db:migrate`；V1 数据回执继续有效，新库使用 V2 | **Release Gate**：生产专用 migrator role/ACL 与单实例发布回执 | [统一 Schema 权威](../database-schema-authority.md) |
 | 用户与内部投影 | **Implemented / Release candidate**：canonical-driven projection、Gateway 反查、服务端用户分页/搜索及 QA-only 回归均已修复验证 | **Release Gate**：生产历史 orphan 只读盘点、映射/隔离回执 | [02](02-business-integration-and-admin-boundary.md)、[06](06-billing-subscription-gateway-integration.md) |
 | Token Subscription/Gateway | **Implemented / Release candidate**：Admin `0017–0028`、Product/Payment API、个人月度状态机、Token Allowance/Token Ledger/Gateway 结算、三套餐 seed 与 Dream BFF/client 已通过 Admin 69 files/340 tests、隔离 PG 与 Dream full/real-PG 合同 | **Release Gate**：真实外部 Provider canary、生产角色切换/凭据注入与用户级流量切换；角色矩阵已在 clone 通过 | [06](06-billing-subscription-gateway-integration.md) |
 | 独立 Provider Pricing/现金计费 | **Implemented baseline / Partial** | 与 Subscription 解耦保留；不得在 Token 耗尽时自动兜底，也不进入 Dream 套餐 DTO | [06](06-billing-subscription-gateway-integration.md) |
@@ -37,10 +39,11 @@ Round 29–30 已替代 Round 24–28 的“全面延期”决定。当前主线
 
 | 文档 | 状态 | 回答的问题 |
 |---|---|---|
+| [统一 PostgreSQL Schema 权威](../database-schema-authority.md) | **Current** | Admin/Drizzle 唯一 DDL、0032 adoption、capability、发布和回滚 |
 | [01-current-scope-and-source-baseline.md](01-current-scope-and-source-baseline.md) | **Current** | 两个项目当前真实实现、43+5 表、推理入口与缺口是什么 |
 | [02-business-integration-and-admin-boundary.md](02-business-integration-and-admin-boundary.md) | **Implemented / Release candidate** | Dream/Admin/Gateway 如何共享事实又保持最小权限 |
 | [03-page-refactor-checklist.md](03-page-refactor-checklist.md) | **Implemented / Release candidate** | Dream 哪些页面已改造，以及哪些真实发布步骤仍开放 |
-| [04-postgresql-migration-plan.md](04-postgresql-migration-plan.md) | **Implemented / Release candidate** | 48 表 baseline adopt、迁移、验证实现与待执行生产切换 |
+| [04-postgresql-migration-plan.md](04-postgresql-migration-plan.md) | **Superseded DDL design / historical data requirements retained** | 历史 Alembic 方案与仍有效的 43+5 数据完整性要求 |
 | [05-release-rollout-and-rollback.md](05-release-rollout-and-rollback.md) | **Current release plan** | 已通过门禁、生产 PG/Gateway 灰度与回滚边界 |
 | [06-billing-subscription-gateway-integration.md](06-billing-subscription-gateway-integration.md) | **Implemented / Release candidate** | Token-only Subscription、独立 Pricing/Billing、资格、API 与迁移合同 |
 | [07-dream-subscription-and-inference-integration.md](07-dream-subscription-and-inference-integration.md) | **Implemented / Release candidate** | Dream 产品体验/Gateway 客户端实现与外部 canary 余项 |
@@ -74,16 +77,17 @@ flowchart LR
 
 | 领域 | 逻辑所有者 | 约束 |
 |---|---|---|
-| Dream canonical 43+5 Schema、Repository、业务写、Alembic | Dream | Admin 仅批准读取、白名单更新或领域命令；无通用硬删 |
+| 共享 PostgreSQL Schema/DDL 版本 | Admin Drizzle | 唯一 journal/runner；应用启动不迁移 |
+| Dream repository、事务、workflow 与业务写 | Dream | Admin 仅批准读取、白名单更新或领域命令；无通用硬删 |
 | Admin/RBAC/Audit、Provider/Model/Pricing、Token Subscription、独立 Billing、Gateway/Usage/Ledger | Admin / Gateway | Dream 只经产品 API/Gateway；Subscription DTO 不携带金额；不直接写表 |
 | `users` | Dream canonical User 领域 | 唯一用户全集；`platform_users` 仅内部兼容映射 |
 | physical PostgreSQL owner/ACL | 目标环境 DBA/审批流程 | 本文逻辑所有权不授权 `ALTER OWNER`、GRANT 或 REVOKE |
 
 ## 6. 实现证据与剩余发布阻断项
 
-当前 Release candidate 证据：Admin `0000–0028` 已应用到本地 `ink-memory`，**69 files / 340 tests、tsc/lint/build** 通过；一次性 PostgreSQL 数据迁移 E2E 完整导入 48 表/4,921 行、初始化 3 个 Plan 与 28 个 canonical User Subscription，并验证重复运行、冲突阻断和 append-only。Dream Alembic、43+5 migration CLI、PG-only runtime、Product BFF 与全入口 Gateway client 已实现；backend **1,791 passed / 25 skipped / 652 subtests**，迁移聚焦 **19 passed / 2 skipped**，前端 lint 0 errors/21 warnings 与 build 通过。角色/最小权限 clone 矩阵通过；本轮没有启动持久后台进程。
+当前 Schema authority transition 证据：Admin `0000–0032` 可从空库一次执行；0032 的 fresh、06（有/无 thread index）、07 与 partial/unknown 原子失败已在 PostgreSQL 16 验证。真实一次性数据迁移 E2E 当前导入 48 表/4,930 行、初始化 3 个 Plan 与 28 个 canonical User Subscription，并验证 V2 回执复用、冲突阻断和 append-only。历史整仓测试数字保留在 91 evidence 文档，本轮聚焦结果以统一 Schema 权威文档为准。
 
-- 本地 Admin-owned `localhost:5433/ink-memory` 已完成真实源快照、owner/ACL 指纹、备份、六波 Alembic 与 43+5 cutover；其他预发布/生产环境尚未执行，不能借用本地回执。
+- 预发布/生产环境的 Alembic 06/07 分布、PITR、migrator role/ACL 与 0032 回执尚未盘点，不能借用一次性数据库回执。
 - 外部 Provider canary、生产 Gateway 服务身份/Secret 注入和逐角色真实流量切换尚未执行。
 - 已提交 Provider credential 已从 active runtime 移除且 secret scan 通过；密钥所有者吊销/轮换仍未确认。
 - ASR endpoint 已代码级 fail-closed；密钥所有者吊销/轮换仍未确认，ASR Gateway 继续 Deferred。
