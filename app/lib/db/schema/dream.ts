@@ -867,7 +867,7 @@ export const runtime_load_receipts = pgTable("runtime_load_receipts", {
 			name: "fk_runtime_load_receipts_workflow_run_id_workflow_runs"
 		}).onDelete("restrict"),
 	check("ck_runtime_load_receipts_1", sql`distribution_mode = 'local_persistent'::text`),
-	check("ck_runtime_load_receipts_2", sql`deployment_tier = ANY (ARRAY['development'::text, 'test'::text])`),
+	check("ck_runtime_load_receipts_2", sql`deployment_tier = 'local'::text`),
 	check("ck_runtime_load_receipts_3", sql`scope = 'session'::text`),
 	check("ck_runtime_load_receipts_4", sql`readiness_state = 'session_loaded'::text`),
 	check("ck_runtime_load_receipts_5", sql`required_entries_ready = ANY (ARRAY[0, 1])`),
@@ -922,7 +922,7 @@ export const agent_sessions = pgTable("agent_sessions", {
 	unique("uq_agent_sessions_workflow_run_id_attempt_number").on(table.workflow_run_id, table.attempt_number),
 	unique("uq_agent_sessions_session_request_key").on(table.session_request_key),
 	check("ck_agent_sessions_1", sql`distribution_mode = 'local_persistent'::text`),
-	check("ck_agent_sessions_2", sql`deployment_tier = ANY (ARRAY['development'::text, 'test'::text])`),
+	check("ck_agent_sessions_2", sql`deployment_tier = 'local'::text`),
 	check("ck_agent_sessions_3", sql`attempt_number >= 1`),
 	check("ck_agent_sessions_4", sql`status = ANY (ARRAY['creating'::text, 'active'::text, 'terminated'::text, 'failed'::text])`),
 	check("ck_agent_sessions_5", sql`runtime_pool_id = runtime_environment_id`),

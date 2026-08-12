@@ -1,4 +1,5 @@
-# Repository Guidelines (ink-memory-admin)
+# AGENTS Instructions Guidelines (ink-memory-admin)
+
 
 本仓库是 Ink Memory 的 Next.js + Refine 管理控制台，使用单一 PostgreSQL 数据库。不存在 `app/(app)` 业务前台，也不存在 SQLite 回退。
 
@@ -13,6 +14,22 @@
 - `app/lib/billing/**`：定价、预授权、结算与账本
 - `app/lib/db/schema.ts`：唯一 Drizzle schema 来源
 - `drizzle/**`：必须提交的 PostgreSQL 迁移
+## Vibe Contract
+- Any functional, architectural, or coding-style change must update affected folder docs and file headers before session end.
+- Prefer reuse-first refactor: search existing modules/components before adding new implementations.
+- Avoid hard-coded business IDs, thresholds, hosts, paths, or policy values; resolve to env/config/policy first.
+
+## Source Of Truth
+- Root pointer: `CLAUDE.md`
+- Folder contracts: `**/.folder.md`
+- Rules index: `docs/rules/README.md`
+- Cursor rules: `.cursor/rules/*.mdc`
+
+## Validation
+- Run requested validation commands after meaningful changes.
+- When touching docs, verify Markdown inventory and referenced paths remain valid.
+- Report concrete evidence (`command`, exit code, key output) in the final summary.
+
 
 ## 强约束
 
@@ -53,6 +70,14 @@ pnpm db:migrate
 - 关键管理交互使用 `tests/e2e/*.spec.ts`。
 - 持久化 E2E 必须使用明确的隔离 PostgreSQL，禁止迁移或清理未知数据库。
 - 提交前至少通过 typecheck、lint、unit 与 focused Playwright；高风险改动再跑 build。
+
+## 单一运行路径与 Harness 协议
+
+- 本项目禁止按 `development`、`test`、`production`、`unknown` 等部署环境名称实现多套业务或数据库行为；设计、应用代码、Gateway、Drizzle schema 与 migration 不得使用环境名称解锁功能、改变状态机、选择 Agent runtime、跳过账本/持久化或降低授权。
+- Dream/Admin/Gateway 在所有部署中必须执行同一条生产合同。运行位置与能力使用明确 topology/capability 表达，不得把测试环境名称写成 runtime 或 DDL capability。
+- 测试 harness 的差异只能存在于 `tests/**` 或明确命名的验证脚本中，并通过依赖注入、明确命名的隔离 PostgreSQL、fake/real provider 选择、显式 capability、显式 secret 与可控 clock 配置；禁止在生产模块中放置 test-only fallback、固定测试密钥或“非测试环境直接 return”的分支。
+- Harness 必须调用公开生产入口和真实 DTO/协议，不得复制测试专用 API、Gateway、migration runner、状态机或 Agent runtime。真实 provider 测试必须显式限定模型与调用次数，保护正文、凭证和 DSN，并清理自有进程、端口、容器、volume 与临时目录。
+- 缺少 migration credential、schema capability、provider entitlement、账本余额或权限时，由对应边界 fail closed；不得通过笼统环境标签推断这些事实。
 
 ## 命名与提交
 

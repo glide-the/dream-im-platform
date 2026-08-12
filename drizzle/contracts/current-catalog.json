@@ -321,7 +321,7 @@
             "name": "ck_agent_sessions_2",
             "type": "c",
             "validated": true,
-            "definition": "CHECK (deployment_tier = ANY (ARRAY['development'::text, 'test'::text]))"
+            "definition": "CHECK (deployment_tier = 'local'::text)"
           },
           {
             "name": "ck_agent_sessions_3",
@@ -4184,7 +4184,7 @@
             "name": "ck_runtime_load_receipts_2",
             "type": "c",
             "validated": true,
-            "definition": "CHECK (deployment_tier = ANY (ARRAY['development'::text, 'test'::text]))"
+            "definition": "CHECK (deployment_tier = 'local'::text)"
           },
           {
             "name": "ck_runtime_load_receipts_3",
@@ -7057,6 +7057,6 @@
       }
     ]
   },
-  "catalogSha256": "97208671d7519979982ed819e2397bba12403a500e14a938165254a64132f0cb",
-  "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+  "catalogSha256": "66ca96bb954a934c926c4aaae8b2037fa4e651218bb2ee904052a88b91194d75",
+  "contractSha256": "50d5bcbff7c69d13a53e74a8a47ad961c71f143e0c652dea3af77601073002cc"
 }

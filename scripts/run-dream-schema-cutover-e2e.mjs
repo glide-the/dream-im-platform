@@ -249,6 +249,12 @@ async function verifySuccess(name, { expectedLegacyHead = null, sampleUser = fal
             FROM drizzle.schema_capabilities) AS capability_hashes,
          (SELECT version FROM drizzle.schema_capabilities
            WHERE capability='dream.workflow.no-continuing.v1') AS lifecycle_capability,
+         (SELECT version FROM drizzle.schema_capabilities
+           WHERE capability='dream.runtime.local-placement.v1') AS placement_capability,
+         (SELECT count(*)::int FROM runtime_load_receipts
+           WHERE deployment_tier <> 'local') AS nonlocal_receipts,
+         (SELECT count(*)::int FROM agent_sessions
+           WHERE deployment_tier <> 'local') AS nonlocal_sessions,
          (SELECT count(*)::int FROM workflow_runs
            WHERE status='continuing') AS continuing_runs,
          (SELECT count(*)::int FROM workflow_run_transitions
@@ -267,9 +273,10 @@ async function verifySuccess(name, { expectedLegacyHead = null, sampleUser = fal
       : (await client.query(
           "SELECT version_num FROM public.dream_alembic_version",
         )).rows[0]?.version_num ?? null;
-    if (row.receipts !== 34 || row.distinct_receipts !== 34
-      || row.capabilities !== 4 || row.capability_hashes !== 1
-      || row.lifecycle_capability !== 1
+    if (row.receipts !== 35 || row.distinct_receipts !== 35
+      || row.capabilities !== 5 || row.capability_hashes !== 2
+      || row.lifecycle_capability !== 1 || row.placement_capability !== 1
+      || row.nonlocal_receipts !== 0 || row.nonlocal_sessions !== 0
       || row.continuing_runs !== 0 || row.continuing_transitions !== 0
       || row.continuing_guard_position !== 0
       || legacyHead !== expectedLegacyHead
@@ -442,8 +449,8 @@ try {
     idempotent: true,
     migrationCheck: true,
     concurrentMigrators: 2,
-    receipts: 34,
-    capabilities: 4,
+    receipts: 35,
+    capabilities: 5,
     legacyV1ReceiptReused: true,
     catalogSha256: expectedContract.catalogSha256,
     disposablePostgresRemoved: true,
