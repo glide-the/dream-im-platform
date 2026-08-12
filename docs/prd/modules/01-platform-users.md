@@ -23,7 +23,7 @@
 | 页面 | 路由 | 能力 |
 |---|---|---|
 | 平台用户 | `/admin/resources/users` | 查询真实用户、Workspace/Story 数量、只读详情 |
-| 用户默认 Token 上限 | `/admin/gateway/rate-limits#platform-users-manager` | 修改控制面 daily/monthly limit，不修改业务用户 |
+| 用户默认 Token 上限 | `/admin/gateway/rate-limits#platform-users-manager` | `gateway-default-token-limits-v1` 默认每日 10 亿、每月 100 亿 Token；修改控制面 429 daily/monthly limit，不增加订阅额度 |
 | 账户余额 | `/admin/billing/accounts` | 查看一对一账户；调账属于 Billing 模块 |
 
 禁止：创建/删除平台用户、修改 password_hash、手工创建内部兼容行、把停用 Gateway 调用等同删除用户。

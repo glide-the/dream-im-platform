@@ -12,6 +12,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { gatewayDefaultLimitsPolicy } from "../../../config/gateway-default-limits.mjs";
 
 /**
  * AI platform control-plane schema.
@@ -31,9 +32,13 @@ export const platformUsers = pgTable(
     tier: text("tier").notNull().default("free"),
     status: text("status").notNull().default("active"),
     daily_token_limit: bigint("daily_token_limit", { mode: "number" }).default(
-      100_000,
+      gatewayDefaultLimitsPolicy.dailyTokenLimit,
     ),
-    monthly_token_limit: bigint("monthly_token_limit", { mode: "number" }),
+    monthly_token_limit: bigint("monthly_token_limit", {
+      mode: "number",
+    }).default(
+      gatewayDefaultLimitsPolicy.monthlyTokenLimit,
+    ),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()

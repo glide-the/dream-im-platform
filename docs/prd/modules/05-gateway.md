@@ -63,7 +63,7 @@ flowchart LR
 
 `gateway_requests` 保存热摘要；`gateway_request_payloads`、`gateway_response_payloads`、`gateway_response_events` 保存脱敏完整报文/流事件。默认不加载 Payload；二次确认请求需要明确 header 并写 append-only Audit。认证、Cookie、Key、Provider Secret 固定脱敏。
 
-429 摘要必须记录 limit/current/reserve/remaining/exceeded。Token 安全限额链接到可实际调整的用户默认/模型覆盖/套餐权益；字段与列名必须显式带“429”语义，并在页面首屏说明调高这些值不会增加订阅 Allowance。用户行提供“处理 402／补发 Token”链接，携带邮箱跳转 `/admin/subscriptions/users?email=…&intent=grant`。RPM 仅展示策略来源和“当前 Admin 未开放编辑”，不能伪造修复入口。实时 `gateway_rate_limits` 只读，不能改计数解除限流。
+429 摘要必须记录 limit/current/reserve/remaining/exceeded。`gateway-default-token-limits-v1` 的用户默认值为每日 1,000,000,000 Token、每月 10,000,000,000 Token；新用户 schema 默认与现有用户显式回填必须一致。Token 安全限额链接到可实际调整的用户默认/模型覆盖/套餐权益；字段与列名必须显式带“429”语义，并在页面首屏说明调高这些值不会增加订阅 Allowance。用户行提供“处理 402／补发 Token”链接，携带邮箱跳转 `/admin/subscriptions/users?email=…&intent=grant`。RPM 仅展示策略来源和“当前 Admin 未开放编辑”，不能伪造修复入口。实时 `gateway_rate_limits` 只读，不能改计数解除限流。
 
 ## 6. Gateway 拒绝与错误契约
 

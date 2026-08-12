@@ -20,7 +20,7 @@
 最容易误解的当前行为：
 
 - 新 canonical 用户会自动获得一个 USD 计费账户；当默认 Free Plan/Version/Entitlement 已正确发布时，还会幂等开通 Free 月度订阅和本周期 Token Allowance。
-- 新建 `platform_users` 当前默认 `daily_token_limit = 100000`，月上限默认未设置。当前窗口实际按“每用户、每模型、UTC 日”分别计数。
+- `gateway-default-token-limits-v1` 统一规定 `platform_users.daily_token_limit = 1000000000`、`monthly_token_limit = 10000000000`；新用户由 schema 默认继承，现有用户通过显式数据 runner 回填。当前窗口实际按“每用户、每模型、UTC 日／自然月”分别计数；这些值只决定 429，不发放订阅 Token。
 - 每日 `100,000 Token` 是 429 限流上限，不是免费 Token，也不会给账户充值。
 - 因此，有效订阅用户即使现金余额为正，只要当前周期 `Plan + Bonus` Token 不足，Gateway 仍返回 `402 SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`；现金不兜底。
 - 订阅基础额度由已发布套餐版本的 `allowance_tokens` 决定；管理员还可使用独立 `subscriptions.grant` 权限一次性补发当前周期 Bonus Token。
@@ -216,7 +216,7 @@ Runtime 会对以下已存在的限额取最小值：
 
 ### 6.5 402 与 429 的配置边界
 
-- 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`：当前周期订阅 Token 不足。唯一额度写入口是“订阅 → 用户订阅 → 管理 → 补发本周期 Token”；限流页用户行提供携带邮箱的直达导航，但不会在限流资源上写额度。也可等待个人周期重置或安排下周期版本。
+- 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`：当前周期订阅 Token 不足。唯一额度写入口是“订阅 → 用户订阅 → 更多操作 → 补发本周期 Token”；限流页用户行提供携带邮箱的直达导航，但不会在限流资源上写额度。也可等待个人周期重置或安排下周期版本。
 - 429：RPM、每日 Token 或月度安全窗口达到阈值。唯一配置入口是“Gateway → 限流策略”；这些字段不是免费 Token 发放。
 - 现金余额为正不会解除 402；补发 Token 也不会抬高 429 限流窗口。
 - paused、cancelled、expired 等不可调用订阅返回对应 403，不回退现金路径。

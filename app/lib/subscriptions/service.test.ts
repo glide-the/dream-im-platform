@@ -1,6 +1,7 @@
+// Domain contract tests for subscription idempotency and conflict classification.
 import { describe, expect, it } from "vitest";
 
-import { subscriptionRequestDigest } from "./service";
+import { subscriptionError, subscriptionRequestDigest } from "./service";
 
 describe("subscription request digest", () => {
   it("binds an idempotent lifecycle command to its optimistic version", () => {
@@ -31,5 +32,26 @@ describe("subscription request digest", () => {
         subscriptionId: "sub_01",
       }),
     );
+  });
+});
+
+describe("subscription conflict errors", () => {
+  it("identifies duplicate callable subscriptions with an actionable code", () => {
+    expect(
+      subscriptionError({
+        code: "23505",
+        constraint: "subscriptions_one_callable_user_uidx",
+      }),
+    ).toMatchObject({
+      code: "SUBSCRIPTION_ALREADY_CALLABLE",
+      status: 409,
+      details: { constraint: "subscriptions_one_callable_user_uidx" },
+    });
+  });
+
+  it("keeps an unknown unique constraint on the generic conflict path", () => {
+    expect(
+      subscriptionError({ code: "23505", constraint: "other_unique_uidx" }),
+    ).toMatchObject({ code: "SUBSCRIPTION_CONFLICT", status: 409 });
   });
 });

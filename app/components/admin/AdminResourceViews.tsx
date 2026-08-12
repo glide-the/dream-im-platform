@@ -1,5 +1,7 @@
 "use client";
 
+// Admin resource views render versioned platform policy without owning its enforcement.
+import { gatewayDefaultLimitsPolicy } from "../../../config/gateway-default-limits.mjs";
 import AdminResourceManager, {
   type AdminFieldDefinition,
 } from "./AdminResourceManager";
@@ -144,7 +146,7 @@ export function GatewayUserDefaultLimitsView() {
     { key: "dailyTokenLimit", sourceKey: "daily_token_limit", label: "每日安全上限（429）", control: "number", section: "limits", nullable: true, min: 0, help: "只控制每日实时用量窗口；不会发放订阅 Token，也不能解除 402。" },
     { key: "monthlyTokenLimit", sourceKey: "monthly_token_limit", label: "每月安全上限（429）", control: "number", section: "limits", nullable: true, min: 0, help: "只控制每月实时用量窗口；不会增加当前订阅周期余额。" },
   ];
-  return <AdminResourceManager resource="platform-users" title="用户默认 429 Token 安全上限" description="这些字段只决定每日／每月实时用量达到何值时返回 429；不会发放免费或订阅 Token。SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED 是 402，必须在用户订阅中补发本周期 Token。" container="drawer" canCreate={false} canDelete={false} sections={[{ id: "limits", title: "429 用户安全上限", description: "保存后新请求按新安全上限检查；不会增加订阅 Allowance，也不会改写已经产生的实时用量。" }]} fields={fields} defaultSort="updated_at" filters={[{ field: "email", label: "用户邮箱" }, { field: "status", label: "状态", operator: "eq" }]} columns={[{ key: "email", label: "用户" }, { key: "display_name", label: "显示名" }, { key: "tier", label: "层级" }, { key: "daily_token_limit", label: "每日安全上限（429）" }, { key: "monthly_token_limit", label: "每月安全上限（429）" }, { key: "updated_at", label: "更新时间", format: "date" }]} rowActions={[{ label: "处理 402／补发 Token", tone: "success", href: (row) => `/admin/subscriptions/users?email=${encodeURIComponent(String(row.email ?? ""))}&intent=grant#subscription-user-list` }]} />;
+  return <AdminResourceManager resource="platform-users" title="用户默认 429 Token 安全上限" description={`平台默认每日 ${gatewayDefaultLimitsPolicy.dailyTokenLimit.toLocaleString("zh-CN")} Token、每月 ${gatewayDefaultLimitsPolicy.monthlyTokenLimit.toLocaleString("zh-CN")} Token；这些字段只决定实时用量达到何值时返回 429，不会发放免费或订阅 Token。SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED 是 402，必须在用户订阅中补发本周期 Token。`} container="drawer" canCreate={false} canDelete={false} sections={[{ id: "limits", title: "429 用户安全上限", description: "保存后新请求按新安全上限检查；不会增加订阅 Allowance，也不会改写已经产生的实时用量。" }]} fields={fields} defaultSort="updated_at" filters={[{ field: "email", label: "用户邮箱" }, { field: "status", label: "状态", operator: "eq" }]} columns={[{ key: "email", label: "用户" }, { key: "display_name", label: "显示名" }, { key: "tier", label: "层级" }, { key: "daily_token_limit", label: "每日安全上限（429）" }, { key: "monthly_token_limit", label: "每月安全上限（429）" }, { key: "updated_at", label: "更新时间", format: "date" }]} rowActions={[{ label: "处理 402／补发 Token", tone: "success", href: (row) => `/admin/subscriptions/users?email=${encodeURIComponent(String(row.email ?? ""))}&intent=grant#subscription-user-list` }]} />;
 }
 
 export function PlatformUsersResourceView() {

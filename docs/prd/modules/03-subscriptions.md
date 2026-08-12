@@ -98,7 +98,7 @@ Canonical User → Subscription → Plan Version → Entitlement → Model Permi
 
 Gateway 在调用 Provider 前锁定当前周期 Allowance，并只以 Token reserve/capture/release 维护守恒；每次变更与 `subscription_token_ledger_entries` 同事务，重放不重复记账。Token 不足返回 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`；Gateway `/v1/**` 响应使用 `metric="tokens"`、`unit="tokens"`、`available_tokens`、`required_tokens` 和 `period_end`，Dream BFF 只映射为 camelCase `availableTokens`、`requiredTokens` 和 `periodEnd`；禁止写入或显示 `availableMicrousd/requiredMicrousd`。
 
-“每日/每月 Token 安全上限（429）”不是订阅 Token 发放。运营处理 402 时进入“订阅 → 用户订阅 → 管理 → 补发本周期 Token”；限流页的每个用户行同时提供“处理 402／补发 Token”直达入口，携带邮箱筛选和 `intent=grant`，但不得在限流资源上直接写额度。目标页先展示该用户的套餐 Token、补发 Token、预留、消耗和剩余，再由独立 `subscriptions.grant` 权限提交。补发与 `subscription_token_grants`、`subscription_events`、Admin Audit 同事务；同幂等键同请求返回原结果，不同请求返回 409。Gateway、Product subscription context 和 model catalog 都以 `granted_tokens + bonus_granted_tokens` 作为周期总额。
+“每日/每月 Token 安全上限（429）”不是订阅 Token 发放。运营处理 402 时进入“订阅 → 用户订阅 → 更多操作 → 补发本周期 Token”；限流页的每个用户行同时提供“处理 402／补发 Token”直达入口，携带邮箱筛选和 `intent=grant`，但不得在限流资源上直接写额度。目标页先展示该用户的套餐 Token、补发 Token、预留、消耗和剩余，再由独立 `subscriptions.grant` 权限提交。补发与 `subscription_token_grants`、`subscription_events`、Admin Audit 同事务；同幂等键同请求返回原结果，不同请求返回 409。Gateway、Product subscription context 和 model catalog 都以 `granted_tokens + bonus_granted_tokens` 作为周期总额。
 
 订阅用户 Token 用尽后不得由套餐隐式降级为现金超额。若未来保留独立的按量现金 Gateway 产品模式，它必须使用显式产品资格与独立合同，不能由 Plan Version 的 overage 字段开启，也不能把 Billing Account 余额描述为订阅额度。
 

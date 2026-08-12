@@ -33,6 +33,8 @@
     "db:migrate:check": "node scripts/migrate.mjs --check",
     "db:data:legacy": "node drizzle/data/legacy-43-plus-5.mjs",
     "db:data:subscriptions": "node drizzle/data/default-dream-plans.mjs",
+    "gateway-limits:check": "node drizzle/data/gateway-default-token-limits.mjs",
+    "gateway-limits:apply": "node drizzle/data/gateway-default-token-limits.mjs --apply",
     "db:push": "node scripts/db-push.mjs",
     "story:import": "node scripts/import-ink-dream-story-source.mjs",
     "docker:build": "cd docker && docker compose build",

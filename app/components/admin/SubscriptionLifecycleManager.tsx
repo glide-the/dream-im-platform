@@ -1,5 +1,7 @@
 "use client";
 
+// Admin subscription UI contract: first activation is distinct from audited
+// lifecycle changes, and cancellation always means cancellation at period end.
 import { useCan, useList } from "@refinedev/core";
 import { useSearchParams } from "next/navigation";
 import {
@@ -12,7 +14,7 @@ import {
 import { AdminCollapsibleFilters, AdminListHeader, countActiveFilterValues } from "./AdminListChrome";
 
 type Row = Record<string, unknown> & { id: string };
-type Action =
+export type SubscriptionAction =
   | "renew"
   | "upgrade"
   | "downgrade"
@@ -23,7 +25,7 @@ type Action =
   | "grant_tokens";
 
 const actionOptions: Array<{
-  value: Action;
+  value: SubscriptionAction;
   label: string;
   description: string;
 }> = [
@@ -39,12 +41,12 @@ const actionOptions: Array<{
   },
   {
     value: "upgrade",
-    label: "升级套餐",
-    description: "只创建待生效版本，在下一个个人周期边界切换；当前周期不重置，也不补发 Token。",
+    label: "更换 / 升级套餐",
+    description: "选择额度或权益更高的目标版本，只在下一个个人周期边界切换；当前周期不重置，也不补发 Token。目标版本更低时请改选“更换 / 降级套餐”。",
   },
   {
     value: "downgrade",
-    label: "降级套餐",
+    label: "更换 / 降级套餐",
     description: "只创建待生效版本，在下一个个人周期边界切换；当前周期额度保持不变。",
   },
   {
@@ -68,6 +70,43 @@ const actionOptions: Array<{
     description: "仅在当前周期结束前清除期末取消标记；不移动周期，也不重新发放 Token。",
   },
 ];
+
+type AdminApiErrorPayload = {
+  error?: { code?: string; message?: string };
+};
+
+type QuickAction = {
+  action: SubscriptionAction;
+  label: string;
+  tone: "default" | "danger";
+};
+
+export function subscriptionQuickActions(status: unknown): QuickAction[] {
+  if (status === "trial" || status === "active") {
+    return [
+      { action: "upgrade", label: "更换套餐", tone: "default" },
+      { action: "cancel", label: "期末取消", tone: "danger" },
+    ];
+  }
+  if (status === "cancel_at_period_end") {
+    return [
+      { action: "revoke_cancel", label: "撤销期末取消", tone: "default" },
+    ];
+  }
+  return [];
+}
+
+export function subscriptionApiErrorMessage(
+  payload: AdminApiErrorPayload,
+  status: number,
+) {
+  if (
+    payload.error?.code === "SUBSCRIPTION_ALREADY_CALLABLE"
+  ) {
+    return "该用户已有可调用订阅，不能重复开通。请在下方用户订阅清单使用“更换套餐”安排下周期切换，或使用“期末取消”。";
+  }
+  return payload.error?.message ?? `操作失败（HTTP ${status}）`;
+}
 
 function requestKey(prefix: string) {
   return `${prefix}:${crypto.randomUUID()}`;
@@ -132,7 +171,7 @@ export default function SubscriptionLifecycleManager() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [selected, setSelected] = useState<Row | null>(null);
-  const [action, setAction] = useState<Action>("renew");
+  const [action, setAction] = useState<SubscriptionAction>("renew");
   const [targetVersion, setTargetVersion] = useState("");
   const [grantAmount, setGrantAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -204,11 +243,9 @@ export default function SubscriptionLifecycleManager() {
         headers: { accept: "application/json", "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const payload = await response.json().catch(() => ({})) as {
-        error?: { message?: string };
-      };
+      const payload = await response.json().catch(() => ({})) as AdminApiErrorPayload;
       if (!response.ok) {
-        throw new Error(payload.error?.message ?? `操作失败（HTTP ${response.status}）`);
+        throw new Error(subscriptionApiErrorMessage(payload, response.status));
       }
       setMessage("订阅操作已提交并写入事件与审计记录。");
       await subscriptions.query.refetch();
@@ -270,10 +307,17 @@ export default function SubscriptionLifecycleManager() {
     setGrantAmount("");
   }
 
-  function openActionDialog(row: Row, trigger: HTMLButtonElement) {
+  function openActionDialog(
+    row: Row,
+    trigger: HTMLButtonElement,
+    initialAction?: SubscriptionAction,
+  ) {
     manageTriggerRef.current = trigger;
     setSelected(row);
-    setAction(grantIntent && grantAccess.data?.can ? "grant_tokens" : "renew");
+    setAction(
+      initialAction ??
+        (grantIntent && grantAccess.data?.can ? "grant_tokens" : "renew"),
+    );
     setTargetVersion("");
     setGrantAmount("");
     setReason("");
@@ -286,8 +330,8 @@ export default function SubscriptionLifecycleManager() {
 
     <form onSubmit={activate} className="admin-panel space-y-5 p-5">
       <header>
-        <h2 className="font-display text-xl font-semibold">为平台用户开通订阅</h2>
-        <p id="platform-user-picker-help" className="mt-1 text-sm leading-6 text-text-secondary">canonical users 是唯一平台用户全集，每个平台用户天然具备订阅身份，不存在单独的“计费用户”名册。缺失内部兼容投影或非 active 的用户仍会显示，以便发现投影故障，但不能误开通订阅。</p>
+        <h2 className="font-display text-xl font-semibold">为平台用户首次开通订阅</h2>
+        <p id="platform-user-picker-help" className="mt-1 text-sm leading-6 text-text-secondary">此处只用于首次开通。已有订阅的用户请在下方清单使用“更换套餐”或“期末取消”，不能通过再次开通来切换套餐。canonical users 是唯一平台用户全集；缺失内部兼容投影或非 active 的用户仍会显示，以便发现投影故障，但不能误开通订阅。</p>
       </header>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto_auto] lg:items-end">
         <div className="space-y-3">
@@ -342,13 +386,13 @@ export default function SubscriptionLifecycleManager() {
           </select>
         </label>
         <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={trial} onChange={(event) => setTrial(event.target.checked)} /> 从试用开始</label>
-        <button disabled={pending || users.query.isLoading} className="min-h-11 bg-text-primary px-5 text-sm font-semibold text-bg-surface disabled:opacity-50">{pending ? "提交中…" : "开通订阅"}</button>
+        <button disabled={pending || users.query.isLoading} className="min-h-11 bg-text-primary px-5 text-sm font-semibold text-bg-surface disabled:opacity-50">{pending ? "提交中…" : "首次开通订阅"}</button>
       </div>
     </form>
 
     <section id="subscription-user-list" className="admin-panel overflow-hidden scroll-mt-24" aria-label="用户订阅清单">
       <AdminListHeader title="用户订阅与当前周期 Token" description="按用户核对套餐 Token、补发 Token、预留、消耗和剩余；补发会立即参与 Gateway 预授权，但不修改 429 安全限流。" />
-      {grantIntent ? <p className="border-b border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary" role="status">正在处理 402：请确认目标用户后点击“管理”。具备 <span className="font-mono text-xs">subscriptions.grant</span> 权限时，弹窗会直接选择“补发本周期 Token”。</p> : null}
+      {grantIntent ? <p className="border-b border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary" role="status">正在处理 402：请确认目标用户后点击“更多操作”。具备 <span className="font-mono text-xs">subscriptions.grant</span> 权限时，弹窗会直接选择“补发本周期 Token”。</p> : null}
       <AdminCollapsibleFilters activeCount={countActiveFilterValues({ subscriptionSearch })}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="block max-w-xl flex-1 text-xs font-semibold text-text-secondary">按邮箱筛选用户订阅
@@ -392,7 +436,21 @@ export default function SubscriptionLifecycleManager() {
                 <td className="px-4 py-3 font-mono">{formatToken(consumed)}</td>
                 <td className="px-4 py-3 font-mono font-semibold">{formatToken(remaining)}</td>
                 <td className="max-w-[260px] break-all px-4 py-3 font-mono text-xs">{pendingVersionLabel(row)}</td>
-                <td className="px-4 py-3"><button type="button" className="min-h-10 underline" onClick={(event) => openActionDialog(row, event.currentTarget)}>管理</button></td>
+                <td className="px-4 py-3">
+                  <div className="flex min-w-max items-center gap-3">
+                    {subscriptionQuickActions(row.status).map((quickAction) => (
+                      <button
+                        key={quickAction.action}
+                        type="button"
+                        className={`min-h-10 font-semibold underline ${quickAction.tone === "danger" ? "text-danger" : ""}`}
+                        onClick={(event) => openActionDialog(row, event.currentTarget, quickAction.action)}
+                      >
+                        {quickAction.label}
+                      </button>
+                    ))}
+                    <button type="button" className="min-h-10 underline" onClick={(event) => openActionDialog(row, event.currentTarget)}>更多操作</button>
+                  </div>
+                </td>
               </tr>;
             })}
             {!subscriptions.query.isLoading && rows.length === 0 ? <tr><td colSpan={12} className="px-5 py-14 text-center text-text-tertiary">{subscriptionSearch ? "没有匹配该邮箱的用户订阅。请核对邮箱，或先为用户开通订阅。" : "尚无用户订阅。请先发布包含月度 Token 额度与模型权益的套餐版本。"}</td></tr> : null}
@@ -416,7 +474,7 @@ export default function SubscriptionLifecycleManager() {
           </dl>
           {action === "renew" && new Date(String(selected.current_period_end)) <= new Date() ? <p className="border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary">如果该订阅已经漏过多个个人周期，服务端会从原始周期锚点直接定位到包含当前时刻的周期；已过期月份不会追溯补发 Token。</p> : null}
           <label className="block text-xs font-semibold text-text-secondary">操作
-            <select data-dialog-autofocus className="admin-field mt-2" value={action} onChange={(event) => { setAction(event.target.value as Action); setTargetVersion(""); setError(""); }}>
+            <select data-dialog-autofocus className="admin-field mt-2" value={action} onChange={(event) => { setAction(event.target.value as SubscriptionAction); setTargetVersion(""); setError(""); }}>
               {visibleActionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
@@ -429,7 +487,7 @@ export default function SubscriptionLifecycleManager() {
           </label> : null}
           <label className="block text-xs font-semibold text-text-secondary">操作原因 *<textarea required minLength={3} maxLength={500} className="admin-field mt-2 min-h-24" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         </div>
-        <footer className="admin-dialog-footer"><button type="button" className="min-h-11 border border-border px-4" onClick={closeActionDialog}>取消</button><button disabled={pending} className={`min-h-11 px-5 font-semibold text-white disabled:opacity-50 ${action === "cancel" ? "bg-danger" : "bg-text-primary"}`}>{pending ? "处理中…" : "确认执行"}</button></footer>
+        <footer className="admin-dialog-footer"><button type="button" className="min-h-11 border border-border px-4" onClick={closeActionDialog}>关闭弹窗</button><button disabled={pending} className={`min-h-11 px-5 font-semibold text-white disabled:opacity-50 ${action === "cancel" ? "bg-danger" : "bg-text-primary"}`}>{pending ? "处理中…" : "确认执行"}</button></footer>
       </form> : null}
     </dialog>
   </div>;

@@ -21,7 +21,7 @@
 | 套餐 | 订阅运营 | name、code、status、current published version、updated | q/status；name/code/updated；无批量写或历史删除 |
 | 版本 | 订阅运营、审计 | plan、version、status、固定“月度”、allowance tokens、published at | plan/status；version/publishedAt；无 cycle/effective date 筛选，无批量编辑/删除 |
 | 权益 | 模型运营、订阅运营 | version、model、scopes、RPM、Storage、status | version/model/scope；published 对象只读；无金额 overage |
-| 用户订阅 | 支持、订阅运营 | user、plan/version、status、current period、token remaining、pending version/cancel | canonical user/plan/status/period；updated；生命周期动作逐条确认，不做批量换版 |
+| 用户订阅 | 支持、订阅运营 | user、plan/version、status、current period、token remaining、pending version/cancel | canonical user/plan/status/period；updated；行级明确展示“更换套餐”“期末取消/撤销期末取消”，其他生命周期动作进入“更多操作”；逐条确认，不做批量换版 |
 
 全部列表使用服务端分页、排序、白名单筛选和真实 total。用户关系选择器搜索 canonical `users`，支持 debounce、跨页保留与 hydration；不存在“计费用户”筛选、开户按钮或 qa 专用名单。
 
@@ -66,6 +66,7 @@ Token 周期总额度只在 Version 配置，避免与 Entitlement 的安全限�
 
 ### 2.4 开通 Drawer
 
+- 开通入口只创建用户的第一条可调用订阅；已有 `trial/active/past_due/paused/cancel_at_period_end` 订阅时返回明确冲突，并引导到用户订阅行的“更换套餐”或“期末取消”，不得再次 POST 开通来切换套餐。
 - canonical user：可搜索 relation；结果显示 name/email/id/status，不出现 billing-user 标签。
 - published version：可搜索 relation；显示 Plan、版本、固定月度、Token/周期和关键 Entitlement。
 - start at：datetime，默认当前时刻但可明确调整；其值成为该用户的周期锚点，不是平台统一套餐生效日。
@@ -88,7 +89,7 @@ Token 周期总额度只在 Version 配置，避免与 Entitlement 的安全限�
 
 `/admin/subscriptions/token-ledger` 是 `subscriptions.read` 控制的只读审计页，按 Gateway Request 展示 `request_sequence`、reserve/capture/release、Token amount 和 available/reserved/consumed 前后快照。页面不得提供新增、编辑、删除、退款成功或支付状态控件，也不得把 Token 流水称为账单金额。
 
-当前周期免费 Token 的写入口固定为“订阅 → 用户订阅 → 管理 → 补发本周期 Token”，不得写在“Gateway → 限流策略”的资源或表单中。限流页可以提供用户行级“处理 402／补发 Token”导航：URL 携带邮箱和 `intent=grant`，目标订阅列表自动按邮箱筛选；点击“管理”后，有 `subscriptions.grant` 权限时默认选中补发动作。只有 `subscriptions.grant` 可看到并提交该动作。确认 Modal 必须显示当前剩余、补发正整数数量、明确原因，并说明“立即参与 Gateway 预授权、只对当前周期有效、不修改 429 安全限流、下周期不重复发放”。提交后刷新套餐 Token/补发 Token/可用总额，成功回执可跳转 Token 流水中的不可变补发记录。
+当前周期免费 Token 的写入口固定为“订阅 → 用户订阅 → 更多操作 → 补发本周期 Token”，不得写在“Gateway → 限流策略”的资源或表单中。限流页可以提供用户行级“处理 402／补发 Token”导航：URL 携带邮箱和 `intent=grant`，目标订阅列表自动按邮箱筛选；点击“更多操作”后，有 `subscriptions.grant` 权限时默认选中补发动作。只有 `subscriptions.grant` 可看到并提交该动作。确认 Modal 必须显示当前剩余、补发正整数数量、明确原因，并说明“立即参与 Gateway 预授权、只对当前周期有效、不修改 429 安全限流、下周期不重复发放”。提交后刷新套餐 Token/补发 Token/可用总额，成功回执可跳转 Token 流水中的不可变补发记录。
 
 ## 4. 生命周期与影响确认
 
@@ -105,7 +106,7 @@ flowchart LR
 
 生命周期统一使用 Modal；移动端为锁焦的全屏/底部 sheet。每个 Modal 显示 current→target、当前周期、准确边界、Token 变化、Gateway 可用性、reason、expected version 和幂等回执。
 
-- 升级和降级都显示“将在 YYYY-MM-DD HH:mm（含时区）下一周期生效”；不得出现“立即升级”、proration、退款或价格差。
+- 用户订阅行对可调用状态直接展示“更换套餐”和“期末取消”；`cancel_at_period_end` 直接展示“撤销期末取消”。升级和降级都显示“将在 YYYY-MM-DD HH:mm（含时区）下一周期生效”；不得出现“立即升级”、proration、退款或价格差。
 - 续期由周期边界推进；运营手工重试只能在边界到达后执行。若已漏过多个边界，确认层说明“跳过已过期周期且不追溯补发 Token”，成功后定位到包含当前时刻的个人周期。提前操作禁用并说明剩余时间；服务端 409 时载入最新周期。
 - 暂停/恢复明确“不会改变本期结束时间或 Token”；期末取消明确“本期可继续使用”，撤销取消明确“不发放新额度”。
 - 补发 Token 使用独立危险能力提示和二次确认；数量、原因、Allowance version、幂等键缺一不可。409 时保留输入并要求刷新最新额度，权限不足时完全隐藏动作；普通 `subscriptions.write` 不能代替 `subscriptions.grant`。

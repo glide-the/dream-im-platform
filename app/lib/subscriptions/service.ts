@@ -1,3 +1,5 @@
+// Subscription service contract: all lifecycle writes are transactional,
+// optimistic, idempotent, permission-checked, and append-only audited.
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
@@ -51,7 +53,7 @@ async function parseBody<T extends z.ZodTypeAny>(request: Request, schema: T) {
   return parsed.data;
 }
 
-function subscriptionError(error: unknown) {
+export function subscriptionError(error: unknown) {
   if (error instanceof AdminError) return error;
   if (error instanceof z.ZodError) {
     return new AdminError(
@@ -62,6 +64,17 @@ function subscriptionError(error: unknown) {
     );
   }
   const pg = error as { code?: string; constraint?: string };
+  if (
+    pg.code === "23505" &&
+    pg.constraint === "subscriptions_one_callable_user_uidx"
+  ) {
+    return new AdminError(
+      "SUBSCRIPTION_ALREADY_CALLABLE",
+      "The user already has a callable subscription; schedule a plan change or period-end cancellation instead of activating another subscription",
+      409,
+      { constraint: pg.constraint },
+    );
+  }
   if (pg.code === "23505") {
     return new AdminError(
       "SUBSCRIPTION_CONFLICT",

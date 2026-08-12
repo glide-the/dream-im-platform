@@ -1,10 +1,14 @@
+// Append-only registry helpers for explicit, redacted PostgreSQL data migrations.
 import { createHash, randomUUID } from "node:crypto";
 import pg from "pg";
+
+import { gatewayDefaultLimitsPolicy } from "../../config/gateway-default-limits.mjs";
 
 export const LEGACY_MIGRATION_KEY_V1 = "dream-legacy-43-plus-5-v1";
 export const LEGACY_MIGRATION_KEY = "dream-legacy-43-plus-5-v2-drizzle";
 export const LEGACY_SCHEMA_CAPABILITY = "dream.schema.unified.v1";
 export const PLAN_SEED_KEY = "default-dream-plans-v1";
+export const GATEWAY_DEFAULT_LIMITS_KEY = gatewayDefaultLimitsPolicy.revision;
 
 const SUCCESS_STATUSES = new Set([
   "committed",
@@ -293,6 +297,53 @@ export async function recordPlanSeedReceipt(databaseUrl, receipt) {
       freeMonthlyTokens: receipt.freeMonthlyTokens,
       backfilledSubscriptions: receipt.backfilledSubscriptions,
       transitionedFreeSubscriptions: receipt.transitionedFreeSubscriptions,
+      redacted: true,
+    },
+  });
+}
+
+export async function recordGatewayDefaultLimitsReceipt(databaseUrl, receipt) {
+  if (receipt?.contract !== "ink-admin-gateway-default-token-limits-v1"
+    || receipt?.mode !== "applied"
+    || receipt?.revision !== GATEWAY_DEFAULT_LIMITS_KEY
+    || receipt?.dailyTokenLimit !== gatewayDefaultLimitsPolicy.dailyTokenLimit
+    || receipt?.monthlyTokenLimit !== gatewayDefaultLimitsPolicy.monthlyTokenLimit
+    || !Number.isSafeInteger(receipt?.totalUsers)
+    || receipt.totalUsers < 0
+    || !Number.isSafeInteger(receipt?.changedUsers)
+    || receipt.changedUsers < 0
+    || receipt?.remainingMismatches !== 0
+    || receipt?.missingCanonicalProjections !== 0) {
+    throw new Error("Unexpected Gateway default-limit migration receipt");
+  }
+  const sourceFingerprint = sha256Json({
+    contract: receipt.contract,
+    revision: receipt.revision,
+    dailyTokenLimit: receipt.dailyTokenLimit,
+    monthlyTokenLimit: receipt.monthlyTokenLimit,
+    totalUsers: receipt.totalUsers,
+  });
+  return record({
+    databaseUrl,
+    migrationKey: GATEWAY_DEFAULT_LIMITS_KEY,
+    runnerContract: receipt.contract,
+    runId: randomUUID(),
+    status: "committed",
+    runnerMode: "apply",
+    sourceFingerprint,
+    sourceTableCount: 1,
+    sourceRowCount: receipt.totalUsers,
+    exactMatchedRowCount: receipt.totalUsers,
+    postCutoverChangedRowCount: receipt.changedUsers,
+    summary: {
+      revision: receipt.revision,
+      dailyTokenLimit: receipt.dailyTokenLimit,
+      monthlyTokenLimit: receipt.monthlyTokenLimit,
+      totalUsers: receipt.totalUsers,
+      changedUsers: receipt.changedUsers,
+      remainingMismatches: receipt.remainingMismatches,
+      missingCanonicalProjections: receipt.missingCanonicalProjections,
+      effect: "429-only",
       redacted: true,
     },
   });

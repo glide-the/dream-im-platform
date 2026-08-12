@@ -1,3 +1,4 @@
+// Isolated Gateway E2E for protocol payloads, limits, persistence, and settlement.
 import { expect, test, type Page } from "@playwright/test";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
@@ -7,6 +8,8 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { promisify } from "node:util";
 import pg from "pg";
+
+import { gatewayDefaultLimitsPolicy } from "../../config/gateway-default-limits.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -144,8 +147,12 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
     const provisionedGatewayUser = (await pool.query(`SELECT id, daily_token_limit, monthly_token_limit FROM platform_users WHERE source = 'ink-dream' AND external_user_id = '201'`)).rows[0];
     const gatewayUserId = String(provisionedGatewayUser?.id);
     expect(gatewayUserId).not.toBe("undefined");
-    expect(Number(provisionedGatewayUser?.daily_token_limit)).toBe(100_000);
-    expect(provisionedGatewayUser?.monthly_token_limit).toBeNull();
+    expect(Number(provisionedGatewayUser?.daily_token_limit)).toBe(
+      gatewayDefaultLimitsPolicy.dailyTokenLimit,
+    );
+    expect(Number(provisionedGatewayUser?.monthly_token_limit)).toBe(
+      gatewayDefaultLimitsPolicy.monthlyTokenLimit,
+    );
     await pool.query(`UPDATE billing_accounts SET available_microusd = 1000000000 WHERE platform_user_id = $1`, [gatewayUserId]);
 
     const api = context.request;

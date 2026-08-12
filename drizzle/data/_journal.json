@@ -29,6 +29,15 @@
       ],
       "supersedes": "dream-legacy-43-plus-5-v1",
       "reusePolicy": "Reuse an existing successful v1 receipt with the same source fingerprint; otherwise record v2."
+    },
+    {
+      "idx": 3,
+      "migrationKey": "gateway-default-token-limits-v1",
+      "runner": "gateway-default-token-limits.mjs",
+      "dependsOn": [
+        "Admin Drizzle 0035_brief_wolverine",
+        "gateway-default-token-limits-v1 policy config"
+      ]
     }
   ]
 }

@@ -1,3 +1,4 @@
+// Isolated PostgreSQL E2E for subscription lifecycle, Token settlement, and responsive Admin UI.
 import { expect, test, type Page } from "@playwright/test";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -219,10 +220,14 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     });
     expect(activationPayloadConflict.status()).toBe(409);
     await expect(activationPayloadConflict.json()).resolves.toMatchObject({ error: { code: "SUBSCRIPTION_IDEMPOTENCY_CONFLICT" } });
-    expect((await api.post(`${baseURL}/api/admin/subscriptions`, {
+    const duplicateCallableSubscription = await api.post(`${baseURL}/api/admin/subscriptions`, {
       headers,
       data: { platformUserId: billingUserId, planVersionId: versionOne, startsAt: startsAt.toISOString(), startInTrial: false, idempotencyKey: "activate:user-e2e:conflict:e2e", reason: "E2E conflict" },
-    })).status()).toBe(409);
+    });
+    expect(duplicateCallableSubscription.status()).toBe(409);
+    await expect(duplicateCallableSubscription.json()).resolves.toMatchObject({
+      error: { code: "SUBSCRIPTION_ALREADY_CALLABLE" },
+    });
 
     const command = async (action: string, key: string, data: Record<string, unknown> = {}) => api.post(`${baseURL}/api/admin/subscriptions/${subscriptionId}/${action}`, { headers, data: { idempotencyKey: key, reason: `E2E ${action}`, expectedVersion, ...data } });
     const versionTwo = await createVersion(120000);
@@ -647,12 +652,28 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     const subscriptionList = page.getByRole("region", { name: "用户订阅清单" });
     await expect(subscriptionList.getByText("creator@example.test", { exact: true })).toBeVisible();
     await expect(subscriptionList.getByText("other@example.test", { exact: true })).toHaveCount(0);
-    await subscriptionList.getByRole("button", { name: "管理" }).click();
+    await expect(subscriptionList.getByRole("button", { name: "更换套餐" })).toBeVisible();
+    await expect(subscriptionList.getByRole("button", { name: "期末取消" })).toBeVisible();
+    await subscriptionList.getByRole("button", { name: "期末取消" }).click();
+    await expect(page.locator("select[data-dialog-autofocus]")).toHaveValue("cancel");
+    await page.getByRole("button", { name: "关闭弹窗", exact: true }).click();
+    await subscriptionList.getByRole("button", { name: "更换套餐" }).click();
+    await expect(page.locator("select[data-dialog-autofocus]")).toHaveValue("upgrade");
+    await expect(page.getByLabel("下周期目标版本")).toBeVisible();
+    await page.getByRole("button", { name: "关闭弹窗", exact: true }).click();
+    await subscriptionList.getByRole("button", { name: "更多操作" }).click();
     await expect(page.locator("select[data-dialog-autofocus]")).toHaveValue("grant_tokens");
     await expect(page.getByLabel("补发 Token 数量 *")).toBeVisible();
     await page.getByRole("button", { name: "关闭", exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("subscription-users-desktop-1440x1000.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/admin/subscriptions/users?email=creator%40example.test#subscription-user-list");
+    const mobileSubscriptionList = page.getByRole("region", { name: "用户订阅清单" });
+    await expect(mobileSubscriptionList.getByRole("button", { name: "更换套餐" })).toBeVisible();
+    await expect(mobileSubscriptionList.getByRole("button", { name: "期末取消" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath("subscription-users-mobile-390x844.png"), fullPage: true });
     await page.goto("/admin/subscriptions/versions");
     await expect(page.getByRole("heading", { name: "套餐版本", exact: true }).first()).toBeVisible();
     for (const forbidden of ["金额额度", "基础价格", "币种", "生效时间", "现金兜底"]) {

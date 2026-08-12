@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+// Isolated Subscription E2E contract: migrations, app traffic, and fixture
+// writes must all use the same script-owned disposable PostgreSQL database.
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -175,6 +177,7 @@ try {
     ...process.env,
     NODE_ENV: "development",
     DATABASE_URL: databaseUrl,
+    MIGRATION_DATABASE_URL: databaseUrl,
     TEST_DATABASE_URL: databaseUrl,
     INK_USE_TEST_DATABASE_URL: "1",
     ADMIN_CONSOLE_ENABLED: "true",
