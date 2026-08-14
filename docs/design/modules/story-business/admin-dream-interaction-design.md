@@ -180,6 +180,27 @@ Run 是过程身份，不能唯一代表长期 Story；用户路径不是授权�
 - Workflow Run → canonical Story：先从 Run/Source Message authority 解析 stable key，再查询 Story；不得把 Run ID 当 Story ID。
 - Artifact 文件详情始终附着在已授权 Story detail 和 registry Episode 上，不存在独立路径型入口。
 
+#### 1.11.1 Dream 工作空间展示标题
+
+同一个 Dream 工作空间在 Dream Execution、Dream 回访列表、Admin Story 列表和 Admin
+Workflow Run 列表使用同一派生标题：
+
+```text
+display_title
+  = canonical Story.title
+  ?? Source Message launch metadata.goal 的前 80 个字符
+```
+
+- `Story.title` 由 Dream 从 `project.yaml.project_name` 物化，是 Project 已构建后的唯一运营
+  标题；Admin 只读，不写回 Run 或 Artifact。
+- 创作目标前缀只用于尚未产生 Story 投影的 Run，不是第二个 Project 标题。Project 首次
+  materialize 或后续重命名后，所有列表在下一次 PostgreSQL/API 读取时显示最新 Story title。
+- Episode 标题、Deck 名称、Thread 名称和 Workflow summary 不参与已构建 Project 的标题
+  选择，也不得覆盖 `Story.title`。
+- Workflow Run 列表通过受限 PostgreSQL 关联派生标题，不按 `runId` 扫描 Artifact Root。
+- 历史 Run 已不再是 Story 的 current source Run 时，按同一 Workspace 和 Source Message 中的
+  stable Project slug 解析当前 Story title；只有整个 Project 尚无 Story 时才使用 goal 前缀。
+
 ### 1.12 状态归属
 
 | 状态域 | 权威事实 | 取值 |
@@ -590,6 +611,10 @@ Workspace 列表只查询 PostgreSQL，显示 Workspace ID/name、Owner、Dream 
 ### 6.5 Admin Workflow Run 列表 `/admin/story/workflow-runs`
 
 Workflow Run 列表只查询 PostgreSQL，显示 Run ID、Workspace、Workflow definition、Run lifecycle、失败步骤/安全错误码、重试来源、Source Message 时间、创建者、开始/完成时间，以及服务端派生的 Artifact Story eligibility：
+
+列表首列显示第 1.11.1 节定义的 Dream 工作空间标题：命中当前 Run 的 canonical Story 时
+显示 `Story.title`；尚未命中时显示 Source Message launch goal 前缀。该字段可搜索，但只读，
+不得为提高显示稳定性复制到 `workflow_runs`。
 
 | PostgreSQL eligibility | 穷举判定 | Admin 操作 |
 |---|---|---|

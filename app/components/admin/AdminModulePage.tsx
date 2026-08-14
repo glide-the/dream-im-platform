@@ -1,3 +1,7 @@
+// [Input] Module-specific title, status, navigation tabs, and content.
+// [Output] Shared Admin module shell, including Story/Dream run navigation.
+// [Pos] Presentational Admin route layout; it owns no resource data or commands.
+
 import AdminPageHeader from "./AdminPageHeader";
 import AdminSectionTabs from "./AdminSectionTabs";
 
@@ -28,6 +32,7 @@ export default function AdminModulePage({
 export const storyTabs = [
   { label: "工作区", href: "/admin/story/workspaces" },
   { label: "剧本", href: "/admin/story/stories" },
+  { label: "Dream 运行", href: "/admin/story/workflow-runs" },
 ];
 
 export const modelTabs = [

@@ -1,6 +1,7 @@
 "use client";
 
-// Admin resource views render versioned platform policy without owning its enforcement.
+// Admin resource views render versioned platform policy and canonical Dream
+// display titles without owning either policy enforcement or Project writes.
 import { gatewayDefaultLimitsPolicy } from "../../../config/gateway-default-limits.mjs";
 import AdminResourceManager, {
   type AdminFieldDefinition,
@@ -227,4 +228,36 @@ export function StoryResourceView({ kind }: StoryResourceViewProps) {
   if (kind === "stories") return <AdminResourceManager resource="story-stories" title="剧本" description="列表只读 PostgreSQL canonical Story；详情从共享只读 Artifact 挂载按资源身份加载安全预览，文件异常不影响索引事实。" canCreate={false} canEdit={false} canDelete={false} container="drawer" fields={[]} renderDetail={(record) => <StoryArtifactDetail record={record} />} commands={[{ action: "confirm", label: "确认当前 Revision", description: "确认当前 PostgreSQL script revision；正文变化时服务端返回 409，不会审核旧文件。", tone: "success", buildPayload: (record) => ({ expectedScriptRevision: record.script_revision }) }]} defaultSort="updated_at" filters={[{ field: "title", label: "剧本标题" }, { field: "workspace_id", label: "所属工作区", operator: "eq", control: "relation", relation: { resource: "story-workspaces", labelKey: "name", secondaryKey: "id", searchField: "name" } }, { field: "author_id", label: "作者", operator: "eq", control: "relation", relation: { resource: "users", labelKey: "email", secondaryKey: "id", searchField: "email" } }, { field: "source_project_id", label: "Project identity" }, { field: "artifact_sync_status", label: "Artifact 状态", operator: "eq", control: "select", options: [{ label: "同步中", value: "syncing" }, { label: "已索引", value: "indexed" }, { label: "Revision 变化", value: "stale" }, { label: "文件缺失", value: "missing" }, { label: "同步失败", value: "failed" }] }, { field: "artifact_available", label: "Artifact 可用", operator: "eq", control: "select", options: [{ label: "可用", value: "true" }, { label: "不可用", value: "false" }] }, { field: "review_status", label: "审核状态", operator: "eq", control: "select", options: reviewStatusOptions }, { field: "status", label: "业务状态", operator: "eq", control: "select", options: storyStatusOptions }, { field: "updated_from", apiField: "updated_at", label: "更新起始", operator: "gte", control: "datetime" }, { field: "updated_to", apiField: "updated_at", label: "更新截止", operator: "lte", control: "datetime" }]} columns={[{ key: "title", label: "Story 标题" }, { key: "id", label: "Story ID", format: "copy" }, { key: "workspace_name", label: "Workspace" }, { key: "author_label", label: "作者" }, { key: "source_project_id", label: "Project identity" }, { key: "episode_count", label: "Episodes" }, { key: "artifact_sync_status", label: "Artifact 状态", format: "status" }, { key: "script_revision", label: "Script revision" }, { key: "artifact_indexed_at", label: "索引时间", format: "date" }, { key: "review_status", label: "审核状态", format: "status" }, { key: "status", label: "业务状态", format: "status" }, { key: "updated_at", label: "更新时间", format: "date" }]} />;
   if (kind === "characters") return <AdminResourceManager resource="story-characters" title="真实角色" description="角色详情包含真实 Story role_type 与 Scene 关系；当前审核操作仅保留确认。" canCreate={false} container="drawer" fields={[{ key: "name", label: "名称", control: "text", section: "main", required: true }, { key: "identity", label: "身份", control: "textarea", section: "main", nullable: true }, { key: "personality", label: "性格", control: "textarea", section: "main", nullable: true }, { key: "background", label: "背景", control: "textarea", section: "main", nullable: true }, { key: "catchphrase", label: "口头禅", control: "textarea", section: "main", nullable: true }, { key: "tags", label: "标签", control: "tags", section: "main", help: "使用逗号分隔；提交为字符串数组。" }, { key: "avatarUrl", sourceKey: "avatar_url", label: "头像 URL", control: "url", section: "main", nullable: true }]} commands={[{ action: "confirm", label: "确认", description: "确认 pending Agent 角色。", tone: "success" }]} filters={[{ field: "name", label: "角色名" }, { field: "workspace_name", label: "工作区" }, { field: "review_status", label: "审核", operator: "eq", options: reviewStatusOptions }]} columns={[{ key: "name", label: "角色" }, { key: "workspace_name", label: "工作区" }, { key: "story_count", label: "剧本数" }, { key: "review_status", label: "审核", format: "status" }]} />;
   return <AdminResourceManager resource="story-scenes" title="真实场景" description="场景可绑定同作者/工作区 Story；当前审核操作仅保留确认。" canCreate={false} container="drawer" fields={[{ key: "name", label: "场景名", control: "text", section: "main", required: true }, { key: "description", label: "说明", control: "textarea", section: "main", nullable: true }, { key: "storyId", sourceKey: "story_id", label: "所属 Story", control: "relation", section: "main", nullable: true, relation: { resource: "story-stories", labelKey: "title", secondaryKey: "workspace_name", searchField: "title" } }, { key: "orderIndex", sourceKey: "order_index", label: "顺序", control: "number", section: "main", min: 0, required: true }]} commands={[{ action: "confirm", label: "确认", description: "确认 pending Agent 场景。", tone: "success" }]} filters={[{ field: "name", label: "场景名" }, { field: "story_title", label: "剧本" }, { field: "workspace_name", label: "工作区" }, { field: "review_status", label: "审核", operator: "eq", options: reviewStatusOptions }]} columns={[{ key: "name", label: "场景" }, { key: "story_title", label: "剧本" }, { key: "workspace_name", label: "工作区" }, { key: "order_index", label: "顺序" }, { key: "review_status", label: "审核", format: "status" }]} />;
+}
+
+export function StoryWorkflowRunsResourceView() {
+  return (
+    <AdminResourceManager
+      resource="story-workflow-runs"
+      title="Dream 运行"
+      description="运行标题优先读取 canonical Project/Story 标题；Project 尚未形成时才显示创作目标前缀。列表只读 PostgreSQL，不扫描 Artifact。"
+      canCreate={false}
+      canEdit={false}
+      canDelete={false}
+      container="drawer"
+      fields={[]}
+      defaultSort="created_at"
+      filters={[
+        { field: "display_title", label: "工作空间标题" },
+        { field: "workspace_id", label: "Workspace ID" },
+        { field: "status", label: "运行状态", operator: "eq" },
+        { field: "deck_plugin_id", label: "Deck Plugin" },
+      ]}
+      columns={[
+        { key: "display_title", label: "工作空间标题" },
+        { key: "id", label: "Run ID", format: "copy" },
+        { key: "workspace_name", label: "Workspace" },
+        { key: "status", label: "运行状态", format: "status" },
+        { key: "deck_plugin_id", label: "Deck Plugin" },
+        { key: "deck_plugin_version", label: "版本" },
+        { key: "created_at", label: "创建时间", format: "date" },
+        { key: "completed_at", label: "完成时间", format: "date" },
+      ]}
+    />
+  );
 }

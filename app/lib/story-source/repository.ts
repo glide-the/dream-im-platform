@@ -1,3 +1,8 @@
+// [Input] Admin-authenticated Story list/detail requests over shared PostgreSQL.
+// [Output] Allowlisted Story/Run records; Dream Run display titles prefer the
+//          canonical Story title and fall back to the launch-goal prefix.
+// [Pos] Admin Story read repository; it never writes Project or Artifact facts.
+
 import type { PoolClient } from "pg";
 import { AdminError } from "../admin/errors";
 import {
@@ -25,6 +30,22 @@ type StoryResourceConfig = {
   defaultSort: string;
   filterFields: string[];
 };
+
+const dreamRunGoalPrefixSql = `LEFT(NULLIF(BTRIM(
+  COALESCE(NULLIF(BTRIM(source.metadata), ''), '{}')::jsonb ->> 'goal'
+), ''), 80)`;
+
+const dreamRunProjectSlugSql = `COALESCE(
+  COALESCE(NULLIF(BTRIM(source.metadata), ''), '{}')::jsonb ->> 'projectStorySlug',
+  COALESCE(NULLIF(BTRIM(source.metadata), ''), '{}')::jsonb
+    #>> '{story_workspace_episode_identity,story_slug}'
+)`;
+
+const dreamRunDisplayTitleSql = `COALESCE(
+  NULLIF(BTRIM(story.title), ''),
+  ${dreamRunGoalPrefixSql},
+  r.id
+)`;
 
 export type StoryArtifactSourceRecord = {
   id: string;
@@ -246,7 +267,10 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
   },
   "story-workflow-runs": {
     permission: "story.read",
-    select: `r.id, r.workspace_id, w.name AS workspace_name,
+    select: `r.id, ${dreamRunDisplayTitleSql} AS display_title,
+             story.title AS project_title,
+             ${dreamRunGoalPrefixSql} AS goal_prefix,
+             r.workspace_id, w.name AS workspace_name,
              r.deck_plugin_id, r.deck_plugin_version,
              r.workflow_definition_ref, r.deck_runtime_snapshot_id,
              r.status, r.failed_step, r.error_code, r.retry_of_run_id,
@@ -258,9 +282,33 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
              r.input_hash, r.semantic_fingerprint, r.status_version,
              r.created_by, r.created_at, r.started_at, r.completed_at`,
     from: `FROM workflow_runs AS r
-           JOIN story_workspace_workspaces AS w ON w.id = r.workspace_id`,
+           JOIN story_workspace_workspaces AS w ON w.id = r.workspace_id
+           LEFT JOIN chat_message AS source
+             ON source.id = r.source_message_id
+            AND source.thread_id = r.source_voice_thread_id
+            AND source.role = 'user'
+           LEFT JOIN LATERAL (
+             SELECT candidate.title
+              FROM story_workspace_stories AS candidate
+              WHERE candidate.artifact_source_type = 'dream_episode'
+                AND (
+                  candidate.source_run_id = r.id
+                  OR (
+                    candidate.workspace_id = r.workspace_id
+                    AND candidate.source_project_id = ${dreamRunProjectSlugSql}
+                  )
+                )
+              ORDER BY
+                CASE WHEN candidate.source_run_id = r.id THEN 0 ELSE 1 END,
+                candidate.updated_at DESC,
+                candidate.id ASC
+              LIMIT 1
+           ) AS story ON TRUE`,
     columns: {
       id: "r.id",
+      display_title: dreamRunDisplayTitleSql,
+      project_title: "story.title",
+      goal_prefix: dreamRunGoalPrefixSql,
       workspace_id: "r.workspace_id",
       workspace_name: "w.name",
       deck_plugin_id: "r.deck_plugin_id",
@@ -277,6 +325,9 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
     },
     defaultSort: "created_at",
     filterFields: [
+      "display_title",
+      "project_title",
+      "goal_prefix",
       "workspace_id",
       "workspace_name",
       "deck_plugin_id",

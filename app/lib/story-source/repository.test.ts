@@ -60,6 +60,28 @@ describe("Story PostgreSQL repository", () => {
     expect(query.mock.calls[1][1]).toEqual(["indexed", "true"]);
   });
 
+  it("uses the canonical Story title for Dream runs and only then the goal prefix", async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: "run-1", display_title: "雾中黑海湖" }] })
+      .mockResolvedValueOnce({ rows: [{ total: "1" }] });
+
+    const response = await queryStorySourceList(
+      new Request(
+        "http://localhost/api/admin/story-workflow-runs?filter[display_title][contains]=黑海湖",
+      ),
+      "story-workflow-runs",
+    );
+
+    expect(response.data[0]).toMatchObject({ display_title: "雾中黑海湖" });
+    expect(query.mock.calls[0][0]).toContain("NULLIF(BTRIM(story.title), '')");
+    expect(query.mock.calls[0][0]).toContain("source.metadata");
+    expect(query.mock.calls[0][0]).toContain("LEFT JOIN LATERAL");
+    expect(query.mock.calls[0][0]).toContain("candidate.source_run_id = r.id");
+    expect(query.mock.calls[0][0]).toContain("candidate.source_project_id");
+    expect(query.mock.calls[0][0]).toContain("projectStorySlug");
+    expect(query.mock.calls[0][0]).toContain("LIKE");
+  });
+
   it("never selects the source password hash", async () => {
     query.mockResolvedValueOnce({
       rows: [{ id: "7", email: "user@example.com", role: "user" }],
