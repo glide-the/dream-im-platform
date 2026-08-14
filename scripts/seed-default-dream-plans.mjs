@@ -1,3 +1,9 @@
+// [Input] Admin database configuration plus optional Free model/token policy.
+// [Output] Idempotent default Plan data and a forward-only published Free snapshot.
+// [Pos] Release gate and data seed for Dream registration defaults.
+// [Sync] 2026-08-14: allow a provider-ready priced model to bootstrap its first
+//                    entitlement and publish a successor when the prior default
+//                    model is no longer eligible.
 import { config } from "dotenv";
 import pg from "pg";
 
@@ -130,18 +136,9 @@ async function selectFreeModel(client) {
          SELECT 1 FROM ai_pricing_rules AS pricing
          WHERE pricing.model_id = model.id
            AND pricing.status = 'active'
+           AND pricing.user_tier IN ('free', 'default')
            AND pricing.effective_from <= NOW()
            AND (pricing.effective_to IS NULL OR pricing.effective_to > NOW())
-       )
-       AND EXISTS (
-         SELECT 1
-         FROM subscription_plan_entitlements AS entitlement
-         JOIN subscription_plan_versions AS version
-           ON version.id = entitlement.plan_version_id
-         WHERE entitlement.model_id = model.id
-           AND entitlement.enabled = TRUE
-           AND entitlement.gateway_scopes @> ARRAY['messages:create']::text[]
-           AND version.status = 'published'
        )
      ORDER BY
        CASE WHEN $1::text IS NULL THEN current_free.version_number END DESC NULLS LAST,
@@ -150,7 +147,7 @@ async function selectFreeModel(client) {
     [configuredAlias],
   );
   if (!result.rows[0]) {
-    throw new Error("No enabled, priced, routable messages:create model is eligible for the Free Plan");
+    throw new Error("No enabled, provider-ready model with active free/default pricing is eligible for the Free Plan");
   }
   return result.rows[0];
 }
@@ -201,16 +198,18 @@ async function ensureFreeVersion(client, planId, model, allowanceTokens) {
       );
       return row.id;
     }
-    if (row.status !== "published"
-      || Number(row.allowance_tokens) <= 0
-      || row.model_id !== model.id
-      || row.is_default !== true
-      || !Array.isArray(row.gateway_scopes)
-      || !row.gateway_scopes.includes("messages:create")) {
-      throw new Error("Existing Free Plan Version is not a valid published default snapshot");
+    if (row.status === "draft") {
+      throw new Error("Existing unmanaged Free Plan draft blocks automatic publication");
     }
-    if (allowanceTokens === null
-      || Number(row.allowance_tokens) === allowanceTokens) return row.id;
+    const reusablePublishedSnapshot = row.status === "published"
+      && Number(row.allowance_tokens) > 0
+      && row.model_id === model.id
+      && row.is_default === true
+      && Array.isArray(row.gateway_scopes)
+      && row.gateway_scopes.includes("messages:create")
+      && (allowanceTokens === null
+        || Number(row.allowance_tokens) === allowanceTokens);
+    if (reusablePublishedSnapshot) return row.id;
   }
 
   const versionNumber = existing.rows[0]
