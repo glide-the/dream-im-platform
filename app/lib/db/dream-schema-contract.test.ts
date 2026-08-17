@@ -9,7 +9,7 @@ import {
 } from "./schema";
 
 describe("complete Dream Drizzle schema", () => {
-  it("declares exactly 45 domain tables plus the three canonical baseline tables", () => {
+  it("declares exactly 49 Dream and canonical baseline tables", () => {
     const generatedNames = Object.values(dreamSchema)
       .filter(isTable)
       .map(getTableName);
@@ -20,7 +20,7 @@ describe("complete Dream Drizzle schema", () => {
       getTableName(storyWorkspaceStories),
     ];
 
-    expect(generatedNames).toHaveLength(45);
-    expect(new Set(allNames).size).toBe(48);
+    expect(generatedNames).toHaveLength(46);
+    expect(new Set(allNames).size).toBe(49);
   });
 });

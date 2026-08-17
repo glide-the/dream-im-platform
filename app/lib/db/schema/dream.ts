@@ -1,5 +1,7 @@
 // Generated from an isolated PostgreSQL 16 replay of Admin 0000-0031
-// plus the approved Dream 20260811_07 physical catalog. Do not edit manually.
+// plus the approved Dream 20260811_07 physical catalog.
+// [Sync] 2026-08-16: add Admin-owned Deck aggregate draft revisions and
+// immutable content-version snapshots for Dream capability consumption.
 import { pgTable, uniqueIndex, index, check, bigint, text, timestamp, foreignKey, jsonb, unique, integer, boolean, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
@@ -439,6 +441,9 @@ export const decks = pgTable("decks", {
 	published: boolean().default(false),
 	author_name: text(),
 	install_count: integer().default(0),
+	draft_revision: integer().default(1).notNull(),
+	latest_version: integer().default(0).notNull(),
+	published_draft_revision: integer().default(0).notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
 	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
@@ -451,8 +456,11 @@ export const decks = pgTable("decks", {
 	foreignKey({
 			columns: [table.parent_id],
 			foreignColumns: [table.id],
-			name: "fk_decks_parent_id_decks"
+		name: "fk_decks_parent_id_decks"
 		}),
+	check("ck_decks_draft_revision", sql`draft_revision >= 1`),
+	check("ck_decks_latest_version", sql`latest_version >= 0`),
+	check("ck_decks_published_draft_revision", sql`published_draft_revision >= 0 AND published_draft_revision <= draft_revision`),
 ]);
 
 export const voices = pgTable("voices", {
@@ -493,6 +501,35 @@ export const voices = pgTable("voices", {
 			foreignColumns: [decks.id],
 			name: "fk_voices_deck_id_decks"
 		}).onDelete("cascade"),
+]);
+
+export const deck_versions = pgTable("deck_versions", {
+	id: text().primaryKey().notNull(),
+	deck_id: text().notNull(),
+	version: integer().notNull(),
+	base_version: integer(),
+	source_draft_revision: integer().notNull(),
+	description: text(),
+	snapshot_json: jsonb("snapshot_json").notNull(),
+	content_hash: text().notNull(),
+	created_by: bigint({ mode: "number" }).notNull(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_deck_versions_deck_created").using("btree", table.deck_id.asc().nullsLast().op("text_ops"), table.created_at.desc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+		columns: [table.deck_id],
+		foreignColumns: [decks.id],
+		name: "fk_deck_versions_deck_id_decks"
+	}).onDelete("restrict"),
+	foreignKey({
+		columns: [table.created_by],
+		foreignColumns: [users.id],
+		name: "fk_deck_versions_created_by_users"
+	}).onDelete("restrict"),
+	unique("uq_deck_versions_deck_id_version").on(table.deck_id, table.version),
+	check("ck_deck_versions_version", sql`version >= 1`),
+	check("ck_deck_versions_base_version", sql`base_version IS NULL OR base_version >= 1`),
+	check("ck_deck_versions_source_draft_revision", sql`source_draft_revision >= 1`),
 ]);
 
 export const chat_thread = pgTable("chat_thread", {
