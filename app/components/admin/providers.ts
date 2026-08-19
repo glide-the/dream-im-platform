@@ -1,3 +1,8 @@
+// [Input] Browser Admin session APIs and registered Refine resource-to-permission mappings.
+// [Output] Auth, access-control, and data providers for the Admin workspace.
+// [Pos] Client projection only; every Marketplace request repeats permission checks server-side.
+// [Sync] 2026-08-19: map ClaudePlugin Marketplace read/write actions to the manage permission.
+
 import type {
   AccessControlProvider,
   AuthProvider,
@@ -36,6 +41,7 @@ const registeredResources = new Set([
   "roles",
   "permissions",
   "storage-resources",
+  "claude-plugin-marketplaces",
   "audit-logs",
   "story-workspaces",
   "story-stories",
@@ -80,6 +86,10 @@ const resourcePermission: Record<
   roles: { read: "access.read", write: "access.write" },
   permissions: { read: "access.read", write: "access.read" },
   "storage-resources": { read: "storage.read", write: "storage.write", delete: "storage.delete" },
+  "claude-plugin-marketplaces": {
+    read: "claude_plugin_marketplaces.manage",
+    write: "claude_plugin_marketplaces.manage",
+  },
   "audit-logs": { read: "audit.read", write: "audit.read" },
   "story-workspaces": { read: "story.read", write: "story.write" },
   "story-stories": { read: "story.read", write: "story.write" },

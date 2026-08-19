@@ -1,7 +1,10 @@
-// Generated from an isolated PostgreSQL 16 replay of Admin 0000-0031
-// plus the approved Dream 20260811_07 physical catalog.
+// [Input] Admin Drizzle PostgreSQL schema history and published Dream capabilities.
+// [Output] Typed Drizzle declarations for the shared Dream physical catalog.
+// [Pos] Admin-owned schema source consumed by migrations, control-plane services, and contract tests.
 // [Sync] 2026-08-16: add Admin-owned Deck aggregate draft revisions and
 // immutable content-version snapshots for Dream capability consumption.
+// [Sync] 2026-08-19: add the Admin-owned global ClaudePlugin remote
+// Marketplace catalog, immutable revisions, full-plugin digests, policies, and install lineage.
 import { pgTable, uniqueIndex, index, check, bigint, text, timestamp, foreignKey, jsonb, unique, integer, boolean, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
@@ -965,10 +968,160 @@ export const agent_sessions = pgTable("agent_sessions", {
 	check("ck_agent_sessions_5", sql`runtime_pool_id = runtime_environment_id`),
 ]);
 
+export const claude_plugin_marketplaces = pgTable("claude_plugin_marketplaces", {
+	id: text().primaryKey().notNull(),
+	slug: text().notNull(),
+	display_name: text().notNull(),
+	remote_url: text().notNull(),
+	default_ref: text(),
+	marketplace_name: text(),
+	status: text().default('pending').notNull(),
+	last_sync_error_code: text(),
+	last_sync_error_summary: text(),
+	created_by: text().notNull(),
+	updated_by: text().notNull(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("uq_claude_plugin_marketplaces_slug").using("btree", table.slug.asc().nullsLast().op("text_ops")),
+	uniqueIndex("uq_claude_plugin_marketplaces_remote_url").using("btree", table.remote_url.asc().nullsLast().op("text_ops")),
+	index("idx_claude_plugin_marketplaces_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
+	check("ck_claude_plugin_marketplaces_status", sql`status = ANY (ARRAY['pending'::text, 'active'::text, 'disabled'::text, 'error'::text])`),
+]);
+
+export const claude_plugin_marketplace_sync_runs = pgTable("claude_plugin_marketplace_sync_runs", {
+	id: text().primaryKey().notNull(),
+	marketplace_id: text().notNull(),
+	status: text().default('running').notNull(),
+	requested_ref: text(),
+	resolved_commit_sha: text(),
+	requested_by: text().notNull(),
+	error_code: text(),
+	error_summary: text(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	started_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	finished_at: timestamp({ withTimezone: true, mode: 'string' }),
+}, (table) => [
+	uniqueIndex("uq_claude_plugin_marketplace_sync_runs_running").using("btree", table.marketplace_id.asc().nullsLast().op("text_ops")).where(sql`(status = 'running'::text)`),
+	index("idx_claude_plugin_marketplace_sync_runs_marketplace").using("btree", table.marketplace_id.asc().nullsLast().op("text_ops"), table.created_at.desc().nullsLast().op("timestamptz_ops")),
+	index("idx_claude_plugin_marketplace_sync_runs_status").using("btree", table.status.asc().nullsLast().op("text_ops"), table.created_at.asc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+		columns: [table.marketplace_id],
+		foreignColumns: [claude_plugin_marketplaces.id],
+		name: "fk_claude_plugin_marketplace_sync_runs_marketplace"
+	}).onDelete("restrict"),
+	check("ck_claude_plugin_marketplace_sync_runs_status", sql`status = ANY (ARRAY['running'::text, 'succeeded'::text, 'failed'::text])`),
+]);
+
+export const claude_plugin_marketplace_revisions = pgTable("claude_plugin_marketplace_revisions", {
+	id: text().primaryKey().notNull(),
+	marketplace_id: text().notNull(),
+	sync_run_id: text().notNull(),
+	remote_url: text().notNull(),
+	requested_ref: text(),
+	resolved_commit_sha: text().notNull(),
+	marketplace_name: text().notNull(),
+	manifest_sha256: text().notNull(),
+	manifest_json: jsonb().notNull(),
+	entry_count: integer().notNull(),
+	validation_status: text().notNull(),
+	validation_errors: jsonb().default([]).notNull(),
+	created_by: text().notNull(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	unique("uq_claude_plugin_marketplace_revisions_marketplace_commit").on(table.marketplace_id, table.resolved_commit_sha),
+	unique("uq_claude_plugin_marketplace_revisions_sync_run").on(table.sync_run_id),
+	index("idx_claude_plugin_marketplace_revisions_marketplace").using("btree", table.marketplace_id.asc().nullsLast().op("text_ops"), table.created_at.desc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+		columns: [table.marketplace_id],
+		foreignColumns: [claude_plugin_marketplaces.id],
+		name: "fk_claude_plugin_marketplace_revisions_marketplace"
+	}).onDelete("restrict"),
+	foreignKey({
+		columns: [table.sync_run_id],
+		foreignColumns: [claude_plugin_marketplace_sync_runs.id],
+		name: "fk_claude_plugin_marketplace_revisions_sync_run"
+	}).onDelete("restrict"),
+	check("ck_claude_plugin_marketplace_revisions_commit_sha", sql`resolved_commit_sha ~ '^[0-9a-f]{40}$'::text`),
+	check("ck_claude_plugin_marketplace_revisions_manifest_sha", sql`manifest_sha256 ~ '^[0-9a-f]{64}$'::text`),
+	check("ck_claude_plugin_marketplace_revisions_entry_count", sql`entry_count >= 0`),
+	check("ck_claude_plugin_marketplace_revisions_status", sql`validation_status = ANY (ARRAY['valid'::text, 'invalid'::text])`),
+]);
+
+export const claude_plugin_marketplace_entries = pgTable("claude_plugin_marketplace_entries", {
+	id: text().primaryKey().notNull(),
+	marketplace_id: text().notNull(),
+	revision_id: text().notNull(),
+	package_name: text().notNull(),
+	marketplace_name: text().notNull(),
+	package_spec: text().notNull(),
+	display_name: text().notNull(),
+	description: text(),
+	version: text(),
+	homepage: text(),
+	source_path: text().notNull(),
+	source_json: jsonb().notNull(),
+	plugin_manifest_json: jsonb(),
+	plugin_manifest_sha256: text(),
+	plugin_digest: text(),
+	component_inventory_json: jsonb().default({}).notNull(),
+	compatibility_json: jsonb().default({}).notNull(),
+	validation_status: text().notNull(),
+	validation_errors: jsonb().default([]).notNull(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	unique("uq_claude_plugin_marketplace_entries_revision_package").on(table.revision_id, table.package_name),
+	unique("uq_claude_plugin_marketplace_entries_identity").on(table.id, table.marketplace_id, table.package_name),
+	index("idx_claude_plugin_marketplace_entries_marketplace_package").using("btree", table.marketplace_id.asc().nullsLast().op("text_ops"), table.package_name.asc().nullsLast().op("text_ops")),
+	index("idx_claude_plugin_marketplace_entries_revision").using("btree", table.revision_id.asc().nullsLast().op("text_ops")),
+	foreignKey({
+		columns: [table.marketplace_id],
+		foreignColumns: [claude_plugin_marketplaces.id],
+		name: "fk_claude_plugin_marketplace_entries_marketplace"
+	}).onDelete("restrict"),
+	foreignKey({
+		columns: [table.revision_id],
+		foreignColumns: [claude_plugin_marketplace_revisions.id],
+		name: "fk_claude_plugin_marketplace_entries_revision"
+	}).onDelete("restrict"),
+	check("ck_claude_plugin_marketplace_entries_plugin_manifest_sha", sql`plugin_manifest_sha256 IS NULL OR plugin_manifest_sha256 ~ '^[0-9a-f]{64}$'::text`),
+	check("ck_claude_plugin_marketplace_entries_plugin_digest", sql`plugin_digest IS NULL OR plugin_digest ~ '^sha256:[0-9a-f]{64}$'::text`),
+	check("ck_claude_plugin_marketplace_entries_valid_digest", sql`validation_status <> 'valid'::text OR plugin_digest IS NOT NULL`),
+	check("ck_claude_plugin_marketplace_entries_status", sql`validation_status = ANY (ARRAY['valid'::text, 'invalid'::text])`),
+]);
+
+export const claude_plugin_marketplace_entry_policies = pgTable("claude_plugin_marketplace_entry_policies", {
+	id: text().primaryKey().notNull(),
+	marketplace_id: text().notNull(),
+	package_name: text().notNull(),
+	decision: text().default('blocked').notNull(),
+	approved_entry_id: text(),
+	reason: text(),
+	updated_by: text().notNull(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	unique("uq_claude_plugin_marketplace_entry_policies_package").on(table.marketplace_id, table.package_name),
+	index("idx_claude_plugin_marketplace_entry_policies_decision").using("btree", table.decision.asc().nullsLast().op("text_ops")),
+	foreignKey({
+		columns: [table.marketplace_id],
+		foreignColumns: [claude_plugin_marketplaces.id],
+		name: "fk_claude_plugin_marketplace_entry_policies_marketplace"
+	}).onDelete("restrict"),
+	foreignKey({
+		columns: [table.approved_entry_id, table.marketplace_id, table.package_name],
+		foreignColumns: [claude_plugin_marketplace_entries.id, claude_plugin_marketplace_entries.marketplace_id, claude_plugin_marketplace_entries.package_name],
+		name: "fk_claude_plugin_marketplace_entry_policies_approved_entry"
+	}).onDelete("restrict"),
+	check("ck_claude_plugin_marketplace_entry_policies_decision", sql`decision = ANY (ARRAY['approved'::text, 'blocked'::text])`),
+	check("ck_claude_plugin_marketplace_entry_policies_approval", sql`(decision = 'approved'::text AND approved_entry_id IS NOT NULL) OR (decision = 'blocked'::text AND approved_entry_id IS NULL)`),
+]);
+
 export const claude_plugin_operations = pgTable("claude_plugin_operations", {
 	id: text().primaryKey().notNull(),
 	operation_kind: text().notNull(),
 	requested_package_spec: text().notNull(),
+	marketplace_entry_id: text(),
 	status: text().default('queued').notNull(),
 	phase: text().default('queued').notNull(),
 	progress: integer().default(0).notNull(),
@@ -987,6 +1140,12 @@ export const claude_plugin_operations = pgTable("claude_plugin_operations", {
 	finished_at: timestamp({ withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("idx_claude_plugin_operations_status").using("btree", table.status.asc().nullsLast().op("text_ops"), table.created_at.asc().nullsLast().op("text_ops")),
+	index("idx_claude_plugin_operations_marketplace_entry").using("btree", table.marketplace_entry_id.asc().nullsLast().op("text_ops")),
+	foreignKey({
+		columns: [table.marketplace_entry_id],
+		foreignColumns: [claude_plugin_marketplace_entries.id],
+		name: "fk_claude_plugin_operations_marketplace_entry"
+	}).onDelete("restrict"),
 	check("ck_claude_plugin_operations_1", sql`operation_kind = ANY (ARRAY['install'::text, 'uninstall'::text, 'validate'::text, 'revalidate'::text])`),
 	check("ck_claude_plugin_operations_2", sql`status = ANY (ARRAY['queued'::text, 'running'::text, 'ready'::text, 'error'::text])`),
 ]);
@@ -994,6 +1153,7 @@ export const claude_plugin_operations = pgTable("claude_plugin_operations", {
 export const claude_plugin_installations = pgTable("claude_plugin_installations", {
 	id: text().primaryKey().notNull(),
 	requested_package_spec: text().notNull(),
+	marketplace_entry_id: text(),
 	package_name: text().notNull(),
 	marketplace: text().notNull(),
 	requested_version: text(),
@@ -1017,6 +1177,12 @@ export const claude_plugin_installations = pgTable("claude_plugin_installations"
 }, (table) => [
 	index("idx_claude_plugin_installations_pkg").using("btree", table.package_name.asc().nullsLast().op("text_ops"), table.marketplace.asc().nullsLast().op("text_ops")),
 	index("idx_claude_plugin_installations_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
+	index("idx_claude_plugin_installations_marketplace_entry").using("btree", table.marketplace_entry_id.asc().nullsLast().op("text_ops")),
+	foreignKey({
+		columns: [table.marketplace_entry_id],
+		foreignColumns: [claude_plugin_marketplace_entries.id],
+		name: "fk_claude_plugin_installations_marketplace_entry"
+	}).onDelete("restrict"),
 	unique("uq_claude_plugin_installations_package_name_marketpl_ea25e21de3").on(table.package_name, table.marketplace, table.resolved_version, table.artifact_digest),
 	check("ck_claude_plugin_installations_1", sql`source_type = ANY (ARRAY['claude-official'::text, 'marketplace'::text, 'github'::text, 'platform-builtin'::text])`),
 	check("ck_claude_plugin_installations_2", sql`status = ANY (ARRAY['installing'::text, 'ready'::text, 'error'::text, 'uninstalled'::text])`),

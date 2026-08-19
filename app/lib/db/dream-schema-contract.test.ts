@@ -1,3 +1,8 @@
+// [Input] Complete Admin-owned Dream Drizzle schema export.
+// [Output] Count evidence that canonical and Dream tables remain fully declared.
+// [Pos] Shared PostgreSQL schema inventory contract test.
+// [Sync] 2026-08-19: include five ClaudePlugin Remote Marketplace relations.
+
 import { getTableName, isTable } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
@@ -9,7 +14,7 @@ import {
 } from "./schema";
 
 describe("complete Dream Drizzle schema", () => {
-  it("declares exactly 49 Dream and canonical baseline tables", () => {
+  it("declares exactly 54 Dream and canonical baseline tables", () => {
     const generatedNames = Object.values(dreamSchema)
       .filter(isTable)
       .map(getTableName);
@@ -20,7 +25,7 @@ describe("complete Dream Drizzle schema", () => {
       getTableName(storyWorkspaceStories),
     ];
 
-    expect(generatedNames).toHaveLength(46);
-    expect(new Set(allNames).size).toBe(49);
+    expect(generatedNames).toHaveLength(51);
+    expect(new Set(allNames).size).toBe(54);
   });
 });

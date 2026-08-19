@@ -8,8 +8,8 @@
   },
   "physicalCounts": {
     "tables": 48,
-    "columns": 584,
-    "explicitIndexes": 85,
+    "columns": 589,
+    "explicitIndexes": 87,
     "triggers": 28
   },
   "tableNames": [
@@ -883,9 +883,22 @@
             "notNull": false,
             "ordinal": 22,
             "identity": null
+          },
+          {
+            "name": "marketplace_entry_id",
+            "type": "text",
+            "default": null,
+            "notNull": false,
+            "ordinal": 23,
+            "identity": null
           }
         ],
         "indexes": [
+          {
+            "name": "idx_claude_plugin_installations_marketplace_entry",
+            "valid": true,
+            "definition": "CREATE INDEX idx_claude_plugin_installations_marketplace_entry ON public.claude_plugin_installations USING btree (marketplace_entry_id)"
+          },
           {
             "name": "idx_claude_plugin_installations_pkg",
             "valid": true,
@@ -910,6 +923,12 @@
             "type": "c",
             "validated": true,
             "definition": "CHECK (status = ANY (ARRAY['installing'::text, 'ready'::text, 'error'::text, 'uninstalled'::text]))"
+          },
+          {
+            "name": "fk_claude_plugin_installations_marketplace_entry",
+            "type": "f",
+            "validated": true,
+            "definition": "FOREIGN KEY (marketplace_entry_id) REFERENCES claude_plugin_marketplace_entries(id) ON DELETE RESTRICT"
           },
           {
             "name": "pk_claude_plugin_installations",
@@ -1079,9 +1098,22 @@
             "notNull": false,
             "ordinal": 19,
             "identity": null
+          },
+          {
+            "name": "marketplace_entry_id",
+            "type": "text",
+            "default": null,
+            "notNull": false,
+            "ordinal": 20,
+            "identity": null
           }
         ],
         "indexes": [
+          {
+            "name": "idx_claude_plugin_operations_marketplace_entry",
+            "valid": true,
+            "definition": "CREATE INDEX idx_claude_plugin_operations_marketplace_entry ON public.claude_plugin_operations USING btree (marketplace_entry_id)"
+          },
           {
             "name": "idx_claude_plugin_operations_status",
             "valid": true,
@@ -1101,6 +1133,12 @@
             "type": "c",
             "validated": true,
             "definition": "CHECK (status = ANY (ARRAY['queued'::text, 'running'::text, 'ready'::text, 'error'::text]))"
+          },
+          {
+            "name": "fk_claude_plugin_operations_marketplace_entry",
+            "type": "f",
+            "validated": true,
+            "definition": "FOREIGN KEY (marketplace_entry_id) REFERENCES claude_plugin_marketplace_entries(id) ON DELETE RESTRICT"
           },
           {
             "name": "pk_claude_plugin_operations",
@@ -2608,6 +2646,30 @@
             "notNull": false,
             "ordinal": 20,
             "identity": null
+          },
+          {
+            "name": "draft_revision",
+            "type": "integer",
+            "default": "1",
+            "notNull": true,
+            "ordinal": 21,
+            "identity": null
+          },
+          {
+            "name": "latest_version",
+            "type": "integer",
+            "default": "0",
+            "notNull": true,
+            "ordinal": 22,
+            "identity": null
+          },
+          {
+            "name": "published_draft_revision",
+            "type": "integer",
+            "default": "0",
+            "notNull": true,
+            "ordinal": 23,
+            "identity": null
           }
         ],
         "indexes": [
@@ -2619,6 +2681,24 @@
         ],
         "triggers": [],
         "constraints": [
+          {
+            "name": "ck_decks_draft_revision",
+            "type": "c",
+            "validated": true,
+            "definition": "CHECK (draft_revision >= 1)"
+          },
+          {
+            "name": "ck_decks_latest_version",
+            "type": "c",
+            "validated": true,
+            "definition": "CHECK (latest_version >= 0)"
+          },
+          {
+            "name": "ck_decks_published_draft_revision",
+            "type": "c",
+            "validated": true,
+            "definition": "CHECK (published_draft_revision >= 0 AND published_draft_revision <= draft_revision)"
+          },
           {
             "name": "fk_decks_owner_id_users",
             "type": "f",
@@ -7057,6 +7137,6 @@
       }
     ]
   },
-  "catalogSha256": "66ca96bb954a934c926c4aaae8b2037fa4e651218bb2ee904052a88b91194d75",
-  "contractSha256": "50d5bcbff7c69d13a53e74a8a47ad961c71f143e0c652dea3af77601073002cc"
+  "catalogSha256": "cd065c30ad8e6369c52f4f2ddc4c3abc91d263618e8f25ce686dd992a57115fe",
+  "contractSha256": "c4dffec3430e9b6854c49fccee6f48cad0d8e6c63919b36745f0162044660eaf"
 }

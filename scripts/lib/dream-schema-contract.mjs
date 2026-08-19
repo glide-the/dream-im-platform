@@ -1,3 +1,8 @@
+// [Input] Checked Dream physical table set and a read-only PostgreSQL catalog connection.
+// [Output] Canonical physical catalog/count/hash receipt for migration adoption and drift validation.
+// [Pos] Shared schema-contract capture used by cutover generation and disposable PostgreSQL E2E.
+// [Sync] 2026-08-19: include Deck draft revision and ClaudePlugin Marketplace lineage columns/indexes in physical counts.
+
 import { createHash } from "node:crypto";
 
 export const DREAM_SCHEMA_CONTRACT_FORMAT = "ink-admin-dream-schema-contract-v1";
@@ -9,8 +14,8 @@ export const DREAM_CORE_COUNTS = Object.freeze({
 });
 export const DREAM_PHYSICAL_COUNTS = Object.freeze({
   tables: 48,
-  columns: 584,
-  explicitIndexes: 85,
+  columns: 589,
+  explicitIndexes: 87,
   triggers: 28,
 });
 
