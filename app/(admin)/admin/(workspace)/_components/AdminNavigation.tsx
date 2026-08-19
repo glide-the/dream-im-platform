@@ -1,3 +1,8 @@
+// [Input] Current protected Admin path, theme state, and permission-filtered navigation descriptors.
+// [Output] Accessible Admin workspace navigation including global ClaudePlugin Marketplace operations.
+// [Pos] Admin chrome; resource authorization remains server-owned.
+// [Sync] 2026-08-19: add the Remote Marketplace resource entry under operations.
+
 "use client";
 
 import Link from "next/link";
@@ -151,6 +156,7 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
     label: "资源管理",
     items: [
       { label: "文件存储", href: "/admin/resources/storage", permission: "storage.read", mark: "FS" },
+      { label: "插件市场", href: "/admin/resources/claude-plugin-marketplaces", permission: "claude_plugin_marketplaces.manage", mark: "MP" },
     ],
   },
   {

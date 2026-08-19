@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// [Input] Self-owned disposable PostgreSQL 16 plus the full Admin Drizzle journal and frozen Dream adoption fixtures.
+// [Output] Fresh/adopted/partial/concurrent/idempotent migration evidence through Remote Marketplace migration 0037.
+// [Pos] Destructive-safe shared Dream schema cutover harness; it creates and removes only its randomized Docker resources.
+// [Sync] 2026-08-19: include 0037 Remote Marketplace receipt/capability counts in every success mode.
 
 import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -273,8 +277,8 @@ async function verifySuccess(name, { expectedLegacyHead = null, sampleUser = fal
       : (await client.query(
           "SELECT version_num FROM public.dream_alembic_version",
         )).rows[0]?.version_num ?? null;
-    if (row.receipts !== 35 || row.distinct_receipts !== 35
-      || row.capabilities !== 5 || row.capability_hashes !== 2
+    if (row.receipts !== 38 || row.distinct_receipts !== 38
+      || row.capabilities !== 7 || row.capability_hashes !== 4
       || row.lifecycle_capability !== 1 || row.placement_capability !== 1
       || row.nonlocal_receipts !== 0 || row.nonlocal_sessions !== 0
       || row.continuing_runs !== 0 || row.continuing_transitions !== 0
@@ -449,8 +453,8 @@ try {
     idempotent: true,
     migrationCheck: true,
     concurrentMigrators: 2,
-    receipts: 35,
-    capabilities: 5,
+    receipts: 38,
+    capabilities: 7,
     legacyV1ReceiptReused: true,
     catalogSha256: expectedContract.catalogSha256,
     disposablePostgresRemoved: true,
