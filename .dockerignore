@@ -8,6 +8,10 @@ packages/*/dist
 !.env.local.example
 docker
 !docker/entrypoint.sh
+deploy
+backups
+*.sql
+*.sql.gz
 agent-workspaces
 tests
 html

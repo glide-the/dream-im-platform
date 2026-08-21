@@ -2,7 +2,7 @@
 # [Input] REMOTE_* SSH settings, mode-0600 target env, and a local embedded PostgreSQL env/data directory.
 # [Output] Admin/Gateway plus embedded PostgreSQL release workflow for Alibaba Cloud ECS.
 # [Pos] Primary Admin-owned Remote SSH release; MinIO and standalone PostgreSQL are absent.
-# [Sync] 2026-08-21: adopt portable compressed-SQL import, package migration, and embedded PG verification.
+# [Sync] 2026-08-21: portable non-interactive dump/import, package migration, and embedded PG verification.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +22,7 @@ REMOTE_ADMIN_ROLLBACK_IMAGE="${REMOTE_ADMIN_ROLLBACK_IMAGE:-ink-memory-admin:rem
 REMOTE_SETUP_NGINX="${REMOTE_SETUP_NGINX:-1}"
 REMOTE_BUILD_PULL="${REMOTE_BUILD_PULL:-0}"
 REMOTE_BUILD_NO_CACHE="${REMOTE_BUILD_NO_CACHE:-0}"
+REMOTE_BOOTSTRAP_DUMP="${REMOTE_BOOTSTRAP_DUMP:-}"
 LOCAL_SOURCE_ENV_FILE="${LOCAL_SOURCE_ENV_FILE:-.env.local}"
 DRY_RUN="${DRY_RUN:-0}"
 COMMAND=""
@@ -46,6 +47,8 @@ Commands:
   deploy      Routine release: sync, build, migrate, start, and verify.
   bootstrap   First release: import the package-managed local embedded PG into an
               empty embedded database, migrate, start, and verify.
+  bootstrap-resume
+              Resume a first release after its image build already succeeded.
   verify      Check embedded PostgreSQL, Admin health, and local nginx routing.
   ps          Show Compose service status.
   logs        Follow Admin and embedded PostgreSQL logs.
@@ -60,6 +63,8 @@ Required:
 Bootstrap reads the source cluster identity and credentials from mode-0600
 LOCAL_SOURCE_ENV_FILE (default: .env.local). The source must use
 INK_DATABASE_MODE=embedded-postgres and an existing explicit data directory.
+Set REMOTE_BOOTSTRAP_DUMP to an existing non-empty .sql.gz under the remote
+backups directory when resuming after a completed upload.
 
 Generate deploy/remote-ssh/.env first with prepare-env.sh. PostgreSQL listens
 only inside the container/shared Docker network. FILE_STORAGE_TYPE is disabled;
@@ -240,6 +245,16 @@ verify() {
 }
 
 seed_database() {
+  if [[ -n "${REMOTE_BOOTSTRAP_DUMP}" ]]; then
+    [[ "${REMOTE_BOOTSTRAP_DUMP}" == "${REMOTE_APP_DIR}"/backups/*.sql.gz ]] || \
+      err "REMOTE_BOOTSTRAP_DUMP must be a .sql.gz under ${REMOTE_APP_DIR}/backups."
+    ssh_run "test -s $(quote "${REMOTE_BOOTSTRAP_DUMP}")"
+    remote_compose run --rm --no-deps \
+      -v "${REMOTE_BOOTSTRAP_DUMP}:/backup/bootstrap.sql.gz:ro" \
+      ink-memory-admin node /app/packages/db/dist/database-io.js restore-sql-gzip /backup/bootstrap.sql.gz
+    log "Imported the retained remote dump into the empty embedded PostgreSQL volume: ${REMOTE_BOOTSTRAP_DUMP}"
+    return 0
+  fi
   local source_env="${REPO_ROOT}/${LOCAL_SOURCE_ENV_FILE}" source_mode source_data_dir
   local source_port source_user source_password source_database source_env_mode
   [[ -f "${source_env}" ]] || err "Local embedded source env not found: ${source_env}."
@@ -261,14 +276,18 @@ seed_database() {
   command -v pg_dump >/dev/null 2>&1 || err "Local pg_dump is required for bootstrap."
   command -v gzip >/dev/null 2>&1 || err "Local gzip is required for bootstrap."
   [[ "${DRY_RUN}" != "1" ]] || { log "Would start the exact local embedded source, dump it, and restore only into an empty target."; return 0; }
-  local dump_file plain_file dump_name remote_dump
-  dump_file="$(mktemp "${TMPDIR:-/tmp}/ink-memory-bootstrap.XXXXXX.sql.gz")"; trap 'rm -f "${dump_file}"' RETURN
-  plain_file="${dump_file%.gz}"; trap 'rm -f "${dump_file}" "${plain_file}"' RETURN
+  local temp_base dump_file plain_file dump_name remote_dump
+  temp_base="$(mktemp "${TMPDIR:-/tmp}/ink-memory-bootstrap.XXXXXX")"
+  rm -f "${temp_base}"
+  dump_file="${temp_base}.sql.gz"
+  plain_file="${temp_base}.sql"
+  trap 'rm -f "${dump_file}" "${plain_file}"' RETURN
   log "Creating a consistent compressed SQL dump from the package-managed local embedded PostgreSQL; contents will not be printed."
   pnpm --filter @ink-memory/db build >/dev/null
   env INK_DATABASE_MODE=embedded-postgres EMBEDDED_POSTGRES_DATA_DIR="${source_data_dir}" \
     EMBEDDED_POSTGRES_PORT="${source_port}" POSTGRES_USER="${source_user}" \
     POSTGRES_PASSWORD="${source_password}" POSTGRES_DB="${source_database}" \
+    PGPASSWORD="${source_password}" \
     RUN_DB_MIGRATIONS=false node packages/db/dist/supervise.js \
     pg_dump --format=plain --no-owner --no-privileges --host=127.0.0.1 \
     --port="${source_port}" --username="${source_user}" --dbname="${source_database}" \
@@ -302,6 +321,12 @@ bootstrap_deploy() {
   command_check; setup_nginx; sync_files; ensure_network; snapshot_image; build_image; seed_database; run_migration; start_admin; verify
 }
 
+resume_bootstrap() {
+  command_check; setup_nginx; sync_files; ensure_network
+  ssh_run "docker image inspect $(quote "${REMOTE_ADMIN_IMAGE}") >/dev/null"
+  seed_database; run_migration; start_admin; verify
+}
+
 rollback() {
   ssh_run "docker image inspect $(quote "${REMOTE_ADMIN_ROLLBACK_IMAGE}") >/dev/null"
   local current_image="${REMOTE_ADMIN_IMAGE}"; REMOTE_ADMIN_IMAGE="${REMOTE_ADMIN_ROLLBACK_IMAGE}"
@@ -329,6 +354,7 @@ case "${COMMAND:-help}" in
   migrate) command_check; run_migration ;;
   deploy|start|up) routine_deploy ;;
   bootstrap) bootstrap_deploy ;;
+  bootstrap-resume) resume_bootstrap ;;
   verify) command_check; verify ;;
   ps) require_config; remote_compose ps ;;
   logs) require_config; remote_compose logs -f --tail=100 ink-memory-admin ;;

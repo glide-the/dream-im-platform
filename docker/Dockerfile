@@ -1,7 +1,7 @@
 # [Input] pnpm workspace sources, @ink-memory/db, immutable Drizzle history, and Next.js app.
 # [Output] Single Admin image supervising embedded PostgreSQL and explicit migration tools.
 # [Pos] Shared local/Alibaba Cloud production image; no separate database or MinIO image is required.
-# [Sync] 2026-08-21: pin PG18 maintenance clients to the embedded server major.
+# [Sync] 2026-08-22: pre-create native library aliases; serialize ECS build stages.
 FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
@@ -12,7 +12,7 @@ COPY patches/ patches/
 RUN pnpm install --frozen-lockfile
 COPY . .
 ARG NEXT_BUILD_CPUS=1
-ARG NEXT_BUILD_MAX_OLD_SPACE_MB=1024
+ARG NEXT_BUILD_MAX_OLD_SPACE_MB=640
 ENV NEXT_BUILD_CPUS=${NEXT_BUILD_CPUS}
 ENV NODE_OPTIONS=--max-old-space-size=${NEXT_BUILD_MAX_OLD_SPACE_MB}
 ENV NEXT_STANDALONE_OUTPUT=true
@@ -28,23 +28,35 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV HOME=/home/node
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
+ARG PGDG_MIRROR=https://apt.postgresql.org/pub/repos/apt
 
-RUN apt-get update \
+# Keep these builder copies before runtime package installation. This creates an
+# explicit stage dependency, so BuildKit cannot run apt and Next.js compilation
+# concurrently on the 2 GiB ECS host.
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /db-runtime ./packages/db
+RUN node --input-type=module -e \
+  'import("/app/packages/db/dist/embedded-postgres-native.js").then((runtime) => runtime.prepareEmbeddedPostgresNativeRuntime())'
+RUN sed -i \
+    -e "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+    -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+    /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl gosu tini \
   && install -d /usr/share/postgresql-common/pgdg \
   && curl --fail --silent --show-error \
     -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
     https://www.postgresql.org/media/keys/ACCC4CF8.asc \
   && printf '%s\n' \
-    'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' \
+    "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] ${PGDG_MIRROR} bookworm-pgdg main" \
     > /etc/apt/sources.list.d/pgdg.list \
   && apt-get update \
   && apt-get install -y --no-install-recommends postgresql-client-18 \
   && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/drizzle ./drizzle
-COPY --from=builder /db-runtime ./packages/db
 COPY docker/entrypoint.sh /usr/local/bin/ink-memory-entrypoint
 RUN chmod +x /usr/local/bin/ink-memory-entrypoint
 

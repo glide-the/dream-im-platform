@@ -43,8 +43,15 @@ Compose 只有 `ink-memory-admin`：镜像内 `@ink-memory/db` supervisor 以非
 到远端 `backups/`，然后调用
 `@ink-memory/db` 流式 restore。纯 SQL 避免 `pg_restore` archive 版本不兼容；内嵌目标
 已有任意用户表时立即失败、不覆盖，本机数据目录也不删除。MinIO 数据不上传、不初始化。
+dump 进程只通过子进程环境接收 `PGPASSWORD`，不会等待交互输入或打印 secret。
 需要使用其他源 env 时显式设置
 `LOCAL_SOURCE_ENV_FILE`。
+若镜像已经成功构建、但首次 dump/import 在后续步骤失败，可执行
+`./deploy/remote-ssh/deploy.sh bootstrap-resume`；它先验证现有目标 image，再从空库
+guard 继续导入、migration、启动与验证，不重复消耗 ECS 内存构建镜像。
+若 dump 已完整上传，额外设置
+`REMOTE_BOOTSTRAP_DUMP=/srv/ink-admin-memory/backups/<file>.sql.gz` 可复用远端文件；路径
+必须位于当前 `REMOTE_APP_DIR/backups/` 且非空，不会重复传输大体积数据。
 
 维护镜像同时固定 `postgresql-client-18`，与 embedded server major 一致；dump/restore
 命令不会退回 Debian 默认的旧 major 客户端。
@@ -54,6 +61,14 @@ Compose 只有 `ink-memory-admin`：镜像内 `@ink-memory/db` supervisor 以非
 `deploy` 顺序固定为：preflight → nginx → rsync → shared network → image snapshot →
 single image build → package migration → migration check → Admin start → PostgreSQL/
 Admin/nginx verify。
+
+面向当前 2 GiB ECS，Dockerfile 先完成 Next.js builder，再安装 runner 的系统包，借由
+stage dependency 阻止 BuildKit 同时运行 Next 编译与 `apt`。远端默认只启用 1 个 Next
+worker，并把每个 Node 进程的 V8 old-space 上限设为 `640MB`；该限制只影响镜像构建。
+生成的阿里云 env 同时把 Debian、Debian Security 与 PGDG build mirror 指向 ECS VPC
+镜像地址；Dockerfile 的默认值仍是上游官方源，因此其他平台不继承阿里云网络假设。
+部署脚本、文档、`backups/` 与 SQL dump 不进入 image build context，发布编排调整不会
+使 Next builder 缓存失效，数据库备份也不会进入 BuildKit cache。
 
 镜像固定 `RUN_DB_MIGRATIONS=false`，入口遇到 `true` 会失败。业务启动和重启都不会
 执行 DDL。migration 保留 38 个历史 receipt 的连续前缀和 hash 校验。
@@ -92,7 +107,8 @@ migration，再启动常驻容器。
 - `EMBEDDED_POSTGRES_DATA_DIR`、`EMBEDDED_POSTGRES_PORT`
 - `EMBEDDED_POSTGRES_SHARED_BUFFERS`（ECS 默认 `96MB`）
 - `EMBEDDED_POSTGRES_MAX_CONNECTIONS`（ECS 默认 `50`）
-- `NEXT_BUILD_CPUS`、`NEXT_BUILD_MAX_OLD_SPACE_MB`（只约束镜像 build，ECS 为 `1`/`1024`）
+- `NEXT_BUILD_CPUS`、`NEXT_BUILD_MAX_OLD_SPACE_MB`（只约束镜像 build，ECS 为 `1`/`640`）
+- `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR`、`PGDG_MIRROR`（只约束镜像 build）
 - Admin、Gateway、Provider 加密和 Product API secrets
 - `FILE_STORAGE_TYPE=disabled`
 - `RUN_DB_MIGRATIONS=false`

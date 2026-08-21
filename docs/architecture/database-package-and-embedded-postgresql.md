@@ -68,8 +68,14 @@ schema-generation config、目标解析与发布执行权均在 `@ink-memory/db`
   相同 embedded PostgreSQL major/runtime，并由人工确认目标 volume。
 - `EMBEDDED_POSTGRES_SHARED_BUFFERS` 默认 `96MB`，`max_connections` 默认 `50`，适合
   当前 1.6GB ECS；它们是配置，不是业务环境分支。
-- Next.js 镜像构建通过 `NEXT_BUILD_CPUS` 与 `NEXT_BUILD_MAX_OLD_SPACE_MB` 显式限制 worker
-  和 V8 heap；这只属于 build harness，不改变运行时业务路径。
+- Next.js 镜像构建通过 `NEXT_BUILD_CPUS=1` 与
+  `NEXT_BUILD_MAX_OLD_SPACE_MB=640` 显式限制 worker 和 V8 heap；runner 的系统包安装位于
+  builder 产物复制之后，确保 BuildKit 在 2 GiB ECS 上串行执行高峰阶段。这只属于
+  build harness，不改变运行时业务路径。
+- Debian 与 PGDG 软件源通过 build args 注入；阿里云发布 env 使用 ECS VPC 镜像，默认
+  build args 保持官方上游地址，不把云厂商网络策略写入应用运行时。
+- production image 以 root 在 build 阶段预建 native OpenSSL soname alias；容器运行时只
+  由非 root `node` 读取，避免 one-off migration/restore 修改 application layer。
 
 ## 暂停对象存储
 

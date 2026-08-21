@@ -1,7 +1,7 @@
 # [Input] mode-0600 deploy env and the pre-created shared platform network.
 # [Output] One Admin/Gateway container with embedded PostgreSQL and persistent volumes.
 # [Pos] Alibaba Cloud ECS stack owned by Admin; MinIO and standalone PostgreSQL are absent.
-# [Sync] 2026-08-21: collapse PostgreSQL into Admin and explicitly disable object storage.
+# [Sync] 2026-08-21: serialize low-memory builds; embedded PG and storage-disabled topology.
 
 services:
   ink-memory-admin:
@@ -9,8 +9,11 @@ services:
       context: ../..
       dockerfile: docker/Dockerfile
       args:
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org/debian}
+        DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
+        PGDG_MIRROR: ${PGDG_MIRROR:-https://apt.postgresql.org/pub/repos/apt}
         NEXT_BUILD_CPUS: ${NEXT_BUILD_CPUS:-1}
-        NEXT_BUILD_MAX_OLD_SPACE_MB: ${NEXT_BUILD_MAX_OLD_SPACE_MB:-1024}
+        NEXT_BUILD_MAX_OLD_SPACE_MB: ${NEXT_BUILD_MAX_OLD_SPACE_MB:-640}
     image: ${REMOTE_ADMIN_IMAGE:-ink-memory-admin:remote}
     restart: unless-stopped
     stop_grace_period: 60s

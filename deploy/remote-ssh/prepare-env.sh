@@ -2,8 +2,7 @@
 # [Input] docker/.env plus Admin and Dream public origins.
 # [Output] Mode-0600 env for Admin with embedded PostgreSQL and disabled storage.
 # [Pos] Alibaba Cloud Admin runtime config generator in deploy/remote-ssh/.
-# [Sync] 2026-08-21: preserve database/auth secrets while removing MinIO and
-#                    selecting the embedded PostgreSQL topology explicitly.
+# [Sync] 2026-08-21: preserve secrets, disable MinIO, and cap low-memory ECS builds.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,8 +51,11 @@ awk -F= '
   printf 'REMOTE_ADMIN_BIND_HOST=127.0.0.1\n'
   printf 'REMOTE_ADMIN_PORT=%s\n' "${REMOTE_ADMIN_PORT}"
   printf 'REMOTE_ADMIN_DOMAIN=%s\n' "${admin_domain}"
+  printf 'DEBIAN_MIRROR=http://mirrors.cloud.aliyuncs.com/debian\n'
+  printf 'DEBIAN_SECURITY_MIRROR=http://mirrors.cloud.aliyuncs.com/debian-security\n'
+  printf 'PGDG_MIRROR=http://mirrors.cloud.aliyuncs.com/postgresql/repos/apt\n'
   printf 'NEXT_BUILD_CPUS=1\n'
-  printf 'NEXT_BUILD_MAX_OLD_SPACE_MB=1024\n'
+  printf 'NEXT_BUILD_MAX_OLD_SPACE_MB=640\n'
   printf 'EMBEDDED_POSTGRES_SHARED_BUFFERS=96MB\n'
   printf 'EMBEDDED_POSTGRES_MAX_CONNECTIONS=50\n'
   printf 'ADMIN_ORIGIN_ALLOWLIST=%s\n' "${ADMIN_PUBLIC_ORIGIN}"
