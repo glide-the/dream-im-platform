@@ -1,22 +1,26 @@
+// [Input] Explicit FILE_STORAGE_TYPE capability and configured storage providers.
+// [Output] Process-stable file-storage implementation plus driver metadata.
+// [Pos] File-storage composition root for Admin and public storage APIs.
+// [Sync] 2026-08-21: default to an explicit disabled driver while MinIO is removed.
 import "server-only";
 import { IS_DEV } from "@/lib/const";
 import type { FileStorage } from "./file-storage.interface";
 import { createS3FileStorage } from "./s3-file-storage";
 import { createVercelBlobStorage } from "./vercel-blob-storage";
+import { createDisabledFileStorage } from "./disabled-file-storage";
 import logger from "@/lib/logger";
 
-export type FileStorageDriver = "vercel-blob" | "s3";
+export type FileStorageDriver = "disabled" | "vercel-blob" | "s3";
 
 const resolveDriver = (): FileStorageDriver => {
   const candidate = process.env.FILE_STORAGE_TYPE;
 
   const normalized = candidate?.trim().toLowerCase();
-  if (normalized === "vercel-blob" || normalized === "s3") {
+  if (normalized === "disabled" || normalized === "vercel-blob" || normalized === "s3") {
     return normalized;
   }
 
-  // Default to Vercel Blob
-  return "vercel-blob";
+  return "disabled";
 };
 
 declare global {
@@ -28,6 +32,8 @@ const storageDriver = resolveDriver();
 const createFileStorage = (): FileStorage => {
   logger.info(`Creating file storage: ${storageDriver}`);
   switch (storageDriver) {
+    case "disabled":
+      return createDisabledFileStorage();
     case "vercel-blob":
       return createVercelBlobStorage();
     case "s3":

@@ -1,6 +1,79 @@
 # Ink Memory Admin 部署
 
-## Docker Compose
+Admin 仓库拥有 Admin/Gateway、内嵌 PostgreSQL、Artifact volume 与 Drizzle
+migration。Dream 只发布 frontend/backend，通过共享网络消费 Admin 和数据库。
+独立 PostgreSQL 与 MinIO 服务已经移除，文件存储当前显式禁用。
+
+架构细节见
+[数据库 Package 与内嵌 PostgreSQL](architecture/database-package-and-embedded-postgresql.md)。
+
+## 阿里云 ECS
+
+生产入口是 [`../deploy/remote-ssh/deploy.sh`](../deploy/remote-ssh/deploy.sh)：
+
+```bash
+ADMIN_PUBLIC_ORIGIN=https://ink-admin.suoxya.com \
+DREAM_PUBLIC_ORIGIN=https://ink-frontend.suoxya.com \
+./deploy/remote-ssh/prepare-env.sh
+
+export REMOTE_SSH_HOST=<ecs-host-or-ip>
+export REMOTE_SSH_USER=<ssh-user>
+export REMOTE_APP_DIR=/srv/ink-admin-memory
+
+./deploy/remote-ssh/deploy.sh check
+./deploy/remote-ssh/deploy.sh deploy
+```
+
+Compose 只有 `ink-memory-admin`：镜像内 `@ink-memory/db` supervisor 以非 root
+运行 PostgreSQL 18.1 与 Next.js。数据分别持久化到
+`ink_memory_postgres_data`、`ink_memory_artifact_data`。Admin 使用
+`127.0.0.1:5432`；Dream 通过 private network alias
+`ink-memory-postgres:5432` 访问；5432 不映射到 ECS host。
+
+### 首次导入现有数据库
+
+首次空目标直接使用 Admin package 管理的本机内嵌 PostgreSQL：
+
+```bash
+./deploy/remote-ssh/deploy.sh bootstrap
+```
+
+脚本从 mode-0600 `.env.local` 验证 `INK_DATABASE_MODE=embedded-postgres`、绝对数据
+目录与 `PG_VERSION`，临时启动该 cluster 后生成 gzip 压缩的纯 SQL dump，并保留一份
+到远端 `backups/`，然后调用
+`@ink-memory/db` 流式 restore。纯 SQL 避免 `pg_restore` archive 版本不兼容；内嵌目标
+已有任意用户表时立即失败、不覆盖，本机数据目录也不删除。MinIO 数据不上传、不初始化。
+需要使用其他源 env 时显式设置
+`LOCAL_SOURCE_ENV_FILE`。
+
+维护镜像同时固定 `postgresql-client-18`，与 embedded server major 一致；dump/restore
+命令不会退回 Debian 默认的旧 major 客户端。
+
+### 发布顺序
+
+`deploy` 顺序固定为：preflight → nginx → rsync → shared network → image snapshot →
+single image build → package migration → migration check → Admin start → PostgreSQL/
+Admin/nginx verify。
+
+镜像固定 `RUN_DB_MIGRATIONS=false`，入口遇到 `true` 会失败。业务启动和重启都不会
+执行 DDL。migration 保留 38 个历史 receipt 的连续前缀和 hash 校验。
+
+## 本机与 Docker
+
+本机默认完全不需要 PostgreSQL 容器：
+
+```bash
+pnpm install
+pnpm env:setup
+pnpm db:migrate
+pnpm dev
+```
+
+`.env.local` 明确配置 `INK_DATABASE_MODE=embedded-postgres`，默认数据目录
+`.ink-memory/postgres`、端口 `54329`。`pnpm dev` 由 package supervisor 同时管理
+PG 与 Next.js；停止开发进程会干净关闭 PG，数据目录保留。
+
+需要容器 parity 时：
 
 ```bash
 pnpm env:setup
@@ -8,33 +81,42 @@ pnpm docker:up
 pnpm docker:logs
 ```
 
-`pnpm env:setup` 会生成 `docker/.env`、安全随机密钥、PostgreSQL 密码和 MinIO 凭据，并保留 Storage/S3/Vercel Blob 配置。Compose 包含 `ink-memory-admin`、PostgreSQL、MinIO 与一次性 Bucket 初始化服务。
+本地 Compose 仍只有一个 Admin service，并将其内嵌 PG 绑定到
+`127.0.0.1:5433` 供本机工具访问。`pnpm docker:up` 先用 one-off container 执行
+migration，再启动常驻容器。
 
-## 必填环境变量
+## 配置合同
 
-- `DATABASE_URL`：容器内由 Compose 生成，数据库名默认 `ink-memory`
-- `ADMIN_SESSION_SECRET`
-- `ADMIN_BOOTSTRAP_TOKEN`
-- `GATEWAY_API_KEY_PEPPER`
-- `AI_CREDENTIAL_ENCRYPTION_KEY`
-- `ADMIN_ORIGIN_ALLOWLIST`
+- `INK_DATABASE_MODE=embedded-postgres`
+- `POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DB`
+- `EMBEDDED_POSTGRES_DATA_DIR`、`EMBEDDED_POSTGRES_PORT`
+- `EMBEDDED_POSTGRES_SHARED_BUFFERS`（ECS 默认 `96MB`）
+- `EMBEDDED_POSTGRES_MAX_CONNECTIONS`（ECS 默认 `50`）
+- `NEXT_BUILD_CPUS`、`NEXT_BUILD_MAX_OLD_SPACE_MB`（只约束镜像 build，ECS 为 `1`/`1024`）
+- Admin、Gateway、Provider 加密和 Product API secrets
+- `FILE_STORAGE_TYPE=disabled`
+- `RUN_DB_MIGRATIONS=false`
 
-文件存储默认连接 Compose 内置 MinIO；也可按驱动补充 `BLOB_READ_WRITE_TOKEN`，或外部 `FILE_STORAGE_S3_BUCKET`、Region 与 AWS/S3 凭据。`pnpm env:setup` 会保留外部配置，不会伪造云平台凭据。
+`prepare-env.sh` 从 mode-0600 `docker/.env` 保留 PostgreSQL 和控制面 secret，删除
+MinIO/S3/AWS 字段并生成 ECS origin/topology。两个 env 文件都不得提交或打印。
 
-生产环境设置 `ADMIN_CONSOLE_ENABLED=true`。默认 `RUN_DB_MIGRATIONS=true` 会在应用启动前通过 `scripts/migrate.mjs` 加锁执行已生成迁移。Provider API Key 应在管理后台加密录入，不写入部署环境文件。
-
-## 首次初始化
-
-Compose 完成迁移并启动应用后，第一次打开 `/admin` 会自动显示首次设置页。默认邮箱为 `dmeck@suoxya.com`，默认密码为 `test123456`；生产部署必须在提交前换成独立强密码。
-
-把 `docker/.env` 中自动生成的 `ADMIN_BOOTSTRAP_TOKEN` 粘贴到“首次启动密钥”，点击“创建管理员并进入控制台”。Token 不会被服务端渲染到 HTML，也不会由浏览器自动读取。Bootstrap 只能成功一次；已有管理员时入口自动切换为登录页。
-
-## 健康与备份
+## 健康、日志、备份与回滚
 
 ```bash
-docker compose exec postgres pg_isready -U ink_memory -d ink-memory
-docker compose exec minio curl -f http://localhost:9000/minio/health/ready
-docker compose exec -T postgres pg_dump -U ink_memory -d ink-memory > ink-memory.sql
+./deploy/remote-ssh/deploy.sh verify
+./deploy/remote-ssh/deploy.sh ps
+./deploy/remote-ssh/deploy.sh logs
+./deploy/remote-ssh/deploy.sh backup
+./deploy/remote-ssh/deploy.sh rollback
 ```
 
-恢复前必须确认目标实例并安排维护窗口；不要对未知或共享数据库执行迁移、DROP 或 TRUNCATE。
+`verify` 在运行容器内执行 DB identity query，再验证 `/admin/login` 和 nginx。
+`backup` 短暂停止 Admin，对关闭的 cluster volume 生成物理 `tar.gz`，随后立即启动并
+复验。物理备份只能恢复到相同 embedded PostgreSQL major/runtime；恢复必须人工确认
+目标 volume。`rollback` 只换应用镜像，不回滚或删除 PG volume。
+
+## 文件存储
+
+当前没有 MinIO、bucket、storage volume 或端口。`GET /api/storage` 返回
+`FILE_STORAGE_DISABLED`；上传、下载和 Admin storage resource fail closed。
+恢复对象存储必须显式选择 Vercel Blob 或外部 S3，并同步恢复凭据、部署变量和验收。

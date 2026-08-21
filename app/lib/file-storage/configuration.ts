@@ -1,3 +1,7 @@
+// [Input] Resolved storage driver and provider-specific runtime variables.
+// [Output] Fail-closed storage capability readiness receipt.
+// [Pos] Guard used before Admin and public storage operations.
+// [Sync] 2026-08-21: report FILE_STORAGE_DISABLED as intentional deployment policy.
 import { IS_VERCEL_ENV } from "@/lib/const";
 import { storageDriver } from "./index";
 
@@ -8,6 +12,13 @@ export type StorageCheckResult = {
 };
 
 export function checkStorageConfiguration(): StorageCheckResult {
+  if (storageDriver === "disabled") {
+    return {
+      isValid: false,
+      error: "FILE_STORAGE_DISABLED",
+      solution: "Object storage is temporarily disabled; enable vercel-blob or s3 explicitly before using file APIs.",
+    };
+  }
   if (storageDriver === "vercel-blob" && !process.env.BLOB_READ_WRITE_TOKEN) {
     return {
       isValid: false,

@@ -9,6 +9,7 @@
 - [ink-dream-memory Billing / Subscription / Gateway 架构](architecture/ink-dream-memory/06-billing-subscription-gateway-integration.md)
 - [ink-dream-memory 产品交互设计](design/ink-dream-memory/README.md)
 - [项目架构设计说明](architecture/项目架构设计说明.md)
+- [数据库 Package 与内嵌 PostgreSQL](architecture/database-package-and-embedded-postgresql.md)
 - [部署指南](deploy.md)
 
 ## Dream 当前范围

@@ -1,3 +1,7 @@
+// [Input] Explicit storage driver environment and the public storage capability route.
+// [Output] Driver/configuration receipts including the disabled base topology.
+// [Pos] API contract test for storage capability discovery.
+// [Sync] 2026-08-21: make disabled storage the expected default while MinIO is paused.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -15,15 +19,15 @@ describe("GET /api/storage", () => {
     delete process.env.AWS_REGION;
   });
 
-  it("returns storage info with default driver (vercel-blob)", async () => {
-    process.env.BLOB_READ_WRITE_TOKEN = "test-token";
+  it("returns an explicit disabled receipt by default", async () => {
     const { GET } = await importRoute();
     const response = await GET();
     const data = await response.json();
     
-    expect(data.type).toBe("vercel-blob");
-    expect(data.supportsDirectUpload).toBe(true);
-    expect(data.isConfigured).toBe(true);
+    expect(data.type).toBe("disabled");
+    expect(data.supportsDirectUpload).toBe(false);
+    expect(data.isConfigured).toBe(false);
+    expect(data.error).toBe("FILE_STORAGE_DISABLED");
   });
 
   it("returns error when vercel-blob missing token", async () => {

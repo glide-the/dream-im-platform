@@ -12,8 +12,9 @@
 - `app/lib/admin/**`：认证、RBAC、资源查询、写操作、审计
 - `app/lib/gateway/**`：协议适配、鉴权、请求生命周期
 - `app/lib/billing/**`：定价、预授权、结算与账本
-- `app/lib/db/schema.ts`：唯一 Drizzle schema 来源
-- `drizzle/**`：必须提交的 PostgreSQL 迁移
+- `packages/db/src/schema/**`：唯一 Drizzle schema 来源；`app/lib/db/schema*` 仅兼容导出
+- `packages/db/src/migrate.ts`：显式 migration runner 与内嵌 PostgreSQL 生命周期
+- `drizzle/**`：必须提交且不可变的 PostgreSQL SQL/journal/snapshot 历史
 ## Vibe Contract
 - Any functional, architectural, or coding-style change must update affected folder docs and file headers before session end.
 - Prefer reuse-first refactor: search existing modules/components before adding new implementations.

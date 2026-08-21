@@ -1,3 +1,7 @@
+// [Input] @ink-memory/db migration plan and database receipt fixtures.
+// [Output] Integrity evidence for journal, hash, prefix, and boundary validation.
+// [Pos] Migration contract test retained at the application compatibility seam.
+// [Sync] 2026-08-21: consume the package-owned migration journal through the legacy facade.
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
@@ -9,9 +13,9 @@ import {
 
 const sqlHash = (value: string) => createHash("sha256").update(value).digest("hex");
 const migrations = [
-  { idx: 0, tag: "0000_first", createdAt: 30, hash: sqlHash("first") },
-  { idx: 1, tag: "0001_second", createdAt: 10, hash: sqlHash("second") },
-  { idx: 2, tag: "0002_third", createdAt: 20, hash: sqlHash("third") },
+  { idx: 0, tag: "0000_first", createdAt: 30, hash: sqlHash("first"), statements: [] },
+  { idx: 1, tag: "0001_second", createdAt: 10, hash: sqlHash("second"), statements: [] },
+  { idx: 2, tag: "0002_third", createdAt: 20, hash: sqlHash("third"), statements: [] },
 ];
 
 describe("migration journal contract", () => {

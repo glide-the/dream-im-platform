@@ -1,14 +1,5 @@
-import { config } from "dotenv";
-import type { Config } from "drizzle-kit";
-
-// Load .env.local for local development
-config({ path: ".env.local" });
-
-export default {
-  schema: ["./app/lib/db/schema.ts", "./app/lib/db/schema/*.ts"],
-  out: "./drizzle",
-  dialect: "postgresql",
-  dbCredentials: {
-    url: process.env.MIGRATION_DATABASE_URL!
-  }
-} satisfies Config;
+// [Input] Canonical Drizzle config owned by @ink-memory/db.
+// [Output] Backward-compatible root config for existing operator commands.
+// [Pos] Compatibility facade; packages/db/drizzle.config.ts is authoritative.
+// [Sync] 2026-08-21: move schema-generation configuration into packages/db.
+export { default } from "./packages/db/drizzle.config";

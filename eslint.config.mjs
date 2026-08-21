@@ -8,6 +8,7 @@ const eslintConfig = [
     ".next/**",
     "out/**",
     "build/**",
+    "packages/db/dist/**",
     "html/**",
     "coverage/**",
     "test-results/**",
