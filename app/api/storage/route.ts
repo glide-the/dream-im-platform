@@ -1,3 +1,7 @@
+// [Input] Resolved file-storage capability and its fail-closed configuration check.
+// [Output] Public driver readiness metadata for upload clients.
+// [Pos] Storage capability discovery endpoint.
+// [Sync] 2026-08-21: expose the explicit disabled driver while MinIO is paused.
 import { NextResponse } from "next/server";
 import { storageDriver } from "@/lib/file-storage";
 import { checkStorageConfiguration } from "@/lib/file-storage/configuration";
@@ -11,7 +15,7 @@ export const runtime = "nodejs";
  * Used by clients to determine upload strategy.
  * 
  * Returns:
- * - type: Storage driver type ('vercel-blob' | 's3')
+ * - type: Storage driver type ('disabled' | 'vercel-blob' | 's3')
  * - supportsDirectUpload: Whether direct upload is supported
  * - isConfigured: Whether storage is properly configured
  * - error/solution: Configuration error details (if any)

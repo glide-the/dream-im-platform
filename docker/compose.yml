@@ -1,18 +1,40 @@
+# [Input] docker/.env secrets and local topology settings.
+# [Output] One local Admin container with embedded PostgreSQL and no MinIO.
+# [Pos] Local container parity path for the production single-container architecture.
+# [Sync] 2026-08-21: remove standalone PostgreSQL/MinIO services and expose embedded PG on localhost only.
 services:
   ink-memory-admin:
     build:
       context: ..
       dockerfile: ./docker/Dockerfile
+      args:
+        NEXT_BUILD_CPUS: ${NEXT_BUILD_CPUS:-2}
+        NEXT_BUILD_MAX_OLD_SPACE_MB: ${NEXT_BUILD_MAX_OLD_SPACE_MB:-2048}
     ports:
       - "${APP_PORT:-3000}:3000"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:?Run pnpm env:setup from the repository root}@postgres:5432/${POSTGRES_DB:-ink-memory}
-      MIGRATION_DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:?Run pnpm env:setup from the repository root}@postgres:5432/${POSTGRES_DB:-ink-memory}
+      INK_DATABASE_MODE: embedded-postgres
+      EMBEDDED_POSTGRES_DATA_DIR: /var/lib/ink-memory/postgres
+      EMBEDDED_POSTGRES_PORT: "5432"
+      EMBEDDED_POSTGRES_SHARED_BUFFERS: ${EMBEDDED_POSTGRES_SHARED_BUFFERS:-96MB}
+      EMBEDDED_POSTGRES_MAX_CONNECTIONS: ${EMBEDDED_POSTGRES_MAX_CONNECTIONS:-50}
+      POSTGRES_USER: ${POSTGRES_USER:-ink_memory}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run pnpm env:setup from the repository root}
+      POSTGRES_DB: ${POSTGRES_DB:-ink-memory}
+      DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:?Run pnpm env:setup from the repository root}@127.0.0.1:5432/${POSTGRES_DB:-ink-memory}
+      MIGRATION_DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:?Run pnpm env:setup from the repository root}@127.0.0.1:5432/${POSTGRES_DB:-ink-memory}
       ADMIN_CONSOLE_ENABLED: ${ADMIN_CONSOLE_ENABLED:-true}
       ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:?Run pnpm env:setup from the repository root}
       ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:?Run pnpm env:setup from the repository root}
       ADMIN_ORIGIN_ALLOWLIST: ${ADMIN_ORIGIN_ALLOWLIST:-http://localhost:3000}
       GATEWAY_API_KEY_PEPPER: ${GATEWAY_API_KEY_PEPPER:?Run pnpm env:setup from the repository root}
+      GATEWAY_SUBJECT_JWT_ISSUER: ${GATEWAY_SUBJECT_JWT_ISSUER:-ink-dream-memory}
+      GATEWAY_SUBJECT_JWT_AUDIENCE: ${GATEWAY_SUBJECT_JWT_AUDIENCE:-ink-memory-admin-gateway}
+      PRODUCT_API_JWT_SECRET: ${PRODUCT_API_JWT_SECRET:?Run pnpm env:setup from the repository root}
+      PRODUCT_API_JWT_ISSUER: ${PRODUCT_API_JWT_ISSUER:-ink-dream-memory}
+      PRODUCT_API_JWT_AUDIENCE: ${PRODUCT_API_JWT_AUDIENCE:-ink-memory-product-api}
+      PRODUCT_API_ORIGIN_ALLOWLIST: ${PRODUCT_API_ORIGIN_ALLOWLIST:-http://127.0.0.1:5173}
       AI_CREDENTIAL_ENCRYPTION_KEY: ${AI_CREDENTIAL_ENCRYPTION_KEY:?Run pnpm env:setup from the repository root}
       AI_PROVIDER_HOST_ALLOWLIST: ${AI_PROVIDER_HOST_ALLOWLIST:-}
       AI_PROVIDER_ALLOW_INSECURE_LOCALHOST: ${AI_PROVIDER_ALLOW_INSECURE_LOCALHOST:-false}
@@ -20,89 +42,21 @@ services:
       GATEWAY_MAX_BODY_BYTES: ${GATEWAY_MAX_BODY_BYTES:-20971520}
       ARTIFACT_WORKSPACE_ROOT: ${ARTIFACT_WORKSPACE_ROOT:-/artifacts}
       ARTIFACT_PREVIEW_MAX_FILE_BYTES: ${ARTIFACT_PREVIEW_MAX_FILE_BYTES:-8388608}
-      RUN_DB_MIGRATIONS: ${RUN_DB_MIGRATIONS:-true}
-      FILE_STORAGE_TYPE: ${FILE_STORAGE_TYPE:-s3}
-      FILE_STORAGE_PREFIX: ${FILE_STORAGE_PREFIX:-uploads}
-      BLOB_READ_WRITE_TOKEN: ${BLOB_READ_WRITE_TOKEN:-}
-      FILE_STORAGE_S3_BUCKET: ${FILE_STORAGE_S3_BUCKET:-ink-memory}
-      FILE_STORAGE_S3_REGION: ${FILE_STORAGE_S3_REGION:-us-east-1}
-      FILE_STORAGE_S3_ENDPOINT: ${FILE_STORAGE_S3_ENDPOINT:-http://minio:9000}
-      FILE_STORAGE_S3_FORCE_PATH_STYLE: ${FILE_STORAGE_S3_FORCE_PATH_STYLE:-true}
-      FILE_STORAGE_S3_PUBLIC_BASE_URL: ${FILE_STORAGE_S3_PUBLIC_BASE_URL:-}
-      AWS_REGION: ${AWS_REGION:-}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
-    networks:
-      - ink-memory-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:16-alpine
-    ports:
-      - "${POSTGRES_PORT:-5433}:5432"
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-ink_memory}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run pnpm env:setup from the repository root}
-      POSTGRES_DB: ${POSTGRES_DB:-ink-memory}
-    networks:
-      - ink-memory-network
+      FILE_STORAGE_TYPE: disabled
+      RUN_DB_MIGRATIONS: "false"
     volumes:
-      - ink_memory_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ink_memory} -d ${POSTGRES_DB:-ink-memory}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
-
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_USER:-ink_memory}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:?Run pnpm env:setup from the repository root}
+      - ink_memory_postgres_data:/var/lib/ink-memory/postgres
+      - ink_memory_artifact_data:/artifacts
     networks:
-      - ink-memory-network
-    volumes:
-      - ink_memory_storage_data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
+      ink-memory-network:
+        aliases:
+          - ink-memory-postgres
     restart: unless-stopped
-
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set ink-memory http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
-      mc mb ink-memory/$$MINIO_BUCKET --ignore-existing;
-      exit 0;
-      "
-    environment:
-      MINIO_ROOT_USER: ${MINIO_USER:-ink_memory}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:?Run pnpm env:setup from the repository root}
-      MINIO_BUCKET: ${FILE_STORAGE_S3_BUCKET:-ink-memory}
-    networks:
-      - ink-memory-network
+    stop_grace_period: 60s
 
 volumes:
   ink_memory_postgres_data:
-  ink_memory_storage_data:
+  ink_memory_artifact_data:
 
 networks:
   ink-memory-network:

@@ -1,0 +1,30 @@
+# [Input] __ADMIN_DOMAIN__, __ADMIN_BIND_HOST__, and __ADMIN_PORT__ rendered by deploy.sh.
+# [Output] Host nginx reverse proxy for the Admin/Gateway origin.
+# [Pos] Alibaba Cloud Admin nginx template in deploy/remote-ssh/.
+# [Sync] 2026-08-21: add SSE-safe Admin/Gateway proxying without exposing container ports.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __ADMIN_DOMAIN__;
+
+    client_max_body_size 100m;
+    access_log /var/log/nginx/ink-memory-admin-access.log;
+    error_log /var/log/nginx/ink-memory-admin-error.log warn;
+
+    location / {
+        proxy_pass http://__ADMIN_BIND_HOST__:__ADMIN_PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $http_connection;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}

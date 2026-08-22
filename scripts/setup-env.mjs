@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// [Input] Existing ignored Admin env files and secure random material.
+// [Output] Mode-0600 local/Compose config for embedded PostgreSQL and disabled storage.
+// [Pos] Base configuration generator for the Admin workspace.
+// [Sync] 2026-08-21: stop generating MinIO/S3 defaults and forbid startup migrations.
 
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -11,6 +15,14 @@ const defaultProjectRoot = resolve(scriptDirectory, "..");
 const ROOT_KEYS = new Set([
   "DATABASE_URL",
   "MIGRATION_DATABASE_URL",
+  "INK_DATABASE_MODE",
+  "EMBEDDED_POSTGRES_DATA_DIR",
+  "EMBEDDED_POSTGRES_PORT",
+  "EMBEDDED_POSTGRES_SHARED_BUFFERS",
+  "EMBEDDED_POSTGRES_MAX_CONNECTIONS",
+  "POSTGRES_USER",
+  "POSTGRES_PASSWORD",
+  "POSTGRES_DB",
   "PGPOOL_MAX",
   "PG_IDLE_TIMEOUT_MS",
   "PG_CONNECTION_TIMEOUT_MS",
@@ -34,20 +46,6 @@ const ROOT_KEYS = new Set([
   "ARTIFACT_PREVIEW_MAX_FILE_BYTES",
   "FILE_STORAGE_TYPE",
   "FILE_STORAGE_PREFIX",
-  "BLOB_READ_WRITE_TOKEN",
-  "FILE_STORAGE_S3_BUCKET",
-  "FILE_STORAGE_S3_REGION",
-  "FILE_STORAGE_S3_ENDPOINT",
-  "FILE_STORAGE_S3_FORCE_PATH_STYLE",
-  "FILE_STORAGE_S3_PUBLIC_BASE_URL",
-  "AWS_REGION",
-  "AWS_ACCESS_KEY_ID",
-  "AWS_SECRET_ACCESS_KEY",
-  "AWS_SESSION_TOKEN",
-  "MINIO_USER",
-  "MINIO_PASSWORD",
-  "MINIO_API_PORT",
-  "MINIO_CONSOLE_PORT",
 ]);
 
 const DOCKER_KEYS = new Set([
@@ -56,6 +54,8 @@ const DOCKER_KEYS = new Set([
   "POSTGRES_USER",
   "POSTGRES_PASSWORD",
   "POSTGRES_DB",
+  "EMBEDDED_POSTGRES_SHARED_BUFFERS",
+  "EMBEDDED_POSTGRES_MAX_CONNECTIONS",
   "ADMIN_CONSOLE_ENABLED",
   "ADMIN_SESSION_SECRET",
   "ADMIN_BOOTSTRAP_TOKEN",
@@ -77,20 +77,6 @@ const DOCKER_KEYS = new Set([
   "ARTIFACT_PREVIEW_MAX_FILE_BYTES",
   "FILE_STORAGE_TYPE",
   "FILE_STORAGE_PREFIX",
-  "BLOB_READ_WRITE_TOKEN",
-  "FILE_STORAGE_S3_BUCKET",
-  "FILE_STORAGE_S3_REGION",
-  "FILE_STORAGE_S3_ENDPOINT",
-  "FILE_STORAGE_S3_FORCE_PATH_STYLE",
-  "FILE_STORAGE_S3_PUBLIC_BASE_URL",
-  "AWS_REGION",
-  "AWS_ACCESS_KEY_ID",
-  "AWS_SECRET_ACCESS_KEY",
-  "AWS_SESSION_TOKEN",
-  "MINIO_USER",
-  "MINIO_PASSWORD",
-  "MINIO_API_PORT",
-  "MINIO_CONSOLE_PORT",
 ]);
 
 function parseArguments(argv) {
@@ -202,10 +188,6 @@ function isBoolean(value) {
   return value === "true" || value === "false";
 }
 
-function isBooleanFlag(value) {
-  return isBoolean(value) || value === "1" || value === "0";
-}
-
 function isInteger(value, minimum, maximum = Number.MAX_SAFE_INTEGER) {
   if (!/^\d+$/.test(value)) return false;
   const parsed = Number(value);
@@ -232,119 +214,17 @@ function randomSecret(prefix = "") {
   return `${prefix}${randomBytes(32).toString("base64url")}`;
 }
 
-function storageConfiguration(existing, defaults) {
-  const optionalValue = (key, fallback = "") =>
-    configuredValue(
-      existing,
-      key,
-      (value) =>
-        !/[\r\n]/.test(value) &&
-        (fallback === "" || value.trim().length > 0),
-      fallback,
-    );
-  const hasOperatorConfiguration = [
-    "BLOB_READ_WRITE_TOKEN",
-    "FILE_STORAGE_S3_BUCKET",
-    "FILE_STORAGE_S3_REGION",
-    "FILE_STORAGE_S3_ENDPOINT",
-    "FILE_STORAGE_S3_PUBLIC_BASE_URL",
-    "AWS_REGION",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_SESSION_TOKEN",
-  ].some((key) => (existing.get(key) ?? "").trim().length > 0);
-  const useLocalMinio = !hasOperatorConfiguration;
-  const minioUser = configuredValue(
-    existing,
-    "MINIO_USER",
-    (value) => /^[A-Za-z0-9_-]{3,}$/.test(value),
-    "ink_memory",
-  );
-
+function storageConfiguration(existing) {
   return [
+    ["FILE_STORAGE_TYPE", "disabled"],
     [
-      "FILE_STORAGE_TYPE",
-      useLocalMinio
-        ? "s3"
-        : configuredValue(
-            existing,
-            "FILE_STORAGE_TYPE",
-            (value) => value === "vercel-blob" || value === "s3",
-            "vercel-blob",
-          ),
-    ],
-    ["FILE_STORAGE_PREFIX", optionalValue("FILE_STORAGE_PREFIX", "uploads")],
-    ["BLOB_READ_WRITE_TOKEN", optionalValue("BLOB_READ_WRITE_TOKEN")],
-    [
-      "FILE_STORAGE_S3_BUCKET",
-      optionalValue("FILE_STORAGE_S3_BUCKET", useLocalMinio ? "ink-memory" : ""),
-    ],
-    [
-      "FILE_STORAGE_S3_REGION",
-      optionalValue("FILE_STORAGE_S3_REGION", useLocalMinio ? "us-east-1" : ""),
-    ],
-    [
-      "FILE_STORAGE_S3_ENDPOINT",
-      optionalValue(
-        "FILE_STORAGE_S3_ENDPOINT",
-        useLocalMinio ? defaults.endpoint : "",
-      ),
-    ],
-    [
-      "FILE_STORAGE_S3_FORCE_PATH_STYLE",
-      useLocalMinio
-        ? "true"
-        : configuredValue(
-            existing,
-            "FILE_STORAGE_S3_FORCE_PATH_STYLE",
-            isBooleanFlag,
-            "false",
-          ),
-    ],
-    [
-      "FILE_STORAGE_S3_PUBLIC_BASE_URL",
-      optionalValue("FILE_STORAGE_S3_PUBLIC_BASE_URL"),
-    ],
-    [
-      "AWS_REGION",
-      optionalValue("AWS_REGION", useLocalMinio ? "us-east-1" : ""),
-    ],
-    [
-      "AWS_ACCESS_KEY_ID",
-      optionalValue("AWS_ACCESS_KEY_ID", useLocalMinio ? minioUser : ""),
-    ],
-    [
-      "AWS_SECRET_ACCESS_KEY",
-      optionalValue(
-        "AWS_SECRET_ACCESS_KEY",
-        useLocalMinio ? defaults.minioPassword : "",
-      ),
-    ],
-    ["AWS_SESSION_TOKEN", optionalValue("AWS_SESSION_TOKEN")],
-    ["MINIO_USER", minioUser],
-    ["MINIO_PASSWORD", defaults.minioPassword],
-    [
-      "MINIO_API_PORT",
-      configuredValue(
-        existing,
-        "MINIO_API_PORT",
-        (value) => isInteger(value, 1, 65_535),
-        "9000",
-      ),
-    ],
-    [
-      "MINIO_CONSOLE_PORT",
-      configuredValue(
-        existing,
-        "MINIO_CONSOLE_PORT",
-        (value) => isInteger(value, 1, 65_535),
-        "9001",
-      ),
+      "FILE_STORAGE_PREFIX",
+      configuredValue(existing, "FILE_STORAGE_PREFIX", (value) => !/[\r\n]/.test(value), "uploads"),
     ],
   ];
 }
 
-function buildConfiguration(rootExisting, dockerExisting) {
+function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
   const adminSessionSecret = pairedSecret(
     rootExisting,
     dockerExisting,
@@ -380,12 +260,16 @@ function buildConfiguration(rootExisting, dockerExisting) {
     isEncryptionKey,
     () => randomBytes(32).toString("base64"),
   );
-  const minioPassword = pairedSecret(
-    rootExisting,
-    dockerExisting,
-    "MINIO_PASSWORD",
+  const postgresPassword = firstValid(
+    [rootExisting, dockerExisting],
+    "POSTGRES_PASSWORD",
     isDockerPostgresPassword,
-    () => randomSecret("minio_"),
+  ) ?? randomSecret("pg_");
+  const embeddedPort = configuredValue(
+    rootExisting,
+    "EMBEDDED_POSTGRES_PORT",
+    (value) => isInteger(value, 1, 65_535),
+    "54329",
   );
   const rootOriginAllowlist = configuredValue(
     rootExisting,
@@ -427,20 +311,16 @@ function buildConfiguration(rootExisting, dockerExisting) {
   const root = new Map([
     [
       "DATABASE_URL",
-      firstValid(
-        [rootExisting],
-        "DATABASE_URL",
-        isInkMemoryDatabaseUrl,
-      ) ?? "postgres://ink_memory:ink_memory@localhost:5433/ink-memory",
+      `postgres://ink_memory:${postgresPassword}@127.0.0.1:${embeddedPort}/ink-memory`,
     ],
-    [
-      "MIGRATION_DATABASE_URL",
-      firstValid(
-        [rootExisting],
-        "MIGRATION_DATABASE_URL",
-        isInkMemoryDatabaseUrl,
-      ) ?? "postgres://ink_memory:ink_memory@localhost:5433/ink-memory",
-    ],
+    ["INK_DATABASE_MODE", "embedded-postgres"],
+    ["EMBEDDED_POSTGRES_DATA_DIR", resolve(projectRoot, ".ink-memory/postgres")],
+    ["EMBEDDED_POSTGRES_PORT", embeddedPort],
+    ["EMBEDDED_POSTGRES_SHARED_BUFFERS", "96MB"],
+    ["EMBEDDED_POSTGRES_MAX_CONNECTIONS", "50"],
+    ["POSTGRES_USER", "ink_memory"],
+    ["POSTGRES_PASSWORD", postgresPassword],
+    ["POSTGRES_DB", "ink-memory"],
     [
       "PGPOOL_MAX",
       firstValid([rootExisting], "PGPOOL_MAX", (value) =>
@@ -552,10 +432,7 @@ function buildConfiguration(rootExisting, dockerExisting) {
         "8388608",
       ),
     ],
-    ...storageConfiguration(rootExisting, {
-      endpoint: "http://localhost:9000",
-      minioPassword: minioPassword.root,
-    }),
+    ...storageConfiguration(rootExisting),
   ]);
   const docker = new Map([
     [
@@ -577,9 +454,11 @@ function buildConfiguration(rootExisting, dockerExisting) {
         [dockerExisting],
         "POSTGRES_PASSWORD",
         isDockerPostgresPassword,
-      ) ?? randomSecret("pg_"),
+      ) ?? postgresPassword,
     ],
     ["POSTGRES_DB", "ink-memory"],
+    ["EMBEDDED_POSTGRES_SHARED_BUFFERS", "96MB"],
+    ["EMBEDDED_POSTGRES_MAX_CONNECTIONS", "50"],
     [
       "ADMIN_CONSOLE_ENABLED",
       configuredValue(
@@ -662,7 +541,7 @@ function buildConfiguration(rootExisting, dockerExisting) {
     ],
     [
       "RUN_DB_MIGRATIONS",
-      firstValid([dockerExisting], "RUN_DB_MIGRATIONS", isBoolean) ?? "true",
+      "false",
     ],
     [
       "ARTIFACT_WORKSPACE_ROOT",
@@ -682,10 +561,7 @@ function buildConfiguration(rootExisting, dockerExisting) {
         "8388608",
       ),
     ],
-    ...storageConfiguration(dockerExisting, {
-      endpoint: "http://minio:9000",
-      minioPassword: minioPassword.docker,
-    }),
+    ...storageConfiguration(dockerExisting),
   ]);
 
   return { root, docker };
@@ -701,10 +577,16 @@ function encodeValue(value) {
 
 function renderRootEnv(values) {
   return `# Generated by pnpm env:setup. Do not commit this file.
-# PostgreSQL: local docker-compose.yml exposes ink-memory on port 5433.
+# PostgreSQL: pnpm dev supervises the embedded cluster on the configured port.
 DATABASE_URL=${encodeValue(values.get("DATABASE_URL"))}
-# Explicit migration connection. Production must use a dedicated migrator role.
-MIGRATION_DATABASE_URL=${encodeValue(values.get("MIGRATION_DATABASE_URL"))}
+INK_DATABASE_MODE=${values.get("INK_DATABASE_MODE")}
+EMBEDDED_POSTGRES_DATA_DIR=${encodeValue(values.get("EMBEDDED_POSTGRES_DATA_DIR"))}
+EMBEDDED_POSTGRES_PORT=${values.get("EMBEDDED_POSTGRES_PORT")}
+EMBEDDED_POSTGRES_SHARED_BUFFERS=${values.get("EMBEDDED_POSTGRES_SHARED_BUFFERS")}
+EMBEDDED_POSTGRES_MAX_CONNECTIONS=${values.get("EMBEDDED_POSTGRES_MAX_CONNECTIONS")}
+POSTGRES_USER=${values.get("POSTGRES_USER")}
+POSTGRES_PASSWORD=${encodeValue(values.get("POSTGRES_PASSWORD"))}
+POSTGRES_DB=${values.get("POSTGRES_DB")}
 PGPOOL_MAX=${values.get("PGPOOL_MAX")}
 PG_IDLE_TIMEOUT_MS=${values.get("PG_IDLE_TIMEOUT_MS")}
 PG_CONNECTION_TIMEOUT_MS=${values.get("PG_CONNECTION_TIMEOUT_MS")}
@@ -735,23 +617,9 @@ PRODUCT_API_JWT_ISSUER=${encodeValue(values.get("PRODUCT_API_JWT_ISSUER"))}
 PRODUCT_API_JWT_AUDIENCE=${encodeValue(values.get("PRODUCT_API_JWT_AUDIENCE"))}
 PRODUCT_API_ORIGIN_ALLOWLIST=${encodeValue(values.get("PRODUCT_API_ORIGIN_ALLOWLIST"))}
 
-# File storage. External credentials are never generated automatically.
+# File storage is intentionally disabled while MinIO is paused.
 FILE_STORAGE_TYPE=${values.get("FILE_STORAGE_TYPE")}
 FILE_STORAGE_PREFIX=${encodeValue(values.get("FILE_STORAGE_PREFIX"))}
-BLOB_READ_WRITE_TOKEN=${encodeValue(values.get("BLOB_READ_WRITE_TOKEN"))}
-FILE_STORAGE_S3_BUCKET=${encodeValue(values.get("FILE_STORAGE_S3_BUCKET"))}
-FILE_STORAGE_S3_REGION=${encodeValue(values.get("FILE_STORAGE_S3_REGION"))}
-FILE_STORAGE_S3_ENDPOINT=${encodeValue(values.get("FILE_STORAGE_S3_ENDPOINT"))}
-FILE_STORAGE_S3_FORCE_PATH_STYLE=${values.get("FILE_STORAGE_S3_FORCE_PATH_STYLE")}
-FILE_STORAGE_S3_PUBLIC_BASE_URL=${encodeValue(values.get("FILE_STORAGE_S3_PUBLIC_BASE_URL"))}
-AWS_REGION=${encodeValue(values.get("AWS_REGION"))}
-AWS_ACCESS_KEY_ID=${encodeValue(values.get("AWS_ACCESS_KEY_ID"))}
-AWS_SECRET_ACCESS_KEY=${encodeValue(values.get("AWS_SECRET_ACCESS_KEY"))}
-AWS_SESSION_TOKEN=${encodeValue(values.get("AWS_SESSION_TOKEN"))}
-MINIO_USER=${encodeValue(values.get("MINIO_USER"))}
-MINIO_PASSWORD=${encodeValue(values.get("MINIO_PASSWORD"))}
-MINIO_API_PORT=${values.get("MINIO_API_PORT")}
-MINIO_CONSOLE_PORT=${values.get("MINIO_CONSOLE_PORT")}
 `;
 }
 
@@ -762,6 +630,8 @@ POSTGRES_PORT=${values.get("POSTGRES_PORT")}
 POSTGRES_USER=${values.get("POSTGRES_USER")}
 POSTGRES_PASSWORD=${encodeValue(values.get("POSTGRES_PASSWORD"))}
 POSTGRES_DB=${values.get("POSTGRES_DB")}
+EMBEDDED_POSTGRES_SHARED_BUFFERS=${values.get("EMBEDDED_POSTGRES_SHARED_BUFFERS")}
+EMBEDDED_POSTGRES_MAX_CONNECTIONS=${values.get("EMBEDDED_POSTGRES_MAX_CONNECTIONS")}
 
 ADMIN_CONSOLE_ENABLED=${values.get("ADMIN_CONSOLE_ENABLED")}
 ADMIN_SESSION_SECRET=${encodeValue(values.get("ADMIN_SESSION_SECRET"))}
@@ -787,20 +657,6 @@ PRODUCT_API_ORIGIN_ALLOWLIST=${encodeValue(values.get("PRODUCT_API_ORIGIN_ALLOWL
 
 FILE_STORAGE_TYPE=${values.get("FILE_STORAGE_TYPE")}
 FILE_STORAGE_PREFIX=${encodeValue(values.get("FILE_STORAGE_PREFIX"))}
-BLOB_READ_WRITE_TOKEN=${encodeValue(values.get("BLOB_READ_WRITE_TOKEN"))}
-FILE_STORAGE_S3_BUCKET=${encodeValue(values.get("FILE_STORAGE_S3_BUCKET"))}
-FILE_STORAGE_S3_REGION=${encodeValue(values.get("FILE_STORAGE_S3_REGION"))}
-FILE_STORAGE_S3_ENDPOINT=${encodeValue(values.get("FILE_STORAGE_S3_ENDPOINT"))}
-FILE_STORAGE_S3_FORCE_PATH_STYLE=${values.get("FILE_STORAGE_S3_FORCE_PATH_STYLE")}
-FILE_STORAGE_S3_PUBLIC_BASE_URL=${encodeValue(values.get("FILE_STORAGE_S3_PUBLIC_BASE_URL"))}
-AWS_REGION=${encodeValue(values.get("AWS_REGION"))}
-AWS_ACCESS_KEY_ID=${encodeValue(values.get("AWS_ACCESS_KEY_ID"))}
-AWS_SECRET_ACCESS_KEY=${encodeValue(values.get("AWS_SECRET_ACCESS_KEY"))}
-AWS_SESSION_TOKEN=${encodeValue(values.get("AWS_SESSION_TOKEN"))}
-MINIO_USER=${encodeValue(values.get("MINIO_USER"))}
-MINIO_PASSWORD=${encodeValue(values.get("MINIO_PASSWORD"))}
-MINIO_API_PORT=${values.get("MINIO_API_PORT")}
-MINIO_CONSOLE_PORT=${values.get("MINIO_CONSOLE_PORT")}
 `;
 }
 
@@ -835,16 +691,19 @@ function validateConfiguration(root, docker, rootParsed, dockerParsed) {
   if (!isInkMemoryDatabaseUrl(root.get("DATABASE_URL") ?? "")) {
     errors.push("DATABASE_URL must use the ink-memory PostgreSQL database");
   }
-  if (!isInkMemoryDatabaseUrl(root.get("MIGRATION_DATABASE_URL") ?? "")) {
-    errors.push("MIGRATION_DATABASE_URL must use the ink-memory PostgreSQL database");
+  if (root.get("MIGRATION_DATABASE_URL") && !isInkMemoryDatabaseUrl(root.get("MIGRATION_DATABASE_URL") ?? "")) {
+    errors.push("MIGRATION_DATABASE_URL must use the ink-memory PostgreSQL database when configured");
+  }
+  if (root.get("INK_DATABASE_MODE") !== "embedded-postgres") {
+    errors.push(".env.local: INK_DATABASE_MODE must be embedded-postgres");
+  }
+  for (const fileValues of [root, docker]) {
+    if (!isDockerPostgresPassword(fileValues.get("POSTGRES_PASSWORD") ?? "")) {
+      errors.push("POSTGRES_PASSWORD must contain at least 16 URL-safe characters");
+    }
   }
   if (docker.get("POSTGRES_DB") !== "ink-memory") {
     errors.push("POSTGRES_DB must be ink-memory");
-  }
-  if (!isDockerPostgresPassword(docker.get("POSTGRES_PASSWORD") ?? "")) {
-    errors.push(
-      "POSTGRES_PASSWORD must contain at least 16 URL-safe characters",
-    );
   }
   if (docker.get("POSTGRES_USER") !== "ink_memory") {
     errors.push("POSTGRES_USER must be ink_memory");
@@ -925,24 +784,8 @@ function validateConfiguration(root, docker, rootParsed, dockerParsed) {
         errors.push(`${file}: ${key} must not be empty`);
       }
     }
-    if (!['vercel-blob', 's3'].includes(values.get("FILE_STORAGE_TYPE") ?? "")) {
-      errors.push(`${file}: FILE_STORAGE_TYPE must be vercel-blob or s3`);
-    }
-    if (!isBooleanFlag(values.get("FILE_STORAGE_S3_FORCE_PATH_STYLE") ?? "")) {
-      errors.push(
-        `${file}: FILE_STORAGE_S3_FORCE_PATH_STYLE must be true, false, 1, or 0`,
-      );
-    }
-    if (!/^[A-Za-z0-9_-]{3,}$/.test(values.get("MINIO_USER") ?? "")) {
-      errors.push(`${file}: MINIO_USER must contain at least 3 URL-safe characters`);
-    }
-    if (!isDockerPostgresPassword(values.get("MINIO_PASSWORD") ?? "")) {
-      errors.push(`${file}: MINIO_PASSWORD must contain at least 16 URL-safe characters`);
-    }
-    for (const key of ["MINIO_API_PORT", "MINIO_CONSOLE_PORT"]) {
-      if (!isInteger(values.get(key) ?? "", 1, 65_535)) {
-        errors.push(`${file}: ${key} must be a valid TCP port`);
-      }
+    if (values.get("FILE_STORAGE_TYPE") !== "disabled") {
+      errors.push(`${file}: FILE_STORAGE_TYPE must be disabled while MinIO is paused`);
     }
   }
   if (!isInteger(root.get("PGPOOL_MAX") ?? "", 1, 100)) {
@@ -953,13 +796,16 @@ function validateConfiguration(root, docker, rootParsed, dockerParsed) {
       errors.push(`.env.local: ${key} must be a positive integer`);
     }
   }
-  for (const key of ["APP_PORT", "POSTGRES_PORT"]) {
+  for (const key of ["APP_PORT", "POSTGRES_PORT", "EMBEDDED_POSTGRES_MAX_CONNECTIONS"]) {
     if (!isInteger(docker.get(key) ?? "", 1, 65_535)) {
       errors.push(`docker/.env: ${key} must be a valid TCP port`);
     }
   }
-  if (!isBoolean(docker.get("RUN_DB_MIGRATIONS") ?? "")) {
-    errors.push("docker/.env: RUN_DB_MIGRATIONS must be true or false");
+  if (!isInteger(root.get("EMBEDDED_POSTGRES_PORT") ?? "", 1, 65_535)) {
+    errors.push(".env.local: EMBEDDED_POSTGRES_PORT must be a valid TCP port");
+  }
+  if (docker.get("RUN_DB_MIGRATIONS") !== "false") {
+    errors.push("docker/.env: RUN_DB_MIGRATIONS must remain false");
   }
   return errors;
 }
@@ -992,7 +838,7 @@ async function run() {
       throw new Error(`Environment validation failed:\n- ${errors.join("\n- ")}`);
     }
     console.log(
-      "Environment structure is valid for ink-memory-admin; local MinIO credentials are managed automatically and external cloud credentials remain operator-managed.",
+      "Environment structure is valid for ink-memory-admin; embedded PostgreSQL is explicit and file storage is disabled.",
     );
     return;
   }
@@ -1002,6 +848,7 @@ async function run() {
   const configuration = buildConfiguration(
     rootParsed.values,
     dockerParsed.values,
+    projectRoot,
   );
   await Promise.all([
     writePrivateFile(rootPath, renderRootEnv(configuration.root)),
@@ -1016,7 +863,7 @@ async function run() {
     console.log(`Removed unsupported docker/.env keys: ${dockerRemoved.join(", ")}`);
   }
   console.log(
-    "Existing control-plane secrets and storage settings were preserved; missing control-plane secrets were generated.",
+    "Existing control-plane and PostgreSQL secrets were preserved; unsupported storage credentials were removed.",
   );
 }
 

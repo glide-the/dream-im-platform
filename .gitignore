@@ -1,4 +1,6 @@
 node_modules
+.ink-memory/
+packages/*/dist/
 .next
 .next-e2e-*/
 html

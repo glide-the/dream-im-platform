@@ -1,0 +1,78 @@
+# [Input] mode-0600 deploy env and the pre-created shared platform network.
+# [Output] One Admin/Gateway container with embedded PostgreSQL and persistent volumes.
+# [Pos] Alibaba Cloud ECS stack owned by Admin; MinIO and standalone PostgreSQL are absent.
+# [Sync] 2026-08-21: serialize low-memory builds; embedded PG and storage-disabled topology.
+
+services:
+  ink-memory-admin:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      args:
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org/debian}
+        DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
+        PGDG_MIRROR: ${PGDG_MIRROR:-https://apt.postgresql.org/pub/repos/apt}
+        NEXT_BUILD_CPUS: ${NEXT_BUILD_CPUS:-1}
+        NEXT_BUILD_MAX_OLD_SPACE_MB: ${NEXT_BUILD_MAX_OLD_SPACE_MB:-640}
+    image: ${REMOTE_ADMIN_IMAGE:-ink-memory-admin:remote}
+    restart: unless-stopped
+    stop_grace_period: 60s
+    ports:
+      - "${REMOTE_ADMIN_BIND_HOST:-127.0.0.1}:${REMOTE_ADMIN_PORT:-3100}:3000"
+    environment:
+      INK_DATABASE_MODE: embedded-postgres
+      EMBEDDED_POSTGRES_DATA_DIR: /var/lib/ink-memory/postgres
+      EMBEDDED_POSTGRES_PORT: "5432"
+      EMBEDDED_POSTGRES_SHARED_BUFFERS: ${EMBEDDED_POSTGRES_SHARED_BUFFERS:-96MB}
+      EMBEDDED_POSTGRES_MAX_CONNECTIONS: ${EMBEDDED_POSTGRES_MAX_CONNECTIONS:-50}
+      POSTGRES_USER: ${POSTGRES_USER:-ink_memory}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Generate deploy/remote-ssh/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-ink-memory}
+      DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:?Generate deploy/remote-ssh/.env}@127.0.0.1:5432/${POSTGRES_DB:-ink-memory}
+      MIGRATION_DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:?Generate deploy/remote-ssh/.env}@127.0.0.1:5432/${POSTGRES_DB:-ink-memory}
+      ADMIN_CONSOLE_ENABLED: ${ADMIN_CONSOLE_ENABLED:-true}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:?Generate deploy/remote-ssh/.env}
+      ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:?Generate deploy/remote-ssh/.env}
+      ADMIN_ORIGIN_ALLOWLIST: ${ADMIN_ORIGIN_ALLOWLIST:?Generate deploy/remote-ssh/.env}
+      GATEWAY_API_KEY_PEPPER: ${GATEWAY_API_KEY_PEPPER:?Generate deploy/remote-ssh/.env}
+      GATEWAY_SUBJECT_JWT_ISSUER: ${GATEWAY_SUBJECT_JWT_ISSUER:-ink-dream-memory}
+      GATEWAY_SUBJECT_JWT_AUDIENCE: ${GATEWAY_SUBJECT_JWT_AUDIENCE:-ink-memory-admin-gateway}
+      AI_CREDENTIAL_ENCRYPTION_KEY: ${AI_CREDENTIAL_ENCRYPTION_KEY:?Generate deploy/remote-ssh/.env}
+      AI_PROVIDER_HOST_ALLOWLIST: ${AI_PROVIDER_HOST_ALLOWLIST:-}
+      AI_PROVIDER_ALLOW_INSECURE_LOCALHOST: ${AI_PROVIDER_ALLOW_INSECURE_LOCALHOST:-false}
+      GATEWAY_MIN_RESERVE_MICROUSD: ${GATEWAY_MIN_RESERVE_MICROUSD:-0}
+      GATEWAY_MAX_BODY_BYTES: ${GATEWAY_MAX_BODY_BYTES:-20971520}
+      PRODUCT_API_JWT_SECRET: ${PRODUCT_API_JWT_SECRET:?Generate deploy/remote-ssh/.env}
+      PRODUCT_API_JWT_ISSUER: ${PRODUCT_API_JWT_ISSUER:-ink-dream-memory}
+      PRODUCT_API_JWT_AUDIENCE: ${PRODUCT_API_JWT_AUDIENCE:-ink-memory-product-api}
+      PRODUCT_API_ORIGIN_ALLOWLIST: ${PRODUCT_API_ORIGIN_ALLOWLIST:?Generate deploy/remote-ssh/.env}
+      FILE_STORAGE_TYPE: disabled
+      ARTIFACT_WORKSPACE_ROOT: ${ARTIFACT_WORKSPACE_ROOT:-/artifacts}
+      ARTIFACT_PREVIEW_MAX_FILE_BYTES: ${ARTIFACT_PREVIEW_MAX_FILE_BYTES:-8388608}
+      RUN_DB_MIGRATIONS: "false"
+    volumes:
+      - ink_memory_postgres_data:/var/lib/ink-memory/postgres
+      - ink_memory_artifact_data:/artifacts
+    networks:
+      default:
+        aliases:
+          - ink-memory-postgres
+      ink-memory-platform:
+        aliases:
+          - ink-memory-admin
+          - ink-memory-postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/admin/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  ink_memory_postgres_data:
+  ink_memory_artifact_data:
+
+networks:
+  ink-memory-platform:
+    external: true
+    name: ${REMOTE_PLATFORM_NETWORK:-ink-memory-platform}

@@ -1,0 +1,58 @@
+{
+  "name": "@ink-memory/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./schema": "./src/schema/index.ts",
+    "./schema/*": "./src/schema/*.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./client": {
+        "types": "./dist/client.d.ts",
+        "import": "./dist/client.js"
+      },
+      "./schema": {
+        "types": "./dist/schema/index.d.ts",
+        "import": "./dist/schema/index.js"
+      },
+      "./schema/*": {
+        "types": "./dist/schema/*.d.ts",
+        "import": "./dist/schema/*.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "generate": "drizzle-kit generate --config drizzle.config.ts",
+    "migrate": "tsx src/migrate.ts",
+    "migrate:status": "tsx src/migrate.ts --status",
+    "migrate:check": "tsx src/migrate.ts --check"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.1",
+    "embedded-postgres": "18.1.0-beta.16",
+    "pg": "^8.13.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "drizzle-kit": "^0.31.8",
+    "tsx": "^4.19.2",
+    "typescript": "5.5.4"
+  }
+}

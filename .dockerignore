@@ -1,4 +1,6 @@
 node_modules
+.ink-memory
+packages/*/dist
 .next
 .git
 .gitignore
@@ -6,6 +8,10 @@ node_modules
 !.env.local.example
 docker
 !docker/entrypoint.sh
+deploy
+backups
+*.sql
+*.sql.gz
 agent-workspaces
 tests
 html

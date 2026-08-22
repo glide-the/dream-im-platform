@@ -22,19 +22,18 @@
 
 - Next.js 16 App Router、React 19、TypeScript
 - Refine Core 5、Next.js Router、TanStack Query
-- PostgreSQL 16、Drizzle ORM 与版本化 SQL migrations
+- 内嵌 PostgreSQL 18.1、Drizzle ORM 与版本化 SQL migrations
 - Anthropic SDK、OpenAI SDK
 - AWS S3 SDK、Vercel Blob
 - Vitest、Playwright、ESLint
 
 ## 本地开发
 
-环境要求：Node.js 20+、pnpm 9+、Docker Desktop 或兼容的 Docker Engine。
+环境要求：Node.js 20+、pnpm 9+。应用本地开发不要求 Docker PostgreSQL。
 
 ```bash
 pnpm install
 pnpm env:setup
-docker compose --env-file .env.local up -d postgres minio minio-init
 pnpm db:migrate
 pnpm dev
 ```
@@ -44,10 +43,10 @@ pnpm dev
 `pnpm env:setup` 会完成以下操作：
 
 - 生成 `.env.local` 和 `docker/.env`，文件权限设为 `0600`；
-- 将本地数据库统一配置为 PostgreSQL `ink-memory`；
+- 将本地数据库配置为 `@ink-memory/db` 管理的内嵌 PostgreSQL `ink-memory`；
 - 自动生成 Session、首次管理员、Gateway pepper、Provider 凭据加密所需的随机密钥；
 - 保留已有且格式有效的控制面密钥，清除当前项目不使用的旧环境变量；
-- 保留 Storage/S3/Vercel Blob 配置，并为本地 MinIO 自动生成独立凭据；
+- 固定 `FILE_STORAGE_TYPE=disabled`，移除旧 MinIO/S3 凭据；
 - 不生成或写入 Anthropic、OpenAI 等上游 Provider API Key。
 
 可重复执行初始化；使用下面的命令检查两套环境文件是否完整有效：
@@ -81,20 +80,29 @@ pnpm docker:up
 pnpm docker:logs
 ```
 
-容器启动时默认执行数据库迁移。停止服务：
+`pnpm docker:up` 先构建单一镜像，再用 one-off container 执行 package migration，
+最后启动包含 Admin/Gateway 与内嵌 PostgreSQL 的容器。应用启动不会自动迁移。
+停止服务：
 
 ```bash
 pnpm docker:down
 ```
 
-生产部署前至少修改 `docker/.env` 中的公开端口、数据库密码、MinIO 密码、管理后台 Origin，并将敏感值交由部署平台的 Secret Manager 注入。数据库与 MinIO 密码需使用至少 16 位的 URL-safe 字符。Compose 会拒绝在必需密钥为空时启动。
+生产部署前至少确认公开端口、数据库密码、管理后台 Origin，并将敏感值交由部署平台注入。数据库密码需使用至少 16 位 URL-safe 字符。Compose 会拒绝必需密钥为空。
+
+阿里云 ECS 使用 Admin-owned [`deploy/remote-ssh/deploy.sh`](deploy/remote-ssh/deploy.sh)，
+发布单一 Admin/Gateway/内嵌 PostgreSQL 容器与 Artifact volume；Dream frontend/backend
+由 Dream 仓库单独发布。首次空目标数据引导、常规发布、单实例 migration、备份、
+验证和回滚见 [部署指南](docs/deploy.md)。
 
 ## 环境变量
 
 | 变量 | 用途 | 初始化策略 |
 | --- | --- | --- |
-| `DATABASE_URL` | PostgreSQL 连接；本地默认连接 `localhost:5433/ink-memory` | 自动配置 |
-| `MIGRATION_DATABASE_URL` | 唯一 Schema runner 的显式连接；生产必须使用专用 migrator 账户 | 本地自动配置；生产由 Secret Manager 注入 |
+| `DATABASE_URL` | PostgreSQL 连接；本机默认 `127.0.0.1:54329/ink-memory` | 自动配置 |
+| `INK_DATABASE_MODE` | 明确数据库 topology capability | 本机/容器固定 `embedded-postgres` |
+| `EMBEDDED_POSTGRES_*` | 数据目录、端口、shared buffers 与连接数 | 本机自动配置；容器默认 5432/96MB/50 |
+| `MIGRATION_DATABASE_URL` | 可选外部 migration 目标；未设置时只允许显式 embedded mode | 生产可由平台注入 |
 | `ADMIN_SESSION_SECRET` | 管理员 Session HMAC | 自动生成，至少 32 bytes |
 | `ADMIN_BOOTSTRAP_TOKEN` | 首次设置页面的一次性初始化授权 | 自动生成，至少 32 bytes；不发送给页面，需手工粘贴 |
 | `ADMIN_ORIGIN_ALLOWLIST` | 管理写操作允许的 Origin，逗号分隔 | 本地默认 `http://localhost:3000` |
@@ -104,13 +112,8 @@ pnpm docker:down
 | `AI_PROVIDER_ALLOW_INSECURE_LOCALHOST` | 开发环境允许本地 HTTP Provider | 默认 `false` |
 | `GATEWAY_MIN_RESERVE_MICROUSD` | 单次请求最低预授权金额 | 默认 `0` |
 | `GATEWAY_MAX_BODY_BYTES` | 网关请求体上限 | 默认 `20971520` |
-| `FILE_STORAGE_TYPE` | 文件存储驱动：`vercel-blob` 或 `s3` | 默认 `vercel-blob` |
+| `FILE_STORAGE_TYPE` | 文件存储 capability：`disabled`、`vercel-blob` 或 `s3` | 当前固定 `disabled` |
 | `FILE_STORAGE_PREFIX` | 对象 Key 前缀 | 默认 `uploads` |
-| `BLOB_READ_WRITE_TOKEN` | Vercel Blob 凭据 | 使用 Vercel Blob 时配置 |
-| `FILE_STORAGE_S3_*` | Bucket、Region、Endpoint、公开 URL 与 Path Style | 使用 S3 时配置 |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | S3 访问凭据 | 使用需要静态凭据的 S3 时配置 |
-| `MINIO_USER` / `MINIO_PASSWORD` | 内置 MinIO 管理凭据 | 本地自动生成/配置 |
-| `MINIO_API_PORT` / `MINIO_CONSOLE_PORT` | MinIO S3 API 与控制台端口 | 默认 `9000` / `9001` |
 
 Provider API Key 不属于应用运行环境变量。请在 `/admin/models` 创建 Provider 时录入，系统只保存加密密文并在读取接口中返回指纹。
 
@@ -122,7 +125,7 @@ Provider、上游型号、alias 和显示名称，不会发起模型目录请求
 
 ## 文件存储
 
-Storage 业务和共享 lib 保留在当前项目中，支持 Vercel Blob、AWS S3 及兼容 S3 协议的对象存储：
+Storage API 与 provider 实现仍保留，但基础 topology 暂停对象存储：
 
 - `GET /api/storage`：读取存储驱动和配置状态；
 - `POST /api/storage/upload`：服务端 multipart 上传；
@@ -131,18 +134,23 @@ Storage 业务和共享 lib 保留在当前项目中，支持 Vercel Blob、AWS 
 
 Storage 的核心接口、驱动实现、Key 校验与内容转换位于 `app/lib/file-storage`。对公网开放上传接口前，应在业务接入层补齐用户鉴权、限流与文件大小策略。
 
-本地默认使用 S3 驱动连接 Compose 中的 MinIO。控制台地址为 [http://localhost:9001](http://localhost:9001)，登录凭据保存在 ignored 的 `.env.local` 中。切换到 Vercel Blob 或外部 S3 时，修改相应 Storage 变量后重新运行 `pnpm env:check`。
+当前 `FILE_STORAGE_TYPE=disabled`，发现接口返回 `FILE_STORAGE_DISABLED`，文件操作
+fail closed；没有 MinIO 容器、端口、bucket 或 volume。重新启用必须显式选择
+Vercel Blob/外部 S3，并同时恢复部署配置与凭据校验。
 
 ## 数据库与迁移
 
 ```bash
-pnpm db:generate        # 修改 app/lib/db/schema/** 后生成前向 migration
+pnpm db:generate        # 修改 packages/db/src/schema/** 后生成前向 migration
 pnpm db:migrate:status  # 只读显示已应用连续前缀和待执行 migration
 pnpm db:migrate         # 唯一 Schema/DDL 迁移入口
 pnpm db:migrate:check   # 要求 journal、hash、数据库 receipt 全部 current
 ```
 
-`drizzle/**` 是共享 PostgreSQL 表、字段、索引、约束、函数和触发器的唯一版本历史。Dream 启动只检查 `drizzle.schema_capabilities`，不执行 Alembic 或 runtime DDL。`MIGRATION_DATABASE_URL` 必须显式提供；runner 不会回退复用 `DATABASE_URL`。生产应将 migration 连接配置为专用账户，并由单实例发布步骤执行。
+`packages/db/src/schema/**` 是唯一 TypeScript schema，`drizzle/**` 是不可变 SQL/
+journal/snapshot 历史。Dream 启动只检查 capability，不执行 DDL。runner 优先使用
+显式 `MIGRATION_DATABASE_URL`；缺少时只在 `INK_DATABASE_MODE=embedded-postgres`
+明确存在后启动内嵌目标，绝不回退复用应用 DSN。生产 migration 仍由单实例发布步骤执行。
 
 Dream 的 43+5 张 SQLite 表不是静态 SQL seed。`drizzle/data/` 只在 Schema 已具备 `dream.schema.unified.v1` 后运行可审计的数据迁移；快照、staging、转换和业务完整性验证仍由 Dream 领域 importer 负责。全新数据库只需一个 Schema 命令：
 
@@ -174,11 +182,11 @@ pnpm test:data-migration:e2e
 
 完整接管合同、发布顺序和回滚边界见 [统一数据库 Schema 权威](docs/architecture/database-schema-authority.md)。`db:push` 仅允许显式命名的一次性本地数据库，并要求 `ALLOW_EPHEMERAL_DB_PUSH=1`；共享、集成和生产数据库禁止使用。
 
-应用没有嵌入式数据库回退。启动数据库容器后，可使用以下命令确认状态：
+本机内嵌数据库由 package 按命令生命周期启动。可使用以下命令确认 migration 与应用：
 
 ```bash
-docker compose exec postgres pg_isready -U ink_memory -d ink-memory
-curl -f http://localhost:9000/minio/health/ready
+pnpm db:migrate:check
+pnpm dev
 ```
 
 ## 项目结构
@@ -196,12 +204,13 @@ app/
 │   ├── file-storage/    # Vercel Blob / S3 存储抽象与实现
 │   ├── models/          # 模型解析
 │   ├── security/        # Provider 凭据加密
-│   └── db/              # PostgreSQL schema
+│   └── db/              # @ink-memory/db 兼容 facade
 └── v1/                  # 模型兼容网关 Route Handlers
-drizzle/                 # 版本化 PostgreSQL migrations 与可审计 data runners
+packages/db/             # DB client、schema、embedded PG、migration
+drizzle/                 # 不可变 PostgreSQL migrations 与可审计 data runners
 scripts/                 # 环境初始化与迁移脚本
 tests/e2e/               # Playwright 管理后台验收
-docker/                  # 应用 + PostgreSQL 生产化 Compose
+docker/                  # 单 Admin/embedded-PG 镜像与 Compose
 ```
 
 ## 质量检查

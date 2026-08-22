@@ -1,3 +1,7 @@
+// [Input] Isolated Dream PostgreSQL introspection output.
+// [Output] Non-baseline Dream Drizzle declarations for @ink-memory/db schema ownership.
+// [Pos] Auditable schema-generation helper; never runs at application startup.
+// [Sync] 2026-08-21: target the package-local canonical schema import.
 import { readFile, writeFile } from "node:fs/promises";
 
 const args = process.argv.slice(2);
@@ -35,7 +39,7 @@ for (const [start, end] of removeRanges.sort((left, right) => right[0] - left[0]
   body = body.slice(0, start) + body.slice(end);
 }
 const importEnd = body.indexOf("\n", body.indexOf("\n") + 1) + 1;
-body = `${body.slice(0, importEnd)}\nimport {\n  storyWorkspaceStories as story_workspace_stories,\n  storyWorkspaceWorkspaces as story_workspace_workspaces,\n  users,\n} from "../schema";\n${body.slice(importEnd)}`;
+body = `${body.slice(0, importEnd)}\nimport {\n  storyWorkspaceStories as story_workspace_stories,\n  storyWorkspaceWorkspaces as story_workspace_workspaces,\n  users,\n} from "./index.js";\n${body.slice(importEnd)}`;
 body = body.replace(
   /\.generatedByDefaultAsIdentity\(\{ name: "[a-z0-9_]+", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 \}\)/g,
   ".generatedByDefaultAsIdentity()",

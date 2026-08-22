@@ -7,6 +7,11 @@
     "node": ">=20"
   },
   "type": "module",
+  "pnpm": {
+    "patchedDependencies": {
+      "embedded-postgres@18.1.0-beta.16": "patches/embedded-postgres@18.1.0-beta.16.patch"
+    }
+  },
   "scripts": {
     "env:setup": "node scripts/setup-env.mjs",
     "env:check": "node scripts/setup-env.mjs --check",
@@ -14,8 +19,10 @@
     "product:provision-local-dream": "node scripts/provision-local-dream-product.mjs --apply",
     "plans:seed": "node scripts/seed-default-dream-plans.mjs --apply",
     "plans:check": "node scripts/seed-default-dream-plans.mjs",
-    "dev": "next dev -H 0.0.0.0",
-    "build": "next build --webpack",
+    "dev": "pnpm run dev:embedded",
+    "dev:app": "next dev -H 0.0.0.0",
+    "dev:embedded": "tsx packages/db/src/supervise.ts pnpm run dev:app",
+    "build": "pnpm --filter @ink-memory/db build && next build --webpack",
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest",
@@ -27,10 +34,10 @@
     "test:data-migration:e2e": "node scripts/run-dream-data-migration-e2e.mjs",
     "test:schema-cutover:e2e": "node scripts/run-dream-schema-cutover-e2e.mjs",
     "test:all": "pnpm test:run && pnpm test:e2e",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "node scripts/migrate.mjs",
-    "db:migrate:status": "node scripts/migrate.mjs --status",
-    "db:migrate:check": "node scripts/migrate.mjs --check",
+    "db:generate": "pnpm --filter @ink-memory/db generate",
+    "db:migrate": "pnpm --filter @ink-memory/db migrate",
+    "db:migrate:status": "pnpm --filter @ink-memory/db migrate:status",
+    "db:migrate:check": "pnpm --filter @ink-memory/db migrate:check",
     "db:data:legacy": "node drizzle/data/legacy-43-plus-5.mjs",
     "db:data:subscriptions": "node drizzle/data/default-dream-plans.mjs",
     "gateway-limits:check": "node drizzle/data/gateway-default-token-limits.mjs",
@@ -38,11 +45,12 @@
     "db:push": "node scripts/db-push.mjs",
     "story:import": "node scripts/import-ink-dream-story-source.mjs",
     "docker:build": "cd docker && docker compose build",
-    "docker:up": "cd docker && docker compose up -d --build",
+    "docker:up": "cd docker && docker compose build && docker compose run --rm ink-memory-admin node /app/packages/db/dist/migrate.js && docker compose up -d",
     "docker:down": "cd docker && docker compose down",
     "docker:logs": "cd docker && docker compose logs -f ink-memory-admin"
   },
   "dependencies": {
+    "@ink-memory/db": "workspace:*",
     "@anthropic-ai/sdk": "0.115.0",
     "@aws-sdk/client-s3": "^3.981.0",
     "@aws-sdk/s3-request-presigner": "^3.981.0",
@@ -75,6 +83,7 @@
     "postcss": "8.4.39",
     "react-grab": "^0.1.50",
     "tailwindcss": "4.1.18",
+    "tsx": "^4.19.2",
     "typescript": "5.5.4",
     "vite-tsconfig-paths": "^6.0.5",
     "vitest": "^4.0.18"
