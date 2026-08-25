@@ -6,6 +6,8 @@
 // [Sync] 2026-08-19: add the Admin-owned global ClaudePlugin remote
 // Marketplace catalog, immutable revisions, full-plugin digests, policies, and install lineage.
 // [Sync] 2026-08-21: move the shared Dream catalog into the database workspace package.
+// [Sync] 2026-08-25: add Admin-owned Dream MCP servers, encrypted credentials,
+// discovery snapshots, durable import receipts, and their exact capability contract.
 import { pgTable, uniqueIndex, index, check, bigint, text, timestamp, foreignKey, jsonb, unique, integer, boolean, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
@@ -1412,4 +1414,114 @@ export const runtime_load_receipt_entries = pgTable("runtime_load_receipt_entrie
 	check("ck_runtime_load_receipt_entries_1", sql`verification_status = ANY (ARRAY['verified'::text, 'legacy_unverified'::text])`),
 	check("ck_runtime_load_receipt_entries_2", sql`required = ANY (ARRAY[0, 1])`),
 	check("ck_runtime_load_receipt_entries_3", sql`load_status = ANY (ARRAY['loaded'::text, 'load_failed'::text, 'skipped'::text])`),
+]);
+
+export const dream_mcp_servers = pgTable("dream_mcp_servers", {
+	id: text().primaryKey().notNull(),
+	user_id: bigint({ mode: "number" }).notNull(),
+	server_key: text().notNull(),
+	display_name: text().notNull(),
+	scope_type: text().notNull(),
+	scope_id: text(),
+	transport: text().notNull(),
+	remote_url: text(),
+	stdio_profile_key: text(),
+	auth_kind: text().default('none').notNull(),
+	enabled: boolean().default(true).notNull(),
+	config_revision: integer().default(1).notNull(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_dream_mcp_servers_list").using("btree", table.user_id.asc().nullsLast().op("int8_ops"), table.scope_type.asc().nullsLast().op("text_ops"), table.scope_id.asc().nullsLast().op("text_ops"), table.enabled.asc().nullsLast().op("bool_ops"), table.updated_at.desc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+		columns: [table.user_id],
+		foreignColumns: [users.id],
+		name: "fk_dream_mcp_servers_user_id_users",
+	}).onDelete("cascade"),
+	unique("uq_dream_mcp_servers_scope_key").on(table.user_id, table.scope_type, table.scope_id, table.server_key).nullsNotDistinct(),
+	check("ck_dream_mcp_servers_scope", sql`(scope_type = 'user'::text AND scope_id IS NULL) OR (scope_type = 'workspace'::text AND scope_id IS NOT NULL)`),
+	check("ck_dream_mcp_servers_transport", sql`transport = ANY (ARRAY['streamable_http'::text, 'sse'::text, 'stdio'::text])`),
+	check("ck_dream_mcp_servers_endpoint", sql`((transport = ANY (ARRAY['streamable_http'::text, 'sse'::text])) AND remote_url IS NOT NULL AND stdio_profile_key IS NULL) OR (transport = 'stdio'::text AND remote_url IS NULL AND stdio_profile_key IS NOT NULL)`),
+	check("ck_dream_mcp_servers_auth_kind", sql`auth_kind = ANY (ARRAY['none'::text, 'oauth'::text])`),
+	check("ck_dream_mcp_servers_config_revision", sql`config_revision >= 1`),
+]);
+
+export const dream_mcp_credentials = pgTable("dream_mcp_credentials", {
+	id: text().primaryKey().notNull(),
+	server_id: text().notNull(),
+	kind: text().notNull(),
+	ciphertext: text().notNull(),
+	iv: text().notNull(),
+	tag: text().notNull(),
+	fingerprint: text().notNull(),
+	key_version: integer().notNull(),
+	credential_revision: integer().default(1).notNull(),
+	expires_at: timestamp({ withTimezone: true, mode: 'string' }),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+		columns: [table.server_id],
+		foreignColumns: [dream_mcp_servers.id],
+		name: "fk_dream_mcp_credentials_server_id_servers",
+	}).onDelete("cascade"),
+	unique("uq_dream_mcp_credentials_server_id").on(table.server_id),
+	check("ck_dream_mcp_credentials_kind", sql`kind = ANY (ARRAY['oauth'::text, 'headers'::text, 'stdio_env'::text])`),
+	check("ck_dream_mcp_credentials_key_version", sql`key_version >= 1`),
+	check("ck_dream_mcp_credentials_revision", sql`credential_revision >= 1`),
+]);
+
+export const dream_mcp_discovery_snapshots = pgTable("dream_mcp_discovery_snapshots", {
+	id: text().primaryKey().notNull(),
+	server_id: text().notNull(),
+	config_revision: integer().notNull(),
+	credential_revision: integer(),
+	status: text().notNull(),
+	inventory: jsonb().default({}).notNull(),
+	inventory_sha256: text().notNull(),
+	safe_error_code: text(),
+	discovered_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expires_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+}, (table) => [
+	index("idx_dream_mcp_discovery_snapshots_query").using("btree", table.server_id.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops"), table.expires_at.desc().nullsLast().op("timestamptz_ops"), table.discovered_at.desc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+		columns: [table.server_id],
+		foreignColumns: [dream_mcp_servers.id],
+		name: "fk_dream_mcp_discovery_snapshots_server_id_servers",
+	}).onDelete("cascade"),
+	unique("uq_dream_mcp_discovery_snapshots_revision").on(table.server_id, table.config_revision, table.credential_revision).nullsNotDistinct(),
+	check("ck_dream_mcp_discovery_snapshots_config_revision", sql`config_revision >= 1`),
+	check("ck_dream_mcp_discovery_snapshots_credential_revision", sql`credential_revision IS NULL OR credential_revision >= 1`),
+	check("ck_dream_mcp_discovery_snapshots_status", sql`status = ANY (ARRAY['complete'::text, 'failed'::text, 'cancelled'::text])`),
+	check("ck_dream_mcp_discovery_snapshots_inventory", sql`jsonb_typeof(inventory) = 'object'::text`),
+	check("ck_dream_mcp_discovery_snapshots_inventory_sha", sql`inventory_sha256 ~ '^[0-9a-f]{64}$'::text`),
+	check("ck_dream_mcp_discovery_snapshots_expiry", sql`expires_at > discovered_at`),
+]);
+
+export const dream_mcp_import_receipts = pgTable("dream_mcp_import_receipts", {
+	id: text().primaryKey().notNull(),
+	user_id: bigint({ mode: "number" }).notNull(),
+	source_item_sha256: text().notNull(),
+	canonical_config_sha256: text().notNull(),
+	target_server_id: text(),
+	state: text().notNull(),
+	run_id: text().notNull(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("uq_dream_mcp_import_receipts_success_source").using("btree", table.user_id.asc().nullsLast().op("int8_ops"), table.source_item_sha256.asc().nullsLast().op("text_ops")).where(sql`(state = ANY (ARRAY['imported'::text, 'noop'::text]))`),
+	index("idx_dream_mcp_import_receipts_run").using("btree", table.user_id.asc().nullsLast().op("int8_ops"), table.run_id.asc().nullsLast().op("text_ops"), table.created_at.desc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+		columns: [table.user_id],
+		foreignColumns: [users.id],
+		name: "fk_dream_mcp_import_receipts_user_id_users",
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.target_server_id],
+		foreignColumns: [dream_mcp_servers.id],
+		name: "fk_dream_mcp_import_receipts_target_server_id_servers",
+	}).onDelete("set null"),
+	check("ck_dream_mcp_import_receipts_source_sha", sql`source_item_sha256 ~ '^[0-9a-f]{64}$'::text`),
+	check("ck_dream_mcp_import_receipts_config_sha", sql`canonical_config_sha256 ~ '^[0-9a-f]{64}$'::text`),
+	check("ck_dream_mcp_import_receipts_state", sql`state = ANY (ARRAY['imported'::text, 'noop'::text, 'conflict'::text, 'credential_reauth_required'::text])`),
 ]);
