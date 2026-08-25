@@ -7,6 +7,27 @@ migration。Dream 只发布 frontend/backend，通过共享网络消费 Admin �
 架构细节见
 [数据库 Package 与内嵌 PostgreSQL](architecture/database-package-and-embedded-postgresql.md)。
 
+## AutoDL SSH 直接部署
+
+AutoDL 使用独立的 `deploy/autodl-ssh` 平台，不复用 ECS 的 Docker/nginx 路径。先以明确的 Admin/Dream 公网 origin 生成安全配置，再执行首次 `bootstrap` 或常规 `deploy`：
+
+先将 `deploy/autodl-ssh/platform.env.example` 复制为 gitignored 的 `platform.env` 并填写 SSH、`/root` 路径及 Dream/Admin 公网映射；发布入口会自动读取该文件。
+
+```bash
+AUTODL_ADMIN_PUBLIC_ORIGIN=https://admin-tunnel.example.com:8443 \
+AUTODL_DREAM_PUBLIC_ORIGIN=https://dream-tunnel.example.com:8443 \
+./deploy/autodl-ssh/prepare-env.sh
+
+export AUTODL_SSH_HOST=connect.example.com
+export AUTODL_SSH_USER=root
+export AUTODL_SSH_PORT=22
+export AUTODL_ADMIN_PUBLIC_ORIGIN=https://admin-tunnel.example.com:8443
+./deploy/autodl-ssh/deploy.sh check
+./deploy/autodl-ssh/deploy.sh bootstrap
+```
+
+Admin 固定监听 `127.0.0.1:6008`，SeetaCloud 负责 HTTPS 端口映射。应用与嵌入式 PostgreSQL 以专用非 root 用户运行；代码、配置与版本化 release 在 `/root/ink-autodl/admin`，数据默认在 `/root/autodl-tmp/ink-memory`。`bootstrap` 对非空目标 fail closed；日常发布运行显式 Drizzle migration 后再启动应用，`rollback` 不回滚数据库。
+
 ## 阿里云 ECS
 
 生产入口是 [`../deploy/remote-ssh/deploy.sh`](../deploy/remote-ssh/deploy.sh)：
