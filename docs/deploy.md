@@ -26,7 +26,7 @@ export AUTODL_ADMIN_PUBLIC_ORIGIN=https://admin-tunnel.example.com:8443
 ./deploy/autodl-ssh/deploy.sh bootstrap
 ```
 
-Admin 固定监听 `127.0.0.1:6008`，SeetaCloud 负责 HTTPS 端口映射。应用与嵌入式 PostgreSQL 以专用非 root 用户运行；代码、配置与版本化 release 在 `/root/ink-autodl/admin`，数据默认在 `/root/autodl-tmp/ink-memory`。`bootstrap` 对非空目标 fail closed；日常发布运行显式 Drizzle migration 后再启动应用，`rollback` 不回滚数据库。
+Admin 固定监听 `127.0.0.1:6008`，SeetaCloud 负责 HTTPS 端口映射。应用与嵌入式 PostgreSQL 以专用非 root 用户运行；代码、配置与版本化 release 在 `/root/ink-autodl/admin`，PostgreSQL 默认在服务用户 home 的 `/var/lib/ink-memory/data/postgres`，共享 Artifact 在 `/root/autodl-tmp/ink-memory/artifacts`。`bootstrap` 对非空目标 fail closed；日常发布运行显式 Drizzle migration 后再启动应用，`rollback` 不回滚数据库。若检测到旧 `/root/autodl-tmp/ink-memory/postgres/PG_VERSION` 且新目录尚无 cluster，initializer 会停止，要求运维先按停机、备份、校验流程处理真实数据；发布脚本不会自行移动或删除它。
 
 ## 阿里云 ECS
 
@@ -126,6 +126,7 @@ migration，再启动常驻容器。
 - `INK_DATABASE_MODE=embedded-postgres`
 - `POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DB`
 - `EMBEDDED_POSTGRES_DATA_DIR`、`EMBEDDED_POSTGRES_PORT`
+- AutoDL `AUTODL_ADMIN_HOME`（必须位于 Dream `AUTODL_DATA_ROOT` 之外）
 - `EMBEDDED_POSTGRES_SHARED_BUFFERS`（ECS 默认 `96MB`）
 - `EMBEDDED_POSTGRES_MAX_CONNECTIONS`（ECS 默认 `50`）
 - `NEXT_BUILD_CPUS`、`NEXT_BUILD_MAX_OLD_SPACE_MB`（只约束镜像 build，ECS 为 `1`/`640`）

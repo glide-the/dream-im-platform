@@ -95,6 +95,11 @@ pnpm docker:down
 由 Dream 仓库单独发布。首次空目标数据引导、常规发布、单实例 migration、备份、
 验证和回滚见 [部署指南](docs/deploy.md)。
 
+AutoDL 直接部署将 embedded PostgreSQL 固定到 Admin 服务用户 home 下的
+`/var/lib/ink-memory/data/postgres`，共享 Artifact 仍位于 Dream 数据盘
+`/root/autodl-tmp/ink-memory/artifacts`。initializer 会拒绝符号链接和未经确认的旧
+cluster 路径切换，不会自动迁移、删除或用空库替代真实数据。
+
 ## 环境变量
 
 | 变量 | 用途 | 初始化策略 |
