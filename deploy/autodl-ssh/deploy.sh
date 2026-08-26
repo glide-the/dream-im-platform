@@ -2,7 +2,7 @@
 # [Input] AutoDL SSH settings, generated runtime env, source tree, and optional bootstrap database.
 # [Output] Versioned direct-host Admin/embedded-PostgreSQL release managed by screen.
 # [Pos] AutoDL release entry; deliberately uses neither Docker nor nginx.
-# [Sync] 2026-08-26: bound Next.js build concurrency for the 2 GiB AutoDL cgroup.
+# [Sync] 2026-08-26: place Admin home and PostgreSQL under /root/ink-autodl/data.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,7 +19,7 @@ AUTODL_SSH_KEY="${AUTODL_SSH_KEY:-}"
 AUTODL_SSH_CONTROL_PATH="${AUTODL_SSH_CONTROL_PATH:-}"
 AUTODL_APP_ROOT="${AUTODL_APP_ROOT:-/root/ink-autodl/admin}"
 AUTODL_DATA_ROOT="${AUTODL_DATA_ROOT:-/root/autodl-tmp/ink-memory}"
-AUTODL_ADMIN_HOME="${AUTODL_ADMIN_HOME:-/var/lib/ink-memory}"
+AUTODL_ADMIN_HOME="${AUTODL_ADMIN_HOME:-/root/ink-autodl/data}"
 AUTODL_ENV_FILE="${AUTODL_ENV_FILE:-${SCRIPT_DIR}/.env}"
 AUTODL_SOURCE_ENV_FILE="${AUTODL_SOURCE_ENV_FILE:-${REPO_ROOT}/.env.local}"
 AUTODL_SERVICE_USER="${AUTODL_SERVICE_USER:-ink-memory}"
@@ -126,7 +126,7 @@ AutoDL Admin direct-host release:
   SSH target:      $(ssh_target):${AUTODL_APP_ROOT}
   local mapping:   http://127.0.0.1:${AUTODL_ADMIN_PORT}
   public mapping:  ${AUTODL_ADMIN_PUBLIC_ORIGIN:-<required>}
-  PostgreSQL:      ${AUTODL_ADMIN_HOME}/data/postgres
+  PostgreSQL:      ${AUTODL_ADMIN_HOME}/postgres
   shared Artifact: ${AUTODL_DATA_ROOT}/artifacts
   build budget:    ${AUTODL_BUILD_CPUS} CPU / ${AUTODL_BUILD_MAX_OLD_SPACE_MB} MiB V8 old-space
   runtime:         Node ${AUTODL_NODE_VERSION} + screen + non-root embedded PostgreSQL
@@ -154,8 +154,8 @@ setfacl -m u:$(quote "${AUTODL_SERVICE_USER}"):--x /root/ink-autodl $(quote "${A
 chgrp $(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/config")
 chmod 0750 $(quote "${AUTODL_APP_ROOT}/config")
 chown $(quote "${AUTODL_SERVICE_USER}"):$(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/run") $(quote "${AUTODL_APP_ROOT}/logs")
-install -d -o $(quote "${AUTODL_SERVICE_USER}") -g $(quote "${AUTODL_SERVICE_USER}") -m 0750 $(quote "${AUTODL_ADMIN_HOME}") $(quote "${AUTODL_ADMIN_HOME}/data") $(quote "${AUTODL_DATA_ROOT}/artifacts")
-install -d -o $(quote "${AUTODL_SERVICE_USER}") -g $(quote "${AUTODL_SERVICE_USER}") -m 0700 $(quote "${AUTODL_ADMIN_HOME}/data/postgres")
+install -d -o $(quote "${AUTODL_SERVICE_USER}") -g $(quote "${AUTODL_SERVICE_USER}") -m 0750 $(quote "${AUTODL_ADMIN_HOME}") $(quote "${AUTODL_DATA_ROOT}/artifacts")
+install -d -o $(quote "${AUTODL_SERVICE_USER}") -g $(quote "${AUTODL_SERVICE_USER}") -m 0700 $(quote "${AUTODL_ADMIN_HOME}/postgres")
 node_root=/root/ink-autodl/runtime/node-v${AUTODL_NODE_VERSION}-linux-x64
 if [ ! -x \"\${node_root}/bin/node\" ]; then
   install -d /root/ink-autodl/runtime
