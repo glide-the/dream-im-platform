@@ -1,3 +1,8 @@
+// [Input] Provider ReadableStream bytes, optional cancellation signal, and optional network-activity observer.
+// [Output] Incrementally parsed SSE events with exact data/event framing and bounded cancellation cleanup.
+// [Pos] Streaming protocol parser used by Gateway provider proxying and payload capture.
+// [Sync] 2026-08-27: expose raw chunk activity so long-running healthy streams can refresh their idle deadline.
+
 export type SseEvent = {
   event: string;
   data: string;
@@ -23,6 +28,7 @@ function parseBlock(raw: string): SseEvent | undefined {
 export async function* parseSseStream(
   body: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
+  onActivity?: () => void,
 ): AsyncGenerator<SseEvent> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -42,6 +48,7 @@ export async function* parseSseStream(
       const { done, value } = aborted
         ? await Promise.race([reader.read(), aborted])
         : await reader.read();
+      if (value?.byteLength) onActivity?.();
       buffer += decoder.decode(value, { stream: !done });
       buffer = buffer.replaceAll("\r\n", "\n");
       let boundary: number;

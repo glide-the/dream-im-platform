@@ -1,3 +1,8 @@
+// [Input] Controlled provider JSON/SSE responses plus mocked billing and payload persistence boundaries.
+// [Output] Protocol, streaming, cancellation, timeout-refresh, settlement, and capture regression proof.
+// [Pos] Core Gateway proxy lifecycle unit tests.
+// [Sync] 2026-08-27: require stream-idle refresh wiring from every upstream network chunk.
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GatewayError } from "./errors";
 import { ProviderHttpError } from "./provider-transport";
@@ -50,7 +55,15 @@ function prepared(providerProtocol: "anthropic" | "openai") {
 
 function transport(response: Response) {
   const controller = new AbortController();
-  return { response, abort: { signal: controller.signal, abort: vi.fn(() => controller.abort()), cleanup: vi.fn() } };
+  return {
+    response,
+    abort: {
+      signal: controller.signal,
+      abort: vi.fn(() => controller.abort()),
+      refreshStreamIdleTimeout: vi.fn(),
+      cleanup: vi.fn(),
+    },
+  };
 }
 
 beforeEach(() => {
@@ -68,11 +81,12 @@ beforeEach(() => {
 
 describe("true gateway streaming proxy", () => {
   it("passes fragmented Anthropic SSE incrementally and settles final usage", async () => {
-    mocks.send.mockResolvedValue(transport(new Response(sse([
+    const result = transport(new Response(sse([
       'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","model":"claude","usage":{"input_tokens":7,"output_tokens":0}}}\n\n',
       'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_',
       'delta","text":"hi"}}\n\nevent: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n',
-    ]), { headers: { "content-type": "text/event-stream" } })));
+    ]), { headers: { "content-type": "text/event-stream" } }));
+    mocks.send.mockResolvedValue(result);
     const response = await proxyStreaming({ request: new Request("http://gateway/v1/messages"), externalProtocol: "anthropic", prepared: prepared("anthropic"), body: { model: "alias", messages: [], max_tokens: 128, stream: true } });
     const body = await response.text();
     expect(response.status).toBe(200);
@@ -82,6 +96,7 @@ describe("true gateway streaming proxy", () => {
     expect(body).toContain("event: message_stop");
     expect(mocks.finalizeKnown).toHaveBeenCalledWith(expect.objectContaining({ usage: expect.objectContaining({ inputTokens: 7, outputTokens: 2 }) }));
     expect(mocks.eventPayload).toHaveBeenCalledTimes(4);
+    expect(result.abort.refreshStreamIdleTimeout).toHaveBeenCalledTimes(4);
   });
 
   it("emits OpenAI chunks and exactly one DONE terminator", async () => {
