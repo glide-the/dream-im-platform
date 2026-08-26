@@ -1,3 +1,8 @@
+// [Input] Resolved provider endpoint, credential, request body, cancellation signal, and provider timeout policy.
+// [Output] Authenticated provider response plus a lifecycle-safe connection/stream-idle abort controller.
+// [Pos] Low-level Gateway provider HTTP transport shared by Anthropic and OpenAI protocol adapters.
+// [Sync] 2026-08-27: treat streaming timeout as rolling network-idle time instead of a fixed total response lifetime.
+
 import { decryptCredential } from "../security/credential-encryption";
 import type { ResolvedBillableModel } from "../models/resolver";
 import { GatewayError } from "./errors";
@@ -14,6 +19,19 @@ export class ProviderHttpError extends Error {
     super(`Provider returned HTTP ${status}`);
     this.name = "ProviderHttpError";
   }
+}
+
+export class ProviderTimeoutError extends Error {
+  constructor(public readonly phase: "connect" | "stream_idle") {
+    super(phase === "connect" ? "Provider connection timed out" : "Provider stream became idle");
+    this.name = "ProviderTimeoutError";
+  }
+}
+
+export function isProviderTimeoutError(error: unknown): error is ProviderTimeoutError {
+  return error instanceof ProviderTimeoutError
+    || (error instanceof Error && error.name === "ProviderTimeoutError")
+    || (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "TimeoutError");
 }
 
 function providerCredential(resolved: ResolvedBillableModel) {
@@ -45,14 +63,22 @@ function endpoint(baseUrl: string, protocol: "anthropic" | "openai", requestUrl?
 
 function linkedAbort(input: { requestSignal: AbortSignal; timeoutMs: number }) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new DOMException("Provider timeout", "TimeoutError")), input.timeoutMs);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const arm = (phase: "connect" | "stream_idle") => {
+    if (timeout !== undefined) clearTimeout(timeout);
+    timeout = setTimeout(() => controller.abort(new ProviderTimeoutError(phase)), input.timeoutMs);
+  };
+  arm("connect");
   const abort = () => controller.abort(input.requestSignal.reason);
   input.requestSignal.addEventListener("abort", abort, { once: true });
   return {
     signal: controller.signal,
     abort: () => controller.abort(),
+    refreshStreamIdleTimeout: () => {
+      if (!controller.signal.aborted) arm("stream_idle");
+    },
     cleanup: () => {
-      clearTimeout(timeout);
+      if (timeout !== undefined) clearTimeout(timeout);
       input.requestSignal.removeEventListener("abort", abort);
     },
   };

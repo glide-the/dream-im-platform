@@ -1,3 +1,8 @@
+// [Input] Prepared billable Gateway request, client cancellation, protocol body, and provider transport stream.
+// [Output] Adapted JSON/SSE response with payload capture, usage accounting, timeout refresh, and settlement.
+// [Pos] Core provider proxy lifecycle joining protocol adapters, transport, billing, and response persistence.
+// [Sync] 2026-08-27: refresh provider stream-idle timeout on every upstream network chunk.
+
 import type { z } from "zod";
 import { createHash } from "node:crypto";
 import type { ResolvedBillableModel } from "../models/resolver";
@@ -259,7 +264,12 @@ export async function proxyStreaming(input: {
     await markGatewayPayloadCaptureFailure(input.prepared.requestId, error).catch(() => undefined);
   });
   await captureQueue.enqueue(() => startGatewayResponsePayload({ requestId: input.prepared.requestId, status: 200, headers }));
-  const iterator = parseSseStream(upstream.body, transport.abort.signal)[Symbol.asyncIterator]();
+  transport.abort.refreshStreamIdleTimeout();
+  const iterator = parseSseStream(
+    upstream.body,
+    transport.abort.signal,
+    transport.abort.refreshStreamIdleTimeout,
+  )[Symbol.asyncIterator]();
   const adapter = createProtocolStreamAdapter({ externalProtocol: input.externalProtocol, providerProtocol: input.prepared.resolved.provider.protocol, requestedModel: String(input.body.model) });
   let usage = emptyUsage(input.externalProtocol);
   usage.upstreamRequestId = upstreamHeaderRequestId;
