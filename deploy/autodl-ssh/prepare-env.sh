@@ -2,14 +2,20 @@
 # [Input] Existing mode-0600 Admin env plus explicit AutoDL bind/public origins.
 # [Output] Mode-0600 local AutoDL runtime env without printing secret values.
 # [Pos] AutoDL Admin runtime configuration projector in deploy/autodl-ssh/.
-# [Sync] 2026-08-26: introduce direct-host mappings and embedded-PG paths for AutoDL.
+# [Sync] 2026-08-26: project PostgreSQL into the Admin service home/data hierarchy.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+AUTODL_PLATFORM_ENV_FILE="${AUTODL_PLATFORM_ENV_FILE:-${SCRIPT_DIR}/platform.env}"
+if [[ -f "${AUTODL_PLATFORM_ENV_FILE}" ]]; then
+  # shellcheck disable=SC1090 -- the operator explicitly selects this local platform file.
+  source "${AUTODL_PLATFORM_ENV_FILE}"
+fi
 SOURCE_ENV_FILE="${AUTODL_SOURCE_ENV_FILE:-${REPO_ROOT}/.env.local}"
 OUTPUT_ENV_FILE="${AUTODL_ENV_FILE:-${SCRIPT_DIR}/.env}"
 AUTODL_DATA_ROOT="${AUTODL_DATA_ROOT:-/root/autodl-tmp/ink-memory}"
+AUTODL_ADMIN_HOME="${AUTODL_ADMIN_HOME:-/var/lib/ink-memory}"
 AUTODL_ADMIN_BIND_HOST="${AUTODL_ADMIN_BIND_HOST:-127.0.0.1}"
 AUTODL_ADMIN_PORT="${AUTODL_ADMIN_PORT:-6008}"
 AUTODL_ADMIN_PUBLIC_ORIGIN="${AUTODL_ADMIN_PUBLIC_ORIGIN:-}"
@@ -19,6 +25,7 @@ err() { printf '[error] %s\n' "$*" >&2; exit 1; }
 
 [[ -f "${SOURCE_ENV_FILE}" ]] || err "Missing source env: ${SOURCE_ENV_FILE}"
 [[ "${AUTODL_DATA_ROOT}" == /root/* ]] || err "AUTODL_DATA_ROOT must stay under /root."
+[[ "${AUTODL_ADMIN_HOME}" == /* && "${AUTODL_ADMIN_HOME}" != "${AUTODL_DATA_ROOT}" && "${AUTODL_ADMIN_HOME}" != "${AUTODL_DATA_ROOT}/"* ]] || err "AUTODL_ADMIN_HOME must be absolute and outside AUTODL_DATA_ROOT."
 [[ "${AUTODL_ADMIN_BIND_HOST}" == "127.0.0.1" ]] || err "Admin must bind to 127.0.0.1 on AutoDL."
 [[ "${AUTODL_ADMIN_PORT}" =~ ^[0-9]+$ ]] || err "AUTODL_ADMIN_PORT must be numeric."
 [[ "${AUTODL_ADMIN_PUBLIC_ORIGIN}" =~ ^https://[^/]+(:[0-9]+)?$ ]] || err "AUTODL_ADMIN_PUBLIC_ORIGIN must be an exact HTTPS origin."
@@ -44,7 +51,7 @@ awk -F= '
   printf 'BETTER_AUTH_URL=%s\n' "${AUTODL_ADMIN_PUBLIC_ORIGIN}"
   printf 'RUN_DB_MIGRATIONS=false\n'
   printf 'INK_DATABASE_MODE=embedded-postgres\n'
-  printf 'EMBEDDED_POSTGRES_DATA_DIR=%s/postgres\n' "${AUTODL_DATA_ROOT}"
+  printf 'EMBEDDED_POSTGRES_DATA_DIR=%s/data/postgres\n' "${AUTODL_ADMIN_HOME}"
   printf 'EMBEDDED_POSTGRES_PORT=54329\n'
   printf 'ARTIFACT_WORKSPACE_ROOT=%s/artifacts\n' "${AUTODL_DATA_ROOT}"
   printf 'FILE_STORAGE_TYPE=disabled\n'

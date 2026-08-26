@@ -2,7 +2,7 @@
 # [Input] AutoDL SSH settings, generated runtime env, source tree, and optional bootstrap database.
 # [Output] Versioned direct-host Admin/embedded-PostgreSQL release managed by screen.
 # [Pos] AutoDL release entry; deliberately uses neither Docker nor nginx.
-# [Sync] 2026-08-26: add check/sync/build/bootstrap/deploy/verify/rollback for AutoDL.
+# [Sync] 2026-08-26: separate Admin PostgreSQL home/data from Dream resources.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,6 +19,7 @@ AUTODL_SSH_KEY="${AUTODL_SSH_KEY:-}"
 AUTODL_SSH_CONTROL_PATH="${AUTODL_SSH_CONTROL_PATH:-}"
 AUTODL_APP_ROOT="${AUTODL_APP_ROOT:-/root/ink-autodl/admin}"
 AUTODL_DATA_ROOT="${AUTODL_DATA_ROOT:-/root/autodl-tmp/ink-memory}"
+AUTODL_ADMIN_HOME="${AUTODL_ADMIN_HOME:-/var/lib/ink-memory}"
 AUTODL_ENV_FILE="${AUTODL_ENV_FILE:-${SCRIPT_DIR}/.env}"
 AUTODL_SOURCE_ENV_FILE="${AUTODL_SOURCE_ENV_FILE:-${REPO_ROOT}/.env.local}"
 AUTODL_SERVICE_USER="${AUTODL_SERVICE_USER:-ink-memory}"
@@ -93,13 +94,14 @@ require_config() {
   [[ -n "${AUTODL_SSH_HOST}" ]] || err "AUTODL_SSH_HOST is required."
   [[ "${AUTODL_SSH_USER}" == "root" ]] || err "AutoDL setup currently requires the root SSH account."
   [[ "${AUTODL_APP_ROOT}" == /root/* && "${AUTODL_DATA_ROOT}" == /root/* ]] || err "AutoDL paths must stay under /root."
+  [[ "${AUTODL_ADMIN_HOME}" == /* && "${AUTODL_ADMIN_HOME}" != "${AUTODL_DATA_ROOT}" && "${AUTODL_ADMIN_HOME}" != "${AUTODL_DATA_ROOT}/"* ]] || err "AUTODL_ADMIN_HOME must be absolute and outside AUTODL_DATA_ROOT."
   [[ "${AUTODL_ADMIN_PORT}" == "6008" ]] || err "Admin AutoDL mapping must use local port 6008."
 }
 
 check_local() {
   local failed=0 mode
   for name in ssh scp rsync git gzip pg_dump; do command -v "${name}" >/dev/null 2>&1 || { warn "Missing local command: ${name}"; failed=1; }; done
-  for file in "${AUTODL_ENV_FILE}" "${SCRIPT_DIR}/runtime/start-admin.sh"; do
+  for file in "${AUTODL_ENV_FILE}" "${SCRIPT_DIR}/runtime/start-admin.sh" "${SCRIPT_DIR}/runtime/init-admin-data.sh"; do
     [[ -f "${file}" ]] || { warn "Missing file: ${file}"; failed=1; }
   done
   if [[ -f "${AUTODL_ENV_FILE}" ]]; then
@@ -121,7 +123,8 @@ AutoDL Admin direct-host release:
   SSH target:      $(ssh_target):${AUTODL_APP_ROOT}
   local mapping:   http://127.0.0.1:${AUTODL_ADMIN_PORT}
   public mapping:  ${AUTODL_ADMIN_PUBLIC_ORIGIN:-<required>}
-  data:            ${AUTODL_DATA_ROOT}
+  PostgreSQL:      ${AUTODL_ADMIN_HOME}/data/postgres
+  shared Artifact: ${AUTODL_DATA_ROOT}/artifacts
   runtime:         Node ${AUTODL_NODE_VERSION} + screen + non-root embedded PostgreSQL
   order:           setup -> sync -> build -> restore(first use only) -> migrate -> start -> verify
   excluded:        Docker, nginx, runtime DDL, plaintext secret logging
@@ -139,14 +142,16 @@ test -f /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc || curl -fsSL -
 printf '%s\n' 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt jammy-pgdg main' >/etc/apt/sources.list.d/pgdg.list
 apt-get update >/dev/null
 apt-get install -y --no-install-recommends postgresql-client-18 >/dev/null
-id -u $(quote "${AUTODL_SERVICE_USER}") >/dev/null 2>&1 || adduser --system --group --no-create-home --home /nonexistent --shell /usr/sbin/nologin $(quote "${AUTODL_SERVICE_USER}") >/dev/null
+id -u $(quote "${AUTODL_SERVICE_USER}") >/dev/null 2>&1 || adduser --system --group --home $(quote "${AUTODL_ADMIN_HOME}") --shell /usr/sbin/nologin $(quote "${AUTODL_SERVICE_USER}") >/dev/null
+usermod --home $(quote "${AUTODL_ADMIN_HOME}") $(quote "${AUTODL_SERVICE_USER}")
 setfacl -m u:$(quote "${AUTODL_SERVICE_USER}"):--x /root
 install -d -m 0750 $(quote "${AUTODL_APP_ROOT}") $(quote "${AUTODL_APP_ROOT}/source") $(quote "${AUTODL_APP_ROOT}/releases") $(quote "${AUTODL_APP_ROOT}/config") $(quote "${AUTODL_APP_ROOT}/run") $(quote "${AUTODL_APP_ROOT}/logs")
 setfacl -m u:$(quote "${AUTODL_SERVICE_USER}"):--x /root/ink-autodl $(quote "${AUTODL_APP_ROOT}") $(quote "${AUTODL_APP_ROOT}/releases")
 chgrp $(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/config")
 chmod 0750 $(quote "${AUTODL_APP_ROOT}/config")
 chown $(quote "${AUTODL_SERVICE_USER}"):$(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/run") $(quote "${AUTODL_APP_ROOT}/logs")
-install -d -o $(quote "${AUTODL_SERVICE_USER}") -g $(quote "${AUTODL_SERVICE_USER}") -m 0750 $(quote "${AUTODL_DATA_ROOT}/postgres") $(quote "${AUTODL_DATA_ROOT}/artifacts")
+install -d -o $(quote "${AUTODL_SERVICE_USER}") -g $(quote "${AUTODL_SERVICE_USER}") -m 0750 $(quote "${AUTODL_ADMIN_HOME}") $(quote "${AUTODL_ADMIN_HOME}/data") $(quote "${AUTODL_DATA_ROOT}/artifacts")
+install -d -o $(quote "${AUTODL_SERVICE_USER}") -g $(quote "${AUTODL_SERVICE_USER}") -m 0700 $(quote "${AUTODL_ADMIN_HOME}/data/postgres")
 node_root=/root/ink-autodl/runtime/node-v${AUTODL_NODE_VERSION}-linux-x64
 if [ ! -x \"\${node_root}/bin/node\" ]; then
   install -d /root/ink-autodl/runtime
@@ -174,6 +179,7 @@ sync_files() {
   log "Syncing Admin source without runtime secrets."
   if [[ "${DRY_RUN}" == "1" ]]; then printf '[dry-run] rsync'; printf ' %q' "${args[@]}" "${REPO_ROOT}/" "$(ssh_target):${AUTODL_APP_ROOT}/source/"; printf '\n';
   else rsync "${args[@]}" "${REPO_ROOT}/" "$(ssh_target):${AUTODL_APP_ROOT}/source/"; fi
+  remote "INK_AUTODL_ADMIN_HOME=$(quote "${AUTODL_ADMIN_HOME}") INK_AUTODL_DATA_ROOT=$(quote "${AUTODL_DATA_ROOT}") INK_AUTODL_SERVICE_USER=$(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/source/deploy/autodl-ssh/runtime/init-admin-data.sh")"
   scp_file "${AUTODL_ENV_FILE}" "${AUTODL_APP_ROOT}/config/admin.env.next"
   remote "set -e; group=\$(id -gn $(quote "${AUTODL_SERVICE_USER}")); chown root:\"\${group}\" $(quote "${AUTODL_APP_ROOT}/config/admin.env.next"); chmod 0640 $(quote "${AUTODL_APP_ROOT}/config/admin.env.next"); mv -f $(quote "${AUTODL_APP_ROOT}/config/admin.env.next") $(quote "${AUTODL_APP_ROOT}/config/admin.env")"
 }
@@ -221,6 +227,7 @@ maintenance() {
   for argument in "$@"; do arguments+=" $(quote "${argument}")"; done
   remote "set -euo pipefail
 set -a; . $(quote "${AUTODL_APP_ROOT}/config/admin.env"); set +a
+export HOME=$(quote "${AUTODL_ADMIN_HOME}")
 export PATH=/root/ink-autodl/runtime/node/bin:/usr/lib/postgresql/18/bin:\$PATH
 export INK_MIGRATIONS_DIR=$(quote "${AUTODL_APP_ROOT}/current/drizzle")
 uid=\$(id -u $(quote "${AUTODL_SERVICE_USER}")); gid=\$(id -g $(quote "${AUTODL_SERVICE_USER}"))
@@ -230,11 +237,12 @@ setpriv --reuid=\"\${uid}\" --regid=\"\${gid}\" --init-groups node packages/db/d
 
 start_admin() {
   remote "set -euo pipefail
+INK_AUTODL_ADMIN_HOME=$(quote "${AUTODL_ADMIN_HOME}") INK_AUTODL_DATA_ROOT=$(quote "${AUTODL_DATA_ROOT}") INK_AUTODL_SERVICE_USER=$(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/source/deploy/autodl-ssh/runtime/init-admin-data.sh")
 test -L $(quote "${AUTODL_APP_ROOT}/current")
 uid=\$(id -u $(quote "${AUTODL_SERVICE_USER}")); gid=\$(id -g $(quote "${AUTODL_SERVICE_USER}"))
 rm -f $(quote "${AUTODL_APP_ROOT}/run/admin.pid")
 screen -S $(quote "${AUTODL_SCREEN_NAME}") -X quit >/dev/null 2>&1 || true
-screen -dmS $(quote "${AUTODL_SCREEN_NAME}") -L -Logfile $(quote "${AUTODL_APP_ROOT}/logs/admin.log") bash -lc \"exec setpriv --reuid=\${uid} --regid=\${gid} --init-groups env AUTODL_ADMIN_ENV_FILE=$(quote "${AUTODL_APP_ROOT}/config/admin.env") AUTODL_ADMIN_PID_FILE=$(quote "${AUTODL_APP_ROOT}/run/admin.pid") AUTODL_NODE_BIN=/root/ink-autodl/runtime/node/bin $(quote "${AUTODL_APP_ROOT}/current/start-admin.sh")\"
+screen -dmS $(quote "${AUTODL_SCREEN_NAME}") -L -Logfile $(quote "${AUTODL_APP_ROOT}/logs/admin.log") bash -lc \"exec setpriv --reuid=\${uid} --regid=\${gid} --init-groups env HOME=$(quote "${AUTODL_ADMIN_HOME}") AUTODL_ADMIN_ENV_FILE=$(quote "${AUTODL_APP_ROOT}/config/admin.env") AUTODL_ADMIN_PID_FILE=$(quote "${AUTODL_APP_ROOT}/run/admin.pid") AUTODL_NODE_BIN=/root/ink-autodl/runtime/node/bin $(quote "${AUTODL_APP_ROOT}/current/start-admin.sh")\"
 for _ in \$(seq 1 90); do curl -fsS --max-time 3 http://127.0.0.1:${AUTODL_ADMIN_PORT}/admin/login >/dev/null 2>&1 && exit 0; sleep 1; done
 tail -n 120 $(quote "${AUTODL_APP_ROOT}/logs/admin.log") >&2 || true
 exit 1"
