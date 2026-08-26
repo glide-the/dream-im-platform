@@ -2,7 +2,7 @@
 # [Input] Exported launcher paths and the mode-0640 Admin runtime env.
 # [Output] One foreground Admin process tree supervising embedded PostgreSQL.
 # [Pos] AutoDL screen-session entrypoint; migrations remain a release step.
-# [Sync] 2026-08-26: enforce the Admin home/data PostgreSQL topology at process start.
+# [Sync] 2026-08-26: enforce /root/ink-autodl/data/postgres at process start.
 set -euo pipefail
 
 : "${AUTODL_ADMIN_ENV_FILE:?AUTODL_ADMIN_ENV_FILE is required}"
@@ -15,7 +15,7 @@ set -a
 set +a
 export PATH="${AUTODL_NODE_BIN}:${PATH}"
 
-expected_postgres_dir="${HOME:?HOME is required}/data/postgres"
+expected_postgres_dir="${HOME:?HOME is required}/postgres"
 [[ "${EMBEDDED_POSTGRES_DATA_DIR:-}" == "${expected_postgres_dir}" ]] || {
   printf '[admin-start:error] EMBEDDED_POSTGRES_DATA_DIR must equal %s.\n' "${expected_postgres_dir}" >&2
   exit 1
