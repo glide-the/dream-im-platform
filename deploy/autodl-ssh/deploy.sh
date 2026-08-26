@@ -2,7 +2,7 @@
 # [Input] AutoDL SSH settings, generated runtime env, source tree, and optional bootstrap database.
 # [Output] Versioned direct-host Admin/embedded-PostgreSQL release managed by screen.
 # [Pos] AutoDL release entry; deliberately uses neither Docker nor nginx.
-# [Sync] 2026-08-26: separate Admin PostgreSQL home/data from Dream resources.
+# [Sync] 2026-08-26: bound Next.js build concurrency for the 2 GiB AutoDL cgroup.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,7 +27,8 @@ AUTODL_NODE_VERSION="${AUTODL_NODE_VERSION:-22.18.0}"
 AUTODL_ADMIN_PORT="${AUTODL_ADMIN_PORT:-6008}"
 AUTODL_ADMIN_PUBLIC_ORIGIN="${AUTODL_ADMIN_PUBLIC_ORIGIN:-}"
 AUTODL_SCREEN_NAME="${AUTODL_ADMIN_SCREEN_NAME:-ink-admin}"
-AUTODL_BUILD_MAX_OLD_SPACE_MB="${AUTODL_BUILD_MAX_OLD_SPACE_MB:-4096}"
+AUTODL_BUILD_CPUS="${AUTODL_BUILD_CPUS:-1}"
+AUTODL_BUILD_MAX_OLD_SPACE_MB="${AUTODL_BUILD_MAX_OLD_SPACE_MB:-1024}"
 AUTODL_BOOTSTRAP_DUMP="${AUTODL_BOOTSTRAP_DUMP:-}"
 DRY_RUN=0
 COMMAND=""
@@ -96,6 +97,8 @@ require_config() {
   [[ "${AUTODL_APP_ROOT}" == /root/* && "${AUTODL_DATA_ROOT}" == /root/* ]] || err "AutoDL paths must stay under /root."
   [[ "${AUTODL_ADMIN_HOME}" == /* && "${AUTODL_ADMIN_HOME}" != "${AUTODL_DATA_ROOT}" && "${AUTODL_ADMIN_HOME}" != "${AUTODL_DATA_ROOT}/"* ]] || err "AUTODL_ADMIN_HOME must be absolute and outside AUTODL_DATA_ROOT."
   [[ "${AUTODL_ADMIN_PORT}" == "6008" ]] || err "Admin AutoDL mapping must use local port 6008."
+  [[ "${AUTODL_BUILD_CPUS}" =~ ^[1-9][0-9]*$ ]] || err "AUTODL_BUILD_CPUS must be a positive integer."
+  [[ "${AUTODL_BUILD_MAX_OLD_SPACE_MB}" =~ ^[1-9][0-9]*$ ]] || err "AUTODL_BUILD_MAX_OLD_SPACE_MB must be a positive integer."
 }
 
 check_local() {
@@ -125,6 +128,7 @@ AutoDL Admin direct-host release:
   public mapping:  ${AUTODL_ADMIN_PUBLIC_ORIGIN:-<required>}
   PostgreSQL:      ${AUTODL_ADMIN_HOME}/data/postgres
   shared Artifact: ${AUTODL_DATA_ROOT}/artifacts
+  build budget:    ${AUTODL_BUILD_CPUS} CPU / ${AUTODL_BUILD_MAX_OLD_SPACE_MB} MiB V8 old-space
   runtime:         Node ${AUTODL_NODE_VERSION} + screen + non-root embedded PostgreSQL
   order:           setup -> sync -> build -> restore(first use only) -> migrate -> start -> verify
   excluded:        Docker, nginx, runtime DDL, plaintext secret logging
@@ -192,7 +196,7 @@ build_release() {
 export PATH=/root/ink-autodl/runtime/node/bin:\$PATH
 cd $(quote "${AUTODL_APP_ROOT}/source")
 pnpm install --frozen-lockfile
-NEXT_STANDALONE_OUTPUT=true NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_CPUS=4 NODE_OPTIONS=--max-old-space-size=${AUTODL_BUILD_MAX_OLD_SPACE_MB} pnpm build
+NEXT_STANDALONE_OUTPUT=true NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_CPUS=${AUTODL_BUILD_CPUS} NODE_OPTIONS=--max-old-space-size=${AUTODL_BUILD_MAX_OLD_SPACE_MB} pnpm build
 staging=$(quote "${AUTODL_APP_ROOT}/releases/${release_id}.staging")
 release=$(quote "${AUTODL_APP_ROOT}/releases/${release_id}")
 db_runtime=$(quote "${AUTODL_APP_ROOT}/releases/${release_id}.db-runtime")
