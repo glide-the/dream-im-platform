@@ -50,7 +50,7 @@ describe("Claude Agent resource console data client", () => {
       "AUTODL_AGENT_MAX_CONCURRENT_RUNS=2",
       "AUTODL_AGENT_RUN_MEMORY_BUDGET_MIB=768",
       "AUTODL_AGENT_MEMORY_RESERVE_MIB=192",
-      "AUTODL_AGENT_SWEEP_INTERVAL_S=45",
+      "AUTODL_AGENT_RETRY_AFTER_SECONDS=45",
     ].join("\n"));
   });
 });

@@ -59,7 +59,7 @@ effective:min(memory.max, raw + reclaim)
 memory:   known host MemAvailable < required OR known effective < required
 ```
 
-capacity 先判断且不触发新内存采样；memory 只有通过 capacity 后才采样。指标全部不可用时，现有语义退化为 concurrency-only；本任务不改变它。`INK_AGENT_SWEEP_INTERVAL_S` 同时是 sweeper interval 与 retry hint，UI 必须披露这一事实，不能伪装成独立动态字段。
+capacity 先判断且不触发新内存采样；memory 只有通过 capacity 后才采样。指标全部不可用时，现有语义退化为 concurrency-only；本任务不改变它。Dream effective 来源 `INK_AGENT_SWEEP_INTERVAL_S` 同时是 sweeper interval 与 retry hint；operator 交接投影使用部署层键 `AUTODL_AGENT_RETRY_AFTER_SECONDS`。UI 必须披露该映射，不能伪装成独立动态字段。
 
 `active_runs`、两类 denial 累计和最近采样均是单 Controller、单 Python 进程/uvicorn worker内存值，重启归零，不是 Redis/数据库历史或集群全局值。现有 AutoDL 合同为单 worker；未来多 worker 时每个 worker 独立门禁。
 

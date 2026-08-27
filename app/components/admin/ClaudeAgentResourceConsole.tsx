@@ -84,7 +84,7 @@ export const CLAUDE_AGENT_ENV_FIELDS: Array<{
   { key: "maxConcurrentRuns", label: "最大并发 Agent turn", env: "max_concurrent_runs", dreamEnv: "INK_AGENT_MAX_CONCURRENT_RUNS", autoDlEnv: "AUTODL_AGENT_MAX_CONCURRENT_RUNS" },
   { key: "runMemoryBudgetMib", label: "单次 Agent 内存预算（MiB）", env: "run_memory_budget_mib", dreamEnv: "INK_AGENT_RUN_MEMORY_BUDGET_MIB", autoDlEnv: "AUTODL_AGENT_RUN_MEMORY_BUDGET_MIB" },
   { key: "memoryReserveMib", label: "系统保留内存（MiB）", env: "memory_reserve_mib", dreamEnv: "INK_AGENT_MEMORY_RESERVE_MIB", autoDlEnv: "AUTODL_AGENT_MEMORY_RESERVE_MIB" },
-  { key: "retryAfterSeconds", label: "重试等待（秒）", env: "retry_after_seconds", dreamEnv: "INK_AGENT_SWEEP_INTERVAL_S", autoDlEnv: "AUTODL_AGENT_SWEEP_INTERVAL_S" },
+  { key: "retryAfterSeconds", label: "重试等待（秒）", env: "retry_after_seconds", dreamEnv: "INK_AGENT_SWEEP_INTERVAL_S", autoDlEnv: "AUTODL_AGENT_RETRY_AFTER_SECONDS" },
 ];
 
 export function buildDreamAutoDlPolicyProjection(desired: PolicyValues | null | undefined) {
