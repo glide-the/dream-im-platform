@@ -1,6 +1,7 @@
 // [Input] Authenticated Admin system-governance route.
-// [Output] Claude Agent resource policy and live diagnostics console.
-// [Pos] Read-only monitoring plus desired-policy editing; no runtime process controls.
+// [Output] Claude Agent resource policy and PostgreSQL observer console.
+// [Pos] Snapshot monitoring plus desired-policy editing; no Dream HTTP, deployment, or process controls.
+// [Sync] 2026-08-27: describe the PostgreSQL latest-instance observer contract.
 
 import AdminModulePage from "@/components/admin/AdminModulePage";
 import ClaudeAgentResourceConsole from "@/components/admin/ClaudeAgentResourceConsole";

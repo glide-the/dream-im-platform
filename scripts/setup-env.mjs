@@ -2,7 +2,7 @@
 // [Input] Existing ignored Admin env files and secure random material.
 // [Output] Mode-0600 local/Compose config for embedded PostgreSQL and disabled storage.
 // [Pos] Base configuration generator for the Admin workspace.
-// [Sync] 2026-08-27: generate the dedicated server-only Dream diagnostics credential.
+// [Sync] 2026-08-21: stop generating MinIO/S3 defaults and forbid startup migrations.
 
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -30,8 +30,6 @@ const ROOT_KEYS = new Set([
   "ADMIN_SESSION_SECRET",
   "ADMIN_BOOTSTRAP_TOKEN",
   "ADMIN_ORIGIN_ALLOWLIST",
-  "DREAM_DIAGNOSTICS_BASE_URL",
-  "DREAM_DIAGNOSTICS_TOKEN",
   "GATEWAY_API_KEY_PEPPER",
   "GATEWAY_SUBJECT_JWT_ISSUER",
   "GATEWAY_SUBJECT_JWT_AUDIENCE",
@@ -241,9 +239,6 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
     hasMinimumBytes,
     () => randomSecret("bootstrap_"),
   );
-  const dreamDiagnosticsToken =
-    firstValid([rootExisting], "DREAM_DIAGNOSTICS_TOKEN", hasMinimumBytes) ??
-    randomSecret("dream_diag_");
   const gatewayPepper = pairedSecret(
     rootExisting,
     dockerExisting,
@@ -351,16 +346,6 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
     ["ADMIN_SESSION_SECRET", adminSessionSecret.root],
     ["ADMIN_BOOTSTRAP_TOKEN", adminBootstrapToken.root],
     ["ADMIN_ORIGIN_ALLOWLIST", rootOriginAllowlist],
-    [
-      "DREAM_DIAGNOSTICS_BASE_URL",
-      configuredValue(
-        rootExisting,
-        "DREAM_DIAGNOSTICS_BASE_URL",
-        (value) => /^https:\/\//.test(value) || /^http:\/\/(127\.0\.0\.1|localhost)(:[0-9]+)?$/.test(value),
-        "http://127.0.0.1:8765",
-      ),
-    ],
-    ["DREAM_DIAGNOSTICS_TOKEN", dreamDiagnosticsToken],
     ["GATEWAY_API_KEY_PEPPER", gatewayPepper.root],
     [
       "GATEWAY_SUBJECT_JWT_ISSUER",
@@ -736,9 +721,6 @@ function validateConfiguration(root, docker, rootParsed, dockerParsed) {
         errors.push(`${file}: ${key} must contain at least 32 bytes`);
       }
     }
-  }
-  if (!hasMinimumBytes(root.get("DREAM_DIAGNOSTICS_TOKEN") ?? "")) {
-    errors.push(".env.local: DREAM_DIAGNOSTICS_TOKEN must contain at least 32 bytes");
   }
   const productKeys = [
     "PRODUCT_API_JWT_SECRET",

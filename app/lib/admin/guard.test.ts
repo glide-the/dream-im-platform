@@ -1,10 +1,16 @@
-import { afterEach, describe, expect, it } from "vitest";
+// [Input] Admin mutation request URL, Origin header, and explicit origin allowlist.
+// [Output] Fail-closed same-origin and configured-origin regression coverage.
+// [Pos] Focused tests for the shared Admin mutation trust boundary.
+// [Sync] 2026-08-27: require Origin in every runtime mode.
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminError } from "./errors";
 import { assertAdminMutationOrigin } from "./guard";
 
 const originalAllowlist = process.env.ADMIN_ORIGIN_ALLOWLIST;
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   if (originalAllowlist === undefined) {
     delete process.env.ADMIN_ORIGIN_ALLOWLIST;
   } else {
@@ -21,6 +27,20 @@ describe("assertAdminMutationOrigin", () => {
     });
 
     expect(() => assertAdminMutationOrigin(request)).not.toThrow();
+  });
+
+  it.each(["development", "test", "production"])("denies a missing Origin in %s", (runtimeMode) => {
+    vi.stubEnv("NODE_ENV", runtimeMode);
+    const request = new Request("https://admin.example.test/api/admin/models", {
+      method: "POST",
+    });
+
+    expect(() => assertAdminMutationOrigin(request)).toThrowError(
+      expect.objectContaining<Partial<AdminError>>({
+        code: "ADMIN_ORIGIN_REQUIRED",
+        status: 403,
+      }),
+    );
   });
 
   it("does not trust a forwarded host supplied by the caller", () => {

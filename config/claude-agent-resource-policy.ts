@@ -1,6 +1,7 @@
 // [Input] Product safety limits for the fixed Claude Agent resource-policy setting.
-// [Output] Versioned defaults, bounds, and immutable system_settings identity.
-// [Pos] Admin policy source; runtime effective values still come from Dream composition-root configuration.
+// [Output] Versioned defaults, bounds, immutable setting identity, and exact observer freshness/capability contract.
+// [Pos] Admin policy source; runtime effective values come only from Dream's PostgreSQL snapshot.
+// [Sync] 2026-08-27: pin the canonical DB-clock/latest-instance Observer contract hash.
 
 export const claudeAgentResourcePolicy = {
   schemaVersion: 1,
@@ -21,5 +22,12 @@ export const claudeAgentResourcePolicy = {
     runMemoryBudgetMib: 512,
     memoryReserveMib: 128,
     retryAfterSeconds: 60,
+  },
+  observer: {
+    capability: "dream.claude-agent-resource-observer.v1",
+    version: 1,
+    contractSha256: "db2ba80eb61a9515ba23000f8a615fb41f6ed5824bd306e8d0ca5fb8f1cc044e",
+    freshSeconds: 20,
+    offlineSeconds: 60,
   },
 } as const;

@@ -2,7 +2,7 @@
 # [Input] Existing mode-0600 Admin env plus explicit AutoDL bind/public origins.
 # [Output] Mode-0600 local AutoDL runtime env without printing secret values.
 # [Pos] AutoDL Admin runtime configuration projector in deploy/autodl-ssh/.
-# [Sync] 2026-08-27: project a fixed private Dream diagnostics base plus its dedicated secret.
+# [Sync] 2026-08-26: project PostgreSQL into /root/ink-autodl/data/postgres.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,7 +20,6 @@ AUTODL_ADMIN_BIND_HOST="${AUTODL_ADMIN_BIND_HOST:-127.0.0.1}"
 AUTODL_ADMIN_PORT="${AUTODL_ADMIN_PORT:-6008}"
 AUTODL_ADMIN_PUBLIC_ORIGIN="${AUTODL_ADMIN_PUBLIC_ORIGIN:-}"
 AUTODL_DREAM_PUBLIC_ORIGIN="${AUTODL_DREAM_PUBLIC_ORIGIN:-}"
-AUTODL_DREAM_DIAGNOSTICS_BASE_URL="${AUTODL_DREAM_DIAGNOSTICS_BASE_URL:-http://127.0.0.1:8765}"
 
 err() { printf '[error] %s\n' "$*" >&2; exit 1; }
 
@@ -31,14 +30,13 @@ err() { printf '[error] %s\n' "$*" >&2; exit 1; }
 [[ "${AUTODL_ADMIN_PORT}" =~ ^[0-9]+$ ]] || err "AUTODL_ADMIN_PORT must be numeric."
 [[ "${AUTODL_ADMIN_PUBLIC_ORIGIN}" =~ ^https://[^/]+(:[0-9]+)?$ ]] || err "AUTODL_ADMIN_PUBLIC_ORIGIN must be an exact HTTPS origin."
 [[ "${AUTODL_DREAM_PUBLIC_ORIGIN}" =~ ^https://[^/]+(:[0-9]+)?$ ]] || err "AUTODL_DREAM_PUBLIC_ORIGIN must be an exact HTTPS origin."
-[[ "${AUTODL_DREAM_DIAGNOSTICS_BASE_URL}" =~ ^http://127\.0\.0\.1:[0-9]+$ ]] || err "AUTODL_DREAM_DIAGNOSTICS_BASE_URL must be an exact loopback HTTP origin."
 
 temp_file="$(mktemp "${SCRIPT_DIR}/.env.XXXXXX")"
 trap 'rm -f "${temp_file}"' EXIT
 umask 077
 awk -F= '
   BEGIN {
-    split("DATABASE_URL MIGRATION_DATABASE_URL NODE_ENV PORT HOSTNAME BETTER_AUTH_URL RUN_DB_MIGRATIONS INK_DATABASE_MODE EMBEDDED_POSTGRES_DATA_DIR EMBEDDED_POSTGRES_PORT ARTIFACT_WORKSPACE_ROOT FILE_STORAGE_TYPE ADMIN_ORIGIN_ALLOWLIST PRODUCT_API_ORIGIN_ALLOWLIST DREAM_DIAGNOSTICS_BASE_URL", keys, " ")
+    split("DATABASE_URL MIGRATION_DATABASE_URL NODE_ENV PORT HOSTNAME BETTER_AUTH_URL RUN_DB_MIGRATIONS INK_DATABASE_MODE EMBEDDED_POSTGRES_DATA_DIR EMBEDDED_POSTGRES_PORT ARTIFACT_WORKSPACE_ROOT FILE_STORAGE_TYPE ADMIN_ORIGIN_ALLOWLIST PRODUCT_API_ORIGIN_ALLOWLIST", keys, " ")
     for (i in keys) excluded[keys[i]] = 1
   }
   /^[A-Za-z_][A-Za-z0-9_]*=/ {
@@ -59,14 +57,11 @@ awk -F= '
   printf 'FILE_STORAGE_TYPE=disabled\n'
   printf 'ADMIN_ORIGIN_ALLOWLIST=%s\n' "${AUTODL_ADMIN_PUBLIC_ORIGIN}"
   printf 'PRODUCT_API_ORIGIN_ALLOWLIST=%s\n' "${AUTODL_DREAM_PUBLIC_ORIGIN}"
-  printf 'DREAM_DIAGNOSTICS_BASE_URL=%s\n' "${AUTODL_DREAM_DIAGNOSTICS_BASE_URL}"
 } >>"${temp_file}"
 
-for required_key in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB ADMIN_SESSION_SECRET GATEWAY_API_KEY_PEPPER AI_CREDENTIAL_ENCRYPTION_KEY PRODUCT_API_JWT_SECRET DREAM_DIAGNOSTICS_TOKEN; do
+for required_key in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB ADMIN_SESSION_SECRET GATEWAY_API_KEY_PEPPER AI_CREDENTIAL_ENCRYPTION_KEY PRODUCT_API_JWT_SECRET; do
   grep -q "^${required_key}=" "${temp_file}" || err "${required_key} is missing from the source env."
 done
-diagnostics_token="$(awk -F= '$1 == "DREAM_DIAGNOSTICS_TOKEN" { print substr($0, index($0, "=") + 1); exit }' "${temp_file}")"
-[[ "${#diagnostics_token}" -ge 32 ]] || err "DREAM_DIAGNOSTICS_TOKEN must contain at least 32 characters."
 password="$(awk -F= '$1 == "POSTGRES_PASSWORD" { print substr($0, index($0, "=") + 1); exit }' "${temp_file}")"
 [[ "${password}" =~ ^[A-Za-z0-9._~-]+$ ]] || err "POSTGRES_PASSWORD must be URL-safe for the direct-host DSN."
 
