@@ -2,7 +2,7 @@
 [Input] 2026-08-27 Claude Agent admission diagnosis, existing Observer/EventBus contracts, and PostgreSQL-only Dream/Admin synchronization requirements.
 [Output] Chinese architecture, interaction, schema, security, sequence, validation, rollback, and ownership design for Claude Agent resource governance.
 [Pos] Authoritative cross-repository design; Admin Drizzle owns schema, Dream owns content-free observation, and Admin never calls Dream diagnostics HTTP.
-[Sync] 2026-08-27: record DB-clock freshness, serialized timeout recovery, transactional capability checks, and frozen edit revisions.
+[Sync] 2026-08-27: add readable dirty-only policy actions, immediate desired/pending projection, responsive hashes, browser proof, and typed null first-sample writes.
 -->
 
 # Dream Claude Agent 资源 Observer 与 Admin 控制台设计
@@ -26,9 +26,11 @@ Codex Goal：在不修改 Dream Agent/Claude Agent 核心业务模块和基础�
 
 | 仓库 | 结果 |
 |---|---|
-| Dream | admission/observer/diagnostics/policy/sink/capability/server/thread factory/service/context：261 passed、10 subtests；既有 FastAPI lifecycle deprecation warnings 25 条 |
-| Admin | focused Vitest：23 passed；全量 Vitest：430 passed；TypeScript、DB package typecheck、ESLint、production build 均 exit 0 |
-| PostgreSQL | 明确命名的临时 embedded PostgreSQL 空库重放 0000–0040；ledger 为 current，41/41，表存在且 exact capability/hash 唯一命中；未连接真实业务库 |
+| Dream | 既有 admission/observer/diagnostics/policy/sink/capability/server/thread factory/service/context：261 passed、10 subtests；本轮 sink/diagnostics/policy 增量回归 22 passed、3 subtests；既有 FastAPI lifecycle deprecation warnings |
+| Admin | focused Vitest：23 passed；全量 Vitest：432 passed；隔离 PostgreSQL Playwright 可见流程：1 passed；TypeScript、DB package typecheck、ESLint、production build 均 exit 0 |
+| PostgreSQL | 明确命名的临时 embedded PostgreSQL 空库重放 0000–0040 并在测试后删除；本机正常 Admin/Dream 重启后，revision 1 已 applied、effective 并发 10、首样本 write errors/drop 均为 0 |
+
+`pnpm dev` 按现有安全协议只托管 PostgreSQL 与 Admin 应用，不隐式执行 Drizzle migration；本地自动化 harness 在启动隔离 Admin 前显式执行 `pnpm --filter @ink-memory/db migrate`。
 
 ## 2. 问题定义与本地证据
 
@@ -193,6 +195,8 @@ Admin 展示状态：
 
 publisher 每 5 秒取得一个 immutable closed DTO 并以 `put_nowait` 写入容量 1 的 latest-value queue；队列满时以新快照替换旧快照并累计 dropped，不反压 Observer 或 turn。单独 worker 通过 `asyncio.to_thread` 使用既有 psycopg 连接边界，外层 timeout，SQL 设置局部 statement timeout。驱动线程超时后仍由该 worker 串行收敛，完成前不启动下一次 driver call，防止旧快照晚到覆盖新快照；Agent 主路径和 Observer hook 均不等待它。失败只记录固定错误码/计数，不记录连接字符串或 payload。
 
+启动首样本允许 `sampled_at=null`；SQL 必须将该参数显式 cast 为 `timestamptz`，否则 PostgreSQL 无法为 null bind 推断类型并产生一次虚假 write error。有样本后 `sampled_at` 仍使用 DB clock，不信任 Dream 墙钟。
+
 建议时间合同：sample 5 秒、heartbeat 5 秒、DB write timeout 1 秒、Admin refetch 10 秒、heartbeat 超过 20 秒 stale、超过 60 秒 offline。Admin 用数据库当前时间计算年龄，避免信任浏览器时钟。Dream 异常退出后不再更新 heartbeat，旧行自然 stale/offline；下次进程以新 instance UUID 和清零计数启动。
 
 ## 11. Admin 信息架构
@@ -203,7 +207,7 @@ publisher 每 5 秒取得一个 immutable closed DTO 并以 `put_nowait` 写入�
 2. 准入概览：active/max、can-start 三态、grant、两类 denial、最近 denial。
 3. turn 累计：started/completed/failed/cancelled。
 4. Linux 资源：host/cgroup/raw/reclaimable 分项/effective/required、memory.events、Claude child count/RSS。
-5. 策略表：default、Admin desired、Dream effective、revision/version、更新时间、applied/pending/invalid/unavailable。
+5. 策略表：default、Admin desired、Dream effective、revision/version、更新时间、applied/pending/invalid/unavailable；主操作只在草稿变更后可用，保存成功立即投影新 desired，显式提示“等待 Dream 正常重启”，不把旧 effective 伪装为已更新。
 6. 观测管线：sample status、sink dropped/write errors；只显示安全数字与枚举。
 
 字段缺失显示“未知/不可用”，不能显示 0；`can_start_new_agent=null` 显示“未知”，不能显示“拒绝”。保存按钮只对 `system.write` 可见/可用；页面不提供 Shell、kill、restart、部署或关闭门禁按钮。
@@ -329,7 +333,7 @@ Dream：
 - 两类 denial、grant、Observer 失败不改变异常/lease。
 - context/setup failure、cancel/stop/close/aclose 的 lease 释放；Chat/SSE/resume 回归。
 - cgroup current/max/stat/events、`memory.max=max`、`/proc`/cgroup 缺失、Claude descendant/RSS 聚合。
-- publisher queue 容量、latest replacement、DB timeout/slow/unavailable、capability missing/drift、upsert/TTL、字段隐私。
+- publisher queue 容量、latest replacement、DB timeout/slow/unavailable、capability missing/drift、启动 `sampled_at=null` 类型、upsert/TTL、字段隐私。
 - policy provider valid/missing/invalid/unavailable；只在 composition root 投影；既有 env/default 始终有限。
 
 Admin：
@@ -338,7 +342,7 @@ Admin：
 - strict bounds/unknown fields、expected revision conflict、before/after audit、同事务 rollback。
 - capability missing、policy invalid、snapshot absent/fresh/stale/offline、DB unavailable。
 - desired/effective applied/pending/invalid/unavailable 与 `can-start=null`。
-- React 10 秒刷新、query signal、卸载取消、无 write 权限、保存确认。
+- React 10 秒刷新、query signal、卸载取消、无 write 权限、保存确认、无草稿禁用、按钮对比度、保存后立即 desired/pending、轮询 applied、390px 无水平溢出。
 - Drizzle generate、snapshot/capability contract、空库 replay、重复执行、partial drift/concurrent migrator（仅明确隔离数据库）。
 - TypeScript、DB package typecheck、lint、focused tests、全量 unit、production build。
 

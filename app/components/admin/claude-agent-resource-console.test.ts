@@ -1,15 +1,19 @@
 // [Input] Claude Agent console refresh, cancellation, admission-state, and policy-field helpers.
-// [Output] Ten-second refresh, cancellation, unknown-state, and frozen revision payload coverage.
+// [Output] Refresh, cancellation, visible save control, immediate desired projection, and revision coverage.
 // [Pos] Node-safe focused tests for the Admin resource console client contract.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS,
   CLAUDE_AGENT_POLICY_FIELDS,
   CLAUDE_AGENT_REFRESH_INTERVAL_MS,
+  type ClaudeAgentResourceResponse,
   fetchClaudeAgentResources,
   formatCanStartNewAgent,
   policyMutationPayload,
+  policySaveButtonState,
+  projectSavedDesired,
 } from "./ClaudeAgentResourceConsole";
 
 describe("Claude Agent resource console data client", () => {
@@ -55,5 +59,51 @@ describe("Claude Agent resource console data client", () => {
       retryAfterSeconds: 60,
     };
     expect(policyMutationPayload(values, 7)).toEqual({ ...values, expectedRevision: 7 });
+  });
+
+  it("keeps the primary action readable and disabled until a draft exists", () => {
+    expect(CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS).toContain("bg-text-primary");
+    expect(CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS).toContain("text-bg-surface");
+    expect(CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS).not.toContain("text-background");
+    expect(policySaveButtonState(false, false, false)).toEqual({
+      disabled: true,
+      label: "修改后可保存",
+    });
+    expect(policySaveButtonState(true, false, false)).toEqual({
+      disabled: false,
+      label: "保存期望配置",
+    });
+    expect(policySaveButtonState(true, true, false)).toEqual({
+      disabled: true,
+      label: "保存中…",
+    });
+  });
+
+  it("projects a successful desired write immediately while effective remains pending", () => {
+    const current = {
+      desired: { status: "valid", values: null, revision: 1, updatedAt: null },
+      runtime: { freshness: "fresh", config: { effective: { max_concurrent_runs: 1 } } },
+      application: { status: "applied", applied: true },
+    } as unknown as ClaudeAgentResourceResponse;
+    const saved = {
+      status: "valid" as const,
+      values: {
+        schemaVersion: 1,
+        revision: 2,
+        maxConcurrentRuns: 10,
+        runMemoryBudgetMib: 416,
+        memoryReserveMib: 128,
+        retryAfterSeconds: 60,
+      },
+      revision: 2,
+      updatedAt: "2026-08-27T12:20:44.000Z",
+    };
+
+    const projected = projectSavedDesired(current, saved);
+
+    expect(projected.desired).toEqual(saved);
+    expect(projected.application).toEqual({ status: "pending", applied: false });
+    expect(projected.runtime?.config.effective.max_concurrent_runs).toBe(1);
+    expect(current.desired.revision).toBe(1);
   });
 });

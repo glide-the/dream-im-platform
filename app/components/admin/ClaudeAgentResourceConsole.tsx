@@ -1,7 +1,7 @@
 // [Input] PostgreSQL-projected Claude Agent resource API, system.write access, and a cancellable React Query signal.
-// [Output] Desired/effective policy controls plus process/cgroup/snapshot-pipeline monitoring.
+// [Output] Desired/effective policy controls with explicit save/pending feedback plus process/cgroup monitoring.
 // [Pos] Admin system-governance console; it cannot call Dream, restart processes, or deploy configuration.
-// [Sync] 2026-08-27: freeze the desired revision when editing so background refresh cannot bypass optimistic concurrency.
+// [Sync] 2026-08-27: make policy saves visible, dirty-only, immediately projected, and explicit about restart-required pending state.
 
 "use client";
 
@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 export const CLAUDE_AGENT_REFRESH_INTERVAL_MS = 10_000;
+export const CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS = "inline-flex min-h-11 items-center justify-center bg-text-primary px-5 text-sm font-semibold text-bg-surface disabled:cursor-not-allowed disabled:opacity-45";
 
 export type PolicyValues = {
   maxConcurrentRuns: number;
@@ -161,6 +162,30 @@ export function policyMutationPayload(
   return { ...values, expectedRevision };
 }
 
+export function policySaveButtonState(
+  hasDraft: boolean,
+  pending: boolean,
+  revisionConflict: boolean,
+) {
+  return {
+    disabled: !hasDraft || pending || revisionConflict,
+    label: pending ? "保存中…" : hasDraft ? "保存期望配置" : "修改后可保存",
+  };
+}
+
+export function projectSavedDesired(
+  current: ClaudeAgentResourceResponse,
+  desired: DesiredProjection,
+): ClaudeAgentResourceResponse {
+  return {
+    ...current,
+    desired,
+    application: current.runtime?.freshness === "fresh"
+      ? { status: "pending", applied: false }
+      : { status: "unavailable", applied: null },
+  };
+}
+
 export default function ClaudeAgentResourceConsole() {
   const queryClient = useQueryClient();
   const writeAccess = useCan({ resource: "claude-agent-resources", action: "edit" });
@@ -184,14 +209,18 @@ export default function ClaudeAgentResourceConsole() {
 
   const mutation = useMutation({
     mutationFn: async (input: { values: PolicyValues; expectedRevision: number | null }) =>
-      await parseResponse(
+      await parseResponse<{ desired: DesiredProjection }>(
         await fetch("/api/admin/claude-agent-resources", {
           method: "PATCH",
           headers: { accept: "application/json", "content-type": "application/json" },
           body: JSON.stringify(policyMutationPayload(input.values, input.expectedRevision)),
         }),
       ),
-    onSuccess: async () => {
+    onSuccess: async ({ desired }) => {
+      queryClient.setQueryData<ClaudeAgentResourceResponse>(
+        ["claude-agent-resources"],
+        (current) => current ? projectSavedDesired(current, desired) : current,
+      );
       setForm(null);
       setEditBaseRevision(undefined);
       await queryClient.invalidateQueries({ queryKey: ["claude-agent-resources"] });
@@ -236,6 +265,11 @@ export default function ClaudeAgentResourceConsole() {
   const revisionChangedWhileEditing = form !== null
     && editBaseRevision !== undefined
     && editBaseRevision !== currentRevision;
+  const saveButton = policySaveButtonState(
+    form !== null,
+    mutation.isPending,
+    revisionChangedWhileEditing,
+  );
 
   return (
     <div className="space-y-6">
@@ -273,11 +307,11 @@ export default function ClaudeAgentResourceConsole() {
         ))}
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-        <section className="border border-border bg-surface p-5">
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+        <section className="min-w-0 overflow-hidden border border-border bg-surface p-5">
           <h2 className="font-display text-xl font-semibold">默认、期望与生效策略</h2>
           <p className="mt-2 text-sm text-text-secondary">保存只更新 PostgreSQL desired；Dream 在正常启动时读取，控制台不提供部署或重启。</p>
-          <div className="mt-5 overflow-x-auto">
+          <div className="mt-5 max-w-full overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead><tr className="border-b border-border text-xs text-text-tertiary"><th className="py-3">阈值</th><th>默认</th><th>Admin desired</th><th>Dream effective</th></tr></thead>
               <tbody>
@@ -288,9 +322,12 @@ export default function ClaudeAgentResourceConsole() {
                     <tr className="border-b border-border/60" key={key}>
                       <th className="py-4 pr-4 font-medium">{label}</th>
                       <td className="font-mono">{value(data?.policy.defaults[key])}</td>
-                      <td className="pr-4"><input aria-label={label} className="w-28 border border-border bg-background px-3 py-2 font-mono" disabled={!writeAccess.data?.can || mutation.isPending || desired === undefined} min={bound?.min} max={bound?.max} type="number" value={desired ?? ""} onChange={(event) => {
+                      <td className="pr-4"><input aria-label={label} className="w-28 border border-border bg-bg-primary px-3 py-2 font-mono text-text-primary disabled:opacity-60" disabled={!writeAccess.data?.can || mutation.isPending || desired === undefined} min={bound?.min} max={bound?.max} type="number" value={desired ?? ""} onChange={(event) => {
                         if (!displayedForm) return;
-                        if (form === null) setEditBaseRevision(currentRevision);
+                        if (form === null) {
+                          setEditBaseRevision(currentRevision);
+                          mutation.reset();
+                        }
                         setForm({ ...displayedForm, [key]: Number(event.target.value) });
                       }} /></td>
                       <td className="font-mono">{value(runtime?.config.effective[effectiveKey])}</td>
@@ -308,22 +345,42 @@ export default function ClaudeAgentResourceConsole() {
             <p>desired 更新时间：<span className="text-text-primary">{timestamp(data?.desired.updatedAt)}</span></p>
             <p>Dream policy 状态：<span className="font-mono text-text-primary">{runtime?.config.policy_status ?? "未知"}</span></p>
             <p>Dream 加载时间：<span className="text-text-primary">{timestamp(runtime?.config.loaded_at)}</span></p>
-            <p>effective version：<span className="font-mono text-text-primary" title={runtime?.config.effective_version}>{runtime?.config.effective_version ?? "未知"}</span></p>
+            <p className="min-w-0">effective version：<span className="break-all font-mono text-text-primary" title={runtime?.config.effective_version}>{runtime?.config.effective_version ?? "未知"}</span></p>
           </div>
-          <div className="mt-5 flex justify-end">
-            {writeAccess.data?.can ? <button type="button" disabled={!displayedForm || mutation.isPending || revisionChangedWhileEditing} onClick={() => {
-              if (!displayedForm || !window.confirm("只保存 desired 配置，不会重启 Dream。继续吗？")) return;
-              mutation.mutate({
-                values: displayedForm,
-                expectedRevision: form === null ? currentRevision : (editBaseRevision ?? null),
-              });
-            }} className="min-h-11 bg-text-primary px-5 text-sm font-semibold text-background disabled:opacity-50">{mutation.isPending ? "保存中…" : "保存期望配置"}</button> : null}
+          {data?.application.status === "pending" ? (
+            <div className="mt-5 border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-primary" role="status">
+              <p className="font-semibold">期望配置已保存，等待 Dream 正常重启后生效</p>
+              <p className="mt-1 text-text-secondary">PostgreSQL desired revision {value(data.desired.revision)} 已更新；当前运行中的 Dream 仍使用上方 effective 值。本控制台不会远程重启进程。</p>
+            </div>
+          ) : data?.application.status === "applied" ? (
+            <div className="mt-5 border border-success/35 bg-success-light p-4 text-sm text-success" role="status">
+              Dream 已加载 desired revision {value(data.desired.revision)}，四项策略现已生效。
+            </div>
+          ) : null}
+          <div className="-mx-5 mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-bg-secondary/35 px-5 py-4" aria-live="polite">
+            <p className="text-sm text-text-secondary">
+              {form !== null ? "有尚未保存的策略修改。" : mutation.isSuccess ? `已保存 desired revision ${value(data?.desired.revision)}。` : "修改任一阈值后即可保存。"}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {form !== null ? <button type="button" className="min-h-11 border border-border bg-bg-surface px-4 text-sm font-semibold text-text-primary" disabled={mutation.isPending} onClick={() => {
+                setForm(null);
+                setEditBaseRevision(undefined);
+                mutation.reset();
+              }}>撤销修改</button> : null}
+              {writeAccess.data?.can ? <button type="button" disabled={saveButton.disabled} onClick={() => {
+                if (!displayedForm || !window.confirm("只保存 desired 配置，不会重启 Dream。继续吗？")) return;
+                mutation.mutate({
+                  values: displayedForm,
+                  expectedRevision: editBaseRevision ?? null,
+                });
+              }} className={CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS}>{saveButton.label}</button> : null}
+            </div>
           </div>
           {revisionChangedWhileEditing ? <p className="mt-3 text-sm text-danger" role="alert">desired 配置已被其他管理员更新。请刷新后重新编辑，当前草稿不会覆盖新 revision。</p> : null}
           {mutation.error ? <p className="mt-3 text-sm text-danger" role="alert">{mutation.error.message}</p> : null}
         </section>
 
-        <section className="border border-border bg-surface p-5">
+        <section className="min-w-0 border border-border bg-surface p-5">
           <h2 className="font-display text-xl font-semibold">Turn 与进程</h2>
           <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
             {[
