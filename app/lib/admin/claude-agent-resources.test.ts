@@ -1,3 +1,7 @@
+// [Input] Mocked Admin guards/database/audit and protected Dream diagnostics responses.
+// [Output] RBAC, fail-closed storage, strict DTO, transaction, and privacy regression coverage.
+// [Pos] Focused contract tests for the dedicated Claude Agent resource domain.
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -84,6 +88,16 @@ describe("Claude Agent Admin resource domain", () => {
     expect(body.data.application.status).toBe("unknown");
   });
 
+  it("fails closed with 503 when the policy store is unavailable", async () => {
+    mocks.query.mockRejectedValueOnce(new Error("database offline"));
+    const dreamFetch = vi.fn();
+    vi.stubGlobal("fetch", dreamFetch);
+    const response = await handleClaudeAgentResourcesGet(new Request("https://admin.test/api/admin/claude-agent-resources"));
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe("CLAUDE_AGENT_POLICY_STORE_UNAVAILABLE");
+    expect(dreamFetch).not.toHaveBeenCalled();
+  });
+
   it("does not forward Admin cookies and strips unknown Dream fields", async () => {
     const dreamFetch = vi.fn().mockResolvedValue(Response.json({ ...diagnostics, transcript: "must-not-pass" }));
     vi.stubGlobal("fetch", dreamFetch);
@@ -92,6 +106,17 @@ describe("Claude Agent Admin resource domain", () => {
     const init = dreamFetch.mock.calls[0][1];
     expect(init.headers).toEqual({ accept: "application/json", authorization: `Bearer ${"x".repeat(32)}` });
     expect(init.headers).not.toHaveProperty("cookie");
+  });
+
+  it("accepts an unavailable can-start observation as null", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+      ...diagnostics,
+      admission: { ...diagnostics.admission, can_start_new_agent: null },
+      sample: { ...diagnostics.sample, stale: true },
+    })));
+    const parsed = await fetchDreamClaudeAgentDiagnostics();
+    expect(parsed.admission.can_start_new_agent).toBeNull();
+    expect(parsed.sample.stale).toBe(true);
   });
 
   it("reports desired as applied only when all effective thresholds match", async () => {

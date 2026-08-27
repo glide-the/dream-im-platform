@@ -14,7 +14,7 @@ Codex Goal：在不修改 Dream Agent/Claude Agent 核心业务模块和基础�
 | 子任务 | 负责人 | 仓库/目录 | 文件所有权 | 状态 | 已有测试 | 阻断 |
 |---|---|---|---|---|---|---|
 | Dream observer | `dream_diagnosis` | `/Users/dmeck/project/ink-dream-memory` | Dream observer、diagnostics、只读 route、Dream tests/docs | 设计通过，未实现 | admission/thread-factory 75 passed | 无 AutoDL SSH/PID/cgroup 实时证据 |
-| Admin console | `admin_diagnosis` | `/Users/dmeck/project/ink-admin-memory` | 专用策略 API、proxy、页面、RBAC migration、Admin tests/docs | 已实现，验证中 | focused Admin tests 8 passed；typecheck passed | 本机 PostgreSQL 未运行；跨服务 secret 尚未部署 |
+| Admin console | `admin_diagnosis` | `/Users/dmeck/project/ink-admin-memory` | 专用策略 API、proxy、页面、RBAC migration、Admin tests/docs | 已实现并验证 | focused 14 passed；Admin 全量 418 passed；typecheck/lint/build passed | 本机 PostgreSQL 未运行；跨服务 secret 尚未部署 |
 
 本轮 copy-paste ready Optimized Prompt：
 
@@ -133,7 +133,7 @@ DTO 包含：scope/instance start time、active/max；turn started/completed/fai
 3. Linux 资源表：host、cgroup current/max/raw/reclaimable 分项、memory.events、Claude child count/RSS；缺失字段逐项降级。
 4. 策略表单：default、env、desired、effective 四列；revision/updatedAt/applied/pending/restart required；只有 `system.write` 显示保存，保存前确认“仅保存期望配置，不会重启或立即改变运行中 Agent”。
 
-Dream 不可达：保留上一份浏览器缓存但顶部红色 unavailable，按 sample age 显示 stale；无缓存则所有 runtime 值为 unavailable。数据库不可用：GET/PATCH 返回明确 503，页面仍可显示已成功取得的 Dream snapshot，但 desired 为 unavailable；任何写入失败全部回滚。
+Dream 不可达：保留上一份浏览器缓存但顶部红色 unavailable，按 sample age 显示 stale；无缓存则所有 runtime 值为 unavailable。数据库或 Admin auth 数据不可用时，RBAC 身份无法可信建立，GET/PATCH 整体 fail closed 并返回明确 503；不得绕过数据库授权边界去获取或展示新的 Dream snapshot。浏览器只可保留 React Query 已有缓存并明确标记刷新失败。任何写入失败全部回滚。
 
 ## 9. RBAC、Origin、审计与 migration
 

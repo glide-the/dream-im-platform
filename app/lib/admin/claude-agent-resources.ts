@@ -80,7 +80,7 @@ const dreamDiagnosticsSchema = z.object({
     memory_pressure_denials_total: z.number().int().nonnegative(),
     last_denial_type: z.enum(["capacity", "memory_pressure"]).nullable(),
     last_denial_at: nullableTimestamp,
-    can_start_new_agent: z.boolean(),
+    can_start_new_agent: z.boolean().nullable(),
   }),
   claude_processes: z.object({
     available: z.boolean(),

@@ -10,7 +10,7 @@ import { useMemo, useState } from "react";
 
 export const CLAUDE_AGENT_REFRESH_INTERVAL_MS = 10_000;
 
-type PolicyValues = {
+export type PolicyValues = {
   maxConcurrentRuns: number;
   runMemoryBudgetMib: number;
   memoryReserveMib: number;
@@ -38,7 +38,7 @@ type Diagnostics = {
     memory_pressure_denials_total: number;
     last_denial_type: "capacity" | "memory_pressure" | null;
     last_denial_at: string | null;
-    can_start_new_agent: boolean;
+    can_start_new_agent: boolean | null;
   };
   claude_processes: { available: boolean; count: number | null; total_rss_bytes: number | null };
   memory: Record<string, number | null> & { events: Record<string, number | null> };
@@ -74,12 +74,30 @@ function bytes(valueInBytes: number | null | undefined) {
   return `${(valueInBytes / 1024 / 1024).toFixed(1)} MiB`;
 }
 
-const fields: Array<{ key: keyof PolicyValues; label: string; env: string }> = [
-  { key: "maxConcurrentRuns", label: "最大并发 Agent turn", env: "max_concurrent_runs" },
-  { key: "runMemoryBudgetMib", label: "单次 Agent 内存预算（MiB）", env: "run_memory_budget_mib" },
-  { key: "memoryReserveMib", label: "系统保留内存（MiB）", env: "memory_reserve_mib" },
-  { key: "retryAfterSeconds", label: "重试等待（秒）", env: "retry_after_seconds" },
+export const CLAUDE_AGENT_ENV_FIELDS: Array<{
+  key: keyof PolicyValues;
+  label: string;
+  env: string;
+  dreamEnv: string;
+  autoDlEnv: string;
+}> = [
+  { key: "maxConcurrentRuns", label: "最大并发 Agent turn", env: "max_concurrent_runs", dreamEnv: "INK_AGENT_MAX_CONCURRENT_RUNS", autoDlEnv: "AUTODL_AGENT_MAX_CONCURRENT_RUNS" },
+  { key: "runMemoryBudgetMib", label: "单次 Agent 内存预算（MiB）", env: "run_memory_budget_mib", dreamEnv: "INK_AGENT_RUN_MEMORY_BUDGET_MIB", autoDlEnv: "AUTODL_AGENT_RUN_MEMORY_BUDGET_MIB" },
+  { key: "memoryReserveMib", label: "系统保留内存（MiB）", env: "memory_reserve_mib", dreamEnv: "INK_AGENT_MEMORY_RESERVE_MIB", autoDlEnv: "AUTODL_AGENT_MEMORY_RESERVE_MIB" },
+  { key: "retryAfterSeconds", label: "重试等待（秒）", env: "retry_after_seconds", dreamEnv: "INK_AGENT_SWEEP_INTERVAL_S", autoDlEnv: "AUTODL_AGENT_SWEEP_INTERVAL_S" },
 ];
+
+export function buildDreamAutoDlPolicyProjection(desired: PolicyValues | null | undefined) {
+  if (!desired) return null;
+  return CLAUDE_AGENT_ENV_FIELDS
+    .map(({ key, autoDlEnv }) => `${autoDlEnv}=${desired[key]}`)
+    .join("\n");
+}
+
+export function formatCanStartNewAgent(allowed: boolean | null | undefined, stale: boolean) {
+  if (stale || allowed === null || allowed === undefined) return "不可用";
+  return allowed ? "允许" : "拒绝";
+}
 
 export default function ClaudeAgentResourceConsole() {
   const queryClient = useQueryClient();
@@ -111,6 +129,7 @@ export default function ClaudeAgentResourceConsole() {
   });
 
   const runtime = data?.runtime;
+  const deploymentProjection = buildDreamAutoDlPolicyProjection(data?.desired);
   const memoryRows = useMemo(() => runtime ? [
     ["宿主机可用内存", bytes(runtime.memory.host_available_bytes)],
     ["cgroup memory.current", bytes(runtime.memory.cgroup_current_bytes)],
@@ -141,7 +160,7 @@ export default function ClaudeAgentResourceConsole() {
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="准入概览">
         {[
           ["当前活跃 / 最大并发", runtime ? `${runtime.admission.active_runs} / ${runtime.admission.max_concurrent_runs}` : "不可用"],
-          ["当前允许启动", runtime ? (runtime.admission.can_start_new_agent ? "允许" : "拒绝") : "不可用"],
+          ["当前允许启动", formatCanStartNewAgent(runtime?.admission.can_start_new_agent, runtime?.sample.stale ?? true)],
           ["Capacity 拒绝", value(runtime?.admission.capacity_denials_total)],
           ["Memory 拒绝", value(runtime?.admission.memory_pressure_denials_total)],
         ].map(([label, metric]) => <div key={label} className="border-l-2 border-text-primary bg-surface-muted px-5 py-4"><p className="text-xs text-text-secondary">{label}</p><p className="mt-3 font-mono text-2xl font-semibold">{metric}</p></div>)}
@@ -152,14 +171,16 @@ export default function ClaudeAgentResourceConsole() {
           <h2 className="font-display text-xl font-semibold">期望配置与当前生效值</h2>
           <p className="mt-2 text-sm text-text-secondary">保存只写入 Admin 期望配置，不会立即改变 Dream。差异需要安全部署投影和受控重启后生效。</p>
           <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead><tr className="border-b border-border text-xs text-text-tertiary"><th className="py-3">阈值</th><th>默认</th><th>环境变量</th><th>Admin 期望</th><th>Dream 生效</th></tr></thead><tbody>
-            {fields.map(({ key, label, env }) => {
+            {CLAUDE_AGENT_ENV_FIELDS.map(({ key, label, env, dreamEnv }) => {
               const bound = data?.policy.bounds[key];
               const desired = displayedForm?.[key];
-              return <tr className="border-b border-border/60" key={key}><th className="py-4 pr-4 font-medium">{label}</th><td className="font-mono">{value(data?.policy.defaults[key])}</td><td className="font-mono">{value(runtime?.config.environment[env])}</td><td className="pr-4"><input aria-label={label} className="w-28 border border-border bg-background px-3 py-2 font-mono" disabled={!writeAccess.data?.can || mutation.isPending || desired === undefined} min={bound?.min} max={bound?.max} type="number" value={desired ?? ""} onChange={(event) => displayedForm && setForm({ ...displayedForm, [key]: Number(event.target.value) })} /></td><td className="font-mono">{value(runtime?.config.effective[env])}</td></tr>;
+              return <tr className="border-b border-border/60" key={key}><th className="py-4 pr-4 font-medium"><span>{label}</span><code className="mt-1 block text-[11px] font-normal text-text-tertiary">{dreamEnv}</code></th><td className="font-mono">{value(data?.policy.defaults[key])}</td><td className="font-mono">{value(runtime?.config.environment[env])}</td><td className="pr-4"><input aria-label={label} className="w-28 border border-border bg-background px-3 py-2 font-mono" disabled={!writeAccess.data?.can || mutation.isPending || desired === undefined} min={bound?.min} max={bound?.max} type="number" value={desired ?? ""} onChange={(event) => displayedForm && setForm({ ...displayedForm, [key]: Number(event.target.value) })} /></td><td className="font-mono">{value(runtime?.config.effective[env])}</td></tr>;
             })}
           </tbody></table></div>
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-4"><p className="text-sm text-text-secondary">状态：<strong className="text-text-primary">{data?.application.status ?? "unknown"}</strong> · revision {data?.desired?.revision ?? "未配置"} · {data?.application.restartRequired ? "需要受控重启" : "无需重启或未知"}</p>{writeAccess.data?.can ? <button type="button" disabled={!displayedForm || mutation.isPending} onClick={() => { if (displayedForm && window.confirm("仅保存期望配置；不会重启 Dream 或立即改变 Agent 准入。继续吗？")) mutation.mutate(displayedForm); }} className="min-h-11 bg-text-primary px-5 text-sm font-semibold text-background disabled:opacity-50">{mutation.isPending ? "保存中…" : "保存期望配置"}</button> : null}</div>
+          <div className="mt-5 grid gap-2 border-t border-border pt-4 text-sm text-text-secondary sm:grid-cols-2"><p>应用状态：<strong className="text-text-primary">{data?.application.status ?? "unknown"}</strong></p><p>配置 revision：<span className="font-mono text-text-primary">{data?.desired?.revision ?? "未配置"}</span></p><p>期望配置更新时间：<span className="text-text-primary">{data?.desired?.updatedAt ? new Date(data.desired.updatedAt).toLocaleString() : "不可用"}</span></p><p>Dream 加载时间：<span className="text-text-primary">{runtime?.config.loaded_at ? new Date(runtime.config.loaded_at).toLocaleString() : "不可用"}</span></p><p>Dream effective version：<span className="font-mono text-text-primary" title={runtime?.config.effective_version}>{runtime?.config.effective_version ? `${runtime.config.effective_version.slice(0, 20)}${runtime.config.effective_version.length > 20 ? "…" : ""}` : "不可用"}</span></p><p>{data?.application.restartRequired ? "需要部署投影并受控重启" : "无需重启或状态未知"}</p></div>
+          <div className="mt-5 flex justify-end">{writeAccess.data?.can ? <button type="button" disabled={!displayedForm || mutation.isPending} onClick={() => { if (displayedForm && window.confirm("仅保存期望配置；不会重启 Dream 或立即改变 Agent 准入。继续吗？")) mutation.mutate(displayedForm); }} className="min-h-11 bg-text-primary px-5 text-sm font-semibold text-background disabled:opacity-50">{mutation.isPending ? "保存中…" : "保存期望配置"}</button> : null}</div>
           {mutation.error ? <p className="mt-3 text-sm text-danger" role="alert">{mutation.error.message}</p> : null}
+          <div className="mt-6 bg-surface-muted p-4"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-text-tertiary">Operator handoff · read only</p><p className="mt-2 text-sm leading-6 text-text-secondary">由 operator 将以下 Admin desired 值复制到 Dream AutoDL 的 <code>AUTODL_AGENT_*</code> 平台配置，再走既有 deploy 流程并执行受控重启。控制台不会执行部署或重启。</p>{deploymentProjection ? <pre className="mt-3 overflow-x-auto border-l-2 border-text-primary bg-background p-3 font-mono text-xs leading-6" aria-label="Dream AutoDL 部署投影">{deploymentProjection}</pre> : <p className="mt-3 text-sm text-text-tertiary">尚未保存 desired 配置，暂无部署投影。</p>}</div>
         </section>
 
         <section className="border border-border bg-surface p-5">
