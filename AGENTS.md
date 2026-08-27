@@ -31,6 +31,12 @@
 - When touching docs, verify Markdown inventory and referenced paths remain valid.
 - Report concrete evidence (`command`, exit code, key output) in the final summary.
 
+### 浏览器 E2E 前置检查
+
+- 浏览器 E2E 优先复用本机已安装的 Chrome；只做一次能否启动的轻量检查，不要求重复下载 Playwright Chromium revision。
+- 仅当本机没有兼容浏览器时才安装浏览器依赖。浏览器或 runner 无法启动属于 harness 前置失败，不能据此判断页面或 API 有缺陷。
+- E2E 结束后只清理本轮明确命名的隔离数据库、端口、进程和生成物，不得停止或修改用户已有服务。
+
 
 ## 强约束
 

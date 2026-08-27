@@ -1,7 +1,7 @@
 // [Input] Authenticated Admin requests plus the shared PostgreSQL desired-policy and observer snapshot relations.
-// [Output] Strict desired/effective resource projection and audited optimistic desired-policy updates.
+// [Output] Storage-safe desired/effective projection and audited optimistic desired-policy updates.
 // [Pos] PostgreSQL-only system-governance boundary; it never calls Dream or controls processes/deployments.
-// [Sync] 2026-08-27: require the exact observer capability inside both read and write database boundaries.
+// [Sync] 2026-08-27: accept positive concurrency through the PostgreSQL integer hard limit, with no unlimited sentinel.
 
 import "server-only";
 
@@ -43,7 +43,7 @@ const storedPolicySchema = claudeAgentResourcePolicyInputSchema
 
 const admissionValuesSchema = z
   .object({
-    max_concurrent_runs: z.number().int().positive(),
+    max_concurrent_runs: boundedInteger("maxConcurrentRuns"),
     run_memory_budget_mib: z.number().int().nonnegative(),
     memory_reserve_mib: z.number().int().nonnegative(),
     retry_after_seconds: z.number().int().nonnegative(),
@@ -88,7 +88,7 @@ export const claudeAgentResourceSnapshotSchema = z
     admission: z
       .object({
         active_runs: z.number().int().nonnegative(),
-        max_concurrent_runs: z.number().int().positive(),
+        max_concurrent_runs: boundedInteger("maxConcurrentRuns"),
         granted_total: z.number().int().nonnegative(),
         capacity_denials_total: z.number().int().nonnegative(),
         memory_pressure_denials_total: z.number().int().nonnegative(),

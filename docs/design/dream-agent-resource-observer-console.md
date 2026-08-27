@@ -2,7 +2,7 @@
 [Input] 2026-08-27 Claude Agent admission diagnosis, existing Observer/EventBus contracts, and PostgreSQL-only Dream/Admin synchronization requirements.
 [Output] Chinese architecture, interaction, schema, security, sequence, validation, rollback, and ownership design for Claude Agent resource governance.
 [Pos] Authoritative cross-repository design; Admin Drizzle owns schema, Dream owns content-free observation, and Admin never calls Dream diagnostics HTTP.
-[Sync] 2026-08-27: define periodic PostgreSQL policy application without restart, immediate pending feedback, strict invalid-draft blocking, and write-side capability gating.
+[Sync] 2026-08-27: remove the artificial concurrency cap while preserving positive-int4 validation, periodic application, and pending/applied feedback.
 -->
 
 # Dream Claude Agent 资源 Observer 与 Admin 控制台设计
@@ -46,6 +46,8 @@ Codex Goal：在不修改 Dream Agent/Claude Agent 核心业务模块和基础�
 | retry hint | `INK_AGENT_SWEEP_INTERVAL_S` | 60 s | 60 s |
 
 进程环境未发现四项覆盖；服务用 `override=False` 加载 `.env`，因此真实进程环境若存在仍优先。本轮没有运行中的 Dream 进程，以上只能称为本地静态配置，不能称为生产或 AutoDL effective。
+
+Admin desired 不对最大并发设置产品人为上限；唯一数值上界是 PostgreSQL signed integer 与 JSON/JavaScript 均可精确表示的 `2_147_483_647`。有效值必须是 `1..2_147_483_647` 的整数；`0`、null、负数、小数和溢出一律无效，任何值都不表示“无限并发”。
 
 ## 3. 当前准入算法与两类错误
 
@@ -181,7 +183,7 @@ Dream policy provider 在 composition root 启动后由有界运行期 refresher
 - policy JSON/边界无效：保留当前 last-known-good effective；若启动时尚无 effective，则保留上述有限 fallback，记录 `invalid`。
 - PostgreSQL/capability 不可用：保留当前 last-known-good effective；若启动时尚无 effective，则保留上述有限 fallback，记录 `unavailable`。
 
-任何异常都不得产生无限并发、零预算或关闭内存门禁。运行中 PostgreSQL 失联或 capability 漂移时 controller 的既有 effective 对象不变；refresher 后续成功即可继续从更高 revision 收敛，sink 恢复后继续 upsert。
+任何异常都不得产生无限并发、零预算或关闭内存门禁。最大并发的 `2_147_483_647` 只是 PostgreSQL integer 存储硬边界，不是无限 sentinel。运行中 PostgreSQL 失联或 capability 漂移时 controller 的既有 effective 对象不变；refresher 后续成功即可继续从更高 revision 收敛，sink 恢复后继续 upsert。
 
 Admin 展示状态：
 
@@ -216,7 +218,7 @@ publisher 每 5 秒取得一个 immutable closed DTO 并以 `put_nowait` 写入�
 
 - GET 要求服务端 `system.read`；PATCH 要求服务端 `system.write`。
 - PATCH 必须先验证 Origin；缺失、错误或 allowlist 不匹配一律 403，不按 `NODE_ENV` 放宽。
-- body 使用 strict Zod、整数边界，拒绝未知字段、0、负数、无限值与 partial policy；UI 同样提前阻断无效草稿且不发 PATCH，但客户端校验不替代服务端边界。
+- body 使用 strict Zod、整数边界；最大并发接受 `1..2_147_483_647`，拒绝未知字段、0、null、负数、小数、溢出、无限值与 partial policy；UI 同样提前阻断无效草稿且不发 PATCH，但客户端校验不替代服务端边界。
 - UI 在第一次编辑时冻结 `expectedRevision`；轮询发现 revision 变化即禁止覆盖并提示刷新。PATCH 携带该基准 revision；事务中 `SELECT ... FOR UPDATE` 后不匹配返回 409，防止两个管理员互相覆盖。
 - revision、settings upsert 与 success audit 在同一数据库事务；audit 失败则全部 rollback。
 - audit before/after 只含四个整数、schemaVersion、revision，不含 request headers、Token、env 或 snapshot。
@@ -342,7 +344,7 @@ Dream：
 Admin：
 
 - 未登录、`system.read`、`system.write`、缺失/错误 Origin。
-- strict bounds/unknown fields、expected revision conflict、before/after audit、同事务 rollback。
+- 最大并发 int4 上界成功保存；0/负数/小数/溢出、其他 strict bounds/unknown fields、expected revision conflict、before/after audit、同事务 rollback。
 - GET/PATCH capability missing/drift；PATCH 在同一事务的任何 desired/audit 写入前 fail closed；policy invalid、snapshot absent/fresh/stale/offline、DB unavailable。
 - desired/effective applied/pending/invalid/unavailable 与 `can-start=null`。
 - React 10 秒刷新、query signal、卸载取消、无 write 权限、保存确认、无草稿禁用、按钮对比度、保存后立即 desired/pending、轮询 applied、390px 无水平溢出。

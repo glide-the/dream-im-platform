@@ -1,6 +1,7 @@
 // [Input] Mocked Admin guards, PostgreSQL projection rows, transactions, and audit writes.
-// [Output] RBAC, read/write capability gates, freshness, strict DTO, optimistic concurrency, and rollback coverage.
+// [Output] RBAC, capability gates, storage-safe integer bounds, optimistic concurrency, and rollback coverage.
 // [Pos] Focused contract tests for the PostgreSQL-only Claude Agent resource Admin domain.
+// [Sync] 2026-08-27: accept the int4 concurrency maximum and reject zero/null, negative, fractional, or overflow values.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -26,6 +27,7 @@ vi.mock("./guard", () => ({
 vi.mock("./audit", () => ({ recordAdminAuditOnClient: mocks.audit }));
 
 import { AdminError } from "./errors";
+import { CLAUDE_AGENT_MAX_CONCURRENT_RUNS } from "../../../config/claude-agent-resource-policy";
 import {
   claudeAgentResourceSnapshotSchema,
   handleClaudeAgentResourcesGet,
@@ -173,6 +175,23 @@ describe("Claude Agent Admin resource domain", () => {
 
   it("uses a strict content-free snapshot schema", () => {
     expect(claudeAgentResourceSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    const maximumSnapshot = {
+      ...snapshot,
+      config: {
+        ...snapshot.config,
+        defaults: { ...snapshot.config.defaults, max_concurrent_runs: CLAUDE_AGENT_MAX_CONCURRENT_RUNS },
+        effective: { ...snapshot.config.effective, max_concurrent_runs: CLAUDE_AGENT_MAX_CONCURRENT_RUNS },
+      },
+      admission: { ...snapshot.admission, max_concurrent_runs: CLAUDE_AGENT_MAX_CONCURRENT_RUNS },
+    };
+    expect(claudeAgentResourceSnapshotSchema.safeParse(maximumSnapshot).success).toBe(true);
+    expect(claudeAgentResourceSnapshotSchema.safeParse({
+      ...maximumSnapshot,
+      admission: {
+        ...maximumSnapshot.admission,
+        max_concurrent_runs: CLAUDE_AGENT_MAX_CONCURRENT_RUNS + 1,
+      },
+    }).success).toBe(false);
     expect(claudeAgentResourceSnapshotSchema.safeParse({ ...snapshot, transcript: "must-not-pass" }).success).toBe(false);
     expect(claudeAgentResourceSnapshotSchema.safeParse({
       ...snapshot,
@@ -236,10 +255,10 @@ describe("Claude Agent Admin resource domain", () => {
     expect(offlineBody.data.application.status).toBe("unavailable");
   });
 
-  it("rejects unknown and out-of-bound policy fields before opening a transaction", async () => {
+  it("rejects unknown policy fields before opening a transaction", async () => {
     const response = await handleClaudeAgentResourcesPatch(patchRequest({
       expectedRevision: 2,
-      maxConcurrentRuns: 0,
+      maxConcurrentRuns: 1,
       runMemoryBudgetMib: 512,
       memoryReserveMib: 128,
       retryAfterSeconds: 60,
@@ -251,8 +270,31 @@ describe("Claude Agent Admin resource domain", () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
-  it("locks, checks expectedRevision, increments, upserts, and audits in one transaction", async () => {
-    const after = { ...desired, revision: 3, maxConcurrentRuns: 2 };
+  it.each([
+    ["zero", 0],
+    ["null", null],
+    ["negative", -1],
+    ["fractional", 1.5],
+    ["PostgreSQL integer overflow", CLAUDE_AGENT_MAX_CONCURRENT_RUNS + 1],
+  ])("rejects %s concurrency before opening a transaction", async (_case, maxConcurrentRuns) => {
+    const response = await handleClaudeAgentResourcesPatch(patchRequest({
+      expectedRevision: 2,
+      maxConcurrentRuns,
+      runMemoryBudgetMib: 512,
+      memoryReserveMib: 128,
+      retryAfterSeconds: 60,
+    }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe("CLAUDE_AGENT_POLICY_INVALID");
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("saves the PostgreSQL integer concurrency maximum in one audited transaction", async () => {
+    const after = {
+      ...desired,
+      revision: 3,
+      maxConcurrentRuns: CLAUDE_AGENT_MAX_CONCURRENT_RUNS,
+    };
     mocks.query
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [capabilityRow] })
@@ -260,7 +302,7 @@ describe("Claude Agent Admin resource domain", () => {
       .mockResolvedValueOnce({ rows: [{ value: after, updated_at: "2026-08-27T06:05:00.000Z" }] });
     const response = await handleClaudeAgentResourcesPatch(patchRequest({
       expectedRevision: 2,
-      maxConcurrentRuns: 2,
+      maxConcurrentRuns: CLAUDE_AGENT_MAX_CONCURRENT_RUNS,
       runMemoryBudgetMib: 512,
       memoryReserveMib: 128,
       retryAfterSeconds: 60,

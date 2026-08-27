@@ -1,7 +1,7 @@
 // [Input] PostgreSQL-projected Claude Agent resource API, system.write access, and a cancellable React Query signal.
-// [Output] Validated desired/effective controls with immediate pending feedback plus process/cgroup monitoring.
+// [Output] Storage-safe desired/effective controls with immediate pending feedback plus process/cgroup monitoring.
 // [Pos] Admin system-governance console; it cannot call Dream, restart processes, or deploy configuration.
-// [Sync] 2026-08-27: block invalid drafts before PATCH and explain Dream's periodic PostgreSQL application loop.
+// [Sync] 2026-08-27: allow any positive concurrency through the published PostgreSQL integer hard boundary.
 
 "use client";
 
