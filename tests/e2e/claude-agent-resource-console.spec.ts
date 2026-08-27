@@ -1,7 +1,7 @@
 // [Input] Owned isolated PostgreSQL, visible Admin bootstrap, and the Claude Agent resource console.
 // [Output] Browser proof for large positive concurrency, invalid no-PATCH, immediate pending, and applied refresh.
 // [Pos] Focused provider-free Admin resource-policy journey; it never controls or restarts Dream.
-// [Sync] 2026-08-27: remove the product concurrency max while preserving positive-integer validation and PG handoff.
+// [Sync] 2026-08-27: remove the product concurrency max and native confirm while preserving validation and PG handoff.
 
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
@@ -162,7 +162,6 @@ test.describe("Claude Agent resource policy console", () => {
       await expect(page.getByRole("button", { name: "撤销修改" })).toBeVisible();
       const save = page.getByRole("button", { name: "保存期望配置" });
       await expect(save).toBeEnabled();
-      page.once("dialog", (dialog) => dialog.accept());
       await save.click();
       await expect.poll(() => patchRequests).toBe(1);
 

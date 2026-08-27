@@ -1,8 +1,9 @@
-// [Input] Claude Agent console refresh, cancellation, admission-state, and policy-field helpers.
-// [Output] Refresh, safe bounds, invalid no-submit state, and immediate pending projection coverage.
+// [Input] Claude Agent console refresh, cancellation, admission-state, policy-field helpers, and save interaction source.
+// [Output] Refresh, safe bounds, direct no-confirm save, invalid no-submit state, and immediate pending projection coverage.
 // [Pos] Node-safe focused tests for the Admin resource console client contract.
-// [Sync] 2026-08-27: cover uncapped positive concurrency and reject values that cannot be safely transported.
+// [Sync] 2026-08-27: cover uncapped positive concurrency and direct save without a blocking native confirmation.
 
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -91,6 +92,11 @@ describe("Claude Agent resource console data client", () => {
       disabled: true,
       label: "请检查输入范围",
     });
+  });
+
+  it("submits the explicit save action without a blocking native confirmation", () => {
+    const source = readFileSync(new URL("./ClaudeAgentResourceConsole.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain("window.confirm");
   });
 
   it("accepts large positive concurrency without a product max and rejects invalid numbers", () => {

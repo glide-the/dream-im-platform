@@ -1,7 +1,7 @@
 // [Input] PostgreSQL-projected Claude Agent resource API, system.write access, and a cancellable React Query signal.
 // [Output] Safe desired/effective controls with immediate pending feedback plus process/cgroup monitoring.
 // [Pos] Admin system-governance console; it cannot call Dream, restart processes, or deploy configuration.
-// [Sync] 2026-08-27: expose positive concurrency without a product maximum.
+// [Sync] 2026-08-27: expose positive concurrency without a product maximum and save directly without a native confirm dialog.
 
 "use client";
 
@@ -434,7 +434,6 @@ export default function ClaudeAgentResourceConsole() {
               }}>撤销修改</button> : null}
               {writeAccess.data?.can ? <button type="button" disabled={saveButton.disabled} onClick={() => {
                 if (!displayedForm || draftInvalid || revisionChangedWhileEditing) return;
-                if (!window.confirm("将 desired 配置保存到 PostgreSQL；Dream 会定时读取并动态应用，无需重启。继续吗？")) return;
                 mutation.mutate({
                   values: displayedForm,
                   expectedRevision: editBaseRevision ?? null,
