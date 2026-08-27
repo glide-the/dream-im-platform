@@ -1,6 +1,7 @@
 // [Input] Claude Agent console refresh, cancellation, admission-state, and policy-field helpers.
-// [Output] Refresh, cancellation, visible save control, immediate desired projection, and revision coverage.
+// [Output] Refresh, cancellation, numeric bounds, invalid no-submit state, and immediate pending projection coverage.
 // [Pos] Node-safe focused tests for the Admin resource console client contract.
+// [Sync] 2026-08-27: cover invalid no-submit state and pending-before-periodic-apply projection.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -9,12 +10,21 @@ import {
   CLAUDE_AGENT_POLICY_FIELDS,
   CLAUDE_AGENT_REFRESH_INTERVAL_MS,
   type ClaudeAgentResourceResponse,
+  type PolicyBounds,
   fetchClaudeAgentResources,
   formatCanStartNewAgent,
   policyMutationPayload,
   policySaveButtonState,
+  policyValidationErrors,
   projectSavedDesired,
 } from "./ClaudeAgentResourceConsole";
+
+const bounds: PolicyBounds = {
+  maxConcurrentRuns: { min: 1, max: 16 },
+  runMemoryBudgetMib: { min: 128, max: 8_192 },
+  memoryReserveMib: { min: 64, max: 4_096 },
+  retryAfterSeconds: { min: 5, max: 3_600 },
+};
 
 describe("Claude Agent resource console data client", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -65,18 +75,57 @@ describe("Claude Agent resource console data client", () => {
     expect(CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS).toContain("bg-text-primary");
     expect(CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS).toContain("text-bg-surface");
     expect(CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS).not.toContain("text-background");
-    expect(policySaveButtonState(false, false, false)).toEqual({
+    expect(policySaveButtonState(false, false, false, false)).toEqual({
       disabled: true,
       label: "修改后可保存",
     });
-    expect(policySaveButtonState(true, false, false)).toEqual({
+    expect(policySaveButtonState(true, false, false, false)).toEqual({
       disabled: false,
       label: "保存期望配置",
     });
-    expect(policySaveButtonState(true, true, false)).toEqual({
+    expect(policySaveButtonState(true, true, false, false)).toEqual({
       disabled: true,
       label: "保存中…",
     });
+    expect(policySaveButtonState(true, false, false, true)).toEqual({
+      disabled: true,
+      label: "请检查输入范围",
+    });
+  });
+
+  it("rejects empty-derived zero, decimals, and values outside each published bound", () => {
+    const valid = {
+      maxConcurrentRuns: 10,
+      runMemoryBudgetMib: 416,
+      memoryReserveMib: 128,
+      retryAfterSeconds: 60,
+    };
+    expect(policyValidationErrors(valid, bounds)).toEqual({});
+    expect(policyValidationErrors({ ...valid, maxConcurrentRuns: 0 }, bounds)).toEqual({
+      maxConcurrentRuns: "请输入 1–16 之间的整数",
+    });
+    expect(policyValidationErrors({ ...valid, runMemoryBudgetMib: 416.5 }, bounds)).toEqual({
+      runMemoryBudgetMib: "请输入 128–8192 之间的整数",
+    });
+    expect(policyValidationErrors({ ...valid, memoryReserveMib: 4097 }, bounds)).toEqual({
+      memoryReserveMib: "请输入 64–4096 之间的整数",
+    });
+    expect(policyValidationErrors({ ...valid, retryAfterSeconds: Number.NaN }, bounds)).toEqual({
+      retryAfterSeconds: "请输入 5–3600 之间的整数",
+    });
+  });
+
+  it("translates strict policy rejection into actionable Chinese guidance", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+      error: {
+        code: "CLAUDE_AGENT_POLICY_INVALID",
+        message: "Claude Agent resource policy is invalid",
+      },
+    }, { status: 400 })));
+
+    await expect(fetchClaudeAgentResources()).rejects.toThrow(
+      "配置未保存：请确认四项阈值都是页面允许范围内的整数。",
+    );
   });
 
   it("projects a successful desired write immediately while effective remains pending", () => {
@@ -105,5 +154,31 @@ describe("Claude Agent resource console data client", () => {
     expect(projected.application).toEqual({ status: "pending", applied: false });
     expect(projected.runtime?.config.effective.max_concurrent_runs).toBe(1);
     expect(current.desired.revision).toBe(1);
+  });
+
+  it("projects pending after a save even when the last Dream snapshot is unavailable", () => {
+    const current = {
+      desired: { status: "not_configured", values: null, revision: null, updatedAt: null },
+      runtime: null,
+      application: { status: "unavailable", applied: null },
+    } as unknown as ClaudeAgentResourceResponse;
+    const saved = {
+      status: "valid" as const,
+      values: {
+        schemaVersion: 1,
+        revision: 1,
+        maxConcurrentRuns: 2,
+        runMemoryBudgetMib: 416,
+        memoryReserveMib: 128,
+        retryAfterSeconds: 60,
+      },
+      revision: 1,
+      updatedAt: "2026-08-27T12:20:44.000Z",
+    };
+
+    expect(projectSavedDesired(current, saved).application).toEqual({
+      status: "pending",
+      applied: false,
+    });
   });
 });

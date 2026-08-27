@@ -1,7 +1,7 @@
 // [Input] Owned isolated PostgreSQL, visible Admin bootstrap, and the Claude Agent resource console.
-// [Output] Browser proof for readable/dirty-only save controls, immediate desired projection, pending, and applied refresh.
+// [Output] Browser proof for invalid no-PATCH, immediate pending, and applied refresh after Dream's periodic write.
 // [Pos] Focused provider-free Admin resource-policy journey; it never controls or restarts Dream.
-// [Sync] 2026-08-27: cover the resource policy button regression and desired/effective handoff states.
+// [Sync] 2026-08-27: cover the Admin-only desired save and periodic PostgreSQL desired/effective handoff.
 
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
@@ -121,15 +121,35 @@ test.describe("Claude Agent resource policy console", () => {
 
       const concurrency = page.getByLabel("最大并发 Agent turn");
       await expect(concurrency).toHaveValue("1");
-      await concurrency.fill("2");
+      let patchRequests = 0;
+      page.on("request", (request) => {
+        if (request.method() === "PATCH" && request.url().endsWith("/api/admin/claude-agent-resources")) {
+          patchRequests += 1;
+        }
+      });
+      await concurrency.fill("0");
+      await expect(page.getByText("请输入 1–16 之间的整数", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "请检查输入范围" })).toBeDisabled();
+      await page.getByRole("button", { name: "请检查输入范围" }).click({ force: true });
+      expect(patchRequests).toBe(0);
+
+      await concurrency.fill("1");
+      await concurrency.press("ArrowUp");
+      await expect(concurrency).toHaveValue("2");
+      await concurrency.press("ArrowDown");
+      await expect(concurrency).toHaveValue("1");
+      await concurrency.press("ArrowUp");
+      await expect(concurrency).toHaveValue("2");
       await expect(page.getByRole("button", { name: "撤销修改" })).toBeVisible();
       const save = page.getByRole("button", { name: "保存期望配置" });
       await expect(save).toBeEnabled();
       page.once("dialog", (dialog) => dialog.accept());
       await save.click();
+      await expect.poll(() => patchRequests).toBe(1);
 
       const pendingNotice = page.getByRole("status").filter({ hasText: "期望配置已保存" });
-      await expect(pendingNotice).toContainText("等待 Dream 正常重启后生效");
+      await expect(pendingNotice).toContainText("等待 Dream 下次定时读取后生效");
+      await expect(pendingNotice).toContainText("无需重启");
       await expect(pendingNotice).toContainText("desired revision 1");
       await expect(concurrency).toHaveValue("2");
       await expect(page.getByRole("button", { name: "修改后可保存" })).toBeDisabled();

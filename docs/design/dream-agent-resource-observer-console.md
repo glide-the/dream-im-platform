@@ -2,7 +2,7 @@
 [Input] 2026-08-27 Claude Agent admission diagnosis, existing Observer/EventBus contracts, and PostgreSQL-only Dream/Admin synchronization requirements.
 [Output] Chinese architecture, interaction, schema, security, sequence, validation, rollback, and ownership design for Claude Agent resource governance.
 [Pos] Authoritative cross-repository design; Admin Drizzle owns schema, Dream owns content-free observation, and Admin never calls Dream diagnostics HTTP.
-[Sync] 2026-08-27: add readable dirty-only policy actions, immediate desired/pending projection, responsive hashes, browser proof, and typed null first-sample writes.
+[Sync] 2026-08-27: define periodic PostgreSQL policy application without restart, immediate pending feedback, strict invalid-draft blocking, and write-side capability gating.
 -->
 
 # Dream Claude Agent 资源 Observer 与 Admin 控制台设计
@@ -13,7 +13,7 @@ Codex Goal：在不修改 Dream Agent/Claude Agent 核心业务模块和基础�
 
 | 子任务 | 负责人 | 仓库 / 目录 | 文件所有权 | 当前状态 | 阻断项 |
 |---|---|---|---|---|---|
-| Dream resource observer | Dream task | `/Users/dmeck/project/ink-dream-memory` | Observer、sampler、PG sink、composition root、capability consumer、Dream tests/docs | 实现和 focused regression 完成 | 无 |
+| Dream resource observer | Dream task | `/Users/dmeck/project/ink-dream-memory` | Observer、sampler、PG sink、运行期 policy refresher、capability consumer、Dream tests/docs | 实现和 focused regression 完成 | 无 |
 | Admin resource console | Admin task | `/Users/dmeck/project/ink-admin-memory` | Drizzle migration/capability、Admin PG projection、RBAC/Origin/audit、React console、Admin tests/docs | migration、API、UI 和本地验证完成 | 无 |
 
 本轮只做本地代码和隔离自动化验证；不连接远程服务器，不读取 AutoDL 状态，不改部署配置，不发布、部署、合并或执行生产 migration。上一版 `Admin -> Dream HTTP + Bearer` 与 AutoDL env 投影不属于目标架构，必须删除。
@@ -28,7 +28,7 @@ Codex Goal：在不修改 Dream Agent/Claude Agent 核心业务模块和基础�
 |---|---|
 | Dream | 既有 admission/observer/diagnostics/policy/sink/capability/server/thread factory/service/context：261 passed、10 subtests；本轮 sink/diagnostics/policy 增量回归 22 passed、3 subtests；既有 FastAPI lifecycle deprecation warnings |
 | Admin | focused Vitest：23 passed；全量 Vitest：432 passed；隔离 PostgreSQL Playwright 可见流程：1 passed；TypeScript、DB package typecheck、ESLint、production build 均 exit 0 |
-| PostgreSQL | 明确命名的临时 embedded PostgreSQL 空库重放 0000–0040 并在测试后删除；本机正常 Admin/Dream 重启后，revision 1 已 applied、effective 并发 10、首样本 write errors/drop 均为 0 |
+| PostgreSQL | 明确命名的临时 embedded PostgreSQL 空库重放 0000–0040 并在测试后删除；本机正常 Admin/Dream 链路中 revision 1 已 applied、effective 并发 10、首样本 write errors/drop 均为 0 |
 
 `pnpm dev` 按现有安全协议只托管 PostgreSQL 与 Admin 应用，不隐式执行 Drizzle migration；本地自动化 harness 在启动隔离 Admin 前显式执行 `pnpm --filter @ink-memory/db migrate`。
 
@@ -87,7 +87,7 @@ lease 在 factory 唯一 `finally` 中幂等释放，覆盖完成、执行失败
 - `NormalizedAgentTurnClassifier` 区分 completed/failed/cancelled，禁止复制第二套终态判断。
 - admission decorator 原样委托 `try_acquire/config/stats`，只记录公开 grant/两类 denial；lease 原样返回。
 - admission `stats()` 提供 process-local active/max 与最后资源信号；系统 sampler 只读 `/proc` 和 cgroup，不读 Agent 私有 pool/set/lock。
-- composition root 是 admission config、observer、sampler、publisher 与 sink 的唯一组装点。
+- composition root 是 admission config、运行期 policy refresher、observer、sampler、publisher 与 sink 的唯一组装点。
 
 Observer hook 不等待 PostgreSQL、网络或采样。Observer 内部错误、EventBus reader 错误和 sink 错误都不得传播到 turn。
 
@@ -107,7 +107,7 @@ flowchart LR
   UI["Admin console"] --> API["Admin RBAC API"]
   API --> PG
   API --> SS["system_settings desired policy"]
-  SS --> R["Dream composition-root policy provider"]
+  SS --> R["Dream runtime policy refresher"]
   R --> A
 ```
 
@@ -116,9 +116,9 @@ flowchart LR
 - Dream Observer/sampler -> 有界 publisher -> PostgreSQL 最新快照。
 - Admin API -> PostgreSQL 读取快照；禁止请求 Dream diagnostics API。
 - Admin API -> `system_settings` 写 desired。
-- Dream composition root 启动时通过公开 provider 读取一次 desired 并构造既有 `AgentAdmissionConfig`。
+- Dream 运行期 policy refresher 定时通过公开 provider 读取 desired，并把通过 capability 与边界校验的新 revision 动态应用到既有 admission controller。
 
-运行期不定时替换 controller config，不读取 controller 私有字段，不提供远程 restart。新 desired 在下一次 Dream 正常启动时生效；页面据 snapshot 中的 effective revision/values 显示 pending 或 applied。
+策略刷新只沿 Dream 内部公开配置入口原子替换 effective config，不读取 controller 私有字段，也不提供远程 restart。Admin 保存后立即显示 pending；Dream 下次定时读取、应用并写回新 effective revision/values 后，页面自动收敛为 applied，全程无需重启。
 
 ## 7. 数据模型与 migration 判断
 
@@ -151,7 +151,7 @@ claude_agent_resource_snapshots
 
 `instance_id` 是每个 Dream 进程启动时生成的随机 UUID，不含 hostname、PID、Thread、Session、用户或业务 ID。`heartbeat_at` 与有样本时的 `sampled_at` 均由 PostgreSQL `CURRENT_TIMESTAMP` 产生；`process_started_at` 至多取数据库当前时间，避免 Dream/DB 时钟偏移破坏 freshness。每次写入只 upsert 当前 instance 行；同一写事务清理 heartbeat 超过 7 天的其他实例。因此历史有明确 TTL，不形成无界时序平台。Admin 默认选择 heartbeat 最新实例，并可明确显示 process scope。
 
-Admin 必须通过新的前向 migration `0040_*` 生成 SQL/journal/snapshot，并在全部 DDL 之后发布精确 `dream.claude-agent-resource-observer.v1` capability/version/hash。hash 由版本、关系/列、DB-clock、content-free/latest-instance 与 desired/effective canonical contract lines 重新计算验证。Dream 不创建 migration、DDL、表或 fallback；Admin GET、PATCH 事务和 Dream sink/provider 均在读写前验证精确 capability。
+Admin 必须通过新的前向 migration `0040_*` 生成 SQL/journal/snapshot，并在全部 DDL 之后发布精确 `dream.claude-agent-resource-observer.v1` capability/version/hash。hash 由版本、关系/列、DB-clock、content-free/latest-instance 与 desired/effective canonical contract lines 重新计算验证。Dream 不创建 migration、DDL、表或 fallback；Admin GET、PATCH 事务和 Dream sink/provider 均在读写前验证精确 capability，其中 PATCH 必须在同一事务、任何 desired 或 audit 写入前 fail closed。
 
 `0039_claude_agent_resource_rbac` 已进入 journal，仅修复 `system.read/system.write` 角色授权，保持不可变。
 
@@ -174,14 +174,14 @@ Admin 必须通过新的前向 migration `0040_*` 生成 SQL/journal/snapshot，
 
 ## 9. desired / effective 与 fail-closed
 
-Dream policy provider 仅在 composition root 构造时读取：
+Dream policy provider 在 composition root 启动后由有界运行期 refresher 定时读取：
 
-- capability 与 policy 均有效：用 desired 构造 `AgentAdmissionConfig`，记录 `applied` 和 revision。
-- policy 行不存在：继续使用通过 Admin 同一上下界验证的有限 env config；越界则使用代码默认，记录 `not_configured`。
-- policy JSON/边界无效：保留上述有限 fallback，记录 `invalid`。
-- PostgreSQL/capability 不可用：保留上述有限 fallback，记录 `unavailable`。
+- capability 与 policy 均有效且 revision 更新：通过 admission controller 的公开配置入口动态应用完整 desired，记录 `applied` 和 revision。
+- policy 行不存在：启动阶段使用通过 Admin 同一上下界验证的有限 env config；越界则使用代码默认，记录 `not_configured`；运行中不得把缺失行解释成无限制配置。
+- policy JSON/边界无效：保留当前 last-known-good effective；若启动时尚无 effective，则保留上述有限 fallback，记录 `invalid`。
+- PostgreSQL/capability 不可用：保留当前 last-known-good effective；若启动时尚无 effective，则保留上述有限 fallback，记录 `unavailable`。
 
-任何异常都不得产生无限并发、零预算或关闭内存门禁。运行中 PostgreSQL 失联时 controller 的既有 effective 对象不变，只有 snapshot heartbeat 变 stale；sink 恢复后继续 upsert。
+任何异常都不得产生无限并发、零预算或关闭内存门禁。运行中 PostgreSQL 失联或 capability 漂移时 controller 的既有 effective 对象不变；refresher 后续成功即可继续从更高 revision 收敛，sink 恢复后继续 upsert。
 
 Admin 展示状态：
 
@@ -197,7 +197,7 @@ publisher 每 5 秒取得一个 immutable closed DTO 并以 `put_nowait` 写入�
 
 启动首样本允许 `sampled_at=null`；SQL 必须将该参数显式 cast 为 `timestamptz`，否则 PostgreSQL 无法为 null bind 推断类型并产生一次虚假 write error。有样本后 `sampled_at` 仍使用 DB clock，不信任 Dream 墙钟。
 
-建议时间合同：sample 5 秒、heartbeat 5 秒、DB write timeout 1 秒、Admin refetch 10 秒、heartbeat 超过 20 秒 stale、超过 60 秒 offline。Admin 用数据库当前时间计算年龄，避免信任浏览器时钟。Dream 异常退出后不再更新 heartbeat，旧行自然 stale/offline；下次进程以新 instance UUID 和清零计数启动。
+建议时间合同：sample 5 秒、heartbeat 5 秒、DB write timeout 1 秒、Admin refetch 10 秒、heartbeat 超过 20 秒 stale、超过 60 秒 offline；Dream policy refresh 使用独立、有界且可配置的运行期周期。Admin 用数据库当前时间计算年龄，避免信任浏览器时钟。Dream 异常退出后不再更新 heartbeat，旧行自然 stale/offline；下次进程以新 instance UUID 和清零计数启动。
 
 ## 11. Admin 信息架构
 
@@ -207,7 +207,7 @@ publisher 每 5 秒取得一个 immutable closed DTO 并以 `put_nowait` 写入�
 2. 准入概览：active/max、can-start 三态、grant、两类 denial、最近 denial。
 3. turn 累计：started/completed/failed/cancelled。
 4. Linux 资源：host/cgroup/raw/reclaimable 分项/effective/required、memory.events、Claude child count/RSS。
-5. 策略表：default、Admin desired、Dream effective、revision/version、更新时间、applied/pending/invalid/unavailable；主操作只在草稿变更后可用，保存成功立即投影新 desired，显式提示“等待 Dream 正常重启”，不把旧 effective 伪装为已更新。
+5. 策略表：default、Admin desired、Dream effective、revision/version、更新时间、applied/pending/invalid/unavailable；主操作只在有效草稿变更后可用，无效整数/范围不发 PATCH；保存成功立即投影新 desired/pending，显式提示“等待 Dream 下次定时读取，无需重启”，不把旧 effective 伪装为已更新。
 6. 观测管线：sample status、sink dropped/write errors；只显示安全数字与枚举。
 
 字段缺失显示“未知/不可用”，不能显示 0；`can_start_new_agent=null` 显示“未知”，不能显示“拒绝”。保存按钮只对 `system.write` 可见/可用；页面不提供 Shell、kill、restart、部署或关闭门禁按钮。
@@ -216,7 +216,7 @@ publisher 每 5 秒取得一个 immutable closed DTO 并以 `put_nowait` 写入�
 
 - GET 要求服务端 `system.read`；PATCH 要求服务端 `system.write`。
 - PATCH 必须先验证 Origin；缺失、错误或 allowlist 不匹配一律 403，不按 `NODE_ENV` 放宽。
-- body 使用 strict Zod、整数边界，拒绝未知字段、0、负数、无限值与 partial policy。
+- body 使用 strict Zod、整数边界，拒绝未知字段、0、负数、无限值与 partial policy；UI 同样提前阻断无效草稿且不发 PATCH，但客户端校验不替代服务端边界。
 - UI 在第一次编辑时冻结 `expectedRevision`；轮询发现 revision 变化即禁止覆盖并提示刷新。PATCH 携带该基准 revision；事务中 `SELECT ... FOR UPDATE` 后不匹配返回 409，防止两个管理员互相覆盖。
 - revision、settings upsert 与 success audit 在同一数据库事务；audit 失败则全部 rollback。
 - audit before/after 只含四个整数、schemaVersion、revision，不含 request headers、Token、env 或 snapshot。
@@ -269,7 +269,7 @@ sequenceDiagram
   end
 ```
 
-### 13.2 采样、Admin 读取、desired 写入与启动加载
+### 13.2 采样、Admin 读取、desired 写入与运行期动态应用
 
 ```mermaid
 sequenceDiagram
@@ -278,8 +278,8 @@ sequenceDiagram
   participant P as PostgreSQL
   participant M as Admin API
   participant UI as Admin page
-  participant C as Dream composition root
-  participant A as Existing AgentAdmissionConfig
+  participant C as Dream policy refresher
+  participant A as Existing admission controller
 
   loop every 5 seconds
     S->>S: read host/cgroup/proc with timeout
@@ -303,12 +303,15 @@ sequenceDiagram
       M-->>UI: desired pending
     end
   end
-  Note over UI,C: console never restarts Dream
-  C->>P: startup capability + desired read
-  alt valid desired
-    C->>A: construct existing config from desired
+  Note over UI,C: Admin never restarts or controls Dream
+  loop bounded runtime policy interval
+    C->>P: exact capability + desired read
+  end
+  alt valid newer desired
+    C->>A: atomically apply validated config
+    C->>P: publish new effective revision/values
   else invalid/unavailable/not configured
-    C->>A: retain bounded env/default config
+    C->>A: retain last-known-good bounded config
   end
   alt desired revision matches fresh effective
     M-->>UI: applied
@@ -319,8 +322,8 @@ sequenceDiagram
 
 ## 14. 数据库不可达与异常退出
 
-- Dream 已运行且 PostgreSQL 变慢/离线：sink timeout/drop；Agent admission、lease、turn、SSE 不受影响；effective 保持启动时对象。
-- Dream 启动加载 desired 失败：使用有限 env/default config 并上报 unavailable；既有数据库启动 capability gate 仍可按仓库合同阻止不兼容 schema。
+- Dream 已运行且 PostgreSQL 变慢/离线：sink/refresher timeout 或 drop；Agent admission、lease、turn、SSE 不受影响；effective 保持 last-known-good 对象，恢复后继续定时收敛。
+- Dream 启动加载 desired 失败：使用有限 env/default config 并上报 unavailable；既有数据库启动 capability gate 仍可按仓库合同阻止不兼容 schema，运行期 refresher 成功后可动态应用有效 desired。
 - Admin 数据库不可达：身份/RBAC/desired/snapshot 均不可可信，GET/PATCH 返回 503；不能绕过数据库去请求 Dream。
 - Dream 异常退出：快照行保留，heartbeat age 进入 stale/offline；`can_start_new_agent` 强制 null。
 - Observer、sampler 或 sink 异常：只影响健康计数/新鲜度，不影响 Agent。
@@ -334,13 +337,13 @@ Dream：
 - context/setup failure、cancel/stop/close/aclose 的 lease 释放；Chat/SSE/resume 回归。
 - cgroup current/max/stat/events、`memory.max=max`、`/proc`/cgroup 缺失、Claude descendant/RSS 聚合。
 - publisher queue 容量、latest replacement、DB timeout/slow/unavailable、capability missing/drift、启动 `sampled_at=null` 类型、upsert/TTL、字段隐私。
-- policy provider valid/missing/invalid/unavailable；只在 composition root 投影；既有 env/default 始终有限。
+- policy provider valid/missing/invalid/unavailable；运行期周期、revision 去重、动态应用与 last-known-good 保留；既有 env/default 始终有限。
 
 Admin：
 
 - 未登录、`system.read`、`system.write`、缺失/错误 Origin。
 - strict bounds/unknown fields、expected revision conflict、before/after audit、同事务 rollback。
-- capability missing、policy invalid、snapshot absent/fresh/stale/offline、DB unavailable。
+- GET/PATCH capability missing/drift；PATCH 在同一事务的任何 desired/audit 写入前 fail closed；policy invalid、snapshot absent/fresh/stale/offline、DB unavailable。
 - desired/effective applied/pending/invalid/unavailable 与 `can-start=null`。
 - React 10 秒刷新、query signal、卸载取消、无 write 权限、保存确认、无草稿禁用、按钮对比度、保存后立即 desired/pending、轮询 applied、390px 无水平溢出。
 - Drizzle generate、snapshot/capability contract、空库 replay、重复执行、partial drift/concurrent migrator（仅明确隔离数据库）。
@@ -360,7 +363,7 @@ Admin：
 | 是否改变准入算法和顺序？ | 否；decorator 原样委托 |
 | Observer/数据库失败是否影响 Agent？ | 否；hook 不做 I/O，queue 有界，worker timeout 隔离 |
 | 是否只通过 PostgreSQL同步？ | 是；删除 Admin->Dream HTTP route/proxy/Bearer |
-| 配置是否仅由 composition root/provider 加载？ | 是；启动时一次加载，不热改 controller |
+| 配置是否仅由受控 provider/refresher 加载？ | 是；composition root 组装唯一运行期 refresher，定时校验并动态应用完整配置 |
 | schema 是否只由 Admin Drizzle 管理？ | 是；Dream 只验证 capability |
 | 是否复用 system_settings/RBAC/audit？ | 是 |
 | 是否泄漏业务标识、正文或凭据？ | 否；闭集 DTO + 反向测试 |
@@ -372,7 +375,7 @@ Admin：
 
 ## 17. 回滚方案
 
-Dream 回滚：停止 publisher/sink 启动注册，移除 PG policy provider，composition root 恢复有限 env config；保留 Observer/diagnostics 纯本地能力或一并移除。不会改 Agent 数据、状态机或 lease。
+Dream 回滚：停止 publisher/sink 与 policy refresher 启动注册，移除 PG policy provider，composition root 恢复有限 env config；保留 Observer/diagnostics 纯本地能力或一并移除。不会改 Agent 数据、状态机或 lease。
 
 Admin 回滚：隐藏页面/导航并移除专用 API；`system_settings` desired 行可保留为无副作用审计事实。`0040` 是 additive migration，不修改或删除历史；表可暂时无人写入。`0039` RBAC migration 保持。
 
@@ -388,4 +391,4 @@ Admin 回滚：隐藏页面/导航并移除专用 API；`system_settings` desire
 - `to_thread` 外层 timeout 不能强制杀死已进入驱动的线程；SQL statement timeout、单一 inflight driver call 与容量 1 queue 限制影响，持续卡住会导致 heartbeat 自然 stale/offline，但不会并发堆积写线程。
 - 随机 instance UUID 会保留短期旧 epoch；7 天 TTL 清理限制增长。
 
-本期明确不实现：一小时趋势、事件明细表、消息队列、跨实例总和、动态热更新、自动 restart、Shell/kill、远程部署、无限并发、关闭内存门禁、用户级/Thread 级资源账本、读取正文推断状态，以及任何 AutoDL 或生产验收。
+本期明确不实现：一小时趋势、事件明细表、消息队列、跨实例总和、自动 restart、Shell/kill、远程部署、无限并发、关闭内存门禁、用户级/Thread 级资源账本、读取正文推断状态，以及任何 AutoDL 或生产验收。运行期策略动态应用仅接受 Admin 写入 PostgreSQL 的完整、受校验 desired policy，不引入第二操作入口。
