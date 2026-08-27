@@ -2,7 +2,7 @@
 # [Input] Admin AutoDL env projector and persistent-directory initializer.
 # [Output] Topology, idempotency, owner/mode, legacy-data, and symlink checks.
 # [Pos] Provider-free AutoDL Admin deployment contract test.
-# [Sync] 2026-08-26: cover /root/ink-autodl/data-style PostgreSQL topology and legacy guards.
+# [Sync] 2026-08-27: cover private Dream diagnostics projection without printing its secret.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,6 +26,7 @@ ADMIN_SESSION_SECRET=test-admin-session
 GATEWAY_API_KEY_PEPPER=test-gateway-pepper
 AI_CREDENTIAL_ENCRYPTION_KEY=test-encryption-key
 PRODUCT_API_JWT_SECRET=test-product-secret
+DREAM_DIAGNOSTICS_TOKEN=test-dream-diagnostics-token-1234567890
 EMBEDDED_POSTGRES_DATA_DIR=/tmp/stale-postgres
 ARTIFACT_WORKSPACE_ROOT=/tmp/stale-artifacts
 EOF
@@ -40,6 +41,7 @@ AUTODL_DREAM_PUBLIC_ORIGIN=https://dream.example.test \
 
 grep -Fx "EMBEDDED_POSTGRES_DATA_DIR=${ADMIN_HOME}/postgres" "${OUTPUT_ENV}"
 grep -Fx "ARTIFACT_WORKSPACE_ROOT=${PROJECTED_DATA_ROOT}/artifacts" "${OUTPUT_ENV}"
+grep -Fx "DREAM_DIAGNOSTICS_BASE_URL=http://127.0.0.1:8765" "${OUTPUT_ENV}"
 if grep -Fq "EMBEDDED_POSTGRES_DATA_DIR=${PROJECTED_DATA_ROOT}" "${OUTPUT_ENV}"; then
   printf 'PostgreSQL was projected into the Dream data root\n' >&2
   exit 1
