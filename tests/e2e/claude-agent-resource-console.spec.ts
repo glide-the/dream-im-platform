@@ -1,15 +1,14 @@
 // [Input] Owned isolated PostgreSQL, visible Admin bootstrap, and the Claude Agent resource console.
 // [Output] Browser proof for large positive concurrency, invalid no-PATCH, immediate pending, and applied refresh.
 // [Pos] Focused provider-free Admin resource-policy journey; it never controls or restarts Dream.
-// [Sync] 2026-08-27: remove the product concurrency cap while preserving the int4 safety boundary and PG handoff.
+// [Sync] 2026-08-27: remove the product concurrency max while preserving positive-integer validation and PG handoff.
 
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
 
-import { CLAUDE_AGENT_MAX_CONCURRENT_RUNS } from "../../config/claude-agent-resource-policy";
-
 const bootstrapToken = process.env.ADMIN_BOOTSTRAP_E2E_TOKEN;
 const databaseUrl = process.env.TEST_DATABASE_URL;
+const LARGE_CONCURRENCY = 1_000_000;
 
 function collectDiagnostics(page: Page) {
   const diagnostics: string[] = [];
@@ -82,7 +81,7 @@ test.describe("Claude Agent resource policy console", () => {
   test.describe.configure({ timeout: 90_000 });
   test.skip(!bootstrapToken || !databaseUrl, "Run only with an owned isolated PostgreSQL database");
 
-  test("saves the int4 maximum, stays pending, then refreshes applied effective values", async ({ page, context, baseURL }, testInfo) => {
+  test("saves large uncapped concurrency, stays pending, then refreshes applied effective values", async ({ page, context, baseURL }, testInfo) => {
     test.setTimeout(90_000);
     await page.route("http://unpkg.com/react-grab/dist/index.global.js", (route) =>
       route.fulfill({ status: 200, contentType: "application/javascript", body: "" }),
@@ -143,9 +142,10 @@ test.describe("Claude Agent resource policy console", () => {
           patchRequests += 1;
         }
       });
-      for (const invalid of ["0", "-1", "1.5", String(CLAUDE_AGENT_MAX_CONCURRENT_RUNS + 1)]) {
+      await expect(concurrency).not.toHaveAttribute("max");
+      for (const invalid of ["0", "-1", "1.5"]) {
         await concurrency.fill(invalid);
-        await expect(page.getByText("请输入 1–2147483647 之间的整数", { exact: true })).toBeVisible();
+        await expect(page.getByText("请输入不小于 1 的整数", { exact: true })).toBeVisible();
         await expect(page.getByRole("button", { name: "请检查输入范围" })).toBeDisabled();
         expect(patchRequests).toBe(0);
       }
@@ -157,8 +157,8 @@ test.describe("Claude Agent resource policy console", () => {
       await expect(concurrency).toHaveValue("1");
       await concurrency.press("ArrowUp");
       await expect(concurrency).toHaveValue("2");
-      await concurrency.fill(String(CLAUDE_AGENT_MAX_CONCURRENT_RUNS));
-      await expect(concurrency).toHaveValue(String(CLAUDE_AGENT_MAX_CONCURRENT_RUNS));
+      await concurrency.fill(String(LARGE_CONCURRENCY));
+      await expect(concurrency).toHaveValue(String(LARGE_CONCURRENCY));
       await expect(page.getByRole("button", { name: "撤销修改" })).toBeVisible();
       const save = page.getByRole("button", { name: "保存期望配置" });
       await expect(save).toBeEnabled();
@@ -170,7 +170,7 @@ test.describe("Claude Agent resource policy console", () => {
       await expect(pendingNotice).toContainText("等待 Dream 下次定时读取后生效");
       await expect(pendingNotice).toContainText("无需重启");
       await expect(pendingNotice).toContainText("desired revision 1");
-      await expect(concurrency).toHaveValue(String(CLAUDE_AGENT_MAX_CONCURRENT_RUNS));
+      await expect(concurrency).toHaveValue(String(LARGE_CONCURRENCY));
       await expect(page.getByRole("button", { name: "修改后可保存" })).toBeDisabled();
       const concurrencyRow = page.getByRole("row").filter({ hasText: "最大并发 Agent turn" });
       await expect(concurrencyRow.locator("td").nth(2)).toHaveText("1");
@@ -185,7 +185,7 @@ test.describe("Claude Agent resource policy console", () => {
           desired: {
             status: "valid",
             revision: 1,
-            values: { maxConcurrentRuns: CLAUDE_AGENT_MAX_CONCURRENT_RUNS },
+            values: { maxConcurrentRuns: LARGE_CONCURRENCY },
           },
           application: { status: "pending", applied: false },
         },
@@ -195,12 +195,12 @@ test.describe("Claude Agent resource policy console", () => {
         `UPDATE claude_agent_resource_snapshots
             SET heartbeat_at = NOW(), sampled_at = NOW(), snapshot = $2::jsonb, updated_at = NOW()
           WHERE instance_id = $1`,
-        ["resource-policy-e2e", JSON.stringify(resourceSnapshot(CLAUDE_AGENT_MAX_CONCURRENT_RUNS, 1))],
+        ["resource-policy-e2e", JSON.stringify(resourceSnapshot(LARGE_CONCURRENCY, 1))],
       );
 
       await expect(page.getByText("Dream 已加载 desired revision 1", { exact: false })).toBeVisible({ timeout: 15_000 });
-      await expect(concurrencyRow.locator("td").nth(2)).toHaveText(String(CLAUDE_AGENT_MAX_CONCURRENT_RUNS));
-      await expect(page.getByText(`0 / ${CLAUDE_AGENT_MAX_CONCURRENT_RUNS}`, { exact: true })).toBeVisible();
+      await expect(concurrencyRow.locator("td").nth(2)).toHaveText(String(LARGE_CONCURRENCY));
+      await expect(page.getByText(`0 / ${LARGE_CONCURRENCY}`, { exact: true })).toBeVisible();
 
       const finalButton = page.getByRole("button", { name: "修改后可保存" });
       await finalButton.scrollIntoViewIfNeeded();

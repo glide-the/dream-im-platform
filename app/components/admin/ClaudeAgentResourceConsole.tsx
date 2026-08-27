@@ -1,7 +1,7 @@
 // [Input] PostgreSQL-projected Claude Agent resource API, system.write access, and a cancellable React Query signal.
-// [Output] Storage-safe desired/effective controls with immediate pending feedback plus process/cgroup monitoring.
+// [Output] Safe desired/effective controls with immediate pending feedback plus process/cgroup monitoring.
 // [Pos] Admin system-governance console; it cannot call Dream, restart processes, or deploy configuration.
-// [Sync] 2026-08-27: allow any positive concurrency through the published PostgreSQL integer hard boundary.
+// [Sync] 2026-08-27: expose positive concurrency without a product maximum.
 
 "use client";
 
@@ -19,7 +19,7 @@ export type PolicyValues = {
   retryAfterSeconds: number;
 };
 
-type Bound = { min: number; max: number };
+type Bound = { min: number; max: number | null };
 export type PolicyBounds = Record<keyof PolicyValues, Bound>;
 type AdmissionValues = {
   max_concurrent_runs: number;
@@ -194,8 +194,14 @@ export function policyValidationErrors(
   for (const key of Object.keys(bounds) as Array<keyof PolicyValues>) {
     const metric = values[key];
     const bound = bounds[key];
-    if (!Number.isFinite(metric) || !Number.isInteger(metric) || metric < bound.min || metric > bound.max) {
-      errors[key] = `请输入 ${bound.min}–${bound.max} 之间的整数`;
+    if (
+      !Number.isSafeInteger(metric)
+      || metric < bound.min
+      || (bound.max !== null && metric > bound.max)
+    ) {
+      errors[key] = bound.max === null
+        ? `请输入不小于 ${bound.min} 的整数`
+        : `请输入 ${bound.min}–${bound.max} 之间的整数`;
     }
   }
   return errors;
@@ -360,7 +366,7 @@ export default function ClaudeAgentResourceConsole() {
                           aria-label={label}
                           className={`w-32 border bg-bg-primary px-3 py-2 font-mono text-text-primary disabled:opacity-60 ${validationError ? "border-danger" : "border-border"}`}
                           disabled={!writeAccess.data?.can || mutation.isPending || desired === undefined}
-                          max={bound?.max}
+                          max={bound?.max ?? undefined}
                           min={bound?.min}
                           required
                           step={1}
@@ -376,7 +382,11 @@ export default function ClaudeAgentResourceConsole() {
                           }}
                         />
                         <p className={`mt-1 text-[11px] ${validationError ? "text-danger" : "text-text-tertiary"}`} id={helpId}>
-                          {validationError ?? (bound ? `${bound.min}–${bound.max}，仅限整数` : "仅限整数")}
+                          {validationError ?? (bound
+                            ? bound.max === null
+                              ? `不小于 ${bound.min}，仅限整数；无产品上限`
+                              : `${bound.min}–${bound.max}，仅限整数`
+                            : "仅限整数")}
                         </p>
                       </td>
                       <td className="font-mono">{value(runtime?.config.effective[effectiveKey])}</td>

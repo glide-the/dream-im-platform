@@ -1,9 +1,7 @@
 // [Input] Product safety limits for the fixed Claude Agent resource-policy setting.
-// [Output] Versioned defaults, storage-safe bounds, immutable setting identity, and exact observer capability contract.
+// [Output] Versioned defaults, safety bounds, immutable setting identity, and exact observer capability contract.
 // [Pos] Admin policy source; runtime effective values come only from Dream's PostgreSQL snapshot.
-// [Sync] 2026-08-27: remove the product concurrency cap while retaining the PostgreSQL integer hard limit.
-
-export const CLAUDE_AGENT_MAX_CONCURRENT_RUNS = 2_147_483_647;
+// [Sync] 2026-08-27: remove the product concurrency cap; null max means positive integer only.
 
 export const claudeAgentResourcePolicy = {
   schemaVersion: 1,
@@ -14,7 +12,7 @@ export const claudeAgentResourcePolicy = {
     description: "Desired Claude Agent admission resource policy",
   },
   bounds: {
-    maxConcurrentRuns: { min: 1, max: CLAUDE_AGENT_MAX_CONCURRENT_RUNS },
+    maxConcurrentRuns: { min: 1, max: null },
     runMemoryBudgetMib: { min: 128, max: 8_192 },
     memoryReserveMib: { min: 64, max: 4_096 },
     retryAfterSeconds: { min: 5, max: 3_600 },

@@ -1,11 +1,9 @@
 // [Input] Claude Agent console refresh, cancellation, admission-state, and policy-field helpers.
-// [Output] Refresh, storage-safe bounds, invalid no-submit state, and immediate pending projection coverage.
+// [Output] Refresh, safe bounds, invalid no-submit state, and immediate pending projection coverage.
 // [Pos] Node-safe focused tests for the Admin resource console client contract.
-// [Sync] 2026-08-27: cover large positive concurrency and reject zero, negative, fractional, or int4 overflow drafts.
+// [Sync] 2026-08-27: cover uncapped positive concurrency and reject values that cannot be safely transported.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-import { CLAUDE_AGENT_MAX_CONCURRENT_RUNS } from "../../../config/claude-agent-resource-policy";
 
 import {
   CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS,
@@ -22,7 +20,7 @@ import {
 } from "./ClaudeAgentResourceConsole";
 
 const bounds: PolicyBounds = {
-  maxConcurrentRuns: { min: 1, max: CLAUDE_AGENT_MAX_CONCURRENT_RUNS },
+  maxConcurrentRuns: { min: 1, max: null },
   runMemoryBudgetMib: { min: 128, max: 8_192 },
   memoryReserveMib: { min: 64, max: 4_096 },
   retryAfterSeconds: { min: 5, max: 3_600 },
@@ -95,25 +93,25 @@ describe("Claude Agent resource console data client", () => {
     });
   });
 
-  it("accepts large positive concurrency and rejects zero, negative, fractional, or int4 overflow", () => {
+  it("accepts large positive concurrency without a product max and rejects invalid numbers", () => {
     const valid = {
-      maxConcurrentRuns: CLAUDE_AGENT_MAX_CONCURRENT_RUNS,
+      maxConcurrentRuns: 1_000_000,
       runMemoryBudgetMib: 416,
       memoryReserveMib: 128,
       retryAfterSeconds: 60,
     };
     expect(policyValidationErrors(valid, bounds)).toEqual({});
     expect(policyValidationErrors({ ...valid, maxConcurrentRuns: 0 }, bounds)).toEqual({
-      maxConcurrentRuns: "请输入 1–2147483647 之间的整数",
+      maxConcurrentRuns: "请输入不小于 1 的整数",
     });
     expect(policyValidationErrors({ ...valid, maxConcurrentRuns: -1 }, bounds)).toEqual({
-      maxConcurrentRuns: "请输入 1–2147483647 之间的整数",
+      maxConcurrentRuns: "请输入不小于 1 的整数",
     });
     expect(policyValidationErrors({ ...valid, maxConcurrentRuns: 1.5 }, bounds)).toEqual({
-      maxConcurrentRuns: "请输入 1–2147483647 之间的整数",
+      maxConcurrentRuns: "请输入不小于 1 的整数",
     });
-    expect(policyValidationErrors({ ...valid, maxConcurrentRuns: CLAUDE_AGENT_MAX_CONCURRENT_RUNS + 1 }, bounds)).toEqual({
-      maxConcurrentRuns: "请输入 1–2147483647 之间的整数",
+    expect(policyValidationErrors({ ...valid, maxConcurrentRuns: Number.MAX_SAFE_INTEGER + 1 }, bounds)).toEqual({
+      maxConcurrentRuns: "请输入不小于 1 的整数",
     });
     expect(policyValidationErrors({ ...valid, runMemoryBudgetMib: 416.5 }, bounds)).toEqual({
       runMemoryBudgetMib: "请输入 128–8192 之间的整数",

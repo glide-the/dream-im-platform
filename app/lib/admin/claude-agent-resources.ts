@@ -1,7 +1,7 @@
 // [Input] Authenticated Admin requests plus the shared PostgreSQL desired-policy and observer snapshot relations.
-// [Output] Storage-safe desired/effective projection and audited optimistic desired-policy updates.
+// [Output] Safe desired/effective projection and audited optimistic desired-policy updates.
 // [Pos] PostgreSQL-only system-governance boundary; it never calls Dream or controls processes/deployments.
-// [Sync] 2026-08-27: accept positive concurrency through the PostgreSQL integer hard limit, with no unlimited sentinel.
+// [Sync] 2026-08-27: accept positive safe-integer concurrency with no product maximum or unlimited sentinel.
 
 import "server-only";
 
@@ -17,8 +17,11 @@ import {
   requireAdminRequest,
 } from "./guard";
 
-const boundedInteger = (key: keyof typeof policy.bounds) =>
-  z.number().int().min(policy.bounds[key].min).max(policy.bounds[key].max);
+const boundedInteger = (key: keyof typeof policy.bounds) => {
+  const bound = policy.bounds[key];
+  const schema = z.number().int().safe().min(bound.min);
+  return bound.max === null ? schema : schema.max(bound.max);
+};
 
 export const claudeAgentResourcePolicyInputSchema = z
   .object({
