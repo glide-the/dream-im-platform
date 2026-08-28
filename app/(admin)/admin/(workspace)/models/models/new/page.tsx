@@ -1,3 +1,8 @@
+// [Input] Model creation query defaults and shared Admin model field definitions.
+// [Output] Dedicated model form with Gateway limits and nullable Claude Code Runtime settings.
+// [Pos] AIModelRegistry create route; persistence remains in the audited Admin model API.
+// [Sync] 2026-08-28: expose the real model-scoped Runtime section with unset defaults.
+
 import AdminResourceFormPage from "@/components/admin/AdminResourceFormPage";
 import { modelFields } from "@/components/admin/AdminResourceViews";
 
@@ -5,6 +10,7 @@ const sections = [
   { id: "relation", title: "Provider 关系", description: "从真实 Provider 注册表选择上游。" },
   { id: "identity", title: "模型 alias 与上游型号", description: "外部只看到 alias；上游型号使用 Model Dropdown 或受控自定义输入。" },
   { id: "limits", title: "Token 上限" },
+  { id: "claude-runtime", title: "Claude Code Runtime", description: "仅作用于使用此模型的 Claude Agent turn；留空时不设置对应运行参数。" },
   { id: "capabilities", title: "模型能力" },
   { id: "status", title: "启用与影响" },
 ];
@@ -20,5 +26,5 @@ export default async function NewModelPage({ searchParams }: { searchParams: Pro
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80) || "custom-model";
-  return <AdminResourceFormPage mode="create" resource="models" title="添加模型" eyebrow="cc-switch · model settings" description="为 Provider 注册稳定模型 alias、上游型号、能力和 Token 上限。启用后仍需要有效 Pricing、用户权限、余额和 Gateway Key scope。" backHref="/admin/models/models" fields={modelFields} sections={sections} defaults={{ providerId, code: suggestedCode, upstreamModel, displayName: upstreamModel, enabled: false, capabilities: { chat: true, streaming: true }, contextWindow: null, maxOutputTokens: null }} submitLabel="添加模型" />;
+  return <AdminResourceFormPage mode="create" resource="models" title="添加模型" eyebrow="cc-switch · model settings" description="为 Provider 注册稳定模型 alias、上游型号、能力、Token 上限和可选 Claude Code Runtime 配置。启用后仍需要有效 Pricing、用户权限、余额和 Gateway Key scope。" backHref="/admin/models/models" fields={modelFields} sections={sections} defaults={{ providerId, code: suggestedCode, upstreamModel, displayName: upstreamModel, requestHeaders: {}, enabled: false, capabilities: { chat: true, streaming: true }, contextWindow: null, maxOutputTokens: null, claudeCodeAutoCompactWindow: null, claudeCodeMaxContextTokens: null }} submitLabel="添加模型" />;
 }

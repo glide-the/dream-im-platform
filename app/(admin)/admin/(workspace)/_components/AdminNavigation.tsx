@@ -1,7 +1,7 @@
 // [Input] Current protected Admin path, theme state, and permission-filtered navigation descriptors.
-// [Output] Accessible Admin workspace navigation including global ClaudePlugin Marketplace operations.
+// [Output] Accessible Admin workspace navigation including Claude Agent system governance.
 // [Pos] Admin chrome; resource authorization remains server-owned.
-// [Sync] 2026-08-19: add the Remote Marketplace resource entry under operations.
+// [Sync] 2026-08-27: add the system.read-gated Claude Agent resource console.
 
 "use client";
 
@@ -162,6 +162,7 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "系统治理",
     items: [
+      { label: "Claude Agent 资源", href: "/admin/system/claude-agent-resources", permission: "system.read", mark: "CA" },
       { label: "审计日志", href: "/admin/system/audit", permission: "audit.read", mark: "AU" },
     ],
   },

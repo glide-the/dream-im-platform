@@ -1,7 +1,7 @@
 // [Input] First-admin bootstrap request plus the canonical permission/role policy.
 // [Output] Transactional initial Admin, roles, permissions, and audit receipt.
 // [Pos] One-time Admin bootstrap service; normal requests use existing session/RBAC checks.
-// [Sync] 2026-08-19: include ClaudePlugin Marketplace manage permission for super-admin/operator.
+// [Sync] 2026-08-27: include Claude Agent resource-console read/write permissions.
 
 import { withPlatformClient, withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
@@ -36,6 +36,8 @@ const PERMISSIONS = [
   "access.read",
   "access.write",
   "audit.read",
+  "system.read",
+  "system.write",
 ] as const;
 
 const ROLE_PERMISSIONS: Record<string, readonly string[]> = {

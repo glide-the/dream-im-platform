@@ -274,6 +274,27 @@
       "when": 1787650641935,
       "tag": "0038_dream_managed_mcp_resources",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1787814357103,
+      "tag": "0039_claude_agent_resource_rbac",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1787827052650,
+      "tag": "0040_claude_agent_resource_observer",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1787870559149,
+      "tag": "0041_claude_code_runtime_config",
+      "breakpoints": true
     }
   ]
 }

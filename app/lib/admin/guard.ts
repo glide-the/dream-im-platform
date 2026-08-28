@@ -1,3 +1,8 @@
+// [Input] Admin session cookies, permission codes, request identifiers, and mutation Origin headers.
+// [Output] Fail-closed Admin authentication/RBAC/Origin guards shared by route handlers.
+// [Pos] Server-side Admin trust boundary; missing mutation Origin is always denied.
+// [Sync] 2026-08-27: remove the NODE_ENV exception for Origin-less mutations.
+
 import { randomUUID } from "node:crypto";
 import {
   ADMIN_SESSION_COOKIE,
@@ -49,7 +54,6 @@ export async function requireAdminRequest(
 
 export function assertAdminMutationOrigin(request: Request) {
   const origin = request.headers.get("origin");
-  if (!origin && process.env.NODE_ENV !== "production") return;
   if (!origin) {
     throw new AdminError(
       "ADMIN_ORIGIN_REQUIRED",

@@ -8,6 +8,8 @@
 // [Sync] 2026-08-21: move the shared Dream catalog into the database workspace package.
 // [Sync] 2026-08-25: add Admin-owned Dream MCP servers, encrypted credentials,
 // discovery snapshots, durable import receipts, and their exact capability contract.
+// [Sync] 2026-08-27: add the PostgreSQL-only Claude Agent latest-instance
+// resource snapshot consumed by the Admin observer console.
 import { pgTable, uniqueIndex, index, check, bigint, text, timestamp, foreignKey, jsonb, unique, integer, boolean, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
@@ -1524,4 +1526,21 @@ export const dream_mcp_import_receipts = pgTable("dream_mcp_import_receipts", {
 	check("ck_dream_mcp_import_receipts_source_sha", sql`source_item_sha256 ~ '^[0-9a-f]{64}$'::text`),
 	check("ck_dream_mcp_import_receipts_config_sha", sql`canonical_config_sha256 ~ '^[0-9a-f]{64}$'::text`),
 	check("ck_dream_mcp_import_receipts_state", sql`state = ANY (ARRAY['imported'::text, 'noop'::text, 'conflict'::text, 'credential_reauth_required'::text])`),
+]);
+
+export const claude_agent_resource_snapshots = pgTable("claude_agent_resource_snapshots", {
+	instance_id: text().primaryKey().notNull(),
+	process_started_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+	heartbeat_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+	sampled_at: timestamp({ withTimezone: true, mode: 'string' }),
+	snapshot: jsonb().notNull(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_claude_agent_resource_snapshots_heartbeat").using("btree", table.heartbeat_at.desc().nullsLast().op("timestamptz_ops")),
+	check("ck_claude_agent_resource_snapshots_instance_id", sql`length(instance_id) BETWEEN 1 AND 128`),
+	check("ck_claude_agent_resource_snapshots_snapshot", sql`jsonb_typeof(snapshot) = 'object'::text`),
+	check("ck_claude_agent_resource_snapshots_heartbeat", sql`heartbeat_at >= process_started_at`),
+	check("ck_claude_agent_resource_snapshots_sampled", sql`sampled_at IS NULL OR (sampled_at >= process_started_at AND sampled_at <= heartbeat_at)`),
+	check("ck_claude_agent_resource_snapshots_updated", sql`updated_at >= created_at`),
 ]);

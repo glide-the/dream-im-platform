@@ -1,8 +1,11 @@
 "use client";
 
-// Admin resource views render versioned platform policy and canonical Dream
-// display titles without owning either policy enforcement or Project writes.
+// [Input] Versioned Admin policies and generic resource-manager field contracts.
+// [Output] Canonical resource forms, including nullable model-scoped Claude Code Runtime controls.
+// [Pos] Admin resource-view declaration layer; server validation and capability gates stay in app/lib.
+// [Sync] 2026-08-28: add a dedicated model Runtime section with positive int4 fields and nullable defaults.
 import { gatewayDefaultLimitsPolicy } from "../../../config/gateway-default-limits.mjs";
+import { CLAUDE_CODE_RUNTIME_INTEGER_MAX } from "../../../config/claude-agent-resource-policy";
 import AdminResourceManager, {
   type AdminFieldDefinition,
 } from "./AdminResourceManager";
@@ -103,12 +106,14 @@ export const modelFields: AdminFieldDefinition[] = [
   { key: "requestHeaders", sourceKey: "request_headers", label: "上游差异请求头（JSON）", control: "json", jsonShape: "object", section: "identity", required: true, help: "仅用于当前模型，例如 {\"User-Agent\":\"OpenAI/JS 6.39.1\"}。不得填写 Authorization、x-api-key、Cookie、Host、Content-Type 或转发类请求头。" },
   { key: "contextWindow", sourceKey: "context_window", label: "Context Window", control: "number", section: "limits", nullable: true, min: 1, step: 1 },
   { key: "maxOutputTokens", sourceKey: "max_output_tokens", label: "最大输出 Token", control: "number", section: "limits", nullable: true, min: 1, step: 1 },
+  { key: "claudeCodeAutoCompactWindow", sourceKey: "claude_code_auto_compact_window", label: "自动压缩窗口", control: "number", section: "claude-runtime", nullable: true, min: 1, max: CLAUDE_CODE_RUNTIME_INTEGER_MAX, step: 1 },
+  { key: "claudeCodeMaxContextTokens", sourceKey: "claude_code_max_context_tokens", label: "最大上下文 Token", control: "number", section: "claude-runtime", nullable: true, min: 1, max: CLAUDE_CODE_RUNTIME_INTEGER_MAX, step: 1 },
   { key: "capabilities", label: "模型能力", control: "capabilities", section: "capabilities", options: [{ label: "对话", value: "chat" }, { label: "流式输出", value: "streaming" }, { label: "Tool Use", value: "tools" }, { label: "视觉输入", value: "vision" }, { label: "JSON 输出", value: "json" }] },
   { key: "enabled", label: "启用模型", control: "switch", section: "status", help: "Provider 未启用时，服务端会以 409/400 拒绝不安全启用。" },
 ];
 
 export function ModelsResourceView() {
-  return <AdminResourceManager resource="models" title="模型注册表" description="按 cc-switch 的 Provider → Model Dropdown → 高级能力流程配置；外部调用只看到稳定模型别名。" container="fullscreen" createLabel="新增模型" sections={[{ id: "relation", title: "Provider 关系", description: "从真实 Provider 注册表选择上游供应商。" }, { id: "identity", title: "模型别名、上游型号与差异请求头", description: "使用常用 Model Dropdown 或输入兼容端点实际支持的型号；差异请求头只应用于当前模型。" }, { id: "limits", title: "Token 上限" }, { id: "capabilities", title: "高级能力" }, { id: "status", title: "启用与影响", description: "启用模型后仍需 Provider、Pricing 成本快照、订阅权益、模型权限、当前周期 Token Allowance 与 Gateway Scope 同时满足。" }]} fields={modelFields} createDefaults={{ enabled: false, capabilities: { chat: true, streaming: true }, requestHeaders: {}, contextWindow: null, maxOutputTokens: null }} filters={[{ field: "code", label: "模型别名" }, { field: "provider_code", label: "Provider", operator: "eq" }, { field: "enabled", label: "状态", operator: "eq", options: [{ label: "启用", value: "true" }, { label: "停用", value: "false" }] }]} columns={[{ key: "code", label: "模型别名" }, { key: "provider_code", label: "Provider" }, { key: "upstream_model", label: "上游型号" }, { key: "display_name", label: "显示名" }, { key: "context_window", label: "Context" }, { key: "max_output_tokens", label: "Max output" }, { key: "enabled", label: "状态", format: "boolean" }]} />;
+  return <AdminResourceManager resource="models" title="模型注册表" description="按 cc-switch 的 Provider → Model Dropdown → 高级能力流程配置；外部调用只看到稳定模型别名。" container="fullscreen" createLabel="新增模型" sections={[{ id: "relation", title: "Provider 关系", description: "从真实 Provider 注册表选择上游供应商。" }, { id: "identity", title: "模型别名、上游型号与差异请求头", description: "使用常用 Model Dropdown 或输入兼容端点实际支持的型号；差异请求头只应用于当前模型。" }, { id: "limits", title: "Token 上限" }, { id: "claude-runtime", title: "Claude Code Runtime", description: "仅作用于使用此模型的 Claude Agent turn；留空时不设置对应运行参数。" }, { id: "capabilities", title: "高级能力" }, { id: "status", title: "启用与影响", description: "启用模型后仍需 Provider、Pricing 成本快照、订阅权益、模型权限、当前周期 Token Allowance 与 Gateway Scope 同时满足。" }]} fields={modelFields} createDefaults={{ enabled: false, capabilities: { chat: true, streaming: true }, requestHeaders: {}, contextWindow: null, maxOutputTokens: null, claudeCodeAutoCompactWindow: null, claudeCodeMaxContextTokens: null }} filters={[{ field: "code", label: "模型别名" }, { field: "provider_code", label: "Provider", operator: "eq" }, { field: "enabled", label: "状态", operator: "eq", options: [{ label: "启用", value: "true" }, { label: "停用", value: "false" }] }]} columns={[{ key: "code", label: "模型别名" }, { key: "provider_code", label: "Provider" }, { key: "upstream_model", label: "上游型号" }, { key: "display_name", label: "显示名" }, { key: "context_window", label: "Context" }, { key: "max_output_tokens", label: "Max output" }, { key: "enabled", label: "状态", format: "boolean" }]} />;
 }
 
 export const pricingFields: AdminFieldDefinition[] = [

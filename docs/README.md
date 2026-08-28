@@ -11,6 +11,7 @@
 - [项目架构设计说明](architecture/项目架构设计说明.md)
 - [数据库 Package 与内嵌 PostgreSQL](architecture/database-package-and-embedded-postgresql.md)
 - [部署指南](deploy.md)
+- [Dream Claude Agent 资源 Observer 与 Admin 控制台设计](design/dream-agent-resource-observer-console.md)
 
 ## Dream 当前范围
 

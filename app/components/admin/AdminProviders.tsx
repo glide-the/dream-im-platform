@@ -1,7 +1,7 @@
 // [Input] Admin auth/data/access providers and the protected Refine resource registry.
-// [Output] Client-side Admin Refine shell including the ClaudePlugin Marketplace resource.
+// [Output] Client-side Admin Refine shell including the Claude Agent governance resource.
 // [Pos] Admin provider composition; server Route Handlers remain the authorization authority.
-// [Sync] 2026-08-19: register the global Remote Marketplace operations resource.
+// [Sync] 2026-08-27: register the Claude Agent resource-governance console.
 
 "use client";
 
@@ -184,6 +184,11 @@ const resources = [
     name: "audit-logs",
     list: "/admin/system/audit",
     meta: { label: "审计日志" },
+  },
+  {
+    name: "claude-agent-resources",
+    list: "/admin/system/claude-agent-resources",
+    meta: { label: "Claude Agent 资源" },
   },
 ];
 

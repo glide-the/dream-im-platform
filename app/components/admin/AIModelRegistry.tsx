@@ -1,3 +1,8 @@
+// [Input] Refine model catalog rows, filters, validation state, and operator navigation.
+// [Output] Model cards with safe Gateway capabilities and optional Claude Code Runtime values.
+// [Pos] Admin model-registry list; edits remain in the shared resource form/API boundary.
+// [Sync] 2026-08-28: display configured compact/context Runtime values without exposing env implementation names.
+
 "use client";
 
 import { type CrudFilter, useCan, useList } from "@refinedev/core";
@@ -105,6 +110,7 @@ export default function AIModelRegistry() {
               <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-border py-4 text-xs">
                 <div><dt className="text-text-tertiary">上游型号</dt><dd className="mt-1 break-all font-mono text-[11px]">{String(model.upstream_model)}</dd></div>
                 <div><dt className="text-text-tertiary">Context / Max output</dt><dd className="mt-1 font-mono text-[11px]">{model.context_window ? Number(model.context_window).toLocaleString("zh-CN") : "—"} / {model.max_output_tokens ? Number(model.max_output_tokens).toLocaleString("zh-CN") : "—"}</dd></div>
+                <div className="col-span-2"><dt className="text-text-tertiary">Claude Code 自动压缩 / 最大上下文</dt><dd className="mt-1 font-mono text-[11px]">{model.claude_code_auto_compact_window ? Number(model.claude_code_auto_compact_window).toLocaleString("zh-CN") : "—"} / {model.claude_code_max_context_tokens ? Number(model.claude_code_max_context_tokens).toLocaleString("zh-CN") : "—"}</dd></div>
               </dl>
               <div className="mt-4 flex min-h-8 flex-wrap gap-2">{capabilities.length ? capabilities.map((label) => <span key={label} className="rounded-full bg-bg-secondary px-2.5 py-1 text-[10px] text-text-secondary">{label}</span>) : <span className="text-xs text-text-tertiary">未声明能力</span>}</div>
               {model.enabled ? <p className={`mt-3 text-xs ${runtimeReady ? "text-success" : "text-accent-orange"}`}>
