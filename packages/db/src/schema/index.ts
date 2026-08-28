@@ -2,6 +2,7 @@
 // [Output] Canonical typed schema for Admin, Gateway, Billing, and Dream.
 // [Pos] @ink-memory/db schema source; the root drizzle history is its immutable DDL ledger.
 // [Sync] 2026-08-21: move the canonical schema into the Paperclip-style database workspace package.
+// [Sync] 2026-08-28: add nullable positive Claude Code Runtime model windows; 0041 publishes the exact capability.
 import {
   bigint,
   boolean,
@@ -438,6 +439,12 @@ export const aiModels = pgTable(
     display_name: text("display_name").notNull(),
     context_window: integer("context_window"),
     max_output_tokens: integer("max_output_tokens"),
+    claude_code_auto_compact_window: integer(
+      "claude_code_auto_compact_window",
+    ),
+    claude_code_max_context_tokens: integer(
+      "claude_code_max_context_tokens",
+    ),
     capabilities: jsonb("capabilities")
       .$type<Record<string, boolean>>()
       .default({}),
@@ -465,6 +472,14 @@ export const aiModels = pgTable(
     check(
       "ai_models_request_headers_check",
       sql`jsonb_typeof(${table.request_headers}) = 'object'`,
+    ),
+    check(
+      "ai_models_claude_code_auto_compact_window_check",
+      sql`${table.claude_code_auto_compact_window} IS NULL OR ${table.claude_code_auto_compact_window} > 0`,
+    ),
+    check(
+      "ai_models_claude_code_max_context_tokens_check",
+      sql`${table.claude_code_max_context_tokens} IS NULL OR ${table.claude_code_max_context_tokens} > 0`,
     ),
   ],
 );

@@ -67,7 +67,11 @@ describe("Claude Agent resource observer schema capability", () => {
     expect(migration).toContain("'admin-drizzle-0040'");
     expect(migration).toContain(`'${contractSha256}'`);
     expect(migration.lastIndexOf(capability)).toBeGreaterThan(migration.lastIndexOf("CREATE INDEX"));
-    expect(journal.entries.at(-1)).toMatchObject({
+    expect(
+      journal.entries.find(
+        (entry: { tag?: string }) => entry.tag === "0040_claude_agent_resource_observer",
+      ),
+    ).toMatchObject({
       idx: 40,
       tag: "0040_claude_agent_resource_observer",
       version: "7",

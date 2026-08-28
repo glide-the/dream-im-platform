@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { modelFields, pricingFields, providerFields } from "./AdminResourceViews";
@@ -10,6 +11,18 @@ import {
 import { canonicalAdminResource } from "./providers";
 
 describe("admin resource form serialization", () => {
+  it("mounts Claude Code Runtime fields on both real AIModelRegistry form routes", () => {
+    for (const relativePath of [
+      "../../(admin)/admin/(workspace)/models/models/new/page.tsx",
+      "../../(admin)/admin/(workspace)/models/models/[id]/edit/page.tsx",
+    ]) {
+      const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
+      expect(source).toContain('id: "claude-runtime"');
+      expect(source).toContain("claudeCodeAutoCompactWindow");
+      expect(source).toContain("claudeCodeMaxContextTokens");
+    }
+  });
+
   it("keeps Provider secrets blank on edit and merges named config fields", () => {
     const values = valuesFromRecord(
       providerFields,
@@ -74,7 +87,7 @@ describe("admin resource form serialization", () => {
     expect(values.authMode).toBe("bearer");
   });
 
-  it("round-trips model-specific request headers as JSON", () => {
+  it("round-trips model request headers and nullable Claude Code Runtime settings", () => {
     const values = valuesFromRecord(modelFields, {
       provider_id: "provider-test",
       code: "hy3",
@@ -82,6 +95,8 @@ describe("admin resource form serialization", () => {
       display_name: "HY3 Preview",
       request_headers: { "user-agent": "OpenAI/JS 6.39.1" },
       capabilities: { chat: true },
+      claude_code_auto_compact_window: 262144,
+      claude_code_max_context_tokens: null,
       enabled: true,
     }, {}, "edit");
 
@@ -90,6 +105,8 @@ describe("admin resource form serialization", () => {
     }, null, 2));
     expect(buildPayload(modelFields, values, "edit")).toMatchObject({
       requestHeaders: { "user-agent": "OpenAI/JS 6.39.1" },
+      claudeCodeAutoCompactWindow: 262144,
+      claudeCodeMaxContextTokens: null,
     });
   });
 

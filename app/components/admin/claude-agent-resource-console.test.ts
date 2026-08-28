@@ -1,7 +1,7 @@
 // [Input] Claude Agent console refresh, cancellation, admission-state, policy-field helpers, and save interaction source.
-// [Output] Refresh, safe bounds, direct no-confirm save, invalid no-submit state, and immediate pending projection coverage.
+// [Output] Strict field picking, technical bounds, field-error mapping, direct save, refetch, and pending coverage.
 // [Pos] Node-safe focused tests for the Admin resource console client contract.
-// [Sync] 2026-08-27: cover uncapped positive concurrency and direct save without a blocking native confirmation.
+// [Sync] 2026-08-28: cover uncapped resource values, nullable Runtime effort, no dialogs, and active refetch.
 
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,21 +10,30 @@ import {
   CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS,
   CLAUDE_AGENT_POLICY_FIELDS,
   CLAUDE_AGENT_REFRESH_INTERVAL_MS,
+  ClaudeAgentPolicyRequestError,
   type ClaudeAgentResourceResponse,
   type PolicyBounds,
+  type PolicyTechnicalLimits,
   fetchClaudeAgentResources,
   formatCanStartNewAgent,
+  policyFieldErrorsFromDetails,
   policyMutationPayload,
   policySaveButtonState,
   policyValidationErrors,
+  policyValuesFromDesired,
   projectSavedDesired,
 } from "./ClaudeAgentResourceConsole";
 
 const bounds: PolicyBounds = {
   maxConcurrentRuns: { min: 1, max: null },
-  runMemoryBudgetMib: { min: 128, max: 8_192 },
-  memoryReserveMib: { min: 64, max: 4_096 },
-  retryAfterSeconds: { min: 5, max: 3_600 },
+  runMemoryBudgetMib: { min: 1, max: null },
+  memoryReserveMib: { min: 1, max: null },
+  retryAfterSeconds: { min: 1, max: null },
+};
+const technicalLimits: PolicyTechnicalLimits = {
+  mibInBytes: 1_048_576,
+  maxCombinedMemoryMib: Math.floor(Number.MAX_SAFE_INTEGER / 1_048_576),
+  claudeCodeRuntimeIntegerMax: 2_147_483_647,
 };
 
 describe("Claude Agent resource console data client", () => {
@@ -62,14 +71,33 @@ describe("Claude Agent resource console data client", () => {
     expect(JSON.stringify(CLAUDE_AGENT_POLICY_FIELDS)).not.toContain("AUTODL");
   });
 
-  it("builds mutation payloads from the revision frozen when editing began", () => {
+  it("picks resource and Runtime fields with the frozen revision from desired", () => {
     const values = {
       maxConcurrentRuns: 2,
       runMemoryBudgetMib: 512,
       memoryReserveMib: 128,
       retryAfterSeconds: 60,
+      claudeCodeEffortLevel: "high" as const,
+      schemaVersion: 1,
+      revision: 7,
     };
-    expect(policyMutationPayload(values, 7)).toEqual({ ...values, expectedRevision: 7 });
+    expect(policyValuesFromDesired(values)).toEqual({
+      maxConcurrentRuns: 2,
+      runMemoryBudgetMib: 512,
+      memoryReserveMib: 128,
+      retryAfterSeconds: 60,
+      claudeCodeEffortLevel: "high",
+    });
+    expect(policyMutationPayload(values, 7)).toEqual({
+      maxConcurrentRuns: 2,
+      runMemoryBudgetMib: 512,
+      memoryReserveMib: 128,
+      retryAfterSeconds: 60,
+      claudeCodeEffortLevel: "high",
+      expectedRevision: 7,
+    });
+    expect(policyMutationPayload(values, 7)).not.toHaveProperty("schemaVersion");
+    expect(policyMutationPayload(values, 7)).not.toHaveProperty("revision");
   });
 
   it("keeps the primary action readable and disabled until a draft exists", () => {
@@ -94,52 +122,85 @@ describe("Claude Agent resource console data client", () => {
     });
   });
 
-  it("submits the explicit save action without a blocking native confirmation", () => {
+  it("has no native dialog, persistent helper, or implicit invalidation-only save", () => {
     const source = readFileSync(new URL("./ClaudeAgentResourceConsole.tsx", import.meta.url), "utf8");
-    expect(source).not.toContain("window.confirm");
+    expect(source).not.toMatch(/\b(?:window\.)?(?:confirm|alert|prompt)\s*\(/);
+    expect(source).not.toContain("仅限整数");
+    expect(source).not.toContain("无产品上限");
+    expect(source).not.toContain("保存只更新 PostgreSQL desired");
+    expect(source).not.toContain("不直连 Dream");
+    expect(source).not.toContain("PostgreSQL observer snapshot");
+    expect(source).not.toContain("等待 Dream 下次定时读取后生效");
+    expect(source).toContain("期望配置已保存，正在等待应用");
+    expect(source).toContain("queryClient.refetchQueries");
+    expect(source).toContain('type: "active"');
   });
 
-  it("accepts large positive concurrency without a product max and rejects invalid numbers", () => {
+  it("accepts all four values above old product maxima and rejects non-positive or unsafe values", () => {
     const valid = {
       maxConcurrentRuns: 1_000_000,
-      runMemoryBudgetMib: 416,
-      memoryReserveMib: 128,
-      retryAfterSeconds: 60,
+      runMemoryBudgetMib: 9_000,
+      memoryReserveMib: 5_000,
+      retryAfterSeconds: 4_000,
+      claudeCodeEffortLevel: null,
     };
-    expect(policyValidationErrors(valid, bounds)).toEqual({});
-    expect(policyValidationErrors({ ...valid, maxConcurrentRuns: 0 }, bounds)).toEqual({
-      maxConcurrentRuns: "请输入不小于 1 的整数",
+    expect(policyValidationErrors(valid, bounds, technicalLimits)).toEqual({});
+    expect(policyValidationErrors({ ...valid, maxConcurrentRuns: 0 }, bounds, technicalLimits)).toEqual({
+      maxConcurrentRuns: "请输入有效的正整数",
     });
-    expect(policyValidationErrors({ ...valid, maxConcurrentRuns: -1 }, bounds)).toEqual({
-      maxConcurrentRuns: "请输入不小于 1 的整数",
+    expect(policyValidationErrors({ ...valid, runMemoryBudgetMib: 0 }, bounds, technicalLimits)).toEqual({
+      runMemoryBudgetMib: "请输入有效的正整数",
     });
-    expect(policyValidationErrors({ ...valid, maxConcurrentRuns: 1.5 }, bounds)).toEqual({
-      maxConcurrentRuns: "请输入不小于 1 的整数",
+    expect(policyValidationErrors({ ...valid, memoryReserveMib: -1 }, bounds, technicalLimits)).toEqual({
+      memoryReserveMib: "请输入有效的正整数",
     });
-    expect(policyValidationErrors({ ...valid, maxConcurrentRuns: Number.MAX_SAFE_INTEGER + 1 }, bounds)).toEqual({
-      maxConcurrentRuns: "请输入不小于 1 的整数",
+    expect(policyValidationErrors({ ...valid, retryAfterSeconds: 1.5 }, bounds, technicalLimits)).toEqual({
+      retryAfterSeconds: "请输入有效的正整数",
     });
-    expect(policyValidationErrors({ ...valid, runMemoryBudgetMib: 416.5 }, bounds)).toEqual({
-      runMemoryBudgetMib: "请输入 128–8192 之间的整数",
-    });
-    expect(policyValidationErrors({ ...valid, memoryReserveMib: 4097 }, bounds)).toEqual({
-      memoryReserveMib: "请输入 64–4096 之间的整数",
-    });
-    expect(policyValidationErrors({ ...valid, retryAfterSeconds: Number.NaN }, bounds)).toEqual({
-      retryAfterSeconds: "请输入 5–3600 之间的整数",
+    expect(policyValidationErrors({ ...valid, maxConcurrentRuns: Number.MAX_SAFE_INTEGER + 1 }, bounds, technicalLimits)).toEqual({
+      maxConcurrentRuns: "请输入有效的正整数",
     });
   });
 
-  it("translates strict policy rejection into actionable Chinese guidance", async () => {
+  it("rejects memory values whose combined byte requirement is not a safe integer", () => {
+    const errors = policyValidationErrors({
+      maxConcurrentRuns: 2,
+      runMemoryBudgetMib: technicalLimits.maxCombinedMemoryMib,
+      memoryReserveMib: 1,
+      retryAfterSeconds: 1,
+      claudeCodeEffortLevel: null,
+    }, bounds, technicalLimits);
+    expect(errors).toEqual({
+      runMemoryBudgetMib: "内存合计过大",
+      memoryReserveMib: "内存合计过大",
+    });
+  });
+
+  it("maps recognized API issue paths to fields and leaves unknown paths global", async () => {
+    expect(policyFieldErrorsFromDetails([
+      { path: ["runMemoryBudgetMib"], code: "combined_memory_unsafe" },
+      { path: ["memoryReserveMib"], code: "combined_memory_unsafe" },
+      { path: ["maxConcurrentRuns"], code: "invalid_value" },
+      { path: ["privateField"], code: "invalid_value" },
+    ])).toEqual({
+      maxConcurrentRuns: "请输入有效的正整数",
+      runMemoryBudgetMib: "内存合计过大",
+      memoryReserveMib: "内存合计过大",
+    });
+
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
       error: {
         code: "CLAUDE_AGENT_POLICY_INVALID",
         message: "Claude Agent resource policy is invalid",
+        details: [{ path: ["retryAfterSeconds"], code: "invalid_value" }],
       },
     }, { status: 400 })));
 
-    await expect(fetchClaudeAgentResources()).rejects.toThrow(
-      "配置未保存：请确认四项阈值都是页面允许范围内的整数。",
+    await expect(fetchClaudeAgentResources()).rejects.toEqual(
+      expect.objectContaining<Partial<ClaudeAgentPolicyRequestError>>({
+        message: "配置未保存",
+        fieldErrors: { retryAfterSeconds: "请输入有效的正整数" },
+      }),
     );
   });
 
@@ -158,6 +219,7 @@ describe("Claude Agent resource console data client", () => {
         runMemoryBudgetMib: 416,
         memoryReserveMib: 128,
         retryAfterSeconds: 60,
+        claudeCodeEffortLevel: "high" as const,
       },
       revision: 2,
       updatedAt: "2026-08-27T12:20:44.000Z",
@@ -186,6 +248,7 @@ describe("Claude Agent resource console data client", () => {
         runMemoryBudgetMib: 416,
         memoryReserveMib: 128,
         retryAfterSeconds: 60,
+        claudeCodeEffortLevel: null,
       },
       revision: 1,
       updatedAt: "2026-08-27T12:20:44.000Z",

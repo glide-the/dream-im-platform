@@ -20,6 +20,15 @@
 - Prefer reuse-first refactor: search existing modules/components before adding new implementations.
 - Avoid hard-coded business IDs, thresholds, hosts, paths, or policy values; resolve to env/config/policy first.
 
+## 通用产品设计原则
+
+1. 产品设计稿必须以“背景与问题、目标与边界、概念与规则”为基础结构。
+2. 产品规则必须对应真实业务约束，不得把任意技术常量包装成产品限制。
+3. 页面不得展示对用户决策没有帮助的技术说明、重复确认或实现细节。
+4. 除非操作不可逆或具有明显风险，否则不得增加确认弹窗。
+5. 配置型业务必须明确 default、desired、effective、revision 和状态转换。
+6. 实现和测试必须聚焦当前业务目标，不得增加 Chromium revision、重复环境初始化、远程环境、部署状态或其他与验收无关的检查。
+
 ## Source Of Truth
 - Root pointer: `CLAUDE.md`
 - Folder contracts: `**/.folder.md`
@@ -47,6 +56,7 @@
 5. 金额统一为整数 micro-USD；历史计费必须保存价格快照，账本只追加。
 6. Provider 密钥和 Gateway Key 不得明文落库或回显。
 7. Story 表属于本项目 PostgreSQL 控制面，修改 schema 必须生成 Drizzle 迁移。
+8. Claude Code Runtime 配置必须保持明确所有权：全局 effort 属于 revisioned resource policy，compact/context 属于模型；未设置即不投影，禁止复用 Gateway context/output 字段或开放通用环境变量编辑器。
 
 ## 统一数据库版本协议
 

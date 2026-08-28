@@ -1,13 +1,14 @@
 // [Input] Authenticated Admin requests plus the shared PostgreSQL desired-policy and observer snapshot relations.
 // [Output] Safe desired/effective projection and audited optimistic desired-policy updates.
 // [Pos] PostgreSQL-only system-governance boundary; it never calls Dream or controls processes/deployments.
-// [Sync] 2026-08-27: accept positive safe-integer concurrency with no product maximum or unlimited sentinel.
+// [Sync] 2026-08-28: validate nullable SDK effort with four resource values and project it through audited desired/effective revisions.
 
 import "server-only";
 
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { claudeAgentResourcePolicy as policy } from "../../../config/claude-agent-resource-policy";
+import { claudeCodeRuntimeCapabilityAvailable } from "../db/claude-code-runtime-capability";
 import { withPlatformClient, withPlatformTransaction } from "../platform-db";
 import { recordAdminAuditOnClient } from "./audit";
 import { AdminError, adminErrorResponse } from "./errors";
@@ -23,39 +24,100 @@ const boundedInteger = (key: keyof typeof policy.bounds) => {
   return bound.max === null ? schema : schema.max(bound.max);
 };
 
+const positiveSafeInteger = z.number().int().safe().positive();
+const safeNonnegativeInteger = z.number().int().safe().nonnegative();
+
+const policyValueShape = {
+  maxConcurrentRuns: boundedInteger("maxConcurrentRuns"),
+  runMemoryBudgetMib: boundedInteger("runMemoryBudgetMib"),
+  memoryReserveMib: boundedInteger("memoryReserveMib"),
+  retryAfterSeconds: boundedInteger("retryAfterSeconds"),
+};
+const claudeCodeEffortLevelSchema = z.enum(policy.claudeCodeRuntime.effortLevels).nullable();
+const policyRuntimeShape = {
+  claudeCodeEffortLevel: claudeCodeEffortLevelSchema.default(null),
+};
+
+type MemoryPolicyValues = {
+  runMemoryBudgetMib: number;
+  memoryReserveMib: number;
+};
+
+function combinedMemoryMibIsSafe(runMemoryBudgetMib: number, memoryReserveMib: number) {
+  const combined = runMemoryBudgetMib + memoryReserveMib;
+  return Number.isSafeInteger(combined)
+    && combined <= policy.technicalLimits.maxCombinedMemoryMib;
+}
+
+function validatePolicyMemory(values: MemoryPolicyValues, context: z.RefinementCtx) {
+  if (combinedMemoryMibIsSafe(values.runMemoryBudgetMib, values.memoryReserveMib)) return;
+  for (const path of ["runMemoryBudgetMib", "memoryReserveMib"] as const) {
+    context.addIssue({
+      code: "custom",
+      path: [path],
+      message: "Combined memory exceeds the exact JSON integer range",
+    });
+  }
+}
+
 export const claudeAgentResourcePolicyInputSchema = z
-  .object({
-    maxConcurrentRuns: boundedInteger("maxConcurrentRuns"),
-    runMemoryBudgetMib: boundedInteger("runMemoryBudgetMib"),
-    memoryReserveMib: boundedInteger("memoryReserveMib"),
-    retryAfterSeconds: boundedInteger("retryAfterSeconds"),
-  })
-  .strict();
+  .object({ ...policyValueShape, ...policyRuntimeShape })
+  .strict()
+  .superRefine(validatePolicyMemory);
 
 export const claudeAgentResourcePolicyMutationSchema =
-  claudeAgentResourcePolicyInputSchema
-    .extend({ expectedRevision: z.number().int().positive().nullable() })
-    .strict();
-
-const storedPolicySchema = claudeAgentResourcePolicyInputSchema
-  .extend({
-    schemaVersion: z.literal(policy.schemaVersion),
-    revision: z.number().int().positive(),
+  z.object({
+    ...policyValueShape,
+    ...policyRuntimeShape,
+    expectedRevision: positiveSafeInteger.nullable(),
   })
-  .strict();
+    .strict()
+    .superRefine(validatePolicyMemory);
+
+const storedPolicySchema = z
+  .object({
+    ...policyValueShape,
+    claudeCodeEffortLevel: claudeCodeEffortLevelSchema.default(null),
+    schemaVersion: z.literal(policy.schemaVersion),
+    revision: positiveSafeInteger,
+  })
+  .strict()
+  .superRefine(validatePolicyMemory);
 
 const admissionValuesSchema = z
   .object({
     max_concurrent_runs: boundedInteger("maxConcurrentRuns"),
-    run_memory_budget_mib: z.number().int().nonnegative(),
-    memory_reserve_mib: z.number().int().nonnegative(),
-    retry_after_seconds: z.number().int().nonnegative(),
-    required_headroom_bytes: z.number().int().nonnegative(),
+    run_memory_budget_mib: boundedInteger("runMemoryBudgetMib"),
+    memory_reserve_mib: boundedInteger("memoryReserveMib"),
+    retry_after_seconds: boundedInteger("retryAfterSeconds"),
+    required_headroom_bytes: safeNonnegativeInteger,
   })
-  .strict();
+  .strict()
+  .superRefine((values, context) => {
+    if (!combinedMemoryMibIsSafe(
+      values.run_memory_budget_mib,
+      values.memory_reserve_mib,
+    )) {
+      context.addIssue({
+        code: "custom",
+        path: ["required_headroom_bytes"],
+        message: "Combined memory exceeds the exact JSON integer range",
+      });
+      return;
+    }
+    const expected = (values.run_memory_budget_mib + values.memory_reserve_mib)
+      * policy.technicalLimits.mibInBytes;
+    if (values.required_headroom_bytes !== expected) {
+      context.addIssue({
+        code: "custom",
+        path: ["required_headroom_bytes"],
+        message: "Required headroom does not match the configured memory values",
+      });
+    }
+  });
 
-const nullableCount = z.number().int().nonnegative().nullable();
-const nullableBytes = z.number().int().nonnegative().nullable();
+const nullableCount = safeNonnegativeInteger.nullable();
+const nullableBytes = safeNonnegativeInteger.nullable();
 const nullableTimestamp = z.string().datetime({ offset: true }).nullable();
 
 export const claudeAgentResourceSnapshotSchema = z
@@ -76,25 +138,28 @@ export const claudeAgentResourceSnapshotSchema = z
         effective_version: z.string().min(1).max(128),
         loaded_at: z.string().datetime({ offset: true }),
         policy_status: z.enum(["applied", "not_configured", "invalid", "unavailable"]),
-        policy_revision: z.number().int().positive().nullable(),
+        policy_revision: positiveSafeInteger.nullable(),
         policy_updated_at: nullableTimestamp,
+        claude_code: z.object({
+          effort_level: claudeCodeEffortLevelSchema,
+        }).strict().optional(),
       })
       .strict(),
     turns: z
       .object({
-        started_total: z.number().int().nonnegative(),
-        completed_total: z.number().int().nonnegative(),
-        failed_total: z.number().int().nonnegative(),
-        cancelled_total: z.number().int().nonnegative(),
+        started_total: safeNonnegativeInteger,
+        completed_total: safeNonnegativeInteger,
+        failed_total: safeNonnegativeInteger,
+        cancelled_total: safeNonnegativeInteger,
       })
       .strict(),
     admission: z
       .object({
-        active_runs: z.number().int().nonnegative(),
+        active_runs: safeNonnegativeInteger,
         max_concurrent_runs: boundedInteger("maxConcurrentRuns"),
-        granted_total: z.number().int().nonnegative(),
-        capacity_denials_total: z.number().int().nonnegative(),
-        memory_pressure_denials_total: z.number().int().nonnegative(),
+        granted_total: safeNonnegativeInteger,
+        capacity_denials_total: safeNonnegativeInteger,
+        memory_pressure_denials_total: safeNonnegativeInteger,
         last_denial_type: z.enum(["capacity", "memory_pressure"]).nullable(),
         last_denial_at: nullableTimestamp,
         can_start_new_agent: z.boolean().nullable(),
@@ -117,7 +182,7 @@ export const claudeAgentResourceSnapshotSchema = z
         slab_reclaimable_bytes: nullableBytes,
         cgroup_reclaimable_bytes: nullableBytes,
         cgroup_effective_headroom_bytes: nullableBytes,
-        required_headroom_bytes: z.number().int().nonnegative(),
+        required_headroom_bytes: safeNonnegativeInteger,
         events: z
           .object({
             low: nullableCount,
@@ -139,8 +204,8 @@ export const claudeAgentResourceSnapshotSchema = z
       .strict(),
     pipeline: z
       .object({
-        queue_dropped_total: z.number().int().nonnegative(),
-        write_errors_total: z.number().int().nonnegative(),
+        queue_dropped_total: safeNonnegativeInteger,
+        write_errors_total: safeNonnegativeInteger,
         last_write_error_at: nullableTimestamp,
       })
       .strict(),
@@ -190,6 +255,13 @@ async function assertExactResourceCapability(client: PoolClient) {
       503,
     );
   }
+  if (!await claudeCodeRuntimeCapabilityAvailable(client)) {
+    throw new AdminError(
+      "CLAUDE_CODE_RUNTIME_CAPABILITY_UNAVAILABLE",
+      "The Claude Code Runtime database capability is unavailable",
+      503,
+    );
+  }
 }
 
 function toIso(value: Date | string | null) {
@@ -205,8 +277,27 @@ function toAge(value: number | string | null) {
 }
 
 function storedRevision(value: unknown) {
-  const parsed = z.object({ revision: z.number().int().positive() }).passthrough().safeParse(value);
+  const parsed = z.object({ revision: positiveSafeInteger }).passthrough().safeParse(value);
   return parsed.success ? parsed.data.revision : null;
+}
+
+function publicPolicyValidationIssues(error: z.ZodError) {
+  const fields = new Set([
+    ...Object.keys(policyValueShape),
+    ...Object.keys(policyRuntimeShape),
+  ]);
+  return error.issues.map((issue) => {
+    const first = issue.path[0];
+    const field = typeof first === "string" && fields.has(first) ? first : null;
+    return {
+      path: field ? [field] : [],
+      code: issue.code === "custom" && (
+        field === "runMemoryBudgetMib" || field === "memoryReserveMib"
+      )
+        ? "combined_memory_unsafe"
+        : "invalid_value",
+    };
+  });
 }
 
 function parseDesired(value: unknown | null, updatedAt: Date | string | null) {
@@ -238,6 +329,7 @@ function effectiveAsDesired(snapshot: ClaudeAgentResourceSnapshot) {
     runMemoryBudgetMib: effective.run_memory_budget_mib,
     memoryReserveMib: effective.memory_reserve_mib,
     retryAfterSeconds: effective.retry_after_seconds,
+    claudeCodeEffortLevel: snapshot.config.claude_code?.effort_level ?? null,
   };
 }
 
@@ -369,7 +461,11 @@ export async function handleClaudeAgentResourcesGet(request: Request) {
           policy: {
             schemaVersion: policy.schemaVersion,
             bounds: policy.bounds,
+            technicalLimits: policy.technicalLimits,
             defaults: policy.defaults,
+            claudeCodeRuntime: {
+              effortLevels: policy.claudeCodeRuntime.effortLevels,
+            },
             freshness: {
               freshSeconds: policy.observer.freshSeconds,
               offlineSeconds: policy.observer.offlineSeconds,
@@ -401,7 +497,7 @@ export async function handleClaudeAgentResourcesPatch(request: Request) {
         "CLAUDE_AGENT_POLICY_INVALID",
         "Claude Agent resource policy is invalid",
         400,
-        input.error.issues,
+        publicPolicyValidationIssues(input.error),
       );
     }
     const desired = await withPlatformTransaction(async (client) => {
@@ -424,6 +520,13 @@ export async function handleClaudeAgentResourcesPatch(request: Request) {
           { expectedRevision: input.data.expectedRevision, currentRevision },
         );
       }
+      if (currentRevision === Number.MAX_SAFE_INTEGER) {
+        throw new AdminError(
+          "CLAUDE_AGENT_POLICY_REVISION_EXHAUSTED",
+          "The Claude Agent resource policy revision cannot be incremented safely",
+          409,
+        );
+      }
       const stored = {
         schemaVersion: policy.schemaVersion,
         revision: (currentRevision ?? 0) + 1,
@@ -431,6 +534,7 @@ export async function handleClaudeAgentResourcesPatch(request: Request) {
         runMemoryBudgetMib: input.data.runMemoryBudgetMib,
         memoryReserveMib: input.data.memoryReserveMib,
         retryAfterSeconds: input.data.retryAfterSeconds,
+        claudeCodeEffortLevel: input.data.claudeCodeEffortLevel,
       };
       const result = await client.query<DesiredRow>(
         `INSERT INTO system_settings (

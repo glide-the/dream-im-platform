@@ -1,14 +1,34 @@
 // [Input] Owned isolated PostgreSQL, visible Admin bootstrap, and the Claude Agent resource console.
-// [Output] Browser proof for large positive concurrency, invalid no-PATCH, immediate pending, and applied refresh.
+// [Output] Browser proof for resources/global effort plus real AIModelRegistry model Runtime controls.
 // [Pos] Focused provider-free Admin resource-policy journey; it never controls or restarts Dream.
-// [Sync] 2026-08-27: remove the product concurrency max and native confirm while preserving validation and PG handoff.
+// [Sync] 2026-08-28: verify nullable effort desired/effective and model compact/context save through real UI entry points.
 
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
 
 const bootstrapToken = process.env.ADMIN_BOOTSTRAP_E2E_TOKEN;
 const databaseUrl = process.env.TEST_DATABASE_URL;
-const LARGE_CONCURRENCY = 1_000_000;
+type PolicyValues = {
+  maxConcurrentRuns: number;
+  runMemoryBudgetMib: number;
+  memoryReserveMib: number;
+  retryAfterSeconds: number;
+  claudeCodeEffortLevel: "low" | "medium" | "high" | "xhigh" | "max" | null;
+};
+const INITIAL_POLICY: PolicyValues = {
+  maxConcurrentRuns: 1,
+  runMemoryBudgetMib: 416,
+  memoryReserveMib: 128,
+  retryAfterSeconds: 60,
+  claudeCodeEffortLevel: null,
+};
+const LARGE_POLICY: PolicyValues = {
+  maxConcurrentRuns: 1_000_000,
+  runMemoryBudgetMib: 9_000,
+  memoryReserveMib: 5_000,
+  retryAfterSeconds: 4_000,
+  claudeCodeEffortLevel: "high",
+};
 
 function collectDiagnostics(page: Page) {
   const diagnostics: string[] = [];
@@ -26,23 +46,31 @@ function collectDiagnostics(page: Page) {
   return diagnostics;
 }
 
-function resourceSnapshot(maxConcurrentRuns: number, revision: number | null) {
+function resourceSnapshot(policy: PolicyValues, revision: number | null) {
   const now = new Date().toISOString();
+  const requiredHeadroomBytes = (policy.runMemoryBudgetMib + policy.memoryReserveMib) * 1_048_576;
   const values = {
-    max_concurrent_runs: maxConcurrentRuns,
-    run_memory_budget_mib: 416,
-    memory_reserve_mib: 128,
-    retry_after_seconds: 60,
-    required_headroom_bytes: 570_425_344,
+    max_concurrent_runs: policy.maxConcurrentRuns,
+    run_memory_budget_mib: policy.runMemoryBudgetMib,
+    memory_reserve_mib: policy.memoryReserveMib,
+    retry_after_seconds: policy.retryAfterSeconds,
+    required_headroom_bytes: requiredHeadroomBytes,
   };
   return {
     schema_version: 1,
     backend_status: "ok",
     scope: { active_runs: "process", counters: "process_lifetime", reset_on_restart: true },
     config: {
-      defaults: { ...values, max_concurrent_runs: 1, run_memory_budget_mib: 512, required_headroom_bytes: 671_088_640 },
+      defaults: {
+        max_concurrent_runs: 1,
+        run_memory_budget_mib: 512,
+        memory_reserve_mib: 128,
+        retry_after_seconds: 60,
+        required_headroom_bytes: 671_088_640,
+      },
       effective: values,
-      effective_version: `e2e-effective-${maxConcurrentRuns}-${revision ?? "none"}`,
+      claude_code: { effort_level: policy.claudeCodeEffortLevel },
+      effective_version: `e2e-effective-${policy.maxConcurrentRuns}-${revision ?? "none"}`,
       loaded_at: now,
       policy_status: revision === null ? "not_configured" : "applied",
       policy_revision: revision,
@@ -51,7 +79,7 @@ function resourceSnapshot(maxConcurrentRuns: number, revision: number | null) {
     turns: { started_total: 3, completed_total: 3, failed_total: 0, cancelled_total: 0 },
     admission: {
       active_runs: 0,
-      max_concurrent_runs: maxConcurrentRuns,
+      max_concurrent_runs: policy.maxConcurrentRuns,
       granted_total: 3,
       capacity_denials_total: 1,
       memory_pressure_denials_total: 0,
@@ -69,7 +97,7 @@ function resourceSnapshot(maxConcurrentRuns: number, revision: number | null) {
       slab_reclaimable_bytes: null,
       cgroup_reclaimable_bytes: null,
       cgroup_effective_headroom_bytes: null,
-      required_headroom_bytes: 570_425_344,
+      required_headroom_bytes: requiredHeadroomBytes,
       events: { low: null, high: null, max: null, oom: null, oom_kill: null },
     },
     sample: { status: "ok", sampled_at: now, stale: false, error_code: null },
@@ -78,17 +106,20 @@ function resourceSnapshot(maxConcurrentRuns: number, revision: number | null) {
 }
 
 test.describe("Claude Agent resource policy console", () => {
-  test.describe.configure({ timeout: 90_000 });
+  test.describe.configure({ timeout: 180_000 });
   test.skip(!bootstrapToken || !databaseUrl, "Run only with an owned isolated PostgreSQL database");
 
-  test("saves large uncapped concurrency, stays pending, then refreshes applied effective values", async ({ page, context, baseURL }, testInfo) => {
-    test.setTimeout(90_000);
+  test("saves four uncapped values, resaves existing desired, and refreshes effective", async ({ page, context, baseURL }, testInfo) => {
+    test.setTimeout(180_000);
     await page.route("http://unpkg.com/react-grab/dist/index.global.js", (route) =>
       route.fulfill({ status: 200, contentType: "application/javascript", body: "" }),
     );
 
     await page.goto("/admin");
     await expect(page).toHaveURL(/\/admin\/login$/);
+    await expect(
+      page.getByRole("heading", { name: /设置首位管理员|登录运营控制台/ }),
+    ).toBeVisible();
     const email = "resource-policy-qa@example.test";
     const password = "Resource-policy-QA-2026!";
     if ((await page.getByLabel("显示名称").count()) === 1) {
@@ -118,7 +149,7 @@ test.describe("Claude Agent resource policy console", () => {
            sampled_at = EXCLUDED.sampled_at,
            snapshot = EXCLUDED.snapshot,
            updated_at = NOW()`,
-        [JSON.stringify(resourceSnapshot(1, null))],
+        [JSON.stringify(resourceSnapshot(INITIAL_POLICY, null))],
       );
 
       await page.setViewportSize({ width: 1440, height: 1000 });
@@ -137,15 +168,26 @@ test.describe("Claude Agent resource policy console", () => {
       const concurrency = page.getByLabel("最大并发 Agent turn");
       await expect(concurrency).toHaveValue("1");
       let patchRequests = 0;
+      let getRequests = 0;
+      let dialogCount = 0;
+      const patchPayloads: Array<Record<string, unknown>> = [];
+      page.on("dialog", async (dialog) => {
+        dialogCount += 1;
+        await dialog.dismiss();
+      });
       page.on("request", (request) => {
-        if (request.method() === "PATCH" && request.url().endsWith("/api/admin/claude-agent-resources")) {
+        if (!request.url().endsWith("/api/admin/claude-agent-resources")) return;
+        if (request.method() === "PATCH") {
           patchRequests += 1;
+          patchPayloads.push(request.postDataJSON() as Record<string, unknown>);
+        } else if (request.method() === "GET") {
+          getRequests += 1;
         }
       });
       await expect(concurrency).not.toHaveAttribute("max");
       for (const invalid of ["0", "-1", "1.5"]) {
         await concurrency.fill(invalid);
-        await expect(page.getByText("请输入不小于 1 的整数", { exact: true })).toBeVisible();
+        await expect(page.getByText("请输入有效的正整数", { exact: true })).toBeVisible();
         await expect(page.getByRole("button", { name: "请检查输入范围" })).toBeDisabled();
         expect(patchRequests).toBe(0);
       }
@@ -157,19 +199,35 @@ test.describe("Claude Agent resource policy console", () => {
       await expect(concurrency).toHaveValue("1");
       await concurrency.press("ArrowUp");
       await expect(concurrency).toHaveValue("2");
-      await concurrency.fill(String(LARGE_CONCURRENCY));
-      await expect(concurrency).toHaveValue(String(LARGE_CONCURRENCY));
+      await concurrency.fill(String(LARGE_POLICY.maxConcurrentRuns));
+      const runBudget = page.getByLabel("单次 Agent 内存预算（MiB）");
+      const reserve = page.getByLabel("系统保留内存（MiB）");
+      const retry = page.getByLabel("重试等待（秒）");
+      const effort = page.getByLabel("Claude Code 推理强度");
+      for (const input of [runBudget, reserve, retry]) await expect(input).not.toHaveAttribute("max");
+      await runBudget.fill(String(LARGE_POLICY.runMemoryBudgetMib));
+      await reserve.fill(String(LARGE_POLICY.memoryReserveMib));
+      await retry.fill(String(LARGE_POLICY.retryAfterSeconds));
+      await effort.selectOption(LARGE_POLICY.claudeCodeEffortLevel!);
+      await expect(concurrency).toHaveValue(String(LARGE_POLICY.maxConcurrentRuns));
+      await expect(page.getByText("仅限整数", { exact: false })).toHaveCount(0);
+      await expect(page.getByText("无产品上限", { exact: false })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "撤销修改" })).toBeVisible();
       const save = page.getByRole("button", { name: "保存期望配置" });
       await expect(save).toBeEnabled();
       await save.click();
       await expect.poll(() => patchRequests).toBe(1);
+      await expect.poll(() => getRequests, { timeout: 3_000 }).toBeGreaterThan(0);
+      expect(dialogCount).toBe(0);
+      expect(patchPayloads[0]).toEqual({ ...LARGE_POLICY, expectedRevision: null });
 
       const pendingNotice = page.getByRole("status").filter({ hasText: "期望配置已保存" });
-      await expect(pendingNotice).toContainText("等待 Dream 下次定时读取后生效");
-      await expect(pendingNotice).toContainText("无需重启");
+      await expect(pendingNotice).toContainText("正在等待应用");
       await expect(pendingNotice).toContainText("desired revision 1");
-      await expect(concurrency).toHaveValue(String(LARGE_CONCURRENCY));
+      await expect(pendingNotice).not.toContainText("PostgreSQL");
+      await expect(page.getByText("保存后将自动应用，无需重启。", { exact: true })).toBeVisible();
+      await expect(page.getByText("PostgreSQL", { exact: false })).toHaveCount(0);
+      await expect(concurrency).toHaveValue(String(LARGE_POLICY.maxConcurrentRuns));
       await expect(page.getByRole("button", { name: "修改后可保存" })).toBeDisabled();
       const concurrencyRow = page.getByRole("row").filter({ hasText: "最大并发 Agent turn" });
       await expect(concurrencyRow.locator("td").nth(2)).toHaveText("1");
@@ -184,7 +242,7 @@ test.describe("Claude Agent resource policy console", () => {
           desired: {
             status: "valid",
             revision: 1,
-            values: { maxConcurrentRuns: LARGE_CONCURRENCY },
+            values: LARGE_POLICY,
           },
           application: { status: "pending", applied: false },
         },
@@ -194,12 +252,29 @@ test.describe("Claude Agent resource policy console", () => {
         `UPDATE claude_agent_resource_snapshots
             SET heartbeat_at = NOW(), sampled_at = NOW(), snapshot = $2::jsonb, updated_at = NOW()
           WHERE instance_id = $1`,
-        ["resource-policy-e2e", JSON.stringify(resourceSnapshot(LARGE_CONCURRENCY, 1))],
+        ["resource-policy-e2e", JSON.stringify(resourceSnapshot(LARGE_POLICY, 1))],
       );
 
       await expect(page.getByText("Dream 已加载 desired revision 1", { exact: false })).toBeVisible({ timeout: 15_000 });
-      await expect(concurrencyRow.locator("td").nth(2)).toHaveText(String(LARGE_CONCURRENCY));
-      await expect(page.getByText(`0 / ${LARGE_CONCURRENCY}`, { exact: true })).toBeVisible();
+      await expect(concurrencyRow.locator("td").nth(2)).toHaveText(String(LARGE_POLICY.maxConcurrentRuns));
+      await expect(page.getByText(`0 / ${LARGE_POLICY.maxConcurrentRuns}`, { exact: true })).toBeVisible();
+      await expect(page.locator("p").filter({ hasText: /^high$/ })).toBeVisible();
+
+      const secondConcurrency = LARGE_POLICY.maxConcurrentRuns + 1;
+      const getRequestsBeforeSecondSave = getRequests;
+      await concurrency.fill(String(secondConcurrency));
+      await page.getByRole("button", { name: "保存期望配置" }).click();
+      await expect.poll(() => patchRequests).toBe(2);
+      await expect.poll(() => getRequests).toBeGreaterThan(getRequestsBeforeSecondSave);
+      expect(patchPayloads[1]).toEqual({
+        ...LARGE_POLICY,
+        maxConcurrentRuns: secondConcurrency,
+        expectedRevision: 1,
+      });
+      expect(patchPayloads[1]).not.toHaveProperty("schemaVersion");
+      expect(patchPayloads[1]).not.toHaveProperty("revision");
+      await expect(pendingNotice).toContainText("desired revision 2");
+      expect(dialogCount).toBe(0);
 
       const finalButton = page.getByRole("button", { name: "修改后可保存" });
       await finalButton.scrollIntoViewIfNeeded();
@@ -217,6 +292,64 @@ test.describe("Claude Agent resource policy console", () => {
       await mobileButton.scrollIntoViewIfNeeded();
       await expect(mobileButton).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+
+      await client.query(
+        `INSERT INTO ai_providers (
+           id, code, name, protocol, base_url, status, timeout_ms, max_retries, config
+         ) VALUES ($1, $2, $3, 'anthropic', 'https://example.invalid', 'disabled', 120000, 1, '{}'::jsonb)
+         ON CONFLICT (id) DO NOTHING`,
+        ["provider-runtime-e2e", "provider-runtime-e2e", "Runtime E2E Provider"],
+      );
+
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.goto(
+        "/admin/models/models/new?providerId=provider-runtime-e2e&upstreamModel=runtime-e2e",
+      );
+      await expect(page.getByRole("heading", { name: "添加模型", exact: true })).toBeVisible();
+      await expect(page.getByRole("group", { name: "Claude Code Runtime", exact: true })).toBeVisible();
+      const compactWindow = page.getByLabel("自动压缩窗口");
+      const maxContextTokens = page.getByLabel("最大上下文 Token");
+      await expect(compactWindow).toHaveValue("");
+      await expect(maxContextTokens).toHaveValue("");
+      await compactWindow.fill("262144");
+      await maxContextTokens.fill("262144");
+      await page.getByRole("button", { name: "添加模型", exact: true }).click();
+      await expect(page).toHaveURL(/\/admin\/models\/models\?saved=/);
+
+      const createdModel = await client.query<{
+        id: string;
+        claude_code_auto_compact_window: number | null;
+        claude_code_max_context_tokens: number | null;
+      }>(
+        `SELECT id, claude_code_auto_compact_window, claude_code_max_context_tokens
+           FROM ai_models
+          WHERE code = 'runtime-e2e'`,
+      );
+      expect(createdModel.rows).toHaveLength(1);
+      expect(createdModel.rows[0]).toMatchObject({
+        claude_code_auto_compact_window: 262144,
+        claude_code_max_context_tokens: 262144,
+      });
+
+      await page.goto(`/admin/models/models/${createdModel.rows[0].id}/edit`);
+      await expect(page.getByRole("heading", { name: "模型设置", exact: true })).toBeVisible();
+      await expect(page.getByLabel("自动压缩窗口")).toHaveValue("262144");
+      await page.getByLabel("自动压缩窗口").fill("");
+      await page.getByRole("button", { name: "保存模型设置", exact: true }).click();
+      await expect(page).toHaveURL(/\/admin\/models\/models\?saved=/);
+      const clearedModel = await client.query<{
+        claude_code_auto_compact_window: number | null;
+        claude_code_max_context_tokens: number | null;
+      }>(
+        `SELECT claude_code_auto_compact_window, claude_code_max_context_tokens
+           FROM ai_models
+          WHERE id = $1`,
+        [createdModel.rows[0].id],
+      );
+      expect(clearedModel.rows[0]).toEqual({
+        claude_code_auto_compact_window: null,
+        claude_code_max_context_tokens: 262144,
+      });
     } finally {
       await client.end();
     }

@@ -1,6 +1,12 @@
+// [Input] Authenticated Gateway subject plus Admin-owned model/billing PostgreSQL state.
+// [Output] Strict callable model catalog with server-only nullable Claude Code Runtime settings.
+// [Pos] Public Gateway catalog consumed by Dream; secrets and upstream identity remain excluded.
+// [Sync] 2026-08-28: project exact compact/context fields after validating the Admin 0041 capability.
+
 import { withPlatformClient } from "../platform-db";
+import { claudeCodeRuntimeCapabilityAvailable } from "../db/claude-code-runtime-capability";
 import { authenticateGatewayRequest } from "./auth";
-import { gatewayErrorResponse } from "./errors";
+import { GatewayError, gatewayErrorResponse } from "./errors";
 
 export type ModelAvailability =
   | "included"
@@ -16,6 +22,8 @@ export type ModelCatalogRow = {
   protocol: "anthropic" | "openai";
   context_window: number | null;
   max_output_tokens: number | null;
+  claude_code_auto_compact_window: number | null;
+  claude_code_max_context_tokens: number | null;
   capabilities: Record<string, boolean> | null;
   provider_ready: boolean;
   pricing_ready: boolean;
@@ -77,9 +85,20 @@ export async function listAvailableGatewayModels(input: {
   userTier: string;
 }) {
   return await withPlatformClient(async (client) => {
+    if (!await claudeCodeRuntimeCapabilityAvailable(client)) {
+      throw new GatewayError(
+        "CLAUDE_CODE_RUNTIME_CAPABILITY_UNAVAILABLE",
+        "The Claude Code Runtime model catalog is unavailable",
+        503,
+        "configuration_error",
+        true,
+      );
+    }
     const { rows } = await client.query<ModelCatalogRow>(
       `SELECT model.code, model.display_name, provider.protocol,
               model.context_window, model.max_output_tokens,
+              model.claude_code_auto_compact_window,
+              model.claude_code_max_context_tokens,
               model.capabilities,
               (
                 provider.status = 'active'
@@ -176,6 +195,8 @@ export async function listAvailableGatewayModels(input: {
         protocol: row.protocol,
         context_window: row.context_window,
         max_output_tokens: row.max_output_tokens,
+        claude_code_auto_compact_window: row.claude_code_auto_compact_window,
+        claude_code_max_context_tokens: row.claude_code_max_context_tokens,
         capabilities: row.capabilities ?? {},
         enabled: true as const,
         callable: evaluated.callable,

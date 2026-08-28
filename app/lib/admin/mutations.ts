@@ -1,3 +1,8 @@
+// [Input] Authenticated Admin mutation requests, strict resource schemas, and PostgreSQL transactions.
+// [Output] Audited CRUD writes, including capability-gated nullable Claude Code Runtime model settings.
+// [Pos] Shared Admin mutation domain; routes delegate here after Origin/RBAC checks.
+// [Sync] 2026-08-28: persist positive int4 compact/context model values and fail closed before writes without 0041 capability.
+
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { resolveGatewayBaseUrl } from "../gateway/public-base-url";
@@ -5,6 +10,7 @@ import { creditBillingAccountOnClient } from "../billing/repository";
 import { createGatewayApiKey } from "../gateway/api-keys";
 import { GatewayError } from "../gateway/errors";
 import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
+import { claudeCodeRuntimeCapabilityAvailable } from "../db/claude-code-runtime-capability";
 import { withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
 import { modelRequestHeadersSchema } from "../models/request-headers";
@@ -28,6 +34,7 @@ import {
 } from "./guard";
 import type { AdminIdentity } from "./session";
 import { hashAdminPassword } from "./password";
+import { CLAUDE_CODE_RUNTIME_INTEGER_MAX } from "../../../config/claude-agent-resource-policy";
 
 const codeSchema = z
   .string()
@@ -125,6 +132,10 @@ const modelCreateSchema = z.strictObject({
   displayName: z.string().trim().min(1).max(160),
   contextWindow: z.number().int().positive().nullable().optional(),
   maxOutputTokens: z.number().int().positive().nullable().optional(),
+  claudeCodeAutoCompactWindow: z.number().int().positive()
+    .max(CLAUDE_CODE_RUNTIME_INTEGER_MAX).nullable().optional(),
+  claudeCodeMaxContextTokens: z.number().int().positive()
+    .max(CLAUDE_CODE_RUNTIME_INTEGER_MAX).nullable().optional(),
   capabilities: z.record(z.string(), z.boolean()).default({}),
   requestHeaders: modelRequestHeadersSchema.default({}),
   enabled: z.boolean().default(false),
@@ -135,6 +146,10 @@ const modelUpdateSchema = z.strictObject({
   displayName: z.string().trim().min(1).max(160).optional(),
   contextWindow: z.number().int().positive().nullable().optional(),
   maxOutputTokens: z.number().int().positive().nullable().optional(),
+  claudeCodeAutoCompactWindow: z.number().int().positive()
+    .max(CLAUDE_CODE_RUNTIME_INTEGER_MAX).nullable().optional(),
+  claudeCodeMaxContextTokens: z.number().int().positive()
+    .max(CLAUDE_CODE_RUNTIME_INTEGER_MAX).nullable().optional(),
   capabilities: z.record(z.string(), z.boolean()).optional(),
   requestHeaders: modelRequestHeadersSchema.optional(),
   enabled: z.boolean().optional(),
@@ -385,14 +400,25 @@ async function insertModel(
   client: PoolClient,
   input: z.infer<typeof modelCreateSchema>,
 ) {
+  if (!await claudeCodeRuntimeCapabilityAvailable(client)) {
+    throw new AdminError(
+      "CLAUDE_CODE_RUNTIME_CAPABILITY_UNAVAILABLE",
+      "The Claude Code Runtime model capability is unavailable",
+      503,
+    );
+  }
   const id = createPlatformId("model");
   const result = await client.query<Record<string, unknown>>(
     `INSERT INTO ai_models (
        id, provider_id, code, upstream_model, display_name,
-       context_window, max_output_tokens, capabilities, request_headers, enabled
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10)
+       context_window, max_output_tokens,
+       claude_code_auto_compact_window, claude_code_max_context_tokens,
+       capabilities, request_headers, enabled
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12)
      RETURNING id, provider_id, code, upstream_model, display_name,
-               context_window, max_output_tokens, capabilities, request_headers, enabled,
+               context_window, max_output_tokens,
+               claude_code_auto_compact_window, claude_code_max_context_tokens,
+               capabilities, request_headers, enabled,
                created_at, updated_at`,
     [
       id,
@@ -402,6 +428,8 @@ async function insertModel(
       input.displayName,
       input.contextWindow ?? null,
       input.maxOutputTokens ?? null,
+      input.claudeCodeAutoCompactWindow ?? null,
+      input.claudeCodeMaxContextTokens ?? null,
       JSON.stringify(input.capabilities),
       JSON.stringify(input.requestHeaders),
       input.enabled,
@@ -934,6 +962,13 @@ async function updateModel(
   id: string,
   input: z.infer<typeof modelUpdateSchema>,
 ) {
+  if (!await claudeCodeRuntimeCapabilityAvailable(client)) {
+    throw new AdminError(
+      "CLAUDE_CODE_RUNTIME_CAPABILITY_UNAVAILABLE",
+      "The Claude Code Runtime model capability is unavailable",
+      503,
+    );
+  }
   const before = await loadRowForUpdate(client, "ai_models", id);
   const values: unknown[] = [id];
   const updates: string[] = [];
@@ -941,6 +976,18 @@ async function updateModel(
   addUpdate(updates, values, "display_name", input.displayName);
   addUpdate(updates, values, "context_window", input.contextWindow);
   addUpdate(updates, values, "max_output_tokens", input.maxOutputTokens);
+  addUpdate(
+    updates,
+    values,
+    "claude_code_auto_compact_window",
+    input.claudeCodeAutoCompactWindow,
+  );
+  addUpdate(
+    updates,
+    values,
+    "claude_code_max_context_tokens",
+    input.claudeCodeMaxContextTokens,
+  );
   addUpdate(
     updates,
     values,

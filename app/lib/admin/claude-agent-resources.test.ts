@@ -1,7 +1,7 @@
 // [Input] Mocked Admin guards, PostgreSQL projection rows, transactions, and audit writes.
-// [Output] RBAC, capability gates, safe integer bounds, optimistic concurrency, and rollback coverage.
+// [Output] RBAC, exact capability gates, resource/Runtime policy, optimistic concurrency, and rollback coverage.
 // [Pos] Focused contract tests for the PostgreSQL-only Claude Agent resource Admin domain.
-// [Sync] 2026-08-27: accept large uncapped concurrency and reject zero/null, negative, fractional, or unsafe values.
+// [Sync] 2026-08-28: remove every product bound, guard combined memory bytes, and sanitize field issue paths.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -28,6 +28,7 @@ vi.mock("./audit", () => ({ recordAdminAuditOnClient: mocks.audit }));
 
 import { AdminError } from "./errors";
 import {
+  claudeAgentResourcePolicyInputSchema,
   claudeAgentResourceSnapshotSchema,
   handleClaudeAgentResourcesGet,
   handleClaudeAgentResourcesPatch,
@@ -40,6 +41,7 @@ const desired = {
   runMemoryBudgetMib: 512,
   memoryReserveMib: 128,
   retryAfterSeconds: 60,
+  claudeCodeEffortLevel: "high",
 };
 
 const effective = {
@@ -57,6 +59,7 @@ const snapshot = {
   config: {
     defaults: effective,
     effective,
+    claude_code: { effort_level: "high" },
     effective_version: "policy-v2",
     loaded_at: "2026-08-27T06:00:00.000Z",
     policy_status: "applied",
@@ -100,6 +103,10 @@ const capabilityRow = {
   version: 1,
   contract_sha256: "db2ba80eb61a9515ba23000f8a615fb41f6ed5824bd306e8d0ca5fb8f1cc044e",
 };
+const runtimeCapabilityRow = {
+  version: 1,
+  contract_sha256: "7b4d46bad9cfb340336a05aa9c9a2b70f5518622e5e2e94d47aac2ca76d63c1d",
+};
 
 function projection(overrides: Record<string, unknown> = {}) {
   return {
@@ -119,6 +126,7 @@ function projection(overrides: Record<string, unknown> = {}) {
 function mockGetProjection(row: ReturnType<typeof projection>) {
   mocks.query
     .mockResolvedValueOnce({ rows: [capabilityRow] })
+    .mockResolvedValueOnce({ rows: [runtimeCapabilityRow] })
     .mockResolvedValueOnce({ rows: [row] });
 }
 
@@ -134,9 +142,11 @@ describe("Claude Agent Admin resource domain", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAdminRequest.mockResolvedValue({ id: "admin_test" });
-    mocks.query.mockImplementation(async (statement) => ({
+    mocks.query.mockImplementation(async (statement, parameters) => ({
       rows: String(statement).includes("FROM drizzle.schema_capabilities")
-        ? [capabilityRow]
+        ? [parameters?.[0] === "dream.claude-code-runtime-config.v1"
+            ? runtimeCapabilityRow
+            : capabilityRow]
         : [projection()],
     }));
     mocks.transaction.mockImplementation(async (callback) => await callback({ query: mocks.query }));
@@ -148,8 +158,23 @@ describe("Claude Agent Admin resource domain", () => {
     expect(response.status).toBe(200);
     expect(mocks.requireAdminRequest).toHaveBeenCalledWith(expect.any(Request), "system.read");
     expect(String(mocks.query.mock.calls[0][0])).toContain("drizzle.schema_capabilities");
-    expect(String(mocks.query.mock.calls[1][0])).toContain("claude_agent_resource_snapshots");
+    expect(String(mocks.query.mock.calls[2][0])).toContain("claude_agent_resource_snapshots");
     expect(fetchSpy).not.toHaveBeenCalled();
+    const body = await response.json();
+    expect(body.data.policy).toMatchObject({
+      bounds: {
+        maxConcurrentRuns: { min: 1, max: null },
+        runMemoryBudgetMib: { min: 1, max: null },
+        memoryReserveMib: { min: 1, max: null },
+        retryAfterSeconds: { min: 1, max: null },
+      },
+      technicalLimits: {
+        mibInBytes: 1_048_576,
+        maxCombinedMemoryMib: Math.floor(Number.MAX_SAFE_INTEGER / 1_048_576),
+        claudeCodeRuntimeIntegerMax: 2_147_483_647,
+      },
+      claudeCodeRuntime: { effortLevels: ["low", "medium", "high", "xhigh", "max"] },
+    });
     fetchSpy.mockRestore();
   });
 
@@ -284,33 +309,90 @@ describe("Claude Agent Admin resource domain", () => {
       retryAfterSeconds: 60,
     }));
     expect(response.status).toBe(400);
-    expect((await response.json()).error.code).toBe("CLAUDE_AGENT_POLICY_INVALID");
+    const body = await response.json();
+    expect(body.error.code).toBe("CLAUDE_AGENT_POLICY_INVALID");
+    expect(body.error.details).toContainEqual({
+      path: ["maxConcurrentRuns"],
+      code: "invalid_value",
+    });
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
-  it("saves a large positive concurrency in one audited transaction", async () => {
+  it.each([
+    "maxConcurrentRuns",
+    "runMemoryBudgetMib",
+    "memoryReserveMib",
+    "retryAfterSeconds",
+  ] as const)("rejects non-positive %s before opening a transaction", async (field) => {
+    const response = await handleClaudeAgentResourcesPatch(patchRequest({
+      expectedRevision: 2,
+      maxConcurrentRuns: 1,
+      runMemoryBudgetMib: 1,
+      memoryReserveMib: 1,
+      retryAfterSeconds: 1,
+      [field]: 0,
+    }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.details).toContainEqual({
+      path: [field],
+      code: "invalid_value",
+    });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unsafe combined memory byte requirement on both public fields", async () => {
+    const maxCombinedMemoryMib = Math.floor(Number.MAX_SAFE_INTEGER / 1_048_576);
+    const response = await handleClaudeAgentResourcesPatch(patchRequest({
+      expectedRevision: 2,
+      maxConcurrentRuns: 1,
+      runMemoryBudgetMib: maxCombinedMemoryMib,
+      memoryReserveMib: 1,
+      retryAfterSeconds: 1,
+    }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.details).toEqual(expect.arrayContaining([
+      { path: ["runMemoryBudgetMib"], code: "combined_memory_unsafe" },
+      { path: ["memoryReserveMib"], code: "combined_memory_unsafe" },
+    ]));
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("accepts all four values above their old product maxima", () => {
+    expect(claudeAgentResourcePolicyInputSchema.safeParse({
+      maxConcurrentRuns: 1_000_000,
+      runMemoryBudgetMib: 9_000,
+      memoryReserveMib: 5_000,
+      retryAfterSeconds: 4_000,
+    }).success).toBe(true);
+  });
+
+  it("saves four large positive values in one audited transaction", async () => {
     const after = {
       ...desired,
       revision: 3,
       maxConcurrentRuns: 1_000_000,
+      runMemoryBudgetMib: 9_000,
+      memoryReserveMib: 5_000,
+      retryAfterSeconds: 4_000,
     };
     mocks.query
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [capabilityRow] })
+      .mockResolvedValueOnce({ rows: [runtimeCapabilityRow] })
       .mockResolvedValueOnce({ rows: [{ value: desired, updated_at: "2026-08-27T05:59:00.000Z" }] })
       .mockResolvedValueOnce({ rows: [{ value: after, updated_at: "2026-08-27T06:05:00.000Z" }] });
     const response = await handleClaudeAgentResourcesPatch(patchRequest({
       expectedRevision: 2,
       maxConcurrentRuns: 1_000_000,
-      runMemoryBudgetMib: 512,
-      memoryReserveMib: 128,
-      retryAfterSeconds: 60,
+      runMemoryBudgetMib: 9_000,
+      memoryReserveMib: 5_000,
+      retryAfterSeconds: 4_000,
     }));
     expect(response.status).toBe(200);
     expect(String(mocks.query.mock.calls[0][0])).toContain("pg_advisory_xact_lock");
     expect(String(mocks.query.mock.calls[1][0])).toContain("drizzle.schema_capabilities");
-    expect(String(mocks.query.mock.calls[2][0])).toContain("FOR UPDATE");
-    expect(String(mocks.query.mock.calls[3][0])).toContain("ON CONFLICT");
+    expect(String(mocks.query.mock.calls[3][0])).toContain("FOR UPDATE");
+    expect(String(mocks.query.mock.calls[4][0])).toContain("ON CONFLICT");
     expect(mocks.audit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       before: desired,
       after,
@@ -321,6 +403,7 @@ describe("Claude Agent Admin resource domain", () => {
     mocks.query
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [capabilityRow] })
+      .mockResolvedValueOnce({ rows: [runtimeCapabilityRow] })
       .mockResolvedValueOnce({ rows: [{ value: desired, updated_at: "2026-08-27T05:59:00.000Z" }] });
     const response = await handleClaudeAgentResourcesPatch(patchRequest({
       expectedRevision: 1,
@@ -331,7 +414,7 @@ describe("Claude Agent Admin resource domain", () => {
     }));
     expect(response.status).toBe(409);
     expect((await response.json()).error.code).toBe("CLAUDE_AGENT_POLICY_REVISION_CONFLICT");
-    expect(mocks.query).toHaveBeenCalledTimes(3);
+    expect(mocks.query).toHaveBeenCalledTimes(4);
     expect(mocks.audit).not.toHaveBeenCalled();
   });
 
@@ -391,6 +474,7 @@ describe("Claude Agent Admin resource domain", () => {
     mocks.query
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [capabilityRow] })
+      .mockResolvedValueOnce({ rows: [runtimeCapabilityRow] })
       .mockResolvedValueOnce({ rows: [{ value: desired, updated_at: "2026-08-27T05:59:00.000Z" }] })
       .mockResolvedValueOnce({ rows: [{ value: after, updated_at: "2026-08-27T06:05:00.000Z" }] });
     mocks.audit.mockRejectedValueOnce(new Error("audit unavailable"));

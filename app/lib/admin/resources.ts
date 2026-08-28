@@ -1,4 +1,10 @@
+// [Input] Authenticated Admin list/detail requests and capability-gated PostgreSQL projections.
+// [Output] Paginated Admin resources with nullable Claude Code Runtime model fields.
+// [Pos] Read-only Admin resource query boundary.
+// [Sync] 2026-08-28: include model compact/context settings and fail closed when the exact 0041 capability is absent.
+
 import type { PoolClient } from "pg";
+import { claudeCodeRuntimeCapabilityAvailable } from "../db/claude-code-runtime-capability";
 import { withPlatformClient } from "../platform-db";
 import { AdminError, adminErrorResponse } from "./errors";
 import {
@@ -113,7 +119,8 @@ const resources: Record<AdminResource, ResourceConfig> = {
     permission: "models.read",
     select: `m.id, m.provider_id, p.code AS provider_code,
              m.code, m.upstream_model, m.display_name, m.context_window,
-             m.max_output_tokens, m.capabilities, m.request_headers,
+             m.max_output_tokens, m.claude_code_auto_compact_window,
+             m.claude_code_max_context_tokens, m.capabilities, m.request_headers,
              m.enabled, m.metadata,
              (p.status = 'active' AND p.api_key_ciphertext IS NOT NULL
                AND p.api_key_iv IS NOT NULL AND p.api_key_tag IS NOT NULL)
@@ -598,9 +605,16 @@ export async function handleAdminResourceList(
     }
     const config = resourceConfig(resource);
     await requireAdminRequest(request, config.permission);
-    const response = await withPlatformClient(
-      async (client) => await queryList(client, request, config),
-    );
+    const response = await withPlatformClient(async (client) => {
+      if (resource === "models" && !await claudeCodeRuntimeCapabilityAvailable(client)) {
+        throw new AdminError(
+          "CLAUDE_CODE_RUNTIME_CAPABILITY_UNAVAILABLE",
+          "The Claude Code Runtime model capability is unavailable",
+          503,
+        );
+      }
+      return await queryList(client, request, config);
+    });
     return Response.json(response, {
       headers: {
         "cache-control": "no-store",
@@ -635,6 +649,13 @@ export async function handleAdminResourceGetOne(
     const config = resourceConfig(resource);
     await requireAdminRequest(request, config.permission);
     const data = await withPlatformClient(async (client) => {
+      if (resource === "models" && !await claudeCodeRuntimeCapabilityAvailable(client)) {
+        throw new AdminError(
+          "CLAUDE_CODE_RUNTIME_CAPABILITY_UNAVAILABLE",
+          "The Claude Code Runtime model capability is unavailable",
+          503,
+        );
+      }
       const result = await client.query<Record<string, unknown>>(
         `SELECT ${config.select} ${config.from}
          WHERE ${config.columns.id} = $1

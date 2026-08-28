@@ -1,7 +1,7 @@
 // [Input] PostgreSQL-projected Claude Agent resource API, system.write access, and a cancellable React Query signal.
 // [Output] Safe desired/effective controls with immediate pending feedback plus process/cgroup monitoring.
 // [Pos] Admin system-governance console; it cannot call Dream, restart processes, or deploy configuration.
-// [Sync] 2026-08-27: expose positive concurrency without a product maximum and save directly without a native confirm dialog.
+// [Sync] 2026-08-28: add nullable global effort desired/effective controls while preserving direct save and active refetch.
 
 "use client";
 
@@ -12,15 +12,24 @@ import { useMemo, useState } from "react";
 export const CLAUDE_AGENT_REFRESH_INTERVAL_MS = 10_000;
 export const CLAUDE_AGENT_POLICY_SAVE_BUTTON_CLASS = "inline-flex min-h-11 items-center justify-center bg-text-primary px-5 text-sm font-semibold text-bg-surface disabled:cursor-not-allowed disabled:opacity-45";
 
-export type PolicyValues = {
+export type AdmissionPolicyValues = {
   maxConcurrentRuns: number;
   runMemoryBudgetMib: number;
   memoryReserveMib: number;
   retryAfterSeconds: number;
 };
+export type ClaudeCodeEffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+export type PolicyValues = AdmissionPolicyValues & {
+  claudeCodeEffortLevel: ClaudeCodeEffortLevel | null;
+};
 
 type Bound = { min: number; max: number | null };
-export type PolicyBounds = Record<keyof PolicyValues, Bound>;
+export type PolicyBounds = Record<keyof AdmissionPolicyValues, Bound>;
+export type PolicyTechnicalLimits = {
+  mibInBytes: number;
+  maxCombinedMemoryMib: number;
+  claudeCodeRuntimeIntegerMax: number;
+};
 type AdmissionValues = {
   max_concurrent_runs: number;
   run_memory_budget_mib: number;
@@ -46,6 +55,7 @@ type Runtime = {
     policy_status: "applied" | "not_configured" | "invalid" | "unavailable";
     policy_revision: number | null;
     policy_updated_at: string | null;
+    claude_code?: { effort_level: ClaudeCodeEffortLevel | null };
   };
   turns: { started_total: number; completed_total: number; failed_total: number; cancelled_total: number };
   admission: {
@@ -91,7 +101,11 @@ export type ClaudeAgentResourceResponse = {
   policy: {
     schemaVersion: number;
     bounds: PolicyBounds;
+    technicalLimits: PolicyTechnicalLimits;
     defaults: PolicyValues;
+    claudeCodeRuntime: {
+      effortLevels: readonly ClaudeCodeEffortLevel[];
+    };
     freshness: { freshSeconds: number; offlineSeconds: number };
   };
   desired: DesiredProjection;
@@ -103,17 +117,60 @@ export type ClaudeAgentResourceResponse = {
   };
 };
 
+export type PolicyFieldErrors = Partial<Record<keyof PolicyValues, string>>;
+
+export class ClaudeAgentPolicyRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly fieldErrors: PolicyFieldErrors,
+  ) {
+    super(message);
+    this.name = "ClaudeAgentPolicyRequestError";
+  }
+}
+
+const POLICY_FIELD_KEYS = new Set<keyof PolicyValues>([
+  "maxConcurrentRuns",
+  "runMemoryBudgetMib",
+  "memoryReserveMib",
+  "retryAfterSeconds",
+  "claudeCodeEffortLevel",
+]);
+
+export function policyFieldErrorsFromDetails(details: unknown): PolicyFieldErrors {
+  const errors: PolicyFieldErrors = {};
+  if (!Array.isArray(details)) return errors;
+  for (const detail of details) {
+    if (!detail || typeof detail !== "object") continue;
+    const issue = detail as { path?: unknown; code?: unknown };
+    if (!Array.isArray(issue.path) || typeof issue.path[0] !== "string") continue;
+    const key = issue.path[0] as keyof PolicyValues;
+    if (!POLICY_FIELD_KEYS.has(key)) continue;
+    errors[key] = key === "claudeCodeEffortLevel"
+      ? "请选择有效的推理强度"
+      : issue.code === "combined_memory_unsafe"
+      ? "内存合计过大"
+      : "请输入有效的正整数";
+  }
+  return errors;
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => ({}))) as {
     data?: T;
     error?: { code?: string; message?: string; details?: unknown };
   };
   if (!response.ok || !body.data) {
-    throw new Error(
-      body.error?.code === "CLAUDE_AGENT_POLICY_INVALID"
-        ? "配置未保存：请确认四项阈值都是页面允许范围内的整数。"
-        : body.error?.message ?? "Claude Agent 资源数据不可用",
-    );
+    if (body.error?.code === "CLAUDE_AGENT_POLICY_INVALID") {
+      const fieldErrors = policyFieldErrorsFromDetails(body.error.details);
+      throw new ClaudeAgentPolicyRequestError(
+        Object.keys(fieldErrors).length > 0
+          ? "配置未保存"
+          : "配置未保存：策略内容无效。",
+        fieldErrors,
+      );
+    }
+    throw new Error(body.error?.message ?? "Claude Agent 资源数据不可用");
   }
   return body.data;
 }
@@ -164,7 +221,27 @@ export function policyMutationPayload(
   values: PolicyValues,
   expectedRevision: number | null,
 ) {
-  return { ...values, expectedRevision };
+  return {
+    maxConcurrentRuns: values.maxConcurrentRuns,
+    runMemoryBudgetMib: values.runMemoryBudgetMib,
+    memoryReserveMib: values.memoryReserveMib,
+    retryAfterSeconds: values.retryAfterSeconds,
+    claudeCodeEffortLevel: values.claudeCodeEffortLevel,
+    expectedRevision,
+  };
+}
+
+export function policyValuesFromDesired(
+  values: DesiredProjection["values"] | null | undefined,
+): PolicyValues | null {
+  if (!values) return null;
+  return {
+    maxConcurrentRuns: values.maxConcurrentRuns,
+    runMemoryBudgetMib: values.runMemoryBudgetMib,
+    memoryReserveMib: values.memoryReserveMib,
+    retryAfterSeconds: values.retryAfterSeconds,
+    claudeCodeEffortLevel: values.claudeCodeEffortLevel,
+  };
 }
 
 export function policySaveButtonState(
@@ -188,10 +265,11 @@ export function policySaveButtonState(
 export function policyValidationErrors(
   values: PolicyValues | null,
   bounds: PolicyBounds | undefined,
+  technicalLimits?: PolicyTechnicalLimits,
 ) {
-  const errors: Partial<Record<keyof PolicyValues, string>> = {};
+  const errors: PolicyFieldErrors = {};
   if (!values || !bounds) return errors;
-  for (const key of Object.keys(bounds) as Array<keyof PolicyValues>) {
+  for (const key of Object.keys(bounds) as Array<keyof AdmissionPolicyValues>) {
     const metric = values[key];
     const bound = bounds[key];
     if (
@@ -199,9 +277,21 @@ export function policyValidationErrors(
       || metric < bound.min
       || (bound.max !== null && metric > bound.max)
     ) {
-      errors[key] = bound.max === null
-        ? `请输入不小于 ${bound.min} 的整数`
-        : `请输入 ${bound.min}–${bound.max} 之间的整数`;
+      errors[key] = "请输入有效的正整数";
+    }
+  }
+  if (
+    technicalLimits
+    && !errors.runMemoryBudgetMib
+    && !errors.memoryReserveMib
+  ) {
+    const combinedMemoryMib = values.runMemoryBudgetMib + values.memoryReserveMib;
+    if (
+      !Number.isSafeInteger(combinedMemoryMib)
+      || combinedMemoryMib > technicalLimits.maxCombinedMemoryMib
+    ) {
+      errors.runMemoryBudgetMib = "内存合计过大";
+      errors.memoryReserveMib = "内存合计过大";
     }
   }
   return errors;
@@ -230,12 +320,16 @@ export default function ClaudeAgentResourceConsole() {
   const [form, setForm] = useState<PolicyValues | null>(null);
   const [editBaseRevision, setEditBaseRevision] = useState<number | null | undefined>(undefined);
   const effectivePolicy = data?.runtime?.config.effective;
-  const displayedForm = form ?? data?.desired.values ?? (effectivePolicy
+  const desiredPolicy = policyValuesFromDesired(data?.desired.values);
+  const displayedForm = form ?? desiredPolicy ?? (effectivePolicy
     ? {
         maxConcurrentRuns: effectivePolicy.max_concurrent_runs,
         runMemoryBudgetMib: effectivePolicy.run_memory_budget_mib,
         memoryReserveMib: effectivePolicy.memory_reserve_mib,
         retryAfterSeconds: effectivePolicy.retry_after_seconds,
+        claudeCodeEffortLevel: data?.runtime?.config.claude_code?.effort_level
+          ?? data?.policy.defaults.claudeCodeEffortLevel
+          ?? null,
       }
     : data?.policy.defaults ?? null);
 
@@ -255,7 +349,10 @@ export default function ClaudeAgentResourceConsole() {
       );
       setForm(null);
       setEditBaseRevision(undefined);
-      await queryClient.invalidateQueries({ queryKey: ["claude-agent-resources"] });
+      await queryClient.refetchQueries({
+        queryKey: ["claude-agent-resources"],
+        type: "active",
+      });
     },
   });
 
@@ -297,7 +394,16 @@ export default function ClaudeAgentResourceConsole() {
   const revisionChangedWhileEditing = form !== null
     && editBaseRevision !== undefined
     && editBaseRevision !== currentRevision;
-  const validationErrors = policyValidationErrors(form, data?.policy.bounds);
+  const clientValidationErrors = policyValidationErrors(
+    form,
+    data?.policy.bounds,
+    data?.policy.technicalLimits,
+  );
+  const serverFieldErrors = mutation.error instanceof ClaudeAgentPolicyRequestError
+    ? mutation.error.fieldErrors
+    : {};
+  const validationErrors = { ...serverFieldErrors, ...clientValidationErrors };
+  const hasServerFieldErrors = Object.keys(serverFieldErrors).length > 0;
   const draftInvalid = Object.keys(validationErrors).length > 0;
   const saveButton = policySaveButtonState(
     form !== null,
@@ -308,10 +414,10 @@ export default function ClaudeAgentResourceConsole() {
 
   return (
     <div className="space-y-6">
-      <section className="border border-border bg-surface px-5 py-4" aria-label="Dream PostgreSQL 观测状态">
+      <section className="border border-border bg-surface px-5 py-4" aria-label="Dream 资源状态">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-text-tertiary">PostgreSQL observer snapshot</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-text-tertiary">Dream resource status</p>
             <p className="mt-2 font-display text-xl font-semibold">Dream {health === "fresh" ? "在线" : health === "stale" ? "心跳陈旧" : health === "offline" ? "离线" : "不可用"}</p>
           </div>
           <div className={`px-3 py-1 font-mono text-xs ${healthClass}`}>{health.toUpperCase()}</div>
@@ -322,7 +428,7 @@ export default function ClaudeAgentResourceConsole() {
           <p>心跳：<span className="text-text-primary">{timestamp(runtime?.heartbeat_at)}</span> · {seconds(runtime?.heartbeat_age_seconds)}</p>
           <p>采样：<span className="text-text-primary">{timestamp(runtime?.sampled_at)}</span> · {seconds(runtime?.sample_age_seconds)}</p>
         </div>
-        <p className="mt-3 text-xs text-text-tertiary">active 与累计值均为单 Dream 进程生命周期指标，进程重启后清零。Admin 每 10 秒读取 PostgreSQL，不直连 Dream。</p>
+        <p className="mt-3 text-xs text-text-tertiary">active 与累计值均为单 Dream 进程生命周期指标，进程重启后清零；页面每 10 秒自动刷新。</p>
         {data?.runtimeError ? <p className="mt-2 text-sm text-danger">{data.runtimeError.message}</p> : null}
       </section>
 
@@ -345,7 +451,7 @@ export default function ClaudeAgentResourceConsole() {
       <div className="grid min-w-0 gap-6 xl:grid-cols-[1.25fr_0.75fr]">
         <section className="min-w-0 overflow-hidden border border-border bg-surface p-5">
           <h2 className="font-display text-xl font-semibold">默认、期望与生效策略</h2>
-          <p className="mt-2 text-sm text-text-secondary">保存只更新 PostgreSQL desired；Dream 定时读取并动态应用，无需重启。控制台不提供部署或进程控制。</p>
+          <p className="mt-2 text-sm text-text-secondary">保存后将自动应用，无需重启。</p>
           <div className="mt-5 max-w-full overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead><tr className="border-b border-border text-xs text-text-tertiary"><th className="py-3">阈值</th><th>默认</th><th>Admin desired</th><th>Dream effective</th></tr></thead>
@@ -354,14 +460,14 @@ export default function ClaudeAgentResourceConsole() {
                   const bound = data?.policy.bounds[key];
                   const desired = displayedForm?.[key];
                   const validationError = validationErrors[key];
-                  const helpId = `claude-agent-policy-${key}-help`;
+                  const errorId = `claude-agent-policy-${key}-error`;
                   return (
                     <tr className="border-b border-border/60" key={key}>
                       <th className="py-4 pr-4 font-medium">{label}</th>
                       <td className="font-mono">{value(data?.policy.defaults[key])}</td>
                       <td className="pr-4">
                         <input
-                          aria-describedby={helpId}
+                          aria-describedby={validationError ? errorId : undefined}
                           aria-invalid={Boolean(validationError)}
                           aria-label={label}
                           className={`w-32 border bg-bg-primary px-3 py-2 font-mono text-text-primary disabled:opacity-60 ${validationError ? "border-danger" : "border-border"}`}
@@ -376,18 +482,16 @@ export default function ClaudeAgentResourceConsole() {
                             if (!displayedForm) return;
                             if (form === null) {
                               setEditBaseRevision(currentRevision);
-                              mutation.reset();
                             }
+                            if (mutation.isError || mutation.isSuccess) mutation.reset();
                             setForm({ ...displayedForm, [key]: Number(event.currentTarget.value) });
                           }}
                         />
-                        <p className={`mt-1 text-[11px] ${validationError ? "text-danger" : "text-text-tertiary"}`} id={helpId}>
-                          {validationError ?? (bound
-                            ? bound.max === null
-                              ? `不小于 ${bound.min}，仅限整数；无产品上限`
-                              : `${bound.min}–${bound.max}，仅限整数`
-                            : "仅限整数")}
-                        </p>
+                        {validationError ? (
+                          <p className="mt-1 text-[11px] text-danger" id={errorId}>
+                            {validationError}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="font-mono">{value(runtime?.config.effective[effectiveKey])}</td>
                     </tr>
@@ -395,6 +499,50 @@ export default function ClaudeAgentResourceConsole() {
                 })}
               </tbody>
             </table>
+          </div>
+          <div className="mt-5 border-t border-border pt-5">
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px_180px] sm:items-end">
+              <div>
+                <h3 className="font-display text-base font-semibold">Claude Code Runtime</h3>
+                <p className="mt-1 text-sm text-text-secondary">统一设置 Agent turn 的推理强度；未设置时沿用 Runtime 行为。</p>
+              </div>
+              <label className="text-xs font-semibold text-text-secondary">
+                Admin desired
+                <select
+                  aria-label="Claude Code 推理强度"
+                  className="admin-field mt-2 text-sm"
+                  disabled={!writeAccess.data?.can || mutation.isPending || !displayedForm}
+                  value={displayedForm?.claudeCodeEffortLevel ?? ""}
+                  onChange={(event) => {
+                    if (!displayedForm) return;
+                    if (form === null) setEditBaseRevision(currentRevision);
+                    if (mutation.isError || mutation.isSuccess) mutation.reset();
+                    setForm({
+                      ...displayedForm,
+                      claudeCodeEffortLevel: event.currentTarget.value
+                        ? event.currentTarget.value as ClaudeCodeEffortLevel
+                        : null,
+                    });
+                  }}
+                >
+                  <option value="">未设置</option>
+                  {(data?.policy.claudeCodeRuntime.effortLevels ?? []).map((level) => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
+                </select>
+                {validationErrors.claudeCodeEffortLevel ? (
+                  <span className="mt-1 block text-[11px] text-danger" role="alert">
+                    {validationErrors.claudeCodeEffortLevel}
+                  </span>
+                ) : null}
+              </label>
+              <div className="text-xs font-semibold text-text-secondary">
+                Dream effective
+                <p className="mt-2 min-h-11 border border-border bg-bg-secondary px-3 py-3 font-mono text-sm font-normal text-text-primary">
+                  {runtime?.config.claude_code?.effort_level ?? "未设置"}
+                </p>
+              </div>
+            </div>
           </div>
           <div className="mt-5 grid gap-2 border-t border-border pt-4 text-sm text-text-secondary sm:grid-cols-2">
             <p>应用状态：<strong className="text-text-primary">{data?.application.status ?? "unavailable"}</strong></p>
@@ -408,12 +556,12 @@ export default function ClaudeAgentResourceConsole() {
           </div>
           {data?.application.status === "pending" ? (
             <div className="mt-5 border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-primary" role="status">
-              <p className="font-semibold">期望配置已保存，等待 Dream 下次定时读取后生效</p>
-              <p className="mt-1 text-text-secondary">PostgreSQL desired revision {value(data.desired.revision)} 已更新；当前运行中的 Dream 暂时仍使用上方 effective 值，应用完成后控制台会自动刷新，无需重启。</p>
+              <p className="font-semibold">期望配置已保存，正在等待应用</p>
+              <p className="mt-1 text-text-secondary">desired revision {value(data.desired.revision)} 已更新；当前仍使用上方 effective 值，应用完成后自动刷新。</p>
             </div>
           ) : data?.application.status === "applied" ? (
             <div className="mt-5 border border-success/35 bg-success-light p-4 text-sm text-success" role="status">
-              Dream 已加载 desired revision {value(data.desired.revision)}，四项策略现已生效。
+              Dream 已加载 desired revision {value(data.desired.revision)}，资源与 Runtime 策略现已生效。
             </div>
           ) : null}
           <div className="-mx-5 mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-bg-secondary/35 px-5 py-4" aria-live="polite">
@@ -442,7 +590,7 @@ export default function ClaudeAgentResourceConsole() {
             </div>
           </div>
           {revisionChangedWhileEditing ? <p className="mt-3 text-sm text-danger" role="alert">desired 配置已被其他管理员更新。请刷新后重新编辑，当前草稿不会覆盖新 revision。</p> : null}
-          {mutation.error ? <p className="mt-3 text-sm text-danger" role="alert">{mutation.error.message}</p> : null}
+          {mutation.error && !hasServerFieldErrors ? <p className="mt-3 text-sm text-danger" role="alert">{mutation.error.message}</p> : null}
         </section>
 
         <section className="min-w-0 border border-border bg-surface p-5">

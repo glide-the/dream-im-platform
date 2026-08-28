@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ authenticate: vi.fn(), query: vi.fn() }));
 
+vi.mock("server-only", () => ({}));
 vi.mock("./auth", () => ({ authenticateGatewayRequest: mocks.authenticate }));
 vi.mock("../platform-db", () => ({
   withPlatformClient: async (operation: (client: { query: typeof mocks.query }) => unknown) =>
@@ -21,6 +22,8 @@ const baseRow: ModelCatalogRow = {
   protocol: "anthropic",
   context_window: 200000,
   max_output_tokens: 8192,
+  claude_code_auto_compact_window: 262144,
+  claude_code_max_context_tokens: 262144,
   capabilities: { tools: true },
   provider_ready: true,
   pricing_ready: true,
@@ -47,11 +50,24 @@ describe("public Gateway model catalog", () => {
       platformUserId: "platform-user-1",
       tier: "member",
     });
+    mocks.query.mockImplementation(async (statement) => ({
+      rows: String(statement).includes("drizzle.schema_capabilities")
+        ? [{
+            version: 1,
+            contract_sha256: "7b4d46bad9cfb340336a05aa9c9a2b70f5518622e5e2e94d47aac2ca76d63c1d",
+          }]
+        : [baseRow],
+    }));
   });
 
   it("returns every enabled model with safe callability metadata", async () => {
-    mocks.query.mockResolvedValue({
-      rows: [
+    mocks.query.mockImplementation(async (statement) => ({
+      rows: String(statement).includes("drizzle.schema_capabilities")
+        ? [{
+            version: 1,
+            contract_sha256: "7b4d46bad9cfb340336a05aa9c9a2b70f5518622e5e2e94d47aac2ca76d63c1d",
+          }]
+        : [
         baseRow,
         {
           ...baseRow,
@@ -60,8 +76,8 @@ describe("public Gateway model catalog", () => {
           entitlement_id: null,
           required_plan_code: "dream",
         },
-      ],
-    });
+          ],
+    }));
 
     vi.setSystemTime(now);
     const response = await handleGatewayModels(
@@ -76,6 +92,8 @@ describe("public Gateway model catalog", () => {
         callable: true,
         availability: "included",
         required_plan_code: "free",
+        claude_code_auto_compact_window: 262144,
+        claude_code_max_context_tokens: 262144,
       }),
       expect.objectContaining({
         id: "dream-premium",
@@ -89,7 +107,7 @@ describe("public Gateway model catalog", () => {
     );
     expect(payload.data[0]).not.toHaveProperty("gateway_scopes");
     expect(payload.default_model_alias).toBe("dream-balanced");
-    const sql = mocks.query.mock.calls[0][0] as string;
+    const sql = mocks.query.mock.calls[1][0] as string;
     expect(sql).toContain("FROM ai_models AS model");
     expect(sql).toContain("WHERE model.enabled = TRUE");
     expect(sql).toContain("LEFT JOIN LATERAL");
