@@ -3,6 +3,7 @@
 # [Output] Versioned direct-host Admin/embedded-PostgreSQL release managed by screen.
 # [Pos] AutoDL release entry; deliberately uses neither Docker nor nginx.
 # [Sync] 2026-08-26: place Admin home and PostgreSQL under /root/ink-autodl/data.
+# [Sync] 2026-08-28: reuse an immutable lock-matched DB runtime and bound fallback packaging.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,6 +30,7 @@ AUTODL_ADMIN_PUBLIC_ORIGIN="${AUTODL_ADMIN_PUBLIC_ORIGIN:-}"
 AUTODL_SCREEN_NAME="${AUTODL_ADMIN_SCREEN_NAME:-ink-admin}"
 AUTODL_BUILD_CPUS="${AUTODL_BUILD_CPUS:-1}"
 AUTODL_BUILD_MAX_OLD_SPACE_MB="${AUTODL_BUILD_MAX_OLD_SPACE_MB:-1024}"
+AUTODL_PACKAGE_MAX_OLD_SPACE_MB="${AUTODL_PACKAGE_MAX_OLD_SPACE_MB:-384}"
 AUTODL_BOOTSTRAP_DUMP="${AUTODL_BOOTSTRAP_DUMP:-}"
 DRY_RUN=0
 COMMAND=""
@@ -99,6 +101,7 @@ require_config() {
   [[ "${AUTODL_ADMIN_PORT}" == "6008" ]] || err "Admin AutoDL mapping must use local port 6008."
   [[ "${AUTODL_BUILD_CPUS}" =~ ^[1-9][0-9]*$ ]] || err "AUTODL_BUILD_CPUS must be a positive integer."
   [[ "${AUTODL_BUILD_MAX_OLD_SPACE_MB}" =~ ^[1-9][0-9]*$ ]] || err "AUTODL_BUILD_MAX_OLD_SPACE_MB must be a positive integer."
+  [[ "${AUTODL_PACKAGE_MAX_OLD_SPACE_MB}" =~ ^[1-9][0-9]*$ ]] || err "AUTODL_PACKAGE_MAX_OLD_SPACE_MB must be a positive integer."
 }
 
 check_local() {
@@ -129,6 +132,7 @@ AutoDL Admin direct-host release:
   PostgreSQL:      ${AUTODL_ADMIN_HOME}/postgres
   shared Artifact: ${AUTODL_DATA_ROOT}/artifacts
   build budget:    ${AUTODL_BUILD_CPUS} CPU / ${AUTODL_BUILD_MAX_OLD_SPACE_MB} MiB V8 old-space
+  package budget:  ${AUTODL_PACKAGE_MAX_OLD_SPACE_MB} MiB V8 old-space
   runtime:         Node ${AUTODL_NODE_VERSION} + screen + non-root embedded PostgreSQL
   order:           setup -> sync -> build -> restore(first use only) -> migrate -> start -> verify
   excluded:        Docker, nginx, runtime DDL, plaintext secret logging
@@ -200,13 +204,27 @@ NEXT_STANDALONE_OUTPUT=true NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_CPUS=${AUTODL_B
 staging=$(quote "${AUTODL_APP_ROOT}/releases/${release_id}.staging")
 release=$(quote "${AUTODL_APP_ROOT}/releases/${release_id}")
 db_runtime=$(quote "${AUTODL_APP_ROOT}/releases/${release_id}.db-runtime")
+db_runtime_seed=
+if [ -L $(quote "${AUTODL_APP_ROOT}/current") ]; then
+  current_release=\$(readlink -f $(quote "${AUTODL_APP_ROOT}/current"))
+  if [ -f \"\${current_release}/pnpm-lock.yaml\" ] && cmp -s $(quote "${AUTODL_APP_ROOT}/source/pnpm-lock.yaml") \"\${current_release}/pnpm-lock.yaml\" && cmp -s $(quote "${AUTODL_APP_ROOT}/source/packages/db/package.json") \"\${current_release}/packages/db/package.json\"; then
+    db_runtime_seed=\$(readlink -f \"\${current_release}/packages/db\")
+  fi
+fi
 rm -rf \"\${staging}\"
 rm -rf \"\${db_runtime}\"
 install -d \"\${staging}/.next\" \"\${staging}/packages\"
 cp -a .next/standalone/. \"\${staging}/\"
 cp -a .next/static \"\${staging}/.next/static\"
 cp -a drizzle \"\${staging}/drizzle\"
-pnpm --filter @ink-memory/db deploy --prod \"\${db_runtime}\"
+cp pnpm-lock.yaml \"\${staging}/pnpm-lock.yaml\"
+if [ -n \"\${db_runtime_seed}\" ]; then
+  cp -al \"\${db_runtime_seed}\" \"\${db_runtime}\"
+  rm -rf \"\${db_runtime}/dist\"
+  cp -a packages/db/dist \"\${db_runtime}/dist\"
+else
+  NODE_OPTIONS=--max-old-space-size=${AUTODL_PACKAGE_MAX_OLD_SPACE_MB} pnpm --filter @ink-memory/db deploy --prod \"\${db_runtime}\"
+fi
 rm -rf \"\${staging}/packages/db\"
 mv \"\${db_runtime}\" \"\${staging}/packages/db\"
 cp deploy/autodl-ssh/runtime/start-admin.sh \"\${staging}/start-admin.sh\"
