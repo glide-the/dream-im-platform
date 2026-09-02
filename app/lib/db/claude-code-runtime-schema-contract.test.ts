@@ -1,6 +1,7 @@
 // [Input] Admin Drizzle ai_models declaration, 0041 migration, snapshot, journal, and Runtime capability config.
 // [Output] Prove additive nullable positive storage and exact capability publication for Dream.
 // [Pos] Provider-free schema contract for dream.claude-code-runtime-config.v1.
+// [Sync] 2026-09-02: locate 0041 by immutable tag so later forward migrations remain valid.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -60,7 +61,11 @@ describe("Claude Code Runtime schema capability", () => {
     expect(migration).not.toMatch(/\b(DROP|TRUNCATE|ALTER\s+COLUMN|CREATE\s+TRIGGER)\b/i);
     expect(migration.lastIndexOf("dream.claude-code-runtime-config.v1"))
       .toBeGreaterThan(migration.lastIndexOf("ADD CONSTRAINT"));
-    expect(journal.entries.at(-1)).toMatchObject({
+    expect(
+      journal.entries.find(
+        (entry: { tag?: string }) => entry.tag === "0041_claude_code_runtime_config",
+      ),
+    ).toMatchObject({
       idx: 41,
       tag: "0041_claude_code_runtime_config",
       version: "7",

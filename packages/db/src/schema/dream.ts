@@ -8,6 +8,7 @@
 // [Sync] 2026-08-21: move the shared Dream catalog into the database workspace package.
 // [Sync] 2026-08-25: add Admin-owned Dream MCP servers, encrypted credentials,
 // discovery snapshots, durable import receipts, and their exact capability contract.
+// [Sync] 2026-09-02: add the exact Chat history keyset ordering index consumed by Dream.
 // [Sync] 2026-08-27: add the PostgreSQL-only Claude Agent latest-instance
 // resource snapshot consumed by the Admin observer console.
 import { pgTable, uniqueIndex, index, check, bigint, text, timestamp, foreignKey, jsonb, unique, integer, boolean, primaryKey } from "drizzle-orm/pg-core"
@@ -579,6 +580,7 @@ export const chat_message = pgTable("chat_message", {
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
 	index("idx_chat_message_thread").using("btree", table.thread_id.asc().nullsLast().op("text_ops"), table.created_at.asc().nullsLast().op("text_ops")),
+	index("idx_chat_message_thread_created_id_desc").using("btree", table.thread_id.asc().nullsLast().op("text_ops"), table.created_at.desc().nullsLast().op("timestamptz_ops"), table.id.desc().nullsLast().op("text_ops")),
 	foreignKey({
 			columns: [table.thread_id],
 			foreignColumns: [chat_thread.id],
