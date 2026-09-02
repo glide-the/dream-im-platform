@@ -42,6 +42,8 @@
     "db:data:subscriptions": "node drizzle/data/default-dream-plans.mjs",
     "gateway-limits:check": "node drizzle/data/gateway-default-token-limits.mjs",
     "gateway-limits:apply": "node drizzle/data/gateway-default-token-limits.mjs --apply",
+    "chat-history-projection:check": "node drizzle/data/chat-history-final-projection.mjs",
+    "chat-history-projection:apply": "node drizzle/data/chat-history-final-projection.mjs --apply",
     "db:push": "node scripts/db-push.mjs",
     "story:import": "node scripts/import-ink-dream-story-source.mjs",
     "docker:build": "cd docker && docker compose build",

@@ -1,4 +1,7 @@
-// Append-only registry helpers for explicit, redacted PostgreSQL data migrations.
+// [Input] Redacted receipts from explicit PostgreSQL data migration runners.
+// [Output] Append-only drizzle.data_migration_runs/table_results records with capability and fingerprint checks.
+// [Pos] Shared audit registry boundary for Admin-owned data migrations.
+// [Sync] 2026-09-02: register the Chat assistant final-projection backfill without persisting message identities or content.
 import { createHash, randomUUID } from "node:crypto";
 import pg from "pg";
 
@@ -9,6 +12,9 @@ export const LEGACY_MIGRATION_KEY = "dream-legacy-43-plus-5-v2-drizzle";
 export const LEGACY_SCHEMA_CAPABILITY = "dream.schema.unified.v1";
 export const PLAN_SEED_KEY = "default-dream-plans-v1";
 export const GATEWAY_DEFAULT_LIMITS_KEY = gatewayDefaultLimitsPolicy.revision;
+export const CHAT_HISTORY_FINAL_PROJECTION_KEY = "chat-history-final-projection-v1";
+export const CHAT_HISTORY_FINAL_PROJECTION_CAPABILITY =
+  "dream.chat-history-final-projection.v1";
 
 const SUCCESS_STATUSES = new Set([
   "committed",
@@ -346,5 +352,45 @@ export async function recordGatewayDefaultLimitsReceipt(databaseUrl, receipt) {
       effect: "429-only",
       redacted: true,
     },
+  });
+}
+
+export async function recordChatHistoryFinalProjectionReceipt(databaseUrl, receipt) {
+  if (receipt?.contract !== "ink-admin-chat-history-final-projection-v1"
+    || receipt?.mode !== "applied"
+    || !/^[0-9a-f]{64}$/.test(String(receipt?.sourceFingerprintSha256 ?? ""))
+    || !Number.isSafeInteger(receipt?.totalAssistantRows)
+    || receipt.totalAssistantRows < 0
+    || !Number.isSafeInteger(receipt?.changedRows)
+    || receipt.changedRows < 0
+    || !Number.isSafeInteger(receipt?.projectedRows)
+    || receipt.projectedRows < 0
+    || !Number.isSafeInteger(receipt?.fallbackRows)
+    || receipt.fallbackRows < 0
+    || receipt?.remainingProjectableRows !== 0
+    || receipt?.projectionVersion !== 1
+    || receipt?.redacted !== true) {
+    throw new Error("Unexpected Chat history final-projection migration receipt");
+  }
+  return record({
+    databaseUrl,
+    migrationKey: CHAT_HISTORY_FINAL_PROJECTION_KEY,
+    runnerContract: receipt.contract,
+    runId: randomUUID(),
+    status: "committed",
+    runnerMode: "apply",
+    sourceFingerprint: receipt.sourceFingerprintSha256,
+    sourceTableCount: 1,
+    sourceRowCount: receipt.totalAssistantRows,
+    exactMatchedRowCount: receipt.projectedRows,
+    postCutoverChangedRowCount: receipt.changedRows,
+    summary: {
+      projectionVersion: receipt.projectionVersion,
+      projectedRows: receipt.projectedRows,
+      fallbackRows: receipt.fallbackRows,
+      remainingProjectableRows: receipt.remainingProjectableRows,
+      redacted: true,
+    },
+    requiredCapability: CHAT_HISTORY_FINAL_PROJECTION_CAPABILITY,
   });
 }

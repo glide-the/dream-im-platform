@@ -38,6 +38,15 @@
         "Admin Drizzle 0035_brief_wolverine",
         "gateway-default-token-limits-v1 policy config"
       ]
+    },
+    {
+      "idx": 4,
+      "migrationKey": "chat-history-final-projection-v1",
+      "runner": "chat-history-final-projection.mjs",
+      "dependsOn": [
+        "Admin Drizzle 0043_chat_history_final_projection",
+        "dream.chat-history-final-projection.v1"
+      ]
     }
   ]
 }
