@@ -1,20 +1,23 @@
-// [Input] Admin session/RBAC, Admin-owned PostgreSQL catalog tables, bounded HTTPS Git sources, and Claude marketplace manifests.
-// [Output] Global Remote Marketplace CRUD, immutable sync revisions, entry policy commands, and thin Route Handler responses.
+// [Input] Admin session/RBAC, Admin-owned PostgreSQL catalog tables, bounded HTTPS remotes, and Claude marketplace manifests.
+// [Output] Global Remote Marketplace CRUD, commit-pinned GitHub raw/Git synchronization, immutable revisions, entry policy commands, and thin Route Handler responses.
 // [Pos] ClaudePlugin Marketplace control-plane service; Dream consumes only approved entries through the published capability.
 // [Sync] 2026-08-19: implement remote Git synchronization without a Marketplace object-storage bucket or user-scoped catalog.
+// [Sync] 2026-09-02: sparsely materialize commit-pinned GitHub files when smart-Git/archive transport is unavailable and preserve actionable failures.
 
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
   lstat,
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
   realpath,
   rm,
+  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import type { PoolClient } from "pg";
 import { z } from "zod";
@@ -36,6 +39,10 @@ export const REMOTE_MARKETPLACE_CAPABILITY =
   "dream.claude-plugin.remote-marketplace.v1";
 const REMOTE_MARKETPLACE_CONTRACT_SHA256 =
   "d215cb2764f656ab32e364a4900b3aac73fca60c77ef4c9f3a914fd192a8c314";
+const GITHUB_HOST = "github.com";
+const GITHUB_API_HOST = "api.github.com";
+const GITHUB_RAW_HOST = "raw.githubusercontent.com";
+const MARKETPLACE_MANIFEST_PATH = ".claude-plugin/marketplace.json";
 
 const identifierSchema = z
   .string()
@@ -141,7 +148,28 @@ type MarketplaceRow = {
   default_ref: string | null;
   marketplace_name: string | null;
   status: "pending" | "active" | "disabled" | "error";
+  last_sync_error_code: string | null;
+  last_sync_error_summary: string | null;
 };
+
+type GitHubRepository = {
+  owner: string;
+  repository: string;
+};
+
+const githubCommitSchema = z.object({
+  sha: z.string().regex(/^[0-9a-f]{40}$/),
+});
+
+const githubTreeSchema = z.object({
+  truncated: z.boolean().optional().default(false),
+  tree: z.array(z.object({
+    path: z.string().min(1).max(4096),
+    mode: z.string().regex(/^[0-9]{6}$/),
+    type: z.enum(["blob", "tree", "commit"]),
+    size: z.number().int().nonnegative().optional(),
+  })),
+});
 
 export type InspectedMarketplaceEntry = {
   id?: string;
@@ -227,6 +255,28 @@ export function normalizeMarketplaceRemoteUrl(rawUrl: string) {
   return parsed.toString();
 }
 
+export function parseGitHubMarketplaceRemote(
+  remoteUrl: string,
+): GitHubRepository | null {
+  const parsed = new URL(remoteUrl);
+  if (parsed.hostname !== GITHUB_HOST) return null;
+  let segments: string[];
+  try {
+    segments = parsed.pathname
+      .split("/")
+      .filter(Boolean)
+      .map((segment) => decodeURIComponent(segment));
+  } catch {
+    return null;
+  }
+  if (segments.length !== 2) return null;
+  const owner = segments[0];
+  const repository = segments[1].replace(/\.git$/, "");
+  const githubName = /^[A-Za-z0-9_.-]+$/;
+  if (!githubName.test(owner) || !githubName.test(repository)) return null;
+  return { owner, repository };
+}
+
 async function assertMarketplaceCapability(client: PoolClient) {
   const { rows } = await client.query<{ ready: boolean }>(
     `SELECT EXISTS (
@@ -247,7 +297,8 @@ async function assertMarketplaceCapability(client: PoolClient) {
 
 async function loadMarketplace(client: PoolClient, marketplaceId: string, lock = false) {
   const { rows } = await client.query<MarketplaceRow>(
-    `SELECT id, slug, display_name, remote_url, default_ref, marketplace_name, status
+    `SELECT id, slug, display_name, remote_url, default_ref, marketplace_name,
+            status, last_sync_error_code, last_sync_error_summary
      FROM claude_plugin_marketplaces
      WHERE id = $1${lock ? " FOR UPDATE" : ""}`,
     [marketplaceId],
@@ -609,16 +660,334 @@ async function runGit(args: string[], cwd?: string) {
       },
     });
     return result.stdout.trim();
-  } catch {
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      (("killed" in error && error.killed === true) ||
+        ("signal" in error && error.signal === "SIGTERM"))
+    ) {
+      throw new AdminError(
+        "CLAUDE_PLUGIN_MARKETPLACE_REMOTE_TIMEOUT",
+        "远程 Marketplace 在同步时限内未响应",
+        504,
+      );
+    }
     throw new AdminError(
       "CLAUDE_PLUGIN_MARKETPLACE_GIT_FAILED",
-      "远程 Marketplace Git 同步失败",
+      "远程 Marketplace Git 读取失败",
       502,
     );
   }
 }
 
-async function checkoutRemote(remoteUrl: string, requestedRef?: string | null) {
+function remoteTimeoutError() {
+  return new AdminError(
+    "CLAUDE_PLUGIN_MARKETPLACE_REMOTE_TIMEOUT",
+    "远程 Marketplace 在同步时限内未响应",
+    504,
+  );
+}
+
+function remoteFetchError() {
+  return new AdminError(
+    "CLAUDE_PLUGIN_MARKETPLACE_REMOTE_FETCH_FAILED",
+    "无法读取远程 Marketplace，请检查仓库可访问性后重试",
+    502,
+  );
+}
+
+async function fetchGitHubJson<T>(
+  url: URL,
+  schema: z.ZodType<T>,
+  signal: AbortSignal,
+  maxBytes = claudePluginMarketplacePolicy.maxMarketplaceManifestBytes,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        accept: "application/vnd.github+json",
+        "user-agent": "ink-memory-admin-marketplace-sync",
+        "x-github-api-version": "2022-11-28",
+      },
+      redirect: "error",
+      signal,
+    });
+  } catch (error) {
+    if (signal.aborted) throw remoteTimeoutError();
+    throw remoteFetchError();
+  }
+  if (response.status === 404) {
+    throw new AdminError(
+      "CLAUDE_PLUGIN_MARKETPLACE_REF_NOT_FOUND",
+      "远程 Marketplace 仓库或 ref 不存在",
+      422,
+    );
+  }
+  if (response.status === 403 || response.status === 429) {
+    throw new AdminError(
+      "CLAUDE_PLUGIN_MARKETPLACE_REMOTE_RATE_LIMITED",
+      "远程 Marketplace 服务暂时限制访问，请稍后重试",
+      503,
+    );
+  }
+  if (!response.ok) throw remoteFetchError();
+  const bytes = await readBoundedResponse(response, maxBytes, signal);
+  let payload: unknown;
+  try {
+    payload = JSON.parse(bytes.toString("utf8")) as unknown;
+  } catch {
+    throw remoteFetchError();
+  }
+  const parsed = schema.safeParse(payload);
+  if (!parsed.success) throw remoteFetchError();
+  return parsed.data;
+}
+
+async function readBoundedResponse(
+  response: Response,
+  maxBytes: number,
+  signal: AbortSignal,
+) {
+  if (!response.body) throw remoteFetchError();
+  const contentLength = response.headers.get("content-length");
+  const declaredBytes = contentLength === null ? null : Number(contentLength);
+  if (
+    declaredBytes !== null &&
+    Number.isFinite(declaredBytes) &&
+    declaredBytes > maxBytes
+  ) {
+    await response.body.cancel().catch(() => undefined);
+    throw new AdminError(
+      "CLAUDE_PLUGIN_MARKETPLACE_REMOTE_CONTENT_TOO_LARGE",
+      "远程 Marketplace 内容超出同步策略大小限制",
+      422,
+    );
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let receivedBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      receivedBytes += value.byteLength;
+      if (receivedBytes > maxBytes) {
+        throw new AdminError(
+          "CLAUDE_PLUGIN_MARKETPLACE_REMOTE_CONTENT_TOO_LARGE",
+          "远程 Marketplace 内容超出同步策略大小限制",
+          422,
+        );
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (signal.aborted) throw remoteTimeoutError();
+    if (error instanceof AdminError) throw error;
+    throw remoteFetchError();
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return Buffer.concat(chunks, receivedBytes);
+}
+
+async function fetchGitHubFile(
+  repository: GitHubRepository,
+  commitSha: string,
+  repositoryPath: string,
+  maxBytes: number,
+  signal: AbortSignal,
+) {
+  const url = new URL(
+    `/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repository)}/${commitSha}/${repositoryPath.split("/").map(encodeURIComponent).join("/")}`,
+    `https://${GITHUB_RAW_HOST}`,
+  );
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { "user-agent": "ink-memory-admin-marketplace-sync" },
+      redirect: "error",
+      signal,
+    });
+  } catch {
+    if (signal.aborted) throw remoteTimeoutError();
+    throw remoteFetchError();
+  }
+  if (response.status === 404 && repositoryPath === MARKETPLACE_MANIFEST_PATH) {
+    throw new AdminError(
+      "CLAUDE_PLUGIN_MARKETPLACE_MANIFEST_INVALID",
+      "远程仓库没有 Claude Marketplace manifest",
+      422,
+    );
+  }
+  if (!response.ok) throw remoteFetchError();
+  return await readBoundedResponse(response, maxBytes, signal);
+}
+
+function declaredPluginSourceRoots(manifestBytes: Buffer) {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(manifestBytes.toString("utf8")) as unknown;
+  } catch {
+    return [];
+  }
+  const manifest = marketplaceManifestSchema.safeParse(payload);
+  if (!manifest.success) return [];
+  return [...new Set(manifest.data.plugins.flatMap((value) => {
+    const entry = marketplacePluginSchema.safeParse(value);
+    if (!entry.success || !entry.data.source.startsWith("./")) return [];
+    const source = entry.data.source.slice(2).replace(/\/+$/, "");
+    const segments = source ? source.split("/") : [];
+    if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+      return [];
+    }
+    return [segments.join("/")];
+  }))];
+}
+
+function pathWithinSource(repositoryPath: string, sourceRoot: string) {
+  return sourceRoot === "" ||
+    repositoryPath === sourceRoot ||
+    repositoryPath.startsWith(`${sourceRoot}/`);
+}
+
+function isSafeRepositoryPath(repositoryPath: string) {
+  if (repositoryPath.startsWith("/") || repositoryPath.includes("\0")) return false;
+  const segments = repositoryPath.split("/");
+  return segments.every((segment) => segment && segment !== "." && segment !== "..");
+}
+
+async function materializeGitHubMarketplace(
+  repository: GitHubRepository,
+  commitSha: string,
+  checkoutRoot: string,
+  signal: AbortSignal,
+) {
+  const manifestBytes = await fetchGitHubFile(
+    repository,
+    commitSha,
+    MARKETPLACE_MANIFEST_PATH,
+    claudePluginMarketplacePolicy.maxMarketplaceManifestBytes,
+    signal,
+  );
+  const manifestPath = join(checkoutRoot, MARKETPLACE_MANIFEST_PATH);
+  await mkdir(dirname(manifestPath), { recursive: true, mode: 0o700 });
+  await writeFile(manifestPath, manifestBytes, { flag: "wx", mode: 0o600 });
+
+  const sourceRoots = declaredPluginSourceRoots(manifestBytes);
+  if (sourceRoots.length === 0) return;
+  const treeUrl = new URL(
+    `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repository)}/git/trees/${commitSha}`,
+    `https://${GITHUB_API_HOST}`,
+  );
+  treeUrl.searchParams.set("recursive", "1");
+  const tree = await fetchGitHubJson(
+    treeUrl,
+    githubTreeSchema,
+    signal,
+    claudePluginMarketplacePolicy.maxRepositoryBytes,
+  );
+  if (tree.truncated) {
+    throw new AdminError(
+      "CLAUDE_PLUGIN_MARKETPLACE_REMOTE_INDEX_INVALID",
+      "远程 Marketplace 文件索引不完整",
+      422,
+    );
+  }
+  const relevant = tree.tree.filter((entry) =>
+    sourceRoots.some((sourceRoot) => pathWithinSource(entry.path, sourceRoot)),
+  );
+  if (relevant.some((entry) =>
+    !isSafeRepositoryPath(entry.path) ||
+    entry.mode === "120000" ||
+    entry.type === "commit"
+  )) {
+    throw new AdminError(
+      "CLAUDE_PLUGIN_MARKETPLACE_SOURCE_INVALID",
+      "远程 Marketplace 插件目录包含不安全的链接或子模块",
+      422,
+    );
+  }
+  const files = relevant.filter((entry) =>
+    entry.type === "blob" && entry.path !== MARKETPLACE_MANIFEST_PATH,
+  );
+  if (files.length > claudePluginMarketplacePolicy.maxInventoryFiles) {
+    throw new AdminError(
+      "CLAUDE_PLUGIN_MARKETPLACE_FILE_LIMIT",
+      "插件文件数量超出同步策略限制",
+      422,
+    );
+  }
+  const declaredBytes = files.reduce((total, entry) => total + (entry.size ?? 0), 0);
+  if (declaredBytes > claudePluginMarketplacePolicy.maxRepositoryBytes) {
+    throw new AdminError(
+      "CLAUDE_PLUGIN_MARKETPLACE_REMOTE_CONTENT_TOO_LARGE",
+      "远程 Marketplace 内容超出同步策略大小限制",
+      422,
+    );
+  }
+  let receivedBytes = 0;
+  for (const entry of files) {
+    const remainingBytes = claudePluginMarketplacePolicy.maxRepositoryBytes - receivedBytes;
+    const bytes = await fetchGitHubFile(
+      repository,
+      commitSha,
+      entry.path,
+      remainingBytes,
+      signal,
+    );
+    receivedBytes += bytes.byteLength;
+    const outputPath = join(checkoutRoot, entry.path);
+    await mkdir(dirname(outputPath), { recursive: true, mode: 0o700 });
+    await writeFile(outputPath, bytes, { flag: "wx", mode: 0o600 });
+  }
+}
+
+async function checkoutGitHubArchive(
+  repository: GitHubRepository,
+  requestedRef?: string | null,
+) {
+  const tempRoot = await mkdtemp(join(tmpdir(), "ink-claude-marketplace-"));
+  const checkoutRoot = join(tempRoot, "checkout");
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    claudePluginMarketplacePolicy.syncTimeoutMs,
+  );
+  try {
+    // GitHub resolves HEAD to the repository's default branch, so both the
+    // implicit default and an explicit ref need only one rate-limited API call.
+    const ref = requestedRef ?? "HEAD";
+    const commitUrl = new URL(
+      `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repository)}/commits/${encodeURIComponent(ref)}`,
+      `https://${GITHUB_API_HOST}`,
+    );
+    const commit = await fetchGitHubJson(
+      commitUrl,
+      githubCommitSchema,
+      controller.signal,
+    );
+    await mkdir(checkoutRoot, { mode: 0o700 });
+    await materializeGitHubMarketplace(
+      repository,
+      commit.sha,
+      checkoutRoot,
+      controller.signal,
+    );
+    return {
+      tempRoot,
+      revision: await inspectMarketplaceCheckout(checkoutRoot, commit.sha),
+    };
+  } catch (error) {
+    await rm(tempRoot, { recursive: true, force: true });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function checkoutGitRemote(remoteUrl: string, requestedRef?: string | null) {
   const tempRoot = await mkdtemp(join(tmpdir(), "ink-claude-marketplace-"));
   const checkoutRoot = join(tempRoot, "checkout");
   try {
@@ -661,6 +1030,18 @@ async function checkoutRemote(remoteUrl: string, requestedRef?: string | null) {
     await rm(tempRoot, { recursive: true, force: true });
     throw error;
   }
+}
+
+export async function checkoutRemoteMarketplace(
+  remoteUrl: string,
+  requestedRef?: string | null,
+) {
+  const normalizedRemoteUrl = normalizeMarketplaceRemoteUrl(remoteUrl);
+  const githubRepository = parseGitHubMarketplaceRemote(normalizedRemoteUrl);
+  if (githubRepository) {
+    return await checkoutGitHubArchive(githubRepository, requestedRef);
+  }
+  return await checkoutGitRemote(normalizedRemoteUrl, requestedRef);
 }
 
 async function cleanupCheckout(tempRoot: string) {
@@ -980,7 +1361,7 @@ export async function handleClaudePluginMarketplaceSync(
     });
     runId = prepared.runId;
 
-    const checkout = await checkoutRemote(
+    const checkout = await checkoutRemoteMarketplace(
       normalizeMarketplaceRemoteUrl(prepared.marketplace.remote_url),
       prepared.requestedRef,
     );

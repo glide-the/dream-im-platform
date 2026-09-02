@@ -1,7 +1,8 @@
 // [Input] Admin Remote Marketplace APIs, Refine permission projection, and React Query cache invalidation.
-// [Output] Operator UI for source registration, bounded sync, immutable revision review, and entry approval/blocking.
+// [Output] Operator UI for source registration, visible persisted sync progress/errors, immutable revision review, and entry approval/blocking.
 // [Pos] Admin resource manager for the one platform-global ClaudePlugin Marketplace catalog.
 // [Sync] 2026-08-19: implement the no-bucket Remote Marketplace operations workbench.
+// [Sync] 2026-09-02: surface synchronization progress, durable failure context, and explicit retry feedback.
 
 "use client";
 
@@ -75,7 +76,40 @@ type MarketplaceRevision = {
   entries: MarketplaceEntry[];
 };
 
-type ApiEnvelope<T> = { data: T; error?: { message?: string } };
+type MarketplaceSyncRun = {
+  id: string;
+  status: "running" | "succeeded" | "failed";
+  requested_ref: string | null;
+  resolved_commit_sha: string | null;
+  error_code: string | null;
+  error_summary: string | null;
+  created_at: string;
+  started_at: string;
+  finished_at: string | null;
+};
+
+type Feedback = {
+  tone: "success" | "error";
+  title: string;
+  message: string;
+};
+
+type ApiEnvelope<T> = {
+  data: T;
+  error?: { code?: string; message?: string };
+};
+
+class MarketplaceApiError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string | null,
+  ) {
+    super(message);
+    this.name = "MarketplaceApiError";
+  }
+}
+
+const SYNC_RUN_POLL_INTERVAL_MS = 1_500;
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -87,7 +121,12 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
     },
   });
   const body = await response.json().catch(() => ({})) as ApiEnvelope<T>;
-  if (!response.ok) throw new Error(body.error?.message ?? "Marketplace 操作失败");
+  if (!response.ok) {
+    throw new MarketplaceApiError(
+      body.error?.message ?? "Marketplace 操作失败",
+      body.error?.code ?? null,
+    );
+  }
   return body.data;
 }
 
@@ -113,13 +152,32 @@ function StatusPill({ status }: { status: MarketplaceSummary["status"] }) {
   return <span className={`inline-flex border px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] ${tone}`}>{statusLabel(status)}</span>;
 }
 
+function syncErrorGuidance(code?: string | null) {
+  switch (code) {
+    case "CLAUDE_PLUGIN_MARKETPLACE_REMOTE_TIMEOUT":
+      return "服务器在同步时限内没有收到远程响应。请检查远程网络后重试；已批准版本不会被覆盖。";
+    case "CLAUDE_PLUGIN_MARKETPLACE_GIT_FAILED":
+    case "CLAUDE_PLUGIN_MARKETPLACE_REMOTE_FETCH_FAILED":
+      return "服务器无法读取远程仓库。请确认仓库可公开访问，并在网络恢复后重试。";
+    case "CLAUDE_PLUGIN_MARKETPLACE_REF_NOT_FOUND":
+      return "仓库或固定 ref 不存在。请核对登记的仓库地址与 branch/tag。";
+    case "CLAUDE_PLUGIN_MARKETPLACE_REMOTE_RATE_LIMITED":
+      return "远程服务暂时限制访问。稍后重试即可，现有已批准版本不受影响。";
+    case "CLAUDE_PLUGIN_MARKETPLACE_MANIFEST_INVALID":
+    case "CLAUDE_PLUGIN_MARKETPLACE_REVISION_INVALID":
+      return "远程内容已读取，但 Marketplace 清单或插件内容未通过校验。请修正上游内容后重试。";
+    default:
+      return "同步没有完成。核对错误代码与仓库状态后重试；现有已批准版本不会被覆盖。";
+  }
+}
+
 export default function ClaudePluginMarketplaceManager() {
   const queryClient = useQueryClient();
   const access = useCan({ resource: "claude-plugin-marketplaces", action: "create" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [revisionId, setRevisionId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [message, setMessage] = useState("");
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   const listQuery = useQuery<MarketplaceSummary[]>({
     queryKey: ["admin-claude-plugin-marketplaces"],
@@ -154,10 +212,25 @@ export default function ClaudePluginMarketplaceManager() {
     ),
   });
 
+  const runsQuery = useQuery<MarketplaceSyncRun[]>({
+    queryKey: ["admin-claude-plugin-marketplace-runs", selectedId],
+    enabled: Boolean(selectedId),
+    queryFn: () => api(
+      `/api/admin/claude-plugin-marketplaces/${encodeURIComponent(selectedId!)}/runs`,
+    ),
+    refetchInterval: (query) => {
+      const runs = query.state.data as MarketplaceSyncRun[] | undefined;
+      return pendingAction === "sync" || runs?.some((run) => run.status === "running")
+        ? SYNC_RUN_POLL_INTERVAL_MS
+        : false;
+    },
+  });
+
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: ["admin-claude-plugin-marketplaces"] });
     await queryClient.invalidateQueries({ queryKey: ["admin-claude-plugin-marketplace"] });
     await queryClient.invalidateQueries({ queryKey: ["admin-claude-plugin-marketplace-revision"] });
+    await queryClient.invalidateQueries({ queryKey: ["admin-claude-plugin-marketplace-runs"] });
   }
 
   async function createMarketplace(event: FormEvent<HTMLFormElement>) {
@@ -165,7 +238,7 @@ export default function ClaudePluginMarketplaceManager() {
     const form = event.currentTarget;
     const data = new FormData(form);
     setPendingAction("create");
-    setMessage("");
+    setFeedback(null);
     try {
       const created = await api<MarketplaceSummary>("/api/admin/claude-plugin-marketplaces", {
         method: "POST",
@@ -180,10 +253,18 @@ export default function ClaudePluginMarketplaceManager() {
       });
       form.reset();
       setSelectedId(created.id);
-      setMessage("远程来源已登记。同步成功并显式批准条目后，Dream 用户才会看到插件。");
+      setFeedback({
+        tone: "success",
+        title: "远程来源已登记",
+        message: "同步成功并显式批准条目后，Dream 用户才会看到插件。",
+      });
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "来源登记失败");
+      setFeedback({
+        tone: "error",
+        title: "来源登记失败",
+        message: error instanceof Error ? error.message : "请检查输入后重试。",
+      });
     } finally {
       setPendingAction(null);
     }
@@ -192,17 +273,26 @@ export default function ClaudePluginMarketplaceManager() {
   async function syncMarketplace() {
     if (!selectedId) return;
     setPendingAction("sync");
-    setMessage("");
+    setFeedback(null);
     try {
       const result = await api<{ entryCount: number; validationStatus: string }>(
         `/api/admin/claude-plugin-marketplaces/${encodeURIComponent(selectedId)}/sync`,
         { method: "POST", body: "{}" },
       );
-      setMessage(`同步完成：${result.entryCount} 个条目已形成不可变 revision，等待逐项批准。`);
+      setFeedback({
+        tone: "success",
+        title: "同步完成",
+        message: `${result.entryCount} 个条目已形成不可变 revision，等待逐项批准。`,
+      });
       setRevisionId(null);
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "同步失败");
+      const code = error instanceof MarketplaceApiError ? error.code : null;
+      setFeedback({
+        tone: "error",
+        title: "同步失败",
+        message: `${error instanceof Error ? error.message : "同步没有完成"} ${syncErrorGuidance(code)}`,
+      });
       await refresh();
     } finally {
       setPendingAction(null);
@@ -212,16 +302,26 @@ export default function ClaudePluginMarketplaceManager() {
   async function setMarketplaceStatus(status: "active" | "disabled") {
     if (!selectedId) return;
     setPendingAction("status");
-    setMessage("");
+    setFeedback(null);
     try {
       await api(`/api/admin/claude-plugin-marketplaces/${encodeURIComponent(selectedId)}`, {
         method: "PATCH",
         body: JSON.stringify({ status }),
       });
-      setMessage(status === "disabled" ? "来源已停用，Dream 目录立即隐藏其条目。" : "来源已启用；只有已批准的有效条目会进入 Dream 目录。");
+      setFeedback({
+        tone: "success",
+        title: status === "disabled" ? "来源已停用" : "来源已启用",
+        message: status === "disabled"
+          ? "Dream 目录会立即隐藏该来源的条目。"
+          : "只有已批准的有效条目会进入 Dream 目录。",
+      });
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "状态更新失败");
+      setFeedback({
+        tone: "error",
+        title: "状态更新失败",
+        message: error instanceof Error ? error.message : "请稍后重试。",
+      });
     } finally {
       setPendingAction(null);
     }
@@ -230,7 +330,7 @@ export default function ClaudePluginMarketplaceManager() {
   async function updatePolicy(entry: MarketplaceEntry, decision: "approved" | "blocked") {
     if (!selectedId) return;
     setPendingAction(`policy:${entry.id}`);
-    setMessage("");
+    setFeedback(null);
     try {
       await api(
         `/api/admin/claude-plugin-marketplaces/${encodeURIComponent(selectedId)}/entries/${encodeURIComponent(entry.package_name)}/policy`,
@@ -242,12 +342,20 @@ export default function ClaudePluginMarketplaceManager() {
           }),
         },
       );
-      setMessage(decision === "approved"
-        ? `${entry.package_spec} 已批准为全局目录版本。`
-        : `${entry.package_spec} 已从全局目录阻断。`);
+      setFeedback({
+        tone: "success",
+        title: decision === "approved" ? "全局版本已批准" : "条目已阻断",
+        message: decision === "approved"
+          ? `${entry.package_spec} 已批准为全局目录版本。`
+          : `${entry.package_spec} 已从全局目录阻断。`,
+      });
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "策略更新失败");
+      setFeedback({
+        tone: "error",
+        title: "策略更新失败",
+        message: error instanceof Error ? error.message : "请稍后重试。",
+      });
     } finally {
       setPendingAction(null);
     }
@@ -255,6 +363,9 @@ export default function ClaudePluginMarketplaceManager() {
 
   const selected = detailQuery.data;
   const entries = revisionQuery.data?.entries ?? [];
+  const latestRun = runsQuery.data?.[0] ?? null;
+  const runningRun = runsQuery.data?.find((run) => run.status === "running") ?? null;
+  const isSyncing = pendingAction === "sync" || Boolean(runningRun);
 
   return <div className="space-y-6">
     <section className="admin-panel grid gap-6 p-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)] lg:p-7">
@@ -279,7 +390,14 @@ export default function ClaudePluginMarketplaceManager() {
       </form> : <p className="border border-border bg-bg-secondary p-4 text-sm text-text-secondary">当前角色没有 Marketplace 管理权限。</p>}
     </section>
 
-    {message ? <p className="border border-border bg-bg-secondary/55 p-4 text-sm text-text-secondary" role="status" aria-live="polite">{message}</p> : null}
+    {feedback ? <section
+      className={`border p-4 ${feedback.tone === "error" ? "border-danger/35 bg-danger-light text-danger" : "border-success/35 bg-success-light text-success"}`}
+      role={feedback.tone === "error" ? "alert" : "status"}
+      aria-live={feedback.tone === "error" ? "assertive" : "polite"}
+    >
+      <p className="text-sm font-semibold">{feedback.title}</p>
+      <p className="mt-1 text-xs leading-5">{feedback.message}</p>
+    </section> : null}
 
     <section className="grid min-h-[560px] gap-0 overflow-hidden border border-border bg-bg-surface lg:grid-cols-[320px_minmax(0,1fr)]">
       <div className="border-b border-border bg-bg-secondary/30 lg:border-b-0 lg:border-r">
@@ -317,11 +435,55 @@ export default function ClaudePluginMarketplaceManager() {
                 <p className="mt-3 text-sm text-text-secondary">全局目录名：<strong>{selected.marketplace_name ?? "尚未同步"}</strong> · ref：{selected.default_ref ?? "远程默认分支"}</p>
               </div>
               <div className="flex shrink-0 flex-wrap gap-2">
-                <button type="button" disabled={Boolean(pendingAction)} onClick={syncMarketplace} className="min-h-10 bg-text-primary px-4 text-xs font-semibold text-bg-surface disabled:opacity-40">{pendingAction === "sync" ? "同步中…" : "同步远程"}</button>
+                <button type="button" disabled={Boolean(pendingAction) || isSyncing} onClick={syncMarketplace} aria-describedby={isSyncing ? "marketplace-sync-progress" : undefined} className="min-h-10 bg-text-primary px-4 text-xs font-semibold text-bg-surface disabled:opacity-40">{isSyncing ? "同步中…" : "同步远程"}</button>
                 <button type="button" disabled={Boolean(pendingAction)} onClick={() => setMarketplaceStatus(selected.status === "disabled" ? "active" : "disabled")} className="min-h-10 border border-border px-4 text-xs font-semibold disabled:opacity-40">{selected.status === "disabled" ? "重新启用" : "停用来源"}</button>
               </div>
             </div>
           </header>
+
+          {isSyncing ? <section
+            id="marketplace-sync-progress"
+            className="border-b border-border bg-bg-secondary/35 px-5 py-5 sm:px-7"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-text-tertiary border-t-text-primary motion-reduce:animate-pulse" aria-hidden="true" />
+              <div>
+                <p className="text-sm font-semibold">正在读取并校验远程 Marketplace</p>
+                <p className="mt-1 text-xs leading-5 text-text-secondary">
+                  正在解析固定 revision、下载远程内容并检查插件清单。完成前不会改动已批准版本。
+                </p>
+                {runningRun ? <p className="mt-2 font-mono text-[10px] text-text-tertiary">
+                  开始于 {new Date(runningRun.started_at).toLocaleString("zh-CN")} · ref {runningRun.requested_ref ?? "远程默认分支"}
+                </p> : null}
+              </div>
+            </div>
+            <div className="mt-4 h-1 overflow-hidden bg-border" aria-hidden="true">
+              <span className="block h-full w-2/3 animate-pulse bg-text-primary motion-reduce:animate-none" />
+            </div>
+          </section> : null}
+
+          {!isSyncing && selected.last_sync_error_code ? <section className="border-b border-danger/35 bg-danger-light px-5 py-5 text-danger sm:px-7" role="alert">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+              <div>
+                <p className="text-sm font-semibold">最近一次同步失败</p>
+                <p className="mt-1 text-xs leading-5">{selected.last_sync_error_summary ?? "同步没有完成。"}</p>
+                <p className="mt-2 text-xs leading-5">{syncErrorGuidance(selected.last_sync_error_code)}</p>
+                <p className="mt-2 font-mono text-[10px]">{selected.last_sync_error_code}</p>
+              </div>
+              <button type="button" disabled={Boolean(pendingAction)} onClick={syncMarketplace} className="min-h-10 shrink-0 border border-danger/35 px-4 text-xs font-semibold disabled:opacity-40">重新同步</button>
+            </div>
+          </section> : null}
+
+          {runsQuery.error ? <section className="border-b border-danger/35 bg-danger-light px-5 py-4 text-sm text-danger sm:px-7" role="alert">
+            无法读取同步进度。<button type="button" onClick={() => runsQuery.refetch()} className="ml-2 min-h-10 text-xs font-semibold underline">重新加载</button>
+          </section> : null}
+
+          {!isSyncing && !selected.last_sync_error_code && latestRun?.status === "succeeded" ? <p className="border-b border-border bg-bg-secondary/20 px-5 py-3 text-xs text-text-tertiary sm:px-7" role="status">
+            最近同步完成于 {new Date(latestRun.finished_at ?? latestRun.created_at).toLocaleString("zh-CN")} · commit {shortHash(latestRun.resolved_commit_sha)}
+          </p> : null}
 
           <div className="border-b border-border px-5 py-5 sm:px-7">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">

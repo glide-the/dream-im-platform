@@ -1,7 +1,8 @@
 // [Input] Temporary remote-checkout fixtures and the Admin Marketplace validation service.
-// [Output] Unit evidence for accepted Comfy-shaped catalogs, canonical content digests, and fail-closed remote/source errors.
+// [Output] Unit evidence for accepted catalogs, canonical content digests, GitHub remote parsing, and fail-closed source errors.
 // [Pos] Focused contract tests for the Remote Marketplace control plane.
 // [Sync] 2026-08-19: cover valid global catalog extraction and invalid source rejection.
+// [Sync] 2026-09-02: cover normalized GitHub archive routing without weakening the HTTPS host policy.
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,6 +14,7 @@ import { AdminError } from "./errors";
 import {
   inspectMarketplaceCheckout,
   normalizeMarketplaceRemoteUrl,
+  parseGitHubMarketplaceRemote,
 } from "./claude-plugin-marketplaces";
 
 const temporaryRoots: string[] = [];
@@ -113,5 +115,22 @@ describe("ClaudePlugin remote Marketplace inspection", () => {
     expect(() =>
       normalizeMarketplaceRemoteUrl("https://example.invalid/marketplace"),
     ).toThrowError(/allowlist/);
+  });
+
+  it("routes only canonical GitHub repository URLs through immutable archives", () => {
+    expect(
+      parseGitHubMarketplaceRemote(
+        normalizeMarketplaceRemoteUrl(
+          "https://github.com/modelcontextprotocol/ext-apps.git",
+        ),
+      ),
+    ).toEqual({ owner: "modelcontextprotocol", repository: "ext-apps" });
+    expect(
+      parseGitHubMarketplaceRemote(
+        normalizeMarketplaceRemoteUrl(
+          "https://github.com/modelcontextprotocol/ext-apps/tree/main",
+        ),
+      ),
+    ).toBeNull();
   });
 });
