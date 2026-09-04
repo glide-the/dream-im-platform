@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // [Input] Existing ignored Admin env files and secure random material.
-// [Output] Mode-0600 local/Compose config for embedded PostgreSQL and disabled storage.
+// [Output] Mode-0600 local/Compose config preserving optional managed Provider product overrides.
 // [Pos] Base configuration generator for the Admin workspace.
-// [Sync] 2026-08-21: stop generating MinIO/S3 defaults and forbid startup migrations.
+// [Sync] 2026-09-04: leave product overrides empty so built-in cc-switch-compatible defaults remain active.
 
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -11,6 +11,26 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultProjectRoot = resolve(scriptDirectory, "..");
+
+const MANAGED_PROVIDER_KEYS = [
+  "INK_PROVIDER_CODEX_CLIENT_ID",
+  "INK_PROVIDER_CODEX_SCOPES",
+  "INK_PROVIDER_CODEX_USER_AGENT",
+  "INK_PROVIDER_CODEX_INTEGRATION_ID",
+  "INK_PROVIDER_CODEX_INTEGRATION_VERSION",
+  "INK_PROVIDER_XAI_CLIENT_ID",
+  "INK_PROVIDER_XAI_SCOPES",
+  "INK_PROVIDER_XAI_USER_AGENT",
+  "INK_PROVIDER_XAI_ISSUER",
+  "INK_PROVIDER_GITHUB_COPILOT_CLIENT_ID",
+  "INK_PROVIDER_GITHUB_COPILOT_CLIENT_SECRET",
+  "INK_PROVIDER_GITHUB_COPILOT_SCOPES",
+  "INK_PROVIDER_GITHUB_COPILOT_USER_AGENT",
+  "INK_PROVIDER_GITHUB_COPILOT_INTEGRATION_ID",
+  "INK_PROVIDER_GITHUB_COPILOT_EDITOR_VERSION",
+  "INK_PROVIDER_GITHUB_COPILOT_EDITOR_PLUGIN_VERSION",
+  "INK_PROVIDER_GITHUB_COPILOT_API_VERSION",
+];
 
 const ROOT_KEYS = new Set([
   "DATABASE_URL",
@@ -38,6 +58,9 @@ const ROOT_KEYS = new Set([
   "PRODUCT_API_JWT_AUDIENCE",
   "PRODUCT_API_ORIGIN_ALLOWLIST",
   "AI_CREDENTIAL_ENCRYPTION_KEY",
+  "AI_CREDENTIAL_ENCRYPTION_KEY_ID",
+  "AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER",
+  ...MANAGED_PROVIDER_KEYS,
   "AI_PROVIDER_HOST_ALLOWLIST",
   "AI_PROVIDER_ALLOW_INSECURE_LOCALHOST",
   "GATEWAY_MIN_RESERVE_MICROUSD",
@@ -68,6 +91,9 @@ const DOCKER_KEYS = new Set([
   "PRODUCT_API_JWT_AUDIENCE",
   "PRODUCT_API_ORIGIN_ALLOWLIST",
   "AI_CREDENTIAL_ENCRYPTION_KEY",
+  "AI_CREDENTIAL_ENCRYPTION_KEY_ID",
+  "AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER",
+  ...MANAGED_PROVIDER_KEYS,
   "AI_PROVIDER_HOST_ALLOWLIST",
   "AI_PROVIDER_ALLOW_INSECURE_LOCALHOST",
   "GATEWAY_MIN_RESERVE_MICROUSD",
@@ -224,6 +250,13 @@ function storageConfiguration(existing) {
   ];
 }
 
+function optionalConfiguration(existing, keys) {
+  return keys.map((key) => [
+    key,
+    configuredValue(existing, key, (value) => !/[\r\n]/.test(value), ""),
+  ]);
+}
+
 function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
   const adminSessionSecret = pairedSecret(
     rootExisting,
@@ -259,6 +292,13 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
     "AI_CREDENTIAL_ENCRYPTION_KEY",
     isEncryptionKey,
     () => randomBytes(32).toString("base64"),
+  );
+  const accountIdentityPepper = pairedSecret(
+    rootExisting,
+    dockerExisting,
+    "AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER",
+    hasMinimumBytes,
+    () => randomSecret("provider_identity_"),
   );
   const postgresPassword = firstValid(
     [rootExisting, dockerExisting],
@@ -386,6 +426,11 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
     ],
     ["PRODUCT_API_ORIGIN_ALLOWLIST", rootProductOriginAllowlist],
     ["AI_CREDENTIAL_ENCRYPTION_KEY", encryptionKey.root],
+    ["AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER", accountIdentityPepper.root],
+    ...optionalConfiguration(rootExisting, [
+      "AI_CREDENTIAL_ENCRYPTION_KEY_ID",
+      ...MANAGED_PROVIDER_KEYS,
+    ]),
     ["AI_PROVIDER_HOST_ALLOWLIST", rootProviderAllowlist],
     [
       "AI_PROVIDER_ALLOW_INSECURE_LOCALHOST",
@@ -511,6 +556,11 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
     ],
     ["PRODUCT_API_ORIGIN_ALLOWLIST", dockerProductOriginAllowlist],
     ["AI_CREDENTIAL_ENCRYPTION_KEY", encryptionKey.docker],
+    ["AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER", accountIdentityPepper.docker],
+    ...optionalConfiguration(dockerExisting, [
+      "AI_CREDENTIAL_ENCRYPTION_KEY_ID",
+      ...MANAGED_PROVIDER_KEYS,
+    ]),
     ["AI_PROVIDER_HOST_ALLOWLIST", dockerProviderAllowlist],
     [
       "AI_PROVIDER_ALLOW_INSECURE_LOCALHOST",
@@ -602,10 +652,15 @@ GATEWAY_API_KEY_PEPPER=${encodeValue(values.get("GATEWAY_API_KEY_PEPPER"))}
 GATEWAY_SUBJECT_JWT_ISSUER=${encodeValue(values.get("GATEWAY_SUBJECT_JWT_ISSUER"))}
 GATEWAY_SUBJECT_JWT_AUDIENCE=${encodeValue(values.get("GATEWAY_SUBJECT_JWT_AUDIENCE"))}
 AI_CREDENTIAL_ENCRYPTION_KEY=${encodeValue(values.get("AI_CREDENTIAL_ENCRYPTION_KEY"))}
+AI_CREDENTIAL_ENCRYPTION_KEY_ID=${encodeValue(values.get("AI_CREDENTIAL_ENCRYPTION_KEY_ID"))}
+AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER=${encodeValue(values.get("AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER"))}
 AI_PROVIDER_HOST_ALLOWLIST=${encodeValue(values.get("AI_PROVIDER_HOST_ALLOWLIST"))}
 AI_PROVIDER_ALLOW_INSECURE_LOCALHOST=${values.get("AI_PROVIDER_ALLOW_INSECURE_LOCALHOST")}
 GATEWAY_MIN_RESERVE_MICROUSD=${values.get("GATEWAY_MIN_RESERVE_MICROUSD")}
 GATEWAY_MAX_BODY_BYTES=${values.get("GATEWAY_MAX_BODY_BYTES")}
+
+# Optional managed-product overrides. Empty values use pinned built-in defaults.
+${MANAGED_PROVIDER_KEYS.map((key) => `${key}=${encodeValue(values.get(key))}`).join("\n")}
 
 # Shared Dream Artifact workspace. Admin must receive this mount read-only.
 ARTIFACT_WORKSPACE_ROOT=${encodeValue(values.get("ARTIFACT_WORKSPACE_ROOT"))}
@@ -642,10 +697,13 @@ GATEWAY_API_KEY_PEPPER=${encodeValue(values.get("GATEWAY_API_KEY_PEPPER"))}
 GATEWAY_SUBJECT_JWT_ISSUER=${encodeValue(values.get("GATEWAY_SUBJECT_JWT_ISSUER"))}
 GATEWAY_SUBJECT_JWT_AUDIENCE=${encodeValue(values.get("GATEWAY_SUBJECT_JWT_AUDIENCE"))}
 AI_CREDENTIAL_ENCRYPTION_KEY=${encodeValue(values.get("AI_CREDENTIAL_ENCRYPTION_KEY"))}
+AI_CREDENTIAL_ENCRYPTION_KEY_ID=${encodeValue(values.get("AI_CREDENTIAL_ENCRYPTION_KEY_ID"))}
+AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER=${encodeValue(values.get("AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER"))}
 AI_PROVIDER_HOST_ALLOWLIST=${encodeValue(values.get("AI_PROVIDER_HOST_ALLOWLIST"))}
 AI_PROVIDER_ALLOW_INSECURE_LOCALHOST=${values.get("AI_PROVIDER_ALLOW_INSECURE_LOCALHOST")}
 GATEWAY_MIN_RESERVE_MICROUSD=${values.get("GATEWAY_MIN_RESERVE_MICROUSD")}
 GATEWAY_MAX_BODY_BYTES=${values.get("GATEWAY_MAX_BODY_BYTES")}
+${MANAGED_PROVIDER_KEYS.map((key) => `${key}=${encodeValue(values.get(key))}`).join("\n")}
 RUN_DB_MIGRATIONS=${values.get("RUN_DB_MIGRATIONS")}
 ARTIFACT_WORKSPACE_ROOT=${encodeValue(values.get("ARTIFACT_WORKSPACE_ROOT"))}
 ARTIFACT_PREVIEW_MAX_FILE_BYTES=${values.get("ARTIFACT_PREVIEW_MAX_FILE_BYTES")}
@@ -750,6 +808,11 @@ function validateConfiguration(root, docker, rootParsed, dockerParsed) {
     if (!isEncryptionKey(values.get("AI_CREDENTIAL_ENCRYPTION_KEY") ?? "")) {
       errors.push(
         `${file}: AI_CREDENTIAL_ENCRYPTION_KEY must encode exactly 32 bytes`,
+      );
+    }
+    if (!hasMinimumBytes(values.get("AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER") ?? "")) {
+      errors.push(
+        `${file}: AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER must contain at least 32 bytes`,
       );
     }
   }

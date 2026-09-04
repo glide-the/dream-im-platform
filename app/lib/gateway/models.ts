@@ -1,7 +1,7 @@
-// [Input] Authenticated Gateway subject plus Admin-owned model/billing PostgreSQL state.
-// [Output] Strict callable model catalog with server-only nullable Claude Code Runtime settings.
-// [Pos] Public Gateway catalog consumed by Dream; secrets and upstream identity remain excluded.
-// [Sync] 2026-08-28: project exact compact/context fields after validating the Admin 0041 capability.
+// [Input] Authenticated Gateway subject plus Admin-owned model, Provider auth, and billing PostgreSQL state.
+// [Output] Strict callable model catalog with product adapter/auth readiness and server-only runtime settings.
+// [Pos] Public Gateway catalog consumed by Dream; credentials and upstream account identity remain excluded.
+// [Sync] 2026-09-04: managed readiness follows the Provider's directly owned credential pointer.
 
 import { withPlatformClient } from "../platform-db";
 import { claudeCodeRuntimeCapabilityAvailable } from "../db/claude-code-runtime-capability";
@@ -102,9 +102,27 @@ export async function listAvailableGatewayModels(input: {
               model.capabilities,
               (
                 provider.status = 'active'
-                AND provider.api_key_ciphertext IS NOT NULL
-                AND provider.api_key_iv IS NOT NULL
-                AND provider.api_key_tag IS NOT NULL
+                AND (
+                  (
+                    provider.adapter_kind = 'generic'
+                    AND provider.active_credential_kind = 'static_api_key'
+                    AND provider.api_key_ciphertext IS NOT NULL
+                    AND provider.api_key_iv IS NOT NULL
+                    AND provider.api_key_tag IS NOT NULL
+                  )
+                  OR (
+                    provider.adapter_kind IN ('codex', 'xai', 'github_copilot')
+                    AND provider.active_credential_kind = 'managed_oauth'
+                    AND EXISTS (
+                      SELECT 1
+                      FROM ai_provider_managed_credentials AS managed
+                      WHERE managed.provider_id = provider.id
+                        AND managed.adapter_kind = provider.adapter_kind
+                        AND managed.id = provider.managed_credential_id
+                        AND managed.status = 'connected'
+                    )
+                  )
+                )
               ) AS provider_ready,
               EXISTS (
                 SELECT 1 FROM ai_pricing_rules AS pricing

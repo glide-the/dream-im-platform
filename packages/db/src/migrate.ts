@@ -1,7 +1,7 @@
 // [Input] Immutable Drizzle history plus an explicit or embedded migration target.
-// [Output] Atomic migration application or machine-readable status/check receipt.
+// [Output] Atomic migration application, truthful post-commit logs, or machine-readable status/check receipt.
 // [Pos] Sole generated-schema migration entry for @ink-memory/db releases.
-// [Sync] 2026-08-21: replace the app-local runner with a Paperclip-style package migration command.
+// [Sync] 2026-09-04: report all Provider credential data-contract gates without a raw stack.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -33,6 +33,18 @@ const connection = await resolveMigrationConnection();
 const pool = new pg.Pool({ connectionString: connection.connectionString, max: 1 });
 const client = await pool.connect();
 
+function isProviderCredentialContractGate(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String(error.code) : "";
+  const message = error instanceof Error ? error.message : "";
+  return code === "55000"
+    && (
+      message.startsWith("PROVIDER_MANAGED_ACCOUNTS_CONTRACT_BLOCKED:")
+      || message.startsWith("PROVIDER_OWNED_CREDENTIALS_CONTRACT_BLOCKED:")
+      || message.startsWith("PROVIDER_DELETED_CREDENTIAL_ORPHANS_CONTRACT_BLOCKED:")
+    );
+}
+
 async function migrationLedgerState(create: boolean, lock = false) {
   const objects = await client.query(`SELECT to_regnamespace('drizzle') IS NOT NULL AS schema_exists, to_regclass('drizzle.__drizzle_migrations')::text AS ledger_relation`);
   const schemaExists = Boolean(objects.rows[0]?.schema_exists);
@@ -54,12 +66,14 @@ try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["ink-admin-memory:drizzle-migrations"]);
     const status = migrationStatus(plan, await migrationLedgerState(true, true));
+    const appliedTags: string[] = [];
     for (const migration of status.pending) {
       for (const statement of migration.statements) await client.query(statement);
       await client.query(`INSERT INTO "drizzle"."__drizzle_migrations" (hash, created_at) VALUES ($1, $2)`, [migration.hash, migration.createdAt]);
-      console.log(`Applied migration ${migration.tag}`);
+      appliedTags.push(migration.tag);
     }
     await client.query("COMMIT");
+    for (const tag of appliedTags) console.log(`Applied migration ${tag}`);
     console.log(`Generated database migrations applied successfully (${connection.source})`);
   } else {
     await client.query("BEGIN READ ONLY");
@@ -81,7 +95,14 @@ try {
   }
 } catch (error) {
   await client.query("ROLLBACK").catch(() => undefined);
-  throw error;
+  if (isProviderCredentialContractGate(error)) {
+    console.error(error instanceof Error ? error.message : "PROVIDER_MANAGED_ACCOUNTS_CONTRACT_BLOCKED");
+    console.error("No migration from this invocation was committed. The database remains on its previous migration prefix.");
+    console.error("Run the Provider migration orchestrator to execute each expand, audited dry-run/apply, contract, and final check against one migration target.");
+    process.exitCode = 1;
+  } else {
+    throw error;
+  }
 } finally {
   client.release();
   await pool.end();

@@ -9,6 +9,8 @@
 // [Sync] 2026-08-25: add Admin-owned Dream MCP servers, encrypted credentials,
 // discovery snapshots, durable import receipts, and their exact capability contract.
 // [Sync] 2026-09-02: add the exact Chat history keyset ordering index consumed by Dream.
+// [Sync] 2026-09-02: add the row-level final-text projection consumed by
+// paged Chat history while canonical assistant parts remain unchanged.
 // [Sync] 2026-08-27: add the PostgreSQL-only Claude Agent latest-instance
 // resource snapshot consumed by the Admin observer console.
 import { pgTable, uniqueIndex, index, check, bigint, text, timestamp, foreignKey, jsonb, unique, integer, boolean, primaryKey } from "drizzle-orm/pg-core"
@@ -577,6 +579,9 @@ export const chat_message = pgTable("chat_message", {
 	role: text().notNull(),
 	parts: text().default('[]').notNull(),
 	metadata: text(),
+	history_final_text: text(),
+	history_process_available: boolean().default(false).notNull(),
+	history_projection_version: integer(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
 	index("idx_chat_message_thread").using("btree", table.thread_id.asc().nullsLast().op("text_ops"), table.created_at.asc().nullsLast().op("text_ops")),
@@ -587,6 +592,16 @@ export const chat_message = pgTable("chat_message", {
 			name: "fk_chat_message_thread_id_chat_thread"
 		}).onDelete("cascade"),
 	check("ck_chat_message_1", sql`role = ANY (ARRAY['user'::text, 'assistant'::text])`),
+	check("ck_chat_message_history_projection_v1", sql`(
+		(history_projection_version IS NULL
+			AND history_final_text IS NULL
+			AND history_process_available = false)
+		OR
+		(history_projection_version = 1
+			AND role = 'assistant'
+			AND history_final_text IS NOT NULL
+			AND btrim(history_final_text) <> '')
+	)`),
 ]);
 
 export const deck_plugin_releases = pgTable("deck_plugin_releases", {

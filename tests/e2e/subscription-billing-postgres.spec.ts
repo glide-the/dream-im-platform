@@ -1,4 +1,7 @@
-// Isolated PostgreSQL E2E for subscription lifecycle, Token settlement, and responsive Admin UI.
+// [Input] Owned isolated PostgreSQL, local Provider HTTP server, and authenticated Admin/Gateway APIs.
+// [Output] Subscription lifecycle, Token settlement, responsive UI, and validated Provider activation evidence.
+// [Pos] Subscription E2E; Provider setup follows the public disabled→model→validated-active contract.
+// [Sync] 2026-09-04: stop creating active Providers before a validation model exists.
 import { expect, test, type Page } from "@playwright/test";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -99,10 +102,17 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     expect(cashBackedBillingUserId).not.toBe("undefined");
     const provider = await api.post(`${baseURL}/api/admin/providers`, {
       headers,
-      data: { code: "subscription-provider", name: "Subscription Provider", protocol: "anthropic", baseUrl: upstreamUrl, apiKey: "subscription-provider-test-secret", status: "active", timeoutMs: 5000, maxRetries: 0, config: { authMode: "x-api-key" } },
+      data: { code: "subscription-provider", name: "Subscription Provider", protocol: "anthropic", baseUrl: upstreamUrl, apiKey: "subscription-provider-test-secret", status: "disabled", timeoutMs: 5000, maxRetries: 0, config: { authMode: "x-api-key" } },
     });
     expect(provider.status()).toBe(201);
-    const providerId = (await provider.json()).data.id;
+    const providerBody = await provider.json();
+    expect(providerBody.data).toMatchObject({
+      status: "disabled",
+      auth_revision: 1,
+      credential_validation_status: "unverified",
+    });
+    expect(JSON.stringify(providerBody)).not.toContain("subscription-provider-test-secret");
+    const providerId = providerBody.data.id;
     const model = await api.post(`${baseURL}/api/admin/models`, {
       headers,
       data: { providerId, code: "subscription-model", upstreamModel: "subscription-upstream", displayName: "Subscription Model", contextWindow: 100000, maxOutputTokens: 1024, capabilities: { chat: true, streaming: true }, enabled: true },
@@ -115,6 +125,18 @@ test.describe("subscription billing on owned PostgreSQL", () => {
     });
     expect(immutableEntitlementModel.status()).toBe(201);
     const immutableEntitlementModelId = (await immutableEntitlementModel.json()).data.id as string;
+    const providerActivation = await api.patch(`${baseURL}/api/admin/providers/${providerId}`, {
+      headers,
+      data: { status: "active", expectedAuthRevision: 1 },
+    });
+    expect(providerActivation.status()).toBe(200);
+    const providerActivationBody = await providerActivation.json();
+    expect(providerActivationBody.data).toMatchObject({
+      status: "active",
+      auth_revision: 2,
+      credential_validation_status: "valid",
+    });
+    expect(JSON.stringify(providerActivationBody)).not.toContain("subscription-provider-test-secret");
     expect((await api.post(`${baseURL}/api/admin/pricing-rules`, {
       headers,
       data: { modelId, userTier: "free", inputPriceMicrousdPerMillion: 1000000, outputPriceMicrousdPerMillion: 2000000, cacheReadPriceMicrousdPerMillion: 0, cacheWritePriceMicrousdPerMillion: 0, markupBps: 0, discountBps: 0, status: "active", effectiveFrom: new Date(Date.now() - 60_000).toISOString(), effectiveTo: null },

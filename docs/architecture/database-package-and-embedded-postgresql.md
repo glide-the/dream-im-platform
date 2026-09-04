@@ -1,5 +1,7 @@
 # 数据库 Package 与内嵌 PostgreSQL 设计
 
+> 更新：2026-09-04
+
 ## 决策
 
 Admin 采用与 Paperclip `packages/db` 相同的 workspace 边界：`@ink-memory/db`
@@ -46,8 +48,13 @@ schema-generation config、目标解析与发布执行权均在 `@ink-memory/db`
 4. 命令退出时干净关闭 PostgreSQL。
 
 它不创建业务 schema，也不运行 migration。`RUN_DB_MIGRATIONS=true` 会 fail closed。
-发布脚本在应用启动前单独运行 `packages/db/dist/migrate.js`；runner 继续验证 journal
+发布脚本在应用启动前单独运行根迁移编排；package schema runner 继续验证 journal
 连续性、已应用 hash、ledger shape 和 advisory lock，并在一个事务内前向执行。
+0047/0048 之间需要账号数据 cutover 时，根命令调用编译后的
+`packages/db/dist/provider-managed-accounts-data.js`：只认同一个 migration target，先
+dry-run 后显式 apply，再执行 0048 和 check；生产制品不依赖 `tsx` 或未复制的 App 源码。
+编排器只启动/解析一次显式或 embedded PostgreSQL，并把精确 DSN 传给每个子进程，防止
+多个阶段竞争停止同一内嵌数据库。
 
 本机 `pnpm db:migrate` 没有 `MIGRATION_DATABASE_URL` 时，只能在
 `INK_DATABASE_MODE=embedded-postgres` 已明确配置后启动相同数据目录。运维人员仍可通过

@@ -1,3 +1,8 @@
+// [Input] Owned isolated PostgreSQL, real Admin session/RBAC, and local mock Provider endpoints.
+// [Output] End-to-end control-plane, Provider lifecycle, billing, and responsive Admin evidence.
+// [Pos] Broad Admin PostgreSQL E2E; focused credential rotation lives in provider-credential-lifecycle.spec.ts.
+// [Sync] 2026-09-04: create Providers disabled, register a model, then activate through revisioned validation.
+
 import { expect, test, type Page } from "@playwright/test";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -193,22 +198,46 @@ test.describe("Refine Admin with owned isolated PostgreSQL", () => {
 
     const validationProvider = await api.post(`${baseURL}/api/admin/providers`, {
       headers,
-      data: { code: "mock-validation-e2e", name: "Mock Validation", protocol: "anthropic", baseUrl: mockUpstreamUrl, apiKey: "fixture-model-validation-secret", status: "active", timeoutMs: 5000, maxRetries: 0, config: { authMode: "bearer" } },
+      data: { code: "mock-validation-e2e", name: "Mock Validation", protocol: "anthropic", baseUrl: mockUpstreamUrl, apiKey: "fixture-model-validation-secret", status: "disabled", timeoutMs: 5000, maxRetries: 0, config: { authMode: "bearer" } },
     });
     expect(validationProvider.status()).toBe(201);
     const validationProviderBody = await validationProvider.json();
+    expect(validationProviderBody.data).toMatchObject({
+      status: "disabled",
+      auth_revision: 1,
+      credential_validation_status: "unverified",
+      credential_validated_at: null,
+    });
     const validationModel = await api.post(`${baseURL}/api/admin/models`, {
       headers,
       data: { providerId: validationProviderBody.data.id, code: "mock-validation-model", upstreamModel: "deepseek-v4-pro", displayName: "Mock Validation Model", contextWindow: 128000, maxOutputTokens: 8192, capabilities: { chat: true }, enabled: true },
     });
     expect(validationModel.status()).toBe(201);
     const validationModelBody = await validationModel.json();
+    const validationActivation = await api.patch(
+      `${baseURL}/api/admin/providers/${validationProviderBody.data.id}`,
+      {
+        headers,
+        data: { status: "active", expectedAuthRevision: 1 },
+      },
+    );
+    expect(validationActivation.status()).toBe(200);
+    const validationActivationBody = await validationActivation.json();
+    expect(validationActivationBody.data).toMatchObject({
+      status: "active",
+      auth_revision: 2,
+      credential_validation_status: "valid",
+    });
+    expect(validationActivationBody.data.credential_validated_at).toEqual(expect.any(String));
+    expect(JSON.stringify(validationActivationBody)).not.toContain("fixture-model-validation-secret");
     const validation = await api.post(`${baseURL}/api/admin/models/${validationModelBody.data.id}/validate`, { headers });
     expect(validation.status()).toBe(200);
     await expect(validation.json()).resolves.toMatchObject({ data: { status: "operational", usable: true, httpStatus: 200 } });
-    expect(mockValidationRequests).toHaveLength(1);
-    expect(mockValidationRequests[0].authorization).toBe("Bearer fixture-model-validation-secret");
-    expect(JSON.parse(mockValidationRequests[0].body)).toMatchObject({ model: "deepseek-v4-pro", max_tokens: 1, stream: false });
+    expect(mockValidationRequests).toHaveLength(2);
+    for (const request of mockValidationRequests) {
+      expect(request.authorization).toBe("Bearer fixture-model-validation-secret");
+      expect(JSON.parse(request.body)).toMatchObject({ model: "deepseek-v4-pro", max_tokens: 1, stream: false });
+    }
 
     const discovery = await api.post(
       `${baseURL}/api/admin/providers/${validationProviderBody.data.id}/discover`,

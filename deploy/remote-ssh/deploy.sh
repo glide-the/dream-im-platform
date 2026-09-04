@@ -2,7 +2,7 @@
 # [Input] REMOTE_* SSH settings, mode-0600 target env, and a local embedded PostgreSQL env/data directory.
 # [Output] Admin/Gateway plus embedded PostgreSQL release workflow for Alibaba Cloud ECS.
 # [Pos] Primary Admin-owned Remote SSH release; MinIO and standalone PostgreSQL are absent.
-# [Sync] 2026-08-21: portable non-interactive dump/import, package migration, and embedded PG verification.
+# [Sync] 2026-09-04: release through the resumable Provider 0047/data/0048 migration workflow.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -229,9 +229,8 @@ initialize_database() {
 }
 
 run_migration() {
-  log "Running the single Admin-owned @ink-memory/db migration step."
-  remote_compose run --rm --no-deps ink-memory-admin node /app/packages/db/dist/migrate.js
-  remote_compose run --rm --no-deps ink-memory-admin node /app/packages/db/dist/migrate.js --check
+  log "Running the Admin-owned schema/data/schema migration workflow."
+  remote_compose run --rm --no-deps ink-memory-admin node /app/scripts/migrate-provider-managed-accounts.mjs
 }
 
 start_admin() { remote_compose up -d --no-deps --force-recreate ink-memory-admin; }

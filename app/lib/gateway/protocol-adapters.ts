@@ -1,4 +1,13 @@
+// [Input] Validated public Anthropic/OpenAI requests plus target protocol, product adapter, and model policy.
+// [Output] Upstream request bodies and JSON responses translated across Messages, Chat, and Responses dialects.
+// [Pos] Pure Gateway protocol boundary; transport, authentication, streaming, and persistence stay outside.
+// [Sync] 2026-09-04: route Codex/xAI through Responses while retaining generic and Copilot Chat behavior.
+
 import { anthropicMessageSchema, openAIChatCompletionSchema } from "./protocols";
+import {
+  openAIChatRequestToResponses,
+  responsesResponseToOpenAIChat,
+} from "./responses-adapter";
 
 type JsonRecord = Record<string, unknown>;
 export type GatewayProtocol = "anthropic" | "openai";
@@ -249,11 +258,32 @@ export function anthropicResponseToOpenAI(body: JsonRecord, requestedModel: stri
 export function adaptProviderRequest(input: {
   externalProtocol: GatewayProtocol;
   providerProtocol: GatewayProtocol;
+  providerAdapterKind?: string;
   body: JsonRecord;
   model: string;
   maxOutputTokens: number;
 }) {
   const matrix: ProtocolMatrix = `${input.externalProtocol}:${input.providerProtocol}`;
+  if (input.providerAdapterKind === "codex" || input.providerAdapterKind === "xai") {
+    const openAIChatBody = input.externalProtocol === "anthropic"
+      ? anthropicRequestToOpenAI(
+          { ...input.body, max_tokens: input.maxOutputTokens },
+          input.model,
+        )
+      : {
+          ...input.body,
+          model: input.model,
+          max_completion_tokens: input.maxOutputTokens,
+          stream: Boolean(input.body.stream),
+        };
+    return openAIChatRequestToResponses({
+      body: openAIChatBody,
+      model: input.model,
+      adapterKind: input.providerAdapterKind,
+      stream: Boolean(input.body.stream),
+      maxOutputTokens: input.maxOutputTokens,
+    });
+  }
   if (matrix === "anthropic:openai") {
     return anthropicRequestToOpenAI({ ...input.body, max_tokens: input.maxOutputTokens }, input.model);
   }
@@ -266,10 +296,17 @@ export function adaptProviderRequest(input: {
 export function adaptProviderResponse(input: {
   externalProtocol: GatewayProtocol;
   providerProtocol: GatewayProtocol;
+  providerAdapterKind?: string;
   body: JsonRecord;
   requestedModel: string;
 }) {
   const matrix: ProtocolMatrix = `${input.externalProtocol}:${input.providerProtocol}`;
+  if (input.providerAdapterKind === "codex" || input.providerAdapterKind === "xai") {
+    const chat = responsesResponseToOpenAIChat(input.body, input.requestedModel);
+    return input.externalProtocol === "anthropic"
+      ? openAIResponseToAnthropic(chat, input.requestedModel)
+      : chat;
+  }
   if (matrix === "anthropic:openai") return openAIResponseToAnthropic(input.body, input.requestedModel);
   if (matrix === "openai:anthropic") return anthropicResponseToOpenAI(input.body, input.requestedModel);
   return input.body;

@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 
+// [Input] Disposable PostgreSQL/Dream test roots and checked-in migration/data runner contracts.
+// [Output] Isolated full-data-migration E2E with synthetic control-plane dependencies and cleanup.
+// [Pos] Test harness only; synthetic legacy Provider rows intentionally exercise forward-migration compatibility.
+// [Sync] 2026-09-04: document active/unverified Provider compatibility after migration 0044.
+
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
@@ -44,6 +49,8 @@ async function provisionSyntheticModel(databaseUrl) {
   await client.connect();
   try {
     await client.query("BEGIN");
+    // Intentionally models a migration-compatible legacy effective Provider:
+    // 0044 defaults it to auth_revision=1/unverified without disabling it.
     await client.query(
       `INSERT INTO ai_providers (
          id, code, name, protocol, base_url,

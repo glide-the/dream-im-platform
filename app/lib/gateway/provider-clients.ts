@@ -1,7 +1,7 @@
 // [Input] Resolved provider records, encrypted credentials, and raw provider/transport failures.
 // [Output] Protocol SDK clients and stable public Gateway error classifications without credential leakage.
 // [Pos] Provider client factory and error-normalization boundary for the Gateway domain.
-// [Sync] 2026-08-27: classify connection and stream-idle deadlines as UPSTREAM_TIMEOUT instead of connection failure.
+// [Sync] 2026-09-04: validate all SDK client authentication through the shared protocol auth-mode resolver.
 
 import Anthropic, { APIError as AnthropicAPIError } from "@anthropic-ai/sdk";
 import OpenAI, { APIError as OpenAIAPIError } from "openai";
@@ -9,7 +9,7 @@ import type { ResolvedBillableModel } from "../models/resolver";
 import { decryptCredential } from "../security/credential-encryption";
 import { GatewayError } from "./errors";
 import { resolveProviderBaseUrl } from "./provider-endpoint";
-import { resolveAnthropicAuthMode } from "./provider-auth";
+import { resolveProviderAuthMode } from "./provider-auth";
 import { isProviderTimeoutError, ProviderHttpError } from "./provider-transport";
 
 function credential(resolved: ResolvedBillableModel) {
@@ -37,7 +37,10 @@ export function createAnthropicProviderClient(
     );
   }
   const secret = credential(resolved);
-  const authMode = resolveAnthropicAuthMode(resolved.provider.config);
+  const authMode = resolveProviderAuthMode({
+    protocol: "anthropic",
+    config: resolved.provider.config,
+  });
   return new Anthropic({
     apiKey: authMode === "x-api-key" ? secret : null,
     authToken: authMode === "bearer" ? secret : null,
@@ -59,6 +62,10 @@ export function createOpenAIProviderClient(resolved: ResolvedBillableModel) {
       "configuration_error",
     );
   }
+  resolveProviderAuthMode({
+    protocol: "openai",
+    config: resolved.provider.config,
+  });
   return new OpenAI({
     apiKey: credential(resolved),
     baseURL: resolveProviderBaseUrl({

@@ -11,6 +11,21 @@ lane that proves the change and retain diagnostics before screenshots.
 
 Read [references/project-workflow.md](references/project-workflow.md) before any browser run.
 
+## Test execution agent
+
+Delegate bounded provider-free, isolated PostgreSQL, mocked Gateway/browser,
+source/unit, and visual-regression execution to the `luna_test_runner` custom
+agent. It is configured for `gpt-5.6-luna`, high reasoning, and Fast mode. Give
+it the exact spec/command, worktree, expected evidence, owned ports/database,
+and cleanup scope; wait for its command receipts before accepting results.
+
+Keep real-user, real-data, or real-provider business acceptance, production
+mutation, migration/destructive work, approvals, diagnosis, and implementation
+in the primary agent. If the runner cannot access the required browser,
+PostgreSQL, or runtime, report a harness blocker; do not silently replace the
+requested lane. Apply the full routing contract from `$luna-test-stage` when
+available.
+
 ## Guardrails
 
 - Run from repository root with `pnpm exec playwright`; never use a global CLI.

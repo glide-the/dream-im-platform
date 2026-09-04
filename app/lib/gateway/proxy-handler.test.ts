@@ -39,12 +39,15 @@ function sse(parts: string[]) {
   return new ReadableStream<Uint8Array>({ start(controller) { for (const part of parts) controller.enqueue(encoder.encode(part)); controller.close(); } });
 }
 
-function prepared(providerProtocol: "anthropic" | "openai") {
+function prepared(
+  providerProtocol: "anthropic" | "openai",
+  adapterKind?: "codex" | "xai" | "github_copilot",
+) {
   return {
     requestId: `req_${providerProtocol}`,
     effectiveMaxOutputTokens: 128,
     resolved: {
-      provider: { protocol: providerProtocol, id: "p", code: "p", baseUrl: "https://example.com", encryptedCredential: { ciphertext: "x", iv: "y", tag: "z" }, timeoutMs: 1000, maxRetries: 0, config: {} },
+      provider: { protocol: providerProtocol, id: "p", code: "p", baseUrl: adapterKind ? null : "https://example.com", adapterKind, encryptedCredential: { ciphertext: "x", iv: "y", tag: "z" }, timeoutMs: 1000, maxRetries: 0, config: {} },
       model: { id: "m", code: "m", upstreamModel: "upstream", displayName: "M", capabilities: {}, requestHeaders: {} },
       pricingRuleId: "price",
       pricing: { inputPriceMicrousdPerMillion: 1, outputPriceMicrousdPerMillion: 1, cacheReadPriceMicrousdPerMillion: 1, cacheWritePriceMicrousdPerMillion: 1, markupBps: 0, discountBps: 0 },
@@ -80,6 +83,29 @@ beforeEach(() => {
 });
 
 describe("true gateway streaming proxy", () => {
+  it("converts xAI Responses SSE to the public Anthropic stream", async () => {
+    mocks.send.mockImplementation(async ({ body }: { body: Record<string, unknown> }) => {
+      expect(body).toMatchObject({ model: "upstream", stream: true, max_output_tokens: 128 });
+      return transport(new Response(sse([
+        'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_xai","model":"grok"}}\n\n',
+        'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"hello"}\n\n',
+        'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_xai","model":"grok","status":"completed","usage":{"input_tokens":6,"output_tokens":2}}}\n\n',
+      ]), { headers: { "content-type": "text/event-stream" } }));
+    });
+    const response = await proxyStreaming({
+      request: new Request("http://gateway/v1/messages"),
+      externalProtocol: "anthropic",
+      prepared: prepared("openai", "xai"),
+      body: { model: "alias", messages: [{ role: "user", content: "hello" }], max_tokens: 128, stream: true },
+    });
+    const body = await response.text();
+    expect(body).toContain('"type":"text_delta","text":"hello"');
+    expect(body).toContain('"type":"message_stop"');
+    expect(mocks.finalizeKnown).toHaveBeenCalledWith(expect.objectContaining({
+      usage: expect.objectContaining({ inputTokens: 6, outputTokens: 2 }),
+    }));
+  });
+
   it("passes fragmented Anthropic SSE incrementally and settles final usage", async () => {
     const result = transport(new Response(sse([
       'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","model":"claude","usage":{"input_tokens":7,"output_tokens":0}}}\n\n',
@@ -280,6 +306,30 @@ describe("true gateway streaming proxy", () => {
 });
 
 describe("gateway non-streaming protocol matrix", () => {
+  it("internally consumes the Codex-mandated Responses stream for a non-streaming client", async () => {
+    mocks.send.mockImplementation(async ({ body }: { body: Record<string, unknown> }) => {
+      expect(body).toMatchObject({ stream: true, store: false });
+      return transport(new Response(sse([
+        'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_codex","model":"gpt-codex"}}\n\n',
+        'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_codex","model":"gpt-codex","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"done"}]}],"usage":{"input_tokens":9,"output_tokens":4}}}\n\n',
+      ]), { headers: { "content-type": "text/event-stream" } }));
+    });
+    const response = await proxyNonStreaming({
+      request: new Request("http://gateway/v1/chat/completions"),
+      externalProtocol: "openai",
+      prepared: prepared("openai", "codex"),
+      body: { model: "alias", messages: [{ role: "user", content: "go" }], stream: false },
+    });
+    expect(await response.json()).toMatchObject({
+      object: "chat.completion",
+      choices: [{ message: { content: "done" } }],
+      usage: { prompt_tokens: 9, completion_tokens: 4 },
+    });
+    expect(mocks.finalizeKnown).toHaveBeenCalledWith(expect.objectContaining({
+      usage: expect.objectContaining({ inputTokens: 9, outputTokens: 4 }),
+    }));
+  });
+
   it("returns a native Anthropic response without protocol pollution", async () => {
     mocks.send.mockResolvedValue(transport(new Response(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: "claude", content: [{ type: "text", text: "ok" }], stop_reason: "end_turn", usage: { input_tokens: 4, output_tokens: 2 } }), { headers: { "content-type": "application/json" } })));
     const response = await proxyNonStreaming({ request: new Request("http://gateway/v1/messages"), externalProtocol: "anthropic", prepared: prepared("anthropic"), body: { model: "alias", messages: [], max_tokens: 32 } });

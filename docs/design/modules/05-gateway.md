@@ -1,6 +1,11 @@
+<!-- [Input] Gateway PRD, billing/entitlement contracts, and Provider authentication lifecycle. -->
+<!-- [Output] Gateway Key, request observability, payload access, rate-limit, and upstream authentication boundaries. -->
+<!-- [Pos] Gateway Admin interaction contract; execution-plane credential rules link to the Provider auth design. -->
+<!-- [Sync] 2026-09-04: resolve managed credentials only through direct Provider ownership. -->
+
 # 模块交互：Gateway Key、Request、Payload 与限流
 
-> 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[Gateway](../../prd/modules/05-gateway.md)
+> 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[Gateway](../../prd/modules/05-gateway.md) · 上游认证合同：[Provider 认证能力与凭据生命周期](../provider-authentication-capability-and-credential-lifecycle.md)
 
 > 实现状态：**Implemented / Release candidate**；Key、Request/Payload/限流、canonical 反查、402 Token 单位、cash-only 禁回退、终态 guard 与 Dream server-only client 已验证。Subscription/Entitlement/Allowance 富详情分区仍是后续增强；外部 Provider canary 未执行。
 
@@ -23,6 +28,8 @@ Target 轮换从旧 Key 详情发起，预览新 scope/到期和旧 Key 撤销�
 Dream 的生产凭据只由服务端 secret provider 注入，不通过本 Admin 页复制到浏览器，不放入用户偏好 JSON/普通表/日志。Key 绑定最小 scope 和 canonical user context，不提供全平台浏览器共享 Key。
 
 错误显示已统一：missing/invalid/revoked 为 401 `GATEWAY_AUTH_REQUIRED`；只有 Key 有效但 canonical mapping 为 orphan 时显示 403 `CANONICAL_USER_REQUIRED`。生产历史 orphan 处置仍需回执，UI 不提供破坏性“修复”。
+
+Gateway Key 是调用 Ink Memory 的下游身份，不能复用为上游 Provider credential。`generic` 执行面只读取当前 effective 加密凭据并在服务端解密，通过与 Admin 验证共享的 capability resolver 注入 `x-api-key` 或静态 Bearer；迁移产生的 active/unverified Provider 继续满足原有兼容 readiness，candidate、失败轮换和 stale revision 永不进入请求。`codex | xai | github_copilot` 只通过 `Provider.managed_credential_id + credential.provider_id + adapter_kind` 的一致性读取该 Provider 直接拥有的 connected bundle，不查询产品默认账号或共享池；再校验 Provider active/active credential kind、auth epoch、credential revision、registration fingerprint 及 envelope schema/product，并按产品 Responses/Chat 合同构造 Endpoint/header。到期 refresh 使用 PostgreSQL DB-clock lease + CAS 单飞，terminal invalid grant 进入 `reauth_required` 并 fail closed。续期后被 post-validation 或 CAS 拒绝的新长期 grant必须先进入加密撤销 outbox，不能成为无主授权。非流式首次 401 只允许强制续期后最多重放一次，流式请求不重放。
 
 ## 2. Request 列表与详情
 

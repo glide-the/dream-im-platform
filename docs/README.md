@@ -1,3 +1,8 @@
+<!-- [Input] Repository documentation tree and current product/architecture decisions. -->
+<!-- [Output] Canonical entry points for current design, architecture, deployment, and verification documents. -->
+<!-- [Pos] Root documentation inventory; historical documents are explicitly separated from current contracts. -->
+<!-- [Sync] 2026-09-04: index the final deployment-gated Go contract for product Device authorization and managed credentials. -->
+
 # 文档索引
 
 ## 当前执行入口
@@ -12,6 +17,7 @@
 - [数据库 Package 与内嵌 PostgreSQL](architecture/database-package-and-embedded-postgresql.md)
 - [部署指南](deploy.md)
 - [Dream Claude Agent 资源 Observer 与 Admin 控制台设计](design/dream-agent-resource-observer-console.md)
+- [模型提供方认证能力与凭据生命周期](design/provider-authentication-capability-and-credential-lifecycle.md)
 
 ## Dream 当前范围
 

@@ -1,13 +1,42 @@
-// [Input] Typed provider timeouts and unrelated transport failures.
-// [Output] Stable public Gateway status/code/message mapping for retryable upstream failures.
+// [Input] Typed provider timeouts, SDK client config, and unrelated transport failures.
+// [Output] Stable error mapping plus shared protocol auth-mode enforcement for SDK clients.
 // [Pos] Provider failure-classification regression tests for the Gateway domain.
-// [Sync] 2026-08-27: distinguish timeout from generic connection failure.
+// [Sync] 2026-09-04: fail closed before creating an OpenAI client with x-api-key mode.
 
 import { describe, expect, it } from "vitest";
-import { toProviderGatewayError } from "./provider-clients";
+import { createOpenAIProviderClient, toProviderGatewayError } from "./provider-clients";
 import { ProviderTimeoutError } from "./provider-transport";
 
 describe("provider error classification", () => {
+  it("uses the shared resolver for OpenAI SDK client authentication", () => {
+    const resolved = {
+      provider: {
+        protocol: "openai",
+        id: "provider-1",
+        code: "openai",
+        baseUrl: "https://api.openai.com",
+        encryptedCredential: { ciphertext: "x", iv: "y", tag: "z" },
+        timeoutMs: 1_000,
+        maxRetries: 0,
+        config: { authMode: "x-api-key" },
+      },
+      model: {},
+      pricing: {},
+      limits: {},
+    } as unknown as Parameters<typeof createOpenAIProviderClient>[0];
+
+    let caught: unknown;
+    try {
+      createOpenAIProviderClient(resolved);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({
+      code: "PROVIDER_AUTH_MODE_INVALID",
+      status: 503,
+    });
+  });
+
   it.each(["connect", "stream_idle"] as const)(
     "maps %s timeout to retryable HTTP 504",
     (phase) => {

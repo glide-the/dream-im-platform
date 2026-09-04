@@ -38,6 +38,49 @@
         "Admin Drizzle 0035_brief_wolverine",
         "gateway-default-token-limits-v1 policy config"
       ]
+    },
+    {
+      "idx": 4,
+      "migrationKey": "chat-history-final-projection-v1",
+      "runner": "chat-history-final-projection.mjs",
+      "dependsOn": [
+        "Admin Drizzle 0043_chat_history_final_projection",
+        "dream.chat-history-final-projection.v1"
+      ]
+    },
+    {
+      "idx": 5,
+      "migrationKey": "provider-managed-accounts-v1",
+      "runner": "provider-managed-accounts.ts",
+      "dependsOn": [
+        "Admin Drizzle 0047_provider_managed_accounts_expand",
+        "AI_CREDENTIAL_ENCRYPTION_KEY and matching key id",
+        "AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER",
+        "terminal Provider revocation jobs"
+      ]
+    },
+    {
+      "idx": 6,
+      "migrationKey": "provider-owned-credentials-v1",
+      "runner": "provider-owned-credentials.ts",
+      "dependsOn": [
+        "Admin Drizzle 0049_provider_owned_credentials_expand",
+        "a committed provider-managed-accounts-v1 receipt when 0048 affected rows",
+        "AI_CREDENTIAL_ENCRYPTION_KEY and matching key id",
+        "zero shared or orphan live credentials",
+        "zero active Provider auth attempts",
+        "terminal Provider revocation jobs"
+      ]
+    },
+    {
+      "idx": 7,
+      "migrationKey": "provider-deleted-credential-orphans-v1",
+      "runner": "provider-deleted-credential-orphans.ts",
+      "dependsOn": [
+        "Admin Drizzle 0051_provider_deleted_credential_orphans_expand",
+        "Provider direct ownership contract 0050",
+        "local-only invalidation with remoteRevocation=not_attempted"
+      ]
     }
   ]
 }
