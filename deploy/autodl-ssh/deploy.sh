@@ -2,8 +2,7 @@
 # [Input] AutoDL SSH settings, generated runtime env, source tree, and optional bootstrap database.
 # [Output] Versioned direct-host Admin/embedded-PostgreSQL release managed by screen.
 # [Pos] AutoDL release entry; deliberately uses neither Docker nor nginx.
-# [Sync] 2026-08-26: place Admin home and PostgreSQL under /root/ink-autodl/data.
-# [Sync] 2026-08-28: reuse an immutable lock-matched DB runtime and bound fallback packaging.
+# [Sync] 2026-09-04: run the release-owned Provider migration orchestrator before startup.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -213,10 +212,11 @@ if [ -L $(quote "${AUTODL_APP_ROOT}/current") ]; then
 fi
 rm -rf \"\${staging}\"
 rm -rf \"\${db_runtime}\"
-install -d \"\${staging}/.next\" \"\${staging}/packages\"
+install -d \"\${staging}/.next\" \"\${staging}/packages\" \"\${staging}/scripts\"
 cp -a .next/standalone/. \"\${staging}/\"
 cp -a .next/static \"\${staging}/.next/static\"
 cp -a drizzle \"\${staging}/drizzle\"
+cp scripts/migrate-provider-managed-accounts.mjs \"\${staging}/scripts/migrate-provider-managed-accounts.mjs\"
 cp pnpm-lock.yaml \"\${staging}/pnpm-lock.yaml\"
 if [ -n \"\${db_runtime_seed}\" ]; then
   cp -al \"\${db_runtime_seed}\" \"\${db_runtime}\"
@@ -255,6 +255,17 @@ export INK_MIGRATIONS_DIR=$(quote "${AUTODL_APP_ROOT}/current/drizzle")
 uid=\$(id -u $(quote "${AUTODL_SERVICE_USER}")); gid=\$(id -g $(quote "${AUTODL_SERVICE_USER}"))
 cd $(quote "${AUTODL_APP_ROOT}/current")
 setpriv --reuid=\"\${uid}\" --regid=\"\${gid}\" --init-groups node packages/db/dist/supervise.js node packages/db/dist/$(quote "${script}")${arguments}"
+}
+
+migrate_admin() {
+  remote "set -euo pipefail
+set -a; . $(quote "${AUTODL_APP_ROOT}/config/admin.env"); set +a
+export HOME=$(quote "${AUTODL_ADMIN_HOME}")
+export PATH=/root/ink-autodl/runtime/node/bin:/usr/lib/postgresql/18/bin:\$PATH
+export INK_MIGRATIONS_DIR=$(quote "${AUTODL_APP_ROOT}/current/drizzle")
+uid=\$(id -u $(quote "${AUTODL_SERVICE_USER}")); gid=\$(id -g $(quote "${AUTODL_SERVICE_USER}"))
+cd $(quote "${AUTODL_APP_ROOT}/current")
+setpriv --reuid=\"\${uid}\" --regid=\"\${gid}\" --init-groups node scripts/migrate-provider-managed-accounts.mjs"
 }
 
 start_admin() {
@@ -300,8 +311,7 @@ bootstrap() {
   remote "set -e; chgrp $(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/backups") $(quote "${remote_dump}"); chmod 0750 $(quote "${AUTODL_APP_ROOT}/backups"); chmod 0640 $(quote "${remote_dump}")"
   maintenance database-io.js restore-sql-gzip "${remote_dump}"
   maintenance assert-bootstrap.mjs
-  maintenance migrate.js
-  maintenance migrate.js --check
+  migrate_admin
   start_admin
   verify
   if [[ -n "${dump_file:-}" ]]; then rm -f "${dump_file}"; trap - RETURN; fi
@@ -314,7 +324,7 @@ verify() {
   log "Admin local port, screen supervisor, and public mapping passed."
 }
 
-deploy() { command_check; setup_host; sync_files; build_release; stop_admin; maintenance migrate.js; maintenance migrate.js --check; start_admin; verify; }
+deploy() { command_check; setup_host; sync_files; build_release; stop_admin; migrate_admin; start_admin; verify; }
 
 rollback() {
   remote "test -L $(quote "${AUTODL_APP_ROOT}/previous")"
@@ -341,7 +351,7 @@ case "${COMMAND:-help}" in
   bootstrap) command_check; setup_host; sync_files; build_release; stop_admin; bootstrap ;;
   bootstrap-resume) command_check; [[ -n "${AUTODL_BOOTSTRAP_DUMP}" ]] || err "AUTODL_BOOTSTRAP_DUMP is required."; setup_host; sync_files; remote "cp $(quote "${AUTODL_APP_ROOT}/source/deploy/autodl-ssh/runtime/assert-bootstrap.mjs") $(quote "${AUTODL_APP_ROOT}/current/packages/db/dist/assert-bootstrap.mjs"); chown $(quote "${AUTODL_SERVICE_USER}"):$(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/current/packages/db/dist/assert-bootstrap.mjs")"; stop_admin; bootstrap ;;
   deploy) deploy ;;
-  migrate) command_check; stop_admin; maintenance migrate.js; maintenance migrate.js --check; start_admin; verify ;;
+  migrate) command_check; stop_admin; migrate_admin; start_admin; verify ;;
   start) require_config; start_admin; verify ;;
   stop) require_config; stop_admin ;;
   status) require_config; remote "screen -ls 2>/dev/null | grep '[.]${AUTODL_SCREEN_NAME}[[:space:]]' || true; if [ -f $(quote "${AUTODL_APP_ROOT}/run/admin.pid") ]; then pid=\$(cat $(quote "${AUTODL_APP_ROOT}/run/admin.pid")); ps -o pid,ppid,user,stat,etimes,cmd -p \"\${pid}\"; fi; ss -ltnp 2>/dev/null | grep -E ':${AUTODL_ADMIN_PORT}[[:space:]]' || true" ;;
