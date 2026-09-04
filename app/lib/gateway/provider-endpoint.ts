@@ -1,3 +1,8 @@
+// [Input] Provider protocol/base URL plus explicit host and local-topology capabilities.
+// [Output] A canonical SSRF-fenced Provider base URL or a safe configuration error.
+// [Pos] Shared static Provider endpoint boundary for Admin validation and Gateway execution.
+// [Sync] 2026-09-04: make localhost opt-in an explicit capability independent of deployment labels.
+
 import { isIP } from "node:net";
 import type { AiProviderProtocol } from "../billing/types";
 import { GatewayError } from "./errors";
@@ -80,15 +85,14 @@ export function resolveProviderBaseUrl(input: {
   }
 
   const hostname = url.hostname.toLowerCase();
-  const localDevelopmentAllowed =
-    process.env.NODE_ENV !== "production" &&
+  const localTopologyAllowed =
     process.env.AI_PROVIDER_ALLOW_INSECURE_LOCALHOST === "true";
 
   if (isLocalHostname(hostname)) {
-    if (!localDevelopmentAllowed || !["http:", "https:"].includes(url.protocol)) {
+    if (!localTopologyAllowed || !["http:", "https:"].includes(url.protocol)) {
       throw new GatewayError(
         "PROVIDER_HOST_NOT_ALLOWED",
-        "Local provider endpoints require the explicit development-only opt-in",
+        "Local provider endpoints require the explicit topology capability",
         503,
         "configuration_error",
       );

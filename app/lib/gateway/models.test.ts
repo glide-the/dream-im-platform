@@ -1,3 +1,8 @@
+// [Input] Authenticated catalog queries plus synthetic Provider, pricing, subscription, and allowance rows.
+// [Output] Regression proof for safe callability metadata and direct Provider-owned credential readiness SQL.
+// [Pos] Focused unit contract for the public Gateway model catalog.
+// [Sync] 2026-09-04: require managed readiness to follow the Provider pointer and credential owner.
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ authenticate: vi.fn(), query: vi.fn() }));
@@ -111,6 +116,9 @@ describe("public Gateway model catalog", () => {
     expect(sql).toContain("FROM ai_models AS model");
     expect(sql).toContain("WHERE model.enabled = TRUE");
     expect(sql).toContain("LEFT JOIN LATERAL");
+    expect(sql).toContain("managed.provider_id = provider.id");
+    expect(sql).toContain("managed.id = provider.managed_credential_id");
+    expect(sql).not.toContain("ai_provider_managed_account_defaults");
   });
 
   it.each([

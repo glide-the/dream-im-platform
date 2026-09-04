@@ -309,6 +309,69 @@
       "when": 1788343437466,
       "tag": "0043_chat_history_final_projection",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1788471577622,
+      "tag": "0044_serious_red_wolf",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1788475005476,
+      "tag": "0045_abandoned_killraven",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1788476694866,
+      "tag": "0046_lovely_hemingway",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1788482044777,
+      "tag": "0047_provider_managed_accounts_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1788482091031,
+      "tag": "0048_provider_managed_accounts_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1788514846069,
+      "tag": "0049_provider_owned_credentials_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1788515022061,
+      "tag": "0050_provider_owned_credentials_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1788517621176,
+      "tag": "0051_provider_deleted_credential_orphans_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1788517624175,
+      "tag": "0052_provider_deleted_credential_orphans_contract",
+      "breakpoints": true
     }
   ]
 }

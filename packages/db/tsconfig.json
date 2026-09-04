@@ -10,5 +10,10 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext"
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/provider-managed-accounts-data-cli.ts",
+    "src/provider-owned-credentials-data-cli.ts",
+    "src/provider-deleted-credential-orphans-data-cli.ts"
+  ]
 }

@@ -1,6 +1,15 @@
+// [Input] Authenticated model-validation requests plus generic static or product-managed Provider state.
+// [Output] A minimal upstream validation result without reading or exposing response or credential content.
+// [Pos] Shared Admin model validation primitive using the same auth and product dialects as Gateway.
+// [Sync] 2026-09-04: validate managed products through fixed resources while preserving static API keys.
+// [Sync] 2026-09-04: resolve managed validation only through the Provider-owned account.
+
 import type { PoolClient } from "pg";
 
 import type { AiProviderProtocol } from "../billing/types";
+import { resolveManagedProviderAccess } from "../gateway/managed-provider-credentials";
+import { adaptProviderRequest } from "../gateway/protocol-adapters";
+import { resolveProviderAuthMode } from "../gateway/provider-auth";
 import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
 import { withPlatformClient, withPlatformTransaction } from "../platform-db";
 import { decryptCredential } from "../security/credential-encryption";
@@ -16,6 +25,7 @@ import {
   assertAdminMutationOrigin,
   requireAdminRequest,
 } from "./guard";
+import type { ProviderProductKind } from "../providers";
 
 type ModelValidationRow = {
   id: string;
@@ -24,8 +34,18 @@ type ModelValidationRow = {
   request_headers: unknown;
   provider_id: string;
   provider_code: string;
+  provider_status: "active" | "disabled";
   protocol: AiProviderProtocol;
-  base_url: string;
+  base_url: string | null;
+  adapter_kind: "generic" | ProviderProductKind;
+  active_credential_kind: "static_api_key" | "managed_oauth" | "none";
+  auth_epoch: number;
+  managed_account_binding_mode: "follow_default" | "pinned" | null;
+  managed_account_id: string | null;
+  managed_account_auth_epoch: number | null;
+  managed_default_revision: number | null;
+  managed_credential_status: "connected" | "reauth_required" | "disconnected" | null;
+  managed_credential_revision: number | null;
   timeout_ms: number;
   config: Record<string, unknown> | null;
   api_key_ciphertext: string | null;
@@ -103,7 +123,10 @@ export async function validateUpstreamModel(
   const now = dependencies.now ?? Date.now;
   const testedAt = dependencies.testedAt ?? (() => new Date());
   const startedAt = now();
-  const authMode = input.config?.authMode === "bearer" ? "bearer" : "x-api-key";
+  const authMode = resolveProviderAuthMode({
+    protocol: input.protocol,
+    config: input.config ?? {},
+  });
   const headers: Record<string, string> = {
     accept: "application/json",
     "content-type": "application/json",
@@ -152,14 +175,108 @@ export async function validateUpstreamModel(
   }
 }
 
+export async function validateManagedUpstreamModel(
+  input: {
+    providerId: string;
+    adapterKind: ProviderProductKind;
+    authEpoch: number;
+    managedAccountId: string;
+    managedAccountAuthEpoch: number;
+    managedDefaultRevision?: number;
+    credentialRevision: number;
+    upstreamModel: string;
+    requestHeaders?: ModelRequestHeaders;
+  },
+  dependencies: {
+    fetcher?: ValidationFetch;
+    resolveAccess?: typeof resolveManagedProviderAccess;
+    now?: () => number;
+    testedAt?: () => Date;
+  } = {},
+): Promise<ModelValidationResult> {
+  const fetcher = dependencies.fetcher ?? fetch;
+  const resolveAccess = dependencies.resolveAccess ?? resolveManagedProviderAccess;
+  const now = dependencies.now ?? Date.now;
+  const testedAt = dependencies.testedAt ?? (() => new Date());
+  const startedAt = now();
+  try {
+    const access = await resolveAccess({
+      providerId: input.providerId,
+      adapterKind: input.adapterKind,
+      authEpoch: input.authEpoch,
+      managedAccountId: input.managedAccountId,
+      managedAccountAuthEpoch: input.managedAccountAuthEpoch,
+      managedDefaultRevision: input.managedDefaultRevision,
+      credentialRevision: input.credentialRevision,
+    });
+    const body = adaptProviderRequest({
+      externalProtocol: "openai",
+      providerProtocol: "openai",
+      providerAdapterKind: input.adapterKind,
+      body: {
+        model: input.upstreamModel,
+        max_completion_tokens: 1,
+        messages: [{ role: "user", content: "ping" }],
+        stream: false,
+      },
+      model: input.upstreamModel,
+      maxOutputTokens: 1,
+    });
+    const headers = new Headers({
+      accept: (body as { stream?: boolean }).stream
+        ? "text/event-stream"
+        : "application/json",
+      "content-type": "application/json",
+    });
+    applyModelRequestHeaders(headers, input.requestHeaders ?? {});
+    for (const [name, value] of access.headers) headers.set(name, value);
+    const response = await fetcher(access.url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      redirect: "manual",
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+    });
+    const classified = validationMessage(response.status);
+    return {
+      ...classified,
+      responseTimeMs: Math.max(0, now() - startedAt),
+      httpStatus: response.status,
+      testedAt: testedAt().toISOString(),
+    };
+  } catch (error) {
+    return {
+      status: "failed",
+      usable: false,
+      responseTimeMs: null,
+      httpStatus: null,
+      testedAt: testedAt().toISOString(),
+      message: abortMessage(error),
+    };
+  }
+}
+
 async function loadModel(client: PoolClient, modelId: string) {
   const { rows } = await client.query<ModelValidationRow>(
     `SELECT m.id, m.code, m.upstream_model, m.request_headers,
-            p.id AS provider_id, p.code AS provider_code, p.protocol,
-            p.base_url, p.timeout_ms, p.config,
+            p.id AS provider_id, p.code AS provider_code,
+            p.status AS provider_status, p.protocol, p.base_url,
+            p.adapter_kind, p.active_credential_kind, p.auth_epoch,
+            p.managed_account_binding_mode,
+            managed.id AS managed_account_id,
+            managed.auth_epoch AS managed_account_auth_epoch,
+            NULL::integer AS managed_default_revision,
+            managed.status AS managed_credential_status,
+            managed.revision AS managed_credential_revision,
+            p.timeout_ms, p.config,
             p.api_key_ciphertext, p.api_key_iv, p.api_key_tag
      FROM ai_models AS m
      JOIN ai_providers AS p ON p.id = m.provider_id
+     LEFT JOIN ai_provider_managed_credentials AS managed
+       ON managed.adapter_kind = p.adapter_kind
+      AND managed.id = p.managed_credential_id
+      AND managed.provider_id = p.id
      WHERE m.id = $1`,
     [modelId],
   );
@@ -167,8 +284,28 @@ async function loadModel(client: PoolClient, modelId: string) {
   if (!row) {
     throw new AdminError("ADMIN_RESOURCE_ITEM_NOT_FOUND", "The requested model does not exist", 404);
   }
-  if (!row.api_key_ciphertext || !row.api_key_iv || !row.api_key_tag) {
+  if (
+    row.adapter_kind === "generic" &&
+    (!row.api_key_ciphertext || !row.api_key_iv || !row.api_key_tag)
+  ) {
     throw new AdminError("PROVIDER_CREDENTIAL_UNAVAILABLE", "The model Provider has no stored credential", 409);
+  }
+  if (
+    row.adapter_kind !== "generic" &&
+    (
+      row.provider_status !== "active" ||
+      row.active_credential_kind !== "managed_oauth" ||
+      row.managed_credential_status !== "connected" ||
+      row.managed_account_id === null ||
+      row.managed_account_auth_epoch === null ||
+      row.managed_credential_revision === null
+    )
+  ) {
+    throw new AdminError(
+      "PROVIDER_MANAGED_CREDENTIAL_UNAVAILABLE",
+      "Enable the Provider with a connected product account before validating this model",
+      409,
+    );
   }
   return row;
 }
@@ -179,24 +316,35 @@ export async function handleModelValidation(request: Request, modelId: string) {
     assertAdminMutationOrigin(request);
     const identity = await requireAdminRequest(request, "models.write");
     const model = await withPlatformClient((client) => loadModel(client, modelId));
-    const credential = decryptCredential({
-      ciphertext: model.api_key_ciphertext!,
-      iv: model.api_key_iv!,
-      tag: model.api_key_tag!,
-    });
     const requestHeaders = modelRequestHeadersSchema.safeParse(model.request_headers ?? {});
     if (!requestHeaders.success) {
       throw new AdminError("MODEL_REQUEST_HEADERS_INVALID", "The model has invalid upstream request headers", 409);
     }
-    const data = await validateUpstreamModel({
-      protocol: model.protocol,
-      baseUrl: model.base_url,
-      upstreamModel: model.upstream_model,
-      credential,
-      config: model.config ?? {},
-      requestHeaders: requestHeaders.data,
-      timeoutMs: model.timeout_ms,
-    });
+    const data = model.adapter_kind === "generic"
+      ? await validateUpstreamModel({
+          protocol: model.protocol,
+          baseUrl: model.base_url!,
+          upstreamModel: model.upstream_model,
+          credential: decryptCredential({
+            ciphertext: model.api_key_ciphertext!,
+            iv: model.api_key_iv!,
+            tag: model.api_key_tag!,
+          }),
+          config: model.config ?? {},
+          requestHeaders: requestHeaders.data,
+          timeoutMs: model.timeout_ms,
+        })
+      : await validateManagedUpstreamModel({
+          providerId: model.provider_id,
+          adapterKind: model.adapter_kind,
+          authEpoch: model.auth_epoch,
+          managedAccountId: model.managed_account_id!,
+          managedAccountAuthEpoch: model.managed_account_auth_epoch!,
+          managedDefaultRevision: model.managed_default_revision ?? undefined,
+          credentialRevision: model.managed_credential_revision!,
+          upstreamModel: model.upstream_model,
+          requestHeaders: requestHeaders.data,
+        });
 
     await withPlatformTransaction(async (client) => {
       await recordAdminAuditOnClient(client, {

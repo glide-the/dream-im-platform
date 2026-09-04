@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adaptProviderRequest,
   anthropicRequestToOpenAI,
   anthropicResponseToOpenAI,
   openAIRequestToAnthropic,
@@ -7,6 +8,27 @@ import {
 } from "./protocol-adapters";
 
 describe("explicit Anthropic/OpenAI protocol adapters", () => {
+  it("routes managed Codex and xAI providers through the Responses dialect", () => {
+    const codex = adaptProviderRequest({
+      externalProtocol: "openai",
+      providerProtocol: "openai",
+      providerAdapterKind: "codex",
+      body: { messages: [{ role: "user", content: "hello" }], stream: false },
+      model: "gpt-codex",
+      maxOutputTokens: 128,
+    });
+    expect(codex).toMatchObject({ model: "gpt-codex", stream: true, store: false });
+    const xai = adaptProviderRequest({
+      externalProtocol: "anthropic",
+      providerProtocol: "openai",
+      providerAdapterKind: "xai",
+      body: { messages: [{ role: "user", content: "hello" }], max_tokens: 64, stream: false },
+      model: "grok-code",
+      maxOutputTokens: 64,
+    });
+    expect(xai).toMatchObject({ model: "grok-code", stream: false, max_output_tokens: 64 });
+  });
+
   it("maps Anthropic tools, tool results and request limits to OpenAI", () => {
     const result = anthropicRequestToOpenAI({
       max_tokens: 100,

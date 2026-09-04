@@ -1,10 +1,18 @@
 "use client";
 
+// [Input] Safe Provider list projections for static and managed credentials plus Admin permissions.
+// [Output] Provider cards with one managed account identity and dependency-aware deletion.
+// [Pos] Provider operations overview; credential validation and authorization remain server-owned.
+// [Sync] 2026-09-04: make same-product accounts distinguishable without exposing implementation metadata.
+// [Sync] 2026-09-04: expose confirmed Provider deletion while preserving model, Pricing, and history gates.
+// [Sync] 2026-09-04: expose account-scoped model sync and keep unlabeled connected accounts unambiguous.
+
 import { type CrudFilter, useCan, useList } from "@refinedev/core";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AdminCollapsibleFilters, AdminListHeader, countActiveFilterValues } from "./AdminListChrome";
+import ProviderDeleteAction from "./ProviderDeleteAction";
 
 type ReachabilityState = {
   pending?: boolean;
@@ -25,12 +33,70 @@ function int(value: unknown) {
   return Number(value ?? 0).toLocaleString("zh-CN");
 }
 
+const MANAGED_PROVIDER_LABELS: Record<string, string> = {
+  codex: "Codex / ChatGPT",
+  xai: "xAI / Grok",
+  github_copilot: "GitHub Copilot",
+};
+
+export function providerManagedAccountLabel(provider: Record<string, unknown>) {
+  if (provider.adapter_kind === undefined || provider.adapter_kind === "generic") return null;
+  return provider.managed_account_label
+    ? `账号：${String(provider.managed_account_label)}`
+    : provider.managed_credential_status === "connected"
+      ? "账号：已连接"
+      : "账号：未连接";
+}
+
+export function providerCredentialValidation(provider: Record<string, unknown>) {
+  if (provider.adapter_kind !== undefined && provider.adapter_kind !== "generic") {
+    if (provider.managed_credential_status === "connected") {
+      return {
+        label: "账号已连接",
+        className: "text-success",
+        valid: true,
+      };
+    }
+    if (provider.managed_credential_status === "reauth_required") {
+      return {
+        label: "账号需要重新授权",
+        className: "text-accent-orange",
+        valid: false,
+      };
+    }
+    return {
+      label: "账号未连接",
+      className: "text-danger",
+      valid: false,
+    };
+  }
+  if (provider.credential_configured !== true) {
+    return {
+      label: "凭据未配置",
+      className: "text-danger",
+      valid: false,
+    };
+  }
+  if (provider.credential_validation_status === "valid") {
+    return {
+      label: "静态凭据已验证",
+      className: "text-success",
+      valid: true,
+    };
+  }
+  return {
+    label: "静态凭据待验证",
+    className: "text-accent-orange",
+    valid: false,
+  };
+}
+
 function providerHealth(provider: Record<string, unknown>) {
   const active = provider.status === "active";
-  const credential = provider.credential_configured === true;
+  const credential = providerCredentialValidation(provider);
   const enabledModels = Number(provider.enabled_model_count ?? 0);
   if (!active) return { label: "已停用", className: "border-border bg-bg-secondary text-text-tertiary" };
-  if (!credential) return { label: "缺少凭据", className: "border-danger/35 bg-danger-light text-danger" };
+  if (!credential.valid) return { label: "凭据待验证", className: "border-warning/40 bg-accent-orange-light text-accent-orange" };
   if (!enabledModels) return { label: "待配置模型", className: "border-warning/40 bg-accent-orange-light text-accent-orange" };
   return { label: "配置就绪", className: "border-success/35 bg-success-light text-success" };
 }
@@ -140,7 +206,7 @@ export default function AIProviderRegistry() {
   return (
     <div className="space-y-6">
       <section className="admin-panel overflow-hidden">
-        <AdminListHeader eyebrow="Provider registry · proxy supply" title="供应商" description="按 cc-switch 卡片列表组织；每个 Provider 是代理上游，不向调用方分发 Secret。" actions={access.data?.can ? <Link href="/admin/models/providers/new" className="inline-flex min-h-11 items-center bg-accent px-4 text-sm font-semibold text-white hover:brightness-95">＋ 添加 Provider</Link> : null} />
+        <AdminListHeader eyebrow="Provider registry · proxy supply" title="供应商" description="每个 Provider 对应一个上游账号和一组运行配置；同一产品接入多个账号时，请分别创建多个 Provider。" actions={access.data?.can ? <Link href="/admin/models/providers/new" className="inline-flex min-h-11 items-center bg-accent px-4 text-sm font-semibold text-white hover:brightness-95">＋ 添加 Provider</Link> : null} />
 
         {automaticDiscoveryFailed ? (
           <div className="border-b border-warning/40 bg-accent-orange-light px-4 py-3 text-sm text-text-secondary" role="status">
@@ -192,7 +258,9 @@ export default function AIProviderRegistry() {
                 ? (provider.config as Record<string, unknown>)
                 : {};
             const manualCatalog = providerConfig.modelCatalogMode === "manual";
+            const managed = provider.adapter_kind !== undefined && provider.adapter_kind !== "generic";
             const health = providerHealth(provider);
+            const credentialValidation = providerCredentialValidation(provider);
             const reachabilityResult = reachability[providerId];
             const discoveryResult = discovery[providerId];
             const requests = Number(provider.request_count_24h ?? 0);
@@ -205,12 +273,25 @@ export default function AIProviderRegistry() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="truncate text-lg font-semibold">{String(provider.name)}</h3>
+                        {managed ? <span className="rounded-full border border-accent/35 bg-accent-light px-2 py-1 text-[10px] font-semibold text-accent">{MANAGED_PROVIDER_LABELS[String(provider.adapter_kind)] ?? "托管账号"}</span> : null}
                         <span className="rounded-full border border-border px-2 py-1 font-mono text-[10px] uppercase text-text-tertiary">{String(provider.protocol)}</span>
                         {manualCatalog ? <span className="rounded-full border border-accent/35 bg-accent-light px-2 py-1 text-[10px] font-semibold text-accent">手工模型</span> : null}
                         <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${health.className}`}>{health.label}</span>
                       </div>
-                      <p className="mt-2 truncate font-mono text-xs text-accent" title={String(provider.base_url)}>{String(provider.base_url)}</p>
-                      <p className="mt-2 font-mono text-[10px] text-text-tertiary">{String(provider.code)} · {provider.credential_configured ? `凭据 ${String(provider.api_key_fingerprint ?? "已配置")}` : "凭据未配置"}</p>
+                      {managed ? (
+                        <p className="mt-2 truncate text-sm font-semibold text-text-primary" title={providerManagedAccountLabel(provider) ?? undefined}>
+                          {providerManagedAccountLabel(provider)}
+                        </p>
+                      ) : (
+                        <p className="mt-2 truncate font-mono text-xs text-accent" title={String(provider.base_url)}>{String(provider.base_url)}</p>
+                      )}
+                      <p className="mt-2 font-mono text-[10px] text-text-tertiary">{String(provider.code)}{!managed ? provider.credential_configured ? ` · 凭据 ${String(provider.api_key_fingerprint ?? "已保存")}` : " · 凭据未配置" : ""}</p>
+                      <p className={`mt-1 text-[11px] ${credentialValidation.className}`} role="status">
+                        {credentialValidation.label}
+                        {!managed && credentialValidation.valid && provider.credential_validated_at
+                          ? ` · ${new Date(String(provider.credential_validated_at)).toLocaleString("zh-CN")}`
+                          : ""}
+                      </p>
                       {reachabilityResult?.message ? (
                         <p
                           className={`mt-2 text-xs ${reachabilityResult.status === "failed" ? "text-danger" : reachabilityResult.status === "degraded" ? "text-accent-orange" : "text-success"}`}
@@ -245,15 +326,21 @@ export default function AIProviderRegistry() {
                     {access.data?.can && !manualCatalog ? (
                       <button
                         type="button"
-                        disabled={discoveryResult?.pending || !provider.credential_configured}
+                        disabled={discoveryResult?.pending || !credentialValidation.valid}
                         onClick={() => discoverModels(providerId)}
                         className="min-h-10 rounded-xl border border-accent/35 bg-accent-light px-3 text-xs font-semibold text-accent hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
-                        title={provider.credential_configured ? "读取上游模型目录并生成差异快照" : "先配置 Provider Credential"}
+                        title={credentialValidation.valid
+                          ? managed
+                            ? "使用此 Provider 已连接的产品账号读取可用模型并生成差异快照"
+                            : "读取上游模型目录并生成差异快照"
+                          : managed
+                            ? "先连接此 Provider 的产品账号"
+                            : "先配置并验证 Provider Credential"}
                       >
                         {discoveryResult?.pending ? "同步中…" : "同步模型"}
                       </button>
                     ) : null}
-                    {access.data?.can && manualCatalog ? (
+                    {access.data?.can && (managed || manualCatalog) ? (
                       <Link
                         href={`/admin/models/models/new?providerId=${encodeURIComponent(providerId)}${typeof providerConfig.manualModel === "string" && providerConfig.manualModel.trim() ? `&upstreamModel=${encodeURIComponent(providerConfig.manualModel.trim())}` : ""}`}
                         className="inline-flex min-h-10 items-center rounded-xl border border-accent/35 bg-accent-light px-3 text-xs font-semibold text-accent hover:brightness-95"
@@ -261,7 +348,7 @@ export default function AIProviderRegistry() {
                         手工添加模型
                       </Link>
                     ) : null}
-                    {access.data?.can ? (
+                    {access.data?.can && !managed ? (
                       <button
                         type="button"
                         disabled={reachabilityResult?.pending}
@@ -275,6 +362,7 @@ export default function AIProviderRegistry() {
                     <Link href={`/admin/billing/usage?providerId=${encodeURIComponent(String(provider.id))}`} className="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-xs font-semibold hover:bg-bg-secondary">监控</Link>
                     <Link href={`/admin/models/models?provider_id=${encodeURIComponent(String(provider.id))}`} className="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-xs font-semibold hover:bg-bg-secondary">模型</Link>
                     <Link href={`/admin/models/providers/${encodeURIComponent(String(provider.id))}/edit`} className="inline-flex min-h-10 items-center rounded-xl bg-text-primary px-4 text-xs font-semibold text-bg-surface">设置</Link>
+                    <ProviderDeleteAction provider={provider} onDeleted={async () => { await query.refetch(); }} />
                   </div>
                 </div>
               </article>
@@ -283,7 +371,7 @@ export default function AIProviderRegistry() {
           {!query.isLoading && !query.error && result.data.length === 0 ? (
             <div className="py-16 text-center">
               <p className="font-display text-xl font-semibold">没有匹配的 Provider</p>
-              <p className="mt-2 text-sm text-text-tertiary">清除筛选，或从 cc-switch 式预设创建第一个代理上游。</p>
+              <p className="mt-2 text-sm text-text-tertiary">清除筛选，或创建第一个 Provider。</p>
             </div>
           ) : null}
           {!query.error && result.total > pageSize ? (

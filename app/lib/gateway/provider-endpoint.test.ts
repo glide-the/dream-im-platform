@@ -1,3 +1,8 @@
+// [Input] Static Provider endpoints plus explicit host/local-topology capabilities.
+// [Output] Regression proof for canonicalization, HTTPS/SSRF fencing, and label-independent localhost opt-in.
+// [Pos] Unit contract for the shared static Provider endpoint resolver.
+// [Sync] 2026-09-04: remove deployment-name branching from the localhost capability test.
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GatewayError } from "./errors";
 import { resolveProviderBaseUrl } from "./provider-endpoint";
@@ -55,8 +60,7 @@ describe("resolveProviderBaseUrl", () => {
     }
   });
 
-  it("allows localhost only with the non-production development switch", () => {
-    vi.stubEnv("NODE_ENV", "test");
+  it("allows localhost only with the explicit topology capability", () => {
     process.env.AI_PROVIDER_ALLOW_INSECURE_LOCALHOST = "true";
     expect(
       resolveProviderBaseUrl({
@@ -65,7 +69,7 @@ describe("resolveProviderBaseUrl", () => {
       }),
     ).toBe("http://localhost:8787");
 
-    vi.stubEnv("NODE_ENV", "production");
+    delete process.env.AI_PROVIDER_ALLOW_INSECURE_LOCALHOST;
     expect(() =>
       resolveProviderBaseUrl({
         protocol: "anthropic",

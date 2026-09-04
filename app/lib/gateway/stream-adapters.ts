@@ -1,9 +1,15 @@
+// [Input] Upstream Anthropic, OpenAI Chat, or Responses SSE bytes plus the public Gateway protocol target.
+// [Output] Incrementally translated SSE events with usage, finish, and error semantics preserved.
+// [Pos] Stateful streaming protocol boundary used by the Gateway proxy after transport authentication.
+// [Sync] 2026-09-04: add Codex/xAI Responses stream translation while leaving Copilot on OpenAI Chat.
+
 import {
   anthropicStopToOpenAI,
   openAIStopToAnthropic,
   record,
   type GatewayProtocol,
 } from "./protocol-adapters";
+import { ResponsesToOpenAIChatStreamState } from "./responses-adapter";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -212,8 +218,26 @@ export type ProtocolStreamAdapter = {
 export function createProtocolStreamAdapter(input: {
   externalProtocol: GatewayProtocol;
   providerProtocol: GatewayProtocol;
+  providerAdapterKind?: string;
   requestedModel: string;
 }): ProtocolStreamAdapter {
+  if (input.providerAdapterKind === "codex" || input.providerAdapterKind === "xai") {
+    const responses = new ResponsesToOpenAIChatStreamState(input.requestedModel);
+    if (input.externalProtocol === "openai") {
+      return {
+        push: (_eventType, data) => responses.push(data),
+        finish: () => responses.finish(),
+      };
+    }
+    const anthropic = new OpenAIToAnthropicStreamState(input.requestedModel);
+    return {
+      push: (_eventType, data) => responses.push(data).flatMap((chunk) => anthropic.push(chunk)),
+      finish: () => [
+        ...responses.finish().flatMap((chunk) => anthropic.push(chunk)),
+        ...anthropic.finish(),
+      ],
+    };
+  }
   if (input.externalProtocol === "anthropic" && input.providerProtocol === "openai") {
     const state = new OpenAIToAnthropicStreamState(input.requestedModel);
     return { push: (_eventType, data) => state.push(data), finish: () => state.finish() };

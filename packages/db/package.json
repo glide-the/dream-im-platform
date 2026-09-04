@@ -6,6 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
+    "./provider-managed-accounts-data": "./dist/provider-managed-accounts-data.js",
+    "./provider-owned-credentials-data": "./dist/provider-owned-credentials-data.js",
+    "./provider-deleted-credential-orphans-data": "./dist/provider-deleted-credential-orphans-data.js",
     "./schema": "./src/schema/index.ts",
     "./schema/*": "./src/schema/*.ts"
   },
@@ -18,6 +21,15 @@
       "./client": {
         "types": "./dist/client.d.ts",
         "import": "./dist/client.js"
+      },
+      "./provider-managed-accounts-data": {
+        "import": "./dist/provider-managed-accounts-data.js"
+      },
+      "./provider-owned-credentials-data": {
+        "import": "./dist/provider-owned-credentials-data.js"
+      },
+      "./provider-deleted-credential-orphans-data": {
+        "import": "./dist/provider-deleted-credential-orphans-data.js"
       },
       "./schema": {
         "types": "./dist/schema/index.d.ts",
@@ -35,11 +47,17 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && pnpm run build:provider-managed-accounts-data && pnpm run build:provider-owned-credentials-data && pnpm run build:provider-deleted-credential-orphans-data",
+    "build:provider-managed-accounts-data": "esbuild src/provider-managed-accounts-data-cli.ts --bundle --platform=node --format=esm --target=node20 --external:pg --external:./migration-runtime.js --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=dist/provider-managed-accounts-data.js",
+    "build:provider-owned-credentials-data": "esbuild src/provider-owned-credentials-data-cli.ts --bundle --platform=node --format=esm --target=node20 --external:pg --external:./migration-runtime.js --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=dist/provider-owned-credentials-data.js",
+    "build:provider-deleted-credential-orphans-data": "esbuild src/provider-deleted-credential-orphans-data-cli.ts --bundle --platform=node --format=esm --target=node20 --external:pg --external:./migration-runtime.js --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=dist/provider-deleted-credential-orphans-data.js",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
-    "generate": "drizzle-kit generate --config drizzle.config.ts",
+    "generate": "pnpm build && drizzle-kit generate --config drizzle.config.ts",
     "migrate": "tsx src/migrate.ts",
+    "migrate:provider-managed-accounts": "node dist/provider-managed-accounts-data.js",
+    "migrate:provider-owned-credentials": "node dist/provider-owned-credentials-data.js",
+    "migrate:provider-deleted-credential-orphans": "node dist/provider-deleted-credential-orphans-data.js",
     "migrate:status": "tsx src/migrate.ts --status",
     "migrate:check": "tsx src/migrate.ts --check"
   },
@@ -52,6 +70,7 @@
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.31.8",
+    "esbuild": "0.25.12",
     "tsx": "^4.19.2",
     "typescript": "5.5.4"
   }

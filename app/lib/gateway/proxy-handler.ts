@@ -1,7 +1,7 @@
-// [Input] Prepared billable Gateway request, client cancellation, protocol body, and provider transport stream.
-// [Output] Adapted JSON/SSE response with payload capture, usage accounting, timeout refresh, and settlement.
+// [Input] Prepared billable request, product dialect, client cancellation, protocol body, and provider response.
+// [Output] Adapted JSON/SSE response with payload capture, renewal snapshot, usage accounting, and settlement.
 // [Pos] Core provider proxy lifecycle joining protocol adapters, transport, billing, and response persistence.
-// [Sync] 2026-08-27: refresh provider stream-idle timeout on every upstream network chunk.
+// [Sync] 2026-09-04: persist managed credential revision/renewal and adapt Responses JSON/SSE without replay.
 
 import type { z } from "zod";
 import { createHash } from "node:crypto";
@@ -21,6 +21,7 @@ import { adaptProviderRequest, adaptProviderResponse, record, type GatewayProtoc
 import { ProviderHttpError, sendProviderRequest } from "./provider-transport";
 import { createProtocolStreamAdapter } from "./stream-adapters";
 import { parseSseStream, serializeSse } from "./sse";
+import { responseObjectFromEvent } from "./responses-adapter";
 import {
   applyAnthropicStreamEvent,
   applyOpenAIChatStreamChunk,
@@ -89,6 +90,43 @@ function parseProviderJson(raw: string) {
   } catch {
     throw new GatewayError("UPSTREAM_RESPONSE_INVALID", "The upstream provider returned invalid JSON", 502, "upstream_error");
   }
+}
+
+async function readProviderJsonResponse(
+  transport: Awaited<ReturnType<typeof sendProviderRequest>>,
+  adapterKind?: string,
+) {
+  const isResponsesAdapter = adapterKind === "codex" || adapterKind === "xai";
+  if (!isResponsesAdapter || !transport.response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
+    return parseProviderJson(await transport.response.text());
+  }
+  if (!transport.response.body) {
+    throw new GatewayError(
+      "UPSTREAM_RESPONSE_INVALID",
+      "The upstream provider returned an empty Responses stream",
+      502,
+      "upstream_error",
+    );
+  }
+  let terminal: JsonRecord | undefined;
+  for await (const event of parseSseStream(
+    transport.response.body,
+    transport.abort.signal,
+    transport.abort.refreshStreamIdleTimeout,
+  )) {
+    if (event.data === "[DONE]") break;
+    const value = parseProviderJson(event.data);
+    terminal = responseObjectFromEvent(value) ?? terminal;
+  }
+  if (!terminal) {
+    throw new GatewayError(
+      "UPSTREAM_RESPONSE_INVALID",
+      "The upstream Responses stream ended without a terminal response",
+      502,
+      "upstream_error",
+    );
+  }
+  return terminal;
 }
 
 function outputUsage(protocol: GatewayProtocol, body: unknown) {
@@ -177,19 +215,23 @@ export async function proxyNonStreaming(input: {
   const upstreamBody = adaptProviderRequest({
     externalProtocol: input.externalProtocol,
     providerProtocol: input.prepared.resolved.provider.protocol,
+    providerAdapterKind: input.prepared.resolved.provider.adapterKind,
     body: { ...input.body, stream: false },
     model: input.prepared.resolved.model.upstreamModel,
     maxOutputTokens: input.prepared.effectiveMaxOutputTokens,
   });
   let transport: Awaited<ReturnType<typeof sendProviderRequest>>;
   try {
-    transport = await sendProviderRequest({ resolved: input.prepared.resolved, body: upstreamBody, requestSignal: input.request.signal, requestHeaders: input.request.headers, requestUrl: input.request.url });
-    const upstreamRaw = await transport.response.text();
+    transport = await sendProviderRequest({ resolved: input.prepared.resolved, body: upstreamBody, requestSignal: input.request.signal, requestHeaders: input.request.headers, requestUrl: input.request.url, gatewayRequestId: input.prepared.requestId, allowManagedCredentialRetry: true });
+    const providerBody = await readProviderJsonResponse(
+      transport,
+      input.prepared.resolved.provider.adapterKind,
+    );
     transport.abort.cleanup();
-    const providerBody = parseProviderJson(upstreamRaw);
     const output = adaptProviderResponse({
       externalProtocol: input.externalProtocol,
       providerProtocol: input.prepared.resolved.provider.protocol,
+      providerAdapterKind: input.prepared.resolved.provider.adapterKind,
       body: providerBody,
       requestedModel: input.body.model as string,
     });
@@ -233,6 +275,7 @@ export async function proxyStreaming(input: {
   const upstreamBody = adaptProviderRequest({
     externalProtocol: input.externalProtocol,
     providerProtocol: input.prepared.resolved.provider.protocol,
+    providerAdapterKind: input.prepared.resolved.provider.adapterKind,
     body: { ...input.body, stream: true, ...(input.prepared.resolved.provider.protocol === "openai" ? { stream_options: { ...(record(input.body.stream_options) ?? {}), include_usage: true } } : {}) },
     model: input.prepared.resolved.model.upstreamModel,
     maxOutputTokens: input.prepared.effectiveMaxOutputTokens,
@@ -240,7 +283,7 @@ export async function proxyStreaming(input: {
   await markGatewayRequestStreaming(input.prepared.requestId);
   let transport: Awaited<ReturnType<typeof sendProviderRequest>>;
   try {
-    transport = await sendProviderRequest({ resolved: input.prepared.resolved, body: upstreamBody, requestSignal: input.request.signal, requestHeaders: input.request.headers, requestUrl: input.request.url });
+    transport = await sendProviderRequest({ resolved: input.prepared.resolved, body: upstreamBody, requestSignal: input.request.signal, requestHeaders: input.request.headers, requestUrl: input.request.url, gatewayRequestId: input.prepared.requestId });
   } catch (error) {
     const mapped = await finalizeProviderFailure({ requestId: input.prepared.requestId, protocol: input.externalProtocol, error, startedAt, cancelled: input.request.signal.aborted });
     const headers = responseHeaders(input.prepared.requestId);
@@ -270,7 +313,12 @@ export async function proxyStreaming(input: {
     transport.abort.signal,
     transport.abort.refreshStreamIdleTimeout,
   )[Symbol.asyncIterator]();
-  const adapter = createProtocolStreamAdapter({ externalProtocol: input.externalProtocol, providerProtocol: input.prepared.resolved.provider.protocol, requestedModel: String(input.body.model) });
+  const adapter = createProtocolStreamAdapter({
+    externalProtocol: input.externalProtocol,
+    providerProtocol: input.prepared.resolved.provider.protocol,
+    providerAdapterKind: input.prepared.resolved.provider.adapterKind,
+    requestedModel: String(input.body.model),
+  });
   let usage = emptyUsage(input.externalProtocol);
   usage.upstreamRequestId = upstreamHeaderRequestId;
   let firstTokenAt: number | undefined;

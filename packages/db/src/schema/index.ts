@@ -3,10 +3,20 @@
 // [Pos] @ink-memory/db schema source; the root drizzle history is its immutable DDL ledger.
 // [Sync] 2026-08-21: move the canonical schema into the Paperclip-style database workspace package.
 // [Sync] 2026-08-28: add nullable positive Claude Code Runtime model windows; 0041 publishes the exact capability.
+// [Sync] 2026-09-04: add revisioned static Provider credential validation state.
+// [Sync] 2026-09-04: add fenced product-account Provider authentication state,
+// encrypted managed credentials/attempts, and non-secret Gateway auth snapshots.
+// [Sync] 2026-09-04: add Provider-specific durable revocation outbox jobs with
+// encrypted payload retention, lease CAS, and terminal secret erasure.
+// [Sync] 2026-09-04: expand managed Provider credentials into product-scoped
+// accounts with explicit defaults, Provider bindings, and account-level fences.
+// [Sync] 2026-09-04: restore direct Provider ownership while retaining the
+// pinned binding marker only as an internal compatibility field.
 import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -396,11 +406,26 @@ export const aiProviders = pgTable(
     code: text("code").notNull(),
     name: text("name").notNull(),
     protocol: text("protocol").notNull(),
-    base_url: text("base_url").notNull(),
+    base_url: text("base_url"),
     api_key_ciphertext: text("api_key_ciphertext"),
     api_key_iv: text("api_key_iv"),
     api_key_tag: text("api_key_tag"),
     api_key_fingerprint: text("api_key_fingerprint"),
+    auth_revision: integer("auth_revision").notNull().default(1),
+    adapter_kind: text("adapter_kind").notNull().default("generic"),
+    active_credential_kind: text("active_credential_kind")
+      .notNull()
+      .default("static_api_key"),
+    auth_epoch: integer("auth_epoch").notNull().default(1),
+    managed_account_binding_mode: text("managed_account_binding_mode"),
+    managed_credential_id: text("managed_credential_id"),
+    credential_validation_status: text("credential_validation_status")
+      .notNull()
+      .default("unverified"),
+    credential_validated_at: timestamp("credential_validated_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     status: text("status").notNull().default("disabled"),
     timeout_ms: integer("timeout_ms").notNull().default(120_000),
     max_retries: integer("max_retries").notNull().default(1),
@@ -414,15 +439,429 @@ export const aiProviders = pgTable(
   },
   (table) => [
     uniqueIndex("ai_providers_code_uidx").on(table.code),
+    uniqueIndex("ai_providers_id_adapter_kind_uidx").on(
+      table.id,
+      table.adapter_kind,
+    ),
     index("ai_providers_status_idx").on(table.status),
+    index("ai_providers_managed_credential_idx").on(
+      table.managed_credential_id,
+    ),
+    index("ai_providers_managed_binding_idx").on(
+      table.adapter_kind,
+      table.managed_account_binding_mode,
+    ),
+    foreignKey({
+      columns: [
+        table.managed_credential_id,
+        table.id,
+        table.adapter_kind,
+      ],
+      foreignColumns: [
+        aiProviderManagedCredentials.id,
+        aiProviderManagedCredentials.provider_id,
+        aiProviderManagedCredentials.adapter_kind,
+      ],
+      name: "ai_providers_managed_credential_owner_fk",
+    }).onDelete("restrict"),
     check(
       "ai_providers_protocol_check",
       sql`${table.protocol} IN ('anthropic', 'openai')`,
     ),
     check("ai_providers_timeout_check", sql`${table.timeout_ms} > 0`),
+    check("ai_providers_auth_revision_check", sql`${table.auth_revision} >= 1`),
+    check("ai_providers_auth_epoch_check", sql`${table.auth_epoch} >= 1`),
+    check(
+      "ai_providers_adapter_kind_check",
+      sql`${table.adapter_kind} IN ('generic', 'codex', 'xai', 'github_copilot')`,
+    ),
+    check(
+      "ai_providers_active_credential_kind_check",
+      sql`${table.active_credential_kind} IN ('static_api_key', 'managed_oauth', 'none')`,
+    ),
+    check(
+      "ai_providers_adapter_credential_kind_check",
+      sql`(${table.adapter_kind} = 'generic' AND ${table.active_credential_kind} = 'static_api_key')
+          OR (${table.adapter_kind} IN ('codex', 'xai', 'github_copilot') AND ${table.active_credential_kind} IN ('managed_oauth', 'none'))`,
+    ),
+    check(
+      "ai_providers_adapter_base_url_check",
+      sql`(${table.adapter_kind} = 'generic' AND ${table.base_url} IS NOT NULL)
+          OR (${table.adapter_kind} IN ('codex', 'xai', 'github_copilot') AND ${table.base_url} IS NULL)`,
+    ),
+    check(
+      "ai_providers_managed_account_binding_check",
+      sql`(${table.adapter_kind} = 'generic'
+            AND ${table.managed_account_binding_mode} IS NULL
+            AND ${table.managed_credential_id} IS NULL)
+          OR (${table.adapter_kind} IN ('codex', 'xai', 'github_copilot')
+            AND ${table.managed_account_binding_mode} = 'pinned')`,
+    ),
+    check(
+      "ai_providers_credential_validation_status_check",
+      sql`${table.credential_validation_status} IN ('unverified', 'valid')`,
+    ),
+    check(
+      "ai_providers_credential_validation_timestamp_check",
+      sql`(${table.credential_validation_status} = 'unverified' AND ${table.credential_validated_at} IS NULL)
+          OR (${table.credential_validation_status} = 'valid' AND ${table.credential_validated_at} IS NOT NULL)`,
+    ),
     check(
       "ai_providers_retries_check",
       sql`${table.max_retries} BETWEEN 0 AND 5`,
+    ),
+  ],
+);
+
+export const aiProviderManagedCredentials = pgTable(
+  "ai_provider_managed_credentials",
+  {
+    id: text("id").primaryKey(),
+    provider_id: text("provider_id"),
+    adapter_kind: text("adapter_kind").notNull(),
+    status: text("status").notNull(),
+    auth_epoch: integer("auth_epoch").notNull().default(1),
+    revision: integer("revision").notNull().default(1),
+    display_name: text("display_name"),
+    envelope_context_id: text("envelope_context_id").notNull(),
+    bundle_format_version: integer("bundle_format_version"),
+    bundle_key_id: text("bundle_key_id"),
+    bundle_ciphertext: text("bundle_ciphertext"),
+    bundle_nonce: text("bundle_nonce"),
+    bundle_tag: text("bundle_tag"),
+    registration_fingerprint: text("registration_fingerprint").notNull(),
+    account_identity_hash: text("account_identity_hash"),
+    account_label: text("account_label"),
+    granted_scopes: text("granted_scopes")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    access_expires_at: timestamp("access_expires_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    refresh_expires_at: timestamp("refresh_expires_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    session_expires_at: timestamp("session_expires_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    refresh_lease_id: text("refresh_lease_id"),
+    refresh_lease_expires_at: timestamp("refresh_lease_expires_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    revocation_status: text("revocation_status"),
+    revocation_attempted_at: timestamp("revocation_attempted_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    revocation_completed_at: timestamp("revocation_completed_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    revocation_failure_code: text("revocation_failure_code"),
+    disconnected_at: timestamp("disconnected_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("ai_provider_managed_credentials_id_adapter_uidx").on(
+      table.id,
+      table.adapter_kind,
+    ),
+    uniqueIndex("ai_provider_managed_credentials_id_provider_adapter_uidx").on(
+      table.id,
+      table.provider_id,
+      table.adapter_kind,
+    ),
+    index("ai_provider_managed_credentials_adapter_status_idx").on(
+      table.adapter_kind,
+      table.status,
+    ),
+    uniqueIndex("ai_provider_managed_credentials_active_identity_uidx")
+      .on(table.adapter_kind, table.account_identity_hash)
+      .where(
+        sql`${table.account_identity_hash} IS NOT NULL AND ${table.status} IN ('connected', 'reauth_required')`,
+      ),
+    uniqueIndex("ai_provider_managed_credentials_live_provider_uidx")
+      .on(table.provider_id)
+      .where(
+        sql`${table.provider_id} IS NOT NULL AND ${table.status} IN ('connected', 'reauth_required')`,
+      ),
+    index("ai_provider_managed_credentials_refresh_idx").on(
+      table.status,
+      table.access_expires_at,
+    ),
+    foreignKey({
+      columns: [table.provider_id, table.adapter_kind],
+      foreignColumns: [aiProviders.id, aiProviders.adapter_kind],
+      name: "ai_provider_managed_credentials_provider_adapter_fk",
+    }).onDelete("restrict"),
+    check(
+      "ai_provider_managed_credentials_adapter_kind_check",
+      sql`${table.adapter_kind} IN ('codex', 'xai', 'github_copilot')`,
+    ),
+    check(
+      "ai_provider_managed_credentials_status_check",
+      sql`${table.status} IN ('connected', 'reauth_required', 'disconnected')`,
+    ),
+    check(
+      "ai_provider_managed_credentials_live_owner_check",
+      sql`${table.status} = 'disconnected' OR ${table.provider_id} IS NOT NULL`,
+    ),
+    check(
+      "ai_provider_managed_credentials_revision_check",
+      sql`${table.auth_epoch} >= 1 AND ${table.revision} >= 1`,
+    ),
+    check(
+      "ai_provider_managed_credentials_envelope_context_check",
+      sql`btrim(${table.envelope_context_id}) <> ''`,
+    ),
+    check(
+      "ai_provider_managed_credentials_active_bundle_check",
+      sql`(${table.status} = 'connected'
+            AND ${table.bundle_format_version} IS NOT NULL
+            AND ${table.bundle_key_id} IS NOT NULL
+            AND ${table.bundle_ciphertext} IS NOT NULL
+            AND ${table.bundle_nonce} IS NOT NULL
+            AND ${table.bundle_tag} IS NOT NULL)
+          OR ${table.status} = 'reauth_required'
+          OR (${table.status} = 'disconnected'
+            AND ${table.bundle_format_version} IS NULL)`,
+    ),
+    check(
+      "ai_provider_managed_credentials_bundle_shape_check",
+      sql`(${table.bundle_format_version} IS NULL
+            AND ${table.bundle_key_id} IS NULL
+            AND ${table.bundle_ciphertext} IS NULL
+            AND ${table.bundle_nonce} IS NULL
+            AND ${table.bundle_tag} IS NULL)
+          OR (${table.bundle_format_version} >= 1
+            AND ${table.bundle_key_id} IS NOT NULL
+            AND ${table.bundle_ciphertext} IS NOT NULL
+            AND ${table.bundle_nonce} IS NOT NULL
+            AND ${table.bundle_tag} IS NOT NULL)`,
+    ),
+    check(
+      "ai_provider_managed_credentials_refresh_lease_check",
+      sql`(${table.refresh_lease_id} IS NULL AND ${table.refresh_lease_expires_at} IS NULL)
+          OR (${table.status} = 'connected'
+            AND ${table.refresh_lease_id} IS NOT NULL
+            AND ${table.refresh_lease_expires_at} IS NOT NULL)`,
+    ),
+    check(
+      "ai_provider_managed_credentials_revocation_status_check",
+      sql`${table.revocation_status} IS NULL
+          OR ${table.revocation_status} IN ('not_attempted', 'succeeded', 'failed', 'unsupported')`,
+    ),
+    check(
+      "ai_provider_managed_credentials_revocation_shape_check",
+      sql`(${table.revocation_status} IS NULL
+            AND ${table.revocation_attempted_at} IS NULL
+            AND ${table.revocation_completed_at} IS NULL
+            AND ${table.revocation_failure_code} IS NULL)
+          OR (${table.revocation_status} IN ('not_attempted', 'unsupported')
+            AND ${table.revocation_attempted_at} IS NULL
+            AND ${table.revocation_completed_at} IS NULL
+            AND ${table.revocation_failure_code} IS NULL)
+          OR (${table.revocation_status} = 'succeeded'
+            AND ${table.revocation_attempted_at} IS NOT NULL
+            AND ${table.revocation_completed_at} IS NOT NULL
+            AND ${table.revocation_failure_code} IS NULL)
+          OR (${table.revocation_status} = 'failed'
+            AND ${table.revocation_attempted_at} IS NOT NULL
+            AND ${table.revocation_completed_at} IS NULL
+            AND ${table.revocation_failure_code} IS NOT NULL)`,
+    ),
+    check(
+      "ai_provider_managed_credentials_revocation_lifecycle_check",
+      sql`(${table.status} = 'disconnected'
+            AND ${table.disconnected_at} IS NOT NULL
+            AND ${table.revocation_status} IS NOT NULL)
+          OR (${table.status} IN ('connected', 'reauth_required')
+            AND ${table.disconnected_at} IS NULL
+            AND ${table.revocation_status} IS NULL)`,
+    ),
+  ],
+);
+
+export const aiProviderRevocationJobs = pgTable(
+  "ai_provider_revocation_jobs",
+  {
+    id: text("id").primaryKey(),
+    provider_id: text("provider_id").notNull(),
+    adapter_kind: text("adapter_kind").notNull(),
+    managed_credential_id: text("managed_credential_id"),
+    account_scope_id: text("account_scope_id").notNull(),
+    credential_auth_epoch: integer("credential_auth_epoch"),
+    envelope_context_id: text("envelope_context_id").notNull(),
+    source_kind: text("source_kind").notNull(),
+    source_record_id: text("source_record_id").notNull(),
+    source_record_revision: integer("source_record_revision").notNull(),
+    source_auth_epoch: integer("source_auth_epoch").notNull(),
+    reason: text("reason").notNull(),
+    status: text("status").notNull(),
+    revision: integer("revision").notNull().default(1),
+    attempt_count: integer("attempt_count").notNull().default(0),
+    next_attempt_at: timestamp("next_attempt_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    operation_lease_id: text("operation_lease_id"),
+    operation_lease_expires_at: timestamp("operation_lease_expires_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    bundle_format_version: integer("bundle_format_version"),
+    bundle_key_id: text("bundle_key_id"),
+    bundle_ciphertext: text("bundle_ciphertext"),
+    bundle_nonce: text("bundle_nonce"),
+    bundle_tag: text("bundle_tag"),
+    registration_fingerprint: text("registration_fingerprint").notNull(),
+    failure_code: text("failure_code"),
+    completed_at: timestamp("completed_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("ai_provider_revocation_jobs_account_source_uidx")
+      .on(
+        table.adapter_kind,
+        table.account_scope_id,
+        table.source_kind,
+        table.source_record_id,
+        table.source_record_revision,
+        table.reason,
+      ),
+    uniqueIndex("ai_provider_revocation_jobs_processing_account_uidx")
+      .on(table.adapter_kind, table.account_scope_id)
+      .where(sql`${table.status} = 'processing'`),
+    index("ai_provider_revocation_jobs_schedule_idx").on(
+      table.status,
+      table.next_attempt_at,
+    ),
+    foreignKey({
+      columns: [table.provider_id, table.adapter_kind],
+      foreignColumns: [aiProviders.id, aiProviders.adapter_kind],
+      name: "ai_provider_revocation_jobs_provider_adapter_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.managed_credential_id, table.adapter_kind],
+      foreignColumns: [
+        aiProviderManagedCredentials.id,
+        aiProviderManagedCredentials.adapter_kind,
+      ],
+      name: "ai_provider_revocation_jobs_credential_adapter_fk",
+    }).onDelete("restrict"),
+    check(
+      "ai_provider_revocation_jobs_adapter_kind_check",
+      sql`${table.adapter_kind} IN ('codex', 'xai', 'github_copilot')`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_source_kind_check",
+      sql`${table.source_kind} IN ('credential', 'attempt')`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_reason_check",
+      sql`${table.reason} IN ('disconnect', 'replacement', 'activation_rejected', 'renewal_rejected')`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_status_check",
+      sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed', 'unsupported')`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_revision_check",
+      sql`${table.source_record_revision} >= 1
+          AND ${table.source_auth_epoch} >= 1
+          AND ${table.revision} >= 1
+          AND ${table.attempt_count} >= 0`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_registration_fingerprint_check",
+      sql`btrim(${table.registration_fingerprint}) <> ''`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_account_scope_check",
+      sql`btrim(${table.account_scope_id}) <> ''
+          AND btrim(${table.envelope_context_id}) <> ''
+          AND (
+            (${table.managed_credential_id} IS NULL
+              AND ${table.credential_auth_epoch} IS NULL)
+            OR (${table.managed_credential_id} IS NOT NULL
+              AND ${table.credential_auth_epoch} >= 1)
+          )`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_bundle_shape_check",
+      sql`(${table.bundle_format_version} IS NULL
+            AND ${table.bundle_key_id} IS NULL
+            AND ${table.bundle_ciphertext} IS NULL
+            AND ${table.bundle_nonce} IS NULL
+            AND ${table.bundle_tag} IS NULL)
+          OR (${table.bundle_format_version} >= 1
+            AND ${table.bundle_key_id} IS NOT NULL
+            AND ${table.bundle_ciphertext} IS NOT NULL
+            AND ${table.bundle_nonce} IS NOT NULL
+            AND ${table.bundle_tag} IS NOT NULL)`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_secret_lifecycle_check",
+      sql`(${table.status} IN ('pending', 'processing', 'failed')
+            AND ${table.bundle_format_version} IS NOT NULL)
+          OR (${table.status} IN ('succeeded', 'unsupported')
+            AND ${table.bundle_format_version} IS NULL)`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_schedule_check",
+      sql`(${table.status} IN ('pending', 'failed')
+            AND ${table.next_attempt_at} IS NOT NULL)
+          OR (${table.status} IN ('processing', 'succeeded', 'unsupported')
+            AND ${table.next_attempt_at} IS NULL)`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_lease_check",
+      sql`(${table.status} = 'processing'
+            AND ${table.operation_lease_id} IS NOT NULL
+            AND ${table.operation_lease_expires_at} IS NOT NULL)
+          OR (${table.status} <> 'processing'
+            AND ${table.operation_lease_id} IS NULL
+            AND ${table.operation_lease_expires_at} IS NULL)`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_failure_check",
+      sql`(${table.status} = 'failed' AND ${table.failure_code} IS NOT NULL)
+          OR (${table.status} <> 'failed' AND ${table.failure_code} IS NULL)`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_completion_check",
+      sql`(${table.status} IN ('succeeded', 'unsupported')
+            AND ${table.completed_at} IS NOT NULL
+            AND ${table.completed_at} >= ${table.created_at})
+          OR (${table.status} IN ('pending', 'processing', 'failed')
+            AND ${table.completed_at} IS NULL)`,
+    ),
+    check(
+      "ai_provider_revocation_jobs_attempt_count_check",
+      sql`${table.status} = 'pending'
+          OR ${table.status} = 'unsupported'
+          OR ${table.attempt_count} >= 1`,
     ),
   ],
 );
@@ -1311,6 +1750,23 @@ export const gatewayRequests = pgTable(
       Record<string, unknown>
     >(),
     protocol: text("protocol").notNull(),
+    provider_adapter_kind: text("provider_adapter_kind")
+      .notNull()
+      .default("generic"),
+    provider_auth_epoch: integer("provider_auth_epoch").notNull().default(1),
+    provider_credential_revision: integer("provider_credential_revision")
+      .notNull()
+      .default(1),
+    provider_managed_credential_id: text("provider_managed_credential_id"),
+    provider_managed_account_auth_epoch: integer(
+      "provider_managed_account_auth_epoch",
+    ),
+    provider_managed_default_revision: integer(
+      "provider_managed_default_revision",
+    ),
+    provider_renewal_attempted: boolean("provider_renewal_attempted")
+      .notNull()
+      .default(false),
     requested_model: text("requested_model").notNull(),
     resolved_model: text("resolved_model").notNull(),
     upstream_request_id: text("upstream_request_id"),
@@ -1404,6 +1860,10 @@ export const gatewayRequests = pgTable(
     ),
     index("gateway_requests_status_idx").on(table.status),
     index("gateway_requests_upstream_idx").on(table.upstream_request_id),
+    index("gateway_requests_managed_credential_idx").on(
+      table.provider_managed_credential_id,
+      table.created_at,
+    ),
     index("gateway_requests_subscription_idx").on(
       table.subscription_id,
       table.created_at,
@@ -1428,6 +1888,35 @@ export const gatewayRequests = pgTable(
       "gateway_requests_cache_write_tokens_check",
       sql`${table.cache_write_tokens} >= 0`,
     ),
+    check(
+      "gateway_requests_provider_adapter_kind_check",
+      sql`${table.provider_adapter_kind} IN ('generic', 'codex', 'xai', 'github_copilot')`,
+    ),
+    check(
+      "gateway_requests_provider_auth_snapshot_check",
+      sql`${table.provider_auth_epoch} >= 1
+          AND ${table.provider_credential_revision} >= 1
+          AND (
+            (${table.provider_managed_credential_id} IS NULL
+              AND ${table.provider_managed_account_auth_epoch} IS NULL
+              AND ${table.provider_managed_default_revision} IS NULL)
+            OR (${table.provider_managed_credential_id} IS NOT NULL
+              AND ${table.provider_managed_account_auth_epoch} >= 1
+              AND (${table.provider_managed_default_revision} IS NULL
+                OR ${table.provider_managed_default_revision} >= 1))
+          )`,
+    ),
+    foreignKey({
+      columns: [
+        table.provider_managed_credential_id,
+        table.provider_adapter_kind,
+      ],
+      foreignColumns: [
+        aiProviderManagedCredentials.id,
+        aiProviderManagedCredentials.adapter_kind,
+      ],
+      name: "gateway_requests_managed_credential_adapter_fk",
+    }).onDelete("restrict"),
     check(
       "gateway_requests_money_check",
       sql`${table.reserved_microusd} >= 0 AND ${table.allowance_reserved_microusd} >= 0 AND ${table.allowance_charged_microusd} >= 0 AND ${table.provider_cost_microusd} >= 0 AND ${table.charged_microusd} >= 0`,
@@ -1879,6 +2368,183 @@ export const adminUsers = pgTable(
       .defaultNow(),
   },
   (table) => [uniqueIndex("admin_users_email_uidx").on(table.email)],
+);
+
+export const aiProviderAuthAttempts = pgTable(
+  "ai_provider_auth_attempts",
+  {
+    id: text("id").primaryKey(),
+    provider_id: text("provider_id").notNull(),
+    adapter_kind: text("adapter_kind").notNull(),
+    flow_kind: text("flow_kind").notNull(),
+    status: text("status").notNull().default("starting"),
+    expected_auth_epoch: integer("expected_auth_epoch").notNull(),
+    target_credential_id: text("target_credential_id"),
+    expected_credential_auth_epoch: integer(
+      "expected_credential_auth_epoch",
+    ),
+    expected_credential_revision: integer("expected_credential_revision"),
+    envelope_context_id: text("envelope_context_id").notNull(),
+    revision: integer("revision").notNull().default(1),
+    idempotency_key_hash: text("idempotency_key_hash").notNull(),
+    request_canonical_hash: text("request_canonical_hash").notNull(),
+    registration_fingerprint: text("registration_fingerprint").notNull(),
+    state_hash: text("state_hash"),
+    bundle_format_version: integer("bundle_format_version"),
+    bundle_key_id: text("bundle_key_id"),
+    bundle_ciphertext: text("bundle_ciphertext"),
+    bundle_nonce: text("bundle_nonce"),
+    bundle_tag: text("bundle_tag"),
+    redirect_uri: text("redirect_uri"),
+    verification_uri: text("verification_uri"),
+    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+    poll_interval_seconds: integer("poll_interval_seconds"),
+    next_poll_at: timestamp("next_poll_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    operation_lease_id: text("operation_lease_id"),
+    operation_lease_expires_at: timestamp("operation_lease_expires_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    failure_code: text("failure_code"),
+    consumed_at: timestamp("consumed_at", { withTimezone: true, mode: "date" }),
+    created_by_admin_id: text("created_by_admin_id")
+      .notNull()
+      .references(() => adminUsers.id, { onDelete: "restrict" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("ai_provider_auth_attempts_idempotency_uidx").on(
+      table.provider_id,
+      table.adapter_kind,
+      table.expected_auth_epoch,
+      table.idempotency_key_hash,
+    ),
+    uniqueIndex("ai_provider_auth_attempts_state_uidx").on(table.state_hash),
+    uniqueIndex("ai_provider_auth_attempts_provider_active_uidx")
+      .on(table.provider_id)
+      .where(sql`${table.status} IN ('starting', 'pending')`),
+    uniqueIndex("ai_provider_auth_attempts_target_active_uidx")
+      .on(table.target_credential_id)
+      .where(
+        sql`${table.target_credential_id} IS NOT NULL AND ${table.status} IN ('starting', 'pending')`,
+      ),
+    index("ai_provider_auth_attempts_expiry_idx").on(
+      table.status,
+      table.expires_at,
+    ),
+    foreignKey({
+      columns: [table.provider_id, table.adapter_kind],
+      foreignColumns: [aiProviders.id, aiProviders.adapter_kind],
+      name: "ai_provider_auth_attempts_provider_adapter_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.target_credential_id, table.adapter_kind],
+      foreignColumns: [
+        aiProviderManagedCredentials.id,
+        aiProviderManagedCredentials.adapter_kind,
+      ],
+      name: "ai_provider_auth_attempts_target_credential_adapter_fk",
+    }).onDelete("restrict"),
+    check(
+      "ai_provider_auth_attempts_adapter_kind_check",
+      sql`${table.adapter_kind} IN ('codex', 'xai', 'github_copilot')`,
+    ),
+    check(
+      "ai_provider_auth_attempts_flow_kind_check",
+      sql`${table.flow_kind} = 'device_code'`,
+    ),
+    check(
+      "ai_provider_auth_attempts_status_check",
+      sql`${table.status} IN ('starting', 'pending', 'succeeded', 'denied', 'expired', 'cancelled', 'failed')`,
+    ),
+    check(
+      "ai_provider_auth_attempts_epoch_revision_check",
+      sql`${table.expected_auth_epoch} >= 1 AND ${table.revision} >= 1`,
+    ),
+    check(
+      "ai_provider_auth_attempts_target_fence_check",
+      sql`(${table.target_credential_id} IS NULL
+            AND ${table.expected_credential_auth_epoch} IS NULL
+            AND ${table.expected_credential_revision} IS NULL)
+          OR (${table.target_credential_id} IS NOT NULL
+            AND ${table.expected_credential_auth_epoch} >= 1
+            AND ${table.expected_credential_revision} >= 1)`,
+    ),
+    check(
+      "ai_provider_auth_attempts_envelope_context_check",
+      sql`btrim(${table.envelope_context_id}) <> ''`,
+    ),
+    check(
+      "ai_provider_auth_attempts_bundle_shape_check",
+      sql`(${table.bundle_format_version} IS NULL
+            AND ${table.bundle_key_id} IS NULL
+            AND ${table.bundle_ciphertext} IS NULL
+            AND ${table.bundle_nonce} IS NULL
+            AND ${table.bundle_tag} IS NULL)
+          OR (${table.bundle_format_version} >= 1
+            AND ${table.bundle_key_id} IS NOT NULL
+            AND ${table.bundle_ciphertext} IS NOT NULL
+            AND ${table.bundle_nonce} IS NOT NULL
+            AND ${table.bundle_tag} IS NOT NULL)`,
+    ),
+    check(
+      "ai_provider_auth_attempts_active_bundle_check",
+      sql`(${table.status} = 'starting'
+            AND ${table.bundle_format_version} IS NULL)
+          OR (${table.status} = 'pending'
+            AND ${table.bundle_format_version} IS NOT NULL)
+          OR (${table.status} IN ('succeeded', 'denied', 'expired', 'cancelled', 'failed')
+            AND ${table.bundle_format_version} IS NULL)`,
+    ),
+    check(
+      "ai_provider_auth_attempts_flow_shape_check",
+      sql`(${table.status} = 'starting'
+            AND ${table.state_hash} IS NULL
+            AND ${table.redirect_uri} IS NULL
+            AND ${table.verification_uri} IS NULL
+            AND ${table.expires_at} IS NULL
+            AND ${table.poll_interval_seconds} IS NULL
+            AND ${table.next_poll_at} IS NULL)
+          OR (${table.status} <> 'starting'
+            AND ${table.state_hash} IS NULL
+            AND ${table.redirect_uri} IS NULL
+            AND ${table.verification_uri} IS NOT NULL
+            AND ${table.expires_at} IS NOT NULL
+            AND ${table.poll_interval_seconds} > 0
+            AND ${table.next_poll_at} IS NOT NULL)
+          OR (${table.status} IN ('succeeded', 'denied', 'expired', 'cancelled', 'failed')
+            AND ${table.state_hash} IS NULL
+            AND ${table.redirect_uri} IS NULL
+            AND ${table.verification_uri} IS NULL
+            AND ${table.expires_at} IS NULL
+            AND ${table.poll_interval_seconds} IS NULL
+            AND ${table.next_poll_at} IS NULL)`,
+    ),
+    check(
+      "ai_provider_auth_attempts_operation_lease_check",
+      sql`(${table.operation_lease_id} IS NULL AND ${table.operation_lease_expires_at} IS NULL)
+          OR (${table.status} IN ('starting', 'pending')
+            AND ${table.operation_lease_id} IS NOT NULL
+            AND ${table.operation_lease_expires_at} IS NOT NULL)`,
+    ),
+    check(
+      "ai_provider_auth_attempts_consumed_check",
+      sql`(${table.status} IN ('starting', 'pending') AND ${table.consumed_at} IS NULL)
+          OR (${table.status} IN ('succeeded', 'denied', 'expired', 'cancelled', 'failed') AND ${table.consumed_at} IS NOT NULL)`,
+    ),
+    check(
+      "ai_provider_auth_attempts_failure_check",
+      sql`${table.status} <> 'failed' OR ${table.failure_code} IS NOT NULL`,
+    ),
+  ],
 );
 
 export const adminRoles = pgTable(

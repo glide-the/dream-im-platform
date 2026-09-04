@@ -1,7 +1,7 @@
 # [Input] pnpm workspace sources, @ink-memory/db, immutable Drizzle history, and Next.js app.
 # [Output] Single Admin image supervising embedded PostgreSQL and explicit migration tools.
 # [Pos] Shared local/Alibaba Cloud production image; no separate database or MinIO image is required.
-# [Sync] 2026-08-22: pre-create native library aliases; serialize ECS build stages.
+# [Sync] 2026-09-04: ship the compiled Provider managed-account migration orchestrator with the DB runtime.
 FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
@@ -39,6 +39,7 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /db-runtime ./packages/db
+COPY scripts/migrate-provider-managed-accounts.mjs ./scripts/migrate-provider-managed-accounts.mjs
 RUN node --input-type=module -e \
   'import("/app/packages/db/dist/embedded-postgres-native.js").then((runtime) => runtime.prepareEmbeddedPostgresNativeRuntime())'
 RUN sed -i \

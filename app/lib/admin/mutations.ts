@@ -1,7 +1,10 @@
 // [Input] Authenticated Admin mutation requests, strict resource schemas, and PostgreSQL transactions.
-// [Output] Audited CRUD writes, including capability-gated nullable Claude Code Runtime model settings.
+// [Output] Audited CRUD writes, including dependency-gated Provider tombstones and model Runtime settings.
 // [Pos] Shared Admin mutation domain; routes delegate here after Origin/RBAC checks.
 // [Sync] 2026-08-28: persist positive int4 compact/context model values and fail closed before writes without 0041 capability.
+// [Sync] 2026-09-04: preserve static validation while gating managed activation on live registry/encryption/fingerprint readiness.
+// [Sync] 2026-09-04: create managed Providers unbound and require their own account before enablement.
+// [Sync] 2026-09-04: add revision-fenced Provider deletion without erasing billing or OAuth history.
 
 import type { PoolClient } from "pg";
 import { z } from "zod";
@@ -9,14 +12,19 @@ import { resolveGatewayBaseUrl } from "../gateway/public-base-url";
 import { creditBillingAccountOnClient } from "../billing/repository";
 import { createGatewayApiKey } from "../gateway/api-keys";
 import { GatewayError } from "../gateway/errors";
+import { resolveProviderAuthMode } from "../gateway/provider-auth";
 import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
 import { claudeCodeRuntimeCapabilityAvailable } from "../db/claude-code-runtime-capability";
-import { withPlatformTransaction } from "../platform-db";
+import { withPlatformClient, withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
+import { getProviderProductRegistry } from "../providers";
+import { providerTokenBundleSchema } from "../providers/schemas";
+import { decryptCredentialEnvelope } from "../security/credential-envelope";
 import { modelRequestHeadersSchema } from "../models/request-headers";
 import {
   CredentialConfigurationError,
   encryptCredential,
+  getCredentialEncryptionKey,
   type EncryptedCredential,
 } from "../security/credential-encryption";
 import {
@@ -34,6 +42,15 @@ import {
 } from "./guard";
 import type { AdminIdentity } from "./session";
 import { hashAdminPassword } from "./password";
+import {
+  findForbiddenProviderConfigKey,
+  sanitizeProviderRecord,
+} from "./provider-config-safety";
+import {
+  prepareProviderCredentialUpdate,
+  recordProviderCredentialRevisionConflict,
+  type PreparedProviderCredentialUpdate,
+} from "./provider-credentials";
 import { CLAUDE_CODE_RUNTIME_INTEGER_MAX } from "../../../config/claude-agent-resource-policy";
 
 const codeSchema = z
@@ -42,10 +59,79 @@ const codeSchema = z
   .min(2)
   .max(80)
   .regex(/^[a-z0-9][a-z0-9._-]*$/);
+const providerAdapterKindSchema = z.enum([
+  "generic",
+  "codex",
+  "xai",
+  "github_copilot",
+]);
+const managedProviderOwnedConfigKeys = new Set([
+  "baseurl",
+  "endpoint",
+  "endpointurl",
+  "modelsurl",
+  "deviceauthorizationurl",
+  "tokenurl",
+  "revokeurl",
+  "resourceurl",
+  "clientid",
+  "integrationprofile",
+  "headers",
+  "authheaders",
+]);
+
+function findManagedProviderOwnedConfigKey(
+  value: unknown,
+  path: Array<string | number> = [],
+): Array<string | number> | null {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      const found = findManagedProviderOwnedConfigKey(entry, [...path, index]);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  for (const [key, entry] of Object.entries(value)) {
+    const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (managedProviderOwnedConfigKeys.has(normalized)) return [...path, key];
+    const found = findManagedProviderOwnedConfigKey(entry, [...path, key]);
+    if (found) return found;
+  }
+  return null;
+}
+
+function assertManagedProviderConfig(config: Record<string, unknown> | undefined) {
+  if (!config) return;
+  if (config.authMode !== undefined) {
+    throw new AdminError(
+      "PROVIDER_MANAGED_AUTH_MODE_NOT_EDITABLE",
+      "Managed product authentication headers are owned by the product registry",
+      400,
+    );
+  }
+  const forbiddenPath = findManagedProviderOwnedConfigKey(config);
+  if (forbiddenPath) {
+    throw new AdminError(
+      "PROVIDER_MANAGED_PRODUCT_CONFIG_NOT_EDITABLE",
+      "Managed product endpoints, registrations, and headers are owned by the deployment product registry",
+      400,
+      { path: forbiddenPath },
+    );
+  }
+}
 const optionalLimit = z.number().int().nonnegative().nullable().optional();
 const providerConfigSchema = z
   .record(z.string(), z.unknown())
   .superRefine((config, context) => {
+    const forbiddenPath = findForbiddenProviderConfigKey(config);
+    if (forbiddenPath) {
+      context.addIssue({
+        code: "custom",
+        path: forbiddenPath,
+        message: "Provider config cannot contain credential or secret fields",
+      });
+    }
     if (
       config.authMode !== undefined &&
       !["x-api-key", "bearer"].includes(String(config.authMode))
@@ -106,8 +192,9 @@ const providerConfigSchema = z
 const providerCreateSchema = z.strictObject({
   code: codeSchema,
   name: z.string().trim().min(1).max(120),
+  adapterKind: providerAdapterKindSchema.default("generic"),
   protocol: z.enum(["anthropic", "openai"]),
-  baseUrl: z.url().max(2_000),
+  baseUrl: z.url().max(2_000).nullable().optional(),
   apiKey: z.string().trim().min(8).max(8_000).optional(),
   status: z.enum(["active", "disabled"]).default("disabled"),
   timeoutMs: z.number().int().min(1_000).max(900_000).default(120_000),
@@ -123,6 +210,7 @@ const providerUpdateSchema = z.strictObject({
   timeoutMs: z.number().int().min(1_000).max(900_000).optional(),
   maxRetries: z.number().int().min(0).max(5).optional(),
   config: providerConfigSchema.optional(),
+  expectedAuthRevision: z.number().int().positive().optional(),
 });
 
 const modelCreateSchema = z.strictObject({
@@ -258,6 +346,9 @@ const adminRoleUpdateSchema = adminRoleCreateSchema
   .omit({ code: true })
   .partial()
   .strict();
+const providerDeleteSchema = z.strictObject({
+  expectedDeleteRevision: z.string().regex(/^[a-f0-9]{32}$/),
+});
 
 async function parseBody<T extends z.ZodTypeAny>(request: Request, schema: T) {
   let body: unknown;
@@ -307,6 +398,16 @@ function pgMutationError(error: unknown) {
     "code" in error &&
     error.code === "23505"
   ) {
+    if (
+      "constraint" in error
+      && error.constraint === "ai_providers_code_uidx"
+    ) {
+      return new AdminError(
+        "PROVIDER_CODE_CONFLICT",
+        "Provider Code 已被使用，请为这个 Provider 设置一个不同的 Code",
+        409,
+      );
+    }
     return new AdminError(
       "ADMIN_RESOURCE_CONFLICT",
       "A resource with the same unique identifier already exists",
@@ -350,50 +451,111 @@ async function insertProvider(
   client: PoolClient,
   input: z.infer<typeof providerCreateSchema>,
 ) {
-  const baseUrl = resolveAdminProviderBaseUrl({
-    protocol: input.protocol,
-    baseUrl: input.baseUrl,
-  });
-  if (input.status === "active" && !input.apiKey) {
+  const managed = input.adapterKind !== "generic";
+  if (managed && input.protocol !== "openai") {
+    throw new AdminError(
+      "PROVIDER_MANAGED_PROTOCOL_REQUIRED",
+      "Managed product Providers use the OpenAI protocol adapter",
+      400,
+    );
+  }
+  if (managed && input.baseUrl !== null && input.baseUrl !== undefined) {
+    throw new AdminError(
+      "PROVIDER_MANAGED_ENDPOINT_NOT_EDITABLE",
+      "Managed product endpoints are owned by the deployment product registry",
+      400,
+    );
+  }
+  if (managed && input.apiKey !== undefined) {
+    throw new AdminError(
+      "PROVIDER_MANAGED_STATIC_CREDENTIAL_DENIED",
+      "Managed product Providers cannot store a static API key",
+      400,
+    );
+  }
+  if (managed) assertManagedProviderConfig(input.config);
+  if (!managed) {
+    try {
+      resolveProviderAuthMode({ protocol: input.protocol, config: input.config });
+    } catch (error) {
+      if (!(error instanceof GatewayError)) throw error;
+      throw new AdminError(
+        error.code,
+        "The Provider authentication configuration is invalid",
+        400,
+      );
+    }
+  }
+  if (!managed && !input.baseUrl) {
+    throw new AdminError(
+      "PROVIDER_BASE_URL_REQUIRED",
+      "A generic Provider requires an API endpoint",
+      400,
+    );
+  }
+  const baseUrl = managed
+    ? null
+    : resolveAdminProviderBaseUrl({
+        protocol: input.protocol,
+        baseUrl: input.baseUrl!,
+      });
+  if (!managed && input.status === "active" && !input.apiKey) {
     throw new AdminError(
       "PROVIDER_CREDENTIAL_REQUIRED",
       "An active provider requires an API credential",
       400,
     );
   }
-  const encrypted = input.apiKey
+  if (input.status === "active") {
+    throw new AdminError(
+      "PROVIDER_ACTIVE_CREATE_REQUIRES_VALIDATION_MODEL",
+      "Create the Provider disabled, add a model, then enable it with credential validation",
+      409,
+    );
+  }
+  const encrypted = !managed && input.apiKey
     ? credentialColumns(encryptCredential(input.apiKey))
     : credentialColumns();
   const id = createPlatformId("provider");
   const result = await client.query<Record<string, unknown>>(
     `INSERT INTO ai_providers (
-       id, code, name, protocol, base_url,
+       id, code, name, adapter_kind, protocol, base_url,
        api_key_ciphertext, api_key_iv, api_key_tag, api_key_fingerprint,
+       active_credential_kind, auth_epoch,
+       managed_account_binding_mode, managed_credential_id,
        status, timeout_ms, max_retries, config
      ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+       $11, 1, $12, NULL, $13, $14, $15, $16::jsonb
      )
-     RETURNING id, code, name, protocol, base_url, status, timeout_ms,
+     RETURNING id, code, name, adapter_kind, protocol, base_url,
+               active_credential_kind, auth_epoch,
+               managed_account_binding_mode, managed_credential_id,
+               status, timeout_ms,
                max_retries, api_key_fingerprint,
                (api_key_ciphertext IS NOT NULL) AS credential_configured,
-               config, created_at, updated_at`,
+               auth_revision, credential_validation_status,
+               credential_validated_at, config, created_at, updated_at`,
     [
       id,
       input.code,
       input.name,
+      input.adapterKind,
       input.protocol,
       baseUrl,
       encrypted.ciphertext,
       encrypted.iv,
       encrypted.tag,
       encrypted.fingerprint,
+      managed ? "none" : "static_api_key",
+      managed ? "pinned" : null,
       input.status,
       input.timeoutMs,
       input.maxRetries,
       JSON.stringify(input.config),
     ],
   );
-  return result.rows[0];
+  return sanitizeProviderRecord(result.rows[0]);
 }
 
 async function insertModel(
@@ -906,14 +1068,175 @@ async function updateProvider(
   client: PoolClient,
   id: string,
   input: z.infer<typeof providerUpdateSchema>,
+  prepared: PreparedProviderCredentialUpdate,
 ) {
   const before = await loadRowForUpdate(client, "ai_providers", id);
+  if (before.status === "deleted") {
+    throw new AdminError(
+      "ADMIN_RESOURCE_ITEM_NOT_FOUND",
+      "The requested Provider does not exist",
+      404,
+    );
+  }
+  const managed = before.adapter_kind !== "generic";
+  if (prepared.sensitive) {
+    const currentAuthRevision = Number(before.auth_revision);
+    if (currentAuthRevision !== prepared.expectedAuthRevision) {
+      throw new AdminError(
+        "PROVIDER_AUTH_REVISION_CONFLICT",
+        "The Provider authentication revision has changed",
+        409,
+        {
+          providerCode: before.code,
+          currentAuthRevision,
+          expectedAuthRevision: prepared.expectedAuthRevision,
+          validationModelCode: prepared.validationModelCode,
+        },
+      );
+    }
+  }
+  if (managed && (input.baseUrl !== undefined || input.apiKey !== undefined)) {
+    throw new AdminError(
+      "PROVIDER_MANAGED_CONFIGURATION_IMMUTABLE",
+      "Managed Provider endpoints and credentials are changed only through the Auth panel",
+      400,
+    );
+  }
+  if (managed) assertManagedProviderConfig(input.config);
+  if (managed && input.status === "active") {
+    const adapterKind = before.adapter_kind as "codex" | "xai" | "github_copilot";
+    const deployment = getProviderProductRegistry().readiness(adapterKind);
+    let encryptionKeyReady = true;
+    try {
+      getCredentialEncryptionKey();
+    } catch {
+      encryptionKeyReady = false;
+    }
+    if (deployment.status !== "ready" || !encryptionKeyReady) {
+      throw new AdminError(
+        "PROVIDER_MANAGED_AUTH_DEPLOYMENT_UNAVAILABLE",
+        "The deployment registration, endpoint policy, or encryption key is not ready for this managed Provider",
+        503,
+        {
+          adapterKind,
+          registrationReady: deployment.status === "ready",
+          encryptionKeyReady,
+        },
+      );
+    }
+    const readiness = await client.query<{
+      credential_ready: boolean;
+      credential_id: string | null;
+      credential_revision: number | null;
+      bundle_format_version: number | null;
+      bundle_key_id: string | null;
+      bundle_ciphertext: string | null;
+      bundle_nonce: string | null;
+      bundle_tag: string | null;
+      envelope_context_id: string | null;
+      registration_fingerprint: string | null;
+      model_ready: boolean;
+      pricing_ready: boolean;
+    }>(
+      `SELECT
+         credential.status = 'connected' AS credential_ready,
+         credential.id AS credential_id,
+         credential.revision AS credential_revision,
+         credential.bundle_format_version,
+         credential.bundle_key_id,
+         credential.bundle_ciphertext,
+         credential.bundle_nonce,
+         credential.bundle_tag,
+         credential.envelope_context_id,
+         credential.registration_fingerprint,
+         EXISTS (
+           SELECT 1 FROM ai_models AS model
+            WHERE model.provider_id = $1 AND model.enabled = TRUE
+         ) AS model_ready,
+         EXISTS (
+           SELECT 1
+             FROM ai_models AS model
+             JOIN ai_pricing_rules AS pricing ON pricing.model_id = model.id
+            WHERE model.provider_id = $1 AND model.enabled = TRUE
+              AND pricing.status = 'active'
+              AND pricing.effective_from <= NOW()
+              AND (pricing.effective_to IS NULL OR pricing.effective_to > NOW())
+         ) AS pricing_ready
+       FROM (SELECT 1) AS singleton
+       LEFT JOIN ai_provider_managed_credentials AS credential
+         ON credential.adapter_kind = $2
+        AND credential.id = (SELECT managed_credential_id FROM ai_providers WHERE id = $1)
+        AND credential.provider_id = $1`,
+      [id, before.adapter_kind],
+    );
+    const state = readiness.rows[0];
+    if (!state?.credential_ready) {
+      throw new AdminError(
+        "PROVIDER_MANAGED_CREDENTIAL_REQUIRED",
+        "Connect the managed product account before enabling this Provider",
+        409,
+      );
+    }
+    if (state.registration_fingerprint !== deployment.registrationFingerprint) {
+      throw new AdminError(
+        "PROVIDER_MANAGED_CREDENTIAL_REGISTRATION_STALE",
+        "The connected credential belongs to an older deployment registration; reauthorize before enabling this Provider",
+        409,
+      );
+    }
+    try {
+      if (
+        state.bundle_format_version !== 1
+        || !state.credential_id
+        || !state.credential_revision
+        || !state.bundle_key_id
+        || !state.bundle_ciphertext
+        || !state.bundle_nonce
+        || !state.bundle_tag
+        || !state.envelope_context_id
+      ) {
+        throw new Error("credential envelope unavailable");
+      }
+      const bundle = decryptCredentialEnvelope(
+        {
+          formatVersion: 1,
+          keyId: state.bundle_key_id,
+          ciphertext: state.bundle_ciphertext,
+          nonce: state.bundle_nonce,
+          tag: state.bundle_tag,
+        },
+        {
+          providerId: state.envelope_context_id,
+          adapterKind,
+          recordKind: "credential",
+          recordId: state.credential_id,
+          revision: state.credential_revision,
+        },
+        providerTokenBundleSchema,
+      );
+      if (bundle.product !== adapterKind) throw new Error("credential product mismatch");
+    } catch {
+      throw new AdminError(
+        "PROVIDER_MANAGED_CREDENTIAL_UNAVAILABLE",
+        "The connected credential cannot be opened with the active encryption key; restore the key or reconnect the account",
+        409,
+      );
+    }
+    if (!state.model_ready || !state.pricing_ready) {
+      throw new AdminError(
+        "PROVIDER_MODEL_PRICING_REQUIRED",
+        "Enable at least one model with an active pricing rule before enabling this Provider",
+        409,
+      );
+    }
+  }
   const protocol = before.protocol as "anthropic" | "openai";
   const baseUrl = input.baseUrl
     ? resolveAdminProviderBaseUrl({ protocol, baseUrl: input.baseUrl })
     : undefined;
-  const encrypted = input.apiKey ? encryptCredential(input.apiKey) : undefined;
+  const encrypted = !managed && input.apiKey ? encryptCredential(input.apiKey) : undefined;
   if (
+    !managed &&
     input.status === "active" &&
     !encrypted &&
     !before.api_key_ciphertext
@@ -944,14 +1267,51 @@ async function updateProvider(
     addUpdate(updates, values, "api_key_tag", encrypted.tag);
     addUpdate(updates, values, "api_key_fingerprint", encrypted.fingerprint);
   }
-  if (!updates.length) return { before, after: before };
+  if (prepared.sensitive) {
+    addUpdate(
+      updates,
+      values,
+      "auth_revision",
+      prepared.expectedAuthRevision + 1,
+    );
+    addUpdate(updates, values, "credential_validation_status", "valid");
+    addUpdate(updates, values, "credential_validated_at", prepared.validatedAt);
+  }
+  if (!updates.length) {
+    return {
+      before,
+      after: {
+        id: before.id,
+        code: before.code,
+        name: before.name,
+        adapter_kind: before.adapter_kind,
+        protocol: before.protocol,
+        base_url: before.base_url,
+        active_credential_kind: before.active_credential_kind,
+        auth_epoch: before.auth_epoch,
+        status: before.status,
+        timeout_ms: before.timeout_ms,
+        max_retries: before.max_retries,
+        api_key_fingerprint: before.api_key_fingerprint,
+        credential_configured: Boolean(before.api_key_ciphertext),
+        auth_revision: before.auth_revision,
+        credential_validation_status: before.credential_validation_status,
+        credential_validated_at: before.credential_validated_at,
+        config: before.config,
+        created_at: before.created_at,
+        updated_at: before.updated_at,
+      },
+    };
+  }
   const result = await client.query<Record<string, unknown>>(
     `UPDATE ai_providers SET ${updates.join(", ")}, updated_at = NOW()
      WHERE id = $1
-     RETURNING id, code, name, protocol, base_url, status, timeout_ms,
+     RETURNING id, code, name, adapter_kind, protocol, base_url,
+               active_credential_kind, auth_epoch, status, timeout_ms,
                max_retries, api_key_fingerprint,
                (api_key_ciphertext IS NOT NULL) AS credential_configured,
-               config, created_at, updated_at`,
+               auth_revision, credential_validation_status,
+               credential_validated_at, config, created_at, updated_at`,
     values,
   );
   return { before, after: result.rows[0] };
@@ -1248,7 +1608,7 @@ async function updateAdminRole(
 }
 
 const updateConfig = {
-  providers: { permission: "providers.write", schema: providerUpdateSchema, update: updateProvider },
+  providers: { permission: "providers.write", schema: providerUpdateSchema },
   models: { permission: "models.write", schema: modelUpdateSchema, update: updateModel },
   "pricing-rules": { permission: "pricing.write", schema: pricingUpdateSchema, update: updatePricing },
   "platform-users": { permission: "users.write", schema: platformUserUpdateSchema, update: updatePlatformUser },
@@ -1289,25 +1649,104 @@ export async function handleAdminResourceUpdate(
     }
     const identity = await requireAdminRequest(request, config.permission);
     const input = await parseBody(request, config.schema);
-    const result = await withPlatformTransaction(async (client) => {
-      const updated = await config.update(client, id, input as never);
-      const safeBefore = Object.fromEntries(
-        Object.entries(updated.before).filter(
-          ([key]) => !key.startsWith("api_key_") && key !== "password_hash",
-        ),
-      );
-      await recordAdminAuditOnClient(client, {
-        identity,
-        action: "update",
-        resourceType: resource,
-        resourceId: id,
-        requestId,
-        request,
-        before: safeBefore,
-        after: updated.after,
+    const providerAdapterKind = resource === "providers"
+      ? await withPlatformClient(async (client) => {
+          const result = await client.query<{ adapter_kind: string }>(
+            "SELECT adapter_kind FROM ai_providers WHERE id = $1 AND status <> 'deleted'",
+            [id],
+          );
+          if (!result.rows[0]) {
+            throw new AdminError(
+              "ADMIN_RESOURCE_ITEM_NOT_FOUND",
+              "The requested Provider does not exist",
+              404,
+            );
+          }
+          return result.rows[0].adapter_kind;
+        })
+      : undefined;
+    const providerPreparation = resource === "providers" && providerAdapterKind === "generic"
+      ? await prepareProviderCredentialUpdate({
+          providerId: id,
+          update: input as z.infer<typeof providerUpdateSchema>,
+          identity,
+          request,
+          requestId,
+        })
+      : resource === "providers"
+        ? { sensitive: false } as const
+        : undefined;
+    let result: Record<string, unknown>;
+    try {
+      result = await withPlatformTransaction(async (client) => {
+        const updated = resource === "providers"
+          ? await updateProvider(
+              client,
+              id,
+              input as z.infer<typeof providerUpdateSchema>,
+              providerPreparation!,
+            )
+          : await (config as Exclude<typeof config, { schema: typeof providerUpdateSchema }>).update(
+              client,
+              id,
+              input as never,
+            );
+        const safeBefore = Object.fromEntries(
+          Object.entries(updated.before).filter(
+            ([key]) => !key.startsWith("api_key_") && key !== "password_hash",
+          ),
+        );
+        const auditedBefore = resource === "providers"
+          ? sanitizeProviderRecord(safeBefore)
+          : safeBefore;
+        const auditedAfter = resource === "providers"
+          ? sanitizeProviderRecord(updated.after)
+          : updated.after;
+        await recordAdminAuditOnClient(client, {
+          identity,
+          action: "update",
+          resourceType: resource,
+          resourceId: id,
+          requestId,
+          request,
+          before: auditedBefore,
+          after: auditedAfter,
+          metadata: providerPreparation?.sensitive
+            ? {
+                credentialValidation: "valid",
+                validationModelCode: providerPreparation.validationModelCode,
+                previousAuthRevision: providerPreparation.expectedAuthRevision,
+              }
+            : undefined,
+        });
+        return auditedAfter;
       });
-      return updated.after;
-    });
+    } catch (error) {
+      const conflict = error instanceof AdminError
+        && error.code === "PROVIDER_AUTH_REVISION_CONFLICT"
+        && error.details
+        && typeof error.details === "object"
+        ? error.details as {
+            providerCode: string;
+            currentAuthRevision: number;
+            expectedAuthRevision: number;
+            validationModelCode: string;
+          }
+        : null;
+      if (providerPreparation?.sensitive && conflict) {
+        await recordProviderCredentialRevisionConflict({
+          providerId: id,
+          providerCode: conflict.providerCode,
+          currentAuthRevision: conflict.currentAuthRevision,
+          expectedAuthRevision: conflict.expectedAuthRevision,
+          validationModelCode: conflict.validationModelCode,
+          identity,
+          request,
+          requestId,
+        });
+      }
+      throw error;
+    }
     return Response.json(
       { data: result },
       { headers: { "cache-control": "no-store", "x-request-id": requestId } },
@@ -1328,6 +1767,173 @@ export async function handleAdminResourceDelete(
   const requestId = adminRequestId(request);
   try {
     assertAdminMutationOrigin(request);
+    if (resource === "providers") {
+      const identity = await requireAdminRequest(request, "providers.write");
+      const input = await parseBody(request, providerDeleteSchema);
+      const data = await withPlatformTransaction(async (client) => {
+        const lockedProvider = await client.query<Record<string, unknown>>(
+          `SELECT provider.*,
+                  md5(extract(epoch FROM provider.updated_at)::text) AS delete_revision
+             FROM ai_providers AS provider
+            WHERE provider.id = $1
+            FOR UPDATE`,
+          [id],
+        );
+        const before = lockedProvider.rows[0];
+        if (!before) {
+          throw new AdminError(
+            "ADMIN_RESOURCE_ITEM_NOT_FOUND",
+            "The requested Provider does not exist",
+            404,
+          );
+        }
+        if (before.status === "deleted") {
+          throw new AdminError(
+            "ADMIN_RESOURCE_ITEM_NOT_FOUND",
+            "The requested Provider does not exist",
+            404,
+          );
+        }
+        if (before.delete_revision !== input.expectedDeleteRevision) {
+          throw new AdminError(
+            "PROVIDER_DELETE_REVISION_STALE",
+            "Provider 已被其他管理员修改，请刷新后重试删除",
+            409,
+          );
+        }
+
+        const dependencies = await client.query<{
+          model_count: number;
+          pricing_rule_count: number;
+        }>(
+          `SELECT COUNT(DISTINCT model.id)::int AS model_count,
+                  COUNT(pricing.id)::int AS pricing_rule_count
+             FROM ai_providers AS provider
+             LEFT JOIN ai_models AS model ON model.provider_id = provider.id
+             LEFT JOIN ai_pricing_rules AS pricing ON pricing.model_id = model.id
+            WHERE provider.id = $1`,
+          [id],
+        );
+        const modelCount = Number(dependencies.rows[0]?.model_count ?? 0);
+        const pricingRuleCount = Number(dependencies.rows[0]?.pricing_rule_count ?? 0);
+        if (modelCount > 0 || pricingRuleCount > 0) {
+          throw new AdminError(
+            "PROVIDER_DELETE_BLOCKED_BY_DEPENDENCIES",
+            "Provider 仍有关联模型或定价（Pricing），请先删除 Pricing 和模型",
+            409,
+            { modelCount, pricingRuleCount },
+          );
+        }
+        if (before.managed_credential_id) {
+          throw new AdminError(
+            "PROVIDER_DELETE_ACCOUNT_CONNECTED",
+            "请先安全断开当前托管账号，再删除 Provider",
+            409,
+          );
+        }
+
+        const orphanedCredential = await client.query<{ id: string }>(
+          `SELECT id
+             FROM ai_provider_managed_credentials
+            WHERE provider_id = $1
+              AND status IN ('connected', 'reauth_required')
+            LIMIT 1
+            FOR UPDATE`,
+          [id],
+        );
+        if (orphanedCredential.rows[0]) {
+          throw new AdminError(
+            "PROVIDER_DELETE_ACCOUNT_STATE_INCONSISTENT",
+            "Provider 仍有关联的遗留账号凭据，请先运行 pnpm db:migrate 完成安全修复",
+            409,
+          );
+        }
+
+        const activeAttempt = await client.query(
+          `SELECT 1
+             FROM ai_provider_auth_attempts
+            WHERE provider_id = $1 AND status IN ('starting', 'pending')
+            LIMIT 1`,
+          [id],
+        );
+        if (activeAttempt.rows[0]) {
+          throw new AdminError(
+            "PROVIDER_DELETE_AUTHORIZATION_ACTIVE",
+            "当前仍有进行中的账号授权，请先取消授权后再删除 Provider",
+            409,
+          );
+        }
+
+        const incompleteRevocation = await client.query(
+          `SELECT 1
+             FROM ai_provider_revocation_jobs
+            WHERE provider_id = $1 AND status IN ('pending', 'processing', 'failed')
+            LIMIT 1`,
+          [id],
+        );
+        if (incompleteRevocation.rows[0]) {
+          throw new AdminError(
+            "PROVIDER_DELETE_REVOCATION_INCOMPLETE",
+            "账号远端撤销尚未完成，请在 Provider 设置中重试撤销后再删除",
+            409,
+          );
+        }
+
+        const deleted = await client.query<Record<string, unknown>>(
+          `UPDATE ai_providers
+              SET status = 'deleted',
+                  api_key_ciphertext = NULL,
+                  api_key_iv = NULL,
+                  api_key_tag = NULL,
+                  api_key_fingerprint = NULL,
+                  credential_validation_status = 'unverified',
+                  credential_validated_at = NULL,
+                  auth_revision = auth_revision + 1,
+                  auth_epoch = auth_epoch + 1,
+                  active_credential_kind = CASE
+                    WHEN adapter_kind = 'generic' THEN 'static_api_key'
+                    ELSE 'none'
+                  END,
+                  updated_at = NOW()
+            WHERE id = $1
+              AND md5(extract(epoch FROM updated_at)::text) = $2
+              AND status <> 'deleted'
+            RETURNING id, code, name, adapter_kind, protocol, status,
+                      auth_revision, auth_epoch, updated_at`,
+          [id, input.expectedDeleteRevision],
+        );
+        if (!deleted.rows[0]) {
+          throw new AdminError(
+            "PROVIDER_DELETE_REVISION_STALE",
+            "Provider 已被其他管理员修改，请刷新后重试删除",
+            409,
+          );
+        }
+        const safeBefore = sanitizeProviderRecord(Object.fromEntries(
+          Object.entries(before).filter(([key]) => !key.startsWith("api_key_")),
+        ));
+        await recordAdminAuditOnClient(client, {
+          identity,
+          action: "delete",
+          resourceType: resource,
+          resourceId: id,
+          requestId,
+          request,
+          before: safeBefore,
+          after: deleted.rows[0],
+          metadata: {
+            deletionMode: "tombstone",
+            modelCount,
+            pricingRuleCount,
+          },
+        });
+        return deleted.rows[0];
+      });
+      return Response.json(
+        { data },
+        { headers: { "cache-control": "no-store", "x-request-id": requestId } },
+      );
+    }
     if (resource !== "gateway-api-keys") {
       const deletable = {
         "user-model-permissions": { table: "user_model_permissions", permission: "users.write" },

@@ -1,16 +1,29 @@
 // [Input] Mock provider fetch, resolved credentials/config, client cancellation, and fake timeout clock.
 // [Output] Regression proof for safe headers plus connection and rolling stream-idle timeout behavior.
 // [Pos] Focused provider transport contract tests for the Gateway domain.
-// [Sync] 2026-08-27: prove active streams may exceed timeout_ms while idle streams still abort.
+// [Sync] 2026-09-04: prove managed transport carries only Provider-owned account fences and no pool default revision.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProviderTimeoutError, sendProviderRequest } from "./provider-transport";
+
+const managedMocks = vi.hoisted(() => ({
+  resolve: vi.fn(),
+  record: vi.fn(),
+}));
+
+vi.mock("./managed-provider-credentials", () => ({
+  resolveManagedProviderAccess: managedMocks.resolve,
+}));
+vi.mock("./repository", () => ({
+  recordGatewayProviderCredentialUse: managedMocks.record,
+}));
 
 vi.mock("../security/credential-encryption", () => ({
   decryptCredential: () => "provider-secret",
 }));
 
 afterEach(() => {
+  vi.clearAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -35,6 +48,165 @@ function resolved(timeoutMs = 1_000) {
 }
 
 describe("provider transport Claude Code compatibility", () => {
+  it("pins managed product tokens to the registry endpoint and headers", async () => {
+    managedMocks.resolve.mockResolvedValue({
+      adapterKind: "xai",
+      dialect: "openai_responses",
+      url: "https://api.x.ai/v1/responses",
+      headers: new Headers({ authorization: "Bearer managed-token", "user-agent": "ink-xai/1" }),
+      credentialRevision: 7,
+      accountId: "account-xai",
+      accountAuthEpoch: 2,
+      defaultRevision: null,
+      renewed: false,
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await sendProviderRequest({
+      resolved: {
+        ...resolved(),
+        provider: {
+          ...resolved().provider,
+          protocol: "openai",
+          baseUrl: null,
+          encryptedCredential: undefined,
+          adapterKind: "xai",
+          activeCredentialKind: "managed_oauth",
+          authEpoch: 3,
+          managedAccountId: "account-xai",
+          managedAccountAuthEpoch: 2,
+          credentialRevision: 7,
+        },
+        model: {
+          ...resolved().model,
+          requestHeaders: { "user-agent": "must-not-win" },
+        },
+      },
+      body: { model: "grok", stream: true, input: [] },
+      requestSignal: new AbortController().signal,
+      gatewayRequestId: "req-1",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(url).toBe("https://api.x.ai/v1/responses");
+    expect(headers.get("authorization")).toBe("Bearer managed-token");
+    expect(headers.get("user-agent")).toBe("ink-xai/1");
+    expect(managedMocks.record).toHaveBeenCalledWith({
+      requestId: "req-1",
+      credentialRevision: 7,
+      managedAccountId: "account-xai",
+      managedAccountAuthEpoch: 2,
+      renewalAttempted: false,
+    });
+    result.abort.cleanup();
+  });
+
+  it("renews and retries a non-streaming managed request only once on 401", async () => {
+    managedMocks.resolve
+      .mockResolvedValueOnce({
+        adapterKind: "github_copilot",
+        dialect: "openai_chat",
+        url: "https://api.githubcopilot.com/chat/completions",
+        headers: new Headers({ authorization: "Bearer old" }),
+        credentialRevision: 4,
+        accountId: "account-copilot",
+        accountAuthEpoch: 3,
+        defaultRevision: null,
+        renewed: false,
+      })
+      .mockResolvedValueOnce({
+        adapterKind: "github_copilot",
+        dialect: "openai_chat",
+        url: "https://api.githubcopilot.com/chat/completions",
+        headers: new Headers({ authorization: "Bearer new" }),
+        credentialRevision: 5,
+        accountId: "account-copilot",
+        accountAuthEpoch: 3,
+        defaultRevision: null,
+        renewed: true,
+      });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("unauthorized", { status: 401 }))
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await sendProviderRequest({
+      resolved: {
+        ...resolved(),
+        provider: {
+          ...resolved().provider,
+          protocol: "openai",
+          baseUrl: null,
+          encryptedCredential: undefined,
+          adapterKind: "github_copilot",
+          activeCredentialKind: "managed_oauth",
+          authEpoch: 8,
+          managedAccountId: "account-copilot",
+          managedAccountAuthEpoch: 3,
+          credentialRevision: 4,
+        },
+      },
+      body: { model: "gpt", stream: false, messages: [] },
+      requestSignal: new AbortController().signal,
+      gatewayRequestId: "req-2",
+      allowManagedCredentialRetry: true,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("authorization")).toBe("Bearer new");
+    expect(managedMocks.resolve).toHaveBeenLastCalledWith(expect.objectContaining({
+      credentialRevision: 4,
+      forceRenew: true,
+    }));
+    expect(managedMocks.record).toHaveBeenLastCalledWith(expect.objectContaining({
+      credentialRevision: 5,
+      renewalAttempted: true,
+    }));
+    result.abort.cleanup();
+  });
+
+  it("does not replay a managed streaming request after a 401", async () => {
+    managedMocks.resolve.mockResolvedValue({
+      adapterKind: "codex",
+      dialect: "openai_responses",
+      url: "https://chatgpt.com/backend-api/codex/responses",
+      headers: new Headers({ authorization: "Bearer old" }),
+      credentialRevision: 2,
+      accountId: "account-codex",
+      accountAuthEpoch: 1,
+      defaultRevision: null,
+      renewed: false,
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("unauthorized", { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(sendProviderRequest({
+      resolved: {
+        ...resolved(),
+        provider: {
+          ...resolved().provider,
+          protocol: "openai",
+          baseUrl: null,
+          encryptedCredential: undefined,
+          adapterKind: "codex",
+          activeCredentialKind: "managed_oauth",
+          authEpoch: 2,
+          managedAccountId: "account-codex",
+          managedAccountAuthEpoch: 1,
+          credentialRevision: 2,
+        },
+      },
+      body: { model: "gpt", stream: true, input: [] },
+      requestSignal: new AbortController().signal,
+      gatewayRequestId: "req-3",
+    })).rejects.toMatchObject({ status: 401, responseBody: undefined });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(managedMocks.resolve).toHaveBeenCalledOnce();
+  });
+
   it("forwards safe Anthropic compatibility headers and beta query without forwarding client auth", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("{}", {
       status: 200,
@@ -172,5 +344,28 @@ describe("provider transport Claude Code compatibility", () => {
     expect(headers.get("x-client-channel")).toBe("openclaw");
     expect(headers.get("authorization")).toBe("Bearer provider-secret");
     result.abort.cleanup();
+  });
+
+  it("fails closed when an OpenAI provider is configured for x-api-key", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(sendProviderRequest({
+      resolved: {
+        ...resolved(),
+        provider: {
+          ...resolved().provider,
+          protocol: "openai",
+          baseUrl: "https://api.openai.com",
+          config: { authMode: "x-api-key" },
+        },
+      },
+      body: { model: "gpt", stream: false, messages: [] },
+      requestSignal: new AbortController().signal,
+    })).rejects.toMatchObject({
+      code: "PROVIDER_AUTH_MODE_INVALID",
+      status: 503,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

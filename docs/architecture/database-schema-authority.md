@@ -1,7 +1,7 @@
 # 统一 PostgreSQL Schema 权威
 
 > 状态：Capability-only implementation complete / production inventory pending
-> 更新：2026-08-12
+> 更新：2026-09-04
 > 权威仓库：`ink-admin-memory/drizzle/**`
 
 ## 1. 决策与所有权
@@ -54,10 +54,18 @@ Runner 在 advisory transaction lock 下执行每条 migration，并把 SQL 与 
 export MIGRATION_DATABASE_URL='postgresql://<dedicated-migrator>@<host>/ink-memory'
 pnpm db:migrate:status
 pnpm db:migrate
+pnpm db:migrate:provider-managed-accounts # 与根迁移入口相同的显式命名别名
 pnpm db:migrate:check
 ```
 
 `MIGRATION_DATABASE_URL` 必须显式提供；runner 不读取应用 `DATABASE_URL` 作为后备。`status` 和 `check` 验证 journal 的连续 index、唯一 tag/time、数据库 receipt 连续前缀、未知 receipt、缺口和历史 SQL hash。`db:push` 仅允许显式批准且名称包含 test/codex/ephemeral/scratch 的 loopback 一次性数据库。
+
+Provider managed-account 是明确的数据迁移例外：根 `db:migrate` 是发布编排入口，
+会在 0047/0048 gate 之间调用编译后的 `@ink-memory/db` data CLI，先 dry-run，再显式
+apply；package 级 schema migrator 仍只执行 DDL，0048 receipt gate 不会自行搬运或重加密
+凭据。编排器只解析并持有一次显式或 embedded target，再把同一 DSN 传给所有子阶段。
+任一步失败时保留最近已提交前缀，可在修复 key、pepper、active attempt 或 revoke job 后
+幂等续跑。
 
 ## 5. Schema 与数据迁移分离
 

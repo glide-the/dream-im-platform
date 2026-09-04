@@ -1,5 +1,10 @@
 "use client";
 
+// [Input] Refine resource state, declarative field definitions, and server-safe Admin projections.
+// [Output] Generic list/form serialization and controls without exposing stored credential material.
+// [Pos] Shared Admin resource presentation boundary; domain validation and authorization remain server-owned.
+// [Sync] 2026-09-04: support numeric auth revisions and serializable conditional options for Provider capabilities.
+
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -69,7 +74,12 @@ export type AdminFieldDefinition = {
   excludeKeys?: string[];
   jsonShape?: "object" | "array";
   payloadGroup?: { key: string; property: string };
-  options?: Array<{ label: string; value: string }>;
+  serializeAs?: "number";
+  options?: Array<{
+    label: string;
+    value: string;
+    when?: { field: string; equals: string | boolean };
+  }>;
   relation?: {
     resource: string;
     labelKey: string;
@@ -220,6 +230,31 @@ function formatDetailValue(value: unknown) {
   return String(value);
 }
 
+export function availableFieldOptions(
+  field: AdminFieldDefinition,
+  values: FormValues,
+) {
+  return (field.options ?? []).filter((option) =>
+    option.when ? values[option.when.field] === option.when.equals : true,
+  );
+}
+
+export function normalizeConditionalOptions(
+  fields: AdminFieldDefinition[],
+  values: FormValues,
+) {
+  const next = { ...values };
+  for (const field of fields) {
+    if (!field.options?.some((option) => option.when)) continue;
+    const options = availableFieldOptions(field, next);
+    const current = next[field.key];
+    if (!options.some((option) => option.value === current)) {
+      next[field.key] = options[0]?.value ?? "";
+    }
+  }
+  return next;
+}
+
 export type JsonEditorValidation =
   | { valid: true; parsed: unknown; formatted: string }
   | { valid: false; error: string };
@@ -255,7 +290,7 @@ export function valuesFromRecord(
   defaults: Record<string, unknown>,
   mode: "create" | "edit",
 ) {
-  return Object.fromEntries(
+  const values = Object.fromEntries(
     fields.map((field) => {
       const recordValue = record ? sourceValue(record, field) : undefined;
       const raw = recordValue === undefined ? defaults[field.key] : recordValue;
@@ -300,6 +335,7 @@ export function valuesFromRecord(
       return [field.key, raw === null || raw === undefined ? "" : String(raw)];
     }),
   ) as FormValues;
+  return normalizeConditionalOptions(fields, values);
 }
 
 export function buildPayload(
@@ -307,13 +343,14 @@ export function buildPayload(
   values: FormValues,
   mode: "create" | "edit",
 ) {
+  const normalizedValues = normalizeConditionalOptions(fields, values);
   const payload: Record<string, unknown> = {};
   const groupedPayload: Record<string, Record<string, unknown>> = {};
   for (const field of fields) {
     if (field.control === "hidden" && values[field.key] === undefined) continue;
     if (mode === "create" && field.updateOnly) continue;
     if (mode === "edit" && (field.createOnly || field.readOnlyOnEdit)) continue;
-    const value = values[field.key];
+    const value = normalizedValues[field.key];
     const assign = (nextValue: unknown) => {
       if (field.payloadGroup) {
         groupedPayload[field.payloadGroup.key] ??= {};
@@ -322,7 +359,20 @@ export function buildPayload(
         payload[field.key] = nextValue;
       }
     };
-    if (
+    if (field.serializeAs === "number") {
+      const number = Number(value);
+      if (!Number.isSafeInteger(number)) {
+        throw new Error(`${field.label} 必须是安全整数。`);
+      }
+      if (field.min !== undefined && number < field.min) {
+        throw new Error(`${field.label} 不能小于 ${field.min}。`);
+      }
+      if (field.max !== undefined && number > field.max) {
+        throw new Error(`${field.label} 不能大于 ${field.max}。`);
+      }
+      assign(number);
+      continue;
+    } else if (
       mode === "edit" &&
       field.omitEmptyOnUpdate &&
       (value === "" || value === undefined)
@@ -582,11 +632,13 @@ function MultiRelationSelect({
 export function FieldControl({
   field,
   value,
+  formValues,
   mode,
   onChange,
 }: {
   field: AdminFieldDefinition;
   value: FormValue;
+  formValues?: FormValues;
   mode: "create" | "edit";
   onChange: (value: FormValue) => void;
 }) {
@@ -596,6 +648,7 @@ export function FieldControl({
   const disabled = mode === "edit" && field.readOnlyOnEdit;
   const required = Boolean(field.required || (field.requiredOnCreate && mode === "create"));
   if (field.control === "hidden") return null;
+  const options = availableFieldOptions(field, formValues ?? { [field.key]: value });
   const jsonValidation = field.control === "json"
     ? validateJsonEditorValue(String(value ?? ""), field.jsonShape)
     : null;
@@ -631,7 +684,7 @@ export function FieldControl({
       ) : field.control === "select" ? (
         <select {...common} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)}>
           {field.nullable ? <option value="">未设置</option> : null}
-          {(field.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
       ) : field.control === "switch" ? (
         <span className="mt-2 flex min-h-11 items-center gap-3 border border-border bg-bg-surface px-3">
@@ -685,12 +738,12 @@ export function FieldControl({
       ) : field.control === "model-picker" ? (
         <span className="mt-2 block space-y-2">
           <input {...common} type="text" list={`${id}-models`} value={String(value ?? "")} placeholder={field.placeholder} autoComplete="off" onChange={(event) => onChange(event.target.value)} className={`${common.className} mt-0 font-mono text-xs`} />
-          <datalist id={`${id}-models`}>{(field.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</datalist>
+          <datalist id={`${id}-models`}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</datalist>
           <span className="block text-[11px] font-normal leading-5 text-text-tertiary">从常用上游型号下拉选择，或输入 Provider 实际支持的自定义型号。</span>
         </span>
       ) : field.control === "multiselect" || field.control === "capabilities" ? (
         <span className="mt-2 grid gap-2 border border-border bg-bg-surface p-3 sm:grid-cols-2" role="group" aria-labelledby={labelId}>
-          {(field.options ?? []).map((option) => {
+          {options.map((option) => {
             const selected = Array.isArray(value) && value.includes(option.value);
             return <label key={option.value} className="flex min-h-9 items-center gap-2 text-sm font-normal text-text-primary"><input type="checkbox" checked={selected} disabled={disabled} onChange={(event) => onChange(event.target.checked ? [...(Array.isArray(value) ? value : []), option.value] : (Array.isArray(value) ? value : []).filter((item) => item !== option.value))} />{option.label}</label>;
           })}

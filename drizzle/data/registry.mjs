@@ -1,7 +1,7 @@
 // [Input] Redacted receipts from explicit PostgreSQL data migration runners.
 // [Output] Append-only drizzle.data_migration_runs/table_results records with capability and fingerprint checks.
 // [Pos] Shared audit registry boundary for Admin-owned data migrations.
-// [Sync] 2026-09-02: register the Chat assistant final-projection backfill without persisting message identities or content.
+// [Sync] 2026-09-04: register Provider ownership cutovers and deleted-Provider orphan cleanup with aggregate-only receipts.
 import { createHash, randomUUID } from "node:crypto";
 import pg from "pg";
 
@@ -15,6 +15,16 @@ export const GATEWAY_DEFAULT_LIMITS_KEY = gatewayDefaultLimitsPolicy.revision;
 export const CHAT_HISTORY_FINAL_PROJECTION_KEY = "chat-history-final-projection-v1";
 export const CHAT_HISTORY_FINAL_PROJECTION_CAPABILITY =
   "dream.chat-history-final-projection.v1";
+export const PROVIDER_MANAGED_ACCOUNTS_KEY = "provider-managed-accounts-v1";
+export const PROVIDER_MANAGED_ACCOUNTS_CONTRACT =
+  "ink-admin-provider-managed-accounts-v1";
+export const PROVIDER_OWNED_CREDENTIALS_KEY = "provider-owned-credentials-v1";
+export const PROVIDER_OWNED_CREDENTIALS_CONTRACT =
+  "ink-admin-provider-owned-credentials-v1";
+export const PROVIDER_DELETED_CREDENTIAL_ORPHANS_KEY =
+  "provider-deleted-credential-orphans-v1";
+export const PROVIDER_DELETED_CREDENTIAL_ORPHANS_CONTRACT =
+  "ink-admin-provider-deleted-credential-orphans-v1";
 
 const SUCCESS_STATUSES = new Set([
   "committed",
@@ -392,5 +402,226 @@ export async function recordChatHistoryFinalProjectionReceipt(databaseUrl, recei
       redacted: true,
     },
     requiredCapability: CHAT_HISTORY_FINAL_PROJECTION_CAPABILITY,
+  });
+}
+
+export async function recordProviderManagedAccountsReceipt(databaseUrl, receipt) {
+  const countFields = [
+    "sourceRowCount",
+    "providerRows",
+    "credentialRows",
+    "attemptRows",
+    "revocationJobRows",
+    "changedRows",
+    "providerRowsChanged",
+    "providersPinned",
+    "providersFollowingDefault",
+    "credentialRowsChanged",
+    "credentialsReencrypted",
+    "identitiesRehashed",
+    "identitiesCleared",
+    "attemptRowsChanged",
+    "attemptsTerminated",
+    "attemptContextsBackfilled",
+    "revocationRowsChanged",
+    "revocationJobsScoped",
+  ];
+  if (receipt?.contract !== PROVIDER_MANAGED_ACCOUNTS_CONTRACT
+    || receipt?.mode !== "applied"
+    || receipt?.sourceTableCount !== 4
+    || !/^[0-9a-f]{64}$/.test(String(receipt?.sourceFingerprintSha256 ?? ""))
+    || countFields.some((field) => (
+      !Number.isSafeInteger(receipt?.[field]) || receipt[field] < 0
+    ))
+    || receipt.sourceRowCount !== receipt.providerRows
+      + receipt.credentialRows + receipt.attemptRows + receipt.revocationJobRows
+    || receipt.changedRows !== receipt.providerRowsChanged
+      + receipt.credentialRowsChanged + receipt.attemptRowsChanged
+      + receipt.revocationRowsChanged
+    || receipt.remainingActiveAttempts !== 0
+    || receipt.remainingNonTerminalRevocationJobs !== 0
+    || receipt?.redacted !== true) {
+    throw new Error("Unexpected Provider managed-account migration receipt");
+  }
+  return record({
+    databaseUrl,
+    migrationKey: PROVIDER_MANAGED_ACCOUNTS_KEY,
+    runnerContract: PROVIDER_MANAGED_ACCOUNTS_CONTRACT,
+    runId: randomUUID(),
+    status: "committed",
+    runnerMode: "apply",
+    sourceFingerprint: receipt.sourceFingerprintSha256,
+    sourceTableCount: receipt.sourceTableCount,
+    sourceRowCount: receipt.sourceRowCount,
+    verifiedSourcePkCount: receipt.sourceRowCount,
+    exactMatchedRowCount: receipt.sourceRowCount,
+    postCutoverChangedRowCount: receipt.changedRows,
+    summary: {
+      providerRows: receipt.providerRows,
+      credentialRows: receipt.credentialRows,
+      attemptRows: receipt.attemptRows,
+      revocationJobRows: receipt.revocationJobRows,
+      providersPinned: receipt.providersPinned,
+      providersFollowingDefault: receipt.providersFollowingDefault,
+      credentialsReencrypted: receipt.credentialsReencrypted,
+      identitiesRehashed: receipt.identitiesRehashed,
+      identitiesCleared: receipt.identitiesCleared,
+      attemptsTerminated: receipt.attemptsTerminated,
+      attemptContextsBackfilled: receipt.attemptContextsBackfilled,
+      revocationJobsScoped: receipt.revocationJobsScoped,
+      redacted: true,
+    },
+  });
+}
+
+export async function recordProviderOwnedCredentialsReceipt(databaseUrl, receipt) {
+  const countFields = [
+    "sourceRowCount",
+    "providerRows",
+    "credentialRows",
+    "defaultRows",
+    "attemptRows",
+    "revocationJobRows",
+    "changedRows",
+    "providerRowsChanged",
+    "credentialRowsChanged",
+    "defaultRowsChanged",
+    "providersDirectBound",
+    "providersWithoutCredential",
+    "credentialsReowned",
+    "defaultsCleared",
+    "liveCredentialRows",
+    "disconnectedCredentialRows",
+  ];
+  if (receipt?.contract !== PROVIDER_OWNED_CREDENTIALS_CONTRACT
+    || receipt?.mode !== "applied"
+    || receipt?.sourceTableCount !== 5
+    || !/^[0-9a-f]{64}$/.test(String(receipt?.sourceFingerprintSha256 ?? ""))
+    || countFields.some((field) => (
+      !Number.isSafeInteger(receipt?.[field]) || receipt[field] < 0
+    ))
+    || receipt.sourceRowCount !== receipt.providerRows
+      + receipt.credentialRows + receipt.defaultRows
+      + receipt.attemptRows + receipt.revocationJobRows
+    || receipt.changedRows !== receipt.providerRowsChanged
+      + receipt.credentialRowsChanged + receipt.defaultRowsChanged
+    || receipt.defaultRowsChanged !== receipt.defaultRows
+    || receipt.defaultsCleared !== receipt.defaultRows
+    || receipt.credentialsReowned !== receipt.credentialRowsChanged
+    || receipt.liveCredentialRows + receipt.disconnectedCredentialRows
+      !== receipt.credentialRows
+    || receipt.remainingSharedLiveCredentials !== 0
+    || receipt.remainingOrphanLiveCredentials !== 0
+    || receipt.remainingActiveAttempts !== 0
+    || receipt.remainingNonTerminalRevocationJobs !== 0
+    || receipt.credentialsCloned !== 0
+    || receipt.credentialsDeleted !== 0
+    || receipt.credentialsReencrypted !== 0
+    || receipt?.redacted !== true) {
+    throw new Error("Unexpected Provider-owned credential migration receipt");
+  }
+  return record({
+    databaseUrl,
+    migrationKey: PROVIDER_OWNED_CREDENTIALS_KEY,
+    runnerContract: PROVIDER_OWNED_CREDENTIALS_CONTRACT,
+    runId: randomUUID(),
+    status: "committed",
+    runnerMode: "apply",
+    sourceFingerprint: receipt.sourceFingerprintSha256,
+    sourceTableCount: receipt.sourceTableCount,
+    sourceRowCount: receipt.sourceRowCount,
+    verifiedSourcePkCount: receipt.sourceRowCount,
+    exactMatchedRowCount: receipt.sourceRowCount,
+    postCutoverChangedRowCount: receipt.changedRows,
+    summary: {
+      providerRows: receipt.providerRows,
+      credentialRows: receipt.credentialRows,
+      defaultRows: receipt.defaultRows,
+      attemptRows: receipt.attemptRows,
+      revocationJobRows: receipt.revocationJobRows,
+      providersDirectBound: receipt.providersDirectBound,
+      providersWithoutCredential: receipt.providersWithoutCredential,
+      credentialsReowned: receipt.credentialsReowned,
+      defaultsCleared: receipt.defaultsCleared,
+      liveCredentialRows: receipt.liveCredentialRows,
+      disconnectedCredentialRows: receipt.disconnectedCredentialRows,
+      credentialsCloned: 0,
+      credentialsDeleted: 0,
+      credentialsReencrypted: 0,
+      redacted: true,
+    },
+  });
+}
+
+export async function recordProviderDeletedCredentialOrphansReceipt(
+  databaseUrl,
+  receipt,
+) {
+  const countFields = [
+    "sourceRowCount",
+    "providerRows",
+    "credentialRows",
+    "attemptRows",
+    "changedRows",
+    "providerRowsChanged",
+    "credentialRowsChanged",
+    "attemptRowsChanged",
+    "providerPointersCleared",
+    "credentialsDisconnected",
+    "credentialSecretsErased",
+    "attemptsCancelled",
+  ];
+  if (receipt?.contract !== PROVIDER_DELETED_CREDENTIAL_ORPHANS_CONTRACT
+    || receipt?.mode !== "applied"
+    || receipt?.sourceTableCount !== 3
+    || !/^[0-9a-f]{64}$/.test(String(receipt?.sourceFingerprintSha256 ?? ""))
+    || countFields.some((field) => (
+      !Number.isSafeInteger(receipt?.[field]) || receipt[field] < 0
+    ))
+    || receipt.sourceRowCount !== receipt.providerRows
+      + receipt.credentialRows + receipt.attemptRows
+    || receipt.changedRows !== receipt.providerRowsChanged
+      + receipt.credentialRowsChanged + receipt.attemptRowsChanged
+    || receipt.providerPointersCleared !== receipt.providerRowsChanged
+    || receipt.credentialsDisconnected !== receipt.credentialRowsChanged
+    || receipt.credentialSecretsErased > receipt.credentialsDisconnected
+    || receipt.attemptsCancelled !== receipt.attemptRowsChanged
+    || receipt.remainingDeletedProviderPointers !== 0
+    || receipt.remainingDeletedProviderLiveCredentials !== 0
+    || receipt.remainingDeletedProviderActiveAttempts !== 0
+    || receipt.remoteRevocation !== "not_attempted"
+    || receipt.revocationJobsCreated !== 0
+    || receipt.remoteRevocationsSucceeded !== 0
+    || receipt.credentialsDeleted !== 0
+    || receipt?.redacted !== true) {
+    throw new Error("Unexpected deleted-Provider credential orphan migration receipt");
+  }
+  return record({
+    databaseUrl,
+    migrationKey: PROVIDER_DELETED_CREDENTIAL_ORPHANS_KEY,
+    runnerContract: PROVIDER_DELETED_CREDENTIAL_ORPHANS_CONTRACT,
+    runId: randomUUID(),
+    status: "committed",
+    runnerMode: "apply",
+    sourceFingerprint: receipt.sourceFingerprintSha256,
+    sourceTableCount: receipt.sourceTableCount,
+    sourceRowCount: receipt.sourceRowCount,
+    verifiedSourcePkCount: receipt.sourceRowCount,
+    exactMatchedRowCount: receipt.sourceRowCount,
+    postCutoverChangedRowCount: receipt.changedRows,
+    summary: {
+      providerRows: receipt.providerRows,
+      credentialRows: receipt.credentialRows,
+      attemptRows: receipt.attemptRows,
+      providerPointersCleared: receipt.providerPointersCleared,
+      credentialsDisconnected: receipt.credentialsDisconnected,
+      credentialSecretsErased: receipt.credentialSecretsErased,
+      attemptsCancelled: receipt.attemptsCancelled,
+      remoteRevocation: "not_attempted",
+      revocationJobsCreated: 0,
+      remoteRevocationsSucceeded: 0,
+      credentialsDeleted: 0,
+      redacted: true,
+    },
   });
 }

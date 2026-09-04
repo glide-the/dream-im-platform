@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { modelFields, pricingFields, providerFields } from "./AdminResourceViews";
 import {
   adminListErrorPresentation,
+  availableFieldOptions,
   buildPayload,
   validateJsonEditorValue,
   valuesFromRecord,
@@ -41,12 +42,16 @@ describe("admin resource form serialization", () => {
           customFlag: true,
         },
         credential_configured: true,
+        credential_validation_status: "valid",
+        credential_validated_at: "2026-09-04T06:00:00.000Z",
+        auth_revision: 7,
       },
       {},
       "edit",
     );
 
     expect(values.apiKey).toBe("");
+    expect(values.expectedAuthRevision).toBe("7");
     expect(values.config).toBe(JSON.stringify({ customFlag: true }, null, 2));
     const payload = buildPayload(providerFields, values, "edit");
     expect(payload).toEqual({
@@ -60,10 +65,44 @@ describe("admin resource form serialization", () => {
       status: "active",
       timeoutMs: 8_000,
       maxRetries: 1,
+      expectedAuthRevision: 7,
     });
     expect(payload).not.toHaveProperty("apiKey");
     expect(payload).not.toHaveProperty("code");
     expect(payload).not.toHaveProperty("protocol");
+  });
+
+  it("labels bearer as a static credential rather than OAuth", () => {
+    const authMode = providerFields.find((field) => field.key === "authMode");
+    const bearer = authMode?.options?.find((option) => option.value === "bearer");
+
+    expect(authMode?.label).toBe("静态凭据发送方式");
+    expect(bearer?.label).toContain("静态凭据");
+    expect(bearer?.label).toContain("非 OAuth");
+  });
+
+  it("only offers x-api-key to Anthropic and normalizes OpenAI to bearer", () => {
+    const authMode = providerFields.find((field) => field.key === "authMode");
+    expect(authMode).toBeDefined();
+    expect(availableFieldOptions(authMode!, {
+      protocol: "openai",
+      authMode: "x-api-key",
+    }).map((option) => option.value)).toEqual(["bearer"]);
+    expect(availableFieldOptions(authMode!, {
+      protocol: "anthropic",
+      authMode: "x-api-key",
+    }).map((option) => option.value)).toEqual(["x-api-key", "bearer"]);
+
+    const values = valuesFromRecord(providerFields, undefined, {
+      protocol: "openai",
+      authMode: "x-api-key",
+      config: {},
+    }, "create");
+    expect(values.authMode).toBe("bearer");
+    expect(buildPayload(providerFields, values, "create")).toMatchObject({
+      protocol: "openai",
+      config: { authMode: "bearer" },
+    });
   });
 
   it("does not leak named Provider config keys into the JSON editor", () => {

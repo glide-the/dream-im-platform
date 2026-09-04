@@ -1,4 +1,7 @@
-// Isolated Gateway E2E for protocol payloads, limits, persistence, and settlement.
+// [Input] Owned isolated PostgreSQL, local Provider HTTP server, official SDK clients, and Admin/Gateway APIs.
+// [Output] Protocol payload, streaming, limits, persistence, settlement, and validated Provider activation evidence.
+// [Pos] Isolated Gateway E2E; Provider fixtures use the public disabled→model→validated-active contract.
+// [Sync] 2026-09-04: stop bypassing validation through direct active Provider creation.
 import { expect, test, type Page } from "@playwright/test";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
@@ -158,14 +161,33 @@ test.describe("Gateway protocol, payload and responsive request detail", () => {
     const api = context.request;
     const adminHeaders = { origin, "content-type": "application/json" };
     async function provider(code: string, protocol: "anthropic" | "openai") {
-      const response = await api.post(`${baseURL}/api/admin/providers`, { headers: adminHeaders, data: { code, name: code, protocol, baseUrl: upstreamUrl, apiKey: `provider-${code}-secret`, status: "active", timeoutMs: 5000, maxRetries: 0, config: protocol === "anthropic" ? { authMode: "x-api-key" } : {} } });
+      const response = await api.post(`${baseURL}/api/admin/providers`, { headers: adminHeaders, data: { code, name: code, protocol, baseUrl: upstreamUrl, apiKey: `provider-${code}-secret`, status: "disabled", timeoutMs: 5000, maxRetries: 0, config: protocol === "anthropic" ? { authMode: "x-api-key" } : {} } });
       expect(response.status()).toBe(201);
-      return (await response.json()).data.id as string;
+      const body = await response.json();
+      expect(body.data).toMatchObject({
+        status: "disabled",
+        auth_revision: 1,
+        credential_validation_status: "unverified",
+      });
+      expect(JSON.stringify(body)).not.toContain(`provider-${code}-secret`);
+      return body.data.id as string;
     }
     async function model(providerId: string, code: string, upstreamModel: string) {
       const response = await api.post(`${baseURL}/api/admin/models`, { headers: adminHeaders, data: { providerId, code, upstreamModel, displayName: code, contextWindow: 128000, maxOutputTokens: 4096, capabilities: { chat: true, tools: true, thinking: true }, enabled: true } });
       expect(response.status()).toBe(201);
       const modelId = (await response.json()).data.id as string;
+      const activation = await api.patch(`${baseURL}/api/admin/providers/${providerId}`, {
+        headers: adminHeaders,
+        data: { status: "active", expectedAuthRevision: 1 },
+      });
+      expect(activation.status()).toBe(200);
+      await expect(activation.json()).resolves.toMatchObject({
+        data: {
+          status: "active",
+          auth_revision: 2,
+          credential_validation_status: "valid",
+        },
+      });
       const pricing = await api.post(`${baseURL}/api/admin/pricing-rules`, { headers: adminHeaders, data: { modelId, userTier: "free", inputPriceMicrousdPerMillion: 1000, outputPriceMicrousdPerMillion: 2000, cacheReadPriceMicrousdPerMillion: 100, cacheWritePriceMicrousdPerMillion: 200, markupBps: 0, discountBps: 0, status: "active", effectiveFrom: new Date(Date.now() - 60_000).toISOString() } });
       expect(pricing.status()).toBe(201);
       return modelId;

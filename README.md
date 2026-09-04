@@ -148,7 +148,8 @@ Vercel Blob/外部 S3，并同时恢复部署配置与凭据校验。
 ```bash
 pnpm db:generate        # 修改 packages/db/src/schema/** 后生成前向 migration
 pnpm db:migrate:status  # 只读显示已应用连续前缀和待执行 migration
-pnpm db:migrate         # 唯一 Schema/DDL 迁移入口
+pnpm db:migrate         # 统一前向迁移入口；需要时编排两个 Provider data gate
+pnpm db:migrate:provider-managed-accounts # 同一受控编排的兼容命名入口
 pnpm db:migrate:check   # 要求 journal、hash、数据库 receipt 全部 current
 ```
 
@@ -156,6 +157,15 @@ pnpm db:migrate:check   # 要求 journal、hash、数据库 receipt 全部 curre
 journal/snapshot 历史。Dream 启动只检查 capability，不执行 DDL。runner 优先使用
 显式 `MIGRATION_DATABASE_URL`；缺少时只在 `INK_DATABASE_MODE=embedded-postgres`
 明确存在后启动内嵌目标，绝不回退复用应用 DSN。生产 migration 仍由单实例发布步骤执行。
+
+若存量数据库从 0046 升级，根命令 `pnpm db:migrate` 会针对同一个显式或内嵌
+migration target 顺序执行 `0047 → managed-account data → 0048 → 0049 →
+provider-owned data → 0050 → check`；`pnpm db:migrate:provider-managed-accounts`
+保留为同流程的命名入口。第二个 data runner 把旧 effective binding 收敛为“一个
+Provider 一个账号”，不复制、不删除、不重加密 token；如果一个 live credential 被多个
+Provider 共享或没有唯一 owner，命令会 fail closed，必须先显式断开/重新授权。运行前必须
+保留旧 credential encryption key，并配置 `AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER`；active
+attempt 或非终态 revoke job 也会阻断 contract migration。
 
 Dream 的 43+5 张 SQLite 表不是静态 SQL seed。`drizzle/data/` 只在 Schema 已具备 `dream.schema.unified.v1` 后运行可审计的数据迁移；快照、staging、转换和业务完整性验证仍由 Dream 领域 importer 负责。全新数据库只需一个 Schema 命令：
 

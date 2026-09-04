@@ -1,7 +1,10 @@
 // [Input] Authenticated Admin list/detail requests and capability-gated PostgreSQL projections.
-// [Output] Paginated Admin resources with nullable Claude Code Runtime model fields.
+// [Output] Paginated active Admin resources with model Runtime fields and safe dependency counts.
 // [Pos] Read-only Admin resource query boundary.
 // [Sync] 2026-08-28: include model compact/context settings and fail closed when the exact 0041 capability is absent.
+// [Sync] 2026-09-04: project static and managed Provider readiness metadata without credential material.
+// [Sync] 2026-09-04: resolve each managed Provider only through its single owned account.
+// [Sync] 2026-09-04: hide deleted Provider tombstones and project Pricing dependencies.
 
 import type { PoolClient } from "pg";
 import { claudeCodeRuntimeCapabilityAvailable } from "../db/claude-code-runtime-capability";
@@ -22,6 +25,10 @@ import {
   queryStorySourceList,
   storySourcePermission,
 } from "../story-source/repository";
+import {
+  sanitizeProviderAuditRecord,
+  sanitizeProviderRecord,
+} from "./provider-config-safety";
 
 export type AdminResource =
   | "platform-users"
@@ -48,6 +55,7 @@ type ResourceConfig = {
   columns: Record<string, string>;
   defaultSort: string;
   filterFields: string[];
+  basePredicate?: string;
 };
 
 const resources: Record<AdminResource, ResourceConfig> = {
@@ -84,12 +92,26 @@ const resources: Record<AdminResource, ResourceConfig> = {
   },
   providers: {
     permission: "providers.read",
-    select: `p.id, p.code, p.name, p.protocol, p.base_url, p.status,
+    select: `p.id, p.code, p.name, p.adapter_kind, p.protocol, p.base_url, p.status,
+             p.active_credential_kind, p.auth_epoch,
+             p.managed_account_binding_mode, p.managed_credential_id,
+             NULL::integer AS managed_default_revision,
              p.timeout_ms, p.max_retries, p.api_key_fingerprint,
              (p.api_key_ciphertext IS NOT NULL) AS credential_configured,
+             p.auth_revision, p.credential_validation_status,
+             p.credential_validated_at,
+             managed.status AS managed_credential_status,
+             managed.revision AS managed_credential_revision,
+             managed.account_label AS managed_account_label,
+             managed.access_expires_at AS managed_access_expires_at,
              p.config, p.created_at, p.updated_at,
+             md5(extract(epoch FROM p.updated_at)::text) AS delete_revision,
              (SELECT COUNT(*)::int FROM ai_models AS m WHERE m.provider_id = p.id) AS model_count,
              (SELECT COUNT(*)::int FROM ai_models AS m WHERE m.provider_id = p.id AND m.enabled = TRUE) AS enabled_model_count,
+             (SELECT COUNT(*)::int
+                FROM ai_pricing_rules AS pricing
+                JOIN ai_models AS priced_model ON priced_model.id = pricing.model_id
+               WHERE priced_model.provider_id = p.id) AS pricing_rule_count,
              (SELECT COUNT(*)::int FROM gateway_requests AS r WHERE r.provider_id = p.id AND r.created_at >= NOW() - INTERVAL '24 hours') AS request_count_24h,
              (SELECT COUNT(*)::int FROM gateway_requests AS r WHERE r.provider_id = p.id AND r.created_at >= NOW() - INTERVAL '24 hours' AND r.outcome = 'success') AS success_count_24h,
              (SELECT MAX(r.created_at) FROM gateway_requests AS r WHERE r.provider_id = p.id) AS last_request_at,
@@ -100,12 +122,17 @@ const resources: Record<AdminResource, ResourceConfig> = {
                WHERE s.provider_id = p.id ORDER BY s.created_at DESC LIMIT 1) AS discovery_at,
              (SELECT jsonb_array_length(s.models) FROM ai_provider_discovery_snapshots AS s
                WHERE s.provider_id = p.id ORDER BY s.created_at DESC LIMIT 1) AS discovered_model_count`,
-    from: "FROM ai_providers AS p",
+    from: `FROM ai_providers AS p
+           LEFT JOIN ai_provider_managed_credentials AS managed
+             ON managed.adapter_kind = p.adapter_kind
+            AND managed.id = p.managed_credential_id
+            AND managed.provider_id = p.id`,
     columns: {
       id: "p.id",
       search: "(p.name || ' ' || p.code)",
       code: "p.code",
       name: "p.name",
+      adapter_kind: "p.adapter_kind",
       protocol: "p.protocol",
       status: "p.status",
       created_at: "p.created_at",
@@ -114,6 +141,7 @@ const resources: Record<AdminResource, ResourceConfig> = {
     },
     defaultSort: "created_at",
     filterFields: ["search", "code", "name", "protocol", "status"],
+    basePredicate: "p.status <> 'deleted'",
   },
   models: {
     permission: "models.read",
@@ -122,9 +150,22 @@ const resources: Record<AdminResource, ResourceConfig> = {
              m.max_output_tokens, m.claude_code_auto_compact_window,
              m.claude_code_max_context_tokens, m.capabilities, m.request_headers,
              m.enabled, m.metadata,
-             (p.status = 'active' AND p.api_key_ciphertext IS NOT NULL
-               AND p.api_key_iv IS NOT NULL AND p.api_key_tag IS NOT NULL)
-               AS provider_ready,
+             (p.status = 'active' AND (
+               (p.adapter_kind = 'generic'
+                 AND p.active_credential_kind = 'static_api_key'
+                 AND p.api_key_ciphertext IS NOT NULL
+                 AND p.api_key_iv IS NOT NULL
+                 AND p.api_key_tag IS NOT NULL)
+               OR (p.adapter_kind IN ('codex', 'xai', 'github_copilot')
+                 AND p.active_credential_kind = 'managed_oauth'
+                 AND EXISTS (
+                   SELECT 1 FROM ai_provider_managed_credentials AS managed
+                    WHERE managed.adapter_kind = p.adapter_kind
+                      AND managed.id = p.managed_credential_id
+                      AND managed.provider_id = p.id
+                      AND managed.status = 'connected'
+                 ))
+             )) AS provider_ready,
              EXISTS (
                SELECT 1 FROM ai_pricing_rules AS pricing
                WHERE pricing.model_id = m.id AND pricing.status = 'active'
@@ -567,13 +608,18 @@ async function queryList(client: PoolClient, request: Request, config: ResourceC
     defaultSort: config.defaultSort,
   });
   const clauses = buildAdminListClauses(query, { columns: config.columns });
+  const whereSql = config.basePredicate
+    ? clauses.whereSql
+      ? `WHERE (${config.basePredicate}) AND (${clauses.whereSql.replace(/^WHERE\s+/i, "")})`
+      : `WHERE ${config.basePredicate}`
+    : clauses.whereSql;
   const data = await client.query<Record<string, unknown>>(
     `SELECT ${config.select} ${config.from}
-     ${clauses.whereSql} ${clauses.orderSql} ${clauses.pageSql}`,
+     ${whereSql} ${clauses.orderSql} ${clauses.pageSql}`,
     clauses.parameters,
   );
   const count = await client.query<{ total: string }>(
-    `SELECT COUNT(*)::text AS total ${config.from} ${clauses.whereSql}`,
+    `SELECT COUNT(*)::text AS total ${config.from} ${whereSql}`,
     clauses.parameters.slice(0, -2),
   );
   const total = Number(count.rows[0]?.total ?? 0);
@@ -613,7 +659,20 @@ export async function handleAdminResourceList(
           503,
         );
       }
-      return await queryList(client, request, config);
+      const response = await queryList(client, request, config);
+      if (resource === "providers") {
+        return {
+          ...response,
+          data: response.data.map(sanitizeProviderRecord),
+        };
+      }
+      if (resource === "audit-logs") {
+        return {
+          ...response,
+          data: response.data.map(sanitizeProviderAuditRecord),
+        };
+      }
+      return response;
     });
     return Response.json(response, {
       headers: {
@@ -658,7 +717,7 @@ export async function handleAdminResourceGetOne(
       }
       const result = await client.query<Record<string, unknown>>(
         `SELECT ${config.select} ${config.from}
-         WHERE ${config.columns.id} = $1
+         WHERE ${config.columns.id} = $1${config.basePredicate ? ` AND ${config.basePredicate}` : ""}
          LIMIT 1`,
         [id],
       );
@@ -668,6 +727,12 @@ export async function handleAdminResourceGetOne(
           `The requested ${resource} item does not exist`,
           404,
         );
+      }
+      if (resource === "providers") {
+        return sanitizeProviderRecord(result.rows[0]);
+      }
+      if (resource === "audit-logs") {
+        return sanitizeProviderAuditRecord(result.rows[0]);
       }
       return result.rows[0];
     });

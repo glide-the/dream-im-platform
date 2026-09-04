@@ -1,5 +1,11 @@
 "use client";
 
+// [Input] Safe Admin records, declarative fields, managed/static Provider modes, and strict API responses.
+// [Output] Full-page forms with mode-aware Provider fields, deletion, preserved drafts, and lifecycle panels.
+// [Pos] Admin form interaction boundary; authorization, credentials, and CAS remain server-owned.
+// [Sync] 2026-09-04: add managed Provider payload normalization, collision-resistant preset codes, and edit-page lifecycle content.
+// [Sync] 2026-09-04: expose the same dependency-aware Provider deletion used by the registry.
+
 import { useInvalidate } from "@refinedev/core";
 import { useRouter } from "next/navigation";
 import {
@@ -16,8 +22,10 @@ import {
   type FormValues,
   FieldControl,
   buildPayload,
+  normalizeConditionalOptions,
   valuesFromRecord,
 } from "./AdminResourceManager";
+import ProviderDeleteAction from "./ProviderDeleteAction";
 
 type Section = { id: string; title: string; description?: string };
 type Preset = {
@@ -42,6 +50,8 @@ type AdminResourceFormPageProps = {
   presets?: Preset[];
   submitLabel: string;
   context?: ReactNode | ((values: FormValues) => ReactNode);
+  contentBeforeFields?: ReactNode;
+  contentBeforeFieldsWhen?: "always" | "managed-provider";
 };
 
 type ApiResult = {
@@ -52,6 +62,53 @@ type ApiResult = {
 const EMPTY_FORM_DEFAULTS: Record<string, unknown> = {};
 const EMPTY_FORM_OVERRIDES: Record<string, unknown> = {};
 const EMPTY_FORM_PRESETS: Preset[] = [];
+
+const MANAGED_PROVIDER_ADAPTERS = new Set(["codex", "xai", "github_copilot"]);
+
+const MANAGED_PROVIDER_CODE_PREFIXES: Record<string, string> = {
+  codex: "codex",
+  xai: "xai",
+  github_copilot: "github-copilot",
+};
+
+export function isManagedProviderAdapter(value: unknown) {
+  return typeof value === "string" && MANAGED_PROVIDER_ADAPTERS.has(value);
+}
+
+export function createManagedProviderCode(
+  adapterKind: unknown,
+  createUuid: () => string = () => globalThis.crypto.randomUUID(),
+) {
+  if (!isManagedProviderAdapter(adapterKind)) return null;
+  const suffix = createUuid().trim().toLowerCase();
+  if (!/^[a-f0-9-]{16,}$/.test(suffix)) {
+    throw new Error("Managed Provider code source returned an invalid UUID");
+  }
+  return `${MANAGED_PROVIDER_CODE_PREFIXES[String(adapterKind)]}-${suffix}`;
+}
+
+export function normalizeProviderFormPayload(
+  payload: Record<string, unknown>,
+  values: FormValues,
+  mode: "create" | "edit",
+) {
+  if (!isManagedProviderAdapter(values.adapterKind)) return payload;
+  const normalized = { ...payload };
+  delete normalized.baseUrl;
+  delete normalized.apiKey;
+  delete normalized.expectedAuthRevision;
+  if (mode === "create") {
+    normalized.adapterKind = values.adapterKind;
+    normalized.protocol = "openai";
+    normalized.status = "disabled";
+  }
+  if (normalized.config && typeof normalized.config === "object" && !Array.isArray(normalized.config)) {
+    const config = { ...(normalized.config as Record<string, unknown>) };
+    delete config.authMode;
+    normalized.config = config;
+  }
+  return normalized;
+}
 
 function HighRiskConfirmation({
   kind,
@@ -88,6 +145,8 @@ export default function AdminResourceFormPage({
   presets,
   submitLabel,
   context,
+  contentBeforeFields,
+  contentBeforeFieldsWhen = "always",
 }: AdminResourceFormPageProps) {
   const resolvedDefaults = defaults ?? EMPTY_FORM_DEFAULTS;
   const resolvedOverrides = seedOverrides ?? EMPTY_FORM_OVERRIDES;
@@ -113,6 +172,9 @@ export default function AdminResourceFormPage({
     () => JSON.stringify(values) !== JSON.stringify(initialValues),
     [initialValues, values],
   );
+  const providerForm = resource === "providers";
+  const managedProvider = providerForm && isManagedProviderAdapter(values.adapterKind);
+  const providerCreateActive = providerForm && !managedProvider && mode === "create" && values.status === "active";
 
   useEffect(() => {
     const targetId = mode === "edit" ? recordId : seedRecordId;
@@ -183,11 +245,16 @@ export default function AdminResourceFormPage({
   }
 
   function applyPreset(preset: Preset) {
+    const managedCode = createManagedProviderCode(preset.values.adapterKind);
     setValues(
       valuesFromRecord(
         fields,
         undefined,
-        { ...resolvedDefaults, ...preset.values },
+        {
+          ...resolvedDefaults,
+          ...preset.values,
+          ...(managedCode ? { code: managedCode } : {}),
+        },
         "create",
       ),
     );
@@ -198,7 +265,10 @@ export default function AdminResourceFormPage({
     setError("");
     setRequestId("");
     try {
-      const payload = buildPayload(fields, values, mode);
+      const rawPayload = buildPayload(fields, values, mode);
+      const payload = providerForm
+        ? normalizeProviderFormPayload(rawPayload, values, mode)
+        : rawPayload;
       const endpoint =
         mode === "create"
           ? `/api/admin/${resource}`
@@ -216,16 +286,22 @@ export default function AdminResourceFormPage({
       setRequestId(nextRequestId);
       if (!response.ok || !body.data) {
         const code = body.error?.code;
-        throw new Error(
-          body.error?.message
-            ? `${body.error.message}${code ? `（${code}）` : ""}`
-            : `保存失败（HTTP ${response.status}）`,
-        );
+        const baseMessage = body.error?.message
+          ? `${body.error.message}${code ? `（${code}）` : ""}`
+          : `保存失败（HTTP ${response.status}）`;
+        throw new Error(providerForm && code === "PROVIDER_AUTH_REVISION_CONFLICT"
+          ? `${baseMessage} 当前草稿已保留；请重新加载最新认证版本后再提交。`
+          : baseMessage);
       }
       await invalidate({ resource, invalidates: ["list", "detail"] });
       setInitialValues(values);
       const savedId = String(body.data.id ?? recordId ?? "");
       if (mode === "create" && resource === "providers" && savedId) {
+        if (isManagedProviderAdapter(body.data.adapter_kind ?? payload.adapterKind)) {
+          router.push(`/admin/models/providers/${encodeURIComponent(savedId)}/edit?created=managed`);
+          router.refresh();
+          return;
+        }
         const savedConfig =
           body.data.config &&
           typeof body.data.config === "object" &&
@@ -332,7 +408,49 @@ export default function AdminResourceFormPage({
                   服务器记录更新于 {new Date(String(record.updated_at)).toLocaleString("zh-CN")}
                 </p>
               ) : null}
+              {providerForm && mode === "edit" && record && !managedProvider ? (
+                <div className="mt-4 grid gap-3 border border-border bg-bg-surface p-4 text-xs sm:grid-cols-3" role="status">
+                  <div>
+                    <p className="text-text-tertiary">静态凭据</p>
+                    <p className="mt-1 font-semibold text-text-primary">
+                      {record.credential_configured === true ? "已加密保存" : "未配置"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-text-tertiary">验证状态</p>
+                    <p className={`mt-1 font-semibold ${record.credential_validation_status === "valid" ? "text-success" : "text-accent-orange"}`}>
+                      {record.credential_validation_status === "valid" ? "已验证" : "待验证，不代表当前可用"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-text-tertiary">认证版本</p>
+                    <p className="mt-1 font-mono font-semibold text-text-primary">
+                      {record.auth_revision ? `revision ${String(record.auth_revision)}` : "—"}
+                    </p>
+                  </div>
+                  {record.credential_validation_status === "valid" && record.credential_validated_at ? (
+                    <p className="text-text-tertiary sm:col-span-3">
+                      最近验证：{new Date(String(record.credential_validated_at)).toLocaleString("zh-CN")}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              {providerCreateActive && !managedProvider ? (
+                <div className="mt-4 border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary" role="alert">
+                  新 Provider 尚无已登记模型，不能直接启用。请先以停用状态创建并添加模型，再返回此页启用；停用创建不会把未验证凭据描述为可用。
+                </div>
+              ) : providerForm && mode === "create" ? (
+                <div className="mt-4 border border-border bg-bg-secondary p-4 text-xs leading-5 text-text-secondary" role="status">
+                  {managedProvider
+                    ? "托管 Provider 会先以停用状态保存。保存后进入账号连接页；账号、模型与价格全部就绪后才能启用。"
+                    : "停用状态允许先完成 Provider 与模型配置；凭据在服务端验证成功前只会显示为“待验证”，不会标记为可用。"}
+                </div>
+              ) : null}
             </section>
+
+            {contentBeforeFieldsWhen === "managed-provider" && !managedProvider
+              ? null
+              : contentBeforeFields}
 
             {resolvedPresets.length > 0 && mode === "create" ? (
               <section aria-labelledby={`${resource}-preset-title`}>
@@ -340,7 +458,7 @@ export default function AdminResourceFormPage({
                   预设供应商
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-text-tertiary">
-                  与 cc-switch 一致：预设只填充字段，仍需检查 Endpoint、模型与凭据。
+                  预设只填充字段，仍需检查 Endpoint、模型与凭据；托管产品会生成可见且可编辑的唯一 Code。
                 </p>
                 <div className="mt-4 flex max-w-full gap-2 overflow-x-auto pb-2">
                   {resolvedPresets.map((preset) => (
@@ -368,6 +486,11 @@ export default function AdminResourceFormPage({
               sections.map((section) => {
                 const sectionFields = fields.filter((field) => {
                   if ((field.section ?? "main") !== section.id) return false;
+                  if (
+                    managedProvider &&
+                    ["protocol", "baseUrl", "apiKey", "authMode", "expectedAuthRevision", "config"].includes(field.key)
+                  ) return false;
+                  if (managedProvider && mode === "create" && field.key === "status") return false;
                   if (mode === "create" && field.updateOnly) return false;
                   if (
                     mode === "edit" &&
@@ -398,9 +521,10 @@ export default function AdminResourceFormPage({
                             values[field.key] ??
                             (field.control === "switch" ? false : "")
                           }
+                          formValues={values}
                           mode={mode}
                           onChange={(next) =>
-                            setValues((current) => ({
+                            setValues((current) => normalizeConditionalOptions(fields, {
                               ...current,
                               [field.key]: next,
                             }))
@@ -433,6 +557,11 @@ export default function AdminResourceFormPage({
               <h2 className="mt-2 font-display text-lg font-semibold">保存前检查</h2>
               <ul className="mt-3 space-y-2 text-xs leading-5 text-text-secondary">
                 <li>· Secret 只提交本次输入，历史值不会回填。</li>
+                {providerForm && managedProvider
+                  ? <li>· 账号连接、重授权与断开由上方托管认证面板独立提交。</li>
+                  : providerForm
+                    ? <li>· 新凭据验证成功前，当前有效凭据继续服务。</li>
+                    : null}
                 <li>· 关系字段提交真实选中 ID，服务器再次校验外键。</li>
                 <li>· 409/503 会保留本页草稿和错误上下文。</li>
                 <li>· 成功写入同步生成管理员审计记录。</li>
@@ -444,6 +573,17 @@ export default function AdminResourceFormPage({
 
         <footer className="z-20 shrink-0 border-t border-border bg-bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
           <div className="mx-auto flex min-h-20 max-w-[1180px] items-center justify-end gap-3 px-4 sm:px-6">
+            {providerForm && mode === "edit" && record ? (
+              <ProviderDeleteAction
+                provider={record}
+                onDeleted={async () => {
+                  await invalidate({ resource: "providers", invalidates: ["list", "detail"] });
+                  router.push(backHref);
+                  router.refresh();
+                }}
+                buttonClassName="mr-auto min-h-11 rounded-xl border border-danger/35 px-5 text-sm font-semibold text-danger hover:bg-danger-light"
+              />
+            ) : null}
             <button
               type="button"
               onClick={leave}
@@ -453,10 +593,10 @@ export default function AdminResourceFormPage({
             </button>
             <button
               type="submit"
-              disabled={pending || loading}
+              disabled={pending || loading || providerCreateActive}
               className="min-h-11 rounded-xl bg-text-primary px-6 text-sm font-semibold text-bg-surface disabled:opacity-50"
             >
-              {pending ? "保存中…" : submitLabel}
+              {pending ? (providerForm && !managedProvider ? "验证并保存中…" : "保存中…") : submitLabel}
             </button>
           </div>
         </footer>

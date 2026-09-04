@@ -1,3 +1,8 @@
+// [Input] Resolved model/auth snapshots, Gateway principal, request reservation, and settlement measurements.
+// [Output] Transactional request ledger rows with billing plus Provider auth epoch/revision evidence.
+// [Pos] PostgreSQL persistence boundary for the Gateway request lifecycle and append-only billing effects.
+// [Sync] 2026-09-04: persist Provider-owned managed credential fences; legacy default revision stays null.
+
 import type { InputTokenSemantics } from "../billing/types";
 import type { ResolvedBillableModel } from "../models/resolver";
 import { withPlatformTransaction } from "../platform-db";
@@ -232,12 +237,17 @@ export async function beginGatewayRequest(input: {
          id, idempotency_key, platform_user_id, gateway_api_key_id,
          provider_id, model_id, pricing_rule_id, protocol,
          requested_model, resolved_model, input_token_semantics, estimated_tokens,
+         provider_adapter_kind, provider_auth_epoch,
+         provider_credential_revision, provider_managed_credential_id,
+         provider_managed_account_auth_epoch, provider_managed_default_revision,
+         provider_renewal_attempted,
          input_price_snapshot, output_price_snapshot,
          cache_read_price_snapshot, cache_write_price_snapshot,
          markup_bps_snapshot, discount_bps_snapshot, is_streaming
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-         $13, $14, $15, $16, $17, $18, $19
+         $13, $14, $15, $16, $17, $18, $19,
+         $20, $21, $22, $23, $24, $25, $26
        )`,
       [
         requestId,
@@ -252,6 +262,13 @@ export async function beginGatewayRequest(input: {
         input.resolved.model.upstreamModel,
         inputTokenSemantics,
         input.estimatedTokens,
+        input.resolved.provider.adapterKind ?? "generic",
+        input.resolved.provider.authEpoch ?? 1,
+        input.resolved.provider.credentialRevision ?? 1,
+        input.resolved.provider.managedAccountId ?? null,
+        input.resolved.provider.managedAccountAuthEpoch ?? null,
+        null,
+        false,
         input.resolved.pricing.inputPriceMicrousdPerMillion,
         input.resolved.pricing.outputPriceMicrousdPerMillion,
         input.resolved.pricing.cacheReadPriceMicrousdPerMillion,
@@ -442,6 +459,36 @@ export async function markGatewayRequestStreaming(requestId: string) {
     );
     if (result.rowCount !== 1) {
       throw new Error("GATEWAY_REQUEST_STREAMING_TRANSITION_REJECTED");
+    }
+  });
+}
+
+export async function recordGatewayProviderCredentialUse(input: {
+  requestId: string;
+  credentialRevision: number;
+  managedAccountId: string;
+  managedAccountAuthEpoch: number;
+  renewalAttempted: boolean;
+}) {
+  await withPlatformTransaction(async (client) => {
+    const result = await client.query(
+      `UPDATE gateway_requests
+          SET provider_credential_revision = $2,
+              provider_renewal_attempted = provider_renewal_attempted OR $5
+        WHERE id = $1 AND settled_at IS NULL
+          AND provider_managed_credential_id = $3
+          AND provider_managed_account_auth_epoch = $4
+          AND provider_managed_default_revision IS NULL`,
+      [
+        input.requestId,
+        input.credentialRevision,
+        input.managedAccountId,
+        input.managedAccountAuthEpoch,
+        input.renewalAttempted,
+      ],
+    );
+    if (result.rowCount !== 1) {
+      throw new Error("GATEWAY_PROVIDER_CREDENTIAL_SNAPSHOT_REJECTED");
     }
   });
 }

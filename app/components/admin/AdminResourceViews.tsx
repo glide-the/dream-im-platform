@@ -1,21 +1,19 @@
 "use client";
 
-// [Input] Versioned Admin policies and generic resource-manager field contracts.
-// [Output] Canonical resource forms, including nullable model-scoped Claude Code Runtime controls.
+// [Input] Versioned Admin policies, safe Provider auth projections, and generic resource-manager field contracts.
+// [Output] Canonical resource forms, including Provider auth revision CAS and model-scoped Runtime controls.
 // [Pos] Admin resource-view declaration layer; server validation and capability gates stay in app/lib.
-// [Sync] 2026-08-28: add a dedicated model Runtime section with positive int4 fields and nullable defaults.
+// [Sync] 2026-09-04: distinguish static Provider credentials from OAuth and submit auth revisions numerically.
 import { gatewayDefaultLimitsPolicy } from "../../../config/gateway-default-limits.mjs";
 import { CLAUDE_CODE_RUNTIME_INTEGER_MAX } from "../../../config/claude-agent-resource-policy";
 import AdminResourceManager, {
   type AdminFieldDefinition,
 } from "./AdminResourceManager";
 import GatewayKeyForm from "./GatewayKeyForm";
+import { providerFields, stateOptions } from "./provider-fields";
 import StoryArtifactDetail from "./StoryArtifactDetail";
 
-export const stateOptions = [
-  { label: "启用", value: "active" },
-  { label: "停用", value: "disabled" },
-];
+export { providerFields, stateOptions } from "./provider-fields";
 
 const storyStatusOptions = [
   { label: "草稿", value: "draft" },
@@ -34,22 +32,6 @@ const workspaceStatusOptions = [
   { label: "已归档", value: "archived" },
 ];
 
-export const providerFields: AdminFieldDefinition[] = [
-  { key: "code", label: "Provider Code", control: "text", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true, placeholder: "anthropic-main", help: "稳定标识，创建后不可修改。" },
-  { key: "protocol", label: "协议", control: "select", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true, options: [{ label: "Anthropic", value: "anthropic" }, { label: "OpenAI", value: "openai" }] },
-  { key: "name", label: "显示名称", control: "text", section: "identity", required: true },
-  { key: "baseUrl", sourceKey: "base_url", label: "API Endpoint", control: "url", section: "connection", required: true, placeholder: "https://api.anthropic.com" },
-  { key: "apiKey", label: "API Key / Credential", control: "password", section: "credential", omitEmptyOnUpdate: true, help: "已保存值永不回填；编辑时留空表示不轮换。" },
-  { key: "authMode", label: "上游鉴权方式", control: "select", section: "credential", required: true, payloadGroup: { key: "config", property: "authMode" }, options: [{ label: "x-api-key（Anthropic 原生）", value: "x-api-key" }, { label: "Bearer Token（兼容中转）", value: "bearer" }] },
-  { key: "status", label: "运行状态", control: "select", section: "runtime", required: true, options: stateOptions },
-  { key: "timeoutMs", sourceKey: "timeout_ms", label: "超时（毫秒）", control: "number", section: "runtime", required: true, min: 1000, max: 900000, step: 1000 },
-  { key: "maxRetries", sourceKey: "max_retries", label: "最大重试次数", control: "number", section: "runtime", required: true, min: 0, max: 5, step: 1 },
-  { key: "modelCatalogMode", label: "模型目录模式", control: "select", section: "advanced", required: true, omitEmptyOnUpdate: true, payloadGroup: { key: "config", property: "modelCatalogMode" }, options: [{ label: "自动读取 /models", value: "auto" }, { label: "无 /models，手工配置", value: "manual" }], help: "没有模型目录接口时选择手工配置；保存 Provider 后直接进入添加模型，不发起目录探测。" },
-  { key: "manualModel", label: "手工上游型号", control: "text", section: "advanced", omitEmptyOnUpdate: true, payloadGroup: { key: "config", property: "manualModel" }, placeholder: "hy3-preview", help: "手工模式必填；将预填到下一步 Model 的上游型号、alias 和显示名称。" },
-  { key: "outputTokenParam", label: "默认输出 Token 参数", control: "select", section: "advanced", required: true, payloadGroup: { key: "config", property: "outputTokenParam" }, options: [{ label: "max_tokens", value: "max_tokens" }, { label: "max_completion_tokens", value: "max_completion_tokens" }], help: "OpenAI 兼容请求未显式传参时使用；Anthropic 端点始终使用 max_tokens。" },
-  { key: "config", label: "其他协议扩展配置", control: "json", section: "advanced", required: true, excludeKeys: ["authMode", "modelCatalogMode", "manualModel", "outputTokenParam"], help: "只有未被具名控件管理的真实扩展键放在这里；不得填写 Secret。" },
-];
-
 export function ProviderProxyContract() {
   const endpoints = [
     { protocol: "Anthropic Messages", method: "POST", path: "/v1/messages", auth: "service key + subject JWT", scope: "messages:create" },
@@ -64,7 +46,7 @@ export function ProvidersResourceView() {
   return <div className="space-y-6"><ProviderProxyContract /><AdminResourceManager
     resource="providers"
     title="Provider 注册表"
-    description="直接采用 cc-switch 的预设驱动全屏设置结构；凭据只写入加密列，读取仅显示配置状态与指纹。"
+    description="以预设驱动全屏设置；静态凭据只写入加密列，读取仅显示验证状态、版本与指纹。"
     container="fullscreen"
     createLabel="新增 Provider"
     submitCreateLabel="添加 Provider"
@@ -72,7 +54,7 @@ export function ProvidersResourceView() {
     sections={[
       { id: "identity", title: "预设与基础信息", description: "先确定协议与稳定 Code，再填写运营名称。" },
       { id: "connection", title: "Endpoint", description: "Endpoint 使用明确 URL，不在 JSON 中隐藏。" },
-      { id: "credential", title: "Credential", description: "显隐只作用于本次草稿；服务器不会返回历史明文。" },
+      { id: "credential", title: "静态凭据", description: "显隐只作用于本次草稿；Bearer 不是 OAuth，服务器不会返回历史明文。" },
       { id: "runtime", title: "运行策略" },
       { id: "advanced", title: "高级配置", description: "只有真实扩展对象使用 JSON Editor。" },
     ]}
@@ -84,7 +66,7 @@ export function ProvidersResourceView() {
       { label: "自定义兼容端点", description: "保留协议约束，自行填写 Endpoint 与凭据。", values: { code: "custom-provider", name: "Custom Provider", protocol: "openai", baseUrl: "https://example.com", status: "disabled", timeoutMs: 120000, maxRetries: 1, authMode: "bearer", outputTokenParam: "max_completion_tokens", config: {} } },
     ]}
     filters={[{ field: "name", label: "名称" }, { field: "protocol", label: "协议", operator: "eq", options: [{ label: "Anthropic", value: "anthropic" }, { label: "OpenAI", value: "openai" }] }, { field: "status", label: "状态", operator: "eq", options: stateOptions }]}
-    columns={[{ key: "code", label: "Code" }, { key: "name", label: "名称" }, { key: "protocol", label: "协议", format: "status" }, { key: "base_url", label: "Endpoint" }, { key: "status", label: "状态", format: "status" }, { key: "credential_configured", label: "凭据", format: "boolean" }, { key: "api_key_fingerprint", label: "指纹" }]}
+    columns={[{ key: "code", label: "Code" }, { key: "name", label: "名称" }, { key: "protocol", label: "协议", format: "status" }, { key: "base_url", label: "Endpoint" }, { key: "status", label: "状态", format: "status" }, { key: "credential_configured", label: "凭据已保存", format: "boolean" }, { key: "credential_validation_status", label: "验证状态", format: "status" }, { key: "auth_revision", label: "认证版本" }, { key: "api_key_fingerprint", label: "指纹" }]}
   /></div>;
 }
 

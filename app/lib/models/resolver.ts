@@ -1,3 +1,8 @@
+// [Input] Public model alias, enabled model/provider state, pricing policy, and Provider authentication state.
+// [Output] A revisioned billable model with either generic static or product-managed auth coordinates.
+// [Pos] Shared PostgreSQL resolver feeding Gateway transport, billing reservation, and request persistence.
+// [Sync] 2026-09-04: resolve only the credential directly owned and selected by the Provider with immutable request fences.
+
 import type { PoolClient } from "pg";
 import type {
   AiProviderProtocol,
@@ -22,13 +27,22 @@ type ModelProviderRow = {
   provider_id: string;
   provider_code: string;
   protocol: AiProviderProtocol;
-  base_url: string;
+  base_url: string | null;
+  adapter_kind: "generic" | "codex" | "xai" | "github_copilot";
+  active_credential_kind: "static_api_key" | "managed_oauth" | "none";
+  auth_epoch: number;
+  provider_managed_credential_id: string | null;
+  auth_revision: number;
   api_key_ciphertext: string | null;
   api_key_iv: string | null;
   api_key_tag: string | null;
   timeout_ms: number;
   max_retries: number;
   provider_config: Record<string, unknown> | null;
+  managed_credential_status: "connected" | "reauth_required" | "disconnected" | null;
+  resolved_managed_credential_id: string | null;
+  managed_account_auth_epoch: number | null;
+  managed_credential_revision: number | null;
 };
 
 type PricingRow = {
@@ -96,8 +110,14 @@ export type ResolvedBillableModel = {
     id: string;
     code: string;
     protocol: AiProviderProtocol;
-    baseUrl: string;
-    encryptedCredential: {
+    baseUrl: string | null;
+    adapterKind?: "generic" | "codex" | "xai" | "github_copilot";
+    activeCredentialKind?: "static_api_key" | "managed_oauth" | "none";
+    authEpoch?: number;
+    managedAccountId?: string;
+    managedAccountAuthEpoch?: number;
+    credentialRevision?: number;
+    encryptedCredential?: {
       ciphertext: string;
       iv: string;
       tag: string;
@@ -129,9 +149,19 @@ export async function resolveBillableModel(input: {
               m.capabilities, m.request_headers, p.id AS provider_id, p.code AS provider_code,
               p.protocol, p.base_url, p.api_key_ciphertext, p.api_key_iv,
               p.api_key_tag, p.timeout_ms, p.max_retries,
-              p.config AS provider_config
+              p.adapter_kind, p.active_credential_kind, p.auth_epoch,
+              p.managed_credential_id AS provider_managed_credential_id,
+              p.auth_revision, p.config AS provider_config,
+              managed.id AS resolved_managed_credential_id,
+              managed.status AS managed_credential_status,
+              managed.auth_epoch AS managed_account_auth_epoch,
+              managed.revision AS managed_credential_revision
        FROM ai_models AS m
        JOIN ai_providers AS p ON p.id = m.provider_id
+       LEFT JOIN ai_provider_managed_credentials AS managed
+         ON managed.provider_id = p.id
+        AND managed.adapter_kind = p.adapter_kind
+        AND managed.id = p.managed_credential_id
        WHERE m.code = $1 AND m.enabled = TRUE AND p.status = 'active'
        FOR SHARE OF m, p`,
       [input.requestedModel],
@@ -148,7 +178,14 @@ export async function resolveBillableModel(input: {
     // The public endpoint protocol and the selected provider protocol are
     // independent. A protocol adapter is selected by the gateway handler when
     // they differ; model resolution must not reject that valid matrix entry.
-    if (!row.api_key_ciphertext || !row.api_key_iv || !row.api_key_tag) {
+    const staticCredentialReady = row.active_credential_kind === "static_api_key"
+      && row.adapter_kind === "generic"
+      && Boolean(row.api_key_ciphertext && row.api_key_iv && row.api_key_tag);
+    const managedCredentialReady = row.active_credential_kind === "managed_oauth"
+      && row.adapter_kind !== "generic"
+      && row.managed_credential_status === "connected"
+      && row.managed_credential_revision !== null;
+    if (!staticCredentialReady && !managedCredentialReady) {
       throw new GatewayError(
         "PROVIDER_CREDENTIAL_UNAVAILABLE",
         "The selected provider has no usable credential",
@@ -232,11 +269,23 @@ export async function resolveBillableModel(input: {
         code: row.provider_code,
         protocol: row.protocol,
         baseUrl: row.base_url,
-        encryptedCredential: {
-          ciphertext: row.api_key_ciphertext,
-          iv: row.api_key_iv,
-          tag: row.api_key_tag,
-        },
+        adapterKind: row.adapter_kind,
+        activeCredentialKind: row.active_credential_kind,
+        authEpoch: row.auth_epoch,
+        managedAccountId: row.resolved_managed_credential_id ?? undefined,
+        managedAccountAuthEpoch: row.managed_account_auth_epoch ?? undefined,
+        credentialRevision: row.active_credential_kind === "managed_oauth"
+          ? row.managed_credential_revision ?? undefined
+          : row.auth_revision,
+        ...(staticCredentialReady
+          ? {
+              encryptedCredential: {
+                ciphertext: row.api_key_ciphertext!,
+                iv: row.api_key_iv!,
+                tag: row.api_key_tag!,
+              },
+            }
+          : {}),
         timeoutMs: row.timeout_ms,
         maxRetries: row.max_retries,
         config: row.provider_config ?? {},
