@@ -2,6 +2,7 @@
 // [Output] Exact relation, security, uniqueness, index, and capability-hash evidence.
 // [Pos] Provider-free schema contract test for Dream-managed MCP resources.
 // [Sync] 2026-08-25: add dream.managed-mcp-resources.v1 expand contract coverage.
+// [Sync] 2026-09-06: preserve the v1 base contract while allowing separately-capable additive columns.
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -61,11 +62,11 @@ describe("Dream-managed MCP schema capability", () => {
       "dream_mcp_discovery_snapshots",
       "dream_mcp_import_receipts",
     ]);
-    expect(Object.keys(getTableColumns(dream_mcp_servers))).toEqual([
+    expect(Object.keys(getTableColumns(dream_mcp_servers))).toEqual(expect.arrayContaining([
       "id", "user_id", "server_key", "display_name", "scope_type", "scope_id",
       "transport", "remote_url", "stdio_profile_key", "auth_kind", "enabled",
       "config_revision", "created_at", "updated_at",
-    ]);
+    ]));
     expect(Object.keys(getTableColumns(dream_mcp_credentials))).toEqual([
       "id", "server_id", "kind", "ciphertext", "iv", "tag", "fingerprint",
       "key_version", "credential_revision", "expires_at", "created_at", "updated_at",
