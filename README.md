@@ -158,6 +158,11 @@ journal/snapshot 历史。Dream 启动只检查 capability，不执行 DDL。run
 显式 `MIGRATION_DATABASE_URL`；缺少时只在 `INK_DATABASE_MODE=embedded-postgres`
 明确存在后启动内嵌目标，绝不回退复用应用 DSN。生产 migration 仍由单实例发布步骤执行。
 
+MCP App 连接设置由前向 migration `0053_rare_lenny_balinger` 扩展：它只在
+`dream_mcp_servers` 上增加默认关闭的用户选择与独立 revision，然后发布
+`dream.mcp-app-connection-settings.v1`。发布顺序必须是先应用并核对该 Admin
+migration，再发布依赖它的 Dream 代码；不需要业务数据回填。
+
 若存量数据库从 0046 升级，根命令 `pnpm db:migrate` 会针对同一个显式或内嵌
 migration target 顺序执行 `0047 → managed-account data → 0048 → 0049 →
 provider-owned data → 0050 → check`；`pnpm db:migrate:provider-managed-accounts`

@@ -13,6 +13,7 @@
 // paged Chat history while canonical assistant parts remain unchanged.
 // [Sync] 2026-08-27: add the PostgreSQL-only Claude Agent latest-instance
 // resource snapshot consumed by the Admin observer console.
+// [Sync] 2026-09-06: add revisioned, deny-by-default per-connection MCP App user preferences.
 import { pgTable, uniqueIndex, index, check, bigint, text, timestamp, foreignKey, jsonb, unique, integer, boolean, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
@@ -1448,6 +1449,10 @@ export const dream_mcp_servers = pgTable("dream_mcp_servers", {
 	auth_kind: text().default('none').notNull(),
 	enabled: boolean().default(true).notNull(),
 	config_revision: integer().default(1).notNull(),
+	app_desired_enabled: boolean().default(false).notNull(),
+	app_desired_low_risk_tool_calls: boolean().default(false).notNull(),
+	app_desired_ui_messages: boolean().default(false).notNull(),
+	app_settings_revision: integer().default(1).notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
@@ -1463,6 +1468,7 @@ export const dream_mcp_servers = pgTable("dream_mcp_servers", {
 	check("ck_dream_mcp_servers_endpoint", sql`((transport = ANY (ARRAY['streamable_http'::text, 'sse'::text])) AND remote_url IS NOT NULL AND stdio_profile_key IS NULL) OR (transport = 'stdio'::text AND remote_url IS NULL AND stdio_profile_key IS NOT NULL)`),
 	check("ck_dream_mcp_servers_auth_kind", sql`auth_kind = ANY (ARRAY['none'::text, 'oauth'::text])`),
 	check("ck_dream_mcp_servers_config_revision", sql`config_revision >= 1`),
+	check("ck_dream_mcp_servers_app_settings_revision", sql`app_settings_revision >= 1`),
 ]);
 
 export const dream_mcp_credentials = pgTable("dream_mcp_credentials", {
