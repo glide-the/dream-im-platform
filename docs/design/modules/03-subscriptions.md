@@ -21,7 +21,7 @@
 | 套餐 | 订阅运营 | name、code、status、current published version、updated | q/status；name/code/updated；无批量写或历史删除 |
 | 版本 | 订阅运营、审计 | plan、version、status、固定“月度”、allowance tokens、published at | plan/status；version/publishedAt；无 cycle/effective date 筛选，无批量编辑/删除 |
 | 权益 | 模型运营、订阅运营 | version、model、scopes、RPM、Storage、status | version/model/scope；published 对象只读；无金额 overage |
-| 用户订阅 | 支持、订阅运营 | user、plan/version、status、current period、token remaining、pending version/cancel | canonical user/plan/status/period；updated；行级明确展示“更换套餐”“期末取消/撤销期末取消”，其他生命周期动作进入“更多操作”；逐条确认，不做批量换版 |
+| 用户订阅 | 支持、订阅运营 | user、plan/version、status、current period、token remaining | canonical user/plan/status/period；已取消/已过期状态明确显示“不可使用”；行级提供“取消当前套餐”，重新订阅通过开通入口创建；逐条确认，不做批量操作 |
 
 全部列表使用服务端分页、排序、白名单筛选和真实 total。用户关系选择器搜索 canonical `users`，支持 debounce、跨页保留与 hydration；不存在“计费用户”筛选、开户按钮或 qa 专用名单。
 
@@ -66,7 +66,7 @@ Token 周期总额度只在 Version 配置，避免与 Entitlement 的安全限�
 
 ### 2.4 开通 Drawer
 
-- 开通入口只创建用户的第一条可调用订阅；已有 `trial/active/past_due/paused/cancel_at_period_end` 订阅时返回明确冲突，并引导到用户订阅行的“更换套餐”或“期末取消”，不得再次 POST 开通来切换套餐。
+- 开通入口创建新的用户订阅；已有 `trial/active/past_due/paused/cancel_at_period_end` 可调用订阅时返回明确冲突，必须先取消当前套餐。历史 `expired/cancelled` 订阅不阻止重新订阅，不能把历史记录当作当前可用订阅。
 - canonical user：可搜索 relation；结果显示 name/email/id/status，不出现 billing-user 标签。
 - published version：可搜索 relation；显示 Plan、版本、固定月度、Token/周期和关键 Entitlement。
 - start at：datetime，默认当前时刻但可明确调整；其值成为该用户的周期锚点，不是平台统一套餐生效日。
@@ -96,19 +96,18 @@ Token 周期总额度只在 Version 配置，避免与 Entitlement 的安全限�
 ```mermaid
 flowchart LR
   Open["开通：建立个人月度锚点"] --> Current["当前周期 Token Allowance"]
-  Current --> Upgrade["升级：排队到下一周期"]
-  Current --> Downgrade["降级：排队到下一周期"]
-  Current --> Pause["暂停：周期不移动"] --> Resume["恢复：不补发 Token"]
   Current --> Grant["补发：只增加本周期 Bonus Token"]
-  Current --> Cancel["期末取消"] --> Revoke["撤销取消：不续期、不补发"]
-  Current --> Boundary["个人周期边界"] --> Next["应用 pending 版本并发放一次 Token"]
+  Current --> Cancel["取消当前套餐：立即不可用"]
+  Cancel --> New["重新订阅：创建新的订阅记录"]
+  Current --> Boundary["个人周期边界"] --> Expired["未主动付费：不可用"]
+  Expired --> New
 ```
 
 生命周期统一使用 Modal；移动端为锁焦的全屏/底部 sheet。每个 Modal 显示 current→target、当前周期、准确边界、Token 变化、Gateway 可用性、reason、expected version 和幂等回执。
 
-- 用户订阅行对可调用状态直接展示“更换套餐”和“期末取消”；`cancel_at_period_end` 直接展示“撤销期末取消”。升级和降级都显示“将在 YYYY-MM-DD HH:mm（含时区）下一周期生效”；不得出现“立即升级”、proration、退款或价格差。
-- 续期由周期边界推进；运营手工重试只能在边界到达后执行。若已漏过多个边界，确认层说明“跳过已过期周期且不追溯补发 Token”，成功后定位到包含当前时刻的个人周期。提前操作禁用并说明剩余时间；服务端 409 时载入最新周期。
-- 暂停/恢复明确“不会改变本期结束时间或 Token”；期末取消明确“本期可继续使用”，撤销取消明确“不发放新额度”。
+- 用户订阅行只展示“取消当前套餐”；取消立即停止当前套餐使用资格，保留历史 Token、周期和审计记录。已取消/已过期状态明确显示“不可使用”，并保留重新订阅入口。
+- 续约由用户主动触发；平台管理员不提供续约按钮。周期结束时未发生新的有效订阅或付费，当前订阅进入不可用状态，不追溯补发已错过周期的 Token。
+- 不新增暂停、恢复、期末取消或撤销期末取消入口；这些复杂操作不属于当前产品目标。
 - 补发 Token 使用独立危险能力提示和二次确认；数量、原因、Allowance version、幂等键缺一不可。409 时保留输入并要求刷新最新额度，权限不足时完全隐藏动作；普通 `subscriptions.write` 不能代替 `subscriptions.grant`。
 - 提交中禁用重复动作；同幂等结果复用原回执。409 保留 Modal、聚焦冲突摘要并提供“载入最新”，不盲写。
 

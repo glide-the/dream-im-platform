@@ -485,8 +485,8 @@ async function createResource(
          display_note, display_details
        ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
       [id, input.code, input.name, input.description ?? null,
-       input.displayEyebrow ?? null, input.displayNote ?? null,
-       JSON.stringify(input.displayDetails)],
+        input.displayEyebrow ?? null, input.displayNote ?? null,
+        JSON.stringify(input.displayDetails)],
     );
     return { id, action: "create" };
   }
@@ -504,7 +504,7 @@ async function createResource(
          allowance_tokens, base_price_microusd
        ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [id, input.planId, next.rows[0]?.number ?? 1, input.trialDays,
-       input.gracePeriodDays, input.allowanceTokens, input.priceMicrousd],
+        input.gracePeriodDays, input.allowanceTokens, input.priceMicrousd],
     );
     return { id, action: "create_draft" };
   }
@@ -519,9 +519,9 @@ async function createResource(
          storage_bytes_limit, is_default, enabled
        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [id, input.planVersionId, input.modelId, input.gatewayScopes,
-       input.requestsPerMinute ?? null, input.dailyTokenLimit ?? null,
-       input.monthlyTokenLimit ?? null, input.storageBytesLimit ?? null,
-       input.isDefault, input.enabled],
+        input.requestsPerMinute ?? null, input.dailyTokenLimit ?? null,
+        input.monthlyTokenLimit ?? null, input.storageBytesLimit ?? null,
+        input.isDefault, input.enabled],
     );
     return { id, action: "create" };
   }
@@ -574,8 +574,8 @@ export async function handleSubscriptionUpdate(
     const identity = await requireAdminRequest(request, "subscriptions.write");
     const schema = resource === "subscription-plans" ? planUpdateSchema
       : resource === "subscription-plan-versions" ? planVersionUpdateSchema
-      : resource === "subscription-entitlements" ? entitlementUpdateSchema
-      : null;
+        : resource === "subscription-entitlements" ? entitlementUpdateSchema
+          : null;
     if (!schema) throw new AdminError("SUBSCRIPTION_UPDATE_DENIED", "Subscription lifecycle changes require an explicit action", 405);
     const input = await parseBody(request, schema);
     const data = await withPlatformTransaction(async (client) => {
@@ -592,10 +592,10 @@ export async function handleSubscriptionUpdate(
              status = COALESCE($11, status), updated_at = NOW()
            WHERE id = $1`,
           [id, value.name ?? null, value.description !== undefined, value.description ?? null,
-           value.displayEyebrow !== undefined, value.displayEyebrow ?? null,
-           value.displayNote !== undefined, value.displayNote ?? null,
-           value.displayDetails !== undefined, JSON.stringify(value.displayDetails ?? []),
-           value.status ?? null],
+            value.displayEyebrow !== undefined, value.displayEyebrow ?? null,
+            value.displayNote !== undefined, value.displayNote ?? null,
+            value.displayDetails !== undefined, JSON.stringify(value.displayDetails ?? []),
+            value.status ?? null],
         );
       } else if (resource === "subscription-plan-versions") {
         const value = input as z.infer<typeof planVersionUpdateSchema>;
@@ -609,7 +609,7 @@ export async function handleSubscriptionUpdate(
              base_price_microusd = COALESCE($5, base_price_microusd),
              updated_at = NOW() WHERE id = $1`,
           [id, value.trialDays ?? null, value.gracePeriodDays ?? null,
-           value.allowanceTokens ?? null, value.priceMicrousd ?? null],
+            value.allowanceTokens ?? null, value.priceMicrousd ?? null],
         );
       } else {
         const value = input as z.infer<typeof entitlementUpdateSchema>;
@@ -640,11 +640,11 @@ export async function handleSubscriptionUpdate(
              enabled = COALESCE($12, enabled), updated_at = NOW()
            WHERE id = $1`,
           [id, value.gatewayScopes ?? null,
-           value.requestsPerMinute !== undefined, value.requestsPerMinute ?? null,
-           value.dailyTokenLimit !== undefined, value.dailyTokenLimit ?? null,
-           value.monthlyTokenLimit !== undefined, value.monthlyTokenLimit ?? null,
-           value.storageBytesLimit !== undefined, value.storageBytesLimit ?? null,
-           value.isDefault ?? null, value.enabled ?? null],
+            value.requestsPerMinute !== undefined, value.requestsPerMinute ?? null,
+            value.dailyTokenLimit !== undefined, value.dailyTokenLimit ?? null,
+            value.monthlyTokenLimit !== undefined, value.monthlyTokenLimit ?? null,
+            value.storageBytesLimit !== undefined, value.storageBytesLimit ?? null,
+            value.isDefault ?? null, value.enabled ?? null],
         );
       }
       const after = await querySubscriptionItem(client, resource, id);
@@ -759,9 +759,12 @@ export async function transitionSubscriptionOnClient(
     status = "active";
     renewalEnabled = true;
   } else if (input.action === "cancel") {
-    if (!["trial", "active"].includes(status)) throw new AdminError("SUBSCRIPTION_TRANSITION_INVALID", "Only an active or trial subscription can schedule cancellation", 409);
-    status = "cancel_at_period_end";
+    if (!["trial", "active", "past_due", "paused", "cancel_at_period_end", "expired"].includes(status)) {
+      throw new AdminError("SUBSCRIPTION_TRANSITION_INVALID", "This subscription cannot be cancelled", 409);
+    }
+    status = "cancelled";
     renewalEnabled = false;
+    pendingVersionId = null;
   } else if (input.action === "revoke_cancel") {
     if (status !== "cancel_at_period_end") throw new AdminError("SUBSCRIPTION_TRANSITION_INVALID", "Only a period-end cancellation can be revoked", 409);
     if (new Date() >= before.current_period_end) {
@@ -848,7 +851,7 @@ export async function transitionSubscriptionOnClient(
        version = version + 1, updated_at = NOW()
      WHERE id = $1 AND version = $9`,
     [before.id, versionId, pendingVersionId, status, start, end,
-     renewalEnabled, periodNumber, input.expectedVersion],
+      renewalEnabled, periodNumber, input.expectedVersion],
   );
   if (updated.rowCount !== 1) {
     throw new AdminError(
@@ -1402,10 +1405,10 @@ export async function handleSubscriptionAction(
       const after = transition.idempotent && transition.originalAfter
         ? transition.originalAfter
         : await querySubscriptionItem(
-            client,
-            "subscriptions",
-            transition.subscriptionId,
-          );
+          client,
+          "subscriptions",
+          transition.subscriptionId,
+        );
       if (!transition.idempotent) {
         await audit(
           client,

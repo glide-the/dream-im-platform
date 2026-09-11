@@ -1,4 +1,4 @@
-// UI contract tests for explicit subscription plan-change and cancellation entry points.
+// UI contract tests for subscription cancellation and reactivation entry points.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,21 +7,19 @@ import {
 } from "./SubscriptionLifecycleManager";
 
 describe("subscription lifecycle manager actions", () => {
-  it("exposes plan change and cancellation for a callable subscription", () => {
+  it("exposes cancellation for callable and expired subscriptions", () => {
     expect(subscriptionQuickActions("active")).toEqual([
-      { action: "upgrade", label: "更换套餐", tone: "default" },
-      { action: "cancel", label: "期末取消", tone: "danger" },
+      { action: "cancel", label: "取消当前套餐", tone: "danger" },
     ]);
-    expect(subscriptionQuickActions("trial")).toHaveLength(2);
+    expect(subscriptionQuickActions("trial")).toHaveLength(1);
+    expect(subscriptionQuickActions("expired")).toEqual([
+      { action: "cancel", label: "取消当前套餐", tone: "danger" },
+    ]);
   });
 
-  it("offers cancellation reversal only while cancellation is scheduled", () => {
+  it("does not expose actions for a cancelled subscription", () => {
     expect(subscriptionQuickActions("cancel_at_period_end")).toEqual([
-      {
-        action: "revoke_cancel",
-        label: "撤销期末取消",
-        tone: "default",
-      },
+      { action: "cancel", label: "取消当前套餐", tone: "danger" },
     ]);
     expect(subscriptionQuickActions("cancelled")).toEqual([]);
   });
@@ -32,7 +30,7 @@ describe("subscription lifecycle manager actions", () => {
         { error: { code: "SUBSCRIPTION_ALREADY_CALLABLE" } },
         409,
       ),
-    ).toContain("更换套餐");
+    ).toContain("取消当前套餐");
     expect(
       subscriptionApiErrorMessage(
         { error: { code: "OTHER", message: "具体错误" } },

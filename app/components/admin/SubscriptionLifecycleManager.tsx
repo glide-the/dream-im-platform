@@ -15,13 +15,7 @@ import { AdminCollapsibleFilters, AdminListHeader, countActiveFilterValues } fro
 
 type Row = Record<string, unknown> & { id: string };
 export type SubscriptionAction =
-  | "renew"
-  | "upgrade"
-  | "downgrade"
-  | "pause"
-  | "resume"
   | "cancel"
-  | "revoke_cancel"
   | "grant_tokens";
 
 const actionOptions: Array<{
@@ -29,47 +23,17 @@ const actionOptions: Array<{
   label: string;
   description: string;
 }> = [
-  {
-    value: "grant_tokens",
-    label: "补发本周期 Token",
-    description: "把免费 Token 追加到当前个人订阅周期，立即参与 Gateway 预授权；操作不会修改每日/每月安全限流，也不会在下周期重复发放。",
-  },
-  {
-    value: "renew",
-    label: "续期",
-    description: "只能在当前个人周期结束后续期；提前提交会由服务端以 409 拒绝，不会提前发放下周期 Token。",
-  },
-  {
-    value: "upgrade",
-    label: "更换 / 升级套餐",
-    description: "选择额度或权益更高的目标版本，只在下一个个人周期边界切换；当前周期不重置，也不补发 Token。目标版本更低时请改选“更换 / 降级套餐”。",
-  },
-  {
-    value: "downgrade",
-    label: "更换 / 降级套餐",
-    description: "只创建待生效版本，在下一个个人周期边界切换；当前周期额度保持不变。",
-  },
-  {
-    value: "pause",
-    label: "暂停",
-    description: "暂停新的 Gateway 调用，不改写已经发生的 Token Usage 与当前周期事实。",
-  },
-  {
-    value: "resume",
-    label: "恢复",
-    description: "恢复当前订阅资格；不会因恢复而重置周期或再次发放 Token。",
-  },
-  {
-    value: "cancel",
-    label: "期末取消",
-    description: "当前周期仍可使用，到个人周期边界后进入已取消；不会再发放下周期 Token。",
-  },
-  {
-    value: "revoke_cancel",
-    label: "撤销期末取消",
-    description: "仅在当前周期结束前清除期末取消标记；不移动周期，也不重新发放 Token。",
-  },
-];
+    {
+      value: "grant_tokens",
+      label: "补发本周期 Token",
+      description: "把免费 Token 追加到当前个人订阅周期，立即参与 Gateway 预授权；操作不会修改每日/每月安全限流，也不会在下周期重复发放。",
+    },
+    {
+      value: "cancel",
+      label: "取消当前套餐",
+      description: "立即停止当前套餐使用资格。历史 Token 和审计记录保留；用户之后仍可订阅新的套餐。",
+    },
+  ];
 
 type AdminApiErrorPayload = {
   error?: { code?: string; message?: string };
@@ -82,15 +46,9 @@ type QuickAction = {
 };
 
 export function subscriptionQuickActions(status: unknown): QuickAction[] {
-  if (status === "trial" || status === "active") {
+  if (["trial", "active", "past_due", "paused", "cancel_at_period_end", "expired"].includes(status as string)) {
     return [
-      { action: "upgrade", label: "更换套餐", tone: "default" },
-      { action: "cancel", label: "期末取消", tone: "danger" },
-    ];
-  }
-  if (status === "cancel_at_period_end") {
-    return [
-      { action: "revoke_cancel", label: "撤销期末取消", tone: "default" },
+      { action: "cancel", label: "取消当前套餐", tone: "danger" },
     ];
   }
   return [];
@@ -103,7 +61,7 @@ export function subscriptionApiErrorMessage(
   if (
     payload.error?.code === "SUBSCRIPTION_ALREADY_CALLABLE"
   ) {
-    return "该用户已有可调用订阅，不能重复开通。请在下方用户订阅清单使用“更换套餐”安排下周期切换，或使用“期末取消”。";
+    return "该用户已有可调用订阅，不能重复开通。请先取消当前套餐，之后再订阅新的套餐。";
   }
   return payload.error?.message ?? `操作失败（HTTP ${status}）`;
 }
@@ -126,13 +84,24 @@ function formatDate(value: unknown) {
   return Number.isNaN(parsed.getTime())
     ? "—"
     : parsed.toLocaleString("zh-CN", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZoneName: "short",
-      });
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
+}
+
+function subscriptionStatusLabel(value: unknown) {
+  const status = String(value ?? "unknown");
+  if (status === "active" || status === "trial" || status === "past_due" || status === "paused") {
+    return `${status} · 可使用`;
+  }
+  if (status === "cancelled" || status === "expired" || status === "cancel_at_period_end") {
+    return `${status} · 不可使用`;
+  }
+  return status;
 }
 
 function userLabel(user: Row) {
@@ -171,7 +140,7 @@ export default function SubscriptionLifecycleManager() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [selected, setSelected] = useState<Row | null>(null);
-  const [action, setAction] = useState<SubscriptionAction>("renew");
+  const [action, setAction] = useState<SubscriptionAction>("cancel");
   const [targetVersion, setTargetVersion] = useState("");
   const [grantAmount, setGrantAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -280,19 +249,16 @@ export default function SubscriptionLifecycleManager() {
     if (!selected) return;
     const body: Record<string, unknown> = action === "grant_tokens"
       ? {
-          idempotencyKey: requestKey("grant-tokens"),
-          reason,
-          amountTokens: Number(grantAmount),
-          expectedAllowanceVersion: Number(selected.allowance_version),
-        }
+        idempotencyKey: requestKey("grant-tokens"),
+        reason,
+        amountTokens: Number(grantAmount),
+        expectedAllowanceVersion: Number(selected.allowance_version),
+      }
       : {
-          idempotencyKey: requestKey(action),
-          reason,
-          expectedVersion: Number(selected.version),
-        };
-    if (["upgrade", "downgrade"].includes(action)) {
-      body.planVersionId = targetVersion;
-    }
+        idempotencyKey: requestKey(action),
+        reason,
+        expectedVersion: Number(selected.version),
+      };
     const ok = await post(
       `/api/admin/subscriptions/${encodeURIComponent(selected.id)}/${action === "grant_tokens" ? "grant-tokens" : action}`,
       body,
@@ -316,7 +282,7 @@ export default function SubscriptionLifecycleManager() {
     setSelected(row);
     setAction(
       initialAction ??
-        (grantIntent && grantAccess.data?.can ? "grant_tokens" : "renew"),
+      (grantIntent && grantAccess.data?.can ? "grant_tokens" : "cancel"),
     );
     setTargetVersion("");
     setGrantAmount("");
@@ -331,7 +297,7 @@ export default function SubscriptionLifecycleManager() {
     <form onSubmit={activate} className="admin-panel space-y-5 p-5">
       <header>
         <h2 className="font-display text-xl font-semibold">为平台用户首次开通订阅</h2>
-        <p id="platform-user-picker-help" className="mt-1 text-sm leading-6 text-text-secondary">此处只用于首次开通。已有订阅的用户请在下方清单使用“更换套餐”或“期末取消”，不能通过再次开通来切换套餐。canonical users 是唯一平台用户全集；缺失内部兼容投影或非 active 的用户仍会显示，以便发现投影故障，但不能误开通订阅。</p>
+        <p id="platform-user-picker-help" className="mt-1 text-sm leading-6 text-text-secondary">此处用于开通新的订阅。已有可用订阅的用户不能重复开通；已过期或已取消的历史订阅不阻止重新订阅。canonical users 是唯一平台用户全集；缺失内部兼容投影或非 active 的用户仍会显示，以便发现投影故障，但不能误开通订阅。</p>
       </header>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto_auto] lg:items-end">
         <div className="space-y-3">
@@ -427,7 +393,7 @@ export default function SubscriptionLifecycleManager() {
               return <tr key={row.id}>
                 <th scope="row" className="px-4 py-3 text-left font-normal"><span className="font-semibold">{String(row.email ?? row.display_name ?? row.platform_user_id)}</span><span className="block font-mono text-[10px] text-text-tertiary">{row.id}</span></th>
                 <td className="px-4 py-3">{String(row.plan_code)} · v{String(row.version_number)}</td>
-                <td className="px-4 py-3"><span className="admin-status">{String(row.status)}</span></td>
+                <td className="px-4 py-3"><span className="admin-status">{subscriptionStatusLabel(row.status)}</span></td>
                 <td className="px-4 py-3 text-xs">{formatDate(row.current_period_start)} → {formatDate(row.current_period_end)}</td>
                 <td className="px-4 py-3 font-mono">{formatToken(planGranted)}</td>
                 <td className="px-4 py-3 font-mono">{formatToken(bonusGranted)}</td>
@@ -472,7 +438,7 @@ export default function SubscriptionLifecycleManager() {
             <div><dt className="text-xs text-text-tertiary">当前周期结束</dt><dd className="mt-1 font-mono text-xs">{formatDate(selected.current_period_end)}</dd></div>
             <div><dt className="text-xs text-text-tertiary">当前剩余 Token</dt><dd className="mt-1 font-mono font-semibold">{formatToken(Math.max(0, tokenValue(selected.granted_tokens) - tokenValue(selected.reserved_tokens) - tokenValue(selected.consumed_tokens)))}</dd></div>
           </dl>
-          {action === "renew" && new Date(String(selected.current_period_end)) <= new Date() ? <p className="border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary">如果该订阅已经漏过多个个人周期，服务端会从原始周期锚点直接定位到包含当前时刻的周期；已过期月份不会追溯补发 Token。</p> : null}
+          {selected.status === "expired" || selected.status === "cancelled" ? <p className="border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary">当前套餐不可使用。如需继续使用，请从上方开通入口订阅新的套餐。</p> : null}
           <label className="block text-xs font-semibold text-text-secondary">操作
             <select data-dialog-autofocus className="admin-field mt-2" value={action} onChange={(event) => { setAction(event.target.value as SubscriptionAction); setTargetVersion(""); setError(""); }}>
               {visibleActionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -481,9 +447,6 @@ export default function SubscriptionLifecycleManager() {
           <p className="border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary">{activeAction.description}</p>
           {action === "grant_tokens" ? <label className="block text-xs font-semibold text-text-secondary">补发 Token 数量 *
             <input required min={1} step={1} inputMode="numeric" type="number" className="admin-field mt-2 font-mono" value={grantAmount} onChange={(event) => setGrantAmount(event.target.value)} placeholder="例如 100000" />
-          </label> : null}
-          {["upgrade", "downgrade"].includes(action) ? <label className="block text-xs font-semibold text-text-secondary">下周期目标版本
-            <select required className="admin-field mt-2" value={targetVersion} onChange={(event) => setTargetVersion(event.target.value)}><option value="">选择已发布版本</option>{published.map((version) => <option key={version.id} value={version.id}>{String(version.plan_code)} · v{String(version.version_number)} · {formatToken(version.allowance_tokens)} Token/月</option>)}</select>
           </label> : null}
           <label className="block text-xs font-semibold text-text-secondary">操作原因 *<textarea required minLength={3} maxLength={500} className="admin-field mt-2 min-h-24" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         </div>
