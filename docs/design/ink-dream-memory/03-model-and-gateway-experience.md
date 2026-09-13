@@ -1,3 +1,8 @@
+<!-- [Input] Authenticated Dream inference, model catalog, and Gateway protocol rules. -->
+<!-- [Output] Current model/Gateway interaction, input estimation, failure handling, and acceptance design. -->
+<!-- [Pos] Dream-facing Gateway design; request lifecycle and actual settlement remain shared. -->
+<!-- [Sync] 2026-09-13: separate protocol-image token estimates from encoding byte limits. -->
+
 # 03 · Model and Gateway Experience
 
 > 2026-08-09合同修正：详细交互与Reader Testing见[06-model-catalog-and-default-subscription-plans](06-model-catalog-and-default-subscription-plans.md)。Admin `enabled=true`决定所有已登录canonical用户的可见目录；Subscription/Plan Version/Entitlement/Permission/Limit/Allowance只决定逐模型callability。无订阅不再让目录消失，也不再映射为503。
@@ -106,6 +111,88 @@ sequenceDiagram
 7. Provider 路由健康且 Secret 可解密。
 
 任一步阻断都不得调用 Provider。Provider Pricing 可作为平台内部成本域存在，但 Dream 不接收或展示其价格窗口，也不能把它误认为套餐生效日。
+
+### 3.1 图片读取后的上下文检查
+
+**背景与问题**：2026-09-13 本机图片 Read 后记录了 Gateway
+`400 MODEL_CONTEXT_WINDOW_EXCEEDED`，随后 Runtime 输出 API error 并结束。
+该终态与网络中断不同。原估算直接以完整 JSON UTF-8 字节数除以 3，
+把 PDF 页面图片和后续 Read 图片的 base64 当作文本 Token；历史图片在后续
+请求中再次发送时，会错误放大输入估算、上下文检查以及 Token 预留。
+文件大小、SDK 单条消息缓冲区、模型上下文窗口是三个不同的技术边界。
+
+**目标与边界**：修复图片编码影响估算的问题，不提高上下文窗口、不自动换模型、
+不裁剪图片或历史、不重放推理、不变更 Thread/resume/cancel/SSE 状态机，
+不新增数据库字段或迁移。大文本、Bash 打印的 base64、工具参数仍按文本检查。
+
+**概念与规则**：
+
+- `prepareGatewayRequest` 复用既有认证与模型查询，解析选中 Provider 协议后
+  调用服务端输入估算回调；原数字型调用仍保持原校验方式，不新增一次模型查询。
+  `estimateInputTokens` 只生成估算投影，不修改原始请求或持久化内容。
+- Anthropic 的消息内容、system 内容及 `tool_result.content` 数组中的标准
+  `image`/`source`，OpenAI 消息内容中的标准 `image_url`，分别按图片估算。
+  每张图片都计数；base64、URL 和 file reference 不按其编码长度估算文本。
+- 仅当公开请求与选中 Provider 协议一致时采用图片估算。现有跨协议转换器
+  可能将图片工具结果序列化为文本；此时必须保留原 JSON 字节估算，不能低估
+  实际发送的文本。跨协议图片转换功能不属于本次修复。
+- 文本、字符串工具结果、tool input、tool schema 和 response format 保留
+  原来的 JSON UTF-8 字节数除以 3 规则。不得递归清除任意对象的 `data` 字段，
+  不解析文本内打印的 JSON。未知或不完整图片格式、二进制 document 仍沿原规则；
+  本次不扩展文档解析、跨协议图片转换或模型图像能力。
+- `GATEWAY_IMAGE_INPUT_TOKEN_ESTIMATE` 是服务端每张图片的预留估算：default
+  为 `4784`，来源是 [Claude 官方视觉预算说明](https://platform.claude.com/docs/en/build-with-claude/vision)。
+  不同 Provider 的视觉分词不同；该值不宣称是所有模型的精确消耗或能力上限，
+  运维应按实际 Provider 调整。desired 来自启动环境，effective 为本次合法解析值；
+  无动态 revision。需要图片估算时，配置必须是正安全整数，非法配置返回 503；
+  组合溢出返回 400。无图片及跨协议请求不应用该图片估算配置。
+- 图片编码仍完整计入 `GATEWAY_MAX_BODY_BYTES`；上下文检查仍比较估算输入加
+  effective 最大输出与选中模型的 context window。预留仍使用估算值，
+  完成后的实际消耗仍来自 Provider `usage`，不是图片估算值。
+- 原生 Anthropic `count_tokens` 继续调用 Provider；OpenAI Provider 对 Anthropic
+  count 请求的既有本地估算 fallback 保留原 JSON 字节规则，符合上述跨协议边界。
+- 真正上下文超限时按既有 error 通道反馈并保留 partial 内容，不显示为成功，
+  也不把 HTTP 200 或已经出现工具结果当作完整 turn 成功。
+
+```mermaid
+sequenceDiagram
+  participant R as Runtime/SDK
+  participant G as Gateway Messages
+  participant E as 输入估算与上下文检查
+  participant B as 既有 Token 预留/结算
+  participant P as Provider
+  R->>G: 历史消息 + 图片 Read 结果 + 输出上限
+  G->>G: 请求体字节上限与 schema 校验
+  G->>G: 既有认证与模型解析，确定 Provider 协议
+  G->>E: 文本投影 + 图片数量
+  E->>E: 文本估算 + 图片估算 + effective 输出
+  alt 超过选中模型上下文窗口
+    E-->>G: MODEL_CONTEXT_WINDOW_EXCEEDED
+    G-->>R: 400 error，既有 turn 失败流程
+  else 检查通过
+    G->>B: 按估算值预留，授权与额度规则不变
+    G->>P: 原始图片和文本，不替换编码
+    P-->>G: 分片 SSE + actual usage + 结束事件
+    G->>B: 按 actual usage 结算与释放余量
+    G-->>R: 完整协议事件与既有终态
+  end
+```
+
+**影响范围与方案评审**：修改 Gateway Messages/Chat 的输入估算及 prepare 中的服务端
+估算调用时机；原生 count 与跨协议本地 fallback 行为不变。
+不修改 Dream Python SDK/Runtime 版本、MCP Apps descriptor、资源读取或 App 宿主。
+复用现有 parse/prepare/proxy/settlement，不新增 tokenizer 服务、图片下载、
+全局 buffer 扩张或新的恢复分支。前端原有 Terminal 会显示工具返回的 JSON；
+隐藏 base64 或新增图片展示属于另一项 UI 改动，本次不改该行为。
+
+**验收**：`input-token-estimate.test.ts` 覆盖直接/嵌套图片、大小变化、URL/file、
+OpenAI、跨协议保守估算、字符串/参数/schema 不被误清除、配置与组合溢出。
+`image-read-flow.test.ts` 经公开 Messages handler、真实估算/prepare/proxy，
+用合成十页历史与两张新图片验证原算法超限、新算法可完成分片 SSE，
+Provider 请求图像不变且按实际 usage 结算；大文本及跨协议图片工具结果文本
+仍在调用前按原规则返回 400，原生 count 及跨协议 count fallback 不变。
+授权、预留、Provider 网络与持久化由测试依赖注入，不使用真实用户文件或模型。
+这是 Provider-free 技术合同验证，不能替代正常 Dream/Admin/PG 真实业务复验。
 
 ## 4. 模型选择交互
 

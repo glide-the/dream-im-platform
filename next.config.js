@@ -1,7 +1,11 @@
-// [Input] Optional repository-local E2E dist name and configurable production-build CPU budget.
-// [Output] Validated Next.js build/runtime configuration.
+// [Input] Configuration-file location, optional repository-local E2E dist name and production-build CPU budget.
+// [Output] Validated Next.js configuration with an absolute repository-local Turbopack root.
 // [Pos] Shared Next.js configuration; remote build resources are supplied by deploy config.
-// [Sync] 2026-08-21: allow low-memory ECS builds to bound Next worker concurrency.
+// [Sync] 2026-09-13: resolve the project root from this file, not ancestor lockfiles or launch cwd.
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const projectRoot = dirname(fileURLToPath(import.meta.url));
 const e2eDistDir = process.env.INK_ADMIN_E2E_DIST_DIR?.trim();
 if (e2eDistDir && !/^\.next-e2e-[a-z0-9-]+$/.test(e2eDistDir)) {
   throw new Error('INK_ADMIN_E2E_DIST_DIR must be a repository-local .next-e2e-* directory');
@@ -15,6 +19,7 @@ if (buildCpus !== undefined && (!Number.isInteger(buildCpus) || buildCpus < 1 ||
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  turbopack: { root: projectRoot },
   ...(e2eDistDir && { distDir: e2eDistDir }),
   ...(buildCpus && { experimental: { cpus: buildCpus } }),
   // Enable standalone output for Docker deployments

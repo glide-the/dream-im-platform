@@ -40,6 +40,16 @@ pnpm dev
 
 打开 [http://localhost:3000/admin](http://localhost:3000/admin)。根路径 `/` 会跳转到管理后台。
 
+Next.js 的 `turbopack.root` 从 `next.config.js` 的文件位置确定，不依赖启动进程的工作目录，也不让祖先目录的锁文件改变 Admin 的依赖解析边界。无需删除用户目录或其他项目的锁文件；修改 Next.js 配置后需要重新启动开发服务。
+
+如果根目录修正后重启仍出现 `Can't resolve 'tailwindcss'`，先正常停止开发服务，确认服务进程与 `.next/dev/lock` 已释放，再把原 `.next` 移到独立备份目录后启动，重新生成编译缓存。旧 Turbopack 缓存可能保留此前的 CSS 解析路径；不要向父目录安装依赖，也不要移动数据库目录、环境文件或重新执行初始化/迁移。本机排查已使用相同 Node 24 验证：全新缓存编译成功，复用旧缓存副本会重现父目录解析错误，备份后通过 VSCode 原调试配置重建即可恢复。
+
+启动配置回归检查（不启动数据库或调用模型）：
+
+```bash
+node --test scripts/next-config.test.mjs
+```
+
 `pnpm env:setup` 会完成以下操作：
 
 - 生成 `.env.local` 和 `docker/.env`，文件权限设为 `0600`；
@@ -117,10 +127,18 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `AI_PROVIDER_ALLOW_INSECURE_LOCALHOST` | 开发环境允许本地 HTTP Provider | 默认 `false` |
 | `GATEWAY_MIN_RESERVE_MICROUSD` | 单次请求最低预授权金额 | 默认 `0` |
 | `GATEWAY_MAX_BODY_BYTES` | 网关请求体上限 | 默认 `20971520` |
+| `GATEWAY_IMAGE_INPUT_TOKEN_ESTIMATE` | 每个协议图片内容块的输入 Token 预留估算，不是模型能力或实际消耗 | 默认 `4784`；正安全整数；文本与请求体上限仍独立检查 |
 | `FILE_STORAGE_TYPE` | 文件存储 capability：`disabled`、`vercel-blob` 或 `s3` | 当前固定 `disabled` |
 | `FILE_STORAGE_PREFIX` | 对象 Key 前缀 | 默认 `uploads` |
 
 Provider API Key 不属于应用运行环境变量。请在 `/admin/models` 创建 Provider 时录入，系统只保存加密密文并在读取接口中返回指纹。
+
+图片 base64 长度不等于输入 Token 数。公开请求与 Provider 使用相同协议时，Gateway 分别估算图片与文本，
+只在估算投影中移除图片编码，发送到 Provider 的原始内容不变。
+该配置是可调整的预留估算；Provider 的图像处理规则可能不同，最终消耗仍取实际 `usage`。
+现有跨协议转换可能把图片工具结果编码成文本，因此跨协议请求保留原有 JSON 字节估算。
+`400 MODEL_CONTEXT_WINDOW_EXCEEDED` 表示上下文检查拒绝，不是 SSE 网络断线；
+真实大文本仍需分段读取或压缩历史，不能通过提高 SDK 缓冲区绕过上下文上限。
 
 自定义 OpenAI/Anthropic 兼容域名必须先把**主机名**加入
 `AI_PROVIDER_HOST_ALLOWLIST`（逗号分隔，不填写 scheme 或 path），然后重启 Admin。

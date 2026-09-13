@@ -1,3 +1,8 @@
+// [Input] Authenticated request context, selected model, and numeric/provider-aware token estimate.
+// [Output] A context-checked reservation or existing replay/rejection response.
+// [Pos] Gateway preparation; model resolution selects the estimator protocol before reservation.
+// [Sync] 2026-09-13: allow image estimates to depend on the resolved Provider protocol.
+
 import { estimateReservation } from "../billing/money";
 import type { AiProviderProtocol } from "../billing/types";
 import { resolveBillableModel } from "../models/resolver";
@@ -47,6 +52,17 @@ export type PrepareGatewayRequestResult =
   | { kind: "ready"; value: PreparedGatewayRequest }
   | Extract<BeginGatewayRequestResult, { kind: "replay" | "rejected" }>;
 
+function validateInputTokenEstimate(value: number) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new GatewayError(
+      "REQUEST_TOKEN_ESTIMATE_INVALID",
+      "The request token estimate is outside the supported range",
+      400,
+      "invalid_request_error",
+    );
+  }
+}
+
 export async function prepareGatewayRequest(input: {
   headers: Headers;
   requiredScope: string;
@@ -54,21 +70,13 @@ export async function prepareGatewayRequest(input: {
   requestedModel: string;
   isStreaming: boolean;
   idempotencyKey?: string;
-  estimatedInputTokens: number;
+  estimatedInputTokens: number | ((providerProtocol: AiProviderProtocol) => number);
   requestedMaxOutputTokens?: number | null;
   outputChoices?: number;
   requestCapture?: GatewayRequestCapture;
 }): Promise<PrepareGatewayRequestResult> {
-  if (
-    !Number.isSafeInteger(input.estimatedInputTokens) ||
-    input.estimatedInputTokens < 0
-  ) {
-    throw new GatewayError(
-      "REQUEST_TOKEN_ESTIMATE_INVALID",
-      "The request token estimate is outside the supported range",
-      400,
-      "invalid_request_error",
-    );
+  if (typeof input.estimatedInputTokens !== "function") {
+    validateInputTokenEstimate(input.estimatedInputTokens);
   }
   const principal = await authenticateGatewayRequest(
     input.headers,
@@ -79,6 +87,10 @@ export async function prepareGatewayRequest(input: {
     requestedModel: input.requestedModel,
     protocol: input.protocol,
   });
+  const estimatedInputTokens = typeof input.estimatedInputTokens === "function"
+    ? input.estimatedInputTokens(resolved.provider.protocol)
+    : input.estimatedInputTokens;
+  validateInputTokenEstimate(estimatedInputTokens);
   const configuredDefault = resolved.model.maxOutputTokens ?? 4_096;
   const effectiveMaxOutputTokens = Math.min(
     input.requestedMaxOutputTokens ?? configuredDefault,
@@ -86,7 +98,7 @@ export async function prepareGatewayRequest(input: {
   );
   if (
     resolved.model.contextWindow !== undefined &&
-    input.estimatedInputTokens + effectiveMaxOutputTokens >
+    estimatedInputTokens + effectiveMaxOutputTokens >
       resolved.model.contextWindow
   ) {
     throw new GatewayError(
@@ -106,7 +118,7 @@ export async function prepareGatewayRequest(input: {
       "invalid_request_error",
     );
   }
-  const estimatedTokens = input.estimatedInputTokens + estimatedOutputTokens;
+  const estimatedTokens = estimatedInputTokens + estimatedOutputTokens;
   if (!Number.isSafeInteger(estimatedTokens)) {
     throw new GatewayError(
       "REQUEST_TOKEN_ESTIMATE_INVALID",
@@ -116,7 +128,7 @@ export async function prepareGatewayRequest(input: {
     );
   }
   const reservationMicrousd = estimateReservation({
-    estimatedInputTokens: input.estimatedInputTokens,
+    estimatedInputTokens,
     maxOutputTokens: estimatedOutputTokens,
     pricing: resolved.pricing,
     minimumReserveMicrousd: minimumReserveMicrousd(),
