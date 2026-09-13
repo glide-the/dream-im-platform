@@ -1,6 +1,12 @@
+// [Input] Public OpenAI Chat requests and the authenticated model route.
+// [Output] Compatible responses using separate image/text input estimates.
+// [Pos] OpenAI Gateway orchestration; shared reservation and settlement own lifecycle.
+// [Sync] 2026-09-13: do not count protocol image_url encodings as text tokens.
+
 import { prepareGatewayRequest, preparationErrorResponse } from "./prepare";
 import { openAIChatCompletionSchema } from "./protocols";
-import { estimateJsonTokens, parseGatewayJsonCapture, readIdempotencyKey } from "./request-body";
+import { parseGatewayJsonCapture, readIdempotencyKey } from "./request-body";
+import { estimateInputTokens } from "./input-token-estimate";
 import { gatewayProtocolErrorResponse, proxyNonStreaming, proxyStreaming } from "./proxy-handler";
 
 export async function handleOpenAIChatCompletions(request: Request) {
@@ -15,7 +21,7 @@ export async function handleOpenAIChatCompletions(request: Request) {
       requestedModel: body.model,
       isStreaming: body.stream,
       idempotencyKey: readIdempotencyKey(request.headers),
-      estimatedInputTokens: estimateJsonTokens({ messages: body.messages, tools: body.tools, response_format: body.response_format }),
+      estimatedInputTokens: (providerProtocol) => estimateInputTokens("openai", { messages: body.messages, tools: body.tools, response_format: body.response_format }, providerProtocol),
       requestedMaxOutputTokens,
       outputChoices: body.n ?? 1,
       requestCapture: { request, rawBody: captured.rawBody, body: captured.body },

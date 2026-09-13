@@ -1,10 +1,16 @@
+// [Input] Public Anthropic Messages/count requests and the authenticated model route.
+// [Output] Compatible responses with protocol-aware reservation/count estimates.
+// [Pos] Anthropic Gateway orchestration; provider transport and settlement remain shared.
+// [Sync] 2026-09-13: estimate image blocks independently from base64 JSON byte length.
+
 import type { MessageCountTokensParams } from "@anthropic-ai/sdk/resources/messages";
 import { authenticateGatewayRequest } from "./auth";
 import { gatewayErrorResponse, toGatewayError } from "./errors";
 import { prepareGatewayRequest, preparationErrorResponse } from "./prepare";
 import { createAnthropicProviderClient, toProviderGatewayError } from "./provider-clients";
 import { anthropicCountTokensSchema, anthropicMessageSchema } from "./protocols";
-import { deriveGatewayIdempotencyKey, estimateJsonTokens, parseGatewayJson, parseGatewayJsonCapture } from "./request-body";
+import { deriveGatewayIdempotencyKey, parseGatewayJson, parseGatewayJsonCapture } from "./request-body";
+import { estimateInputTokens } from "./input-token-estimate";
 import { gatewayProtocolErrorResponse, proxyNonStreaming, proxyStreaming } from "./proxy-handler";
 import { resolveBillableModel } from "../models/resolver";
 
@@ -19,7 +25,7 @@ export async function handleAnthropicMessages(request: Request) {
       requestedModel: body.model,
       isStreaming: body.stream,
       idempotencyKey: deriveGatewayIdempotencyKey(request.headers, captured.rawBody),
-      estimatedInputTokens: estimateJsonTokens({ messages: body.messages, system: body.system, tools: body.tools }),
+      estimatedInputTokens: (providerProtocol) => estimateInputTokens("anthropic", { messages: body.messages, system: body.system, tools: body.tools }, providerProtocol),
       requestedMaxOutputTokens: body.max_tokens,
       requestCapture: { request, rawBody: captured.rawBody, body: captured.body },
     });
@@ -37,7 +43,7 @@ export async function handleAnthropicCountTokens(request: Request) {
     const principal = await authenticateGatewayRequest(request.headers, "messages:create");
     const resolved = await resolveBillableModel({ platformUserId: principal.platformUserId, requestedModel: body.model, protocol: "anthropic" });
     if (resolved.provider.protocol === "openai") {
-      return Response.json({ input_tokens: estimateJsonTokens({ messages: body.messages, system: body.system, tools: body.tools }) }, { headers: { "cache-control": "no-store" } });
+      return Response.json({ input_tokens: estimateInputTokens("anthropic", { messages: body.messages, system: body.system, tools: body.tools }, "openai") }, { headers: { "cache-control": "no-store" } });
     }
     const client = createAnthropicProviderClient(resolved);
     const response = await client.messages.countTokens({ ...body, model: resolved.model.upstreamModel } as unknown as MessageCountTokensParams, { signal: request.signal });
