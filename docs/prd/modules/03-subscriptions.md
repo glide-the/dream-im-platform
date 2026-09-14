@@ -1,5 +1,22 @@
 # 模块 PRD：Token-only 月度订阅、套餐版本与权益
 
+## 2026-09-15 模型选择与版本发布检查
+
+### 背景与问题
+
+套餐草稿可选择未启用模型，发布时也未检查 Provider 状态，造成用户订阅已生效但 Dream 没有对应可调用模型。
+
+### 目标与边界
+
+新增模型权益只提供已启用模型；发布时检查套餐启用权益中的全部模型与 Provider。不自动启用依赖，不改写历史已发布版本，不把账号已连接或定价有效当作 Provider 已启用。
+
+### 概念与规则
+
+- 已启用模型指 `ai_models.enabled=true`；选择器的搜索和分页固定保留该条件，服务端新增权益时重新锁定并验证模型，停用或不存在返回 `SUBSCRIPTION_ENTITLEMENT_MODEL_DISABLED` 409。
+- 已启用提供商指 `ai_providers.status=active`；发布事务先锁定版本，再锁定并检查全部启用权益对应的模型与 Provider。任一未启用返回 `SUBSCRIPTION_PUBLISH_DEPENDENCY_DISABLED` 409，错误列出对应模型和提供商；共用 Provider 不重复列出。
+- 发布失败保留版本草稿和套餐状态，不写发布成功审计；运营处理依赖后重新发布。停用权益不参与发布检查，已发布版本重试只返回既有结果。
+- 验收覆盖正常新增与发布、停用模型不可选、搜索分页保留条件、提交前停用、模型或 Provider 未启用及组合错误。
+
 ## 2026-08-09 默认三套餐与Free自动资格增量
 
 - 正式Plan identity code固定为`free`、`dream`、`is-dreaming`；Plan保存`eyebrow/note/details`正式展示字段，Dream不得复制静态数组。
