@@ -2,6 +2,7 @@
 <!-- [Output] Reuse boundaries for Provider, Model, Pricing, Usage, and Gateway interaction patterns. -->
 <!-- [Pos] cc-switch adaptation guide; authentication capability decisions defer to the dedicated lifecycle contract. -->
 <!-- [Sync] 2026-09-04: distinguish cc-switch manual model fetch from managed post-connect discovery, including generation fencing and unsupported Copilot models. -->
+<!-- [Sync] 2026-09-14: allow explicit candidate choice from immutable pricing snapshots through collapsible comparison. -->
 
 # cc-switch 模型设置与计费设计接入规范
 
@@ -157,6 +158,16 @@ Model 卡片的“验证配置”不是表单字段：按钮需 `models.write`�
 | 影响摘要 | 关联请求数、旧/新价格差、时间窗 | 只读确认区 | 仅展示真实查询；未知显示“暂不可计算”，不虚构 |
 
 models.dev 同步层额外字段：目录 provider/model ID（文本）、source ref/version/hash（只读）、match kind（exact/normalized/ambiguous/unmatched 选项徽标）、release date（日期）、四类 USD/1M 目录价（等宽金额）、目标 Model（真实 Combobox）、目标 Tier（选项）和 effective_from（带时区日期时间）。只有 exact 可默认勾选；Apply 对每个选中项插入新版本并返回 created/no-op/conflict receipt。
+
+### 6.1 歧义价格候选选择
+
+**背景与问题**：同一上游模型可能对应多个目录来源。仅展示第一个候选及其价格，会误导管理员以为来源已确定，也无法比较其他候选。
+
+**目标与边界**：在现有价格差异表中折叠展开全部候选，管理员单选来源后即可参与本次 Apply。选择操作只修改页面草稿，不自动保存价格、不改变模型 Provider，也不增加确认弹窗。
+
+**概念与规则**：默认只有 exact 勾选；ambiguous 没有默认来源，主行价格显示 `—`。展开列表显示 Provider、模型目录 key 和四类 USD/1M 价格；单选后自动勾选模型，主行改为所选来源与金额并标记“人工选择”。取消勾选、收起与筛选保留来源草稿，切换快照清空草稿。
+
+Snapshot 保存全部候选 key 和完整目录价格，不截断为二十项。Apply 的 strict DTO 只接受模型、候选 key 和生效时间；事务内锁定 ready 且未过期的 snapshot，拒绝未选择、重复、跨模型、目录外候选及客户端金额覆盖。金额、目录版本与 hash 均取自该 snapshot，新 Pricing 的 source metadata 与 audit 记录人工选择；即使价格相同，人工改选不同来源也创建新来源版本。已应用/过期快照不可 Apply，旧 key-only 快照需通过明确的重新同步动作创建新快照，不补写或覆盖原快照。
 
 ## 7. Usage 与 Gateway Request 展示规范
 
