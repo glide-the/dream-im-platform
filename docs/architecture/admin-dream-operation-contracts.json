@@ -25939,5 +25939,895 @@
       "output_schema_version": 1,
       "contract_sha256": "c971b5f2ee3517eb9c078d70544bfaa46d74a293afc44b1b8386496d9d081e62"
     }
+  },
+  {
+    "contract": {
+      "name": "deck-plugin-binding.current",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "deck_id",
+          "workspace_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "binding_revision": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "applied_to": {
+            "type": "string",
+            "const": "next_run"
+          },
+          "binding": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "deck_plugin_binding_id": {
+                    "type": "string",
+                    "pattern": "^dpb_[0-9a-f]{32}$"
+                  },
+                  "deck_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "deck_plugin_id": {
+                    "type": "string",
+                    "minLength": 3,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                  },
+                  "deck_plugin_version": {
+                    "type": "string",
+                    "minLength": 5,
+                    "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                  },
+                  "binding_revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "stale"
+                    ]
+                  },
+                  "applied_to": {
+                    "type": "string",
+                    "const": "next_run"
+                  },
+                  "selection_validation_summary": {
+                    "type": "object",
+                    "properties": {
+                      "selectable": {
+                        "type": "boolean"
+                      },
+                      "release_status": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "installation_status": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "compatibility": {
+                        "type": "string",
+                        "enum": [
+                          "passed",
+                          "failed",
+                          "unknown"
+                        ]
+                      },
+                      "runtime_readiness": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "reason_code": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "recovery": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "owner": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "action": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "required": [
+                              "owner",
+                              "action"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "capability_summary": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "selectable",
+                      "release_status",
+                      "installation_status",
+                      "compatibility",
+                      "runtime_readiness",
+                      "reason_code",
+                      "recovery",
+                      "capability_summary"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "deck_plugin_binding_id",
+                  "deck_id",
+                  "deck_plugin_id",
+                  "deck_plugin_version",
+                  "binding_revision",
+                  "status",
+                  "applied_to",
+                  "selection_validation_summary"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "deck_id",
+          "binding_revision",
+          "applied_to",
+          "binding"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "deck-plugin-binding.current",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "4b66af7888ed17e16f7e7aa38aded821ad3ecfe148663001dd6c4a66c714fb93"
+    }
+  },
+  {
+    "contract": {
+      "name": "deck-plugin-binding.history",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "deck_id",
+          "workspace_id",
+          "limit"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "current_binding_revision": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "deck_plugin_binding_id": {
+                  "type": "string",
+                  "pattern": "^dpb_[0-9a-f]{32}$"
+                },
+                "deck_plugin_id": {
+                  "type": "string",
+                  "minLength": 3,
+                  "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                },
+                "deck_plugin_version": {
+                  "type": "string",
+                  "minLength": 5,
+                  "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                },
+                "binding_revision": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "stale"
+                  ]
+                },
+                "applied_to": {
+                  "type": "string",
+                  "const": "next_run"
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                }
+              },
+              "required": [
+                "deck_plugin_binding_id",
+                "deck_plugin_id",
+                "deck_plugin_version",
+                "binding_revision",
+                "status",
+                "applied_to",
+                "created_at",
+                "updated_at"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "deck_id",
+          "current_binding_revision",
+          "entries"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "deck-plugin-binding.history",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "568bb2ad097382510919eb230e20b1e7d5e6e2dfd9c66c83384cbf3e52ede0e8"
+    }
+  },
+  {
+    "contract": {
+      "name": "deck-plugin-binding.options",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "deck_id",
+          "workspace_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "applied_to": {
+            "type": "string",
+            "const": "next_run"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "display_name": {
+                  "type": "string"
+                },
+                "deck_plugin_id": {
+                  "type": "string",
+                  "minLength": 3,
+                  "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                },
+                "deck_plugin_version": {
+                  "type": "string",
+                  "minLength": 5,
+                  "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                },
+                "release_status": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "installation_status": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "compatibility": {
+                  "type": "string",
+                  "enum": [
+                    "passed",
+                    "failed",
+                    "unknown"
+                  ]
+                },
+                "runtime_readiness": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "selectable": {
+                  "type": "boolean"
+                },
+                "reason_code": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "recovery": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "owner": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "action": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "action"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "capability_summary": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "display_name",
+                "deck_plugin_id",
+                "deck_plugin_version",
+                "release_status",
+                "installation_status",
+                "compatibility",
+                "runtime_readiness",
+                "selectable",
+                "reason_code",
+                "recovery",
+                "capability_summary"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "deck_id",
+          "applied_to",
+          "options"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "deck-plugin-binding.options",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "aca3a55ce01d9e7754d5cd9be07320cb4240d3d26928c8ff24ba3ea9675fa770"
+    }
+  },
+  {
+    "contract": {
+      "name": "deck-plugin-binding.validate",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deck_plugin_id": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+          },
+          "deck_plugin_version": {
+            "type": "string",
+            "minLength": 5,
+            "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+          },
+          "apply_to": {
+            "type": "string",
+            "const": "next_run"
+          }
+        },
+        "required": [
+          "deck_id",
+          "workspace_id",
+          "deck_plugin_id",
+          "deck_plugin_version",
+          "apply_to"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deck_plugin_id": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+          },
+          "deck_plugin_version": {
+            "type": "string",
+            "minLength": 5,
+            "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+          },
+          "applied_to": {
+            "type": "string",
+            "const": "next_run"
+          },
+          "validation": {
+            "type": "object",
+            "properties": {
+              "selectable": {
+                "type": "boolean"
+              },
+              "release_status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "installation_status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "compatibility": {
+                "type": "string",
+                "enum": [
+                  "passed",
+                  "failed",
+                  "unknown"
+                ]
+              },
+              "runtime_readiness": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason_code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "recovery": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "owner": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "action": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "owner",
+                      "action"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capability_summary": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "selectable",
+              "release_status",
+              "installation_status",
+              "compatibility",
+              "runtime_readiness",
+              "reason_code",
+              "recovery",
+              "capability_summary"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "deck_id",
+          "deck_plugin_id",
+          "deck_plugin_version",
+          "applied_to",
+          "validation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "deck-plugin-binding.validate",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "55fc0175170183fc1d5fc5162ef6be15bb863ef43261902c8edda5614bbcdb70"
+    }
+  },
+  {
+    "contract": {
+      "name": "deck-plugin-binding.save",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deck_plugin_id": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+          },
+          "deck_plugin_version": {
+            "type": "string",
+            "minLength": 5,
+            "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+          },
+          "apply_to": {
+            "type": "string",
+            "const": "next_run"
+          },
+          "expected_binding_revision": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "deck_id",
+          "workspace_id",
+          "deck_plugin_id",
+          "deck_plugin_version",
+          "apply_to",
+          "expected_binding_revision"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_plugin_binding_id": {
+            "type": "string",
+            "pattern": "^dpb_[0-9a-f]{32}$"
+          },
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deck_plugin_id": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+          },
+          "deck_plugin_version": {
+            "type": "string",
+            "minLength": 5,
+            "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+          },
+          "binding_revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "stale"
+            ]
+          },
+          "applied_to": {
+            "type": "string",
+            "const": "next_run"
+          },
+          "selection_validation_summary": {
+            "type": "object",
+            "properties": {
+              "selectable": {
+                "type": "boolean"
+              },
+              "release_status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "installation_status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "compatibility": {
+                "type": "string",
+                "enum": [
+                  "passed",
+                  "failed",
+                  "unknown"
+                ]
+              },
+              "runtime_readiness": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason_code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "recovery": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "owner": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "action": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "owner",
+                      "action"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capability_summary": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "selectable",
+              "release_status",
+              "installation_status",
+              "compatibility",
+              "runtime_readiness",
+              "reason_code",
+              "recovery",
+              "capability_summary"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "deck_plugin_binding_id",
+          "deck_id",
+          "deck_plugin_id",
+          "deck_plugin_version",
+          "binding_revision",
+          "status",
+          "applied_to",
+          "selection_validation_summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "deck-plugin-binding.save",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "cf91b567af3ae207d0c009947d98fb0dcb2335d3abcbf7e8194f95a02ceeddb2"
+    }
   }
 ]

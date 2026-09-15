@@ -1,6 +1,7 @@
 // [Input] Explicit registered local-data, Thread/message, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
 // [Output] Strict domain DTO, never generic SQL or arbitrary function dispatch.
 // [Pos] Thin named operation ingress.
+// [Sync] 2026-09-16: dispatch Registry122-126 Deck Plugin binding operations.
 // [Sync] 2026-09-16: dispatch Registry120 Story Workspace confirmation operations.
 import { handleChatThreadOperation } from "../../../../../../lib/dream/chatThreadHandler";
 import { handleUserProfile } from "../../../../../../lib/dream/userProfileHandler";
@@ -35,9 +36,11 @@ import { handleStoryWorkspaceReview, isStoryWorkspaceReviewOperation } from "../
 import { handleStoryWorkspaceCatalog, isStoryWorkspaceCatalogOperation } from "../../../../../../lib/dream/storyWorkspaceCatalogHandler";
 import { handleStoryWorkspaceGuidance, isStoryWorkspaceGuidanceOperation } from "../../../../../../lib/dream/storyWorkspaceGuidanceHandler";
 import { handleStoryWorkspaceConfirmation, isStoryWorkspaceConfirmationOperation } from "../../../../../../lib/dream/storyWorkspaceConfirmationHandler";
+import { handleDeckPluginBinding, isDeckPluginBindingOperation } from "../../../../../../lib/dream/deckPluginBindingHandler";
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
+  if (isDeckPluginBindingOperation(name)) return handleDeckPluginBinding(request, name);
   if (isStoryWorkspaceConfirmationOperation(name)) return handleStoryWorkspaceConfirmation(request, name);
   if (isStoryWorkspaceGuidanceOperation(name)) return handleStoryWorkspaceGuidance(request, name);
   if (isStoryWorkspaceCatalogOperation(name)) return handleStoryWorkspaceCatalog(request, name);
