@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-15: Registry115 Story Guidance DTO/ORM, receipt, concurrency and restricted-role PostgreSQL gates pass. -->
 <!-- [Sync] 2026-09-15: Registry114 Story catalog DTO/ORM, route, receipt and restricted-role PostgreSQL gates pass. -->
 <!-- [Sync] 2026-09-15: Registry111 Story review DTO/ORM, concurrency, rollback and restricted-role PostgreSQL gates pass. -->
 <!-- [Input] Unified contract and explicit domain/identity permissions. -->
@@ -9,6 +10,7 @@
 
 | 流程 | 模块/数据权限 | 方式 | 成功 | 失败与恢复 | 状态 |
 | --- | --- | --- | --- | --- | --- |
+| Story Workspace Guidance | current OAuth owner；Workflow Run/Workspace/source Thread | Admin focused Vitest + Dream provider-free Python + runner-owned restricted PostgreSQL | confirmed/failed命令、immutable message、exact/business replay、concurrent duplicate、same-Thread dispatch | foreign/non-guidable/changed input/unsafe DTO失败关闭；未知只查原receipt；无PG fallback | Registry115实现与PG 5/5通过，Dream源码扫描减少1 SQL模块、2 SQL literal、1 driver模块、2 legacy helper；正常Runtime业务未执行 |
 | Story Workspace catalog | current OAuth owner；Workspace/Story/Character/Scene | Admin focused Vitest + Dream provider-free Python + runner-owned restricted PostgreSQL | 六view过滤/分页/关系、controlled patch、default Workspace、原FastAPI外形、read无receipt | 非owner/foreign Story/非法selector/unsafe DTO失败关闭；write未知只查原receipt；无PG fallback | Registry114实现与PG 6/6通过，Dream源码扫描减少1 SQL/driver模块；正常真实业务未执行 |
 | Story Workspace审核 | current OAuth owner；Story/Character/Scene generated pending rows | focused Vitest/Python consumer + runner-owned restricted PostgreSQL | 单项与批量DTO、Story级联、顺序、幂等回放、八公开入口无DB fallback | 非owner/非generated/非pending跳过；并发仅一提交；DTO/audit故障全回滚；未知仅查原回执 | 技术验证通过：Admin 16 tests、Dream 36 tests、PG 6/6；正常真实业务未执行 |
 | 配置/issuer/origin | auth config，无数据 | Luna unit | exact origin、HTTPS cookie、限定后台scope | secret缺失/非法redirect fail closed | 定向通过 |

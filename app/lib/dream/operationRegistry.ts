@@ -1,7 +1,7 @@
 // [Input] Named domain input/output DTOs and exact schema requirements.
 // [Output] Version/hash descriptors for implemented operations only.
 // [Pos] API compatibility registry; independent from the global Drizzle head.
-// [Sync] 2026-09-15: append three Story Workspace catalog DTO/ORM operations as Registry114.
+// [Sync] 2026-09-15: append Story Workspace guidance persistence as Registry115.
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { canonicalContractJson } from "./canonicalContractJson";
@@ -63,6 +63,8 @@ import { storyWorkspaceReviewOperationContracts } from "./storyWorkspaceReviewDt
 import { storyWorkspaceReviewSchemaRequirements } from "./storyWorkspaceReviewService";
 import { storyWorkspaceCatalogOperationContracts } from "./storyWorkspaceCatalogDto";
 import { storyWorkspaceCatalogSchemaRequirements } from "./storyWorkspaceCatalogService";
+import { storyWorkspaceGuidanceOperationContracts } from "./storyWorkspaceGuidanceDto";
+import { storyWorkspaceGuidanceSchemaRequirements } from "./storyWorkspaceGuidanceService";
 function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
@@ -139,5 +141,9 @@ export const dreamOperations = [
   ...Object.entries(storyWorkspaceCatalogOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...storyWorkspaceCatalogSchemaRequirements], operation.userScope,
+  )),
+  ...Object.entries(storyWorkspaceGuidanceOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...storyWorkspaceGuidanceSchemaRequirements], operation.userScope,
   )),
 ] as const;

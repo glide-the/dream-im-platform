@@ -1,4 +1,4 @@
-// [Input] Frozen Registry108 prefix, Registry109 DTO, Registry114 inventory and production POST route.
+// [Input] Frozen Registry108 prefix, Registry109 DTO, Registry115 inventory and production POST route.
 // [Output] Exact historical append, contract hash, requirements, generated inventory and dispatch assertions.
 // [Pos] Registration gate for story-workspace-output.store.
 // [Sync] 2026-09-15: preserve Registry109 bytes while Registry114 appends later Story domains.
@@ -10,7 +10,7 @@ vi.mock("./storyWorkspaceOutputHandler", () => ({
   isStoryWorkspaceOutputOperation: (value: string) => value === name,
   handleStoryWorkspaceOutput: mocks.handler,
 }));
-import generated114 from "../../../docs/architecture/admin-dream-operation-contracts.json";
+import generated115 from "../../../docs/architecture/admin-dream-operation-contracts.json";
 import { POST } from "../../api/internal/dream/v1/operations/[operation]/route";
 import { canonicalContractJson, dreamOperations } from "./operationRegistry";
 import { storyWorkspaceOutputOperationContracts } from "./storyWorkspaceOutputDto";
@@ -18,7 +18,7 @@ import { storyWorkspaceOutputSchemaRequirements } from "./storyWorkspaceOutputSe
 import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 it("preserves Registry108 and appends exactly one Registry109 atomic write", () => {
-  expect(dreamOperations).toHaveLength(114); expect(generated114).toEqual(dreamOperations);
+  expect(dreamOperations).toHaveLength(115); expect(generated115).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 108))).digest("hex"))
     .toBe("a631f9dbae964079af9fbd92eebd212b1d5294ebdeba9aa8e164668831352583");
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 109))).digest("hex"))

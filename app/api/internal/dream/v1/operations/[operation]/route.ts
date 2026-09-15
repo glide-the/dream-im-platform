@@ -1,7 +1,7 @@
 // [Input] Explicit registered local-data, Thread/message, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
 // [Output] Strict domain DTO, never generic SQL or arbitrary function dispatch.
 // [Pos] Thin named operation ingress.
-// [Sync] 2026-09-15: dispatch Story Workspace catalog DTO/ORM operations through Registry114.
+// [Sync] 2026-09-15: dispatch Story Workspace guidance DTO/ORM persistence through Registry115.
 import { handleChatThreadOperation } from "../../../../../../lib/dream/chatThreadHandler";
 import { handleUserProfile } from "../../../../../../lib/dream/userProfileHandler";
 import { handleEditorSessionOperation, isEditorSessionOperation } from "../../../../../../lib/dream/editorSessionHandler";
@@ -33,9 +33,11 @@ import { handleWorkflowRuntimeActivation, isWorkflowRuntimeActivationOperation }
 import { handleStoryWorkspaceOutput, isStoryWorkspaceOutputOperation } from "../../../../../../lib/dream/storyWorkspaceOutputHandler";
 import { handleStoryWorkspaceReview, isStoryWorkspaceReviewOperation } from "../../../../../../lib/dream/storyWorkspaceReviewHandler";
 import { handleStoryWorkspaceCatalog, isStoryWorkspaceCatalogOperation } from "../../../../../../lib/dream/storyWorkspaceCatalogHandler";
+import { handleStoryWorkspaceGuidance, isStoryWorkspaceGuidanceOperation } from "../../../../../../lib/dream/storyWorkspaceGuidanceHandler";
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
+  if (isStoryWorkspaceGuidanceOperation(name)) return handleStoryWorkspaceGuidance(request, name);
   if (isStoryWorkspaceCatalogOperation(name)) return handleStoryWorkspaceCatalog(request, name);
   if (isStoryWorkspaceReviewOperation(name)) return handleStoryWorkspaceReview(request, name);
   if (isStoryWorkspaceOutputOperation(name)) return handleStoryWorkspaceOutput(request, name);

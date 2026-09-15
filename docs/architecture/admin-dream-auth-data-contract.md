@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-15: register Story Workspace Guidance persistence as Registry115. -->
 <!-- [Sync] 2026-09-15: register Story Workspace catalog browse/edit operations as Registry114. -->
 <!-- [Sync] 2026-09-15: register OAuth-only Story Workspace review operations as Registry111. -->
 <!-- [Sync] 2026-09-15: record Dream internal Agent output adoption of Registry109 without a contract change. -->
@@ -8,7 +9,15 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际114操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry111 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证；Registry108 Runtime activation继续使用当前Thread/Run grant。Dream公开Agent post-turn、旧 `/api/story-workspace/internal/agent-output`、八个Story审核入口与11个Story catalog入口均已消费Admin operation；durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际115操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry114 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证；Registry108 Runtime activation继续使用当前Thread/Run grant。Dream公开Guidance、Agent post-turn、旧 `/api/story-workspace/internal/agent-output`、八个Story审核入口与11个Story catalog入口均已消费Admin operation；durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+
+### Story Workspace Guidance（注册115）
+
+`story-workspace-guidance.submit`只接受`workflow_run_id`、`kind`、nullable `text`、nullable `step_id`和`idempotency_key`。`kind=free-text`要求非空text且step为空；`kind=continue`要求非空step且text为空。current OAuth是唯一调用身份，actor、Workspace、Thread、message ID、request metadata、SQL、表列、数据库、事务与Runtime选择器均不能由调用方提供。
+
+Admin从owned Workflow Run派生Workspace及`source_voice_thread_id`，锁定Run、Workspace与Thread并要求Run处于`confirmed`或`failed`。Service从幂等key派生`guide_`消息ID和canonical fingerprint；Repository用事务级advisory lock串行化该identity。首次调用插入immutable user message并更新Thread时间；完全相同的业务重放返回原request ID且不更新Thread，输入改变返回409。首次业务效果、严格结果DTO、通用audit与operation receipt在同一个UOW提交；exact request recovery只接受相同actor、Run/Thread scope和安全结果。
+
+结果只在首次提交或原receipt恢复时携带`dispatch`，其内容是已持久化的同一Thread、消息、parts及受限metadata；业务幂等重放返回`dispatch:null`。Dream提交后调用现有同Thread Runtime dispatcher；Runtime投递失败不撤销已经提交的用户命令，公开202仍报告持久化结果与`dispatched:false`。Admin不可用、权限/状态/capability/DTO不匹配或未知提交均失败关闭，不重发POST且不回退Dream PostgreSQL。operation SHA为`a061ed38d2ca10073bbb7fd078e679f072f0cbd4ff1ce900792fbf8725223727`，Registry114 prefix SHA为`dc80b77410aac58528dde77578154d9848d9dfc3bf55de4a35c8c315a81af704`，完整Registry115 SHA为`58ab3cd933165dca7d6ae2d6eb50f46ff8f148e8e7eaf3dd5e46ceab1ad2ba9b`。现有Run、Workspace、Thread、Message、receipt与audit结构足够，无migration。
 
 ### Story Workspace Catalog（注册114）
 
