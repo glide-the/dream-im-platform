@@ -1,7 +1,7 @@
-// [Input] Configuration-file location, optional repository-local E2E dist name and production-build CPU budget.
-// [Output] Validated Next.js configuration with an absolute repository-local Turbopack root.
+// [Input] Configuration-file location, workspace NodeNext sources, optional E2E dist name and production-build CPU budget.
+// [Output] Validated Next.js configuration with stable roots and Webpack TypeScript extension aliases.
 // [Pos] Shared Next.js configuration; remote build resources are supplied by deploy config.
-// [Sync] 2026-09-15: trace fixed Deck/launch/failure/SystemConfig codecs with stable project root.
+// [Sync] 2026-09-15: resolve @ink-memory/db NodeNext .js specifiers to workspace TypeScript during Webpack builds.
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +22,15 @@ const nextConfig = {
   turbopack: { root: projectRoot },
   outputFileTracingIncludes: {
     '/api/internal/dream/v1/operations/*': ['./app/lib/dream/deckContentCanonical.py', './app/lib/dream/dreamLaunchEnvelope.py', './app/lib/dream/dreamLaunchFailureEnvelope.py', './app/lib/dream/userSystemConfigCodec.py'],
+  },
+  webpack(config) {
+    config.resolve.extensionAlias = {
+      ...config.resolve.extensionAlias,
+      '.js': ['.ts', '.tsx', '.js'],
+      '.mjs': ['.mts', '.mjs'],
+      '.cjs': ['.cts', '.cjs'],
+    };
+    return config;
   },
   ...(e2eDistDir && { distDir: e2eDistDir }),
   ...(buildCpus && { experimental: { cpus: buildCpus } }),

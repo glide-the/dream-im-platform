@@ -1,9 +1,11 @@
 // [Input] Named domain input/output DTOs and exact schema requirements.
 // [Output] Version/hash descriptors for implemented operations only.
 // [Pos] API compatibility registry; independent from the global Drizzle head.
-// [Sync] 2026-09-15: append managed MCP Workflow scope as Registry107 while preserving Registry106.
+// [Sync] 2026-09-15: append atomic Workflow Runtime activation as Registry108 while preserving Registry107.
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { canonicalContractJson } from "./canonicalContractJson";
+export { canonicalContractJson } from "./canonicalContractJson";
 import { claudeAgentResourcePolicy as policy } from "../../../config/claude-agent-resource-policy";
 import { resourcePolicyReadInputDto, resourcePolicyReadOutputDto, resourceObserverPublishInputDto, resourceObserverPublishOutputDto } from "./resourceDto";
 import type { SchemaRequirement } from "./database";
@@ -53,11 +55,8 @@ import { deckWorkspacePluginsOperationContracts } from "./deckWorkspacePluginsDt
 import { deckWorkspacePluginsSchemaRequirements } from "./deckWorkspacePluginsService";
 import { workflowManagedMcpScopeOperationContracts } from "./workflowManagedMcpScopeDto";
 import { workflowManagedMcpScopeSchemaRequirements } from "./workflowManagedMcpScopeService";
-export function canonicalContractJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalContractJson).join(",")}]`;
-  if (value !== null && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonicalContractJson(item)}`).join(",")}}`;
-  return JSON.stringify(value);
-}
+import { workflowRuntimeActivationOperationContracts } from "./workflowRuntimeActivationDto";
+import { workflowRuntimeActivationSchemaRequirements } from "./workflowRuntimeActivationService";
 function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
@@ -118,5 +117,9 @@ export const dreamOperations = [
   ...Object.entries(workflowManagedMcpScopeOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...workflowManagedMcpScopeSchemaRequirements], operation.userScope,
+  )),
+  ...Object.entries(workflowRuntimeActivationOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...workflowRuntimeActivationSchemaRequirements], operation.userScope,
   )),
 ] as const;

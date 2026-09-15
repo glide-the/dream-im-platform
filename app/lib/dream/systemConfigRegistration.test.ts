@@ -3,7 +3,7 @@
 // [Pos] SystemConfig prefix gate inside registered99; domain/codec/PostgreSQL behavior stays separate.
 // [Sync] 2026-09-15: preserve exact user get/patch and Thread get descriptors at positions78-80 of Registry103.
 // [Sync] 2026-09-15: retain Registry80 assertions after the independent Registry106 append.
-// [Sync] 2026-09-15: Registry107 extends only the total-length guard; this file still owns its original frozen segment.
+// [Sync] 2026-09-15: Registry108 extends only the total-length guard; this file still owns its original frozen segment.
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ user: vi.fn(), thread: vi.fn(), service: vi.fn(), principal: vi.fn(), transaction: vi.fn(), read: vi.fn() }));
 vi.mock("./userSystemConfigHandler", () => ({
@@ -27,7 +27,7 @@ beforeEach(() => {
   mocks.read.mockResolvedValue({ status: "committed", operation: "user-system-config.patch", request_id: "original", result: { success: true } });
 });
 it("appends exactly three SystemConfig descriptors after the frozen77 catalog", () => {
-  expect(dreamOperations).toHaveLength(107);
+  expect(dreamOperations).toHaveLength(108);
   expect(dreamOperations.slice(77, 80).map(item => ({ name: item.contract.name, kind: item.capability.kind, scope: item.capability.user_scope, requirements: item.requirements }))).toEqual([
     { name: "user-system-config.get", kind: "read", scope: "dream:read", requirements: [identitySchemaRequirement, ...userSystemConfigSchemaRequirements] },
     { name: "user-system-config.patch", kind: "write", scope: "dream:write", requirements: [identitySchemaRequirement, ...userSystemConfigSchemaRequirements] },

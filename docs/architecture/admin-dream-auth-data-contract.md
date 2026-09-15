@@ -1,11 +1,17 @@
 <!-- [Input] Admin/Dream published baselines, PostgreSQL FK/transaction catalog, Better Auth 1.7.4 official protocol. -->
 <!-- [Output] Shared authentication, delegation, domain persistence and recovery contract. -->
 <!-- [Pos] Canonical cross-project contract owned by the Admin implementation task. -->
-<!-- [Sync] 2026-09-15: register Run/Thread-bound managed MCP workspace scope as Registry107. -->
+<!-- [Sync] 2026-09-15: register atomic Story Workspace Runtime activation as Registry108. -->
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际107操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry106 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry107 managed MCP scope 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW和受限SELECT角色验证；Dream公共Chat consumer 已接入当前Thread/Run grant。内部durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际108操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry107 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry108 Runtime activation 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW和 Dream consumer 围栏验证；公开 Story Workspace turn 使用当前Thread/Run grant。内部durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+
+### Story Workspace Runtime 激活（注册108）
+
+`workflow-runtime.activate` 只接受 `{thread_id, workflow_run_id, remote_session_ref, verified_plugins[]}`。每个插件只包含 `package_spec`、`resolved_version`、`artifact_digest` 与 `has_manifest`；Dream 在调用前读取并验证共享工作区 launch manifest，物理路径和文件字节不穿越接口。Admin 从 OAuth 或精确 Thread/Run `server-persistence` delegation 派生主体，在同一事务锁定 owner/workspace/source Thread 匹配的 Run，校验 frozen Runtime lock、配置的 built-in adapter、Admin installation 与 materialization，并写入 Runtime load receipt/entries；Agent Session 先按现有数据库约束以配置的1..300秒lease和server owner token进入`creating`，记录已观察的SDK Thread后转为`active`并清除lease/owner，再执行queued→running Run CAS、transition、operation receipt 和 audit。调用方不能提供 actor、workspace、table、column、SQL、artifact path、runtime node、lease 或 placement policy。
+
+placement、creating lease 与 built-in adapter policy 只从 Admin `DREAM_RUNTIME_ACTIVATION_POLICY_JSON` 读取。queued 激活缺少安装、materialization、Session owner转换、CAS 或证据匹配时返回409并回滚整个UOW；已处于 running/output_validating/pending_review/confirmed 的 Run 会重新校验 materialization、active Session及其`remote_session_ref`后返回 `replayed:true`，不要求安装仍处于ready，也不追加生命周期记录。相同 request ID 恢复原结果，输入或Thread/Run scope改变返回409；Dream收到未知写结果时只查询原receipt，不重发非幂等写。Dream保留Runtime进程、turn/resume/cancel、EventBus、SSE与共享文件系统。当前表和 capability 已存在，无Drizzle migration。
 
 ### Managed MCP Workspace Scope（注册107）
 

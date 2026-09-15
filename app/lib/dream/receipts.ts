@@ -9,7 +9,7 @@ import { operationReceipts } from "@ink-memory/db/schema/auth";
 import { adminAuditLogs } from "@ink-memory/db/schema";
 import { AuthBoundaryError } from "../auth/config";
 import type { DataTransaction } from "./database";
-import { canonicalContractJson } from "./operationRegistry";
+import { canonicalContractJson } from "./canonicalContractJson";
 export function operationRequestKeyDigest(serviceClientId: string, actor: string, operation: string, requestId: string) {
   return createHash("sha256").update(canonicalContractJson([serviceClientId, actor, operation, requestId])).digest("hex");
 }

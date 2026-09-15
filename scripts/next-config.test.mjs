@@ -1,7 +1,7 @@
 // [Input] Repository Next.js config, launch working directory and existing build options.
 // [Output] Provider-free Node tests for stable project-root resolution and config validation.
 // [Pos] Startup configuration regression tests; no server or database lifecycle.
-// [Sync] 2026-09-15: also pin all four fixed Dream codec files in operation-route tracing.
+// [Sync] 2026-09-15: pin NodeNext workspace extension aliases and all four fixed Dream codec traces.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { dirname } from 'node:path';
@@ -31,6 +31,15 @@ function readTracing() {
   return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
     import config from ${JSON.stringify(configUrl.href)};
     console.log(JSON.stringify(config.outputFileTracingIncludes));
+  `], { cwd: projectRoot, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+}
+
+function readWebpackExtensionAlias() {
+  const env = { ...process.env };
+  return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
+    import config from ${JSON.stringify(configUrl.href)};
+    const result = config.webpack({ resolve: { extensionAlias: { '.jsx': ['.jsx'] } } });
+    console.log(JSON.stringify(result.resolve.extensionAlias));
   `], { cwd: projectRoot, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
 }
 
@@ -71,5 +80,14 @@ test('internal Dream operations trace every fixed Python codec from the reposito
       './app/lib/dream/dreamLaunchFailureEnvelope.py',
       './app/lib/dream/userSystemConfigCodec.py',
     ],
+  });
+});
+
+test('Webpack resolves NodeNext JavaScript specifiers to workspace TypeScript sources', () => {
+  assert.deepEqual(readWebpackExtensionAlias(), {
+    '.jsx': ['.jsx'],
+    '.js': ['.ts', '.tsx', '.js'],
+    '.mjs': ['.mts', '.mjs'],
+    '.cjs': ['.cts', '.cjs'],
   });
 });

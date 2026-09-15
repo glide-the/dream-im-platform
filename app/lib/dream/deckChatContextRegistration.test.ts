@@ -2,7 +2,7 @@
 // [Output] Exact one-read append, OAuth dispatch, capability and generated-artifact parity evidence.
 // [Pos] Registration gate for deck-chat-context.resolve.
 // [Sync] 2026-09-15: pin the storage-status projection while Dream retains enabled/ready policy.
-// [Sync] 2026-09-15: Registry107 extends only the total-length guard; this file still owns its original frozen segment.
+// [Sync] 2026-09-15: Registry108 extends only the total-length guard; this file still owns its original frozen segment.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
@@ -23,7 +23,7 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves the complete Registry104 prefix and appends exactly one OAuth read as Registry105", () => {
-  expect(dreamOperations).toHaveLength(107);
+  expect(dreamOperations).toHaveLength(108);
   expect(generated106).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 104))).digest("hex")).toBe("84134aa00070e3a5838435742a5c2a2a966914225d45a85674da058e3cd8070e");
   expect(dreamOperations.slice(104, 105).map(item => item.contract.name)).toEqual([name]);

@@ -19494,5 +19494,152 @@
       "output_schema_version": 1,
       "contract_sha256": "c996f3bf5fc2bfcc8fa9a7c3b90ae039800109a56ec2159882cfd921d6f74bdc"
     }
+  },
+  {
+    "contract": {
+      "name": "workflow-runtime.activate",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "workflow_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          "remote_session_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "verified_plugins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "package_spec": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "resolved_version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "artifact_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "has_manifest": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "package_spec",
+                "resolved_version",
+                "artifact_digest",
+                "has_manifest"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "thread_id",
+          "workflow_run_id",
+          "remote_session_ref",
+          "verified_plugins"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "workflow_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "runtime_plugin_lock_id": {
+            "type": "string",
+            "pattern": "^rpl_[0-9a-f]{32}$"
+          },
+          "runtime_load_receipt_id": {
+            "type": "string",
+            "pattern": "^rlr_[0-9a-f]{32}$"
+          },
+          "agent_session_id": {
+            "type": "string",
+            "pattern": "^as_[0-9a-f]{32}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "output_validating",
+              "pending_review",
+              "confirmed"
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "thread_id",
+          "workflow_run_id",
+          "workspace_id",
+          "runtime_plugin_lock_id",
+          "runtime_load_receipt_id",
+          "agent_session_id",
+          "status",
+          "replayed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.runtime.local-placement.v1",
+        "version": 1,
+        "contractSha256": "87fbd3c28bc077992bfa0e12674e71b59182ea08934314c02560c8b577c50983"
+      }
+    ],
+    "capability": {
+      "name": "workflow-runtime.activate",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "50a35aa706efc3f9515b5ff72b52b49c9a7ab2f5e34de959377c2c67fb054d1f"
+    }
   }
 ]

@@ -42,7 +42,7 @@ pnpm dev
 
 打开 [http://localhost:3000/admin](http://localhost:3000/admin)。根路径 `/` 会跳转到管理后台。
 
-Next.js 的 `turbopack.root` 从 `next.config.js` 的文件位置确定，不依赖启动进程的工作目录，也不让祖先目录的锁文件改变 Admin 的依赖解析边界。无需删除用户目录或其他项目的锁文件；修改 Next.js 配置后需要重新启动开发服务。
+Next.js 的 `turbopack.root` 从 `next.config.js` 的文件位置确定，不依赖启动进程的工作目录，也不让祖先目录的锁文件改变 Admin 的依赖解析边界。Webpack构建会把workspace NodeNext源码中的`.js`说明符解析到对应TypeScript文件，发布后的数据库包仍使用`dist/*.js`。无需删除用户目录或其他项目的锁文件；修改 Next.js 配置后需要重新启动开发服务。
 
 如果根目录修正后重启仍出现 `Can't resolve 'tailwindcss'`，先正常停止开发服务，确认服务进程与 `.next/dev/lock` 已释放，再把原 `.next` 移到独立备份目录后启动，重新生成编译缓存。旧 Turbopack 缓存可能保留此前的 CSS 解析路径；不要向父目录安装依赖，也不要移动数据库目录、环境文件或重新执行初始化/迁移。本机排查已使用相同 Node 24 验证：全新缓存编译成功，复用旧缓存副本会重现父目录解析错误，备份后通过 VSCode 原调试配置重建即可恢复。
 
@@ -130,6 +130,7 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON；Reflections执行服务需显式包含`reflections:execute`，独立于用户Bearer |
 | `DREAM_DATA_MAX_BODY_BYTES` | Admin领域请求体技术容量 | 显式正安全整数 |
 | `DREAM_WORKSPACE_PLUGIN_POLICY_JSON` | Story Workspace server adapter 数据选择 | 严格JSON；package、marketplace与nullable版本由Admin配置，Dream请求不能覆盖 |
+| `DREAM_RUNTIME_ACTIVATION_POLICY_JSON` | Story Workspace Runtime激活placement、creating lease与built-in adapter | 严格JSON；lease为1..300秒，Admin Service读取，Dream请求不能覆盖node、policy或artifact path |
 | `DREAM_REFLECTION_REPORT_LIST_MAX_ROWS` | Reflections报告历史单次查询技术容量 | 必填正安全整数；Dream默认仍请求10条 |
 | `DREAM_REFLECTIONS_LAUNCH_SNAPSHOT_MAX_BYTES` | Reflections私有启动快照技术容量 | 必填正安全整数；超限在持久化前拒绝 |
 | `DREAM_REFLECTIONS_WORKSPACE_ROOT` | Reflections task workspace根目录 | 必填绝对路径；实际locator只追加task ID与`memory` |
