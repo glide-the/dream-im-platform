@@ -1,5 +1,5 @@
 // [Input] Actual Dream DeckChatContextService through a fixed source oracle and Registry105 DTO.
-// [Output] Source field/error/order/provenance parity plus explicit Admin installation-status extension.
+// [Output] Source field/error/order/provenance parity plus explicit Admin storage-status projection.
 // [Pos] Cross-project source gate; it opens no pool, plugin artifact, workspace or Runtime.
 // [Sync] 2026-09-15: bind the Admin aggregate read to current Dream behavior before consumer replacement.
 import { spawnSync } from "node:child_process";
@@ -54,14 +54,14 @@ it.skipIf(!sourceRoot || !python)("matches the actual Dream Deck chat-context so
       description: "说明", description_zh: null, description_en: "Description", enabled: true,
     },
     voices: [
-      { id: "voice-1", name: "Writer", name_zh: "编剧", name_en: "Writer", system_prompt: "写作😀" },
-      { id: "voice-2", name: "Editor", name_zh: null, name_en: null, system_prompt: "Review" },
+      { id: "voice-1", name: "Writer", name_zh: "编剧", name_en: "Writer", system_prompt: "写作😀", enabled: true },
+      { id: "voice-2", name: "Editor", name_zh: null, name_en: null, system_prompt: "Review", enabled: true },
     ],
     refs: [
       {
         plugin_installation_id: "install-1", package_spec: "drama-forge@official",
         resolved_version: "1.2.3", artifact_digest: `sha256:${"a".repeat(64)}`,
-        order_index: 0, installation_status: "ready",
+        order_index: 0, enabled: true, installation_status: "ready",
       },
     ],
   };
@@ -75,15 +75,16 @@ it.skipIf(!sourceRoot || !python)("matches the actual Dream Deck chat-context so
   const result = JSON.parse(child.stdout) as SourceOracleResult;
 
   const adminOutput = deckChatContextOutputDto.parse({
-    deck: (({ enabled: _enabled, ...deck }) => deck)(request.deck),
+    deck: request.deck,
     voices: request.voices,
     plugin_refs: request.refs,
   });
   expect(adminOutput.deck.id).toBe(result.all.context.deck_id);
+  expect(adminOutput.deck.enabled).toBe(true);
   expect(adminOutput.deck.name).toBe(result.all.context.deck_name);
   expect(adminOutput.voices).toEqual(request.voices);
-  expect(adminOutput.plugin_refs[0]).toEqual(expect.objectContaining({ installation_status: "ready" }));
-  expect(result.all.context.plugin_refs).toEqual(request.refs.map(({ installation_status: _status, ...ref }) => ref));
+  expect(adminOutput.plugin_refs[0]).toEqual(expect.objectContaining({ enabled: true, installation_status: "ready" }));
+  expect(result.all.context.plugin_refs).toEqual(request.refs.map(({ installation_status: _status, enabled: _enabled, ...ref }) => ref));
   expect(result.all.context.plugin_provenance).toEqual({ source: "deck_claude_plugin_refs", plugins: result.all.context.plugin_refs });
   expect(result.all.context.system_prompt).toContain("<deck_context>\n");
   expect(result.all.context.system_prompt).toContain("写作😀");
@@ -102,5 +103,5 @@ it.skipIf(!sourceRoot || !python)("matches the actual Dream Deck chat-context so
   expect(result.missing_voice).toMatchObject({ status: "error", code: "AGENT_ACCESS_DENIED", status_code: 404, ref_calls: [] });
   expect(result.nonready_plugin).toMatchObject({ status: "error", code: "DECK_PLUGIN_UNAVAILABLE", status_code: 409, ref_calls: [request.deck.id] });
   expect(result.nonready_plugin.message).toContain("drama-forge@official (status=error)");
-  // Reviewed extension: Admin returns installation_status so Dream keeps the existing non-ready failure before Runtime.
+  // Admin projects storage status; Dream retains disabled/non-ready decisions before Runtime.
 });

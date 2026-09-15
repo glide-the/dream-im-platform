@@ -1,7 +1,7 @@
 // [Input] Validated canonical actor, Deck/Voice selection and caller-owned Admin data UOW.
-// [Output] Owned enabled Deck prompt facts with ordered enabled Voice and plugin provenance rows.
-// [Pos] Registry105 typed Drizzle read; Dream keeps prompt encoding, Runtime and workspace packing.
-// [Sync] 2026-09-15: preserve legacy access errors and order_index/created_at/ID ordering.
+// [Output] Owned Deck, selected/all Voice and plugin-ref storage facts with deterministic ordering.
+// [Pos] Registry105 typed Drizzle read; Dream owns enabled/ready policy, prompt, Runtime and workspace packing.
+// [Sync] 2026-09-15: retain permission filtering while returning status fields for Dream decisions.
 import { and, asc, eq, sql } from "drizzle-orm";
 import {
   claude_plugin_installations as installations,
@@ -30,6 +30,7 @@ const voiceFields = {
   name_zh: voices.name_zh,
   name_en: voices.name_en,
   system_prompt: voices.system_prompt,
+  enabled: voices.enabled,
 };
 const pluginRefFields = {
   plugin_installation_id: refs.plugin_installation_id,
@@ -37,6 +38,7 @@ const pluginRefFields = {
   resolved_version: refs.resolved_version,
   artifact_digest: refs.artifact_digest,
   order_index: refs.order_index,
+  enabled: sql<boolean>`${refs.enabled} = 1`,
   installation_status: installations.status,
 };
 
@@ -53,21 +55,16 @@ export class DeckChatContextRepository {
       eq(decks.owner_id, sql`${this.canonicalUserId}::bigint`),
     )).limit(1))[0];
     if (!deck) throw new AuthBoundaryError("DECK_ACCESS_DENIED", 404);
-    if (deck.enabled !== true) throw new AuthBoundaryError("DECK_DISABLED", 409);
 
     const selectedVoices = await this.tx.select(voiceFields).from(voices).where(and(
       eq(voices.deck_id, input.deck_id),
-      eq(voices.enabled, true),
       input.voice_id === null ? undefined : eq(voices.id, input.voice_id),
     )).orderBy(asc(voices.order_index), asc(voices.created_at), asc(voices.id));
-    if (input.voice_id !== null && selectedVoices.length === 0) throw new AuthBoundaryError("AGENT_ACCESS_DENIED", 404);
 
     const pluginRefs = await this.tx.select(pluginRefFields).from(refs)
       .innerJoin(installations, eq(installations.id, refs.plugin_installation_id))
-      .where(and(eq(refs.deck_id, input.deck_id), eq(refs.enabled, 1)))
+      .where(eq(refs.deck_id, input.deck_id))
       .orderBy(asc(refs.order_index), asc(refs.created_at), asc(refs.plugin_installation_id));
-    const { enabled: ignored, ...promptDeck } = deck;
-    void ignored;
-    return { deck: promptDeck, voices: selectedVoices, plugin_refs: pluginRefs };
+    return { deck, voices: selectedVoices, plugin_refs: pluginRefs };
   }
 }

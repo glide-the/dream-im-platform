@@ -1,7 +1,7 @@
 // [Input] Frozen Registry104 prefix, live Registry105 DTO and production POST route.
 // [Output] Exact one-read append, OAuth dispatch, capability and generated-artifact parity evidence.
 // [Pos] Registration gate for deck-chat-context.resolve.
-// [Sync] 2026-09-15: preserve every prior descriptor and append only the context aggregate read.
+// [Sync] 2026-09-15: pin the storage-status projection while Dream retains enabled/ready policy.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
@@ -29,7 +29,7 @@ it("preserves the complete Registry104 prefix and appends exactly one OAuth read
   const registered = dreamOperations[104];
   expect(registered.capability).toMatchObject({
     kind: "read", user_scope: "dream:read", background_scope: null,
-    contract_sha256: "299ba61935aad3b2f696bd4f5868d4e53aebda1fd4150d4f767bc0b8ab8fb487",
+    contract_sha256: "c956db969d76208bd99d2d8ad2c9e7eb2f6154d835388424e7db5ca09ca74b97",
   });
   expect(registered.requirements).toEqual([identitySchemaRequirement, ...deckChatContextSchemaRequirements]);
 });
@@ -45,7 +45,7 @@ it("production POST dispatches the operation exactly once", async () => {
 it("keeps the live strict DTO behind one read-only descriptor", () => {
   const operation = deckChatContextOperationContracts[name];
   const registered = dreamOperations.find(item => item.contract.name === name);
-  expect(registered?.capability.contract_sha256).toBe("299ba61935aad3b2f696bd4f5868d4e53aebda1fd4150d4f767bc0b8ab8fb487");
+  expect(registered?.capability.contract_sha256).toBe("c956db969d76208bd99d2d8ad2c9e7eb2f6154d835388424e7db5ca09ca74b97");
   expect(operation.kind).toBe("read");
   expect(operation.userScope).toBe("dream:read");
 });

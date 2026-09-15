@@ -1,7 +1,7 @@
 // [Input] Registry105 Handler with captured service, OAuth, UOW and domain seams.
 // [Output] Exact body limit, capability list, no-receipt read and fail-closed ingress evidence.
-// [Pos] Provider-free Deck chat-context HTTP boundary test; domain rules stay in Service/Repository.
-// [Sync] 2026-09-15: prove OAuth dream:read and reject caller authority/runtime/physical selectors.
+// [Pos] Provider-free Deck chat-context HTTP boundary test; Dream owns enabled/ready policy.
+// [Sync] 2026-09-15: prove OAuth dream:read and return only typed storage status facts.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), transaction: vi.fn(), run: vi.fn() }));
@@ -21,7 +21,7 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 const service = { id: "service" }, tx = { marker: "tx" };
 const principal = { subject: "subject", canonical_user_id: "9007199254740993", client_id: "browser", scopes: ["dream:read"], status: "active" as const };
 const input = { deck_id: "deck-1", voice_id: null };
-const output = { deck: { id: "deck-1", name: "Deck", name_zh: null, name_en: null, description: null, description_zh: null, description_en: null }, voices: [], plugin_refs: [] };
+const output = { deck: { id: "deck-1", name: "Deck", name_zh: null, name_en: null, description: null, description_zh: null, description_en: null, enabled: true }, voices: [], plugin_refs: [] };
 function request(rawInput: unknown, name = "deck-chat-context.resolve", token = "oauth") {
   return new Request(`http://localhost/api/internal/dream/v1/operations/${name}`, {
     method: "POST",

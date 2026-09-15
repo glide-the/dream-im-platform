@@ -1,7 +1,7 @@
 // [Input] Strict Deck/nullable Voice request, verified OAuth actor and existing Admin data UOW.
-// [Output] Validated prompt/provenance snapshot without prompt composition or Runtime behavior.
-// [Pos] Registry105 aggregate read orchestration; Handler owns authentication and UOW acquisition.
-// [Sync] 2026-09-15: require dream:read, reject entity grants and fail closed on stored projection drift.
+// [Output] Validated storage projection without Dream enabled/ready policy, prompt or Runtime behavior.
+// [Pos] Registry105 data read orchestration; Handler owns authentication and UOW acquisition.
+// [Sync] 2026-09-15: retain access/capability checks while Dream owns domain decisions.
 import { AuthBoundaryError } from "../auth/config";
 import { principalDto } from "../auth/dto";
 import type { DeckVoiceActor } from "./deckVoiceService";

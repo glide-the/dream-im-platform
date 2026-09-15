@@ -1,7 +1,7 @@
 // [Input] Runner-owned loopback PostgreSQL, Registry105 service and restricted read-only DATA role.
-// [Output] Ownership/filter/order/error/capability results with unchanged rows and owned-cluster cleanup.
-// [Pos] Provider-free Deck chat-context contract; it never connects to configured application databases.
-// [Sync] 2026-09-15: verify one typed Drizzle UOW over Deck, Voice, ref and installation facts.
+// [Output] Ownership, status/order/capability results with unchanged rows and owned-cluster cleanup.
+// [Pos] Provider-free Deck context data contract; Dream business policy is outside this harness.
+// [Sync] 2026-09-15: verify one typed Drizzle UOW projects status facts without applying Dream decisions.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -187,22 +187,24 @@ try {
     const all = await execute({ deck_id: "deck-owned", voice_id: null });
     assert.deepEqual(all.deck, {
       id: "deck-owned", name: "创作组", name_zh: "创作组", name_en: null,
-      description: "说明", description_zh: null, description_en: "Description",
+      description: "说明", description_zh: null, description_en: "Description", enabled: true,
     });
-    assert.deepEqual(all.voices.map(item => item.id), ["voice-a", "voice-b", "voice-z"]);
-    assert.equal(all.voices[0]?.system_prompt, "Alpha 😀");
-    assert.deepEqual(all.plugin_refs.map(item => [item.plugin_installation_id, item.installation_status]), [
-      ["install-ready", "ready"], ["install-error", "error"],
+    assert.deepEqual(all.voices.map(item => [item.id, item.enabled]), [
+      ["voice-disabled", false], ["voice-a", true], ["voice-b", true], ["voice-z", true],
+    ]);
+    assert.equal(all.voices[1]?.system_prompt, "Alpha 😀");
+    assert.deepEqual(all.plugin_refs.map(item => [item.plugin_installation_id, item.enabled, item.installation_status]), [
+      ["install-disabled", false, "ready"], ["install-ready", true, "ready"], ["install-error", true, "error"],
     ]);
     const selected = await execute({ deck_id: "deck-owned", voice_id: "voice-b" });
     assert.deepEqual(selected.voices.map(item => item.id), ["voice-b"]);
 
     await expectFailure(() => execute({ deck_id: "deck-foreign", voice_id: null }), "DECK_ACCESS_DENIED", 404);
     await expectFailure(() => execute({ deck_id: "deck-owned", voice_id: null }, actor("7")), "DECK_ACCESS_DENIED", 404);
-    await expectFailure(() => execute({ deck_id: "deck-disabled", voice_id: null }), "DECK_DISABLED", 409);
-    await expectFailure(() => execute({ deck_id: "deck-owned", voice_id: "voice-disabled" }), "AGENT_ACCESS_DENIED", 404);
-    await expectFailure(() => execute({ deck_id: "deck-owned", voice_id: "voice-other" }), "AGENT_ACCESS_DENIED", 404);
-    await expectFailure(() => execute({ deck_id: "deck-owned", voice_id: "missing" }), "AGENT_ACCESS_DENIED", 404);
+    assert.equal((await execute({ deck_id: "deck-disabled", voice_id: null })).deck.enabled, false);
+    assert.deepEqual((await execute({ deck_id: "deck-owned", voice_id: "voice-disabled" })).voices.map(item => [item.id, item.enabled]), [["voice-disabled", false]]);
+    assert.deepEqual((await execute({ deck_id: "deck-owned", voice_id: "voice-other" })).voices, []);
+    assert.deepEqual((await execute({ deck_id: "deck-owned", voice_id: "missing" })).voices, []);
     await expectFailure(() => execute({ deck_id: "deck-owned" }), "INPUT_INVALID", 400);
     await expectFailure(() => execute({ deck_id: "deck-owned", voice_id: null, actor_id: actorId }), "INPUT_INVALID", 400);
     await expectFailure(() => execute({ deck_id: "deck-owned", voice_id: null }, actor(actorId, [])), "DREAM_SCOPE_REQUIRED", 403);
@@ -223,9 +225,9 @@ try {
       listen_addresses: topology.rows[0].listen,
       server_address: topology.rows[0].address,
       restricted_data_role: true,
-      owned_enabled_deck: true,
-      selected_and_all_voice_order: true,
-      enabled_ref_order_and_nonready_status: true,
+      owned_deck_status_projected: true,
+      selected_and_all_voice_status_order: true,
+      all_ref_enabled_and_installation_status_order: true,
       closed_selectors: true,
       scope_entity_and_capability_denied: true,
       one_read_operation: Object.keys(deckChatContextOperationContracts).length,

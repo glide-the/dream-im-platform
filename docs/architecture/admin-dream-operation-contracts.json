@@ -19036,6 +19036,16 @@
                     "type": "null"
                   }
                 ]
+              },
+              "enabled": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -19045,7 +19055,8 @@
               "name_en",
               "description",
               "description_zh",
-              "description_en"
+              "description_en",
+              "enabled"
             ],
             "additionalProperties": false
           },
@@ -19083,6 +19094,16 @@
                 },
                 "system_prompt": {
                   "type": "string"
+                },
+                "enabled": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -19090,7 +19111,8 @@
                 "name",
                 "name_zh",
                 "name_en",
-                "system_prompt"
+                "system_prompt",
+                "enabled"
               ],
               "additionalProperties": false
             }
@@ -19120,6 +19142,9 @@
                   "minimum": -2147483648,
                   "maximum": 2147483647
                 },
+                "enabled": {
+                  "type": "boolean"
+                },
                 "installation_status": {
                   "type": "string",
                   "enum": [
@@ -19136,6 +19161,7 @@
                 "resolved_version",
                 "artifact_digest",
                 "order_index",
+                "enabled",
                 "installation_status"
               ],
               "additionalProperties": false
@@ -19169,7 +19195,7 @@
       "background_scope": null,
       "input_schema_version": 1,
       "output_schema_version": 1,
-      "contract_sha256": "299ba61935aad3b2f696bd4f5868d4e53aebda1fd4150d4f767bc0b8ab8fb487"
+      "contract_sha256": "c956db969d76208bd99d2d8ad2c9e7eb2f6154d835388424e7db5ca09ca74b97"
     }
   }
 ]

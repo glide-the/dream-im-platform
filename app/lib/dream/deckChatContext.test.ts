@@ -1,7 +1,7 @@
 // [Input] Registry105 DTO, OAuth actor and typed Drizzle repository seams.
-// [Output] Closed aggregate shapes, exact errors, ordering and one-UOW service validation.
-// [Pos] Provider-free Deck chat-context domain gate; prompt/Runtime/filesystem stay in Dream.
-// [Sync] 2026-09-15: prove actor-owned Deck, selected/all Voice and plugin provenance behavior.
+// [Output] Closed storage shapes, owner errors, status projection, ordering and one-UOW validation.
+// [Pos] Provider-free Deck chat-context data gate; enabled/ready policy, prompt/Runtime/filesystem stay in Dream.
+// [Sync] 2026-09-15: prove Admin returns status facts without executing Dream domain decisions.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DataTransaction } from "./database";
 import {
@@ -25,21 +25,21 @@ const repositoryDeck = {
   id: input.deck_id, name: "创作组", name_zh: "创作组", name_en: null,
   description: "说明", description_zh: null, description_en: "Description", enabled: true,
 };
-const deck = (({ enabled: _enabled, ...value }) => value)(repositoryDeck);
+const deck = repositoryDeck;
 const voices = [
-  { id: "voice-1", name: "Writer", name_zh: "编剧", name_en: "Writer", system_prompt: "写作😀" },
-  { id: "voice-2", name: "Editor", name_zh: null, name_en: null, system_prompt: "Review" },
+  { id: "voice-1", name: "Writer", name_zh: "编剧", name_en: "Writer", system_prompt: "写作😀", enabled: true },
+  { id: "voice-2", name: "Editor", name_zh: null, name_en: null, system_prompt: "Review", enabled: true },
 ];
 const pluginRefs = [
   {
     plugin_installation_id: "install-1", package_spec: "drama-forge@official",
     resolved_version: "1.2.3", artifact_digest: `sha256:${"a".repeat(64)}`,
-    order_index: 0, installation_status: "ready" as const,
+    order_index: 0, enabled: true, installation_status: "ready" as const,
   },
   {
     plugin_installation_id: "install-2", package_spec: "pending@official",
     resolved_version: "2.0.0", artifact_digest: `sha256:${"b".repeat(64)}`,
-    order_index: 2, installation_status: "error" as const,
+    order_index: 2, enabled: true, installation_status: "error" as const,
   },
 ];
 const output = { deck, voices, plugin_refs: pluginRefs };
@@ -64,7 +64,7 @@ describe("strict Deck chat-context DTO", () => {
     expect(deckChatContextInputDto.safeParse({ deck_id: input.deck_id }).success).toBe(false);
     expect(deckChatContextOutputDto.safeParse({ ...output, actor_id: "42" }).success).toBe(false);
     expect(deckChatContextOutputDto.safeParse({ ...output, plugin_refs: [{ ...pluginRefs[0], artifact_digest: "bad" }] }).success).toBe(false);
-    expect(deckChatContextOutputDto.safeParse({ ...output, voices: [{ ...voices[0], enabled: true }] }).success).toBe(false);
+    expect(deckChatContextOutputDto.safeParse({ ...output, voices: [{ ...voices[0], owner_id: "42" }] }).success).toBe(false);
   });
 });
 
@@ -121,8 +121,6 @@ function capturedTransaction(rows: RepositoryRows) {
 
 const repositoryErrorCases: Array<[string, RepositoryRows, DeckChatContextInput, string, number]> = [
   ["missing Deck", { deck: null, voices: [], refs: [] }, input, "DECK_ACCESS_DENIED", 404],
-  ["disabled Deck", { deck: { ...repositoryDeck, enabled: false }, voices: [], refs: [] }, input, "DECK_DISABLED", 409],
-  ["invalid selected Voice", { deck: repositoryDeck, voices: [], refs: [] }, { ...input, voice_id: "voice-absent" }, "AGENT_ACCESS_DENIED", 404],
 ];
 
 describe("typed Deck chat-context repository", () => {
@@ -130,7 +128,7 @@ describe("typed Deck chat-context repository", () => {
     const { database, calls } = capturedTransaction({ deck: repositoryDeck, voices, refs: pluginRefs });
     expect(await new DeckChatContextRepository(database, actor.principal.canonical_user_id).resolve(input)).toEqual(output);
     expect(calls).toHaveLength(3);
-    expect(Object.keys(calls[0]?.projection ?? {})).toEqual([...Object.keys(deck), "enabled"]);
+    expect(Object.keys(calls[0]?.projection ?? {})).toEqual(Object.keys(deck));
     expect(Object.keys(calls[1]?.projection ?? {})).toEqual(Object.keys(voices[0] ?? {}));
     expect(Object.keys(calls[2]?.projection ?? {})).toEqual(Object.keys(pluginRefs[0] ?? {}));
     expect(calls[0]?.limit).toBe(1);
@@ -142,5 +140,20 @@ describe("typed Deck chat-context repository", () => {
   it.each(repositoryErrorCases)("keeps the original %s error", async (_label, rows, selection, code, status) => {
     const { database } = capturedTransaction(rows);
     await expect(new DeckChatContextRepository(database, actor.principal.canonical_user_id).resolve(selection)).rejects.toMatchObject({ code, status });
+  });
+
+  it("returns disabled and missing-selection facts for Dream-owned policy", async () => {
+    const disabled = capturedTransaction({
+      deck: { ...repositoryDeck, enabled: false },
+      voices: [],
+      refs: [],
+    });
+    expect(await new DeckChatContextRepository(disabled.database, actor.principal.canonical_user_id).resolve(input)).toMatchObject({
+      deck: { enabled: false }, voices: [], plugin_refs: [],
+    });
+    const missingVoice = capturedTransaction({ deck: repositoryDeck, voices: [], refs: [] });
+    expect(await new DeckChatContextRepository(missingVoice.database, actor.principal.canonical_user_id).resolve({ ...input, voice_id: "voice-absent" })).toMatchObject({
+      deck: { enabled: true }, voices: [], plugin_refs: [],
+    });
   });
 });
