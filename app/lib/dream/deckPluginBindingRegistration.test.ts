@@ -1,7 +1,7 @@
 // [Input] Frozen Registry132 prefix, Registry133 replay DTO and production operation route.
-// [Output] Exact append hashes, scopes, requirements and generated inventory parity through Registry133.
+// [Output] Exact frozen-prefix hashes, scopes, requirements and generated inventory parity from Registry133 onward.
 // [Pos] Registration gate for eleven Deck Plugin, Agent-type and launch Runtime operations.
-// [Sync] 2026-09-16: append Registry133 without changing Registry132 bytes.
+// [Sync] 2026-09-16: freeze Registry133 while allowing later append-only operations.
 import { createHash } from "node:crypto";
 import { beforeEach, expect, it, vi } from "vitest";
 const names = new Set(["deck-plugin-binding.current", "deck-plugin-binding.history", "deck-plugin-binding.options", "deck-plugin-binding.validate", "deck-plugin-binding.save", "deck-plugin-binding.clear", "deck-agent-type.runtime-plan", "deck-agent-type.runtime-prepare", "dream-launch.runtime-scope", "dream-launch.runtime-plan", "dream-launch.runtime-prepare"]);
@@ -17,10 +17,10 @@ import { dreamUnifiedSchemaRequirement } from "./chatThreadService";
 
 beforeEach(() => vi.resetAllMocks());
 it("preserves Registry129 and appends the three exact launch Runtime contracts", () => {
-  expect(dreamOperations).toHaveLength(133); expect(generated133).toEqual(dreamOperations);
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(133); expect(generated133).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 129))).digest("hex")).toBe("686f0668c72ca6114d894392d2dd2a2fde228b87fa31a1b858fd1dd553663881");
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 132))).digest("hex")).toBe("6e0149b3d3354d081564af21349f364cc092087d5aadce0d5164654a6c005bb2");
-  expect(createHash("sha256").update(canonicalContractJson(dreamOperations)).digest("hex")).toBe("951a3ee9d26354d0094dafec6233a13638a430672ddacd730cefc95f654b5ec3");
+  expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 133))).digest("hex")).toBe("951a3ee9d26354d0094dafec6233a13638a430672ddacd730cefc95f654b5ec3");
   expect(dreamOperations.slice(121, 132).map(item => item.contract.name)).toEqual([...names]);
   expect(dreamOperations.slice(121, 132).every(item => JSON.stringify(item.requirements) === JSON.stringify([identitySchemaRequirement, ...deckPluginBindingSchemaRequirements]))).toBe(true);
   expect(dreamOperations[132]).toMatchObject({ contract: { name: "dream-launch-replay.lookup" },

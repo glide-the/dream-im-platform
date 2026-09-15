@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: append managed-MCP persistence operations as Registry134-147.
 // [Sync] 2026-09-16: append actor-scoped launch replay lookup as Registry133.
 // [Sync] 2026-09-16: append launch scope/plan/prepare operations as Registry130-132.
 // [Sync] 2026-09-16: append Agent-type clear/plan/prepare operations as Registry127-129.
@@ -73,6 +74,8 @@ import { storyWorkspaceConfirmationOperationContracts } from "./storyWorkspaceCo
 import { storyWorkspaceConfirmationRequirements } from "./storyWorkspaceConfirmationService";
 import { deckPluginBindingOperationContracts } from "./deckPluginBindingDto";
 import { deckPluginBindingSchemaRequirements } from "./deckPluginBindingService";
+import { managedMcpOperationContracts } from "./managedMcpDto";
+import { managedMcpSchemaRequirements } from "./managedMcpService";
 function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
@@ -170,5 +173,9 @@ export const dreamOperations = [
   ...Object.entries(dreamLaunchReplayOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope,
+  )),
+  ...Object.entries(managedMcpOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...managedMcpSchemaRequirements], operation.userScope,
   )),
 ] as const;

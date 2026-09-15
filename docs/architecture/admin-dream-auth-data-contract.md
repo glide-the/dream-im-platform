@@ -147,6 +147,14 @@ placement、creating lease 与 built-in adapter policy 只从 Admin `DREAM_RUNTI
 
 `workflow-managed-mcp-scope.resolve` 只接受严格 `{thread_id, workflow_run_id}`。Admin 从 OAuth 或精确 `server-persistence` delegation 派生主体和实体范围，在同一 read UOW 内校验 Run creator、source Thread 及 Story Workspace owner，返回 `{thread_id, workflow_run_id, workspace_id}`。调用方不能提供 actor、workspace、表、列、SQL、路径或 runtime node。Dream 使用返回的 workspace scope 加载原有 managed MCP snapshot；MCP配置应用、Agent Runtime、SSE与共享文件系统不迁入Admin。Admin不可用、capability缺失、实体不匹配或DTO错误时失败关闭，不回退Dream PostgreSQL。
 
+### Managed MCP 数据领域（注册134-147）
+
+十四个具名操作覆盖 Server list/get/create/update/delete、App settings get/update、加密 credential get/upsert/delete、discovery snapshot get/save 和 import receipt get/import。输入使用严格 Zod DTO；actor 由 Admin 根据 OAuth principal 或 `server-persistence` delegation 派生，调用方不能提交 actor/user、SQL、表列、连接、事务或明文凭据。远程 endpoint 只允许无 userinfo、query、fragment 的 HTTP(S) URL；stdio 只接受已配置的 profile key。凭据接口传输 Dream 已使用 AES-GCM 封装的 ciphertext/iv/tag/fingerprint/key version，Admin 不接收解密密钥也不执行第三方 MCP OAuth。
+
+`ManagedMcpRepository` 使用现有 Drizzle schema 完成 owner/workspace 可见性、Workspace owner 校验、Server/App revision CAS、配置变化时 credential/discovery invalidation、snapshot TTL 与 canonical hash 验证、import source serialization 和 receipt 持久化。数据查询与变更均使用 typed Drizzle；固定 `pg_advisory_xact_lock` 只用于相同 import/request 的事务串行化，不构成通用 SQL 接口。所有写操作在同一个 Admin transaction 中提交业务变更、operation receipt 和 audit；响应未知时 Dream 只能按原 operation/request ID 查询 receipt，不能盲目重试。
+
+浏览器产品调用使用 service-bound OAuth 且 `authority:null`。Agent Runtime 调用必须提供与 bearer 完全一致的 `{thread_id, workflow_run_id}`；Admin 还会校验 `server-persistence` purpose，并从 owned Run 推导允许的 Workspace。Dream 继续负责 MCP SDK discovery、外部 MCP OAuth 状态机、credential 加密/解密、Runtime snapshot、Agent Runtime、SSE 和产品页面。既有 `dream.managed-mcp-resources.v1` 与 `dream.mcp-app-connection-settings.v1` capability 已覆盖数据结构，因此不新增 migration。Registry133 prefix SHA 保持 `951a3ee9d26354d0094dafec6233a13638a430672ddacd730cefc95f654b5ec3`，完整 Registry147 SHA 为 `a1611330c798ffb6a1df60c3b1d48386fc49f9b4a65cb39cf249e7c8ffeaa1b4`。
+
 ### 工作区插件元数据（注册106）
 
 `deck-workspace-plugins.resolve` 接受严格 `{thread_id, profile}`，其中 profile 只能是 `standard` 或 `story_workspace`。Admin 从 OAuth principal 或精确 Thread delegation 派生 actor，在一个 read UOW 内校验 Thread 与 Deck owner，按 `order_index, created_at, plugin_installation_id` 返回 enabled Deck refs。Story Workspace adapter 的 package、marketplace 与 nullable version 只从 `DREAM_WORKSPACE_PLUGIN_POLICY_JSON` 读取；Repository按 `installed_at DESC NULLS LAST, created_at DESC, id DESC` 返回 latest status 与首个 ready 候选。输出不含 artifact path/bytes、workspace path、SQL selector或Runtime参数。Dream校验本机artifact digest并负责共享文件系统复制、freeze/repair、launch manifest、Dream surface、Runtime与SSE；Admin不可用、配置缺失或DTO不匹配时禁止回退Dream PostgreSQL。
