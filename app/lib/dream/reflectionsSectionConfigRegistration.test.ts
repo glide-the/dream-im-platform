@@ -3,6 +3,7 @@
 // [Pos] Reflections section-config registration gate; domain and PostgreSQL behavior remain separate.
 // [Sync] 2026-09-15: preserve get/save/delete positions inside Registry103.
 // [Sync] 2026-09-15: retain Registry83 assertions after the independent Registry106 append.
+// [Sync] 2026-09-15: Registry107 extends only the total-length guard; this file still owns its original frozen segment.
 import { beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -61,7 +62,7 @@ beforeEach(() => {
 });
 
 it("appends exactly three Reflections descriptors after the frozen Registry80 prefix", () => {
-    expect(dreamOperations).toHaveLength(106);
+    expect(dreamOperations).toHaveLength(107);
   expect(dreamOperations.slice(80, 83).map(item => ({
     name: item.contract.name,
     kind: item.capability.kind,

@@ -3,6 +3,7 @@
 // [Pos] Registration gate for deck.default-plugin.resolve.
 // [Sync] 2026-09-15: preserve every prior descriptor and append only the configured read.
 // [Sync] 2026-09-15: keep the Registry104 slot stable after Registry106 appends independently.
+// [Sync] 2026-09-15: Registry107 extends only the total-length guard; this file still owns its original frozen segment.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
@@ -23,7 +24,7 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves the complete Registry103 prefix and appends exactly one OAuth read as Registry104", () => {
-  expect(dreamOperations).toHaveLength(106);
+  expect(dreamOperations).toHaveLength(107);
   expect(generated104).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 103))).digest("hex")).toBe("b47e731abee6fd0a9b937333f9535817a5d7ffffe0a012440123fde6d6f6c824");
   expect(dreamOperations.slice(103, 104).map(item => item.contract.name)).toEqual([name]);

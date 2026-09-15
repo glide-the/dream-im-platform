@@ -3,6 +3,7 @@
 // [Pos] Reflections registration gate; repository behavior and PostgreSQL migration execution remain separate.
 // [Sync] 2026-09-15: preserve the sixteen-operation Reflections segment inside Registry103.
 // [Sync] 2026-09-15: retain Registry99 assertions after the independent Registry106 append.
+// [Sync] 2026-09-15: Registry107 extends only the total-length guard; this file still owns its original frozen segment.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
@@ -49,7 +50,7 @@ beforeEach(() => {
 });
 
 it("preserves all 83 published descriptors and appends the reviewed sixteen as Registry99", () => {
-      expect(dreamOperations).toHaveLength(106);
+      expect(dreamOperations).toHaveLength(107);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 83))).digest("hex")).toBe("a5f73bf39a8c5f639e636f255b1948349da938be2d354bd3e175261f9af85d6e");
   expect(candidate.status).toBe("registered_registry99_source");
   expect(candidate.operations).toHaveLength(16);

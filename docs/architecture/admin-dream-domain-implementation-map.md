@@ -1,8 +1,10 @@
 <!-- [Input] Dream baseline 108-file candidate inventory and 159 original transaction candidates. -->
 <!-- [Output] Explicit domain ownership, closure criteria and first implementation priorities. -->
 <!-- [Pos] Admin implementation map; individual production replacements require evidence. -->
-<!-- [Sync] 2026-09-15: Registry106 registers Thread-bound workspace plugin metadata after Dream consumed Registry105. -->
+<!-- [Sync] 2026-09-15: Registry107 registers managed MCP workspace scope after Dream consumed Registry106. -->
 # Dream 领域实施映射
+
+Registry107 `workflow-managed-mcp-scope.resolve` 接受严格 `{thread_id, workflow_run_id}`。Admin 从 OAuth 或精确 Thread/Run grant 派生 actor，在一个 read UOW 内用 typed Drizzle Repository 同时校验 Run creator、source Thread 和 Story Workspace owner。输出只含原 Run、Thread 与 `workspace_id`，不含 actor、SQL、表列、路径、数据库地址或物理 Runtime 参数。Dream 公共 Chat 通过续期中的 `server-persistence` grant 消费；managed MCP snapshot、Agent Runtime、SSE 和共享文件系统仍由 Dream 执行。Registry106 完整前缀 canonical SHA 为 `f2076b75b446446bbed747c80ea7c7859f6c9ed9b602ef9fd28c332b220ada1a`，新契约 SHA 为 `c996f3bf5fc2bfcc8fa9a7c3b90ae039800109a56ec2159882cfd921d6f74bdc`。内部 durable dispatcher 尚未携带该 grant，继续列入关闭清单。Sync 2026-09-15.
 
 ## 背景与问题
 

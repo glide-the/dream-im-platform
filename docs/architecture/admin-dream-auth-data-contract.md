@@ -1,11 +1,15 @@
 <!-- [Input] Admin/Dream published baselines, PostgreSQL FK/transaction catalog, Better Auth 1.7.4 official protocol. -->
 <!-- [Output] Shared authentication, delegation, domain persistence and recovery contract. -->
 <!-- [Pos] Canonical cross-project contract owned by the Admin implementation task. -->
-<!-- [Sync] 2026-09-15: register Thread-bound workspace plugin metadata as Registry106. -->
+<!-- [Sync] 2026-09-15: register Run/Thread-bound managed MCP workspace scope as Registry107. -->
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际106操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry105 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。resource/Thread、Editor/Session、Deck19、refs6、Workflow context/确认保护、Run5、Preferences2、Social9已有隔离技术回执；Preflight独立剩余读取/恢复/阶段故障/中断补验通过，首完整失败保留。Run create/retry、Launch、默认Workspace、SystemConfig、Reflections section-config和十六项Reflections aggregate保留各自既有证据。Registry101本地数据原子导入与首次登录完成、Registry103图片历史只读、Registry104默认Deck插件候选只读、Registry105 Deck chat-context 与 Registry106 workspace plugin metadata 已通过 Admin 隔离UOW；Registry104/105 Dream consumer 已完成，Registry106 consumer 与正常验收 pending。其余领域仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际107操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry106 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry107 managed MCP scope 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW和受限SELECT角色验证；Dream公共Chat consumer 已接入当前Thread/Run grant。内部durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+
+### Managed MCP Workspace Scope（注册107）
+
+`workflow-managed-mcp-scope.resolve` 只接受严格 `{thread_id, workflow_run_id}`。Admin 从 OAuth 或精确 `server-persistence` delegation 派生主体和实体范围，在同一 read UOW 内校验 Run creator、source Thread 及 Story Workspace owner，返回 `{thread_id, workflow_run_id, workspace_id}`。调用方不能提供 actor、workspace、表、列、SQL、路径或 runtime node。Dream 使用返回的 workspace scope 加载原有 managed MCP snapshot；MCP配置应用、Agent Runtime、SSE与共享文件系统不迁入Admin。Admin不可用、capability缺失、实体不匹配或DTO错误时失败关闭，不回退Dream PostgreSQL。
 
 ### 工作区插件元数据（注册106）
 
