@@ -19197,5 +19197,228 @@
       "output_schema_version": 1,
       "contract_sha256": "c956db969d76208bd99d2d8ad2c9e7eb2f6154d835388424e7db5ca09ca74b97"
     }
+  },
+  {
+    "contract": {
+      "name": "deck-workspace-plugins.resolve",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "profile": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "story_workspace"
+            ]
+          }
+        },
+        "required": [
+          "thread_id",
+          "profile"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deck_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "plugin_installation_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "package_spec": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "package_name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "marketplace": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "resolved_version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "artifact_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "installation_status": {
+                  "type": "string",
+                  "enum": [
+                    "installing",
+                    "ready",
+                    "error",
+                    "uninstalled"
+                  ]
+                },
+                "order_index": {
+                  "type": "integer",
+                  "minimum": -2147483648,
+                  "maximum": 2147483647
+                }
+              },
+              "required": [
+                "plugin_installation_id",
+                "package_spec",
+                "package_name",
+                "marketplace",
+                "resolved_version",
+                "artifact_digest",
+                "installation_status",
+                "order_index"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "story_workspace_adapter": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "latest_status": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "installing",
+                          "ready",
+                          "error",
+                          "uninstalled"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "ready": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "plugin_installation_id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "package_spec": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "package_name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "marketplace": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "resolved_version": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "artifact_digest": {
+                            "type": "string",
+                            "pattern": "^sha256:[a-f0-9]{64}$"
+                          },
+                          "installation_status": {
+                            "type": "string",
+                            "enum": [
+                              "installing",
+                              "ready",
+                              "error",
+                              "uninstalled"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "plugin_installation_id",
+                          "package_spec",
+                          "package_name",
+                          "marketplace",
+                          "resolved_version",
+                          "artifact_digest",
+                          "installation_status"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "latest_status",
+                  "ready"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "thread_id",
+          "deck_id",
+          "refs",
+          "story_workspace_adapter"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "deck-workspace-plugins.resolve",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "79eca8295a3a1611b2459af26f0a9e05dd01eae97bdd4928d1982e77a524425e"
+    }
   }
 ]

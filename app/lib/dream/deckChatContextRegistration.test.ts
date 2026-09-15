@@ -12,7 +12,7 @@ vi.mock("./deckChatContextHandler", () => ({
   handleDeckChatContext: mocks.handler,
 }));
 
-import generated105 from "../../../docs/architecture/admin-dream-operation-contracts.json";
+import generated106 from "../../../docs/architecture/admin-dream-operation-contracts.json";
 import { POST } from "../../api/internal/dream/v1/operations/[operation]/route";
 import { canonicalContractJson, dreamOperations } from "./operationRegistry";
 import { deckChatContextOperationContracts } from "./deckChatContextDto";
@@ -22,10 +22,10 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves the complete Registry104 prefix and appends exactly one OAuth read as Registry105", () => {
-  expect(dreamOperations).toHaveLength(105);
-  expect(generated105).toEqual(dreamOperations);
+  expect(dreamOperations).toHaveLength(106);
+  expect(generated106).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 104))).digest("hex")).toBe("84134aa00070e3a5838435742a5c2a2a966914225d45a85674da058e3cd8070e");
-  expect(dreamOperations.slice(104).map(item => item.contract.name)).toEqual([name]);
+  expect(dreamOperations.slice(104, 105).map(item => item.contract.name)).toEqual([name]);
   const registered = dreamOperations[104];
   expect(registered.capability).toMatchObject({
     kind: "read", user_scope: "dream:read", background_scope: null,

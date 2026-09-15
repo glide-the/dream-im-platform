@@ -1,7 +1,7 @@
 // [Input] Named domain input/output DTOs and exact schema requirements.
 // [Output] Version/hash descriptors for implemented operations only.
 // [Pos] API compatibility registry; independent from the global Drizzle head.
-// [Sync] 2026-09-15: append the Deck chat-context aggregate read as Registry105 while preserving Registry104.
+// [Sync] 2026-09-15: append the workspace plugin metadata read as Registry106 while preserving Registry105.
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { claudeAgentResourcePolicy as policy } from "../../../config/claude-agent-resource-policy";
@@ -49,6 +49,8 @@ import { deckDefaultPluginResolveOperationContracts } from "./deckDefaultPluginR
 import { deckDefaultPluginResolveSchemaRequirements } from "./deckDefaultPluginResolveService";
 import { deckChatContextOperationContracts } from "./deckChatContextDto";
 import { deckChatContextSchemaRequirements } from "./deckChatContextService";
+import { deckWorkspacePluginsOperationContracts } from "./deckWorkspacePluginsDto";
+import { deckWorkspacePluginsSchemaRequirements } from "./deckWorkspacePluginsService";
 export function canonicalContractJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalContractJson).join(",")}]`;
   if (value !== null && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonicalContractJson(item)}`).join(",")}}`;
@@ -106,5 +108,9 @@ export const dreamOperations = [
   ...Object.entries(deckChatContextOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...deckChatContextSchemaRequirements], operation.userScope,
+  )),
+  ...Object.entries(deckWorkspacePluginsOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...deckWorkspacePluginsSchemaRequirements], operation.userScope,
   )),
 ] as const;

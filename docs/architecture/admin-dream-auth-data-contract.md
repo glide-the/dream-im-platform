@@ -1,11 +1,15 @@
 <!-- [Input] Admin/Dream published baselines, PostgreSQL FK/transaction catalog, Better Auth 1.7.4 official protocol. -->
 <!-- [Output] Shared authentication, delegation, domain persistence and recovery contract. -->
 <!-- [Pos] Canonical cross-project contract owned by the Admin implementation task. -->
-<!-- [Sync] 2026-09-15: register the configured default Deck plugin read as Registry104. -->
+<!-- [Sync] 2026-09-15: register Thread-bound workspace plugin metadata as Registry106. -->
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际104操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry103 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。resource/Thread、Editor/Session、Deck19、refs6、Workflow context/确认保护、Run5、Preferences2、Social9已有隔离技术回执；Preflight独立剩余读取/恢复/阶段故障/中断补验通过，首完整失败保留。Run create/retry、Launch、默认Workspace、SystemConfig、Reflections section-config和十六项Reflections aggregate保留各自既有证据。Registry101本地数据原子导入与首次登录完成、Registry103图片历史只读以及Registry104默认Deck插件候选只读均已通过Admin隔离UOW；对应Dream consumer与正常验收pending。其余领域仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际106操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry105 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。resource/Thread、Editor/Session、Deck19、refs6、Workflow context/确认保护、Run5、Preferences2、Social9已有隔离技术回执；Preflight独立剩余读取/恢复/阶段故障/中断补验通过，首完整失败保留。Run create/retry、Launch、默认Workspace、SystemConfig、Reflections section-config和十六项Reflections aggregate保留各自既有证据。Registry101本地数据原子导入与首次登录完成、Registry103图片历史只读、Registry104默认Deck插件候选只读、Registry105 Deck chat-context 与 Registry106 workspace plugin metadata 已通过 Admin 隔离UOW；Registry104/105 Dream consumer 已完成，Registry106 consumer 与正常验收 pending。其余领域仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+
+### 工作区插件元数据（注册106）
+
+`deck-workspace-plugins.resolve` 接受严格 `{thread_id, profile}`，其中 profile 只能是 `standard` 或 `story_workspace`。Admin 从 OAuth principal 或精确 Thread delegation 派生 actor，在一个 read UOW 内校验 Thread 与 Deck owner，按 `order_index, created_at, plugin_installation_id` 返回 enabled Deck refs。Story Workspace adapter 的 package、marketplace 与 nullable version 只从 `DREAM_WORKSPACE_PLUGIN_POLICY_JSON` 读取；Repository按 `installed_at DESC NULLS LAST, created_at DESC, id DESC` 返回 latest status 与首个 ready 候选。输出不含 artifact path/bytes、workspace path、SQL selector或Runtime参数。Dream校验本机artifact digest并负责共享文件系统复制、freeze/repair、launch manifest、Dream surface、Runtime与SSE；Admin不可用、配置缺失或DTO不匹配时禁止回退Dream PostgreSQL。
 
 ### 默认 Deck 插件候选（注册104）
 
