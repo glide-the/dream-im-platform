@@ -191,7 +191,6 @@ export const managedMcpDiscoverySaveInputDto = z.strictObject({
   credential_revision: z.number().int().nonnegative().safe(),
   status: inventoryStatus,
   inventory: jsonObject,
-  inventory_sha256: sha256,
   safe_error_code: z.string().min(1).max(255).nullable(),
   ttl_seconds: z.number().positive().finite(),
 });

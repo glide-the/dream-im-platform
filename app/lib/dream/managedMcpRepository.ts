@@ -378,9 +378,6 @@ export class ManagedMcpRepository {
     }
     const actualHash = createHash("sha256")
       .update(canonicalContractJson(input.inventory), "utf8").digest("hex");
-    if (actualHash !== input.inventory_sha256) {
-      throw new AuthBoundaryError("CLAUDE_MCP_INVENTORY_MALFORMED", 422);
-    }
     const now = Date.now();
     const expires = new Date(now + input.ttl_seconds * 1_000);
     if (!Number.isFinite(expires.getTime()) || expires.getTime() <= now) {

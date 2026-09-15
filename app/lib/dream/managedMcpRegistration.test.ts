@@ -33,7 +33,7 @@ it("preserves Registry133 and appends exactly fourteen Registry134-147 operation
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 133))).digest("hex"))
     .toBe("951a3ee9d26354d0094dafec6233a13638a430672ddacd730cefc95f654b5ec3");
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations)).digest("hex"))
-    .toBe("a1611330c798ffb6a1df60c3b1d48386fc49f9b4a65cb39cf249e7c8ffeaa1b4");
+    .toBe("73a50db695af5170765f8473179b8a8dacd817c5c457161d75bec5b97c1e32f1");
   expect(dreamOperations.slice(133).map(operation => operation.contract.name)).toEqual([...names]);
   for (const operation of dreamOperations.slice(133)) {
     expect(operation.requirements).toEqual([identitySchemaRequirement, ...managedMcpSchemaRequirements]);

@@ -30414,10 +30414,6 @@
               "$ref": "#/$defs/__schema0"
             }
           },
-          "inventory_sha256": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$"
-          },
           "safe_error_code": {
             "anyOf": [
               {
@@ -30442,7 +30438,6 @@
           "credential_revision",
           "status",
           "inventory",
-          "inventory_sha256",
           "safe_error_code",
           "ttl_seconds"
         ],
@@ -30520,7 +30515,7 @@
       "background_scope": null,
       "input_schema_version": 1,
       "output_schema_version": 1,
-      "contract_sha256": "dea08c63596b031eba7f20e95b075fe72899358bbfc7b11259e14663d5b97d3a"
+      "contract_sha256": "a00378206f45390f121c6dacda23e7f552df82b84a95c9fef94b4be5487d7688"
     }
   },
   {
