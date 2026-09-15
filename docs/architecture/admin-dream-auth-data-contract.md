@@ -1,11 +1,19 @@
 <!-- [Input] Admin/Dream published baselines, PostgreSQL FK/transaction catalog, Better Auth 1.7.4 official protocol. -->
 <!-- [Output] Shared authentication, delegation, domain persistence and recovery contract. -->
 <!-- [Pos] Canonical cross-project contract owned by the Admin implementation task. -->
-<!-- [Sync] 2026-09-15: register atomic Story Workspace Runtime activation as Registry108. -->
+<!-- [Sync] 2026-09-15: register standalone Story Workspace output persistence as Registry109. -->
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际108操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry107 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry108 Runtime activation 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW和 Dream consumer 围栏验证；公开 Story Workspace turn 使用当前Thread/Run grant。内部durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际109操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry108 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证；Registry108 Runtime activation继续使用当前Thread/Run grant。Story Workspace旧内部 `/internal/agent-output`、durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+
+### Story Workspace 输出持久化（注册109）
+
+`story-workspace-output.store` 接受严格 `{thread_id, story}`。`story` 只包含title/description/type/content、按name唯一的Characters与按`order_index`唯一的Scenes；调用方不能提交actor、user、Workspace、database、SQL、表列、路径或事务参数。Admin从OAuth或精确Thread `server-persistence` delegation派生canonical actor，使用既有actor advisory lock与default Workspace policy串行化初始化，再锁定owner Thread并派生Deck。
+
+DTO进入一个Admin UOW。typed Drizzle Repository按`author_id + agent_session_id(thread_id) + title`复用最早Story，按当前Story关系中的Character name与Scene order复用identity，重建Story/Scene Character关系，删除重复或已移除Scene，并重算Story及受影响Character计数。Story保持draft/pending review；更新会清空旧review notes、confirmed/published时间。业务图、输出DTO、operation receipt和audit同事务提交。相同request ID和输入恢复原结果，变化输入或scope返回409；提交结果未知时Dream只读取original receipt，Admin要求合法input SHA、nonnull Thread scope与结果`chat_thread_id`一致，且Run/Editor scope均为null。
+
+输出仅为Story/Character/Scene ID、pending review状态、source Thread和Deck显示字段。解析Story输出、Runtime、turn/resume/cancel、EventBus、SSE、共享FS及`.claude-tmp`规则仍由Dream执行；Admin失败保持原普通Chat结果并记录同步失败，不回退Dream PostgreSQL。当前Drizzle表与`dream.schema.unified.v1`已覆盖该聚合，不新增migration。契约SHA为`2b7d9180c78829df86289d717037ddbfd20ecee517d8213e0e71b9388cee65ed`；Registry108前缀SHA为`a631f9dbae964079af9fbd92eebd212b1d5294ebdeba9aa8e164668831352583`，完整Registry109 SHA为`48909feea302787bcbd0ed7a263212eeee163a0e3e7887acfda56cc2b421d513`。
 
 ### Story Workspace Runtime 激活（注册108）
 

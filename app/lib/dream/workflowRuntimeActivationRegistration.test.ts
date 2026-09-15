@@ -1,7 +1,7 @@
 // [Input] Frozen Registry107 prefix, live Registry108 DTO, schema capability and production POST route.
 // [Output] Exact append, contract hash, requirements, generated inventory and dispatch assertions.
 // [Pos] Registration gate for workflow-runtime.activate.
-// [Sync] 2026-09-15: append one atomic write without changing Registry107 bytes.
+// [Sync] 2026-09-15: Registry109 extends only the total-length guard; this file still owns its frozen segment.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
@@ -22,10 +22,10 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves Registry107 and appends exactly one Registry108 atomic write", () => {
-  expect(dreamOperations).toHaveLength(108); expect(generated108).toEqual(dreamOperations);
+  expect(dreamOperations).toHaveLength(109); expect(generated108).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 107))).digest("hex"))
     .toBe("d636ba4be69279e0e0d9bf84a249c61c1c02635798cb1ab2c56cb6bd42ed4a20");
-  expect(createHash("sha256").update(canonicalContractJson(dreamOperations)).digest("hex"))
+  expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 108))).digest("hex"))
     .toBe("a631f9dbae964079af9fbd92eebd212b1d5294ebdeba9aa8e164668831352583");
   const registered = dreamOperations[107]; expect(registered.contract.name).toBe(name);
   expect(registered.capability).toMatchObject({ kind: "write", user_scope: "dream:write", background_scope: null,

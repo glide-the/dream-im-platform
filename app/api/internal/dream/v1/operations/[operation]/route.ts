@@ -1,7 +1,7 @@
 // [Input] Explicit registered local-data, Thread/message, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
 // [Output] Strict domain DTO, never generic SQL or arbitrary function dispatch.
 // [Pos] Thin named operation ingress.
-// [Sync] 2026-09-15: dispatch atomic Workflow Runtime activation through Registry108.
+// [Sync] 2026-09-15: dispatch atomic Story Workspace output persistence through Registry109.
 import { handleChatThreadOperation } from "../../../../../../lib/dream/chatThreadHandler";
 import { handleUserProfile } from "../../../../../../lib/dream/userProfileHandler";
 import { handleEditorSessionOperation, isEditorSessionOperation } from "../../../../../../lib/dream/editorSessionHandler";
@@ -30,9 +30,11 @@ import { handleDeckChatContext, isDeckChatContextOperation } from "../../../../.
 import { handleDeckWorkspacePlugins, isDeckWorkspacePluginsOperation } from "../../../../../../lib/dream/deckWorkspacePluginsHandler";
 import { handleWorkflowManagedMcpScope, isWorkflowManagedMcpScopeOperation } from "../../../../../../lib/dream/workflowManagedMcpScopeHandler";
 import { handleWorkflowRuntimeActivation, isWorkflowRuntimeActivationOperation } from "../../../../../../lib/dream/workflowRuntimeActivationHandler";
+import { handleStoryWorkspaceOutput, isStoryWorkspaceOutputOperation } from "../../../../../../lib/dream/storyWorkspaceOutputHandler";
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
+  if (isStoryWorkspaceOutputOperation(name)) return handleStoryWorkspaceOutput(request, name);
   if (isWorkflowRuntimeActivationOperation(name)) return handleWorkflowRuntimeActivation(request, name);
   if (isWorkflowManagedMcpScopeOperation(name)) return handleWorkflowManagedMcpScope(request, name);
   if (isDeckWorkspacePluginsOperation(name)) return handleDeckWorkspacePlugins(request, name);

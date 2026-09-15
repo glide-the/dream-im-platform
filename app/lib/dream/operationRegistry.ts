@@ -1,7 +1,7 @@
 // [Input] Named domain input/output DTOs and exact schema requirements.
 // [Output] Version/hash descriptors for implemented operations only.
 // [Pos] API compatibility registry; independent from the global Drizzle head.
-// [Sync] 2026-09-15: append atomic Workflow Runtime activation as Registry108 while preserving Registry107.
+// [Sync] 2026-09-15: append atomic Story Workspace output persistence as Registry109 while preserving Registry108.
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { canonicalContractJson } from "./canonicalContractJson";
@@ -57,6 +57,8 @@ import { workflowManagedMcpScopeOperationContracts } from "./workflowManagedMcpS
 import { workflowManagedMcpScopeSchemaRequirements } from "./workflowManagedMcpScopeService";
 import { workflowRuntimeActivationOperationContracts } from "./workflowRuntimeActivationDto";
 import { workflowRuntimeActivationSchemaRequirements } from "./workflowRuntimeActivationService";
+import { storyWorkspaceOutputOperationContracts } from "./storyWorkspaceOutputDto";
+import { storyWorkspaceOutputSchemaRequirements } from "./storyWorkspaceOutputService";
 function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
@@ -121,5 +123,9 @@ export const dreamOperations = [
   ...Object.entries(workflowRuntimeActivationOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...workflowRuntimeActivationSchemaRequirements], operation.userScope,
+  )),
+  ...Object.entries(storyWorkspaceOutputOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...storyWorkspaceOutputSchemaRequirements], operation.userScope,
   )),
 ] as const;
