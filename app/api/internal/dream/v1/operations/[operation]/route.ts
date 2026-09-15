@@ -1,7 +1,7 @@
 // [Input] Explicit registered local-data, Thread/message, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
 // [Output] Strict domain DTO, never generic SQL or arbitrary function dispatch.
 // [Pos] Thin named operation ingress.
-// [Sync] 2026-09-15: dispatch the configured default Deck plugin read through Registry104.
+// [Sync] 2026-09-15: dispatch the Deck chat-context aggregate read through Registry105.
 import { handleChatThreadOperation } from "../../../../../../lib/dream/chatThreadHandler";
 import { handleUserProfile } from "../../../../../../lib/dream/userProfileHandler";
 import { handleEditorSessionOperation, isEditorSessionOperation } from "../../../../../../lib/dream/editorSessionHandler";
@@ -26,9 +26,11 @@ import { handleReflectionTaskOperation, isReflectionTaskOperation } from "../../
 import { handleLocalDataImport, isLocalDataImportOperation } from "../../../../../../lib/dream/localDataImportHandler";
 import { handlePictureHistory, isPictureHistoryOperation } from "../../../../../../lib/dream/pictureHistoryHandler";
 import { handleDeckDefaultPluginResolve, isDeckDefaultPluginResolveOperation } from "../../../../../../lib/dream/deckDefaultPluginResolveHandler";
+import { handleDeckChatContext, isDeckChatContextOperation } from "../../../../../../lib/dream/deckChatContextHandler";
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
+  if (isDeckChatContextOperation(name)) return handleDeckChatContext(request, name);
   if (isDeckDefaultPluginResolveOperation(name)) return handleDeckDefaultPluginResolve(request, name);
   if (isPictureHistoryOperation(name)) return handlePictureHistory(request, name);
   if (isLocalDataImportOperation(name)) return handleLocalDataImport(request, name);

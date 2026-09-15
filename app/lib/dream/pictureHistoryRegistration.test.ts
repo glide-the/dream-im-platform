@@ -2,6 +2,7 @@
 // [Output] Exact two-read append, OAuth dispatch, capability and no-receipt registration evidence.
 // [Pos] Registration gate for picture-history.list and picture-history.full.
 // [Sync] 2026-09-15: preserve every prior descriptor and append only two current-actor reads.
+// [Sync] 2026-09-15: retain Registry103 assertions after the independent Registry105 append.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
@@ -22,7 +23,7 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves the complete Registry101 prefix and appends exactly two OAuth reads as Registry103", () => {
-  expect(dreamOperations).toHaveLength(104);
+  expect(dreamOperations).toHaveLength(105);
   expect(generated103).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 101))).digest("hex")).toBe("8964d7dea090d83bf2795b1b0e1c1fc23da293b80182428c7bec7ebc9ded8147");
   expect(dreamOperations.slice(101, 103).map(item => item.contract.name)).toEqual(names);

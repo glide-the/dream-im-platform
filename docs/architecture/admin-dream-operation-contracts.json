@@ -18941,5 +18941,235 @@
       "output_schema_version": 1,
       "contract_sha256": "9ae17f5c334a14f04363705b55701cbcc7ccd8a12070f9548adbf67746535b83"
     }
+  },
+  {
+    "contract": {
+      "name": "deck-chat-context.resolve",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "voice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "deck_id",
+          "voice_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              },
+              "name_zh": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name_en": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description_zh": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description_en": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "name_zh",
+              "name_en",
+              "description",
+              "description_zh",
+              "description_en"
+            ],
+            "additionalProperties": false
+          },
+          "voices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string"
+                },
+                "name_zh": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name_en": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "system_prompt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "name_zh",
+                "name_en",
+                "system_prompt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "plugin_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "plugin_installation_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "package_spec": {
+                  "type": "string"
+                },
+                "resolved_version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "artifact_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "order_index": {
+                  "type": "integer",
+                  "minimum": -2147483648,
+                  "maximum": 2147483647
+                },
+                "installation_status": {
+                  "type": "string",
+                  "enum": [
+                    "installing",
+                    "ready",
+                    "error",
+                    "uninstalled"
+                  ]
+                }
+              },
+              "required": [
+                "plugin_installation_id",
+                "package_spec",
+                "resolved_version",
+                "artifact_digest",
+                "order_index",
+                "installation_status"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "deck",
+          "voices",
+          "plugin_refs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "deck-chat-context.resolve",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "299ba61935aad3b2f696bd4f5868d4e53aebda1fd4150d4f767bc0b8ab8fb487"
+    }
   }
 ]

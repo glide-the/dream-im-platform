@@ -2,6 +2,7 @@
 // [Output] Exact local-data segment, OAuth dispatch and unknown-commit recovery evidence.
 // [Pos] Registration gate for local-data.import and first-login.complete.
 // [Sync] 2026-09-15: preserve the two reviewed OAuth writes before the Registry103 picture suffix.
+// [Sync] 2026-09-15: retain Registry101 assertions after the independent Registry105 append.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 const names = ["local-data.import", "first-login.complete"] as const;
@@ -31,7 +32,7 @@ beforeEach(() => {
 });
 
 it("preserves the complete Registry99 prefix and appends exactly two OAuth writes as Registry101", () => {
-  expect(dreamOperations).toHaveLength(104);
+  expect(dreamOperations).toHaveLength(105);
   expect(generated103).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 99))).digest("hex")).toBe("bc1d8c0c033673c91f5e5ba3c11316c366d20aa8e1693bdc71b9e4425a9b7e85");
   expect(dreamOperations.slice(99, 101).map(item => item.contract.name)).toEqual(names);

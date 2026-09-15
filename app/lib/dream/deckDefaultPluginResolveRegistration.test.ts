@@ -2,6 +2,7 @@
 // [Output] Exact one-read append, OAuth dispatch, capability and artifact parity evidence.
 // [Pos] Registration gate for deck.default-plugin.resolve.
 // [Sync] 2026-09-15: preserve every prior descriptor and append only the configured read.
+// [Sync] 2026-09-15: keep the Registry104 slot stable after Registry105 appends independently.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
@@ -22,10 +23,10 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves the complete Registry103 prefix and appends exactly one OAuth read as Registry104", () => {
-  expect(dreamOperations).toHaveLength(104);
+  expect(dreamOperations).toHaveLength(105);
   expect(generated104).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 103))).digest("hex")).toBe("b47e731abee6fd0a9b937333f9535817a5d7ffffe0a012440123fde6d6f6c824");
-  expect(dreamOperations.slice(103).map(item => item.contract.name)).toEqual([name]);
+  expect(dreamOperations.slice(103, 104).map(item => item.contract.name)).toEqual([name]);
   const registered = dreamOperations[103];
   expect(registered.capability).toMatchObject({ kind: "read", user_scope: "dream:read", background_scope: null });
   expect(registered.requirements).toEqual([identitySchemaRequirement, ...deckDefaultPluginResolveSchemaRequirements]);
