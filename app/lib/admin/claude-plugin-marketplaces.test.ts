@@ -3,6 +3,7 @@
 // [Pos] Focused contract tests for the Remote Marketplace control plane.
 // [Sync] 2026-08-19: cover valid global catalog extraction and invalid source rejection.
 // [Sync] 2026-09-02: cover normalized GitHub archive routing without weakening the HTTPS host policy.
+// [Sync] 2026-09-15: lock Admin plugin digests to Dream's path-component ordering.
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -102,6 +103,30 @@ describe("ClaudePlugin remote Marketplace inspection", () => {
     expect(revision.validationStatus).toBe("invalid");
     expect(revision.entries[0].validationErrors).toContain(
       "CLAUDE_PLUGIN_MARKETPLACE_SOURCE_UNSUPPORTED",
+    );
+  });
+
+  it("orders sibling files and nested directories exactly like Dream's canonical digest", async () => {
+    const root = await fixtureRoot();
+    await mkdir(join(root, ".claude-plugin"), { recursive: true });
+    await mkdir(join(root, "plugin", ".claude-plugin"), { recursive: true });
+    await mkdir(join(root, "plugin", "skills", "a"), { recursive: true });
+    await writeJson(join(root, ".claude-plugin", "marketplace.json"), {
+      name: "ordering-marketplace",
+      plugins: [{ name: "ordering-plugin", source: "./plugin" }],
+    });
+    await writeJson(join(root, "plugin", ".claude-plugin", "plugin.json"), {
+      name: "ordering-plugin",
+      version: "1.0.0",
+    });
+    await writeFile(join(root, "plugin", "skills.md"), "# root", "utf8");
+    await writeFile(join(root, "plugin", "skills", "a", "SKILL.md"), "# nested", "utf8");
+
+    const revision = await inspectMarketplaceCheckout(root, "c".repeat(40));
+
+    expect(revision.validationStatus).toBe("valid");
+    expect(revision.entries[0].pluginDigest).toBe(
+      "sha256:6b9a1e781934ecdcae293f5c4a52c427184254cfb167f042184b9436a76ea196",
     );
   });
 
