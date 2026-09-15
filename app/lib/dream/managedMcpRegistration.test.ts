@@ -27,15 +27,15 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 
 beforeEach(() => vi.resetAllMocks());
 
-it("preserves Registry133 and appends exactly fourteen Registry134-147 operations", () => {
-  expect(dreamOperations).toHaveLength(147);
+it("preserves Registry133 and the exact fourteen Registry134-147 operations", () => {
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(147);
   expect(generated147).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 133))).digest("hex"))
     .toBe("951a3ee9d26354d0094dafec6233a13638a430672ddacd730cefc95f654b5ec3");
-  expect(createHash("sha256").update(canonicalContractJson(dreamOperations)).digest("hex"))
+  expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 147))).digest("hex"))
     .toBe("73a50db695af5170765f8473179b8a8dacd817c5c457161d75bec5b97c1e32f1");
-  expect(dreamOperations.slice(133).map(operation => operation.contract.name)).toEqual([...names]);
-  for (const operation of dreamOperations.slice(133)) {
+  expect(dreamOperations.slice(133, 147).map(operation => operation.contract.name)).toEqual([...names]);
+  for (const operation of dreamOperations.slice(133, 147)) {
     expect(operation.requirements).toEqual([identitySchemaRequirement, ...managedMcpSchemaRequirements]);
   }
 });

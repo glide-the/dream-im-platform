@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-16: register Notion connector persistence as Registry148-168. -->
 <!-- [Sync] 2026-09-16: register Dream launch Runtime scope/current/replay as Registry130-132. -->
 <!-- [Sync] 2026-09-16: register Agent-type clear/Runtime plan/prepare as Registry127-129. -->
 <!-- [Sync] 2026-09-16: register Story Workspace confirmation persistence and durable delivery as Registry120. -->
@@ -12,7 +13,7 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际132操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry129 descriptor前缀保持。Registry130-132 Dream launch Runtime、Registry127-129 Agent type、Registry122-126 Deck Plugin binding、Registry120 confirmation、Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证。Dream launch 已删除旧 Runtime provisioning 数据库服务并消费 Admin current/replay operation；source、Preflight、Run、dispatch 与失败记录等其余生产数据库入口继续按[全域映射](admin-dream-domain-implementation-map.md)关闭。本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际168操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry147 descriptor前缀保持。Registry148-168 Notion connector provider、Registry134-147 managed MCP、Registry130-133 Dream launch Runtime/replay、Registry127-129 Agent type、Registry122-126 Deck Plugin binding、Registry120 confirmation、Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository 和原回执边界验证。Notion Dream consumer 与其余生产数据库入口继续按[全域映射](admin-dream-domain-implementation-map.md)关闭。本稿不是完整部署或真实业务回执。
 
 ### Dream Launch Runtime（注册130–132）
 
@@ -524,3 +525,10 @@ The future Dream consumer must introduce an explicit `ReflectionTurnPersistenceO
 
 The keeper renews before short expiry, stops new writes when closing, drains acknowledged message/session writes, reads the bound transcript, calls section finish, then revokes. Failure uses explicit section revoke and ultimately task `fatal-fail`; finalize and fatal-fail revoke all live authorities. Each background request locks the task row. Event append replays one exactly matching stored event; otherwise its sequence must equal current max+1 in the int4 range 1..2147483647, so a restart resumes from worker-load's high-water mark without gaps. A close/drain timeout or an unknown write leaves the section unfinished and records the business failure rather than silently switching to ordinary Chat authority. Ordinary Chat `idg_` server-persistence behavior and frozen runtime delegation purpose/hash remain unchanged. A self-created named disposable PostgreSQL previously proved the 0061 overlap lock, deterministic legacy event resequence, constraints/capability and owned cleanup; 0061 was not rerun during Registry99 registration. Role ACL, service UOW faults and Dream owner/keeper consumption remain pending. Sync 2026-09-15.
 <!-- [Sync] 2026-09-16: Registry133 closes launch replay lookup and Dream production launch persistence through DTO/Service/typed Drizzle operations. -->
+## Registry148-168：Notion Connector 数据接口
+
+Admin 通过 Registry148-168 提供 connector、selected resource、canonical snapshot 与 Thread binding 的具名业务操作。用户操作从 OAuth 或精确 `server-persistence` grant 派生 canonical actor，输入中没有 `user_id`；调度操作拒绝浏览器 Authorization，要求服务配置中的 `connectors:sync`，并根据 connector ID 查询 owner。canonical user ID 仅以十进制字符串输出，避免 PostgreSQL bigint 在 JavaScript 中被截断。
+
+`notion.resources.replace` 在锁定 owner connector 后完成旧选择删除、新选择插入和 config 更新。`notion.snapshot.save` 与 `notion.sync-snapshot.save` 在一个 Admin transaction 中完成 snapshot upsert、current snapshot/source/cursor 更新、database page 替换与精确 resource sync 状态更新。所有写操作通过 operation receipt 处理未知提交结果；用户写与后台写使用不同 subject，后台 receipt 查询必须同时给出原 operation 和 connector ID。
+
+Dream 继续执行 Notion CLI 登录轮询、远端资源发现、同步策略判断、canonical snapshot 构建、共享文件发布与 Agent thread 投影。Admin 不接收 credential path、workspace path 或任意 SQL，也不执行 Notion 网络请求。现有五张表已由 Admin Drizzle 和 `dream.schema.unified.v1` 管理，本阶段不新增 migration。

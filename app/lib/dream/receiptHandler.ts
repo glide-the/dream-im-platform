@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: recover Registry148-168 Notion user/scheduler writes under separate original authorities.
 // [Sync] 2026-09-16: recover Registry134-147 managed-MCP writes under original OAuth or server-persistence authority.
 // [Sync] 2026-09-16: recover Registry127/129/132 Runtime writes under their original OAuth actor.
 // [Sync] 2026-09-16: recover Registry120 confirmation submit under its original OAuth Run/Thread scope.
@@ -79,6 +80,9 @@ import { deckPluginBindingSchemaRequirements } from "./deckPluginBindingService"
 import { managedMcpOperationContracts } from "./managedMcpDto";
 import { isManagedMcpOperation } from "./managedMcpHandler";
 import { managedMcpSchemaRequirements } from "./managedMcpService";
+import { notionConnectorOperationContracts, notionSyncConnectorInputDto } from "./notionConnectorDto";
+import { isNotionConnectorOperation } from "./notionConnectorHandler";
+import { notionBackgroundReceiptActor, notionConnectorSchemaRequirements } from "./notionConnectorService";
 import { DelegationService } from "../auth/delegationService";
 export async function handleReceipt(request: Request, requestId: string) {
   return handleInternalAuthRequest(request, async (service, setRequestId) => {
@@ -86,6 +90,66 @@ export async function handleReceipt(request: Request, requestId: string) {
     setRequestId(parsed.data);
     const query = new URL(request.url).searchParams;
     const name = query.get("operation") ?? "";
+    if (isNotionConnectorOperation(name)) {
+      const operation = notionConnectorOperationContracts[name];
+      if (operation.kind !== "write") throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+      const receiptResultDto = z.discriminatedUnion("status", [
+        z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
+        z.strictObject({ status: z.literal("committed"), operation: z.literal(name), request_id: requestIdDto, result: operation.output }),
+      ]);
+      if (operation.audience === "background") {
+        const connectorId = notionSyncConnectorInputDto.shape.connector_id.safeParse(query.get("connector_id") ?? "");
+        if (!connectorId.success || query.size !== 2 || query.getAll("operation").length !== 1 || query.getAll("connector_id").length !== 1) {
+          throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+        }
+        if (request.headers.has("authorization")) throw new AuthBoundaryError("NOTION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
+        requireBackgroundScope(service, "connectors:sync");
+        return withDataTransaction([identitySchemaRequirement, ...notionConnectorSchemaRequirements], async tx => {
+          const row = await new ReceiptRepository(tx, service.id, notionBackgroundReceiptActor(connectorId.data)).find(name, parsed.data);
+          if (row && (
+            !/^[0-9a-f]{64}$/.test(row.inputSha256)
+            || row.threadScope !== null || row.editorSessionScope !== null || row.runScope !== null
+            || !operation.output.safeParse(row.result).success
+          )) throw new AuthBoundaryError("NOTION_RECEIPT_INVALID");
+          return receiptResultDto.parse({
+            status: row ? "committed" : "absent", operation: name, request_id: parsed.data,
+            ...(row ? { result: row.result } : {}),
+          });
+        });
+      }
+      if (query.size !== 1 || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+      const token = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
+      const delegated = token.startsWith("idg_");
+      return withDataTransaction([
+        identitySchemaRequirement, ...notionConnectorSchemaRequirements,
+        ...(delegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : []),
+      ], async tx => {
+        let subject: string;
+        let threadScope: string | null = null;
+        let runScope: string | null = null;
+        if (delegated) {
+          const actor = await new DelegationService(tx).resolve(token, operation.userScope, service.id);
+          if (actor.purpose !== "server-persistence" || actor.editorSessionId !== null) {
+            throw new AuthBoundaryError("DREAM_DELEGATION_ENTITY_DENIED", 403);
+          }
+          subject = actor.principal.subject;
+          threadScope = actor.threadId;
+          runScope = actor.runId;
+        } else {
+          subject = (await principalForServiceToken(tx, token, service, operation.userScope)).subject;
+        }
+        const row = await new ReceiptRepository(tx, service.id, subject).find(name, parsed.data);
+        if (row && (
+          !/^[0-9a-f]{64}$/.test(row.inputSha256)
+          || row.threadScope !== threadScope || row.editorSessionScope !== null || row.runScope !== runScope
+          || !operation.output.safeParse(row.result).success
+        )) throw new AuthBoundaryError("NOTION_RECEIPT_INVALID");
+        return receiptResultDto.parse({
+          status: row ? "committed" : "absent", operation: name, request_id: parsed.data,
+          ...(row ? { result: row.result } : {}),
+        });
+      });
+    }
     if (isManagedMcpOperation(name)) {
       const operation = managedMcpOperationContracts[name];
       if (operation.kind !== "write"
