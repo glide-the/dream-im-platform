@@ -36223,5 +36223,170 @@
       "output_schema_version": 1,
       "contract_sha256": "4922cbb523ce184eb8176f1cb9ed1a68c279cde83421d15d685d7ce46ad67383"
     }
+  },
+  {
+    "contract": {
+      "name": "dream-auto-repair.settle",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "expected_identity": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "story-workspace-dream-auto-repair"
+              },
+              "schema_version": {
+                "type": "string",
+                "const": "story-workspace-dream-auto-repair/v1"
+              },
+              "originating_message_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "originating_turn_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "workflow_run_id": {
+                "type": "string",
+                "pattern": "^run_[0-9a-f]{32}$"
+              },
+              "repair_attempt": {
+                "type": "number",
+                "const": 1
+              },
+              "validation_code": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+              },
+              "idempotency_key": {
+                "type": "string",
+                "pattern": "^dream-auto-repair\\/v1:[0-9a-f]{64}$"
+              },
+              "project_cleanup": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "trusted_project_slug": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                      },
+                      "stale_project_slugs": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "trusted_project_slug",
+                      "stale_project_slugs"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "schema_version",
+              "originating_message_id",
+              "originating_turn_id",
+              "workflow_run_id",
+              "repair_attempt",
+              "validation_code",
+              "idempotency_key",
+              "project_cleanup"
+            ],
+            "additionalProperties": false
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "dispatched",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "thread_id",
+          "message_id",
+          "expected_identity",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "dispatched",
+              "failed"
+            ]
+          },
+          "changed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "message_id",
+          "status",
+          "changed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "dream-auto-repair.settle",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "155adcb6995b63e090cbc2906383ba4b78525c1f268a430ad6f2ba449b66b159"
+    }
   }
 ]

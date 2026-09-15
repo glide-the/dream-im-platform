@@ -1,6 +1,7 @@
 // [Input] Explicit registered local-data, Thread/message, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
 // [Output] Strict domain DTO, never generic SQL or arbitrary function dispatch.
 // [Pos] Thin named operation ingress.
+// [Sync] 2026-09-16: dispatch Registry169 auto-repair message settlement.
 // [Sync] 2026-09-16: dispatch Registry148-168 Notion connector persistence operations.
 // [Sync] 2026-09-16: dispatch Registry134-147 managed-MCP persistence operations.
 // [Sync] 2026-09-16: dispatch Registry122-132 binding, Agent-type and launch Runtime operations.
@@ -41,9 +42,11 @@ import { handleStoryWorkspaceConfirmation, isStoryWorkspaceConfirmationOperation
 import { handleDeckPluginBinding, isDeckPluginBindingOperation } from "../../../../../../lib/dream/deckPluginBindingHandler";
 import { handleManagedMcp, isManagedMcpOperation } from "../../../../../../lib/dream/managedMcpHandler";
 import { handleNotionConnector, isNotionConnectorOperation } from "../../../../../../lib/dream/notionConnectorHandler";
+import { handleDreamAutoRepair, isDreamAutoRepairOperation } from "../../../../../../lib/dream/dreamAutoRepairHandler";
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
+  if (isDreamAutoRepairOperation(name)) return handleDreamAutoRepair(request, name);
   if (isNotionConnectorOperation(name)) return handleNotionConnector(request, name);
   if (isManagedMcpOperation(name)) return handleManagedMcp(request, name);
   if (isDeckPluginBindingOperation(name)) return handleDeckPluginBinding(request, name);

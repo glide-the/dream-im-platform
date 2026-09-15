@@ -1,7 +1,7 @@
 // [Input] Frozen Registry147 prefix, Notion DTOs, capabilities, generated inventory and production POST route.
 // [Output] Registry148-168 append hash, scope split, requirements and dispatch assertions.
 // [Pos] Registration gate for the complete Notion connector persistence domain.
-// [Sync] 2026-09-16: append twenty-one operations without changing Registry147 bytes.
+// [Sync] 2026-09-16: freeze the Notion-owned Registry148-168 prefix while allowing later operations.
 import { createHash } from "node:crypto";
 import { beforeEach, expect, it, vi } from "vitest";
 
@@ -30,14 +30,14 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves Registry147 and appends exactly Registry148-168", () => {
-  expect(dreamOperations).toHaveLength(168);
-  expect(generated168).toEqual(dreamOperations);
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(168);
+  expect(generated168.slice(0, 168)).toEqual(dreamOperations.slice(0, 168));
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 147))).digest("hex"))
     .toBe("73a50db695af5170765f8473179b8a8dacd817c5c457161d75bec5b97c1e32f1");
-  expect(createHash("sha256").update(canonicalContractJson(dreamOperations)).digest("hex"))
+  expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 168))).digest("hex"))
     .toBe("5b165b20d82ba48a47ada70db497df54552ec256f673f53a977e9c177a6a1961");
-  expect(dreamOperations.slice(147).map(item => item.contract.name)).toEqual(names);
-  for (const operation of dreamOperations.slice(147)) {
+  expect(dreamOperations.slice(147, 168).map(item => item.contract.name)).toEqual(names);
+  for (const operation of dreamOperations.slice(147, 168)) {
     expect(operation.requirements).toEqual([identitySchemaRequirement, ...notionConnectorSchemaRequirements]);
   }
 });

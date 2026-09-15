@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: append auto-repair message settlement as Registry169.
 // [Sync] 2026-09-16: append Notion connector persistence operations as Registry148-168.
 // [Sync] 2026-09-16: append managed-MCP persistence operations as Registry134-147.
 // [Sync] 2026-09-16: append actor-scoped launch replay lookup as Registry133.
@@ -79,6 +80,8 @@ import { managedMcpOperationContracts } from "./managedMcpDto";
 import { managedMcpSchemaRequirements } from "./managedMcpService";
 import { notionConnectorOperationContracts } from "./notionConnectorDto";
 import { notionConnectorSchemaRequirements } from "./notionConnectorService";
+import { dreamAutoRepairOperationContracts } from "./dreamAutoRepairDto";
+import { dreamAutoRepairSchemaRequirements } from "./dreamAutoRepairService";
 function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
@@ -189,5 +192,9 @@ export const dreamOperations = [
     operation.output,
     [identitySchemaRequirement, ...notionConnectorSchemaRequirements],
     operation.audience === "user" ? operation.userScope : null,
+  )),
+  ...Object.entries(dreamAutoRepairOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...dreamAutoRepairSchemaRequirements], operation.userScope,
   )),
 ] as const;

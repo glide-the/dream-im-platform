@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-16: register automatic-repair message settlement as Registry169. -->
 <!-- [Sync] 2026-09-16: register Notion connector persistence as Registry148-168. -->
 <!-- [Sync] 2026-09-16: register Dream launch Runtime scope/current/replay as Registry130-132. -->
 <!-- [Sync] 2026-09-16: register Agent-type clear/Runtime plan/prepare as Registry127-129. -->
@@ -13,7 +14,15 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际168操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry147 descriptor前缀保持。Registry148-168 Notion connector provider、Registry134-147 managed MCP、Registry130-133 Dream launch Runtime/replay、Registry127-129 Agent type、Registry122-126 Deck Plugin binding、Registry120 confirmation、Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository 和原回执边界验证。Notion Dream consumer 与其余生产数据库入口继续按[全域映射](admin-dream-domain-implementation-map.md)关闭。本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际169操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry168 descriptor前缀保持。Registry169 automatic repair message settlement、Registry148-168 Notion connector provider、Registry134-147 managed MCP、Registry130-133 Dream launch Runtime/replay、Registry127-129 Agent type、Registry122-126 Deck Plugin binding、Registry120 confirmation、Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository 和原回执边界验证。Notion Dream consumer 已完成；其余生产数据库入口继续按[全域映射](admin-dream-domain-implementation-map.md)关闭。本稿不是完整部署或真实业务回执。
+
+## Registry169：自动修复消息终态
+
+Dream 检测到 Story Workspace 验证失败后，仍由现有 Registry44 `chat-user-message.persist` 保存同一条自动修复用户消息。新操作 `dream-auto-repair.settle` 只接收 `thread_id`、`message_id`、完整 `expected_identity` 与目标状态 `dispatched|failed`。`expected_identity` 包含 schema、来源 message/turn、Workflow Run、首次 repair attempt、validation code、幂等摘要和可空 project cleanup；DTO 不接受 actor、任意 metadata patch、SQL、表列或事务选择器。
+
+Admin 从 OAuth 或精确绑定该 Thread/Run 的 `server-persistence` grant 派生 actor，在一个 receipt UOW 中通过 typed Drizzle 锁定 actor-owned user message，解析并比较全部持久化身份，再执行 `dispatching -> dispatched|failed` 或 `dispatched -> failed`。相同终态重放返回 `changed=false`；身份不一致、跨 owner、错误 role、`failed -> dispatched`、未知状态和缺失消息均拒绝。写响应未知时，Dream 只按原 request ID 查询 receipt，不重发写入，也不回退 PostgreSQL。
+
+Dream 继续负责验证错误识别、自动修复消息构造、Runtime 投递、失败反馈、EventBus/SSE 与共享文件系统。本操作复用 `identity.better-auth.v1` 和 `dream.schema.unified.v1`，没有新增 schema 或 migration。operation SHA 为 `155adcb6995b63e090cbc2906383ba4b78525c1f268a430ad6f2ba449b66b159`；Registry168 prefix SHA 保持 `5b165b20d82ba48a47ada70db497df54552ec256f673f53a977e9c177a6a1961`；完整 Registry169 SHA 为 `adb90cec21e76f709d9d10638642051f33b1eb04df618f6984aaffb5c4a0962e`。
 
 ### Dream Launch Runtime（注册130–132）
 
