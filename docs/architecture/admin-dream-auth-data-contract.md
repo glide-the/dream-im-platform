@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-16: register Story Workspace confirmation persistence and durable delivery as Registry120. -->
 <!-- [Sync] 2026-09-15: register Story Workspace Guidance persistence as Registry115. -->
 <!-- [Sync] 2026-09-15: register Story Workspace catalog browse/edit operations as Registry114. -->
 <!-- [Sync] 2026-09-15: register OAuth-only Story Workspace review operations as Registry111. -->
@@ -9,7 +10,17 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际115操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry114 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证；Registry108 Runtime activation继续使用当前Thread/Run grant。Dream公开Guidance、Agent post-turn、旧 `/api/story-workspace/internal/agent-output`、八个Story审核入口与11个Story catalog入口均已消费Admin operation；durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际120操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry115 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry120 confirmation、Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证；Registry108 Runtime activation继续使用当前Thread/Run grant。Dream公开confirmation/Guidance、Agent post-turn、旧 `/api/story-workspace/internal/agent-output`、八个Story审核入口与11个Story catalog入口均已消费Admin operation；其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+
+### Story Workspace Confirmation（注册120）
+
+`story-workspace-confirmation.submit`只接受一份完整confirmation command JSON；current OAuth `dream:write`是唯一用户身份。Admin重新解析严格命令，派生canonical actor、owned Run/Workspace/source Thread、确定性message ID、command fingerprint、Chat parts和metadata。首次提交在一个capability-checked UOW内锁定业务identity，写入普通user消息、更新Thread时间、按`running → output_validating → pending_review → confirmed`推进合法Run并写transition、result和operation receipt。完全相同的业务重放返回原消息且`dispatch:null`；第二份确认或内容变化返回409。只有实际创建持久行的提交返回即时dispatch，避免并发HTTP响应重复启动Runtime。
+
+`fact`要求OAuth `dream:read`，从owned Run派生Thread并只读accepted/dispatched状态，不获取更新锁。`claim/lease/ack`只接受配置了`story-confirmation:dispatch`的Dream服务身份，不接受用户Bearer、actor、数据库、表列、SQL、路径、状态或Runtime选择器。claim锁定指定或最早eligible消息，以exact claim ID取得pending或过期租约；lease只续期当前claim且不能超过Admin配置；ack只在Run为confirmed/completed时将同一claim标为dispatched，并保存不可逆claim摘要。同claim重试可恢复，其他claim不能覆盖；服务中断后由租约过期和reconcile接管。
+
+Dream在submit前后读取并验证共享文件系统投影，接收Admin DTO后继续使用既有same-Thread Runtime、heartbeat、EventBus与SSE。Admin不可用、scope/capability/hash/DTO不匹配、越权、状态冲突或未知提交均失败关闭；OAuth未知写只读取原request receipt，不重发POST，后台claim用同claim ID重试并由后续扫描恢复，绝不回退Dream PostgreSQL。文件路径、文件字节及`.dream`投影不穿越接口，也不进入Admin。
+
+五个operation SHA依次为`2571aa2cc9c19656c4ac90d33221da65e8a631657adebf9f535ab0fe3c76bb12`、`f455a6075161751d25a229dd64479e2a6d6ca781ea7aacfa5575ec4561f52beb`、`c049317c4383584a7574b11daea1b8c626875d589e0dbbd45dfb739c4ca8cde1`、`a5720992e5a0cbc39773481dd3f98a32e6b535c34ea24df230de6ad5646817e6`与`12aeed9beb6584354aa584ebadf7ce352d68084632c0d2c90a2c768c3a8626c6`；Registry115 prefix SHA为`58ab3cd933165dca7d6ae2d6eb50f46ff8f148e8e7eaf3dd5e46ceab1ad2ba9b`，完整Registry120 SHA为`4b0bbfa8caecd42acf0ecc89be4153b6d6fb1e124aac4ff27e937ecb14904795`。现有Run、Transition、Thread、Message与receipt结构满足本阶段，无Drizzle schema或migration变更。
 
 ### Story Workspace Guidance（注册115）
 
@@ -249,7 +260,7 @@ sequenceDiagram
 
 ### 服务身份、领域请求与恢复
 
-前缀`/api/internal/dream/v1`。每次验证`X-Ink-Dream-Service`客户端ID与独立`X-Ink-Dream-Credential` secret（constant-time比较，TLS/loopback网络）+ `Authorization: Bearer <user access token>`，拒绝user_id/query/header覆盖。`DREAM_DATA_SERVICE_CLIENTS`是严格JSON数组：每项`{id,secret,origin,oauthClientId,redirectUri,backgroundScopes}`；secret最少32bytes，id唯一，origin精确，redirect同origin精确，backgroundScopes只取`capabilities:read/resource-policy:read/resource-observer:write/connectors:sync/plugins:catalog/reflections:execute`的明确子集。每个请求重新按所选client验证，handle绑定该service client/origin/OAuth client，不能跨client resolve。Dream使用`INK_ADMIN_DREAM_SERVICE_CLIENT_ID`和`INK_ADMIN_DREAM_SERVICE_SECRET`。后台policy/observer/startup/scheduled connector及Reflections worker走服务限定scope，不能借它查询任意user数据。后续可轮换service credential；不得把用户token当服务身份。
+前缀`/api/internal/dream/v1`。每次验证`X-Ink-Dream-Service`客户端ID与独立`X-Ink-Dream-Credential` secret（constant-time比较，TLS/loopback网络）+ `Authorization: Bearer <user access token>`，拒绝user_id/query/header覆盖。`DREAM_DATA_SERVICE_CLIENTS`是严格JSON数组：每项`{id,secret,origin,oauthClientId,redirectUri,backgroundScopes}`；secret最少32bytes，id唯一，origin精确，redirect同origin精确，backgroundScopes只取`capabilities:read/resource-policy:read/resource-observer:write/connectors:sync/plugins:catalog/reflections:execute/story-confirmation:dispatch`的明确子集。每个请求重新按所选client验证，handle绑定该service client/origin/OAuth client，不能跨client resolve。Dream使用`INK_ADMIN_DREAM_SERVICE_CLIENT_ID`和`INK_ADMIN_DREAM_SERVICE_SECRET`。后台policy/observer/startup/scheduled connector及Reflections worker走服务限定scope，不能借它查询任意user数据。后续可轮换service credential；不得把用户token当服务身份。
 
 | Endpoint | 输入与输出 |
 | --- | --- |

@@ -25304,5 +25304,447 @@
       "output_schema_version": 1,
       "contract_sha256": "a061ed38d2ca10073bbb7fd078e679f072f0cbd4ff1ce900792fbf8725223727"
     }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-confirmation.submit",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "command_json": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "command_json"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "pattern": "^dream_confirm_[0-9a-f]{64}$"
+          },
+          "story_workspace_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          "thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "const": "accepted"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "dispatched": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          },
+          "dispatch": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "thread_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "actor_id": {
+                    "type": "string",
+                    "pattern": "^[1-9]\\d{0,18}$"
+                  },
+                  "message_id": {
+                    "type": "string",
+                    "pattern": "^dream_confirm_[0-9a-f]{64}$"
+                  },
+                  "parts_json": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "metadata_json": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "thread_id",
+                  "actor_id",
+                  "message_id",
+                  "parts_json",
+                  "metadata_json"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "message_id",
+          "story_workspace_run_id",
+          "thread_id",
+          "status",
+          "replayed",
+          "dispatched",
+          "request_id",
+          "dispatch"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-confirmation.submit",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "2571aa2cc9c19656c4ac90d33221da65e8a631657adebf9f535ab0fe3c76bb12"
+    }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-confirmation.fact",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workflow_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          }
+        },
+        "required": [
+          "workflow_run_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workflow_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          "thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirmation_accepted": {
+            "type": "boolean"
+          },
+          "confirmation_dispatched": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "workflow_run_id",
+          "thread_id",
+          "confirmation_accepted",
+          "confirmation_dispatched"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-confirmation.fact",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "f455a6075161751d25a229dd64479e2a6d6ca781ea7aacfa5575ec4561f52beb"
+    }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-confirmation.claim",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^dream_confirm_[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "claim_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        },
+        "required": [
+          "message_id",
+          "claim_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "dispatch": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "thread_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "actor_id": {
+                    "type": "string",
+                    "pattern": "^[1-9]\\d{0,18}$"
+                  },
+                  "message_id": {
+                    "type": "string",
+                    "pattern": "^dream_confirm_[0-9a-f]{64}$"
+                  },
+                  "parts_json": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "metadata_json": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "thread_id",
+                  "actor_id",
+                  "message_id",
+                  "parts_json",
+                  "metadata_json"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "dispatch"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-confirmation.claim",
+      "kind": "write",
+      "user_scope": null,
+      "background_scope": "story-confirmation:dispatch",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "c049317c4383584a7574b11daea1b8c626875d589e0dbbd45dfb739c4ca8cde1"
+    }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-confirmation.lease",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "pattern": "^dream_confirm_[0-9a-f]{64}$"
+          },
+          "claim_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "message_id",
+          "claim_id",
+          "duration_seconds"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "renewed": {
+            "type": "boolean"
+          },
+          "lease_until": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "renewed",
+          "lease_until"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-confirmation.lease",
+      "kind": "write",
+      "user_scope": null,
+      "background_scope": "story-confirmation:dispatch",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "a5720992e5a0cbc39773481dd3f98a32e6b535c34ea24df230de6ad5646817e6"
+    }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-confirmation.ack",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "pattern": "^dream_confirm_[0-9a-f]{64}$"
+          },
+          "claim_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        },
+        "required": [
+          "message_id",
+          "claim_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "acked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "acked"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-confirmation.ack",
+      "kind": "write",
+      "user_scope": null,
+      "background_scope": "story-confirmation:dispatch",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "12aeed9beb6584354aa584ebadf7ce352d68084632c0d2c90a2c768c3a8626c6"
+    }
   }
 ]

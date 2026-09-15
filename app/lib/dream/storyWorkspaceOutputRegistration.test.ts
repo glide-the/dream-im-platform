@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: preserve this frozen segment while Registry120 appends confirmation operations.
 // [Input] Frozen Registry108 prefix, Registry109 DTO, Registry115 inventory and production POST route.
 // [Output] Exact historical append, contract hash, requirements, generated inventory and dispatch assertions.
 // [Pos] Registration gate for story-workspace-output.store.
@@ -18,7 +19,7 @@ import { storyWorkspaceOutputSchemaRequirements } from "./storyWorkspaceOutputSe
 import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 it("preserves Registry108 and appends exactly one Registry109 atomic write", () => {
-  expect(dreamOperations).toHaveLength(115); expect(generated115).toEqual(dreamOperations);
+  expect(dreamOperations).toHaveLength(120); expect(generated115).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 108))).digest("hex"))
     .toBe("a631f9dbae964079af9fbd92eebd212b1d5294ebdeba9aa8e164668831352583");
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 109))).digest("hex"))

@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: preserve this frozen segment while Registry120 appends confirmation operations.
 // [Input] Frozen Registry83, reviewed Reflections candidate and production POST/original-receipt Routes.
 // [Output] Exact Registry99 segment plus OAuth/background dispatch and recovery routing evidence inside Registry103.
 // [Pos] Reflections registration gate; repository behavior and PostgreSQL migration execution remain separate.
@@ -50,7 +51,7 @@ beforeEach(() => {
 });
 
 it("preserves all 83 published descriptors and appends the reviewed sixteen as Registry99", () => {
-      expect(dreamOperations).toHaveLength(115);
+      expect(dreamOperations).toHaveLength(120);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 83))).digest("hex")).toBe("a5f73bf39a8c5f639e636f255b1948349da938be2d354bd3e175261f9af85d6e");
   expect(candidate.status).toBe("registered_registry99_source");
   expect(candidate.operations).toHaveLength(16);

@@ -127,7 +127,7 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `GOOGLE_CLIENT_ID/SECRET` | 内置Google认证注册 | 显式注册与exactcallback |
 | `AUTH_TRUSTED_ORIGINS/DREAM_API_RESOURCE` | trusted origins与OAuth resource | exact origins/resource |
 | `AUTH_TOKEN_ENCRYPTION_KEY` | BFF/委托恢复密文 | 32bytes AEAD，不能回显 |
-| `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON；Reflections执行服务需显式包含`reflections:execute`，独立于用户Bearer |
+| `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON；Reflections执行服务需显式包含`reflections:execute`，confirmation dispatcher需显式包含`story-confirmation:dispatch`，均独立于用户Bearer |
 | `DREAM_DATA_MAX_BODY_BYTES` | Admin领域请求体技术容量 | 显式正安全整数 |
 | `DREAM_WORKSPACE_PLUGIN_POLICY_JSON` | Story Workspace server adapter 数据选择 | 严格JSON；package、marketplace与nullable版本由Admin配置，Dream请求不能覆盖 |
 | `DREAM_RUNTIME_ACTIVATION_POLICY_JSON` | Story Workspace Runtime激活placement、creating lease与built-in adapter | 严格JSON；lease为1..300秒，Admin Service读取，Dream请求不能覆盖node、policy或artifact path |
@@ -137,6 +137,7 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `AUTH_REFLECTIONS_AUTHORITY_TTL_SECONDS/MAX_TTL_SECONDS` | `rta_`短期续期与原最大寿命 | 必填正安全整数，短TTL不得超过最大TTL |
 | `DREAM_FRIENDSHIP_POLICY_JSON` | 明确好友邀请码规则及碰撞执行预算 | `{"code_length":6,"lifetime_seconds":604800,"generation_attempts":64}` 的严格JSON；原6字符/7日，预算仅server capacity |
 | `DREAM_DOMAIN_CANONICAL_TIMEOUT_MS` | 固定canonical业务codec deadline | 显式正安全整数；失败不输出payload |
+| `DREAM_CONFIRMATION_DISPATCH_LEASE_SECONDS` | Story Workspace confirmation delivery租约 | 必填正安全整数；Admin计算deadline；Dream可请求不超过上限的短租约，但不能扩张策略 |
 | `INK_WORKFLOW_TOKEN_SECRET` | Admin独占原Workflow pft签发与Run消费摘要 | 显式UTF-8至少32byte；无JWT_SECRET fallback，Dream不持有 |
 | `DREAM_PREFLIGHT_TOKEN_TTL_SECONDS` | 原Preflight token TTL | 正安全整数，默认300秒；原回执恢复不刷新expiry |
 | `DREAM_PREFLIGHT_MAX_INPUT_BYTES` | canonical Preflight输入技术容量 | 正安全整数，默认65536byte |

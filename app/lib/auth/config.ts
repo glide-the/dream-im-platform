@@ -1,7 +1,7 @@
 // [Input] Explicit Admin auth origin, Google secrets, token key and configured service clients.
 // [Output] Strict single-topology authentication configuration; missing capability fails closed.
 // [Pos] Server-only configuration boundary shared by auth/domain services.
-// [Sync] 2026-09-15: admit the exact Reflections executor background scope for Registry99.
+// [Sync] 2026-09-16: admit the exact Story confirmation dispatcher scope for Registry120.
 import { z } from "zod";
 import type { DreamDomainErrorDetails } from "../dream/errorDto";
 
@@ -38,7 +38,7 @@ const serviceClientSchema = z.strictObject({
   origin: z.string(),
   oauthClientId: z.string().min(1).max(160),
   redirectUri: z.string(),
-  backgroundScopes: z.array(z.enum(["capabilities:read", "resource-policy:read", "resource-observer:write", "connectors:sync", "plugins:catalog", "reflections:execute"])),
+  backgroundScopes: z.array(z.enum(["capabilities:read", "resource-policy:read", "resource-observer:write", "connectors:sync", "plugins:catalog", "reflections:execute", "story-confirmation:dispatch"])),
 });
 
 export type DreamServiceClient = z.infer<typeof serviceClientSchema>;

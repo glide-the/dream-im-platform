@@ -1,7 +1,7 @@
 // [Input] Admin-owned aggregate facts with raw memory/base JSON and a configured canonical-operation deadline.
 // [Output] Python-compatible v1 hash/diff; never parses legacy numeric payload through JS Number.
 // [Pos] Fixed local pure helper, no shell, DB, network, user executable or Runtime configuration.
-// [Sync] 2026-09-15: preserve raw provenance/memory/capability decoding with bounded safe transport.
+// [Sync] 2026-09-16: expose lossless Dream confirmation envelope construction to the Admin service.
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { z } from "zod";
@@ -34,6 +34,7 @@ const confirmationEnvelopeResult = z.discriminatedUnion("status", [
  z.strictObject({status:z.literal("valid"),story_workspace_run_id:z.string().min(1),thread_id:z.string().min(1),idempotency_key:z.string().min(1),command_json:z.string(),command_fingerprint:z.string().regex(/^sha256:[a-f0-9]{64}$/),message_id:z.string().regex(/^dream_confirm_[a-f0-9]{64}$/),parts_canonical_json:z.string()}),
 ]);
 export async function analyzeConfirmationEnvelope(rawPartsJson:string,actorId:string){return confirmationEnvelopeResult.parse(await invoke({action:"confirmation-envelope",raw_parts_json:rawPartsJson,actor_id:actorId}));}
+export async function buildConfirmationEnvelope(commandJson:string,actorId:string){return confirmationEnvelopeResult.parse(await invoke({action:"confirmation-build",command_json:commandJson,actor_id:actorId}));}
 export async function compareConfirmationClaims(storedMetadataJson:string,incomingMetadataJson:string){return z.strictObject({equal:z.boolean()}).parse(await invoke({action:"confirmation-claims",stored_metadata_json:storedMetadataJson,incoming_metadata_json:incomingMetadataJson}));}
 
 // Preserve original Python dictionary detection without decoding stored numeric JSON through JS Number.

@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: preserve this frozen segment while Registry120 appends confirmation operations.
 // [Input] Frozen Registry114 prefix, live Registry115 guidance DTO, schema capability and production POST route.
 // [Output] Exact append hash, requirements, scope, generated inventory and dispatch assertions.
 // [Pos] Registration gate for the Story Workspace guidance business operation.
@@ -19,10 +20,10 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 
 beforeEach(() => vi.resetAllMocks());
 it("preserves Registry114 and appends exactly one Registry115 operation", () => {
-  expect(dreamOperations).toHaveLength(115); expect(generated115).toEqual(dreamOperations);
+  expect(dreamOperations).toHaveLength(120); expect(generated115).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 114))).digest("hex"))
     .toBe("dc80b77410aac58528dde77578154d9848d9dfc3bf55de4a35c8c315a81af704");
-  expect(createHash("sha256").update(canonicalContractJson(dreamOperations)).digest("hex"))
+  expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 115))).digest("hex"))
     .toBe("58ab3cd933165dca7d6ae2d6eb50f46ff8f148e8e7eaf3dd5e46ceab1ad2ba9b");
   expect(dreamOperations[114].capability.contract_sha256).toBe("a061ed38d2ca10073bbb7fd078e679f072f0cbd4ff1ce900792fbf8725223727");
   expect(dreamOperations[114].requirements).toEqual([identitySchemaRequirement, ...storyWorkspaceGuidanceSchemaRequirements]);

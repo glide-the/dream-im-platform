@@ -1,7 +1,7 @@
 # [Input] Fixed JSON-only aggregate facts or memory JSON, never SQL/paths/credentials.
 # [Output] Exact existing Python deck-content/v1 canonical bytes/hash/diff, with safe failure.
 # [Pos] Fixed Admin stdlib codec for domain facts; no SQL, network, service or Runtime execution.
-# [Sync] 2026-09-15: preserve canonical bytes, claim equality, memory dictionaries and three capability-set decoders.
+# [Sync] 2026-09-16: build the canonical Dream confirmation envelope without JS numeric coercion.
 import hashlib
 import json
 import sys
@@ -73,6 +73,44 @@ def confirmation_envelope(raw_parts, actor):
         return {"status": "invalid"}
 
 
+def confirmation_build(raw_command, actor):
+    try:
+        command = json.loads(raw_command, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+        if not isinstance(command, dict) or not isinstance(actor, str) or not actor:
+            return {"status": "invalid"}
+        run, thread, key = (command.get(name) for name in ("storyWorkspaceRunId", "threadId", "idempotencyKey"))
+        if not all(isinstance(value, str) and bool(value) for value in (run, thread, key)):
+            return {"status": "invalid"}
+        command_json = canonical(command, allow_nan=False)
+        envelope = {
+            "kind": "story-workspace-dream-confirmation",
+            "command": command,
+            "instructions": {
+                "first_action": "Your first action MUST be a built-in Write or Edit tool call. Do not explain, plan, inspect, or reason before that tool call.",
+                "edits": "If command.edits is non-empty, apply only those edits to the canonical files already known in this session.",
+                "files": "In the existing canonical Project path, create or overwrite episodes/EP01/episode-outline.md, script.md, storyboard.yaml, and review-report.md with built-in Write/Edit tools. Real files, not assistant-message code blocks, are the only completion fact.",
+                "storyboard_contract": "Overwrite storyboard.yaml even if a previous attempt created it. Every shots item must use a quoted ASCII string shot_id such as \"shot-001\"; an integer such as shot_id: 1 is invalid. Each item must use exactly this minimal shape: {shot_id: \"shot-001\", shot_type: \"wide\", visual: \"...\", camera: {movement: \"static\"}, timing: {duration_sec: 6}}. shot_id values must be unique and match ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$. Do not research another schema.",
+                "forbidden": "Do not call Dream MCP, Agent, Read, Grep, Glob, Bash, WebFetch, WebSearch, or AskUserQuestion. Do not inspect plugins or schemas. Do not write .dream. Do not ask for another confirmation.",
+                "finish": "After the four file writes succeed, reply with one short completion sentence and stop. The host alone validates, updates Dream stages, publishes the Run-private .dream copy, and binds EP01.",
+            },
+        }
+        parts = [{"type": "text", "text": canonical(envelope, allow_nan=False)}]
+        fingerprint_input = canonical({"actor": actor, "command": command}, allow_nan=False)
+        message_input = canonical({"actor": actor, "storyWorkspaceRunId": run, "idempotencyKey": key}, allow_nan=False)
+        return {
+            "status": "valid",
+            "story_workspace_run_id": run,
+            "thread_id": thread,
+            "idempotency_key": key,
+            "command_json": command_json,
+            "command_fingerprint": "sha256:" + hashlib.sha256(fingerprint_input.encode()).hexdigest(),
+            "message_id": "dream_confirm_" + hashlib.sha256(message_input.encode()).hexdigest(),
+            "parts_canonical_json": canonical(parts, allow_nan=False),
+        }
+    except (ValueError, TypeError):
+        return {"status": "invalid"}
+
+
 def confirmation_claims(left_raw, right_raw):
     try:
         left, right = json.loads(left_raw), json.loads(right_raw)
@@ -102,6 +140,8 @@ def execute(request):
         return {"is_object": isinstance(json_value(request["json_text"]), dict)}
     if request.get("action") == "confirmation-envelope":
         return confirmation_envelope(request["raw_parts_json"], request["actor_id"])
+    if request.get("action") == "confirmation-build":
+        return confirmation_build(request["command_json"], request["actor_id"])
     if request.get("action") == "confirmation-claims":
         return confirmation_claims(request["stored_metadata_json"], request["incoming_metadata_json"])
     if request.get("action") == "canonical":
