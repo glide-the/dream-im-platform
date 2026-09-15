@@ -1,14 +1,18 @@
 // [Input] Strict binding DTOs, mocked typed repositories and existing compatibility fixtures.
-// [Output] Owner, read projection, validation, CAS, no-op and atomic write behavior.
-// [Pos] Provider-free Registry122-126 service verification.
-// [Sync] 2026-09-16: lock the Deck Plugin binding Admin owner semantics.
+// [Output] Owner, binding CAS and evidence-bound Agent-type Runtime preparation behavior.
+// [Pos] Provider-free Registry122-129 service verification.
+// [Sync] 2026-09-16: cover clear, Runtime plan and Runtime preparation semantics.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { compatibilityFixture } from "../../../tests/fixtures/deckPluginCompatibility";
 import { principalDto } from "../auth/dto";
 import type { DataTransaction } from "./database";
 import { DeckPluginBindingRepository, type DeckPluginBindingRow } from "./deckPluginBindingRepository";
 import { DeckPluginCompatibilityRepository } from "./deckPluginCompatibilityRepository";
+import { WorkflowRuntimeActivationRepository } from "./workflowRuntimeActivationRepository";
 import {
+  deckAgentTypeChatDto,
+  deckAgentTypeRuntimePlanDto,
+  deckAgentTypeRuntimePreparedDto,
   deckPluginBindingHistoryDto,
   deckPluginBindingResponseDto,
   deckPluginOptionsDto,
@@ -18,6 +22,27 @@ import { runDeckPluginBindingOperation } from "./deckPluginBindingService";
 const principal = principalDto.parse({ subject: "subject", canonical_user_id: "1", client_id: "browser", scopes: ["dream:read", "dream:write"], status: "active" });
 const scope = { deck_id: "deck", workspace_id: "workspace" };
 const selection = { ...scope, deck_plugin_id: "example.story", deck_plugin_version: "1.0.0", apply_to: "next_run" as const };
+const runtimePolicy = {
+  runtime_environment_id: "local-runtime", runtime_pool_id: "local-runtime", runtime_node_id: "local",
+  distribution_mode: "local_persistent" as const, deployment_tier: "local" as const,
+  policy_revision: "dream-agent-type/v1", materialization_key_scope: "dream-agent-type",
+  session_creating_lease_seconds: 30, required_plugin_id: "example.runtime",
+  required_plugin_version: "1.0.0", required_source_type: "platform-builtin" as const,
+};
+const runtimeFacts = () => {
+  const fixture = compatibilityFixture();
+  const lock = { ...fixture.lock, production_ready: true, production_readiness_reasons: [],
+    claude_code_plugins: fixture.lock.claude_code_plugins.map(item => ({ ...item, capability_bindings: ["story.workspace.propose"] })) };
+  return {
+    row: { deck_plugin_id: fixture.manifest.deck_plugin_id, deck_plugin_version: fixture.manifest.deck_plugin_version,
+      manifest_hash: fixture.release.manifest_hash, capabilities_json: JSON.stringify(fixture.manifest.capabilities),
+      runtime_plugin_lock_id: fixture.lock.runtime_plugin_lock_id, deck_plugin_manifest_hash: fixture.release.manifest_hash,
+      lock_json: JSON.stringify(lock) },
+    installation: { plugin_installation_id: `cpi_${"4".repeat(32)}`, package_spec: "example.runtime", package_name: "runtime",
+      marketplace: "platform-builtin", resolved_version: "1.0.0", artifact_digest: fixture.lock.claude_code_plugins[0].artifact_digest,
+      artifact_path: "/server-owned/artifact", compatibility_json: "{}", manifest_json: "{}", source_type: "platform-builtin", status: "ready" },
+  };
+};
 const row = (patch: Partial<DeckPluginBindingRow> = {}): DeckPluginBindingRow => ({
   deck_plugin_binding_id: `dpb_${"1".repeat(32)}`, deck_id: "deck", workspace_id: "workspace", creator_id: "1",
   deck_plugin_id: "example.story", deck_plugin_version: "1.0.0", binding_revision: 1, status: "active", applied_to: "next_run",
@@ -111,5 +136,84 @@ describe("Deck Plugin binding Admin service", () => {
     vi.spyOn(DeckPluginCompatibilityRepository.prototype, "installation").mockResolvedValue({ ...compatibilityFixture().installation, status: "disabled" });
     await expect(runDeckPluginBindingOperation("deck-plugin-binding.save", { ...selection, expected_binding_revision: 0 }, principal, {} as DataTransaction))
       .rejects.toMatchObject({ code: "SELECTION_NOT_ALLOWED", status: 422, details: { validation: { reason_code: "DECK_PLUGIN_DISABLED" } } });
+  });
+
+  it("clears an active binding without inventing a new binding revision", async () => {
+    vi.spyOn(DeckPluginBindingRepository.prototype, "current").mockResolvedValue(row());
+    vi.spyOn(DeckPluginBindingRepository.prototype, "latestRevision").mockResolvedValue(1);
+    const stale = vi.spyOn(DeckPluginBindingRepository.prototype, "markCurrentStale").mockResolvedValue(true);
+    const advance = vi.spyOn(DeckPluginBindingRepository.prototype, "advanceDraftRevision").mockResolvedValue();
+    const result = deckAgentTypeChatDto.parse(await runDeckPluginBindingOperation(
+      "deck-plugin-binding.clear", { ...scope, expected_binding_revision: 1 }, principal, {} as DataTransaction,
+    ));
+    expect(result).toEqual({ deck_id: "deck", agent_type: "chat", binding_revision: 1 });
+    expect(stale).toHaveBeenCalledWith(row().deck_plugin_binding_id, 1);
+    expect(advance).toHaveBeenCalledWith("deck");
+  });
+
+  it("keeps Chat clear idempotent when no active binding exists", async () => {
+    vi.spyOn(DeckPluginBindingRepository.prototype, "current").mockResolvedValue(null);
+    vi.spyOn(DeckPluginBindingRepository.prototype, "latestRevision").mockResolvedValue(3);
+    const stale = vi.spyOn(DeckPluginBindingRepository.prototype, "markCurrentStale");
+    const advance = vi.spyOn(DeckPluginBindingRepository.prototype, "advanceDraftRevision");
+    expect(await runDeckPluginBindingOperation(
+      "deck-plugin-binding.clear", { ...scope, expected_binding_revision: 3 }, principal, {} as DataTransaction,
+    )).toEqual({ deck_id: "deck", agent_type: "chat", binding_revision: 3 });
+    expect(stale).not.toHaveBeenCalled(); expect(advance).not.toHaveBeenCalled();
+  });
+
+  it("plans the single server-selected Runtime target without exposing its path", async () => {
+    const facts = runtimeFacts();
+    vi.spyOn(DeckPluginBindingRepository.prototype, "runtimeTargets").mockResolvedValue([facts.row]);
+    vi.spyOn(DeckPluginBindingRepository.prototype, "readyRuntimeInstallation").mockResolvedValue(facts.installation);
+    vi.spyOn(DeckPluginBindingRepository.prototype, "latestRevision").mockResolvedValue(4);
+    const result = deckAgentTypeRuntimePlanDto.parse(await runDeckPluginBindingOperation(
+      "deck-agent-type.runtime-plan", scope, principal, {} as DataTransaction, runtimePolicy,
+    ));
+    expect(result).toMatchObject({ deck_id: "deck", current_binding_revision: 4,
+      target: { package_spec: "example.runtime", resolved_version: "1.0.0" } });
+    expect(result.target).not.toHaveProperty("artifact_path");
+    expect(result.target).not.toHaveProperty("cache_ref");
+  });
+
+  it("rejects Runtime preparation when local evidence differs from Admin installation facts", async () => {
+    const facts = runtimeFacts();
+    vi.spyOn(DeckPluginBindingRepository.prototype, "runtimeTargets").mockResolvedValue([facts.row]);
+    vi.spyOn(DeckPluginBindingRepository.prototype, "readyRuntimeInstallation").mockResolvedValue(facts.installation);
+    vi.spyOn(DeckPluginBindingRepository.prototype, "latestRevision").mockResolvedValue(4);
+    await expect(runDeckPluginBindingOperation("deck-agent-type.runtime-prepare", {
+      ...scope, expected_binding_revision: 4,
+      verified_plugin: { plugin_installation_id: facts.installation.plugin_installation_id,
+        package_spec: facts.installation.package_spec, resolved_version: facts.installation.resolved_version,
+        artifact_digest: `sha256:${"f".repeat(64)}`, has_manifest: true },
+    }, principal, {} as DataTransaction, runtimePolicy)).rejects.toMatchObject({ code: "RUNTIME_PLUGIN_NOT_READY", status: 409 });
+  });
+
+  it("prepares materialization and Workspace installation from Admin-owned ORM facts", async () => {
+    const facts = runtimeFacts();
+    vi.spyOn(DeckPluginBindingRepository.prototype, "runtimeTargets").mockResolvedValue([facts.row]);
+    vi.spyOn(DeckPluginBindingRepository.prototype, "readyRuntimeInstallation").mockResolvedValue(facts.installation);
+    vi.spyOn(DeckPluginBindingRepository.prototype, "latestRevision").mockResolvedValue(4);
+    vi.spyOn(WorkflowRuntimeActivationRepository.prototype, "clock").mockResolvedValue("2026-09-16T01:02:03+00:00");
+    vi.spyOn(WorkflowRuntimeActivationRepository.prototype, "materializationByKey").mockResolvedValue(null);
+    const insertMaterialization = vi.spyOn(WorkflowRuntimeActivationRepository.prototype, "insertMaterialization").mockResolvedValue();
+    vi.spyOn(DeckPluginBindingRepository.prototype, "workspaceInstallation").mockResolvedValue(null);
+    const workspaceRow = { id: `dpi_${"5".repeat(32)}`, scope_type: "workspace", scope_id: "workspace", deck_plugin_id: "example.story",
+      installed_versions_json: '["1.0.0"]', default_version: "1.0.0", status: "ready",
+      approved_capabilities_json: '["story.workspace.propose"]', source_policy_id: "system:dream-agent-type/v1",
+      last_error_code: null, last_error_summary: null, pending_version: null, pending_capabilities_json: null,
+      revision: 1, created_at: "2026-09-16 00:00:00+00", updated_at: "2026-09-16 00:00:00+00" };
+    const insertWorkspace = vi.spyOn(DeckPluginBindingRepository.prototype, "insertReadyWorkspaceInstallation").mockResolvedValue(workspaceRow);
+    const result = deckAgentTypeRuntimePreparedDto.parse(await runDeckPluginBindingOperation("deck-agent-type.runtime-prepare", {
+      ...scope, expected_binding_revision: 4,
+      verified_plugin: { plugin_installation_id: facts.installation.plugin_installation_id,
+        package_spec: facts.installation.package_spec, resolved_version: facts.installation.resolved_version,
+        artifact_digest: facts.installation.artifact_digest, has_manifest: true },
+    }, principal, {} as DataTransaction, runtimePolicy));
+    expect(result).toEqual({ deck_id: "deck", deck_plugin_id: "example.story", deck_plugin_version: "1.0.0",
+      current_binding_revision: 4, runtime_ready: true });
+    expect(insertMaterialization).toHaveBeenCalledWith(expect.objectContaining({ cache_ref: "/server-owned/artifact",
+      materialization_status: "materialized", activation_status: "loadable" }));
+    expect(insertWorkspace).toHaveBeenCalledWith("workspace", "example.story", "1.0.0", ["story.workspace.propose"]);
   });
 });

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// [Input] Admin Drizzle history and isolated Registry122-126 binding PostgreSQL integration test.
-// [Output] Disposable named database, restricted-role ORM/CAS evidence and cleanup.
+// [Input] Admin Drizzle history and isolated Registry122-129 binding/Runtime PostgreSQL integration test.
+// [Output] Disposable named database, restricted-role ORM/CAS/materialization evidence and cleanup.
 // [Pos] Technical verification harness; never targets the configured normal business database.
-// [Sync] 2026-09-16: verify Deck Plugin binding DTO/Service/Drizzle transactions.
+// [Sync] 2026-09-16: verify evidence-bound Agent-type Runtime preparation transactions.
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -64,13 +64,15 @@ try {
     await admin.query("GRANT USAGE ON SCHEMA public, dream TO ink_deck_plugin_binding_executor");
     await admin.query(`GRANT SELECT ON story_workspace_workspaces, decks, deck_plugin_releases,
       deck_runtime_plugin_locks, deck_plugin_installations, runtime_plugin_materializations,
-      deck_plugin_bindings TO ink_deck_plugin_binding_executor`);
+      claude_plugin_installations, deck_plugin_bindings TO ink_deck_plugin_binding_executor`);
     // PostgreSQL row locks used for a stable selection snapshot require UPDATE
     // privilege even though these compatibility repositories never mutate rows.
     await admin.query(`GRANT UPDATE ON story_workspace_workspaces, deck_plugin_releases,
-      deck_runtime_plugin_locks, deck_plugin_installations, runtime_plugin_materializations
+      deck_runtime_plugin_locks, deck_plugin_installations, runtime_plugin_materializations,
+      claude_plugin_installations
       TO ink_deck_plugin_binding_executor`);
     await admin.query("GRANT INSERT, UPDATE ON deck_plugin_bindings TO ink_deck_plugin_binding_executor");
+    await admin.query("GRANT INSERT, UPDATE ON deck_plugin_installations, runtime_plugin_materializations TO ink_deck_plugin_binding_executor");
     await admin.query("GRANT UPDATE (draft_revision, updated_at) ON decks TO ink_deck_plugin_binding_executor");
   } finally { await admin.end(); }
   const restricted = new URL(adminUrl);

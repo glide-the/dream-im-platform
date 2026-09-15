@@ -1,7 +1,8 @@
-// [Input] Strict Registry122-126 DTO, OAuth principal and caller-owned Admin transaction.
-// [Output] Original binding projections with owner checks, compatibility, CAS and draft revision semantics.
-// [Pos] DTO-Service-typed ORM composition; Dream retains HTTP UI, Runtime and shared filesystem execution.
-// [Sync] 2026-09-16: implement five Admin-owned Deck Plugin binding operations.
+// [Input] Strict Registry122-129 DTO, OAuth principal and caller-owned Admin transaction.
+// [Output] Binding projections plus Agent-type plan/prepare with owner checks, CAS and Runtime metadata.
+// [Pos] DTO-Service-typed ORM composition; Dream retains HTTP UI, local artifact verification and Runtime execution.
+// [Sync] 2026-09-16: append clear and evidence-bound Agent-type Runtime preparation.
+import { randomUUID } from "node:crypto";
 import { AuthBoundaryError } from "../auth/config";
 import { principalDto } from "../auth/dto";
 import type { DataTransaction } from "./database";
@@ -9,6 +10,16 @@ import { pgTimestampToIso } from "./chatThreadDto";
 import { DeckPluginBindingRepository, type DeckPluginBindingRow } from "./deckPluginBindingRepository";
 import { DeckPluginCompatibilityRepository } from "./deckPluginCompatibilityRepository";
 import { evaluateDeckPluginCompatibility, resolveDeckRuntimeContext, storedPluginStringSet } from "./deckPluginCompatibilityService";
+import { parseDeckRuntimePluginLock } from "./deckRuntimePluginLockDto";
+import { WorkflowRuntimeActivationRepository } from "./workflowRuntimeActivationRepository";
+import {
+  configuredWorkflowRuntimeActivationPolicy,
+  runtimeArtifactSetHash,
+  runtimeMaterializationKey,
+  validateObservedRuntimePlugins,
+  validateRuntimeLock,
+} from "./workflowRuntimeActivationService";
+import type { WorkflowRuntimeActivationPolicy } from "./workflowRuntimeActivationDto";
 import * as dto from "./deckPluginBindingDto";
 import { dreamUnifiedSchemaRequirement } from "./chatThreadService";
 
@@ -92,7 +103,67 @@ function bindingHistoryEntry(row: DeckPluginBindingRow) {
   });
 }
 
-export async function runDeckPluginBindingOperation(operation: dto.DeckPluginBindingOperation, rawInput: unknown, rawPrincipal: unknown, tx: DataTransaction) {
+const dreamAgentCapability = "story.workspace.propose";
+
+async function runtimeTarget(store: DeckPluginBindingRepository, policy: WorkflowRuntimeActivationPolicy) {
+  const matches = [];
+  for (const row of await store.runtimeTargets()) {
+    const parsed = parseDeckRuntimePluginLock(row.lock_json);
+    if (!parsed.success) continue;
+    const lock = parsed.data;
+    const required = lock.claude_code_plugins.filter(item => item.required);
+    if (required.length !== 1 || required[0].claude_code_plugin_id !== policy.required_plugin_id
+      || required[0].resolved_version !== policy.required_plugin_version) continue;
+    if (row.manifest_hash !== row.deck_plugin_manifest_hash || lock.runtime_plugin_lock_id !== row.runtime_plugin_lock_id
+      || lock.deck_plugin_id !== row.deck_plugin_id || lock.deck_plugin_version !== row.deck_plugin_version
+      || lock.deck_plugin_manifest_hash !== row.manifest_hash || !lock.production_ready
+      || !storedPluginStringSet(row.capabilities_json).has(dreamAgentCapability)) {
+      throw new AuthBoundaryError("DECK_RUNTIME_CONFIG_INVALID", 503);
+    }
+    const checkedRequired = validateRuntimeLock(lock, policy);
+    const installation = await store.readyRuntimeInstallation(
+      checkedRequired.claude_code_plugin_id,
+      checkedRequired.resolved_version,
+      checkedRequired.artifact_digest,
+      policy.required_source_type,
+    );
+    if (!installation || !installation.artifact_path || !installation.manifest_json) {
+      throw new AuthBoundaryError("RUNTIME_PLUGIN_NOT_READY", 503);
+    }
+    matches.push({ row, lock, required: checkedRequired, installation,
+      capabilities: [...storedPluginStringSet(row.capabilities_json)].sort() });
+  }
+  if (matches.length !== 1) throw new AuthBoundaryError("DECK_RUNTIME_CONFIG_INVALID", 503);
+  return matches[0];
+}
+
+function runtimePlanOutput(deckId: string, revision: number, target: Awaited<ReturnType<typeof runtimeTarget>>) {
+  const { row, installation } = target;
+  return dto.deckAgentTypeRuntimePlanDto.parse({
+    deck_id: deckId,
+    current_binding_revision: revision,
+    target: {
+      deck_plugin_id: row.deck_plugin_id,
+      deck_plugin_version: row.deck_plugin_version,
+      runtime_plugin_lock_id: row.runtime_plugin_lock_id,
+      plugin_installation_id: installation.plugin_installation_id,
+      package_spec: installation.package_spec,
+      package_name: installation.package_name,
+      marketplace: installation.marketplace,
+      resolved_version: installation.resolved_version,
+      artifact_digest: installation.artifact_digest,
+      compatibility_json: installation.compatibility_json,
+    },
+  });
+}
+
+export async function runDeckPluginBindingOperation(
+  operation: dto.DeckPluginBindingOperation,
+  rawInput: unknown,
+  rawPrincipal: unknown,
+  tx: DataTransaction,
+  suppliedRuntimePolicy?: WorkflowRuntimeActivationPolicy,
+) {
   const contract = dto.deckPluginBindingOperationContracts[operation];
   if (!contract) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
   const parsed = contract.input.safeParse(rawInput);
@@ -101,7 +172,7 @@ export async function runDeckPluginBindingOperation(operation: dto.DeckPluginBin
   const principal = principalDto.parse(rawPrincipal);
   if (!principal.scopes.includes(contract.userScope)) throw new AuthBoundaryError("DREAM_SCOPE_REQUIRED", 403);
   const store = new DeckPluginBindingRepository(tx, principal.canonical_user_id);
-  const mutating = operation === "deck-plugin-binding.save";
+  const mutating = contract.kind === "write";
   if (!await store.ownsDeckWorkspace(input.deck_id, input.workspace_id, mutating ? "update" : "share")) {
     throw new AuthBoundaryError("DECK_ACCESS_DENIED", 404);
   }
@@ -155,6 +226,98 @@ export async function runDeckPluginBindingOperation(operation: dto.DeckPluginBin
       const created = await store.insert({ ...save, binding_revision: latest + 1 });
       await store.advanceDraftRevision(save.deck_id);
       result = bindingResponse(created, validation);
+      break;
+    }
+    case "deck-plugin-binding.clear": {
+      const clear = dto.deckPluginBindingClearInputDto.parse(parsed.data);
+      const current = await store.current(clear.deck_id, "update");
+      const latest = await store.latestRevision(clear.deck_id);
+      if (clear.expected_binding_revision !== latest) {
+        throw new AuthBoundaryError("BINDING_REVISION_CONFLICT", 409, { current_revision: latest });
+      }
+      if (current) {
+        if (!await store.markCurrentStale(current.deck_plugin_binding_id, current.binding_revision)) {
+          throw new AuthBoundaryError("BINDING_REVISION_CONFLICT", 409, { current_revision: await store.latestRevision(clear.deck_id) });
+        }
+        await store.advanceDraftRevision(clear.deck_id);
+      }
+      result = { deck_id: clear.deck_id, agent_type: "chat", binding_revision: latest };
+      break;
+    }
+    case "deck-agent-type.runtime-plan": {
+      const policy = suppliedRuntimePolicy ?? configuredWorkflowRuntimeActivationPolicy();
+      const target = await runtimeTarget(store, policy);
+      result = runtimePlanOutput(input.deck_id, await store.latestRevision(input.deck_id), target);
+      break;
+    }
+    case "deck-agent-type.runtime-prepare": {
+      const prepare = dto.deckAgentTypeRuntimePrepareInputDto.parse(parsed.data);
+      const latest = await store.latestRevision(prepare.deck_id);
+      if (prepare.expected_binding_revision !== latest) {
+        throw new AuthBoundaryError("BINDING_REVISION_CONFLICT", 409, { current_revision: latest });
+      }
+      const policy = suppliedRuntimePolicy ?? configuredWorkflowRuntimeActivationPolicy();
+      const target = await runtimeTarget(store, policy);
+      const expected = target.installation;
+      if (prepare.verified_plugin.plugin_installation_id !== expected.plugin_installation_id
+        || prepare.verified_plugin.package_spec !== expected.package_spec
+        || prepare.verified_plugin.resolved_version !== expected.resolved_version
+        || prepare.verified_plugin.artifact_digest !== expected.artifact_digest) {
+        throw new AuthBoundaryError("RUNTIME_PLUGIN_NOT_READY", 409);
+      }
+      validateObservedRuntimePlugins(target.lock, [prepare.verified_plugin]);
+      const runtimeStore = new WorkflowRuntimeActivationRepository(tx);
+      const artifactHash = runtimeArtifactSetHash(target.lock);
+      const key = runtimeMaterializationKey(policy, target.required, artifactHash);
+      const nowValue = await runtimeStore.clock();
+      const now = new Date(nowValue).toISOString();
+      const existing = await runtimeStore.materializationByKey(key);
+      if (existing) {
+        await runtimeStore.refreshMaterialization(existing.id, target.required.artifact_digest, expected.artifact_path, now);
+      } else {
+        await runtimeStore.insertMaterialization({
+          runtime_materialization_id: `rm_${randomUUID().replaceAll("-", "")}`,
+          runtime_environment_id: policy.runtime_environment_id,
+          runtime_pool_id: policy.runtime_pool_id,
+          runtime_node_id: policy.runtime_node_id,
+          claude_code_plugin_id: target.required.claude_code_plugin_id,
+          resolved_version: target.required.resolved_version,
+          artifact_digest: target.required.artifact_digest,
+          materialized_digest: target.required.artifact_digest,
+          artifact_set_hash: artifactHash,
+          policy_revision: policy.policy_revision,
+          declaration_status: "declared",
+          materialization_status: "materialized",
+          activation_status: "loadable",
+          materialization_key: key,
+          attempt_id: `rpa_${randomUUID().replaceAll("-", "")}`,
+          attempt_count: 1,
+          verification_status: "verified",
+          retention_state: "shared_artifact",
+          cache_ref: expected.artifact_path,
+          created_at: now,
+          updated_at: now,
+        });
+      }
+      let workspaceInstallation = await store.workspaceInstallation(prepare.workspace_id, target.row.deck_plugin_id);
+      if (!workspaceInstallation) {
+        workspaceInstallation = await store.insertReadyWorkspaceInstallation(
+          prepare.workspace_id, target.row.deck_plugin_id, target.row.deck_plugin_version, target.capabilities,
+        );
+      }
+      if (!workspaceInstallation || workspaceInstallation.status !== "ready"
+        || workspaceInstallation.default_version !== target.row.deck_plugin_version
+        || !storedPluginStringSet(workspaceInstallation.installed_versions_json).has(target.row.deck_plugin_version)
+        || [...storedPluginStringSet(workspaceInstallation.approved_capabilities_json)].sort().join("\0") !== target.capabilities.join("\0")) {
+        throw new AuthBoundaryError("DECK_PLUGIN_UNAVAILABLE", 409);
+      }
+      result = {
+        deck_id: prepare.deck_id,
+        deck_plugin_id: target.row.deck_plugin_id,
+        deck_plugin_version: target.row.deck_plugin_version,
+        current_binding_revision: latest,
+        runtime_ready: true,
+      };
       break;
     }
   }

@@ -1,7 +1,7 @@
-// [Input] Internal operation request, service/OAuth mocks and Registry122-126 Handler.
+// [Input] Internal operation request, service/OAuth mocks and Registry122-129 Handler.
 // [Output] Exact schema gates, principal scopes, read execution and write receipt ownership.
 // [Pos] Provider-free Deck Plugin binding ingress verification.
-// [Sync] 2026-09-16: lock OAuth-only binding dispatch and atomic receipt behavior.
+// [Sync] 2026-09-16: lock OAuth-only binding/Runtime dispatch and atomic receipt behavior.
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ service: vi.fn(), transaction: vi.fn(), principal: vi.fn(), run: vi.fn(), receipt: vi.fn() }));
 vi.mock("../auth/serviceIdentity", async original => ({ ...await original<typeof import("../auth/serviceIdentity")>(), requireDreamService: mocks.service }));

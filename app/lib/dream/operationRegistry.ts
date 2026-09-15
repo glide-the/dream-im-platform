@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: append five Admin-owned Deck Plugin binding operations as Registry122-126.
+// [Sync] 2026-09-16: append Agent-type clear/plan/prepare operations as Registry127-129.
 // [Sync] 2026-09-16: append claim-bound confirmation Runtime authority as Registry121.
 // [Input] Named domain input/output DTOs and exact schema requirements.
 // [Output] Version/hash descriptors for implemented operations only.

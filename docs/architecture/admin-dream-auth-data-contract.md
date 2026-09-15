@@ -1,4 +1,4 @@
-<!-- [Sync] 2026-09-16: register Deck Plugin binding state/history/options/validation/save as Registry122-126. -->
+<!-- [Sync] 2026-09-16: register Agent-type clear/Runtime plan/prepare as Registry127-129. -->
 <!-- [Sync] 2026-09-16: register Story Workspace confirmation persistence and durable delivery as Registry120. -->
 <!-- [Sync] 2026-09-15: register Story Workspace Guidance persistence as Registry115. -->
 <!-- [Sync] 2026-09-15: register Story Workspace catalog browse/edit operations as Registry114. -->
@@ -11,9 +11,9 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际126操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry121 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry122-126 Deck Plugin binding、Registry120 confirmation、Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证；Registry108 Runtime activation继续使用当前Thread/Run grant。Dream五个公开binding接口、confirmation/Guidance、Agent post-turn、旧 `/api/story-workspace/internal/agent-output`、八个Story审核入口与11个Story catalog入口均已消费Admin operation；`agent-type`及其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际129操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry126 descriptor前缀保持。Registry127-129 Agent type、Registry122-126 Deck Plugin binding、Registry120 confirmation、Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证。Dream公开 `agent-type` 与五个binding接口均已消费Admin operation；Dream launch 仍复用旧 provisioning 数据库服务，和其他生产数据库入口继续按[全域映射](admin-dream-domain-implementation-map.md)关闭。本稿不是完整部署或真实业务回执。
 
-### Deck Plugin Binding（注册122–126）
+### Deck Plugin Binding 与 Agent Type（注册122–129）
 
 `deck-plugin-binding.current/history/options/validate/save` 分别接受严格的 Deck/Workspace scope、历史 limit、Plugin/version/apply target 与 expected revision。current OAuth 是唯一用户身份；actor、owner、SQL、表列、数据库连接、readiness、Runtime grant、文件路径和事务选择器不能由 Dream 提交。Admin 从 token 派生 canonical actor，并在每项 operation 内重新验证 Deck 和 Workspace 归属。
 
@@ -26,27 +26,39 @@
 | `deck-plugin-binding.options` | `dream:read` | deck/workspace | published/deprecated/revoked options 与逐项 summary |
 | `deck-plugin-binding.validate` | `dream:read` | deck/workspace/plugin/version/next_run | side-effect-free selection result |
 | `deck-plugin-binding.save` | `dream:write` | validate fields + expected revision | owner lock、CAS、stale/insert、draft advance、receipt |
+| `deck-plugin-binding.clear` | `dream:write` | deck/workspace/expected revision | owner lock、CAS、可选 stale/draft advance、receipt；binding revision 不新增 |
+| `deck-agent-type.runtime-plan` | `dream:read` | deck/workspace | 服务端策略选择唯一 release/lock/ready installation；返回不含路径的验证候选 |
+| `deck-agent-type.runtime-prepare` | `dream:write` | deck/workspace/expected revision + verified plugin evidence | 重新核对策略与 installation；幂等写/刷新 materialization 并确保 Workspace installation |
 
 ```mermaid
 sequenceDiagram
   participant B as Dream Browser
   participant D as Dream FastAPI
-  participant A as Admin Registry122-126
+  participant A as Admin Registry122-129
+  participant F as Dream shared artifact/CLI
   participant P as Admin PostgreSQL
   B->>D: binding request + current OAuth
   D->>A: strict DTO + bearer + request_id
   A->>P: Drizzle owner/compatibility read
-  alt read
+  alt ordinary read
     P-->>A: state/history/options/validation
-  else save
+  else binding save/clear
     A->>P: lock + CAS + stale/insert + draft + receipt
     P-->>A: committed binding
   end
+  B->>D: select Dream Agent type
+  D->>A: runtime-plan DTO
+  A->>P: select policy release/lock/installation
+  A-->>D: closed candidate without path
+  D->>F: verify digest + manifest + CLI
+  D->>A: runtime-prepare + exact evidence
+  A->>P: recheck + materialization + Workspace installation + receipt
+  D->>A: existing binding.save CAS
   A-->>D: strict DTO or closed domain error
   D-->>B: original public response
 ```
 
-五项契约 SHA 依次为 `4b66af7888ed17e16f7e7aa38aded821ad3ecfe148663001dd6c4a66c714fb93`、`568bb2ad097382510919eb230e20b1e7d5e6e2dfd9c66c83384cbf3e52ede0e8`、`aca3a55ce01d9e7754d5cd9be07320cb4240d3d26928c8ff24ba3ea9675fa770`、`55fc0175170183fc1d5fc5162ef6be15bb863ef43261902c8edda5614bbcdb70` 和 `cf91b567af3ae207d0c009947d98fb0dcb2335d3abcbf7e8194f95a02ceeddb2`。Registry121 prefix SHA 保持 `969d316b62c1c77aa5f232030d882fd48b36f01b0728cd4f86b877caa99909af`，完整 Registry126 SHA 为 `67a18f69f0674270c5f316959a7d962ef7a8c201249f4c45ac3a780ed710eada`。现有 Admin Drizzle schema 与 unified capability 足够，无 migration；Dream 的 agent-type 本地 artifact/materialization 分支留在下一阶段。
+前五项契约 SHA 保持不变。新增 clear、runtime-plan、runtime-prepare SHA 依次为 `9a89ec380e280fc64b67b9725a68edf3244df0f76e41df8db5fd89b3e3fd44fc`、`87a3f0497e3927aa8c8048e6bc79de1b042631f096f85184568201dce378e5f7`、`9cc1a08d15e0279ed977bb5b7ee25a5ab270cf32a4f67ded719c23e33d000716`。完整 Registry126 prefix SHA 保持 `67a18f69f0674270c5f316959a7d962ef7a8c201249f4c45ac3a780ed710eada`，完整 Registry129 SHA 为 `686f0668c72ca6114d894392d2dd2a2fde228b87fa31a1b858fd1dd553663881`。现有 Admin Drizzle schema 与 unified capability 足够，无 migration；Dream launch 中的旧 provisioning 服务仍是后续显式缺口。
 
 ### Story Workspace Confirmation（注册120）
 

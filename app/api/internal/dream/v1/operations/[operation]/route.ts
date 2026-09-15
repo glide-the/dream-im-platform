@@ -1,7 +1,7 @@
 // [Input] Explicit registered local-data, Thread/message, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
 // [Output] Strict domain DTO, never generic SQL or arbitrary function dispatch.
 // [Pos] Thin named operation ingress.
-// [Sync] 2026-09-16: dispatch Registry122-126 Deck Plugin binding operations.
+// [Sync] 2026-09-16: dispatch Registry122-129 Deck Plugin binding and Agent-type operations.
 // [Sync] 2026-09-16: dispatch Registry120 Story Workspace confirmation operations.
 import { handleChatThreadOperation } from "../../../../../../lib/dream/chatThreadHandler";
 import { handleUserProfile } from "../../../../../../lib/dream/userProfileHandler";

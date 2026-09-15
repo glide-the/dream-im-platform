@@ -1,7 +1,7 @@
 // [Input] Strict Registry108 input, verified actor, configured placement and caller-owned Admin UOW.
 // [Output] Idempotent active Runtime binding committed with its receipt in one transaction.
 // [Pos] DTO-Service-typed ORM composition; Dream retains byte verification, Agent Runtime and SSE.
-// [Sync] 2026-09-15: migrate assembled Story Runtime activation without accepting physical paths or SQL selectors.
+// [Sync] 2026-09-16: share lock/evidence/hash helpers with Agent-type Runtime preparation.
 import { createHash, randomUUID } from "node:crypto";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 import { principalDto } from "../auth/dto";
@@ -42,7 +42,7 @@ export function configuredWorkflowRuntimeActivationPolicy() {
   return parsed.data;
 }
 
-function validateLock(lock: DeckRuntimePluginLock, policy: dto.WorkflowRuntimeActivationPolicy) {
+export function validateRuntimeLock(lock: DeckRuntimePluginLock, policy: dto.WorkflowRuntimeActivationPolicy) {
   const ids = new Set(lock.claude_code_plugins.map(item => item.claude_code_plugin_id));
   const required = lock.claude_code_plugins.filter(item => item.required);
   if (ids.size !== lock.claude_code_plugins.length || required.length !== 1
@@ -53,7 +53,7 @@ function validateLock(lock: DeckRuntimePluginLock, policy: dto.WorkflowRuntimeAc
   return required[0];
 }
 
-function validateObservedPlugins(lock: DeckRuntimePluginLock, observed: dto.WorkflowRuntimeActivationInput["verified_plugins"]) {
+export function validateObservedRuntimePlugins(lock: DeckRuntimePluginLock, observed: dto.WorkflowRuntimeActivationInput["verified_plugins"]) {
   const byId = new Map<string, (typeof observed)[number]>();
   for (const item of observed) {
     if (byId.has(item.package_spec)) throw new AuthBoundaryError("DREAM_RUNTIME_INIT_INVALID", 409);
@@ -69,14 +69,14 @@ function validateObservedPlugins(lock: DeckRuntimePluginLock, observed: dto.Work
   }
 }
 
-function artifactSetHash(lock: DeckRuntimePluginLock) {
+export function runtimeArtifactSetHash(lock: DeckRuntimePluginLock) {
   const entries = lock.claude_code_plugins.filter(item => item.required)
     .map(item => ({ artifact_digest: item.artifact_digest, claude_code_plugin_id: item.claude_code_plugin_id, resolved_version: item.resolved_version }))
     .sort((a, b) => a.claude_code_plugin_id.localeCompare(b.claude_code_plugin_id));
   return sha256(canonicalJson(entries));
 }
 
-function materializationKey(policy: dto.WorkflowRuntimeActivationPolicy, required: DeckRuntimePluginLock["claude_code_plugins"][number], artifactHash: string) {
+export function runtimeMaterializationKey(policy: dto.WorkflowRuntimeActivationPolicy, required: DeckRuntimePluginLock["claude_code_plugins"][number], artifactHash: string) {
   return sha256(`${policy.runtime_environment_id}\0${policy.materialization_key_scope}\0${required.claude_code_plugin_id}\0${required.resolved_version}\0${required.artifact_digest}\0${artifactHash}`);
 }
 
@@ -137,9 +137,9 @@ export async function runWorkflowRuntimeActivationOperation(operation: dto.Workf
     || parsedLock.data.deck_plugin_manifest_hash !== run.deck_plugin_manifest_hash) {
     throw new AuthBoundaryError("DREAM_RUNTIME_NOT_READY", 409);
   }
-  const lock = parsedLock.data, required = validateLock(lock, policy);
-  validateObservedPlugins(lock, input.verified_plugins);
-  const artifactHash = artifactSetHash(lock);
+  const lock = parsedLock.data, required = validateRuntimeLock(lock, policy);
+  validateObservedRuntimePlugins(lock, input.verified_plugins);
+  const artifactHash = runtimeArtifactSetHash(lock);
 
   return new ReceiptRepository(tx, serviceId, principal.subject).execute(operation, requestId, input, contract.output, async () => {
     const replayStatuses = new Set(["running", "output_validating", "pending_review", "confirmed"]);
@@ -164,7 +164,7 @@ export async function runWorkflowRuntimeActivationOperation(operation: dto.Workf
       || installation.source_type !== policy.required_source_type || installation.status !== "ready"
       || !installation.artifact_path) throw new AuthBoundaryError("DREAM_RUNTIME_NOT_READY", 409);
     const now = workflowTimeDto.parse(projectWorkflowTimestamp(await store.clock()));
-    const key = materializationKey(policy, required, artifactHash);
+    const key = runtimeMaterializationKey(policy, required, artifactHash);
     const existing = await store.materializationByKey(key);
     if (existing) await store.refreshMaterialization(existing.id, required.artifact_digest, installation.artifact_path, now);
     else await store.insertMaterialization({ runtime_materialization_id: `rm_${randomUUID().replaceAll("-", "")}`,

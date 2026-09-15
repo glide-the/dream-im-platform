@@ -1,11 +1,18 @@
 // [Input] Canonical actor and validated binding DTO inside one caller-owned Admin transaction.
-// [Output] Owner-checked Deck/Workspace, ordered binding/release facts and atomic CAS mutations.
-// [Pos] Registry122-126 typed Drizzle Repository; no Runtime, filesystem or caller-selected SQL.
-// [Sync] 2026-09-16: move Deck Plugin binding persistence into Admin.
+// [Output] Owner-checked Deck/Workspace, binding facts and Agent-type Runtime metadata mutations.
+// [Pos] Registry122-129 typed Drizzle Repository; no Runtime execution, filesystem or caller-selected SQL.
+// [Sync] 2026-09-16: add server-selected Runtime plan and Workspace installation persistence.
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 import { storyWorkspaceWorkspaces as workspaces } from "@ink-memory/db/schema";
-import { decks, deck_plugin_bindings as bindings, deck_plugin_releases as releases } from "@ink-memory/db/schema/dream";
+import {
+  claude_plugin_installations as claudeInstallations,
+  decks,
+  deck_plugin_bindings as bindings,
+  deck_plugin_installations as deckInstallations,
+  deck_plugin_releases as releases,
+  deck_runtime_plugin_locks as locks,
+} from "@ink-memory/db/schema/dream";
 import { decimalIdDto } from "../auth/dto";
 import type { DataTransaction } from "./database";
 
@@ -67,6 +74,70 @@ export class DeckPluginBindingRepository {
       status: releases.status,
     }).from(releases).where(inArray(releases.status, ["published", "deprecated", "revoked"]))
       .orderBy(asc(releases.display_name), asc(releases.deck_plugin_id), desc(releases.deck_plugin_version)).for("share");
+  }
+
+  async runtimeTargets() {
+    return this.tx.select({
+      deck_plugin_id: releases.deck_plugin_id,
+      deck_plugin_version: releases.deck_plugin_version,
+      manifest_hash: releases.manifest_hash,
+      capabilities_json: releases.capabilities_json,
+      runtime_plugin_lock_id: locks.id,
+      deck_plugin_manifest_hash: locks.deck_plugin_manifest_hash,
+      lock_json: locks.lock_json,
+    }).from(releases).innerJoin(locks, and(
+      eq(locks.deck_plugin_id, releases.deck_plugin_id),
+      eq(locks.deck_plugin_version, releases.deck_plugin_version),
+    )).where(inArray(releases.status, ["published", "deprecated"]))
+      .orderBy(asc(releases.deck_plugin_id), desc(releases.deck_plugin_version)).for("share");
+  }
+
+  async readyRuntimeInstallation(packageSpec: string, version: string, artifactDigest: string, sourceType: "platform-builtin") {
+    return (await this.tx.select({
+      plugin_installation_id: claudeInstallations.id,
+      package_spec: claudeInstallations.requested_package_spec,
+      package_name: claudeInstallations.package_name,
+      marketplace: claudeInstallations.marketplace,
+      resolved_version: claudeInstallations.resolved_version,
+      artifact_digest: claudeInstallations.artifact_digest,
+      artifact_path: claudeInstallations.artifact_path,
+      compatibility_json: claudeInstallations.compatibility_json,
+      manifest_json: claudeInstallations.manifest_json,
+      source_type: claudeInstallations.source_type,
+      status: claudeInstallations.status,
+    }).from(claudeInstallations).where(and(
+      eq(claudeInstallations.requested_package_spec, packageSpec),
+      eq(claudeInstallations.resolved_version, version),
+      eq(claudeInstallations.artifact_digest, artifactDigest),
+      eq(claudeInstallations.source_type, sourceType),
+      eq(claudeInstallations.status, "ready"),
+    )).orderBy(desc(claudeInstallations.installed_at), desc(claudeInstallations.id)).limit(1).for("share"))[0] ?? null;
+  }
+
+  async workspaceInstallation(workspaceId: string, pluginId: string) {
+    return (await this.tx.select().from(deckInstallations).where(and(
+      eq(deckInstallations.scope_type, "workspace"),
+      eq(deckInstallations.scope_id, workspaceId),
+      eq(deckInstallations.deck_plugin_id, pluginId),
+    )).limit(1).for("update"))[0] ?? null;
+  }
+
+  async insertReadyWorkspaceInstallation(workspaceId: string, pluginId: string, version: string, capabilities: string[]) {
+    await this.tx.insert(deckInstallations).values({
+      id: `dpi_${randomUUID().replaceAll("-", "")}`,
+      scope_type: "workspace",
+      scope_id: workspaceId,
+      deck_plugin_id: pluginId,
+      installed_versions_json: JSON.stringify([version]),
+      default_version: version,
+      status: "ready",
+      approved_capabilities_json: JSON.stringify(capabilities),
+      source_policy_id: "system:dream-agent-type/v1",
+      pending_version: null,
+      pending_capabilities_json: null,
+      revision: 1,
+    }).onConflictDoNothing();
+    return this.workspaceInstallation(workspaceId, pluginId);
   }
 
   async markCurrentStale(bindingId: string, revision: number) {
