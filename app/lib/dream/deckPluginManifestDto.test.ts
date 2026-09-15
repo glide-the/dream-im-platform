@@ -1,0 +1,18 @@
+// [Input] Complete real manifest fixture and malformed nested/capability/identifier evidence.
+// [Output] Complete validation parity and fail-closed Agent projection assertions.
+// [Pos] Provider-free focused domain tests; no DB, Runtime or account mutations.
+// [Sync] 2026-09-14: validate actual DeckPluginManifestV1 including Pydantic versus explicit Python whitespace.
+import { describe,it,expect } from "vitest";
+import {deckPluginManifestDto,agentTypeFromManifest,stripPydanticString,stripPythonString} from "./deckPluginManifestDto";
+export const manifestFixture={schema_version:"deck-plugin/v1",deck_plugin_id:"example.story",deck_plugin_version:"1.0.0",display_name:"Story",description:"Story plugin",author:"Fixture",status:"published",workflow:{workflow_definition_ref:"workflow",input_schema_ref:"input",output_schema_ref:"output",steps:[{step_id:"start"}]},compatibility:{deck_host_api:"*",claude_agent_contract:"*",claude_code:"*",story_output_schema:"*",deck_runtime_snapshot_contract:"*"},runtime_configuration:{profile_contract:"profile/v1",required_config_keys:[],secret_ref_kinds:[],allow_profile_versions:"*"},capabilities:["story.workspace.propose"],runtime:{claude_code_plugins:[]},dependencies:{}};
+describe("complete Deck manifest boundary",()=>{
+ it("validates complete release and applies actual omitted-list defaults",()=>{const v=deckPluginManifestDto.parse(manifestFixture);expect(v.workflow.steps[0].required_capabilities).toEqual([]);expect(v.runtime.degraded_modes).toEqual([]);expect(v.dependencies.deck_plugin_releases).toEqual([]);expect(agentTypeFromManifest(JSON.stringify(manifestFixture))).toBe("dream");});
+ it.each([{},null,"bad json",{capabilities:["story.workspace.propose"]},{...manifestFixture,workflow:{steps:[]}},{...manifestFixture,compatibility:{}},{...manifestFixture,runtime:{claude_code_plugins:[{required:true}]}},{...manifestFixture,dependencies:{extra:1}},{...manifestFixture,extra:true},{...manifestFixture,deck_plugin_id:"undotted"},{...manifestFixture,deck_plugin_version:"01.0.0"},{...manifestFixture,capabilities:["story.workspace.propose","story.workspace.propose"]},{...manifestFixture,capabilities:["  "]}])("fails closed for malformed complete evidence %j",raw=>expect(agentTypeFromManifest(raw)).toBe("chat"));
+ it("strips Python-model strings before capability duplicate validation",()=>{expect(deckPluginManifestDto.parse({...manifestFixture,deck_plugin_id:" example.story ",capabilities:[" story.workspace.propose "]}).capabilities).toEqual(["story.workspace.propose"]);expect(deckPluginManifestDto.safeParse({...manifestFixture,capabilities:["story.workspace.propose"," story.workspace.propose "]}).success).toBe(false);});
+});
+
+
+describe("actual Pydantic versus Python whitespace",()=>{
+ it.each(["\u001c","\u001d","\u001e","\u001f"])("retains model control whitespace %j but rejects blank capability",value=>{expect(stripPydanticString(value+"model"+value)).toBe(value+"model"+value);expect(stripPythonString(value+"model"+value)).toBe("model");expect(deckPluginManifestDto.parse({...manifestFixture,description:value+"text"+value}).description).toBe(value+"text"+value);expect(deckPluginManifestDto.safeParse({...manifestFixture,capabilities:[value]}).success).toBe(false);expect(deckPluginManifestDto.parse({...manifestFixture,capabilities:[value+"story.workspace.propose"+value]}).capabilities).toEqual([value+"story.workspace.propose"+value]);});
+ it.each(["\u0085","\u00a0","\u1680","\u2000","\u200a","\u2028","\u2029","\u202f","\u205f","\u3000"])("strips actual Unicode White_Space %j on model strings",value=>{expect(deckPluginManifestDto.parse({...manifestFixture,display_name:value+"Story"+value}).display_name).toBe("Story");});
+});

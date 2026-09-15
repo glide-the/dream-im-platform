@@ -1,358 +1,90 @@
-import { SignJWT } from "jose";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const mocks = vi.hoisted(() => ({
-  query: vi.fn(),
-}));
-
-vi.mock("../platform-db", () => ({
-  withPlatformClient: async (
-    callback: (client: { query: typeof mocks.query }) => unknown,
-  ) => await callback({ query: mocks.query }),
-}));
-
+// [Input] Real Gateway authentication with injected Admin verifier/identity/data persistence boundaries.
+// [Output] Key billing identity, exact canonical mapping, live scope/client checks and opaque runtime isolation.
+// [Pos] Provider-free Gateway authority contract; cryptography is covered by auth/accessToken.test.ts.
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({ query: vi.fn(), verify: vi.fn(), active: vi.fn(), resolve: vi.fn() }));
+vi.mock("../platform-db", () => ({ withPlatformClient: (callback: (tx: { query: typeof mocks.query }) => unknown) => callback({ query: mocks.query }) }));
+vi.mock("../auth/accessToken", () => ({ verifyAdminAccessToken: mocks.verify }));
+vi.mock("../auth/database", () => ({ withAuthTransaction: (callback: (tx: unknown) => unknown) => callback({}) }));
+vi.mock("../auth/subjectRepository", () => ({ SubjectRepository: class { findActive = mocks.active; } }));
+vi.mock("../dream/database", () => ({ withDataTransaction: (_requirements: unknown, callback: (tx: unknown) => unknown) => callback({}) }));
+vi.mock("../auth/delegationService", () => ({ DelegationService: class { resolve = mocks.resolve; } }));
 import { authenticateGatewayRequest } from "./auth";
-
-const pepper = "gateway-auth-test-pepper-with-more-than-32-bytes";
-const plaintext = "gw_test-only-key-never-used-outside-unit-tests";
-const issuer = "https://dream.example.test";
-const audience = "ink-memory-gateway";
-const originalEnvironment = {
-  pepper: process.env.GATEWAY_API_KEY_PEPPER,
-  issuer: process.env.GATEWAY_SUBJECT_JWT_ISSUER,
-  audience: process.env.GATEWAY_SUBJECT_JWT_AUDIENCE,
-};
-
-type TokenInput = {
-  subject?: string;
-  clientId?: string;
-  authorizedParty?: string;
-  scope?: string;
-  issuedAt?: number;
-  expiresAt?: number;
-  signingSecret?: string;
-};
-
-async function subjectToken(input: TokenInput = {}) {
-  const now = Math.floor(Date.now() / 1_000);
-  const claims: Record<string, string> = {
-    scope: input.scope ?? "messages:create",
-  };
-  if (input.clientId !== "") claims.client_id = input.clientId ?? "dream-bff";
-  if (input.authorizedParty !== undefined) claims.azp = input.authorizedParty;
-  return await new SignJWT(claims)
-    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-    .setIssuer(issuer)
-    .setAudience(audience)
-    .setSubject(input.subject ?? "101")
-    .setJti("gateway-subject-jti")
-    .setIssuedAt(input.issuedAt ?? now)
-    .setExpirationTime(input.expiresAt ?? now + 120)
-    .sign(new TextEncoder().encode(input.signingSecret ?? plaintext));
+import { AuthBoundaryError } from "../auth/config";
+const plaintext = "gw_unit-key-never-used-outside-unit-tests";
+const identity = { canonical_user_id: "9007199254740993", platform_user_id: "usr_canonical", source: "ink-dream", external_user_id: "9007199254740993", tier: "creator", daily_token_limit: 200000, monthly_token_limit: null };
+const serviceKey = { api_key_id: "service-key", platform_user_id: null, subject_mode: "canonical_subject", service_client_id: "gateway-dream", scopes: ["messages:create", "models:list"], canonical_user_id: null };
+function database(key: Record<string, unknown> = serviceKey, projection: Record<string, unknown> | null = identity) {
+  mocks.query.mockImplementation(async (statement: unknown) => {
+    const sql = String(statement);
+    if (sql.includes("FROM gateway_api_keys AS k")) return { rows: [key] };
+    if (sql.includes("SELECT id, scopes FROM gateway_api_keys")) return { rows: [{ id: "service-key", scopes: ["messages:create"] }] };
+    if (sql.includes("FROM users AS canonical_user")) return { rows: projection ? [projection] : [] };
+    if (sql.includes("UPDATE gateway_api_keys")) return { rows: [], rowCount: 1 };
+    throw new Error("Unexpected repository query");
+  });
 }
-
-function fixedKeyRow(overrides: Record<string, unknown> = {}) {
-  return {
-    api_key_id: "key_fixed",
-    platform_user_id: "usr_101",
-    subject_mode: "fixed_user",
-    service_client_id: null,
-    scopes: ["messages:create", "models:list"],
-    canonical_user_id: "101",
-    source: "ink-dream",
-    external_user_id: "101",
-    tier: "free",
-    daily_token_limit: 100_000,
-    monthly_token_limit: null,
-    ...overrides,
-  };
-}
-
-function serviceKeyRow(overrides: Record<string, unknown> = {}) {
-  return {
-    api_key_id: "key_service",
-    platform_user_id: null,
-    subject_mode: "canonical_subject",
-    service_client_id: "dream-bff",
-    scopes: ["messages:create", "models:list"],
-    canonical_user_id: null,
-    source: null,
-    external_user_id: null,
-    tier: null,
-    daily_token_limit: null,
-    monthly_token_limit: null,
-    ...overrides,
-  };
-}
-
-function mockGatewayDatabase(
-  keyRow: Record<string, unknown>,
-  identities: Record<string, Record<string, unknown>> = {},
-) {
-  mocks.query.mockImplementation(
-    async (statementValue: unknown, parameters?: unknown[]) => {
-      const statement = String(statementValue);
-      if (statement.includes("FROM gateway_api_keys AS k")) {
-        return { rows: [keyRow] };
-      }
-      if (statement.includes("FROM users AS canonical_user")) {
-        const subject = String(parameters?.[0] ?? "");
-        return { rows: identities[subject] ? [identities[subject]] : [] };
-      }
-      if (statement.includes("UPDATE gateway_api_keys")) {
-        return { rows: [], rowCount: 1 };
-      }
-      throw new Error(`Unexpected test query: ${statement}`);
-    },
-  );
-}
-
+const headers = () => new Headers({ "x-api-key": plaintext, authorization: "Bearer Admin-OAuth-grant" });
 beforeEach(() => {
-  mocks.query.mockReset();
-  process.env.GATEWAY_API_KEY_PEPPER = pepper;
-  process.env.GATEWAY_SUBJECT_JWT_ISSUER = issuer;
-  process.env.GATEWAY_SUBJECT_JWT_AUDIENCE = audience;
+  vi.clearAllMocks();
+  vi.stubEnv("GATEWAY_API_KEY_PEPPER", "p".repeat(32));
+  vi.stubEnv("DREAM_GATEWAY_CLIENT_BINDINGS", JSON.stringify([{ service_client_id: "dream", gateway_client_id: "gateway-dream", oauth_client_ids: ["browser", "device"] }]));
+  mocks.verify.mockResolvedValue({ subject: "auth-sub", clientId: "browser", tokenId: "jti", scopes: ["openid", "dream:read", "messages:create"] });
+  mocks.active.mockResolvedValue({ canonicalUserId: 9007199254740993n });
+  database();
 });
-
-afterEach(() => {
-  const names = {
-    pepper: "GATEWAY_API_KEY_PEPPER",
-    issuer: "GATEWAY_SUBJECT_JWT_ISSUER",
-    audience: "GATEWAY_SUBJECT_JWT_AUDIENCE",
-  } as const;
-  for (const [key, name] of Object.entries(names)) {
-    const original = originalEnvironment[key as keyof typeof originalEnvironment];
-    if (original === undefined) delete process.env[name];
-    else process.env[name] = original;
-  }
-});
-
-describe("Gateway canonical subject authentication", () => {
-  it("preserves a legacy fixed-user key after canonical ownership checks", async () => {
-    mockGatewayDatabase(fixedKeyRow({ subject_mode: null }));
-
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({ authorization: `Bearer ${plaintext}` }),
-        "messages:create",
-      ),
-    ).resolves.toMatchObject({
-      apiKeyId: "key_fixed",
-      platformUserId: "usr_101",
-      externalUserId: "101",
-      scopes: ["messages:create", "models:list"],
-    });
-    expect(
-      mocks.query.mock.calls.some(([statement]) =>
-        String(statement).includes("last_used_at"),
-      ),
-    ).toBe(true);
+afterEach(() => vi.unstubAllEnvs());
+describe("Gateway Admin authority", () => {
+  it("retains fixed-user billing identity and active canonical ownership checks", async () => {
+    database({ ...identity, api_key_id: "fixed-key", service_client_id: null, subject_mode: null, scopes: ["messages:create"] });
+    expect(await authenticateGatewayRequest(new Headers({ authorization: `Bearer ${plaintext}` }), "messages:create")).toMatchObject({ apiKeyId: "fixed-key", platformUserId: identity.platform_user_id, externalUserId: identity.external_user_id });
+    expect(String(mocks.query.mock.calls[0][0])).toContain("canonical_user.status = 'active'");
+    expect(mocks.verify).not.toHaveBeenCalled();
   });
-
-  it("rejects a fixed-user key whose internal mapping has no canonical user", async () => {
-    mockGatewayDatabase(fixedKeyRow({ canonical_user_id: null }));
-
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({ "x-api-key": plaintext }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({ code: "GATEWAY_API_KEY_INVALID", status: 401 });
-
-    expect(String(mocks.query.mock.calls[0]?.[0])).toContain(
-      "LEFT JOIN users AS canonical_user",
-    );
+  it("maps separate OAuth subjects via explicit links preserving bigint and key billing ownership", async () => {
+    expect(await authenticateGatewayRequest(headers(), "messages:create")).toMatchObject({ apiKeyId: "service-key", externalUserId: "9007199254740993", scopes: ["messages:create"] });
+    expect(mocks.active).toHaveBeenCalledWith("auth-sub");
+    const call = mocks.query.mock.calls.find(([sql]) => String(sql).includes("FROM users AS canonical_user"));
+    expect(call?.[1]).toEqual(["9007199254740993"]);
   });
-
-  it("maps two JWT subjects through one service key without binding usage to the key owner", async () => {
-    mockGatewayDatabase(serviceKeyRow(), {
-      "101": {
-        canonical_user_id: "101",
-        platform_user_id: "usr_101",
-        source: "ink-dream",
-        external_user_id: "101",
-        tier: "creator",
-        daily_token_limit: 200_000,
-        monthly_token_limit: 2_000_000,
-      },
-      "202": {
-        canonical_user_id: "202",
-        platform_user_id: "usr_202",
-        source: "ink-dream",
-        external_user_id: "202",
-        tier: "free",
-        daily_token_limit: 100_000,
-        monthly_token_limit: null,
-      },
-    });
-
-    const first = await authenticateGatewayRequest(
-      new Headers({
-        "x-api-key": plaintext,
-        authorization: `Bearer ${await subjectToken({ subject: "101" })}`,
-      }),
-      "messages:create",
-    );
-    const second = await authenticateGatewayRequest(
-      new Headers({
-        "x-api-key": plaintext,
-        authorization: `Bearer ${await subjectToken({ subject: "202" })}`,
-      }),
-      "messages:create",
-    );
-
-    expect(first).toMatchObject({
-      apiKeyId: "key_service",
-      platformUserId: "usr_101",
-      externalUserId: "101",
-    });
-    expect(second).toMatchObject({
-      apiKeyId: "key_service",
-      platformUserId: "usr_202",
-      externalUserId: "202",
-    });
-    const identitySubjects = mocks.query.mock.calls
-      .filter(([statement]) =>
-        String(statement).includes("FROM users AS canonical_user"),
-      )
-      .map(([, parameters]) => parameters?.[0]);
-    expect(identitySubjects).toEqual(["101", "202"]);
+  it("refuses an OAuth client not explicitly bound to the active Gateway key", async () => {
+    mocks.verify.mockResolvedValue({ subject: "auth-sub", clientId: "other-client", tokenId: "jti", scopes: ["messages:create"] });
+    await expect(authenticateGatewayRequest(headers(), "messages:create")).rejects.toMatchObject({ status: 401 });
+    expect(mocks.active).not.toHaveBeenCalled();
   });
-
-  it("rejects forged signatures, invalid subjects and missing canonical projections", async () => {
-    mockGatewayDatabase(serviceKeyRow());
-
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({
-          "x-api-key": plaintext,
-          authorization: `Bearer ${await subjectToken({ signingSecret: "different-secret-material-that-cannot-verify" })}`,
-        }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({
-      code: "GATEWAY_SUBJECT_TOKEN_INVALID",
-      status: 401,
-    });
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({
-          "x-api-key": plaintext,
-          authorization: `Bearer ${await subjectToken({ subject: "qa-user" })}`,
-        }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({
-      code: "GATEWAY_SUBJECT_TOKEN_INVALID",
-      status: 401,
-    });
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({
-          "x-api-key": plaintext,
-          authorization: `Bearer ${await subjectToken({ subject: "303" })}`,
-        }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({
-      code: "GATEWAY_CANONICAL_USER_REQUIRED",
-      status: 403,
-    });
+  it.each([[401, "GATEWAY_SUBJECT_TOKEN_INVALID"], [403, "GATEWAY_SCOPE_REQUIRED"], [503, "GATEWAY_AUTH_NOT_CONFIGURED"]] as const)("preserves Admin token refusal %s", async (status, code) => {
+    mocks.verify.mockRejectedValue(new AuthBoundaryError("BOUNDARY", status));
+    await expect(authenticateGatewayRequest(headers(), "messages:create")).rejects.toMatchObject({ status, code });
   });
-
-  it("rejects client, scope and lifetime forgery", async () => {
-    mockGatewayDatabase(serviceKeyRow());
-
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({
-          "x-api-key": plaintext,
-          authorization: `Bearer ${await subjectToken({ clientId: "other-service" })}`,
-        }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({ status: 401 });
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({
-          "x-api-key": plaintext,
-          authorization: `Bearer ${await subjectToken({ clientId: "dream-bff", authorizedParty: "other-service" })}`,
-        }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({ status: 401 });
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({
-          "x-api-key": plaintext,
-          authorization: `Bearer ${await subjectToken({ scope: "models:list" })}`,
-        }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({ code: "GATEWAY_SCOPE_REQUIRED", status: 403 });
-
-    const now = Math.floor(Date.now() / 1_000);
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({
-          "x-api-key": plaintext,
-          authorization: `Bearer ${await subjectToken({ issuedAt: now, expiresAt: now + 301 })}`,
-        }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({ status: 401 });
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({
-          "x-api-key": plaintext,
-          authorization: `Bearer ${await subjectToken({ issuedAt: now - 600, expiresAt: now - 300 })}`,
-        }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({ status: 401 });
+  it("refuses missing canonical link or active platform projection", async () => {
+    mocks.active.mockResolvedValueOnce(null);
+    await expect(authenticateGatewayRequest(headers(), "messages:create")).rejects.toMatchObject({ status: 403, code: "GATEWAY_CANONICAL_USER_REQUIRED" });
+    database(serviceKey, null);
+    await expect(authenticateGatewayRequest(headers(), "messages:create")).rejects.toMatchObject({ status: 403, code: "GATEWAY_CANONICAL_USER_REQUIRED" });
   });
-
-  it("fails closed when service JWT configuration or the subject token is missing", async () => {
-    mockGatewayDatabase(serviceKeyRow());
-
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({ "x-api-key": plaintext }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({
-      code: "GATEWAY_SUBJECT_TOKEN_REQUIRED",
-      status: 401,
-    });
-
-    delete process.env.GATEWAY_SUBJECT_JWT_ISSUER;
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({
-          "x-api-key": plaintext,
-          authorization: `Bearer ${await subjectToken()}`,
-        }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({
-      code: "GATEWAY_AUTH_NOT_CONFIGURED",
-      status: 503,
-    });
+  it("refuses key scope loss and malformed explicit binding configuration", async () => {
+    database({ ...serviceKey, scopes: ["models:list"] });
+    await expect(authenticateGatewayRequest(headers(), "messages:create")).rejects.toMatchObject({ status: 403 });
+    database(); vi.stubEnv("DREAM_GATEWAY_CLIENT_BINDINGS", "[]");
+    await expect(authenticateGatewayRequest(headers(), "messages:create")).rejects.toMatchObject({ status: 503 });
   });
-
-  it("forbids identity override headers before any database lookup", async () => {
-    await expect(
-      authenticateGatewayRequest(
-        new Headers({
-          "x-api-key": plaintext,
-          "x-platform-user-id": "usr_qa",
-        }),
-        "messages:create",
-      ),
-    ).rejects.toMatchObject({
-      code: "GATEWAY_SUBJECT_OVERRIDE_FORBIDDEN",
-      status: 400,
-    });
-    expect(mocks.query).not.toHaveBeenCalled();
+  it("accepts entity-bound runtime proof without sharing or hashing a service key", async () => {
+    const token = `idg_${"x".repeat(43)}`;
+    mocks.resolve.mockResolvedValue({ gatewayApiKeyId: "service-key", principal: { canonical_user_id: "9007199254740993", scopes: ["messages:create"] }, threadId: "owned-thread" });
+    delete process.env.GATEWAY_API_KEY_PEPPER;
+    expect(await authenticateGatewayRequest(new Headers({ authorization: `Bearer ${token}` }), "messages:create")).toMatchObject({ apiKeyId: "service-key", scopes: ["messages:create"] });
+    expect(mocks.resolve).toHaveBeenCalledWith(token, "messages:create");
+    expect(mocks.verify).not.toHaveBeenCalled();
+  });
+  it("refuses revoked/expired runtime proof and runtime proof without Gateway grant", async () => {
+    const token = `idg_${"x".repeat(43)}`;
+    mocks.resolve.mockRejectedValueOnce(new AuthBoundaryError("DELEGATION_REQUIRED", 401));
+    await expect(authenticateGatewayRequest(new Headers({ authorization: `Bearer ${token}` }), "messages:create")).rejects.toMatchObject({ status: 401 });
+    mocks.resolve.mockResolvedValueOnce({ gatewayApiKeyId: null });
+    await expect(authenticateGatewayRequest(new Headers({ authorization: `Bearer ${token}` }), "messages:create")).rejects.toMatchObject({ status: 401 });
+  });
+  it("refuses caller user override before any database or verifier access", async () => {
+    await expect(authenticateGatewayRequest(new Headers({ "x-api-key": plaintext, "x-user-id": "other" }), "messages:create")).rejects.toMatchObject({ status: 400 });
+    expect(mocks.query).not.toHaveBeenCalled(); expect(mocks.verify).not.toHaveBeenCalled();
   });
 });

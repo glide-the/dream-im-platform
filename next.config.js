@@ -1,7 +1,7 @@
 // [Input] Configuration-file location, optional repository-local E2E dist name and production-build CPU budget.
 // [Output] Validated Next.js configuration with an absolute repository-local Turbopack root.
 // [Pos] Shared Next.js configuration; remote build resources are supplied by deploy config.
-// [Sync] 2026-09-13: resolve the project root from this file, not ancestor lockfiles or launch cwd.
+// [Sync] 2026-09-15: trace fixed Deck/launch/failure/SystemConfig codecs with stable project root.
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,6 +20,9 @@ if (buildCpus !== undefined && (!Number.isInteger(buildCpus) || buildCpus < 1 ||
 const nextConfig = {
   reactStrictMode: true,
   turbopack: { root: projectRoot },
+  outputFileTracingIncludes: {
+    '/api/internal/dream/v1/operations/*': ['./app/lib/dream/deckContentCanonical.py', './app/lib/dream/dreamLaunchEnvelope.py', './app/lib/dream/dreamLaunchFailureEnvelope.py', './app/lib/dream/userSystemConfigCodec.py'],
+  },
   ...(e2eDistDir && { distDir: e2eDistDir }),
   ...(buildCpus && { experimental: { cpus: buildCpus } }),
   // Enable standalone output for Docker deployments

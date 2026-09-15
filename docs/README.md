@@ -1,11 +1,22 @@
 <!-- [Input] Repository documentation tree and current product/architecture decisions. -->
 <!-- [Output] Canonical entry points for current design, architecture, deployment, and verification documents. -->
 <!-- [Pos] Root documentation inventory; historical documents are explicitly separated from current contracts. -->
-<!-- [Sync] 2026-09-04: index the final deployment-gated Go contract for product Device authorization and managed credentials. -->
+<!-- [Sync] 2026-09-15: index Registry83 after isolated Reflections public/atomic acceptance; consumer remains pending. -->
 
 # 文档索引
 
 ## 当前执行入口
+
+- [Admin / Dream 统一认证与数据访问契约](architecture/admin-dream-auth-data-contract.md)
+- [实际数据区域、表归属与角色权限](architecture/admin-dream-data-ownership.md)
+- [统一认证架构与登录交互](architecture/auth.md)
+- [设备授权交互与状态](architecture/auth-device.md)
+- [实际领域操作DTO与hash](architecture/admin-dream-operation-contracts.json)
+- [实际Runtime委托DTO与hash](architecture/admin-dream-delegation-contracts.json)
+- [实际Preflight原请求三态回执DTO与hash](architecture/admin-dream-workflow-preflight-receipt-contract.json)
+- [Dream 全领域实施映射](architecture/admin-dream-domain-implementation-map.md)
+- [认证与数据服务验证回执](verification/admin-auth-data-provider-matrix.md)
+- [统一认证与数据服务执行计划](task/admin-auth-data-provider-plan.md)
 
 - [Ink Memory Admin PRD v3](prd/ink-memory-admin-prd-v3.md)
 - [Ink Memory Admin 全局交互规范 v3](design/refine-admin-ui-v3-interaction-design.md)

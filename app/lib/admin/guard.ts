@@ -1,14 +1,12 @@
 // [Input] Admin session cookies, permission codes, request identifiers, and mutation Origin headers.
 // [Output] Fail-closed Admin authentication/RBAC/Origin guards shared by route handlers.
 // [Pos] Server-side Admin trust boundary; missing mutation Origin is always denied.
-// [Sync] 2026-08-27: remove the NODE_ENV exception for Origin-less mutations.
+// [Sync] 2026-09-14: sole Better Auth Session plus explicit active Admin mapping/live RBAC.
 
 import { randomUUID } from "node:crypto";
 import {
-  ADMIN_SESSION_COOKIE,
-  getAdminIdentityFromToken,
+  getAdminIdentity,
   hasAdminPermission,
-  parseCookie,
 } from "./session";
 import { AdminError } from "./errors";
 
@@ -25,10 +23,9 @@ export async function requireAdminRequest(
 ) {
   let identity;
   try {
-    identity = await getAdminIdentityFromToken(
-      parseCookie(request.headers, ADMIN_SESSION_COOKIE),
-    );
-  } catch {
+    identity = await getAdminIdentity(request.headers);
+  } catch (error) {
+    if (error instanceof AdminError) throw error;
     throw new AdminError(
       "ADMIN_AUTH_UNAVAILABLE",
       "Admin authentication is not available",

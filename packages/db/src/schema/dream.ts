@@ -523,6 +523,7 @@ export const deck_versions = pgTable("deck_versions", {
 	source_draft_revision: integer().notNull(),
 	description: text(),
 	snapshot_json: jsonb("snapshot_json").notNull(),
+	snapshot_canonical_json: text("snapshot_canonical_json"),
 	content_hash: text().notNull(),
 	created_by: bigint({ mode: "number" }).notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -542,6 +543,7 @@ export const deck_versions = pgTable("deck_versions", {
 	check("ck_deck_versions_version", sql`version >= 1`),
 	check("ck_deck_versions_base_version", sql`base_version IS NULL OR base_version >= 1`),
 	check("ck_deck_versions_source_draft_revision", sql`source_draft_revision >= 1`),
+	check("ck_deck_versions_canonical_projection", sql`"snapshot_canonical_json" IS NULL OR "snapshot_canonical_json"::jsonb = "snapshot_json"`),
 ]);
 
 export const chat_thread = pgTable("chat_thread", {

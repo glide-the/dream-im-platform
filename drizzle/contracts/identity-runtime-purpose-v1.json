@@ -1,0 +1,332 @@
+{
+  "contract_sha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447",
+  "version": 1,
+  "tables": {
+    "identity.runtime_delegations": {
+      "name": "runtime_delegations",
+      "schema": "identity",
+      "columns": {
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "service_client_id": {
+          "name": "service_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_user_id": {
+          "name": "auth_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "oauth_client_id": {
+          "name": "oauth_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "input_sha256": {
+          "name": "input_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_ciphertext": {
+          "name": "token_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gateway_api_key_id": {
+          "name": "gateway_api_key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "editor_session_id": {
+          "name": "editor_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "canonical_user_id": {
+          "name": "canonical_user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scopes": {
+          "name": "scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "maximum_expires_at": {
+          "name": "maximum_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "runtime_delegations_thread_idx": {
+          "name": "runtime_delegations_thread_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "runtime_delegations_request_uidx": {
+          "name": "runtime_delegations_request_uidx",
+          "columns": [
+            {
+              "expression": "service_client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "auth_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "runtime_delegations_auth_user_id_user_id_fk": {
+          "name": "runtime_delegations_auth_user_id_user_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "user",
+          "schemaTo": "identity",
+          "columnsFrom": [
+            "auth_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "runtime_delegations_gateway_api_key_id_gateway_api_keys_id_fk": {
+          "name": "runtime_delegations_gateway_api_key_id_gateway_api_keys_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "gateway_api_keys",
+          "columnsFrom": [
+            "gateway_api_key_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "runtime_delegations_editor_session_id_user_sessions_id_fk": {
+          "name": "runtime_delegations_editor_session_id_user_sessions_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "user_sessions",
+          "columnsFrom": [
+            "editor_session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "runtime_delegations_canonical_user_id_users_id_fk": {
+          "name": "runtime_delegations_canonical_user_id_users_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "canonical_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "runtime_delegations_maximum_expiry_check": {
+          "name": "runtime_delegations_maximum_expiry_check",
+          "value": "\"identity\".\"runtime_delegations\".\"maximum_expires_at\" IS NULL OR \"identity\".\"runtime_delegations\".\"maximum_expires_at\" >= \"identity\".\"runtime_delegations\".\"expires_at\""
+        },
+        "runtime_delegations_creation_check": {
+          "name": "runtime_delegations_creation_check",
+          "value": "\"identity\".\"runtime_delegations\".\"request_id\" IS NULL OR (\"identity\".\"runtime_delegations\".\"oauth_client_id\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"input_sha256\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"input_sha256\" ~ '^[0-9a-f]{64}$' AND \"identity\".\"runtime_delegations\".\"token_ciphertext\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"maximum_expires_at\" IS NOT NULL)"
+        },
+        "runtime_delegations_purpose_check": {
+          "name": "runtime_delegations_purpose_check",
+          "value": "(\"identity\".\"runtime_delegations\".\"purpose\" IS NULL AND \"identity\".\"runtime_delegations\".\"editor_session_id\" IS NULL) OR (\"identity\".\"runtime_delegations\".\"purpose\" IS NOT NULL AND cardinality(\"identity\".\"runtime_delegations\".\"scopes\") > 0 AND array_position(\"identity\".\"runtime_delegations\".\"scopes\", NULL) IS NULL AND (\n    (\"identity\".\"runtime_delegations\".\"purpose\" = 'server-persistence' AND \"identity\".\"runtime_delegations\".\"editor_session_id\" IS NULL AND \"identity\".\"runtime_delegations\".\"gateway_api_key_id\" IS NULL AND \"identity\".\"runtime_delegations\".\"scopes\" <@ ARRAY['dream:read','dream:write']::text[]) OR\n    (\"identity\".\"runtime_delegations\".\"purpose\" = 'gateway-cli' AND \"identity\".\"runtime_delegations\".\"editor_session_id\" IS NULL AND \"identity\".\"runtime_delegations\".\"gateway_api_key_id\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"scopes\" <@ ARRAY['messages:create','messages:count_tokens','models:list']::text[]) OR\n    (\"identity\".\"runtime_delegations\".\"purpose\" = 'editor-stdio' AND \"identity\".\"runtime_delegations\".\"editor_session_id\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"gateway_api_key_id\" IS NULL AND \"identity\".\"runtime_delegations\".\"scopes\" <@ ARRAY['editor:read','editor:write']::text[])\n  ))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.user_sessions": {
+      "name": "user_sessions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "editor_state_json": {
+          "name": "editor_state_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "labels": {
+          "name": "labels",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_sessions_user": {
+          "name": "idx_sessions_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_user_sessions_user_id_users": {
+          "name": "fk_user_sessions_user_id_users",
+          "tableFrom": "user_sessions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  }
+}

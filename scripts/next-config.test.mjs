@@ -1,7 +1,7 @@
 // [Input] Repository Next.js config, launch working directory and existing build options.
 // [Output] Provider-free Node tests for stable project-root resolution and config validation.
 // [Pos] Startup configuration regression tests; no server or database lifecycle.
-// [Sync] 2026-09-13: prevent ancestor lockfiles or launch cwd from selecting another project root.
+// [Sync] 2026-09-15: also pin all four fixed Dream codec files in operation-route tracing.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { dirname } from 'node:path';
@@ -24,6 +24,14 @@ function readConfig(cwd = projectRoot, overrides = {}) {
       output: config.output,
     }));
   `], { cwd, env: { ...env, ...overrides }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+}
+
+function readTracing() {
+  const env = { ...process.env };
+  return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
+    import config from ${JSON.stringify(configUrl.href)};
+    console.log(JSON.stringify(config.outputFileTracingIncludes));
+  `], { cwd: projectRoot, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
 }
 
 test('Turbopack uses the configuration file directory as its absolute root', () => {
@@ -53,4 +61,15 @@ test('invalid existing dist and CPU options are still rejected', () => {
   for (const value of ['0', '65', '1.5', 'invalid']) {
     assert.throws(() => readConfig(projectRoot, { NEXT_BUILD_CPUS: value }), /integer between 1 and 64/);
   }
+});
+
+test('internal Dream operations trace every fixed Python codec from the repository', () => {
+  assert.deepEqual(readTracing(), {
+    '/api/internal/dream/v1/operations/*': [
+      './app/lib/dream/deckContentCanonical.py',
+      './app/lib/dream/dreamLaunchEnvelope.py',
+      './app/lib/dream/dreamLaunchFailureEnvelope.py',
+      './app/lib/dream/userSystemConfigCodec.py',
+    ],
+  });
 });

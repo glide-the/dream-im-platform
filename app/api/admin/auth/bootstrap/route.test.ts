@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   isAdminBootstrapRequired: vi.fn(),
   assertAdminMutationOrigin: vi.fn(),
   verifyBootstrapToken: vi.fn(),
-  createAdminSession: vi.fn(),
 }));
 
 vi.mock("../../../../lib/admin/bootstrap", () => ({
@@ -19,8 +18,6 @@ vi.mock("../../../../lib/admin/guard", () => ({
 }));
 
 vi.mock("../../../../lib/admin/session", () => ({
-  adminSessionCookie: () => "ink_admin_session=test; Path=/; HttpOnly",
-  createAdminSession: mocks.createAdminSession,
   verifyBootstrapToken: mocks.verifyBootstrapToken,
 }));
 
@@ -31,11 +28,7 @@ describe("/api/admin/auth/bootstrap", () => {
     vi.clearAllMocks();
     mocks.isAdminBootstrapRequired.mockResolvedValue(true);
     mocks.verifyBootstrapToken.mockReturnValue(true);
-    mocks.bootstrapFirstAdmin.mockResolvedValue({ adminUserId: "admin_1" });
-    mocks.createAdminSession.mockResolvedValue({
-      token: "session_token",
-      expiresAt: new Date("2030-01-01T00:00:00.000Z"),
-    });
+    mocks.bootstrapFirstAdmin.mockImplementation(async () => Response.json({ data: { id: "admin_1", email: "dmeck@suoxya.com" } }, { status: 201, headers: { "set-cookie": "better-auth.session_token=opaque; Path=/; HttpOnly" } }));
   });
 
   it("reports whether first-run setup is required without caching", async () => {
@@ -79,7 +72,7 @@ describe("/api/admin/auth/bootstrap", () => {
         requestId: "admin_request_test",
       }),
     );
-    expect(response.headers.get("set-cookie")).toContain("ink_admin_session=");
+    expect(response.headers.get("set-cookie")).toContain("better-auth.session_token=");
   });
 
   it("rejects passwords shorter than the first-run minimum", async () => {

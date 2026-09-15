@@ -18,6 +18,8 @@
 
 模型网关提供 Anthropic `POST /v1/messages`、`POST /v1/messages/count_tokens`，以及 OpenAI `POST /v1/chat/completions`、`GET /v1/models` 兼容接口。
 
+统一认证与 Dream 数据访问正在实施：Better Auth 1.7.4 为唯一 Google/密码/Session/OAuth/device authority，Admin 管理权限按显式 membership 与 live RBAC；Dream 通过命名领域 DTO API 访问数据。当前技术证据与未闭合领域见[契约](docs/architecture/admin-dream-auth-data-contract.md)、[领域映射](docs/architecture/admin-dream-domain-implementation-map.md)与[回执](docs/verification/admin-auth-data-provider-matrix.md)。0054–0056 仅隔离重放通过，不能据此在正常数据库自动迁移或采用旧账户。
+
 ## 技术栈
 
 - Next.js 16 App Router、React 19、TypeScript
@@ -118,7 +120,24 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `INK_DATABASE_MODE` | 明确数据库 topology capability | 本机/容器固定 `embedded-postgres` |
 | `EMBEDDED_POSTGRES_*` | 数据目录、端口、shared buffers 与连接数 | 本机自动配置；容器默认 5432/96MB/50 |
 | `MIGRATION_DATABASE_URL` | 可选外部 migration 目标；未设置时只允许显式 embedded mode | 生产可由平台注入 |
-| `ADMIN_SESSION_SECRET` | 管理员 Session HMAC | 自动生成，至少 32 bytes |
+| `BETTER_AUTH_URL/SECRET` | 唯一认证issuer与Session密钥 | 显式origin + `/api/auth`；secret至少32bytes |
+| `AUTH_DATABASE_URL` | 专用auth角色 | 显式PostgreSQL，无fallback |
+| `ADMIN_CONTROL_DATABASE_URL` | 一次性bootstrap control角色 | 显式PostgreSQL，无fallback |
+| `DREAM_DATA_DATABASE_URL` | Admin Dream领域角色 | 显式PostgreSQL，无Dream DSN注入 |
+| `GOOGLE_CLIENT_ID/SECRET` | 内置Google认证注册 | 显式注册与exactcallback |
+| `AUTH_TRUSTED_ORIGINS/DREAM_API_RESOURCE` | trusted origins与OAuth resource | exact origins/resource |
+| `AUTH_TOKEN_ENCRYPTION_KEY` | BFF/委托恢复密文 | 32bytes AEAD，不能回显 |
+| `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON |
+| `DREAM_DATA_MAX_BODY_BYTES` | Admin领域请求体技术容量 | 显式正安全整数 |
+| `DREAM_FRIENDSHIP_POLICY_JSON` | 明确好友邀请码规则及碰撞执行预算 | `{"code_length":6,"lifetime_seconds":604800,"generation_attempts":64}` 的严格JSON；原6字符/7日，预算仅server capacity |
+| `DREAM_DOMAIN_CANONICAL_TIMEOUT_MS` | 固定canonical业务codec deadline | 显式正安全整数；失败不输出payload |
+| `INK_WORKFLOW_TOKEN_SECRET` | Admin独占原Workflow pft签发与Run消费摘要 | 显式UTF-8至少32byte；无JWT_SECRET fallback，Dream不持有 |
+| `DREAM_PREFLIGHT_TOKEN_TTL_SECONDS` | 原Preflight token TTL | 正安全整数，默认300秒；原回执恢复不刷新expiry |
+| `DREAM_PREFLIGHT_MAX_INPUT_BYTES` | canonical Preflight输入技术容量 | 正安全整数，默认65536byte |
+| `INK_DECK_HOST_COMPATIBLE` / `INK_CLAUDE_AGENT_CONTRACT_COMPATIBLE` / `INK_STORY_SCHEMA_COMPATIBLE` / `INK_DECK_RUNTIME_CONFIG_COMPATIBLE` | 明确server compatibility capability facts | 原Python strip+lower的1/true/yes/on；缺失fail closed，不按部署名称解锁 |
+| `DREAM_WORKFLOW_CONTEXT_MAX_ATTEMPTS` | 完整retry链查询技术容量 | 保留原256默认；与权限独立 |
+| `DREAM_CHAT_AUTO_TITLE_MAX_CHARACTERS` | 首条普通user消息自动title容量 | 保留原50默认，Python whitespace/Unicode字符 |
+| `AUTH_RUNTIME_DELEGATION_TTL_SECONDS/MAX_TTL_SECONDS` | 窄授权续期与原最大寿命 | 显式正安全整数，renew不能扩张最大寿命 |
 | `ADMIN_BOOTSTRAP_TOKEN` | 首次设置页面的一次性初始化授权 | 自动生成，至少 32 bytes；不发送给页面，需手工粘贴 |
 | `ADMIN_ORIGIN_ALLOWLIST` | 管理写操作允许的 Origin，逗号分隔 | 本地默认 `http://localhost:3000` |
 | `GATEWAY_API_KEY_PEPPER` | Gateway Key HMAC | 自动生成，至少 32 bytes |
