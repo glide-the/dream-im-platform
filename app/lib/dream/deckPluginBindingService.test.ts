@@ -1,7 +1,7 @@
 // [Input] Strict binding DTOs, mocked typed repositories and existing compatibility fixtures.
-// [Output] Owner, binding CAS and evidence-bound Agent-type Runtime preparation behavior.
-// [Pos] Provider-free Registry122-129 service verification.
-// [Sync] 2026-09-16: cover clear, Runtime plan and Runtime preparation semantics.
+// [Output] Owner, binding CAS and evidence-bound Agent-type/launch Runtime preparation behavior.
+// [Pos] Provider-free Registry122-132 service verification.
+// [Sync] 2026-09-16: cover launch scope plus current and frozen replay Runtime semantics.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { compatibilityFixture } from "../../../tests/fixtures/deckPluginCompatibility";
 import { principalDto } from "../auth/dto";
@@ -16,6 +16,9 @@ import {
   deckPluginBindingHistoryDto,
   deckPluginBindingResponseDto,
   deckPluginOptionsDto,
+  dreamLaunchRuntimePlanDto,
+  dreamLaunchRuntimePreparedDto,
+  dreamLaunchRuntimeScopeDto,
 } from "./deckPluginBindingDto";
 import { runDeckPluginBindingOperation } from "./deckPluginBindingService";
 
@@ -36,6 +39,7 @@ const runtimeFacts = () => {
   return {
     row: { deck_plugin_id: fixture.manifest.deck_plugin_id, deck_plugin_version: fixture.manifest.deck_plugin_version,
       manifest_hash: fixture.release.manifest_hash, capabilities_json: JSON.stringify(fixture.manifest.capabilities),
+      release_status: "published",
       runtime_plugin_lock_id: fixture.lock.runtime_plugin_lock_id, deck_plugin_manifest_hash: fixture.release.manifest_hash,
       lock_json: JSON.stringify(lock) },
     installation: { plugin_installation_id: `cpi_${"4".repeat(32)}`, package_spec: "example.runtime", package_name: "runtime",
@@ -56,6 +60,8 @@ beforeEach(() => {
   vi.stubEnv("INK_STORY_SCHEMA_COMPATIBLE", "true");
   vi.stubEnv("INK_DECK_RUNTIME_CONFIG_COMPATIBLE", "true");
   vi.spyOn(DeckPluginBindingRepository.prototype, "ownsDeckWorkspace").mockResolvedValue({ id: "deck" });
+  vi.spyOn(DeckPluginBindingRepository.prototype, "ownsEnabledDeckWorkspace").mockResolvedValue({ id: "deck" });
+  vi.spyOn(DeckPluginBindingRepository.prototype, "enabledAgent").mockResolvedValue({ id: "agent" });
   const fixture = compatibilityFixture();
   vi.spyOn(DeckPluginCompatibilityRepository.prototype, "release").mockResolvedValue(fixture.release);
   vi.spyOn(DeckPluginCompatibilityRepository.prototype, "installation").mockResolvedValue(fixture.installation);
@@ -215,5 +221,74 @@ describe("Deck Plugin binding Admin service", () => {
     expect(insertMaterialization).toHaveBeenCalledWith(expect.objectContaining({ cache_ref: "/server-owned/artifact",
       materialization_status: "materialized", activation_status: "loadable" }));
     expect(insertWorkspace).toHaveBeenCalledWith("workspace", "example.story", "1.0.0", ["story.workspace.propose"]);
+  });
+
+  it("authorizes launch Deck, Workspace and optional Voice before Runtime planning", async () => {
+    const input = { ...scope, agent_id: "agent" };
+    expect(dreamLaunchRuntimeScopeDto.parse(await runDeckPluginBindingOperation(
+      "dream-launch.runtime-scope", input, principal, {} as DataTransaction, runtimePolicy,
+    ))).toEqual({ ...input, authorized: true });
+    vi.mocked(DeckPluginBindingRepository.prototype.enabledAgent).mockResolvedValueOnce(null);
+    await expect(runDeckPluginBindingOperation(
+      "dream-launch.runtime-scope", input, principal, {} as DataTransaction, runtimePolicy,
+    )).rejects.toMatchObject({ code: "AGENT_ACCESS_DENIED", status: 404 });
+  });
+
+  it("plans and prepares the current explicit launch binding without returning an artifact path", async () => {
+    const facts = runtimeFacts();
+    vi.spyOn(DeckPluginBindingRepository.prototype, "current").mockResolvedValue(row());
+    vi.spyOn(DeckPluginBindingRepository.prototype, "runtimeTargets").mockResolvedValue([facts.row]);
+    vi.spyOn(DeckPluginBindingRepository.prototype, "readyRuntimeInstallation").mockResolvedValue(facts.installation);
+    const input = { ...scope, agent_id: null, mode: "current" as const, workflow_run_id: null, thread_id: null };
+    const plan = dreamLaunchRuntimePlanDto.parse(await runDeckPluginBindingOperation(
+      "dream-launch.runtime-plan", input, principal, {} as DataTransaction, runtimePolicy,
+    ));
+    expect(plan).toMatchObject({ mode: "current", binding: { deck_plugin_binding_id: row().deck_plugin_binding_id,
+      binding_revision: 1 }, target: { plugin_installation_id: facts.installation.plugin_installation_id } });
+    expect(plan.target).not.toHaveProperty("artifact_path");
+    vi.spyOn(WorkflowRuntimeActivationRepository.prototype, "clock").mockResolvedValue("2026-09-16T02:03:04+00:00");
+    vi.spyOn(WorkflowRuntimeActivationRepository.prototype, "materializationByKey").mockResolvedValue({ id: "existing" });
+    const refresh = vi.spyOn(WorkflowRuntimeActivationRepository.prototype, "refreshMaterialization").mockResolvedValue();
+    vi.spyOn(DeckPluginBindingRepository.prototype, "workspaceInstallation").mockResolvedValue({
+      id: "installation", status: "ready", default_version: "1.0.0", installed_versions_json: '["1.0.0"]',
+    } as never);
+    const prepared = dreamLaunchRuntimePreparedDto.parse(await runDeckPluginBindingOperation(
+      "dream-launch.runtime-prepare", { ...input, expected_binding_revision: 1,
+        verified_plugin: { plugin_installation_id: facts.installation.plugin_installation_id,
+          package_spec: facts.installation.package_spec, resolved_version: facts.installation.resolved_version,
+          artifact_digest: facts.installation.artifact_digest, has_manifest: true } },
+      principal, {} as DataTransaction, runtimePolicy,
+    ));
+    expect(prepared).toMatchObject({ mode: "current", binding: { binding_revision: 1 }, runtime_ready: true });
+    expect(refresh).toHaveBeenCalledWith("existing", facts.installation.artifact_digest,
+      "/server-owned/artifact", "2026-09-16T02:03:04.000Z");
+  });
+
+  it("derives replay binding and frozen lock from the actor-owned Run", async () => {
+    const facts = runtimeFacts();
+    const workflowRunId = `run_${"a".repeat(32)}`;
+    const replay = { workflow_run_id: workflowRunId, thread_id: "thread", workspace_id: "workspace",
+      deck_plugin_id: "example.story", deck_plugin_version: "1.0.0",
+      deck_plugin_manifest_hash: facts.row.manifest_hash, deck_plugin_binding_id: row().deck_plugin_binding_id,
+      binding_revision: 1, runtime_plugin_lock_id: facts.row.runtime_plugin_lock_id,
+      preflight_deck_id: "deck", binding_deck_id: "deck", binding_workspace_id: "workspace",
+      binding_creator_id: "1", binding_plugin_id: "example.story", binding_plugin_version: "1.0.0",
+      binding_revision_actual: 1 };
+    vi.spyOn(DeckPluginBindingRepository.prototype, "replayBinding").mockResolvedValue(replay);
+    vi.spyOn(DeckPluginBindingRepository.prototype, "runtimeTargetByLock").mockResolvedValue(facts.row);
+    vi.spyOn(DeckPluginBindingRepository.prototype, "readyRuntimeInstallation").mockResolvedValue(facts.installation);
+    const current = vi.spyOn(DeckPluginBindingRepository.prototype, "current");
+    const input = { ...scope, agent_id: "agent", mode: "replay" as const,
+      workflow_run_id: workflowRunId, thread_id: "thread" };
+    const plan = dreamLaunchRuntimePlanDto.parse(await runDeckPluginBindingOperation(
+      "dream-launch.runtime-plan", input, principal, {} as DataTransaction, runtimePolicy,
+    ));
+    expect(plan).toMatchObject({ mode: "replay", workflow_run_id: workflowRunId,
+      binding: { deck_plugin_binding_id: replay.deck_plugin_binding_id, binding_revision: 1 },
+      target: { runtime_plugin_lock_id: replay.runtime_plugin_lock_id } });
+    expect(DeckPluginBindingRepository.prototype.replayBinding).toHaveBeenCalledWith(
+      workflowRunId, "thread", "deck", "workspace", "share",
+    );
+    expect(current).not.toHaveBeenCalled();
   });
 });

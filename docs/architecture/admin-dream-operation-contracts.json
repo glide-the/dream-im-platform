@@ -27160,5 +27160,579 @@
       "output_schema_version": 1,
       "contract_sha256": "9cc1a08d15e0279ed977bb5b7ee25a5ab270cf32a4f67ded719c23e33d000716"
     }
+  },
+  {
+    "contract": {
+      "name": "dream-launch.runtime-scope",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "deck_id",
+          "workspace_id",
+          "agent_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authorized": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "deck_id",
+          "workspace_id",
+          "agent_id",
+          "authorized"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "dream-launch.runtime-scope",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "67dbe0a6eb7ddfd9bd1fa668e38f143add53201b725b19506af976319bba2b92"
+    }
+  },
+  {
+    "contract": {
+      "name": "dream-launch.runtime-plan",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "current",
+              "replay"
+            ]
+          },
+          "workflow_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^run_[0-9a-f]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "deck_id",
+          "workspace_id",
+          "agent_id",
+          "mode",
+          "workflow_run_id",
+          "thread_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "current",
+              "replay"
+            ]
+          },
+          "workflow_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^run_[0-9a-f]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "binding": {
+            "type": "object",
+            "properties": {
+              "deck_plugin_binding_id": {
+                "type": "string",
+                "pattern": "^dpb_[0-9a-f]{32}$"
+              },
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              },
+              "deck_plugin_version": {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              },
+              "binding_revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "deck_plugin_binding_id",
+              "deck_plugin_id",
+              "deck_plugin_version",
+              "binding_revision"
+            ],
+            "additionalProperties": false
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              },
+              "deck_plugin_version": {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              },
+              "runtime_plugin_lock_id": {
+                "type": "string",
+                "pattern": "^rpl_[0-9a-f]{32}$"
+              },
+              "plugin_installation_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "package_spec": {
+                "type": "string",
+                "minLength": 1
+              },
+              "package_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "marketplace": {
+                "type": "string",
+                "minLength": 1
+              },
+              "resolved_version": {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              },
+              "artifact_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "compatibility_json": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "deck_plugin_id",
+              "deck_plugin_version",
+              "runtime_plugin_lock_id",
+              "plugin_installation_id",
+              "package_spec",
+              "package_name",
+              "marketplace",
+              "resolved_version",
+              "artifact_digest",
+              "compatibility_json"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "deck_id",
+          "workspace_id",
+          "agent_id",
+          "mode",
+          "workflow_run_id",
+          "thread_id",
+          "binding",
+          "target"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "dream-launch.runtime-plan",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "efd986cef6f891202c4d3ceb889d7491e8227dc097eeb009202a2be92549e9a6"
+    }
+  },
+  {
+    "contract": {
+      "name": "dream-launch.runtime-prepare",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "current",
+              "replay"
+            ]
+          },
+          "workflow_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^run_[0-9a-f]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_binding_revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "verified_plugin": {
+            "type": "object",
+            "properties": {
+              "plugin_installation_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "package_spec": {
+                "type": "string",
+                "minLength": 1
+              },
+              "resolved_version": {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              },
+              "artifact_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "has_manifest": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "plugin_installation_id",
+              "package_spec",
+              "resolved_version",
+              "artifact_digest",
+              "has_manifest"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "deck_id",
+          "workspace_id",
+          "agent_id",
+          "mode",
+          "workflow_run_id",
+          "thread_id",
+          "expected_binding_revision",
+          "verified_plugin"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "current",
+              "replay"
+            ]
+          },
+          "workflow_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^run_[0-9a-f]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "binding": {
+            "type": "object",
+            "properties": {
+              "deck_plugin_binding_id": {
+                "type": "string",
+                "pattern": "^dpb_[0-9a-f]{32}$"
+              },
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              },
+              "deck_plugin_version": {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              },
+              "binding_revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "deck_plugin_binding_id",
+              "deck_plugin_id",
+              "deck_plugin_version",
+              "binding_revision"
+            ],
+            "additionalProperties": false
+          },
+          "runtime_ready": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "deck_id",
+          "workspace_id",
+          "agent_id",
+          "mode",
+          "workflow_run_id",
+          "thread_id",
+          "binding",
+          "runtime_ready"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "dream-launch.runtime-prepare",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "d9c2faeb03b86cf562286f283e5bfcd3098e1da81c1b628c2e9aaa5a7b897882"
+    }
   }
 ]

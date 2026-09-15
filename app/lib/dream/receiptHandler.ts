@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: recover Registry127/129 clear and Runtime prepare under their original OAuth actor.
+// [Sync] 2026-09-16: recover Registry127/129/132 Runtime writes under their original OAuth actor.
 // [Sync] 2026-09-16: recover Registry120 confirmation submit under its original OAuth Run/Thread scope.
 // [Input] Original request ID plus an implemented operation name and its exact OAuth, background or task authority.
 // [Output] Strict original request evidence bound to the derived service, actor and Reflections task when applicable.

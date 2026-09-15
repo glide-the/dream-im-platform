@@ -1,7 +1,7 @@
 // [Input] Closed owner-scoped Deck/Workspace and Plugin selection identifiers.
-// [Output] Strict binding and Agent-type Runtime preparation DTOs matching Dream's public models.
-// [Pos] Registry122-129 cross-project contract; actor, SQL, policy and filesystem paths are absent.
-// [Sync] 2026-09-16: append clear and evidence-bound Agent-type Runtime preparation.
+// [Output] Strict binding, Agent-type and launch Runtime DTOs matching Dream's public models.
+// [Pos] Registry122-132 cross-project contract; actor, SQL, policy and filesystem paths are absent.
+// [Sync] 2026-09-16: append current/frozen launch Runtime authorization, plan and preparation.
 import { z } from "zod";
 import { isoTimeDto } from "../auth/dto";
 import { comparePythonStrings } from "./deckPluginCompatibilityDto";
@@ -18,6 +18,7 @@ const bindingStatus = z.enum(["active", "stale"]);
 const selectionCompatibility = z.enum(["passed", "failed", "unknown"]);
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 const runtimeLockId = z.string().regex(/^rpl_[0-9a-f]{32}$/);
+const workflowRunId = z.string().regex(/^run_[0-9a-f]{32}$/);
 
 export const deckPluginSelectionRecoveryDto = z.strictObject({ owner: identifier, action: identifier });
 export const deckPluginSelectionSummaryDto = z.strictObject({
@@ -149,6 +150,50 @@ export const deckAgentTypeChatDto = z.strictObject({
   agent_type: z.literal("chat"),
   binding_revision: revision,
 });
+const dreamLaunchRuntimeScope = {
+  ...scopeInput,
+  agent_id: identifier.nullable(),
+};
+export const dreamLaunchRuntimeScopeInputDto = z.strictObject(dreamLaunchRuntimeScope);
+export const dreamLaunchRuntimeScopeDto = z.strictObject({
+  ...dreamLaunchRuntimeScope,
+  authorized: z.literal(true),
+});
+const dreamLaunchRuntimeModeFields = {
+  ...dreamLaunchRuntimeScope,
+  mode: z.enum(["current", "replay"]),
+  workflow_run_id: workflowRunId.nullable(),
+  thread_id: identifier.nullable(),
+};
+function validateLaunchMode(value: { mode: "current" | "replay"; workflow_run_id?: string | null; thread_id?: string | null }, context: z.RefinementCtx) {
+  const replayFields = value.workflow_run_id !== null && value.thread_id !== null;
+  if ((value.mode === "current" && (value.workflow_run_id !== null || value.thread_id !== null))
+    || (value.mode === "replay" && !replayFields)) {
+    context.addIssue({ code: "custom", message: "Launch Runtime mode and replay identity must match." });
+  }
+}
+export const dreamLaunchRuntimePlanInputDto = z.strictObject(dreamLaunchRuntimeModeFields).superRefine(validateLaunchMode);
+export const dreamLaunchRuntimeBindingDto = z.strictObject({
+  deck_plugin_binding_id: bindingId,
+  deck_plugin_id: pluginId,
+  deck_plugin_version: pluginVersion,
+  binding_revision: bindingRevision,
+});
+export const dreamLaunchRuntimePlanDto = z.strictObject({
+  ...dreamLaunchRuntimeModeFields,
+  binding: dreamLaunchRuntimeBindingDto,
+  target: deckAgentTypeRuntimeCandidateDto,
+}).superRefine(validateLaunchMode);
+export const dreamLaunchRuntimePrepareInputDto = z.strictObject({
+  ...dreamLaunchRuntimeModeFields,
+  expected_binding_revision: bindingRevision,
+  verified_plugin: deckAgentTypeVerifiedPluginDto,
+}).superRefine(validateLaunchMode);
+export const dreamLaunchRuntimePreparedDto = z.strictObject({
+  ...dreamLaunchRuntimeModeFields,
+  binding: dreamLaunchRuntimeBindingDto,
+  runtime_ready: z.literal(true),
+}).superRefine(validateLaunchMode);
 export const deckPluginBindingValidationDto = z.strictObject({
   deck_id: identifier,
   deck_plugin_id: pluginId,
@@ -166,6 +211,9 @@ export const deckPluginBindingOperationContracts = {
   "deck-plugin-binding.clear": { kind: "write" as const, userScope: "dream:write", input: deckPluginBindingClearInputDto, output: deckAgentTypeChatDto },
   "deck-agent-type.runtime-plan": { kind: "read" as const, userScope: "dream:read", input: deckPluginBindingScopeInputDto, output: deckAgentTypeRuntimePlanDto },
   "deck-agent-type.runtime-prepare": { kind: "write" as const, userScope: "dream:write", input: deckAgentTypeRuntimePrepareInputDto, output: deckAgentTypeRuntimePreparedDto },
+  "dream-launch.runtime-scope": { kind: "read" as const, userScope: "dream:read", input: dreamLaunchRuntimeScopeInputDto, output: dreamLaunchRuntimeScopeDto },
+  "dream-launch.runtime-plan": { kind: "read" as const, userScope: "dream:read", input: dreamLaunchRuntimePlanInputDto, output: dreamLaunchRuntimePlanDto },
+  "dream-launch.runtime-prepare": { kind: "write" as const, userScope: "dream:write", input: dreamLaunchRuntimePrepareInputDto, output: dreamLaunchRuntimePreparedDto },
 };
 
 export type DeckPluginBindingOperation = keyof typeof deckPluginBindingOperationContracts;
@@ -175,3 +223,5 @@ export type DeckPluginBindingSaveInput = z.infer<typeof deckPluginBindingSaveInp
 export type DeckPluginSelectionSummary = z.infer<typeof deckPluginSelectionSummaryDto>;
 export type DeckAgentTypeRuntimeCandidate = z.infer<typeof deckAgentTypeRuntimeCandidateDto>;
 export type DeckAgentTypeRuntimePrepareInput = z.infer<typeof deckAgentTypeRuntimePrepareInputDto>;
+export type DreamLaunchRuntimePlanInput = z.infer<typeof dreamLaunchRuntimePlanInputDto>;
+export type DreamLaunchRuntimePrepareInput = z.infer<typeof dreamLaunchRuntimePrepareInputDto>;

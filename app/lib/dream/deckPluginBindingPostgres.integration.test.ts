@@ -1,7 +1,7 @@
-// [Input] Named disposable PostgreSQL, restricted role and Registry122-129 DTO-Service-Drizzle path.
-// [Output] Binding CAS plus evidence-bound Runtime plan/materialization/Workspace installation evidence.
+// [Input] Named disposable PostgreSQL, restricted role and Registry122-132 DTO-Service-Drizzle path.
+// [Output] Binding CAS plus current/frozen launch Runtime and materialization evidence.
 // [Pos] Isolated destructive technical contract; never uses normal business data.
-// [Sync] 2026-09-16: verify Agent-type preparation through the restricted Admin executor.
+// [Sync] 2026-09-16: verify launch scope/current/replay through the restricted Admin executor.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -15,6 +15,9 @@ import {
   deckPluginBindingStateDto,
   deckPluginBindingValidationDto,
   deckPluginOptionsDto,
+  dreamLaunchRuntimePlanDto,
+  dreamLaunchRuntimePreparedDto,
+  dreamLaunchRuntimeScopeDto,
 } from "./deckPluginBindingDto";
 import { runDeckPluginBindingOperation } from "./deckPluginBindingService";
 
@@ -27,6 +30,11 @@ const concurrentDeckId = "deck-binding-race";
 const workspaceId = "workspace-binding-1";
 const runtimeDeckId = "deck-binding-runtime";
 const runtimeWorkspaceId = "workspace-binding-runtime";
+const launchDeckId = "deck-binding-launch";
+const launchWorkspaceId = "workspace-binding-launch";
+const launchBindingId = `dpb_${"7".repeat(32)}`;
+const launchRunId = `run_${"7".repeat(32)}`;
+const launchThreadId = "thread-binding-launch";
 const principal = (id: string) => ({ subject: `binding-subject-${id}`, canonical_user_id: id,
   client_id: "dream-browser", scopes: ["dream:read", "dream:write"], status: "active" });
 const selection = (targetDeck = deckId) => ({ deck_id: targetDeck, workspace_id: workspaceId,
@@ -57,11 +65,13 @@ describe.skipIf(!enabled)("Deck Plugin binding PostgreSQL contract", () => {
       INSERT INTO story_workspace_workspaces (id, name, owner_id, settings) VALUES
         ('${workspaceId}', 'Binding Workspace', 1, '{}'),
         ('${runtimeWorkspaceId}', 'Runtime Workspace', 1, '{}'),
+        ('${launchWorkspaceId}', 'Launch Workspace', 1, '{}'),
         ('workspace-binding-2', 'Foreign Workspace', 2, '{}');
       INSERT INTO decks (id, name, owner_id, draft_revision) VALUES
         ('${deckId}', 'Binding Deck', 1, 1),
         ('${concurrentDeckId}', 'Binding Race Deck', 1, 1),
         ('${runtimeDeckId}', 'Binding Runtime Deck', 1, 1),
+        ('${launchDeckId}', 'Binding Launch Deck', 1, 1),
         ('deck-binding-foreign', 'Foreign Deck', 2, 1);
     `);
     await admin.query(`INSERT INTO deck_plugin_releases
@@ -111,6 +121,38 @@ describe.skipIf(!enabled)("Deck Plugin binding PostgreSQL contract", () => {
       fixture.lock.claude_code_plugins[0].resolved_version,
       fixture.lock.claude_code_plugins[0].artifact_digest, `sha256:${"e".repeat(64)}`,
     ]);
+    await admin.query(`INSERT INTO deck_plugin_bindings
+      (deck_plugin_binding_id, deck_id, workspace_id, creator_id, deck_plugin_id,
+       deck_plugin_version, binding_revision, status, applied_to)
+      VALUES ($1,$2,$3,'1',$4,$5,1,'active','next_run')`, [
+      launchBindingId, launchDeckId, launchWorkspaceId, fixture.manifest.deck_plugin_id,
+      fixture.manifest.deck_plugin_version,
+    ]);
+    await admin.query(`INSERT INTO workflow_preflights
+      (workflow_preflight_id, request_fingerprint, deck_id, binding_revision,
+       deck_plugin_id, deck_plugin_version, runtime_plugin_lock_id,
+       deck_runtime_profile_id, input_hash, status, expires_at, created_by)
+      VALUES ($1,'binding-launch-preflight',$2,1,$3,$4,$5,'binding-launch-profile',$6,
+       'passed',now() + interval '1 day','1')`, [
+      `pf_${"7".repeat(32)}`, launchDeckId, fixture.manifest.deck_plugin_id,
+      fixture.manifest.deck_plugin_version, fixture.lock.runtime_plugin_lock_id,
+      `sha256:${"7".repeat(64)}`,
+    ]);
+    await admin.query("ALTER TABLE workflow_runs DISABLE TRIGGER ALL");
+    await admin.query(`INSERT INTO workflow_runs
+      (id, workspace_id, deck_plugin_id, deck_plugin_version, workflow_definition_ref,
+       deck_runtime_snapshot_id, status, deck_plugin_manifest_hash, deck_plugin_binding_id,
+       binding_revision, runtime_plugin_lock_id, workflow_preflight_id, source_voice_thread_id,
+       idempotency_key, input_hash, semantic_fingerprint, created_by)
+      VALUES ($1,$2,$3,$4,$5,'binding-launch-snapshot','queued',$6,$7,1,$8,$9,$10,
+       'binding-launch-key',$11,$12,'1')`, [
+      launchRunId, launchWorkspaceId, fixture.manifest.deck_plugin_id,
+      fixture.manifest.deck_plugin_version, fixture.release.workflow_definition_ref,
+      fixture.release.manifest_hash, launchBindingId, fixture.lock.runtime_plugin_lock_id,
+      `pf_${"7".repeat(32)}`, launchThreadId, `sha256:${"8".repeat(64)}`,
+      `sha256:${"9".repeat(64)}`,
+    ]);
+    await admin.query("ALTER TABLE workflow_runs ENABLE TRIGGER ALL");
   });
 
   afterAll(async () => { await restrictedPool.end(); await admin.end(); });
@@ -187,6 +229,44 @@ describe.skipIf(!enabled)("Deck Plugin binding PostgreSQL contract", () => {
     expect(installed.rows).toEqual([{ status: "ready", default_version: fixture.manifest.deck_plugin_version,
       installed_versions_json: JSON.stringify([fixture.manifest.deck_plugin_version]),
       approved_capabilities_json: JSON.stringify(fixture.manifest.capabilities) }]);
+  });
+
+  it("authorizes and prepares current launch then derives frozen replay from the Run", async () => {
+    const scope = { deck_id: launchDeckId, workspace_id: launchWorkspaceId, agent_id: null };
+    expect(dreamLaunchRuntimeScopeDto.parse(await database.transaction(tx => runDeckPluginBindingOperation(
+      "dream-launch.runtime-scope", scope, principal("1"), tx, runtimePolicy))))
+      .toEqual({ ...scope, authorized: true });
+    const currentInput = { ...scope, mode: "current" as const, workflow_run_id: null, thread_id: null };
+    const current = dreamLaunchRuntimePlanDto.parse(await database.transaction(tx => runDeckPluginBindingOperation(
+      "dream-launch.runtime-plan", currentInput, principal("1"), tx, runtimePolicy)));
+    expect(current).toMatchObject({ mode: "current", binding: { deck_plugin_binding_id: launchBindingId,
+      binding_revision: 1 }, target: { runtime_plugin_lock_id: fixture.lock.runtime_plugin_lock_id } });
+    expect(current.target).not.toHaveProperty("artifact_path");
+    const evidence = { plugin_installation_id: current.target.plugin_installation_id,
+      package_spec: current.target.package_spec, resolved_version: current.target.resolved_version,
+      artifact_digest: current.target.artifact_digest, has_manifest: true as const };
+    expect(dreamLaunchRuntimePreparedDto.parse(await database.transaction(tx => runDeckPluginBindingOperation(
+      "dream-launch.runtime-prepare", { ...currentInput, expected_binding_revision: 1, verified_plugin: evidence },
+      principal("1"), tx, runtimePolicy)))).toMatchObject({ mode: "current", runtime_ready: true });
+
+    await admin.query("UPDATE deck_plugin_bindings SET status='stale' WHERE deck_plugin_binding_id=$1", [launchBindingId]);
+    await admin.query(`INSERT INTO deck_plugin_bindings
+      (deck_plugin_binding_id, deck_id, workspace_id, creator_id, deck_plugin_id,
+       deck_plugin_version, binding_revision, status, applied_to)
+      VALUES ($1,$2,$3,'1',$4,$5,2,'active','next_run')`, [
+      `dpb_${"8".repeat(32)}`, launchDeckId, launchWorkspaceId, fixture.manifest.deck_plugin_id,
+      fixture.manifest.deck_plugin_version,
+    ]);
+    const replayInput = { ...scope, mode: "replay" as const, workflow_run_id: launchRunId,
+      thread_id: launchThreadId };
+    const replay = dreamLaunchRuntimePlanDto.parse(await database.transaction(tx => runDeckPluginBindingOperation(
+      "dream-launch.runtime-plan", replayInput, principal("1"), tx, runtimePolicy)));
+    expect(replay).toMatchObject({ mode: "replay", binding: { deck_plugin_binding_id: launchBindingId,
+      binding_revision: 1 }, target: { runtime_plugin_lock_id: fixture.lock.runtime_plugin_lock_id } });
+    expect(dreamLaunchRuntimePreparedDto.parse(await database.transaction(tx => runDeckPluginBindingOperation(
+      "dream-launch.runtime-prepare", { ...replayInput, expected_binding_revision: 1, verified_plugin: evidence },
+      principal("1"), tx, runtimePolicy)))).toMatchObject({ mode: "replay", binding: {
+        deck_plugin_binding_id: launchBindingId, binding_revision: 1 }, runtime_ready: true });
   });
 
   it("serializes concurrent compare-and-swap so only one revision commits", async () => {

@@ -1,7 +1,7 @@
-// [Input] Registered Registry122-129 operation, service-bound OAuth and strict request envelope.
+// [Input] Registered Registry122-132 operation, service-bound OAuth and strict request envelope.
 // [Output] DTO-validated binding/Runtime result; every write commits with its receipt in one Admin transaction.
 // [Pos] Thin OAuth-only ingress; no Runtime, filesystem or generic database dispatch.
-// [Sync] 2026-09-16: expose clear and evidence-bound Agent-type Runtime preparation.
+// [Sync] 2026-09-16: expose launch scope/current/replay and evidence-bound Runtime preparation.
 import { z } from "zod";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 import { requestIdDto } from "../auth/dto";

@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: append launch scope/plan/prepare operations as Registry130-132.
 // [Sync] 2026-09-16: append Agent-type clear/plan/prepare operations as Registry127-129.
 // [Sync] 2026-09-16: append claim-bound confirmation Runtime authority as Registry121.
 // [Input] Named domain input/output DTOs and exact schema requirements.

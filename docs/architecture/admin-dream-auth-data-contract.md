@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-16: register Dream launch Runtime scope/current/replay as Registry130-132. -->
 <!-- [Sync] 2026-09-16: register Agent-type clear/Runtime plan/prepare as Registry127-129. -->
 <!-- [Sync] 2026-09-16: register Story Workspace confirmation persistence and durable delivery as Registry120. -->
 <!-- [Sync] 2026-09-15: register Story Workspace Guidance persistence as Registry115. -->
@@ -11,7 +12,41 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际129操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry126 descriptor前缀保持。Registry127-129 Agent type、Registry122-126 Deck Plugin binding、Registry120 confirmation、Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证。Dream公开 `agent-type` 与五个binding接口均已消费Admin operation；Dream launch 仍复用旧 provisioning 数据库服务，和其他生产数据库入口继续按[全域映射](admin-dream-domain-implementation-map.md)关闭。本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际132操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry129 descriptor前缀保持。Registry130-132 Dream launch Runtime、Registry127-129 Agent type、Registry122-126 Deck Plugin binding、Registry120 confirmation、Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证。Dream launch 已删除旧 Runtime provisioning 数据库服务并消费 Admin current/replay operation；source、Preflight、Run、dispatch 与失败记录等其余生产数据库入口继续按[全域映射](admin-dream-domain-implementation-map.md)关闭。本稿不是完整部署或真实业务回执。
+
+### Dream Launch Runtime（注册130–132）
+
+`dream-launch.runtime-scope` 接受 Deck、Workspace 与 nullable Voice；Admin 从 OAuth 主体校验 enabled Deck、同 owner Workspace 与可选 enabled Voice。`runtime-plan` 使用闭集 `mode`：`current` 要求 Run/Thread 均为 null，并派生当前 active binding；`replay` 要求精确 `run_*` 与 source Thread，并从 actor-owned Run、Preflight 和 binding 关系派生已冻结的 revision 与 Runtime lock。调用方不能提交 actor、Plugin/version、lock、路径、placement、policy、SQL、表列或事务选择器。
+
+plan 只返回 binding projection 和本地校验所需的 installation/package/version/digest/compatibility，不返回 `artifact_path` 或 `cache_ref`。Dream 从受控共享 artifact store 推导路径并校验 digest、manifest 与 Claude CLI。`runtime-prepare` 接收原 mode identity、plan revision 和精确 evidence，在 receipt UOW 中重新锁定 scope 与 current/frozen 关系，拒绝 revision 或 evidence 漂移，幂等写或刷新 materialization；current 模式同时确保 Workspace installation，replay 模式不切换至更新的 active binding。当前部署策略不再允许已冻结 lock 时返回明确失败，Dream 不回退数据库或隐式安装。
+
+```mermaid
+sequenceDiagram
+  participant UI as Dream Browser
+  participant D as Dream Launch
+  participant A as Admin Registry130-132
+  participant F as Shared artifact + Claude CLI
+  participant P as Admin PostgreSQL
+  UI->>D: start Deck/goal/idempotency key
+  D->>A: runtime-scope + current OAuth
+  A->>P: Drizzle enabled Deck/Workspace/Voice check
+  D->>D: resolve existing idempotent Run
+  alt new launch
+    D->>A: runtime-plan(current, Run=null, Thread=null)
+    A->>P: active binding + policy lock + ready installation
+  else queued replay
+    D->>A: runtime-plan(replay, Run, source Thread)
+    A->>P: owned Run + Preflight + frozen binding/lock
+  end
+  A-->>D: binding + verification candidate without path
+  D->>F: verify artifact digest + manifest + CLI
+  D->>A: runtime-prepare + exact evidence
+  A->>P: recheck + materialization + optional Workspace installation + receipt
+  A-->>D: runtime_ready + same binding
+  D->>D: existing Preflight/Run/source/Agent dispatch flow
+```
+
+三个 operation SHA 依次为 `67dbe0a6eb7ddfd9bd1fa668e38f143add53201b725b19506af976319bba2b92`、`efd986cef6f891202c4d3ceb889d7491e8227dc097eeb009202a2be92549e9a6`、`d9c2faeb03b86cf562286f283e5bfcd3098e1da81c1b628c2e9aaa5a7b897882`。Registry129 prefix SHA 保持 `686f0668c72ca6114d894392d2dd2a2fde228b87fa31a1b858fd1dd553663881`，完整 Registry132 SHA 为 `6e0149b3d3354d081564af21349f364cc092087d5aadce0d5164654a6c005bb2`。63 个既有 Admin migration 已满足本阶段，无新 schema 或 migration。
 
 ### Deck Plugin Binding 与 Agent Type（注册122–129）
 
@@ -58,7 +93,7 @@ sequenceDiagram
   D-->>B: original public response
 ```
 
-前五项契约 SHA 保持不变。新增 clear、runtime-plan、runtime-prepare SHA 依次为 `9a89ec380e280fc64b67b9725a68edf3244df0f76e41df8db5fd89b3e3fd44fc`、`87a3f0497e3927aa8c8048e6bc79de1b042631f096f85184568201dce378e5f7`、`9cc1a08d15e0279ed977bb5b7ee25a5ab270cf32a4f67ded719c23e33d000716`。完整 Registry126 prefix SHA 保持 `67a18f69f0674270c5f316959a7d962ef7a8c201249f4c45ac3a780ed710eada`，完整 Registry129 SHA 为 `686f0668c72ca6114d894392d2dd2a2fde228b87fa31a1b858fd1dd553663881`。现有 Admin Drizzle schema 与 unified capability 足够，无 migration；Dream launch 中的旧 provisioning 服务仍是后续显式缺口。
+前五项契约 SHA 保持不变。新增 clear、runtime-plan、runtime-prepare SHA 依次为 `9a89ec380e280fc64b67b9725a68edf3244df0f76e41df8db5fd89b3e3fd44fc`、`87a3f0497e3927aa8c8048e6bc79de1b042631f096f85184568201dce378e5f7`、`9cc1a08d15e0279ed977bb5b7ee25a5ab270cf32a4f67ded719c23e33d000716`。完整 Registry126 prefix SHA 保持 `67a18f69f0674270c5f316959a7d962ef7a8c201249f4c45ac3a780ed710eada`，完整 Registry129 SHA 为 `686f0668c72ca6114d894392d2dd2a2fde228b87fa31a1b858fd1dd553663881`。现有 Admin Drizzle schema 与 unified capability 足够，无 migration；launch Runtime 的三项后续契约见上节 Registry130-132。
 
 ### Story Workspace Confirmation（注册120）
 
