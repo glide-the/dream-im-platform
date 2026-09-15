@@ -3,6 +3,7 @@
 // [Pos] ClaudePlugin Marketplace control-plane service; Dream consumes only approved entries through the published capability.
 // [Sync] 2026-08-19: implement remote Git synchronization without a Marketplace object-storage bucket or user-scoped catalog.
 // [Sync] 2026-09-02: sparsely materialize commit-pinned GitHub files when smart-Git/archive transport is unavailable and preserve actionable failures.
+// [Sync] 2026-09-15: match Dream's canonical path-component ordering when hashing complete plugin directories.
 
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -449,9 +450,24 @@ async function walkInventory(root: string) {
 
   await walk(root);
   const digest = createHash("sha256");
-  digestFiles.sort((left, right) =>
-    Buffer.compare(Buffer.from(left.relative, "utf8"), Buffer.from(right.relative, "utf8")),
-  );
+  // Dream's canonical Python digest orders pathlib paths by their component
+  // tuples. Comparing the complete POSIX string puts a sibling file such as
+  // `skills.md` before `skills/example/SKILL.md` because `.` sorts before `/`,
+  // producing a different digest for the same tree. Compare each UTF-8 path
+  // component so Admin approval and Dream installation use identical bytes.
+  digestFiles.sort((left, right) => {
+    const leftParts = left.relative.split("/");
+    const rightParts = right.relative.split("/");
+    const sharedLength = Math.min(leftParts.length, rightParts.length);
+    for (let index = 0; index < sharedLength; index += 1) {
+      const order = Buffer.compare(
+        Buffer.from(leftParts[index], "utf8"),
+        Buffer.from(rightParts[index], "utf8"),
+      );
+      if (order !== 0) return order;
+    }
+    return leftParts.length - rightParts.length;
+  });
   for (const file of digestFiles) {
     const relativeBytes = Buffer.from(file.relative, "utf8");
     const relativeLength = Buffer.alloc(4);
