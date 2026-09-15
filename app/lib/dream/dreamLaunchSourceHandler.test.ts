@@ -1,13 +1,14 @@
-// [Input] Closed source ensure envelope with fixed service/OAuth/capability/domain collaborators.
-// [Output] Live owner composition and selector/entity/scope/capability failures before source writes.
+// [Input] Closed source ensure/replay envelopes with fixed service/OAuth/capability/domain collaborators.
+// [Output] Live owner composition and selector/entity/scope/capability failures before persistence access.
 // [Pos] Provider-free unregistered ingress gate; public source registration/SQL remains separate.
-// [Sync] 2026-09-15: require OAuth write principal and exact source persistence capabilities.
+// [Sync] 2026-09-16: cover Registry133 read routing and separate read/write scopes.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), transaction: vi.fn(), ensure: vi.fn() }));
+const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), transaction: vi.fn(), ensure: vi.fn(), lookup: vi.fn() }));
 vi.mock("../auth/serviceIdentity", () => ({ requireDreamService: mocks.service }));
 vi.mock("../auth/serviceAccessToken", () => ({ principalForServiceToken: mocks.principal }));
 vi.mock("./database", () => ({ withDataTransaction: mocks.transaction }));
-vi.mock("./dreamLaunchSourceService", async original => ({ ...await original<typeof import("./dreamLaunchSourceService")>(), ensureDreamLaunchSource: mocks.ensure }));
+vi.mock("./dreamLaunchSourceService", async original => ({ ...await original<typeof import("./dreamLaunchSourceService")>(),
+  ensureDreamLaunchSource: mocks.ensure, lookupDreamLaunchReplay: mocks.lookup }));
 import { handleDreamLaunchSource } from "./dreamLaunchSourceHandler";
 import { dreamLaunchSourceSchemaRequirements } from "./dreamLaunchSourceService";
 import { AuthBoundaryError } from "../auth/config";
@@ -18,6 +19,13 @@ function request(raw: unknown = input, token = "original-token") { return new Re
 beforeEach(() => {
   vi.resetAllMocks(); vi.stubEnv("DREAM_DATA_MAX_BODY_BYTES", "10000"); mocks.service.mockReturnValue(service); mocks.principal.mockResolvedValue(principal);
   mocks.transaction.mockImplementation(async (_requirements, action) => action({ marker: "tx" })); mocks.ensure.mockResolvedValue({ ensured: true });
+  mocks.lookup.mockResolvedValue({ replay: null });
+});
+it("routes replay lookup through the read principal and omits receipt/write parameters", async () => {
+  const response = await handleDreamLaunchSource(request(), "dream-launch-replay.lookup"); expect(response.status).toBe(200);
+  expect(mocks.principal).toHaveBeenCalledWith({ marker: "tx" }, "original-token", service, "dream:read");
+  expect(mocks.lookup).toHaveBeenCalledWith(input, { principal, threadScope: null, runScope: null }, { marker: "tx" });
+  expect(mocks.ensure).not.toHaveBeenCalled();
 });
 afterEach(() => vi.unstubAllEnvs());
 it("composes live OAuth owner, closed source and exact caps in one persistence UOW", async () => {

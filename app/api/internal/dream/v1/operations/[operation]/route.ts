@@ -16,7 +16,7 @@ import { handleWorkflowPreflightRead, handleWorkflowPreflightExecute } from "../
 import { handleUserPreferences, isUserPreferencesOperation } from "../../../../../../lib/dream/userPreferencesHandler";
 import { handleSocialFriendship, isSocialFriendshipOperation } from "../../../../../../lib/dream/socialFriendshipHandler";
 import { handleWorkflowRunCreation, isWorkflowRunCreationOperation } from "../../../../../../lib/dream/workflowRunCreationHandler";
-import { handleDreamLaunchSource } from "../../../../../../lib/dream/dreamLaunchSourceHandler";
+import { handleDreamLaunchSource, isDreamLaunchSourceOperation } from "../../../../../../lib/dream/dreamLaunchSourceHandler";
 import { handleDreamLaunchDispatch, isDreamLaunchDispatchOperation } from "../../../../../../lib/dream/dreamLaunchDispatchHandler";
 import { handleWorkspaceDefault } from "../../../../../../lib/dream/workspaceDefaultHandler";
 import { handleDreamLaunchFailure } from "../../../../../../lib/dream/dreamLaunchFailureHandler";
@@ -60,7 +60,7 @@ export async function POST(request: Request, context: { params: Promise<{ operat
   if (isReflectionTaskOperation(name)) return handleReflectionTaskOperation(request, name);
   if (name === "workspace-default.ensure") return handleWorkspaceDefault(request, name);
   if (isWorkflowRunCreationOperation(name)) return handleWorkflowRunCreation(request, name);
-  if (name === "dream-launch-source.ensure") return handleDreamLaunchSource(request, name);
+  if (isDreamLaunchSourceOperation(name)) return handleDreamLaunchSource(request, name);
   if (isDreamLaunchDispatchOperation(name)) return handleDreamLaunchDispatch(request, name);
   return name === "user-profile.current" ? handleUserProfile(request) : name === "workflow-context.resolve" ? handleWorkflowContext(request) : name === "workflow-preflight.read" ? handleWorkflowPreflightRead(request) : name === "workflow-preflight.execute" ? handleWorkflowPreflightExecute(request) : name === "chat-user-message.persist" ? handleUserMessage(request) : isWorkflowRunOperation(name) ? handleWorkflowRun(request, name) : isWorkflowRunCommandOperation(name) ? handleWorkflowRunCommand(request, name) : isEditorSessionOperation(name) ? handleEditorSessionOperation(request, name) : isDeckVoiceOperation(name) ? handleDeckVoiceOperation(request, name) : isDeckRuntimeDataOperation(name) ? handleDeckRuntimeData(request, name) : isUserPreferencesOperation(name) ? handleUserPreferences(request, name) : isSocialFriendshipOperation(name) ? handleSocialFriendship(request, name) : handleChatThreadOperation(request, name);
 }

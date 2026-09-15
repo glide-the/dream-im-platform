@@ -1,9 +1,10 @@
 // [Input] Existing typed Admin transaction and verified canonical actor.
-// [Output] Current enabled Deck/workspace scope, locked deterministic source and atomic backing inserts.
+// [Output] Current enabled Deck/workspace scope, scoped replay facts, locked source and atomic inserts.
 // [Pos] Launch source repository; no pool, transaction commit, Runtime or user-authored metadata.
-// [Sync] 2026-09-15: preserve original hidden source transaction and exact PostgreSQL clock text.
+// [Sync] 2026-09-16: add typed actor/workspace/idempotency replay lookup without raw SQL selectors.
 import { and, eq, sql } from "drizzle-orm";
-import { chat_message as message, chat_thread as thread, decks } from "@ink-memory/db/schema/dream";
+import { chat_message as message, chat_thread as thread, decks, workflow_preflights as preflight,
+  workflow_runs as run } from "@ink-memory/db/schema/dream";
 import { storyWorkspaceWorkspaces as workspace } from "@ink-memory/db/schema";
 import { AuthBoundaryError } from "../auth/config";
 import { decimalIdDto } from "../auth/dto";
@@ -33,6 +34,15 @@ export class DreamLaunchSourceRepository {
   async existingThread(threadId: string) {
     return (await this.tx.select({ user_id: sql<string>`${thread.user_id}::text`, deck_id: thread.deck_id, voice_id: thread.voice_id })
       .from(thread).where(eq(thread.id, threadId)).limit(1).for("update"))[0] ?? null;
+  }
+  async scopedReplay(workspaceId: string, key: string) {
+    return (await this.tx.select({ workflow_run_id: run.id, workflow_preflight_id: run.workflow_preflight_id,
+      source_voice_thread_id: run.source_voice_thread_id, source_message_id: run.source_message_id,
+      source_message_time: sql<string | null>`${run.source_message_time}::text`, input_hash: run.input_hash,
+      preflight_deck_id: preflight.deck_id, preflight_created_by: preflight.created_by })
+      .from(run).innerJoin(preflight, eq(preflight.workflow_preflight_id, run.workflow_preflight_id))
+      .where(and(eq(run.workspace_id, workspaceId), eq(run.created_by, this.actor), eq(run.idempotency_key, key)))
+      .limit(1))[0] ?? null;
   }
   async clock() {
     const result = await this.tx.execute(sql`SELECT clock_timestamp()::text AS now`);

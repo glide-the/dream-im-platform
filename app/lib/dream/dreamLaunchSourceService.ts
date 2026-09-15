@@ -1,7 +1,7 @@
 // [Input] OAuth write principal, closed launch request and one existing Admin UOW.
-// [Output] Atomic hidden source or original replay with unchanged parts/dispatch facts/Thread order.
+// [Output] Atomic hidden source or bounded read of an existing frozen launch Run.
 // [Pos] Registered launch persistence domain; source identity/content are server-derived.
-// [Sync] 2026-09-15: current scope and stored source authority precede bounded original receipt recovery.
+// [Sync] 2026-09-16: expose actor-scoped idempotent replay identity before current Runtime planning.
 import { dreamLaunchProtocolPolicy as policy } from "../../../config/dream-launch-policy";
 import { AuthBoundaryError } from "../auth/config";
 import { principalDto } from "../auth/dto";
@@ -10,10 +10,12 @@ import type { DataTransaction } from "./database";
 import { dreamUnifiedSchemaRequirement } from "./chatThreadService";
 import type { ChatThreadActor } from "./chatThreadService";
 import { ReceiptRepository } from "./receipts";
-import { dreamLaunchSourceDto, dreamLaunchSourceEnsureInputDto, dreamLaunchSourceEnsureOutputDto, type DreamLaunchSourceEnsureInput } from "./dreamLaunchSourceDto";
+import { dreamLaunchReplayLookupOutputDto, dreamLaunchSourceDto, dreamLaunchSourceEnsureInputDto,
+  dreamLaunchSourceEnsureOutputDto, type DreamLaunchSourceEnsureInput } from "./dreamLaunchSourceDto";
 import { DreamLaunchSourceRepository, type DreamLaunchExistingMessage } from "./dreamLaunchSourceRepository";
 import { dreamLaunchSourceEnvelope, dreamLaunchSourceIdentity } from "./dreamLaunchSourceSemantics";
 import { projectWorkflowTimestamp } from "./workflowRunService";
+import { canonicalBusinessJson } from "./deckContentCanonical";
 
 export const dreamLaunchSourceSchemaRequirements = [identitySchemaRequirement, dreamUnifiedSchemaRequirement] as const;
 export function validateExistingDreamLaunchSource(row: DreamLaunchExistingMessage, actor: string, input: DreamLaunchSourceEnsureInput, identity: Awaited<ReturnType<typeof dreamLaunchSourceIdentity>>) {
@@ -25,6 +27,28 @@ export function validateExistingDreamLaunchSource(row: DreamLaunchExistingMessag
     throw new AuthBoundaryError("DREAM_LAUNCH_IDEMPOTENCY_CONFLICT", 409);
   return dreamLaunchSourceDto.parse({ thread_id: identity.threadId, message_id: identity.messageId,
     message_time: projectWorkflowTimestamp(row.created_at), request_fingerprint: identity.requestFingerprint, created: false });
+}
+export async function lookupDreamLaunchReplay(rawInput: unknown, actor: ChatThreadActor & { runScope?: string | null }, tx: DataTransaction) {
+  const parsed = dreamLaunchSourceEnsureInputDto.safeParse(rawInput);
+  if (!parsed.success) throw new AuthBoundaryError("INPUT_INVALID", 400);
+  const input = parsed.data, principal = principalDto.parse(actor.principal);
+  if (!principal.scopes.includes("dream:read")) throw new AuthBoundaryError("DREAM_SCOPE_REQUIRED", 403);
+  if (actor.threadScope !== null || (actor.runScope ?? null) !== null) throw new AuthBoundaryError("DREAM_DELEGATION_ENTITY_DENIED", 403);
+  const store = new DreamLaunchSourceRepository(tx, principal.canonical_user_id);
+  await store.requireScope(input.workspace_id, input.deck_id);
+  const replay = await store.scopedReplay(input.workspace_id, input.idempotency_key);
+  if (!replay) return dreamLaunchReplayLookupOutputDto.parse({ replay: null });
+  const identity = await dreamLaunchSourceIdentity(principal.canonical_user_id, input);
+  const source = await store.existingMessage(identity.messageId);
+  if (!source) throw new AuthBoundaryError("DREAM_LAUNCH_SOURCE_UNAVAILABLE", 503);
+  const validated = validateExistingDreamLaunchSource(source, principal.canonical_user_id, input, identity);
+  const goalHash = (await canonicalBusinessJson(JSON.stringify({ goal: input.goal }))).content_hash;
+  if (replay.preflight_created_by !== principal.canonical_user_id || replay.preflight_deck_id !== input.deck_id ||
+    replay.source_voice_thread_id !== identity.threadId || replay.source_message_id !== identity.messageId ||
+    projectWorkflowTimestamp(replay.source_message_time) !== validated.message_time || replay.input_hash !== goalHash)
+    throw new AuthBoundaryError("DREAM_LAUNCH_IDEMPOTENCY_CONFLICT", 409);
+  return dreamLaunchReplayLookupOutputDto.parse({ replay: { workflow_run_id: replay.workflow_run_id,
+    workflow_preflight_id: replay.workflow_preflight_id, thread_id: identity.threadId, message_id: identity.messageId } });
 }
 export async function ensureDreamLaunchSource(rawInput: unknown, actor: ChatThreadActor & { runScope?: string | null }, serviceClientId: string, requestId: string, tx: DataTransaction) {
   const parsed = dreamLaunchSourceEnsureInputDto.safeParse(rawInput);

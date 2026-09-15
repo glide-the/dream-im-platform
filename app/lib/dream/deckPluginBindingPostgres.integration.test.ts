@@ -1,7 +1,7 @@
-// [Input] Named disposable PostgreSQL, restricted role and Registry122-132 DTO-Service-Drizzle path.
-// [Output] Binding CAS plus current/frozen launch Runtime and materialization evidence.
+// [Input] Named disposable PostgreSQL, restricted role and Registry122-133 DTO-Service-Drizzle path.
+// [Output] Binding CAS, current/frozen Runtime and actor-derived replay lookup evidence.
 // [Pos] Isolated destructive technical contract; never uses normal business data.
-// [Sync] 2026-09-16: verify launch scope/current/replay through the restricted Admin executor.
+// [Sync] 2026-09-16: verify Registry133 source/Run replay through the restricted Admin executor.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -20,6 +20,9 @@ import {
   dreamLaunchRuntimeScopeDto,
 } from "./deckPluginBindingDto";
 import { runDeckPluginBindingOperation } from "./deckPluginBindingService";
+import { lookupDreamLaunchReplay } from "./dreamLaunchSourceService";
+import { dreamLaunchSourceEnvelope, dreamLaunchSourceIdentity } from "./dreamLaunchSourceSemantics";
+import { canonicalBusinessJson } from "./deckContentCanonical";
 
 const adminUrl = process.env.DECK_PLUGIN_BINDING_TEST_ADMIN_URL;
 const restrictedUrl = process.env.DECK_PLUGIN_BINDING_TEST_DATABASE_URL;
@@ -34,9 +37,11 @@ const launchDeckId = "deck-binding-launch";
 const launchWorkspaceId = "workspace-binding-launch";
 const launchBindingId = `dpb_${"7".repeat(32)}`;
 const launchRunId = `run_${"7".repeat(32)}`;
-const launchThreadId = "thread-binding-launch";
+const replayInput = { workspace_id: launchWorkspaceId, deck_id: launchDeckId, agent_id: null,
+  goal: "Registry133 回放", idempotency_key: "binding-launch-key" };
+let replayIdentity: Awaited<ReturnType<typeof dreamLaunchSourceIdentity>>;
 const principal = (id: string) => ({ subject: `binding-subject-${id}`, canonical_user_id: id,
-  client_id: "dream-browser", scopes: ["dream:read", "dream:write"], status: "active" });
+  client_id: "dream-browser", scopes: ["dream:read", "dream:write"], status: "active" as const });
 const selection = (targetDeck = deckId) => ({ deck_id: targetDeck, workspace_id: workspaceId,
   deck_plugin_id: fixture.manifest.deck_plugin_id, deck_plugin_version: fixture.manifest.deck_plugin_version,
   apply_to: "next_run" as const });
@@ -55,6 +60,9 @@ describe.skipIf(!enabled)("Deck Plugin binding PostgreSQL contract", () => {
   const database = drizzle(restrictedPool);
 
   beforeAll(async () => {
+    replayIdentity = await dreamLaunchSourceIdentity("1", replayInput);
+    const source = dreamLaunchSourceEnvelope("1", replayInput, replayIdentity.requestFingerprint);
+    const goalHash = (await canonicalBusinessJson(JSON.stringify({ goal: replayInput.goal }))).content_hash;
     const identity = await admin.query("SELECT current_database() AS database, current_user AS actor");
     expect(String(identity.rows[0].database)).toMatch(/^ink_deck_plugin_binding_test_[a-z0-9_]+$/);
     expect(String(identity.rows[0].actor)).toBe("postgres");
@@ -139,17 +147,22 @@ describe.skipIf(!enabled)("Deck Plugin binding PostgreSQL contract", () => {
       `sha256:${"7".repeat(64)}`,
     ]);
     await admin.query("ALTER TABLE workflow_runs DISABLE TRIGGER ALL");
+    await admin.query(`INSERT INTO chat_thread (id, user_id, title, deck_id) VALUES ($1,1,'Registry133',$2)`,
+      [replayIdentity.threadId, launchDeckId]);
+    await admin.query(`INSERT INTO chat_message (id, thread_id, role, parts, metadata, created_at)
+      VALUES ($1,$2,'user',$3,$4,'2026-09-16T01:02:03.123456+00:00')`,
+      [replayIdentity.messageId, replayIdentity.threadId, source.parts, source.metadata]);
     await admin.query(`INSERT INTO workflow_runs
       (id, workspace_id, deck_plugin_id, deck_plugin_version, workflow_definition_ref,
        deck_runtime_snapshot_id, status, deck_plugin_manifest_hash, deck_plugin_binding_id,
        binding_revision, runtime_plugin_lock_id, workflow_preflight_id, source_voice_thread_id,
-       idempotency_key, input_hash, semantic_fingerprint, created_by)
-      VALUES ($1,$2,$3,$4,$5,'binding-launch-snapshot','queued',$6,$7,1,$8,$9,$10,
-       'binding-launch-key',$11,$12,'1')`, [
+       source_message_id, source_message_time, idempotency_key, input_hash, semantic_fingerprint, created_by)
+      VALUES ($1,$2,$3,$4,$5,'binding-launch-snapshot','queued',$6,$7,1,$8,$9,$10,$11,
+       '2026-09-16T01:02:03.123456+00:00','binding-launch-key',$12,$13,'1')`, [
       launchRunId, launchWorkspaceId, fixture.manifest.deck_plugin_id,
       fixture.manifest.deck_plugin_version, fixture.release.workflow_definition_ref,
       fixture.release.manifest_hash, launchBindingId, fixture.lock.runtime_plugin_lock_id,
-      `pf_${"7".repeat(32)}`, launchThreadId, `sha256:${"8".repeat(64)}`,
+      `pf_${"7".repeat(32)}`, replayIdentity.threadId, replayIdentity.messageId, goalHash,
       `sha256:${"9".repeat(64)}`,
     ]);
     await admin.query("ALTER TABLE workflow_runs ENABLE TRIGGER ALL");
@@ -258,7 +271,7 @@ describe.skipIf(!enabled)("Deck Plugin binding PostgreSQL contract", () => {
       fixture.manifest.deck_plugin_version,
     ]);
     const replayInput = { ...scope, mode: "replay" as const, workflow_run_id: launchRunId,
-      thread_id: launchThreadId };
+      thread_id: replayIdentity.threadId };
     const replay = dreamLaunchRuntimePlanDto.parse(await database.transaction(tx => runDeckPluginBindingOperation(
       "dream-launch.runtime-plan", replayInput, principal("1"), tx, runtimePolicy)));
     expect(replay).toMatchObject({ mode: "replay", binding: { deck_plugin_binding_id: launchBindingId,
@@ -267,6 +280,19 @@ describe.skipIf(!enabled)("Deck Plugin binding PostgreSQL contract", () => {
       "dream-launch.runtime-prepare", { ...replayInput, expected_binding_revision: 1, verified_plugin: evidence },
       principal("1"), tx, runtimePolicy)))).toMatchObject({ mode: "replay", binding: {
         deck_plugin_binding_id: launchBindingId, binding_revision: 1 }, runtime_ready: true });
+  });
+
+  it("reads Registry133 replay through strict DTO, Service and restricted Drizzle repository", async () => {
+    const actor = { principal: principal("1"), threadScope: null, runScope: null };
+    expect(await database.transaction(tx => lookupDreamLaunchReplay(replayInput, actor, tx))).toEqual({ replay: {
+      workflow_run_id: launchRunId, workflow_preflight_id: `pf_${"7".repeat(32)}`,
+      thread_id: replayIdentity.threadId, message_id: replayIdentity.messageId,
+    } });
+    expect(await database.transaction(tx => lookupDreamLaunchReplay(
+      { ...replayInput, idempotency_key: "missing-key" }, actor, tx))).toEqual({ replay: null });
+    await expect(database.transaction(tx => lookupDreamLaunchReplay(
+      { ...replayInput, goal: "changed" }, actor, tx)))
+      .rejects.toMatchObject({ code: "DREAM_LAUNCH_IDEMPOTENCY_CONFLICT", status: 409 });
   });
 
   it("serializes concurrent compare-and-swap so only one revision commits", async () => {

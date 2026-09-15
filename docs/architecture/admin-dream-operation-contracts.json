@@ -27734,5 +27734,127 @@
       "output_schema_version": 1,
       "contract_sha256": "d9c2faeb03b86cf562286f283e5bfcd3098e1da81c1b628c2e9aaa5a7b897882"
     }
+  },
+  {
+    "contract": {
+      "name": "dream-launch-replay.lookup",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "deck_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "goal": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000
+          },
+          "idempotency_key": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "workspace_id",
+          "deck_id",
+          "agent_id",
+          "goal",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "replay": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "workflow_run_id": {
+                    "type": "string",
+                    "pattern": "^run_[0-9a-f]{32}$"
+                  },
+                  "workflow_preflight_id": {
+                    "type": "string",
+                    "pattern": "^pf_[0-9a-f]{32}$"
+                  },
+                  "thread_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "message_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "workflow_run_id",
+                  "workflow_preflight_id",
+                  "thread_id",
+                  "message_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "replay"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "dream-launch-replay.lookup",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "af4d06490d6d030d9aa0a3b68460c15813786130a85c5133b438439a3fcb11fb"
+    }
   }
 ]

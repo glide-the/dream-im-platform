@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: append actor-scoped launch replay lookup as Registry133.
 // [Sync] 2026-09-16: append launch scope/plan/prepare operations as Registry130-132.
 // [Sync] 2026-09-16: append Agent-type clear/plan/prepare operations as Registry127-129.
 // [Sync] 2026-09-16: append claim-bound confirmation Runtime authority as Registry121.
@@ -36,7 +37,7 @@ import { socialFriendshipSchemaRequirements } from "./socialFriendshipService";
 import { workflowPreflightExecutionOperationContracts } from "./workflowPreflightExecutionDto";
 import { workflowRunCreationOperationContracts } from "./workflowRunCreationDto";
 import { workflowRunCreationSchemaRequirements } from "./workflowRunCreationService";
-import { dreamLaunchSourceOperationContracts } from "./dreamLaunchSourceDto";
+import { dreamLaunchReplayOperationContracts, dreamLaunchSourceOperationContracts } from "./dreamLaunchSourceDto";
 import { dreamLaunchDispatchOperationContracts } from "./dreamLaunchDispatchDto";
 import { workspaceDefaultOperationContracts } from "./workspaceDefaultDto";
 import { dreamLaunchFailureOperationContracts } from "./dreamLaunchFailureDto";
@@ -165,5 +166,9 @@ export const dreamOperations = [
   ...Object.entries(deckPluginBindingOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...deckPluginBindingSchemaRequirements], operation.userScope,
+  )),
+  ...Object.entries(dreamLaunchReplayOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope,
   )),
 ] as const;

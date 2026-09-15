@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// [Input] Admin Drizzle history and isolated Registry122-132 binding/launch Runtime PostgreSQL test.
-// [Output] Disposable named database, restricted-role ORM/CAS/current/replay evidence and cleanup.
+// [Input] Admin Drizzle history and isolated Registry122-133 launch/binding PostgreSQL test.
+// [Output] Disposable database, restricted-role ORM/CAS/runtime/replay-lookup evidence and cleanup.
 // [Pos] Technical verification harness; never targets the configured normal business database.
-// [Sync] 2026-09-16: grant the exact launch Run/Preflight reads and row-lock privileges.
+// [Sync] 2026-09-16: grant exact Registry133 source read/row-lock privileges.
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -65,13 +65,14 @@ try {
     await admin.query(`GRANT SELECT ON story_workspace_workspaces, decks, deck_plugin_releases,
       deck_runtime_plugin_locks, deck_plugin_installations, runtime_plugin_materializations,
       claude_plugin_installations, deck_plugin_bindings, workflow_preflights, workflow_runs,
-      voices TO ink_deck_plugin_binding_executor`);
+      voices, chat_thread, chat_message TO ink_deck_plugin_binding_executor`);
     // PostgreSQL row locks used for a stable selection snapshot require UPDATE
     // privilege even though these compatibility repositories never mutate rows.
     await admin.query(`GRANT UPDATE ON story_workspace_workspaces, deck_plugin_releases,
       deck_runtime_plugin_locks, deck_plugin_installations, runtime_plugin_materializations,
       claude_plugin_installations, workflow_preflights, workflow_runs
       TO ink_deck_plugin_binding_executor`);
+    await admin.query("GRANT UPDATE ON chat_thread, chat_message TO ink_deck_plugin_binding_executor");
     await admin.query("GRANT INSERT, UPDATE ON deck_plugin_bindings TO ink_deck_plugin_binding_executor");
     await admin.query("GRANT INSERT, UPDATE ON deck_plugin_installations, runtime_plugin_materializations TO ink_deck_plugin_binding_executor");
     await admin.query("GRANT UPDATE (draft_revision, updated_at) ON decks TO ink_deck_plugin_binding_executor");
