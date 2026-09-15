@@ -107,7 +107,9 @@
     "reflection-section.transcript",
     "reflection-section.finish",
     "reflection-event.append",
-    "reflection-report.ensure"
+    "reflection-report.ensure",
+    "local-data.import",
+    "first-login.complete"
   ],
   "entries": [
     {
@@ -29169,7 +29171,7 @@
         "user_preferences"
       ],
       "domain_calls": [],
-      "admin_operation": "pending canonical operation; entire aggregate boundary must remain Admin-owned"
+      "admin_operation": "first-login.complete (Registry101); Dream consumer replacement pending"
     },
     {
       "file": "backend/database.py",
@@ -29213,7 +29215,7 @@
       "domain_calls": [
         "report.get"
       ],
-      "admin_operation": "pending canonical operation; entire aggregate boundary must remain Admin-owned"
+      "admin_operation": "local-data.import (Registry101); Dream consumer replacement pending"
     },
     {
       "file": "backend/database.py",

@@ -1,7 +1,7 @@
 // [Input] Original request ID plus an implemented operation name and its exact OAuth, background or task authority.
 // [Output] Strict original request evidence bound to the derived service, actor and Reflections task when applicable.
 // [Pos] Unknown-commit recovery ingress; absence never causes automatic retry.
-// [Sync] 2026-09-15: add Registry99 OAuth/background Reflections recovery and exact RTA child-write checks.
+// [Sync] 2026-09-15: add Registry101 OAuth local-data recovery without replaying aggregate inserts.
 import { z } from "zod";
 import { AuthBoundaryError } from "../auth/config";
 import { requestIdDto } from "../auth/dto";
@@ -49,12 +49,29 @@ import { isReflectionsSectionConfigReceiptOperation, readOriginalReflectionsSect
 import { reflectionsSectionConfigSchemaRequirements } from "./reflectionsSectionConfigService";
 import { reflectionTaskIdDto, reflectionTaskOperationContracts, type ReflectionTaskBackgroundOperation, type ReflectionTaskOperation } from "./reflectionTaskDto";
 import { readOriginalReflectionTaskBackgroundReceipt } from "./reflectionTaskService";
+import { isLocalDataImportOperation } from "./localDataImportHandler";
+import { localDataImportOperationContracts } from "./localDataImportDto";
+import { localDataImportSchemaRequirements } from "./localDataImportService";
 export async function handleReceipt(request: Request, requestId: string) {
   return handleInternalAuthRequest(request, async (service, setRequestId) => {
     const parsed = requestIdDto.safeParse(requestId); if (!parsed.success) throw new AuthBoundaryError("INPUT_INVALID", 400);
     setRequestId(parsed.data);
     const query = new URL(request.url).searchParams;
     const name = query.get("operation") ?? "";
+    if (isLocalDataImportOperation(name)) {
+      if (query.size !== 1 || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+      const operation = localDataImportOperationContracts[name];
+      const receiptResultDto = z.discriminatedUnion("status", [
+        z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
+        z.strictObject({ status: z.literal("committed"), operation: z.literal(name), request_id: requestIdDto, result: operation.output }),
+      ]);
+      return withDataTransaction([identitySchemaRequirement, ...localDataImportSchemaRequirements], async tx => {
+        const principal = await principalForServiceToken(tx, request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", service, operation.userScope);
+        const row = await new ReceiptRepository(tx, service.id, principal.subject).find(name, parsed.data);
+        if (row && (!/^[0-9a-f]{64}$/.test(row.inputSha256) || row.threadScope !== null || row.editorSessionScope !== null || row.runScope !== null)) throw new AuthBoundaryError("LOCAL_DATA_RECEIPT_INVALID");
+        return receiptResultDto.parse({ status: row ? "committed" : "absent", operation: name, request_id: parsed.data, ...(row ? { result: row.result } : {}) });
+      });
+    }
     const reflectionTaskOperation = Object.hasOwn(reflectionTaskOperationContracts, name) ? reflectionTaskOperationContracts[name as ReflectionTaskOperation] : null;
     if (reflectionTaskOperation) {
       if (reflectionTaskOperation.kind !== "write") throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);

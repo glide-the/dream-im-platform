@@ -1,11 +1,17 @@
 <!-- [Input] Admin/Dream published baselines, PostgreSQL FK/transaction catalog, Better Auth 1.7.4 official protocol. -->
 <!-- [Output] Shared authentication, delegation, domain persistence and recovery contract. -->
 <!-- [Pos] Canonical cross-project contract owned by the Admin implementation task. -->
-<!-- [Sync] 2026-09-15: register the Reflections aggregate, exact child authority and gap-free int4 event stream. -->
+<!-- [Sync] 2026-09-15: register the atomic local-data import and first-login completion as Registry101. -->
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际99操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。旧83全部 descriptor canonical hash保持，独立Preflight回执/委托artifact字节保持。resource/Thread、Editor/Session、Deck19、refs6、Workflow context/确认保护、Run5、Preferences2、Social9已有隔离技术回执；Preflight独立剩余读取/恢复/阶段故障/中断补验通过，首完整失败保留。Run create/retry六原accepted事实保持，剩余22拒绝/10GET通过230断言，九故障/实际COMMIT响应丢失业务68断言通过但命令exit1为cleanup helper作用域错误，独立只读cleanup exit0/3。Launch source/claim/finish与Failure77隔离组件已通过各自续验、故障和保留门禁。默认Workspace注册76及20入口/恢复门禁通过，隔离公开347/独立故障90/保留159通过。SystemConfig、Reflections section-config和十六项Reflections aggregate均已注册；aggregate当前只有静态Route/authority/receipt证据，公开PostgreSQL/fault/ACL、Dream consumer与正常业务验收pending。其余领域仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际101操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry99 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。resource/Thread、Editor/Session、Deck19、refs6、Workflow context/确认保护、Run5、Preferences2、Social9已有隔离技术回执；Preflight独立剩余读取/恢复/阶段故障/中断补验通过，首完整失败保留。Run create/retry、Launch、默认Workspace、SystemConfig、Reflections section-config和十六项Reflections aggregate保留各自既有证据。Registry101新增本地数据原子导入与首次登录完成；Admin隔离UOW已通过，Dream consumer与正常首次登录验收pending。其余领域仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+
+### 本地数据导入与首次登录（注册101）
+
+`local-data.import` 接受严格规范化的 Session、Picture、Preferences 和 Report 集合。Editor、config 和 report data 以已验证的 JSON object text 穿越边界，Admin只校验而不重新编码，因此 bigint、`1.0`、Unicode和未知字段原文保留。Report `timestamp` 是带时区RFC3339；Dream必须把旧安全整数毫秒转换后发送，Admin将其写入 `analysis_reports.created_at`，不能接受后丢弃。Preferences 四字段执行原全量import替换，公开计数按非空字段保持0–4。
+
+Handler从OAuth principal派生canonical owner，并在identity/unified capability满足后开启一个UOW。Repository先锁定全部已存在Session ID；同owner按原name/editor state覆盖，任何foreign owner冲突在其它类别写入前拒绝。Picture与Report插入、Preferences替换、result receipt和audit在同一事务。相同request恢复原结果，payload变化409，并发相同request只有一次业务效果；未知COMMIT只查original receipt。`first-login.complete` 对缺失行insert 1、现有行update 1、重复1仍返回 `{success:true, first_login_completed:1}`，不修改其它Preferences字段。当前schema已覆盖这些语义，不新增migration。Dream三旧入口替换与正常账户验收仍pending。
 
 ### 创建与重试合同（注册72，独立隔离验证）
 

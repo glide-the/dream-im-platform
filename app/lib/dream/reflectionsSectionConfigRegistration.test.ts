@@ -1,7 +1,7 @@
 // [Input] Production operation/receipt Routes with captured Reflections handlers and OAuth/UOW seams.
 // [Output] Exact three-name Registry83 prefix, POST dispatch and bounded original write recovery.
 // [Pos] Reflections section-config registration gate; domain and PostgreSQL behavior remain separate.
-// [Sync] 2026-09-15: preserve get/save/delete positions inside Registry99.
+// [Sync] 2026-09-15: preserve get/save/delete positions inside Registry101.
 import { beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -60,7 +60,7 @@ beforeEach(() => {
 });
 
 it("appends exactly three Reflections descriptors after the frozen Registry80 prefix", () => {
-  expect(dreamOperations).toHaveLength(99);
+  expect(dreamOperations).toHaveLength(101);
   expect(dreamOperations.slice(80, 83).map(item => ({
     name: item.contract.name,
     kind: item.capability.kind,

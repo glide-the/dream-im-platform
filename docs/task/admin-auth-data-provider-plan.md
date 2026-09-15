@@ -1,7 +1,7 @@
 <!-- [Input] Authorized Admin provider scope, original Dream sources and coordination stage evidence. -->
 <!-- [Output] Before-code optimized prompts, ownership boundaries and actual validation receipts. -->
 <!-- [Pos] Admin execution plan; candidate/source/static stages never close public or real-business acceptance. -->
-<!-- [Sync] 2026-09-15: register the reviewed Reflections aggregate as Registry99 with bounded OAuth, background and RTA entry points. -->
+<!-- [Sync] 2026-09-15: register the local-data aggregate and first-login completion as Registry101. -->
 # Admin 统一认证与 Dream 数据访问执行计划
 
 ## Round 1 — 现状、边界与首版契约
@@ -326,3 +326,9 @@ Optimized Prompt:
 新增注册、公开 OAuth、内部 background、receipt 与 RTA 成功/拒绝测试，证明 DTO→Service→typed Drizzle Repository 调用链和 Route 只编排。生成 Registry99 artifact及实现map，校验旧83 descriptors逐字等价、四份旧冻结 artifact原始哈希保留、候选16 canonical hashes一致；运行 focused tests、cache-free TypeScript、focused ESLint、Markdown引用、JSON/AST检查和 `git diff --check`。本阶段不运行任何真实或隔离数据库migration，不执行正常账户、Google、Provider/model、Runtime/FS或Dream consumer验收；这些缺口保持明确 pending。只提交本阶段自有文件，不混入共享 worktree 其他修改。
 
 Round30 actual registration result: Registry99 已把评审的 Reflections 十六项按原顺序追加到 canonical-hash 稳定的 Registry83 前缀，OAuth7/background9、POST16、OAuth write receipt3、background write receipt8、RTA六入口及 same-subject/Thread recovery 已闭合。Worker load 返回持久化 event high-water，append 在 task-row lock 下只允许 exact replay 或当前 max+1；DTO/runtime/descriptor 同步限制 PostgreSQL int4 `1..2147483647`。指定17个 focused files 共156 tests 通过，cache-free TypeScript、35-file focused ESLint、JSON6 parse、Registry99/unique/map/parity/canonical/raw-hash检查、Python source oracle语法、Markdown221/356/247/0missing及 `git diff --check` 均 exit0。旧83 canonical SHA `a5f73bf39a8c5f639e636f255b1948349da938be2d354bd3e175261f9af85d6e`；Registry/map raw SHA 为 `2f5af5acb5c52864a3ff00ce19e05540e5191b6f33450f5d2bc4911b5ac7f96e`/`dbb9604d2168af1a7cf8a14c7b04c7895c79899828d1423b780d151f2248c08a`；registered-source canonical/raw SHA 为 `2af7477c424a92c39a1d323b301ef698da147dfa4f1aeb4e8a2166f146981365`/`74513bb643d6a7210d437beb14a46766a9e7ce6285c85fa7fe1004ad558c279f`；current capability SHA 为 `52340d24e76db9ee91dfbe8748ebaf3b0f3c2d20f15367c1c096d2e869d4753f`。Registration 未执行0061；先前隔离PG证据早于最终 capability/event-wire 修正，协调者仍需重放候选并完成ACL/fault验证。Dream consumer与正常业务/model验收继续 pending。
+
+## Round 31 — 本地数据导入与首次登录 Registry101
+
+读取Dream三个旧路由、`database.import_user_data`、`set_first_login_completed`和阶段合同后，只在Admin新增两个OAuth写操作。`local-data.import`使用严格raw JSON DTO、一个Service、一个typed Repository和现有receipt/audit UOW；先锁定所有Session owner，再执行same-owner upsert、Picture/Report insert、四字段Preferences全量import。Report旧毫秒由Dream规范化为RFC3339并持久化created_at；可见Preferences计数保持0–4。`first-login.complete`用单条upsert保存1并保留其它字段。当前schema满足，不生成migration。
+
+静态测试覆盖空导入、每类、selector拒绝、JSON/time、0–4计数、owner冲突、first-login insert/update/repeat、401/403/503、Route/Registry/Original GET和receipt replay/conflict/concurrency。Focused 8 files/88 tests、默认221 files中1730 passed/32 skipped、actual Dream source oracle 1/1、cache-free TypeScript、focused ESLint、Python syntax、JSON101 unique/map parity和diff均exit0；首次source-test TypeScript因ProcessEnv直接断言exit2，改为既有unknown过渡后最终exit0。Luna运行runner-owned loopback PG：默认sandbox因loopback EPERM exit1，限定loopback重试exit0；random limited DATA role、same-owner、foreign全回滚、UOW故障回滚、并发单效果、unknown-COMMIT只读恢复、raw JSON/RFC3339、receipt-wrapped first-login replay及owned cleanup均PASS。Dream consumer和正常首次登录验收仍pending。

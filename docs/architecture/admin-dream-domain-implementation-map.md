@@ -1,7 +1,7 @@
 <!-- [Input] Dream baseline 108-file candidate inventory and 159 original transaction candidates. -->
 <!-- [Output] Explicit domain ownership, closure criteria and first implementation priorities. -->
 <!-- [Pos] Admin implementation map; individual production replacements require evidence. -->
-<!-- [Sync] 2026-09-15: Registry99 registers the reviewed Reflections aggregate and exact child authority. -->
+<!-- [Sync] 2026-09-15: Registry101 registers atomic local-data import and first-login completion. -->
 # Dream 领域实施映射
 
 ## 背景与问题
@@ -18,7 +18,7 @@
 | resource_policy / resource_postgres_sink | Admin + Dream 消费 | 两命名后台操作，严格 hash/版本，既有 LKG/worker/queue/lease；Admin unit 与 Dream provider-free 通过 |
 | database.py Thread/message；session_manager/thread_pool/工具确认 | Admin，Thread 首批由协调实现 | 14 操作公开 Route 隔离合同通过；其他 Thread Runtime/确认/metadata 入口仍需逐项迁入 |
 | database.py Deck/Voice；deck content_versioning；deck_versions/voices routes | 协调任务独立实现；Admin 接入注册表/薄路由 | 全19公开受限246断言通过、wholetype/lint通过；JSONB字节问题前向0059保留canontext修复，旧NULL兼容。refs/Voice metadata6已注册、focused37/type/lint及公开104通过；Dream真实artifact/CLI及其余runtime事务pending |
-| database.py sessions/preferences；Editor tools/Session writing context | Admin；preferences原两个callable由协调独立实现 | exact owned EditorSession与具名Session8操作/103断言受限公开Route通过；既有session.list新增同service、live、dream:read、Thread-bound、no-Editor的server-persistence权限，独立Luna focused29/type/lint/docs/diff通过且其它Session操作不扩权。工具scope分离、无DSN/service key。preferences2已注册，focused19/type/lint与受限公开78断言通过；新consumer/public wiring仍pending |
+| database.py sessions/preferences/local import；Editor tools/Session writing context | Admin；Dream保留legacy localStorage解析 | exact owned EditorSession与具名Session8操作及preferences2保持。Registry101新增一个四类原子import与first-login完成：foreign Session全回滚、same-owner upsert、raw JSON/RFC3339 report time、0–4 preference计数、receipt并发/未知提交和first-login insert/update/repeat已通过具名隔离PG；现有schema足够。Dream三个旧入口consumer替换与正常首次登录验收pending |
 | Workflow/preflight/run；StoryWorkspace activation/confirmation/reentry/guidance/artifact | Admin | Context/确认public5families170、Run5公开163通过；PF独立remaining8/74、COMMIT-loss44、中断54、权限tail11及stage96通过，首full失败保留。Create/retry注册72：六原accepted保持，remaining22拒绝/10GET230，九fault/COMMIT-loss业务68及只读cleanup3通过，原业务命令cleanup错误exit1保留。Source/claim/finish注册75、旧72完整parity，实际source/GET及public入口10/type/lint通过，新publicharness静态通过；首full公开exit1保留，原source只读恢复加剩余37/21GET/974隔离通过，fault/COMMIT-loss补验pending。Agent/model/binding prepare、failure recorder、output/confirmation/完整启动与真实Launch22仍pending |
 | Plugin/release/binding/install/revocation；runtime materialization/reconcile metadata | Admin | 原RuntimeLock/八链compat/Preflight snapshot与materialization依赖实施中；第一轮source oracle63/64发现model/显式Python strip差异，按实际source修复后9files116tests/type/lint通过。元数据、immutable lineage/CAS/receipt 与 revoke 状态在领域事务；packer/FS/Runtime 留 Dream；尚未注册/公开 |
 | MCP repository/auth/discovery/import/App settings | Admin | owned scope、独立 revision、密文、import 收据与 Runtime projection；不能通用凭据/表导出；pending |
@@ -27,6 +27,8 @@
 | startup/health/catalog/defaults/event/error/background factories | Admin + Dream 调度消费 | capability/health 无 SQL 或 pool fallback；默认创建/事件审计通过命名领域 API；pending |
 
 ## 概念与规则
+
+Current101 appends only `local-data.import` and `first-login.complete` after the frozen99 prefix. Both are OAuth `dream:write`, all entity scopes null, and require exact identity/unified capabilities. The aggregate keeps four categories in one receipt/audit UOW, locks every Session collision before writes, preserves raw JSON text and stores normalized report time. Original recovery is same service/subject and never replays inserts. Generated Registry/map raw SHA are `0f78063e2204ea835b16015bf50a45a40adfc5289520a6c548e1c63c28d652e6`/`0bda942de0ad3d806d76c7890c9768cfdaa536371c8904b1bc2e1bd74b772260`. Dream consumer and normal acceptance remain pending. Sync 2026-09-15.
 
 Current99 appends the reviewed sixteen-operation Reflections aggregate after the frozen83 prefix. OAuth7 and background9 retain exact scopes and identity/unified/reflection capability requirements; POST dispatch, OAuth/background original recovery and all six RTA handler entries are wired without a generic service bypass. Worker-load returns persisted event high-water; append is task-row serialized, exact-replay or current max+1 within int4. Generated Registry SHA is `2f5af5acb5c52864a3ff00ce19e05540e5191b6f33450f5d2bc4911b5ac7f96e`, map SHA `dbb9604d2168af1a7cf8a14c7b04c7895c79899828d1423b780d151f2248c08a`; prior83 canonical descriptor SHA and separate delegation/Preflight receipt raw hashes remain unchanged. Public PostgreSQL/fault/ACL, Dream consumer and normal business/model acceptance remain pending. Sync 2026-09-15.
 
