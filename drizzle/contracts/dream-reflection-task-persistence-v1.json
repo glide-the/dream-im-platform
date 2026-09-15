@@ -1,0 +1,842 @@
+{
+  "contract_sha256": "52340d24e76db9ee91dfbe8748ebaf3b0f3c2d20f15367c1c096d2e869d4753f",
+  "version": 1,
+  "tables": {
+    "public.analysis_reports": {
+      "name": "analysis_reports",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "analysis_reports_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "report_type": {
+          "name": "report_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "report_data_json": {
+          "name": "report_data_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "all_notes_text": {
+          "name": "all_notes_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reflection_task_id": {
+          "name": "reflection_task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_reports_user": {
+          "name": "idx_reports_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_analysis_reports_reflection_task": {
+          "name": "uq_analysis_reports_reflection_task",
+          "columns": [
+            {
+              "expression": "reflection_task_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"analysis_reports\".\"reflection_task_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_analysis_reports_user_id_users": {
+          "name": "fk_analysis_reports_user_id_users",
+          "tableFrom": "analysis_reports",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fk_analysis_reports_reflection_task_id_reflection_task": {
+          "name": "fk_analysis_reports_reflection_task_id_reflection_task",
+          "tableFrom": "analysis_reports",
+          "tableTo": "reflection_task",
+          "columnsFrom": [
+            "reflection_task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.reflection_task": {
+      "name": "reflection_task",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sections": {
+          "name": "sections",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'"
+        },
+        "input_snapshot": {
+          "name": "input_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "workspace_path": {
+          "name": "workspace_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_contract_version": {
+          "name": "agent_contract_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_summary": {
+          "name": "error_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "service_client_id": {
+          "name": "service_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auth_user_id": {
+          "name": "auth_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "launch_snapshot_json": {
+          "name": "launch_snapshot_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_reflection_task_status": {
+          "name": "idx_reflection_task_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_reflection_task_user": {
+          "name": "idx_reflection_task_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_reflection_task_user_id_users": {
+          "name": "fk_reflection_task_user_id_users",
+          "tableFrom": "reflection_task",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_reflection_task_status": {
+          "name": "ck_reflection_task_status",
+          "value": "status = ANY (ARRAY['CREATED'::text, 'ASSEMBLING'::text, 'QUEUED'::text, 'RUNNING'::text, 'COMPLETED'::text, 'PARTIAL_FAILED'::text, 'FAILED'::text])"
+        },
+        "ck_reflection_task_revision": {
+          "name": "ck_reflection_task_revision",
+          "value": "revision >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.reflection_task_section": {
+      "name": "reflection_task_section",
+      "schema": "",
+      "columns": {
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "section": {
+          "name": "section",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result_count": {
+          "name": "result_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "error_summary": {
+          "name": "error_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_reflection_task_section_thread": {
+          "name": "uq_reflection_task_section_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"reflection_task_section\".\"thread_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_reflection_task_section_task_id_reflection_task": {
+          "name": "fk_reflection_task_section_task_id_reflection_task",
+          "tableFrom": "reflection_task_section",
+          "tableTo": "reflection_task",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fk_reflection_task_section_thread_id_chat_thread": {
+          "name": "fk_reflection_task_section_thread_id_chat_thread",
+          "tableFrom": "reflection_task_section",
+          "tableTo": "chat_thread",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "pk_reflection_task_section": {
+          "name": "pk_reflection_task_section",
+          "columns": [
+            "task_id",
+            "section"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_reflection_task_section_section": {
+          "name": "ck_reflection_task_section_section",
+          "value": "section = ANY (ARRAY['echoes'::text, 'traits'::text, 'patterns'::text])"
+        },
+        "ck_reflection_task_section_status": {
+          "name": "ck_reflection_task_section_status",
+          "value": "status = ANY (ARRAY['PENDING'::text, 'RUNNING'::text, 'COMPLETED'::text, 'FAILED'::text])"
+        },
+        "ck_reflection_task_section_result_count": {
+          "name": "ck_reflection_task_section_result_count",
+          "value": "result_count >= 0"
+        },
+        "ck_reflection_task_section_revision": {
+          "name": "ck_reflection_task_section_revision",
+          "value": "revision >= 1"
+        },
+        "ck_reflection_task_section_lifecycle": {
+          "name": "ck_reflection_task_section_lifecycle",
+          "value": "(status = 'PENDING' AND started_at IS NULL AND completed_at IS NULL AND result_count = 0) OR (status = 'RUNNING' AND started_at IS NOT NULL AND completed_at IS NULL AND result_count = 0) OR (status = 'COMPLETED' AND started_at IS NOT NULL AND completed_at IS NOT NULL AND error_summary IS NULL) OR (status = 'FAILED' AND completed_at IS NOT NULL AND result_count = 0)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.reflection_task_event": {
+      "name": "reflection_task_event",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_reflection_task_event_task": {
+          "name": "idx_reflection_task_event_task",
+          "columns": [
+            {
+              "expression": "task_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int4_ops"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_reflection_task_event_task_id_reflection_task": {
+          "name": "fk_reflection_task_event_task_id_reflection_task",
+          "tableFrom": "reflection_task_event",
+          "tableTo": "reflection_task",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_reflection_task_event_task_sequence": {
+          "name": "uq_reflection_task_event_task_sequence",
+          "nullsNotDistinct": false,
+          "columns": [
+            "task_id",
+            "sequence"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "ck_reflection_task_event_sequence": {
+          "name": "ck_reflection_task_event_sequence",
+          "value": "sequence >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "dream.reflection_task_authorities": {
+      "name": "reflection_task_authorities",
+      "schema": "dream",
+      "columns": {
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "service_client_id": {
+          "name": "service_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "section": {
+          "name": "section",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_user_id": {
+          "name": "auth_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "canonical_user_id": {
+          "name": "canonical_user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'reflections-worker'"
+        },
+        "scopes": {
+          "name": "scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_sha256": {
+          "name": "input_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_ciphertext": {
+          "name": "token_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "maximum_expires_at": {
+          "name": "maximum_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "reflection_task_authorities_live_uidx": {
+          "name": "reflection_task_authorities_live_uidx",
+          "columns": [
+            {
+              "expression": "task_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "section",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"dream\".\"reflection_task_authorities\".\"revoked_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reflection_task_authorities_request_uidx": {
+          "name": "reflection_task_authorities_request_uidx",
+          "columns": [
+            {
+              "expression": "service_client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "task_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "section",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reflection_task_authorities_auth_user_id_user_id_fk": {
+          "name": "reflection_task_authorities_auth_user_id_user_id_fk",
+          "tableFrom": "reflection_task_authorities",
+          "tableTo": "user",
+          "schemaTo": "identity",
+          "columnsFrom": [
+            "auth_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "reflection_task_authorities_canonical_user_id_users_id_fk": {
+          "name": "reflection_task_authorities_canonical_user_id_users_id_fk",
+          "tableFrom": "reflection_task_authorities",
+          "tableTo": "users",
+          "columnsFrom": [
+            "canonical_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "reflection_task_authorities_task_section_fk": {
+          "name": "reflection_task_authorities_task_section_fk",
+          "tableFrom": "reflection_task_authorities",
+          "tableTo": "reflection_task_section",
+          "columnsFrom": [
+            "task_id",
+            "section"
+          ],
+          "columnsTo": [
+            "task_id",
+            "section"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "reflection_task_authorities_thread_fk": {
+          "name": "reflection_task_authorities_thread_fk",
+          "tableFrom": "reflection_task_authorities",
+          "tableTo": "chat_thread",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "reflection_task_authorities_hash_check": {
+          "name": "reflection_task_authorities_hash_check",
+          "value": "\"dream\".\"reflection_task_authorities\".\"input_sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "reflection_task_authorities_purpose_scope_check": {
+          "name": "reflection_task_authorities_purpose_scope_check",
+          "value": "\"dream\".\"reflection_task_authorities\".\"purpose\" = 'reflections-worker' AND cardinality(\"dream\".\"reflection_task_authorities\".\"scopes\") = 2 AND \"dream\".\"reflection_task_authorities\".\"scopes\" @> ARRAY['dream:read','dream:write']::text[] AND array_position(\"dream\".\"reflection_task_authorities\".\"scopes\", NULL) IS NULL"
+        },
+        "reflection_task_authorities_expiry_check": {
+          "name": "reflection_task_authorities_expiry_check",
+          "value": "\"dream\".\"reflection_task_authorities\".\"maximum_expires_at\" >= \"dream\".\"reflection_task_authorities\".\"expires_at\" AND \"dream\".\"reflection_task_authorities\".\"updated_at\" >= \"dream\".\"reflection_task_authorities\".\"created_at\""
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "semantics": {
+    "task_binding": "nullable historical service_client_id and auth_user_id; new or adopted execution binds exact service, OAuth subject, and canonical owner",
+    "launch_snapshot": "nullable server-only bounded immutable JSON; never projected through OAuth task DTO or receipt/audit bodies",
+    "section_binding": "primary key task_id+section and unique nullable child thread",
+    "authority_binding": "one live task+section authority binds exact service, OAuth subject, canonical owner, and child thread; exact reflections-worker purpose and dream read/write scopes",
+    "authority_recovery": "encrypted bearer recovery is service-authenticated and remains bounded by maximum expiry and explicit revocation; receipts retain digest and binding only",
+    "event_identity": "global event id plus unique task_id+sequence; sequence uses the PostgreSQL int4 range 1..2147483647",
+    "event_backfill": "all historical task streams are deterministically resequenced by created_at NULLS LAST then id before positive unique enforcement",
+    "report_identity": "at most one nonnull reflection_task_id link",
+    "receipt_actor": "reflection-task:{task_id}",
+    "event_migration_lock": "SHARE ROW EXCLUSIVE held before resequencing through NOT NULL, positive, and unique constraint publication",
+    "event_append": "background service locks the task row; an exact stored event replays, otherwise only current task max+1 may insert"
+  }
+}

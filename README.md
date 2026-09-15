@@ -127,8 +127,12 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `GOOGLE_CLIENT_ID/SECRET` | 内置Google认证注册 | 显式注册与exactcallback |
 | `AUTH_TRUSTED_ORIGINS/DREAM_API_RESOURCE` | trusted origins与OAuth resource | exact origins/resource |
 | `AUTH_TOKEN_ENCRYPTION_KEY` | BFF/委托恢复密文 | 32bytes AEAD，不能回显 |
-| `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON |
+| `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON；Reflections执行服务需显式包含`reflections:execute`，独立于用户Bearer |
 | `DREAM_DATA_MAX_BODY_BYTES` | Admin领域请求体技术容量 | 显式正安全整数 |
+| `DREAM_REFLECTION_REPORT_LIST_MAX_ROWS` | Reflections报告历史单次查询技术容量 | 必填正安全整数；Dream默认仍请求10条 |
+| `DREAM_REFLECTIONS_LAUNCH_SNAPSHOT_MAX_BYTES` | Reflections私有启动快照技术容量 | 必填正安全整数；超限在持久化前拒绝 |
+| `DREAM_REFLECTIONS_WORKSPACE_ROOT` | Reflections task workspace根目录 | 必填绝对路径；实际locator只追加task ID与`memory` |
+| `AUTH_REFLECTIONS_AUTHORITY_TTL_SECONDS/MAX_TTL_SECONDS` | `rta_`短期续期与原最大寿命 | 必填正安全整数，短TTL不得超过最大TTL |
 | `DREAM_FRIENDSHIP_POLICY_JSON` | 明确好友邀请码规则及碰撞执行预算 | `{"code_length":6,"lifetime_seconds":604800,"generation_attempts":64}` 的严格JSON；原6字符/7日，预算仅server capacity |
 | `DREAM_DOMAIN_CANONICAL_TIMEOUT_MS` | 固定canonical业务codec deadline | 显式正安全整数；失败不输出payload |
 | `INK_WORKFLOW_TOKEN_SECRET` | Admin独占原Workflow pft签发与Run消费摘要 | 显式UTF-8至少32byte；无JWT_SECRET fallback，Dream不持有 |

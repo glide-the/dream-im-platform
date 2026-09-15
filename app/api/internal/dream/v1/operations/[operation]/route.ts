@@ -1,7 +1,7 @@
 // [Input] Explicit registered Thread/message, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
 // [Output] Strict domain DTO, never generic SQL or arbitrary function dispatch.
 // [Pos] Thin named operation ingress.
-// [Sync] 2026-09-15: dispatch the registered Registry83 named operations.
+// [Sync] 2026-09-15: dispatch the reviewed Reflections aggregate through Registry99.
 import { handleChatThreadOperation } from "../../../../../../lib/dream/chatThreadHandler";
 import { handleUserProfile } from "../../../../../../lib/dream/userProfileHandler";
 import { handleEditorSessionOperation, isEditorSessionOperation } from "../../../../../../lib/dream/editorSessionHandler";
@@ -22,6 +22,7 @@ import { handleDreamLaunchFailure } from "../../../../../../lib/dream/dreamLaunc
 import { handleUserSystemConfig, isUserSystemConfigOperation } from "../../../../../../lib/dream/userSystemConfigHandler";
 import { handleThreadSystemConfig, isThreadSystemConfigOperation } from "../../../../../../lib/dream/threadSystemConfigHandler";
 import { handleReflectionsSectionConfig, isReflectionsSectionConfigOperation } from "../../../../../../lib/dream/reflectionsSectionConfigHandler";
+import { handleReflectionTaskOperation, isReflectionTaskOperation } from "../../../../../../lib/dream/reflectionTaskHandler";
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
@@ -29,6 +30,7 @@ export async function POST(request: Request, context: { params: Promise<{ operat
   if (isUserSystemConfigOperation(name)) return handleUserSystemConfig(request, name);
   if (isThreadSystemConfigOperation(name)) return handleThreadSystemConfig(request, name);
   if (isReflectionsSectionConfigOperation(name)) return handleReflectionsSectionConfig(request, name);
+  if (isReflectionTaskOperation(name)) return handleReflectionTaskOperation(request, name);
   if (name === "workspace-default.ensure") return handleWorkspaceDefault(request, name);
   if (isWorkflowRunCreationOperation(name)) return handleWorkflowRunCreation(request, name);
   if (name === "dream-launch-source.ensure") return handleDreamLaunchSource(request, name);

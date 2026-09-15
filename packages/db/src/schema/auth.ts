@@ -6,7 +6,7 @@ import { sql } from "drizzle-orm";
 import { bigint, boolean, check, foreignKey, index, jsonb, pgSchema, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { adminUsers, gatewayApiKeys, users } from "./index.js";
 import { identity, user } from "./auth-generated.js";
-import { user_sessions, workflow_preflights } from "./dream.js";
+import { chat_thread, reflection_task_section, user_sessions, workflow_preflights } from "./dream.js";
 
 export const dream = pgSchema("dream");
 
@@ -84,6 +84,34 @@ export const operationReceipts = dream.table("operation_receipts", {
 }, table => [
   primaryKey({ columns: [table.serviceClientId, table.actor, table.operation, table.requestId] }),
   check("operation_receipts_hash_check", sql`${table.inputSha256} ~ '^[0-9a-f]{64}$'`),
+]);
+
+export const reflectionTaskAuthorities = dream.table("reflection_task_authorities", {
+  tokenHash: text("token_hash").primaryKey(),
+  serviceClientId: text("service_client_id").notNull(),
+  taskId: text("task_id").notNull(),
+  section: text("section").notNull(),
+  threadId: text("thread_id").notNull(),
+  authUserId: text("auth_user_id").notNull().references(() => user.id, { onDelete: "restrict" }),
+  canonicalUserId: bigint("canonical_user_id", { mode: "bigint" }).notNull().references(() => users.id, { onDelete: "restrict" }),
+  purpose: text("purpose").notNull().default("reflections-worker"),
+  scopes: text("scopes").array().notNull(),
+  requestId: text("request_id").notNull(),
+  inputSha256: text("input_sha256").notNull(),
+  tokenCiphertext: text("token_ciphertext").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  maximumExpiresAt: timestamp("maximum_expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  foreignKey({ columns: [table.taskId, table.section], foreignColumns: [reflection_task_section.task_id, reflection_task_section.section], name: "reflection_task_authorities_task_section_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.threadId], foreignColumns: [chat_thread.id], name: "reflection_task_authorities_thread_fk" }).onDelete("cascade"),
+  uniqueIndex("reflection_task_authorities_live_uidx").on(table.taskId, table.section).where(sql`${table.revokedAt} IS NULL`),
+  uniqueIndex("reflection_task_authorities_request_uidx").on(table.serviceClientId, table.taskId, table.section, table.requestId),
+  check("reflection_task_authorities_hash_check", sql`${table.inputSha256} ~ '^[0-9a-f]{64}$'`),
+  check("reflection_task_authorities_purpose_scope_check", sql`${table.purpose} = 'reflections-worker' AND cardinality(${table.scopes}) = 2 AND ${table.scopes} @> ARRAY['dream:read','dream:write']::text[] AND array_position(${table.scopes}, NULL) IS NULL`),
+  check("reflection_task_authorities_expiry_check", sql`${table.maximumExpiresAt} >= ${table.expiresAt} AND ${table.updatedAt} >= ${table.createdAt}`),
 ]);
 
 export const workflowPreflightRequests = dream.table("workflow_preflight_requests", {

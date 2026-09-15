@@ -1,7 +1,7 @@
 <!-- [Input] Authorized Admin provider scope, original Dream sources and coordination stage evidence. -->
 <!-- [Output] Before-code optimized prompts, ownership boundaries and actual validation receipts. -->
 <!-- [Pos] Admin execution plan; candidate/source/static stages never close public or real-business acceptance. -->
-<!-- [Sync] 2026-09-15: establish the Better Auth and Registry83 Admin data-provider foundation. -->
+<!-- [Sync] 2026-09-15: register the reviewed Reflections aggregate as Registry99 with bounded OAuth, background and RTA entry points. -->
 # Admin 统一认证与 Dream 数据访问执行计划
 
 ## Round 1 — 现状、边界与首版契约
@@ -308,3 +308,21 @@ Failure77 final isolated evidence actual raw receipts read: atomic command exit0
 ## Round 28 — Dream first-turn Session context 的最小读取授权
 
 复用现有 `session.list` v1 DTO、`EditorSessionRepository.list`、operation hash与Registry83 descriptor，不新增operation/schema/receipt。内部handler仅在此操作把opaque `idg_` bearer交给完整 `DelegationService.resolve(token, "dream:read", currentServiceId)`；解析继续验证有效期/撤销、purpose结构、service、scope、active canonical主体与Thread/Run/Editor ownership。解析后只接受purpose=`server-persistence`、Thread非NULL、Editor Session为NULL；Cookie拒绝。Domain重复要求精确actor形态，仅此read可执行，session.save/get/batch/text-list/delete均拒绝该purpose；OAuth Session行为与editor-stdio精确Editor load/replace不变。首本地focused2files29项、whole cache-free TypeScript、focused lint、Markdown和diff均exit0；独立Luna复核同样29/29、type/lint/docs/diff exit0，Markdown221/356/247/0missing，四份冻结artifact SHA精确相等。没有PG、Registry generation、正常账户、Provider/model、Runtime或FS执行，Dream consumer及隔离public仍pending；本组Session provider文件冻结。
+
+## Round 29 — Reflections task/result/event/report aggregate candidate
+
+完整 Dream helper/Agent/router 调用链映射为十六个闭合操作。Admin candidate 已有严格 DTO、OAuth/background Service、typed Drizzle Repository、0061 forward schema、task-scoped receipt、private launch snapshot、section CAS、event conflict detection、exactly-once report 和独立 encrypted `rta_` authority。Authority 精确绑定 service/subject/owner/task/section/Thread，短 TTL 可在 original maximum 内由后台恢复续期，revoked/max-expired/terminal 拒绝；其六操作 allowlist 不扩展普通 Chat。当前仅 candidate artifact，Registry83/shared Route/receipt reader/auth config 未改。报告 JSON 原始文本保留 bigint/`1.0`；保存请求只受既有 `DREAM_DATA_MAX_BODY_BYTES` 约束，列表保留原默认10并由必填 `DREAM_REFLECTION_REPORT_LIST_MAX_ROWS` 限制单次服务容量。DTO/service/authority/handler/artifact/static-migration 30 tests、actual Dream source1 batch、whole tsc与Luna delta通过。具名自建隔离PG已验证旧writer阻塞、提交后五行确定重排、七类约束拒绝、capability v1及完整清理；service fault/ACL、public/consumer/normal acceptance仍pending。
+
+## Round 30 — Reflections Registry99 注册与调用面闭合
+
+Optimized Prompt:
+
+你是 Admin Reflections 注册负责人。只消费已经独立评审通过的 Round29 十六项候选和既有 Registry83，不重新设计 DTO、schema、migration 或产品状态机，也不再次执行 0061。先保存 Registry83 四份冻结 artifact 的原始哈希和旧83个完整 descriptor；然后把候选按既定顺序追加为 Registry99，精确分成 OAuth 7 项与 `reflections:execute` background 9 项，要求每项 Zod input/output、kind、scope、identity 与 `dream.reflection-task-persistence.v1` physical capability 和候选 canonical hash 完全一致。共享 POST Route 只按注册名分派到现有薄 Handler；OAuth 入口继续走 verified canonical subject 与 `dream:read`/`dream:write`，background 入口只接受显式 service client scope，不能用环境名、Cookie 或请求 user_id 旁路。
+
+把 `rta_` authority 接入现有 operation auth 时只允许原六项 exact allowlist：`chat-user-message.persist`、`chat-message.persist`、`chat-thread.get`、`chat-thread.update-session`、`thread-system-config.get`、`session.list`。每次解析必须重复验证 service、subject、task、section、Thread、状态、到期/撤销及 operation；涉及 Thread 的 handler 和领域服务再核对精确 Thread scope，`session.list` 强制 `include_text=false`。缺少显式 operation 的公共 principal helper、OAuth-only service token 边界、其它 Chat/Session/SystemConfig 操作都拒绝 `rta_`；不得扩大普通 service bypass、editor-stdio 或 server-persistence 权限。
+
+原始回执按受众分开：三个 OAuth write 只允许 `operation` 查询并按 canonical主体读取标准 Receipt；八个 background write 只允许 `operation+task_id`，以当前 service与持久化task绑定读取 task-scoped receipt；RTA 子写操作仍走既有 operation receipt 路径并先通过同一 exact allowlist，read操作不生成回执。同步 auth service-client enum、环境示例与 README 必填策略值，所有容量/TTL/路径来自明确 env/config，不把实现常量包装成产品规则。
+
+新增注册、公开 OAuth、内部 background、receipt 与 RTA 成功/拒绝测试，证明 DTO→Service→typed Drizzle Repository 调用链和 Route 只编排。生成 Registry99 artifact及实现map，校验旧83 descriptors逐字等价、四份旧冻结 artifact原始哈希保留、候选16 canonical hashes一致；运行 focused tests、cache-free TypeScript、focused ESLint、Markdown引用、JSON/AST检查和 `git diff --check`。本阶段不运行任何真实或隔离数据库migration，不执行正常账户、Google、Provider/model、Runtime/FS或Dream consumer验收；这些缺口保持明确 pending。只提交本阶段自有文件，不混入共享 worktree 其他修改。
+
+Round30 actual registration result: Registry99 已把评审的 Reflections 十六项按原顺序追加到 canonical-hash 稳定的 Registry83 前缀，OAuth7/background9、POST16、OAuth write receipt3、background write receipt8、RTA六入口及 same-subject/Thread recovery 已闭合。Worker load 返回持久化 event high-water，append 在 task-row lock 下只允许 exact replay 或当前 max+1；DTO/runtime/descriptor 同步限制 PostgreSQL int4 `1..2147483647`。指定17个 focused files 共156 tests 通过，cache-free TypeScript、35-file focused ESLint、JSON6 parse、Registry99/unique/map/parity/canonical/raw-hash检查、Python source oracle语法、Markdown221/356/247/0missing及 `git diff --check` 均 exit0。旧83 canonical SHA `a5f73bf39a8c5f639e636f255b1948349da938be2d354bd3e175261f9af85d6e`；Registry/map raw SHA 为 `2f5af5acb5c52864a3ff00ce19e05540e5191b6f33450f5d2bc4911b5ac7f96e`/`dbb9604d2168af1a7cf8a14c7b04c7895c79899828d1423b780d151f2248c08a`；registered-source canonical/raw SHA 为 `2af7477c424a92c39a1d323b301ef698da147dfa4f1aeb4e8a2166f146981365`/`74513bb643d6a7210d437beb14a46766a9e7ce6285c85fa7fe1004ad558c279f`；current capability SHA 为 `52340d24e76db9ee91dfbe8748ebaf3b0f3c2d20f15367c1c096d2e869d4753f`。Registration 未执行0061；先前隔离PG证据早于最终 capability/event-wire 修正，协调者仍需重放候选并完成ACL/fault验证。Dream consumer与正常业务/model验收继续 pending。

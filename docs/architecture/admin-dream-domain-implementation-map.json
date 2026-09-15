@@ -91,7 +91,23 @@
     "thread-system-config.get",
     "reflections-section-config.get",
     "reflections-section-config.save",
-    "reflections-section-config.delete"
+    "reflections-section-config.delete",
+    "reflection-task.create",
+    "reflection-task.start",
+    "reflection-task.get",
+    "reflection-task.latest",
+    "reflection-task.events",
+    "analysis-report.list",
+    "analysis-report.save",
+    "reflection-task.worker-load",
+    "reflection-task.advance",
+    "reflection-section.begin",
+    "reflection-section.authority-renew",
+    "reflection-section.authority-revoke",
+    "reflection-section.transcript",
+    "reflection-section.finish",
+    "reflection-event.append",
+    "reflection-report.ensure"
   ],
   "entries": [
     {

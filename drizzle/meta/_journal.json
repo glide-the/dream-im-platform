@@ -428,6 +428,13 @@
       "when": 1789406485376,
       "tag": "0060_sharp_misty_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1789442608063,
+      "tag": "0061_outstanding_maverick",
+      "breakpoints": true
     }
   ]
 }

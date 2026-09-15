@@ -1,7 +1,7 @@
-// [Input] Named Session/Editor DTO through a service or an exact delegated opaque bearer.
+// [Input] Named Session/Editor DTO through a service or an exact delegated/task opaque bearer.
 // [Output] Strict domain result/receipt; stdio carries no service or database credential.
 // [Pos] Thin ingress into Admin-owned Editor/Session UOW and authorization.
-// [Sync] 2026-09-15: admit server-persistence only for Session list and editor-stdio for Editor state.
+// [Sync] 2026-09-15: admit Reflections authority only for metadata-only Session list.
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
@@ -10,10 +10,11 @@ import { handleInternalAuthRequest, parseAuthDto } from "../auth/internalHandler
 import { principalForServiceToken } from "../auth/serviceAccessToken";
 import { DelegationService } from "../auth/delegationService";
 import { withDataTransaction, type DataTransaction } from "./database";
-import { identitySchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement } from "./schemaRequirements";
+import { identitySchemaRequirement, reflectionTaskSchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement } from "./schemaRequirements";
 import { editorSessionOperationContracts, type EditorSessionOperation } from "./editorSessionDto";
 import { runEditorSessionOperation, type EditorSessionActor } from "./editorSessionService";
 import { ReceiptRepository } from "./receipts";
+import { resolveReflectionTaskAuthority } from "./reflectionTaskAuthorityService";
 export function isEditorSessionOperation(name: string): name is EditorSessionOperation { return Object.hasOwn(editorSessionOperationContracts, name); }
 const requirements = [identitySchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement];
 function delegationBearer(headers: Headers) {
@@ -32,6 +33,10 @@ async function persistenceSessionListActorForBearer(tx: DataTransaction, headers
   if (actor.purpose !== "server-persistence" || actor.editorSessionId !== null) throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
   return { principal: actor.principal, editorSessionScope: null, threadScope: actor.threadId, delegationPurpose: actor.purpose, serviceId: actor.serviceClientId };
 }
+async function reflectionSessionListActorForBearer(tx: DataTransaction, token: string, serviceId: string): Promise<EditorSessionActor & { serviceId: string }> {
+  const actor = await resolveReflectionTaskAuthority(tx, token, "session.list", serviceId);
+  return { principal: actor.principal, editorSessionScope: null, threadScope: actor.threadScope, delegationPurpose: actor.purpose, serviceId: actor.serviceClientId };
+}
 async function execute(tx: DataTransaction, serviceId: string, name: EditorSessionOperation, requestId: string, input: unknown, actor: EditorSessionActor) {
   const operation = editorSessionOperationContracts[name], action = () => runEditorSessionOperation(name, input, actor, tx);
   return operation.kind === "read" ? action() : new ReceiptRepository(tx, serviceId, actor.principal.subject).execute(name, requestId, input, operation.output as z.ZodType, action, actor.threadScope, actor.editorSessionScope);
@@ -41,10 +46,14 @@ export async function handleEditorSessionOperation(request: Request, name: strin
     if (!isEditorSessionOperation(name)) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
     const operation = editorSessionOperationContracts[name];
     const parsed = await parseAuthDto(request, z.strictObject({ request_id: requestIdDto, input: operation.input }), Number(requiredAuthValue("DREAM_DATA_MAX_BODY_BYTES"))); setRequestId(parsed.request_id);
-    const authorization = request.headers.get("authorization") ?? "", bearer = authorization.replace(/^Bearer /, ""), delegated = bearer.startsWith("idg_");
-    return withDataTransaction([identitySchemaRequirement, runtimePurposeSchemaRequirement, ...(delegated ? [runtimeDelegationSchemaRequirement] : [])], async tx => {
+    const authorization = request.headers.get("authorization") ?? "", bearer = authorization.replace(/^Bearer /, ""), delegated = bearer.startsWith("idg_"), reflectionAuthority = authorization.startsWith("Bearer rta_");
+    return withDataTransaction([identitySchemaRequirement, runtimePurposeSchemaRequirement, ...(delegated ? [runtimeDelegationSchemaRequirement] : []), ...(reflectionAuthority ? [reflectionTaskSchemaRequirement] : [])], async tx => {
       const sessionId = "session_id" in parsed.input ? parsed.input.session_id : undefined;
-      const actor = delegated
+      const actor = reflectionAuthority
+        ? name === "session.list" && "include_text" in parsed.input && parsed.input.include_text === false
+          ? await reflectionSessionListActorForBearer(tx, bearer, service.id)
+          : (() => { throw new AuthBoundaryError("REFLECTION_AUTHORITY_OPERATION_DENIED", 403); })()
+        : delegated
         ? name === "session.list"
           ? await persistenceSessionListActorForBearer(tx, request.headers, operation.userScope, service.id)
           : await editorActorForBearer(tx, request.headers, operation.userScope, sessionId, service.id)

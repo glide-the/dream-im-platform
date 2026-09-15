@@ -1,7 +1,7 @@
 // [Input] Named Editor/Session operation, active owner and optional exact Editor delegation scope.
 // [Output] Strict domain state/projection, missing null and explicit corrupt/unavailable errors.
 // [Pos] Session business boundary; Dream keeps metrics, SSE and in-memory editor orchestration.
-// [Sync] 2026-09-15: allow exact server-persistence Session metadata listing.
+// [Sync] 2026-09-15: allow a Reflections task authority to list metadata-only source Sessions.
 import { AuthBoundaryError } from "../auth/config";
 import { principalDto, type PrincipalDto } from "../auth/dto";
 import type { DelegatedPrincipal } from "../auth/delegationService";
@@ -13,7 +13,7 @@ export type EditorSessionActor = {
   principal: PrincipalDto;
   editorSessionScope: string | null;
   threadScope: string | null;
-  delegationPurpose: DelegatedPrincipal["purpose"] | null;
+  delegationPurpose: DelegatedPrincipal["purpose"] | "reflections-worker" | null;
 };
 function decodeState(row: EditorSessionRow): EditorStateDto {
   try {
@@ -41,7 +41,8 @@ export async function runEditorSessionOperation(name: EditorSessionOperation, ra
   const oauth = actor.delegationPurpose === null && actor.threadScope === null && actor.editorSessionScope === null;
   const editorDelegation = actor.delegationPurpose === "editor-stdio" && actor.threadScope !== null && actor.editorSessionScope !== null && name.startsWith("editor-state.");
   const persistenceSessionList = actor.delegationPurpose === "server-persistence" && actor.threadScope !== null && actor.editorSessionScope === null && name === "session.list";
-  if (!oauth && !editorDelegation && !persistenceSessionList) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
+  const reflectionSessionList = actor.delegationPurpose === "reflections-worker" && actor.threadScope !== null && actor.editorSessionScope === null && name === "session.list" && "include_text" in input && input.include_text === false;
+  if (!oauth && !editorDelegation && !persistenceSessionList && !reflectionSessionList) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
   if (actor.editorSessionScope !== null && (!("session_id" in input) || input.session_id !== actor.editorSessionScope)) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
   const repository = new EditorSessionRepository(tx, actor.principal.canonical_user_id);
   async function validateState(sessionId: string, state: EditorStateDto) {

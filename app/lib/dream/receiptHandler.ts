@@ -1,14 +1,14 @@
-// [Input] Original request ID plus an implemented operation name and its exact OAuth or delegated authority.
-// [Output] Strict original request evidence bound to the derived service and actor.
+// [Input] Original request ID plus an implemented operation name and its exact OAuth, background or task authority.
+// [Output] Strict original request evidence bound to the derived service, actor and Reflections task when applicable.
 // [Pos] Unknown-commit recovery ingress; absence never causes automatic retry.
-// [Sync] 2026-09-15: recover registered Registry83 writes through exact actor boundaries.
+// [Sync] 2026-09-15: add Registry99 OAuth/background Reflections recovery and exact RTA child-write checks.
 import { z } from "zod";
 import { AuthBoundaryError } from "../auth/config";
 import { requestIdDto } from "../auth/dto";
 import { handleInternalAuthRequest } from "../auth/internalHandler";
 import { requireBackgroundScope } from "../auth/serviceIdentity";
 import { withDataTransaction } from "./database";
-import { identitySchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement, workflowPreflightExecutionSchemaRequirements } from "./schemaRequirements";
+import { identitySchemaRequirement, reflectionTaskSchemaRequirement, reflectionTaskSchemaRequirements, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement, workflowPreflightExecutionSchemaRequirements } from "./schemaRequirements";
 import { ReceiptRepository } from "./receipts";
 import { resourceObserverPublishOutputDto } from "./resourceDto";
 import { chatThreadOperationContracts } from "./chatThreadDto";
@@ -47,12 +47,38 @@ import { readOriginalUserSystemConfigReceipt } from "./userSystemConfigOriginalR
 import { userSystemConfigSchemaRequirements } from "./userSystemConfigService";
 import { isReflectionsSectionConfigReceiptOperation, readOriginalReflectionsSectionConfigReceipt } from "./reflectionsSectionConfigOriginalReceiptService";
 import { reflectionsSectionConfigSchemaRequirements } from "./reflectionsSectionConfigService";
+import { reflectionTaskIdDto, reflectionTaskOperationContracts, type ReflectionTaskBackgroundOperation, type ReflectionTaskOperation } from "./reflectionTaskDto";
+import { readOriginalReflectionTaskBackgroundReceipt } from "./reflectionTaskService";
 export async function handleReceipt(request: Request, requestId: string) {
   return handleInternalAuthRequest(request, async (service, setRequestId) => {
     const parsed = requestIdDto.safeParse(requestId); if (!parsed.success) throw new AuthBoundaryError("INPUT_INVALID", 400);
     setRequestId(parsed.data);
     const query = new URL(request.url).searchParams;
     const name = query.get("operation") ?? "";
+    const reflectionTaskOperation = Object.hasOwn(reflectionTaskOperationContracts, name) ? reflectionTaskOperationContracts[name as ReflectionTaskOperation] : null;
+    if (reflectionTaskOperation) {
+      if (reflectionTaskOperation.kind !== "write") throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+      const receiptResultDto = z.discriminatedUnion("status", [
+        z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
+        z.strictObject({ status: z.literal("committed"), operation: z.literal(name), request_id: requestIdDto, result: reflectionTaskOperation.output }),
+      ]);
+      if (reflectionTaskOperation.audience === "background") {
+        const taskId = query.get("task_id") ?? "", parsedTaskId = reflectionTaskIdDto.safeParse(taskId);
+        if (query.size !== 2 || query.getAll("operation").length !== 1 || query.getAll("task_id").length !== 1 || !parsedTaskId.success) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+        if (request.headers.has("authorization")) throw new AuthBoundaryError("REFLECTION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
+        return withDataTransaction([identitySchemaRequirement, ...reflectionTaskSchemaRequirements], async tx => {
+          const result = await readOriginalReflectionTaskBackgroundReceipt(name as ReflectionTaskBackgroundOperation, parsedTaskId.data, parsed.data, service, tx);
+          return receiptResultDto.parse({ status: result === null ? "absent" : "committed", operation: name, request_id: parsed.data, ...(result === null ? {} : { result }) });
+        });
+      }
+      if (query.size !== 1 || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+      return withDataTransaction([identitySchemaRequirement, ...reflectionTaskSchemaRequirements], async tx => {
+        const principal = await principalForServiceToken(tx, request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", service, reflectionTaskOperation.userScope);
+        const row = await new ReceiptRepository(tx, service.id, principal.subject).find(name, parsed.data);
+        if (row && (!/^[0-9a-f]{64}$/.test(row.inputSha256) || row.threadScope !== null || row.editorSessionScope !== null || row.runScope !== null)) throw new AuthBoundaryError("REFLECTION_RECEIPT_DATA_INVALID");
+        return receiptResultDto.parse({ status: row ? "committed" : "absent", operation: name, request_id: parsed.data, ...(row ? { result: row.result } : {}) });
+      });
+    }
     if (isReflectionsSectionConfigReceiptOperation(name)) {
       if ([...query.keys()].some(key => key !== "operation") || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
       return withDataTransaction(reflectionsSectionConfigSchemaRequirements, async tx => {
@@ -117,11 +143,12 @@ export async function handleReceipt(request: Request, requestId: string) {
       z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
       z.strictObject({ status: z.literal("committed"), operation: z.literal(name), request_id: requestIdDto, result: output }),
     ]);
-    const bearer = request.headers.get("authorization") ?? "", delegated = bearer.startsWith("Bearer idg_");
-    return withDataTransaction([identitySchemaRequirement, ...(deck ? deckVoiceSchemaRequirements : []), ...(runtimeData ? deckRuntimeDataSchemaRequirements : []), ...(preferences ? userPreferencesSchemaRequirements : []), ...(social ? socialFriendshipSchemaRequirements : []), ...(userMessage ? [dreamUnifiedSchemaRequirement] : []), ...(workflowRun ? workflowRunCommandSchemaRequirements(name as keyof typeof workflowRunCommandOperationContracts) : []), ...(session ? [runtimePurposeSchemaRequirement] : []), ...(delegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : [])], async tx => {
+    const bearer = request.headers.get("authorization") ?? "", delegated = bearer.startsWith("Bearer idg_"), reflectionAuthority = bearer.startsWith("Bearer rta_");
+    if (reflectionAuthority && ((session && session.kind === "read") || (isChatThreadOperation(name) && chatThreadOperationContracts[name].kind === "read"))) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+    return withDataTransaction([identitySchemaRequirement, ...(deck ? deckVoiceSchemaRequirements : []), ...(runtimeData ? deckRuntimeDataSchemaRequirements : []), ...(preferences ? userPreferencesSchemaRequirements : []), ...(social ? socialFriendshipSchemaRequirements : []), ...(userMessage ? [dreamUnifiedSchemaRequirement] : []), ...(workflowRun ? workflowRunCommandSchemaRequirements(name as keyof typeof workflowRunCommandOperationContracts) : []), ...(session ? [runtimePurposeSchemaRequirement] : []), ...(delegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : []), ...(reflectionAuthority ? [reflectionTaskSchemaRequirement] : [])], async tx => {
       const userScope = session ? session.userScope : deck ? deck.kind === "read" ? "dream:read" : "dream:write" : userMessage ? userMessage.userScope : workflowRun ? workflowRun.userScope : runtimeData ? runtimeData.userScope : preferences ? preferences.userScope : social ? social.userScope : !background && chatThreadOperationContracts[name as keyof typeof chatThreadOperationContracts].kind === "write" ? "dream:write" : "dream:read";
       const oauthOnly = deck || preferences || social || (runtimeData && !isThreadRuntimeDataOperation(name));
-      const actor = background ? null : oauthOnly ? { principal: await principalForServiceToken(tx, request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", service, userScope), threadScope: null } : session && delegated ? await editorActorForBearer(tx, request.headers, userScope, undefined, service.id) : await requireDataActor(tx, request.headers, service, userScope);
+      const actor = background ? null : oauthOnly ? { principal: await principalForServiceToken(tx, request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", service, userScope), threadScope: null } : session && delegated ? await editorActorForBearer(tx, request.headers, userScope, undefined, service.id) : await requireDataActor(tx, request.headers, service, userScope, undefined, undefined, name);
       const row = await new ReceiptRepository(tx, service.id, actor?.principal.subject ?? `background:${service.id}`).find(name, parsed.data);
       if (row && actor?.threadScope && row.threadScope !== actor.threadScope) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
       if (row && actor && "editorSessionScope" in actor && row.editorSessionScope !== actor.editorSessionScope) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);

@@ -1,13 +1,13 @@
 // [Input] Named domain input/output DTOs and exact schema requirements.
 // [Output] Version/hash descriptors for implemented operations only.
 // [Pos] API compatibility registry; independent from the global Drizzle head.
-// [Sync] 2026-09-15: register the Reflections section-config aggregate as operations81-83.
+// [Sync] 2026-09-15: append reviewed Reflections aggregate operations84-99 while preserving released83.
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { claudeAgentResourcePolicy as policy } from "../../../config/claude-agent-resource-policy";
 import { resourcePolicyReadInputDto, resourcePolicyReadOutputDto, resourceObserverPublishInputDto, resourceObserverPublishOutputDto } from "./resourceDto";
 import type { SchemaRequirement } from "./database";
-import { identitySchemaRequirement, workflowPreflightExecutionSchemaRequirements } from "./schemaRequirements";
+import { identitySchemaRequirement, reflectionTaskSchemaRequirements, workflowPreflightExecutionSchemaRequirements } from "./schemaRequirements";
 import { chatThreadOperationContracts } from "./chatThreadDto";
 import { chatThreadSchemaRequirements } from "./chatThreadService";
 import { userProfileInputDto, userProfileOutputDto } from "./userProfileDto";
@@ -40,6 +40,7 @@ import { userSystemConfigSchemaRequirements } from "./userSystemConfigService";
 import { threadSystemConfigOperationContracts } from "./threadSystemConfigDto";
 import { threadSystemConfigSchemaRequirements } from "./threadSystemConfigService";
 import { reflectionsSectionConfigOperationContracts } from "./reflectionsSectionConfigDto";
+import { reflectionTaskOperationContracts } from "./reflectionTaskDto";
 export function canonicalContractJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalContractJson).join(",")}]`;
   if (value !== null && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonicalContractJson(item)}`).join(",")}}`;
@@ -73,4 +74,13 @@ export const dreamOperations = [
   ...Object.entries(userSystemConfigOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...userSystemConfigSchemaRequirements], operation.userScope)),
   ...Object.entries(threadSystemConfigOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...threadSystemConfigSchemaRequirements], operation.userScope)),
   ...Object.entries(reflectionsSectionConfigOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
+  ...Object.entries(reflectionTaskOperationContracts).map(([name, operation]) => descriptor(
+    name,
+    operation.kind,
+    operation.audience === "background" ? operation.backgroundScope : null,
+    operation.input,
+    operation.output,
+    [identitySchemaRequirement, ...reflectionTaskSchemaRequirements],
+    operation.audience === "oauth" ? operation.userScope : null,
+  )),
 ] as const;
