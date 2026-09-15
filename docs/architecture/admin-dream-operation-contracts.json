@@ -18843,5 +18843,103 @@
       "output_schema_version": 1,
       "contract_sha256": "e35e76d3425641660da361f2671f0004042a3600b2f3d4072386233c0d90efa3"
     }
+  },
+  {
+    "contract": {
+      "name": "deck.default-plugin.resolve",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "installation": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "plugin_installation_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "package_name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "marketplace": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "resolved_version": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "artifact_digest": {
+                    "type": "string",
+                    "pattern": "^sha256:[a-f0-9]{64}$"
+                  },
+                  "compatibility_json": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "plugin_installation_id",
+                  "package_name",
+                  "marketplace",
+                  "resolved_version",
+                  "artifact_digest",
+                  "compatibility_json"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "installation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.deck-content-canonical-storage.v1",
+        "version": 1,
+        "contractSha256": "97a95f92efecf3435890fcb3f9c1ce46e33fbed8a3de4dca3a632484de4f1c76"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.deck-content-versions.v1",
+        "version": 1,
+        "contractSha256": "ca7ad5914895d6aa9e8c7d576b9af3ed65b44f34318e068d2fc10c90e351e4c3"
+      }
+    ],
+    "capability": {
+      "name": "deck.default-plugin.resolve",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "9ae17f5c334a14f04363705b55701cbcc7ccd8a12070f9548adbf67746535b83"
+    }
   }
 ]

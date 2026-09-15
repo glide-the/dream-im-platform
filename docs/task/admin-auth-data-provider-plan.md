@@ -1,7 +1,7 @@
 <!-- [Input] Authorized Admin provider scope, original Dream sources and coordination stage evidence. -->
 <!-- [Output] Before-code optimized prompts, ownership boundaries and actual validation receipts. -->
 <!-- [Pos] Admin execution plan; candidate/source/static stages never close public or real-business acceptance. -->
-<!-- [Sync] 2026-09-15: register current-user picture history reads as Registry103. -->
+<!-- [Sync] 2026-09-15: register configured default Deck plugin resolution as Registry104. -->
 # Admin 统一认证与 Dream 数据访问执行计划
 
 ## Round 1 — 现状、边界与首版契约
@@ -338,3 +338,9 @@ Round30 actual registration result: Registry99 已把评审的 Reflections 十�
 读取Dream `pictures.py` 三个公开路由、`get_daily_pictures`、`get_daily_pictures_range`、`get_daily_picture_full`及前端调用后，只在Admin新增两个OAuth只读操作。`picture-history.list`用严格nullable ISO日期和非负安全limit统一普通/范围列表，typed Repository只读current actor并保留inclusive范围、日期倒序、thumbnail fallback及nullable prompt/time。`picture-history.full`按严格日期返回current actor同日最新原图或null。两者要求`dream:read`及identity/unified capability，拒绝entity/user/friend/SQL/物理selector，不执行friendship检查、receipt、migration或写操作。
 
 Admin静态门禁覆盖日期/limit/selector、owner/scope/delegation、NULL/微秒投影、损坏数据、Handler UOW与Registry101前缀；新领域4 files/33 tests及actual Dream source oracle通过，完整默认226 files中211 passed/15 skipped、1762 passed/34 skipped，cache-free TypeScript与全仓lint均exit0。Runner-owned restricted-role PostgreSQL合同已通过无/start/end/both/zero limit、owner隔离、fallback、duplicate/full newest、缺capability/scope/delegation和cleanup。默认sandbox loopback EPERM与首次时区期望差异均作为harness前置/fixture修正保留，最终限定loopback命令exit0。JSON103 unique/map parity、Python syntax、Markdown10 files/22 links/0 missing和diff均exit0。Dream三个公开路由consumer、旧helper运行时封锁和正常账户验收属于后续Dream提交。
+
+## Round 33 — 默认 Deck 插件候选 Registry104
+
+读取Dream `backend/services/deck/defaults.py`、`PluginInstallService.list_installations`和Deck默认创建阶段合同后，只在Admin新增一个OAuth只读操作。`deck.default-plugin.resolve`使用strict `{}`，从Admin `DREAM_DECK_POLICY_JSON`取得package/version，在typed Drizzle Repository中只匹配ready行，并按原 `created_at DESC, id DESC` 选择最新候选。输出nullable installation，非空只含安装ID、package、marketplace、resolved version、digest和raw compatibility JSON；禁止caller actor、policy、candidate/evidence、SQL/table/column selector。
+
+Handler要求 `dream:read`、null entity scope和identity/既有Deck capability，不生成receipt/audit。Admin不读取artifact、不调用CLI；现有 `deck.create` 与 `deck.reconcile-default` 的事务内安装ID、policy、digest、ready二次匹配保持不变。领域/Handler/registration及实际Dream source oracle focused门禁通过；runner-owned具名loopback PostgreSQL用SELECT-only DATA role验证exact/absent/unready/mismatch、同时间ID次序、raw compatibility、scope/entity/capability拒绝、row count不变和owned cleanup。无migration、configured database、provider、正常账户或Dream consumer执行；Dream本机verifier与两条公开路由替换属于后续独立提交。

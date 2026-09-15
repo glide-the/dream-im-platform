@@ -48,7 +48,7 @@ beforeEach(() => {
 });
 
 it("preserves all 83 published descriptors and appends the reviewed sixteen as Registry99", () => {
-  expect(dreamOperations).toHaveLength(103);
+  expect(dreamOperations).toHaveLength(104);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 83))).digest("hex")).toBe("a5f73bf39a8c5f639e636f255b1948349da938be2d354bd3e175261f9af85d6e");
   expect(candidate.status).toBe("registered_registry99_source");
   expect(candidate.operations).toHaveLength(16);

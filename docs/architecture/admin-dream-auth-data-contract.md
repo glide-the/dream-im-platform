@@ -1,11 +1,17 @@
 <!-- [Input] Admin/Dream published baselines, PostgreSQL FK/transaction catalog, Better Auth 1.7.4 official protocol. -->
 <!-- [Output] Shared authentication, delegation, domain persistence and recovery contract. -->
 <!-- [Pos] Canonical cross-project contract owned by the Admin implementation task. -->
-<!-- [Sync] 2026-09-15: register current-actor picture history reads as Registry103. -->
+<!-- [Sync] 2026-09-15: register the configured default Deck plugin read as Registry104. -->
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际103操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry101 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。resource/Thread、Editor/Session、Deck19、refs6、Workflow context/确认保护、Run5、Preferences2、Social9已有隔离技术回执；Preflight独立剩余读取/恢复/阶段故障/中断补验通过，首完整失败保留。Run create/retry、Launch、默认Workspace、SystemConfig、Reflections section-config和十六项Reflections aggregate保留各自既有证据。Registry101本地数据原子导入与首次登录完成已通过Admin隔离UOW；Registry103新增当前用户图片历史两个只读操作，Dream consumer与正常验收pending。其余领域仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际104操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry103 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。resource/Thread、Editor/Session、Deck19、refs6、Workflow context/确认保护、Run5、Preferences2、Social9已有隔离技术回执；Preflight独立剩余读取/恢复/阶段故障/中断补验通过，首完整失败保留。Run create/retry、Launch、默认Workspace、SystemConfig、Reflections section-config和十六项Reflections aggregate保留各自既有证据。Registry101本地数据原子导入与首次登录完成、Registry103图片历史只读以及Registry104默认Deck插件候选只读均已通过Admin隔离UOW；对应Dream consumer与正常验收pending。其余领域仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+
+### 默认 Deck 插件候选（注册104）
+
+`deck.default-plugin.resolve` 只接受严格空对象。Admin从 `DREAM_DECK_POLICY_JSON` 取得默认package/version，Repository只查询ready的精确匹配，并按 `created_at DESC, id DESC` 稳定选择一行。输出是nullable installation，非空时只包含 `plugin_installation_id`、`package_name`、`marketplace`、`resolved_version`、`artifact_digest` 与原始 `compatibility_json`；调用方不能提供actor、配置、候选、evidence或物理选择器。
+
+操作要求OAuth `dream:read`、null entity scope及identity/三个既有Deck capability，不生成receipt/audit，不读取artifact或执行Claude CLI。Dream后续使用这六字段完成本机artifact/CLI校验，并缩减为已有四字段evidence；现有 `deck.create` 与 `deck.reconcile-default` 在写事务内继续按安装ID、Admin policy package/version、digest和ready状态重新匹配，因此读写竞态失败关闭。Runner-owned loopback PostgreSQL已用只有installation/capability SELECT的随机DATA角色验证exact/absent/unready/mismatch、同时间ID稳定次序、raw compatibility、无写入与完整cleanup。无需migration；Dream consumer与正常Deck验收pending。
 
 ### 当前用户图片历史（注册103）
 

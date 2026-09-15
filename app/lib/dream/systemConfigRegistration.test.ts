@@ -25,7 +25,7 @@ beforeEach(() => {
   mocks.read.mockResolvedValue({ status: "committed", operation: "user-system-config.patch", request_id: "original", result: { success: true } });
 });
 it("appends exactly three SystemConfig descriptors after the frozen77 catalog", () => {
-  expect(dreamOperations).toHaveLength(103);
+  expect(dreamOperations).toHaveLength(104);
   expect(dreamOperations.slice(77, 80).map(item => ({ name: item.contract.name, kind: item.capability.kind, scope: item.capability.user_scope, requirements: item.requirements }))).toEqual([
     { name: "user-system-config.get", kind: "read", scope: "dream:read", requirements: [identitySchemaRequirement, ...userSystemConfigSchemaRequirements] },
     { name: "user-system-config.patch", kind: "write", scope: "dream:write", requirements: [identitySchemaRequirement, ...userSystemConfigSchemaRequirements] },

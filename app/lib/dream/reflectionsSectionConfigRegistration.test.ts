@@ -60,7 +60,7 @@ beforeEach(() => {
 });
 
 it("appends exactly three Reflections descriptors after the frozen Registry80 prefix", () => {
-  expect(dreamOperations).toHaveLength(103);
+  expect(dreamOperations).toHaveLength(104);
   expect(dreamOperations.slice(80, 83).map(item => ({
     name: item.contract.name,
     kind: item.capability.kind,

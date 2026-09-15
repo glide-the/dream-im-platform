@@ -111,7 +111,8 @@
     "local-data.import",
     "first-login.complete",
     "picture-history.list",
-    "picture-history.full"
+    "picture-history.full",
+    "deck.default-plugin.resolve"
   ],
   "entries": [
     {
@@ -12517,11 +12518,11 @@
           "signature": "voice_id: str, request: VoiceForkRequest, current_user: dict=Depends(get_current_user)"
         }
       ],
-      "admin_interface": "pending Admin canonical contract; no interface invented",
-      "replacement": "Admin aggregate operation for each existing transaction; Dream orchestration/FS preserved",
+      "admin_interface": "deck.default-plugin.resolve plus existing deck.create and deck.reconcile-default (Registry104); Dream consumer replacement pending",
+      "replacement": "Admin resolves the configured candidate; Dream keeps local artifact/CLI verification and calls existing Admin aggregate writes",
       "admin_domain_group": "deck-voice-versions",
       "owner": "coordinator",
-      "status": "pending per-callable production replacement",
+      "status": "Admin read/write interfaces implemented with isolated validation; Dream production create/reconcile replacement and other per-callable work pending",
       "atomic_operation_rule": "Preserve each original transaction as one named domain operation; no SQL/table/user identity parameter."
     },
     {
@@ -19590,11 +19591,11 @@
           "signature": "user_id: int"
         }
       ],
-      "admin_interface": "pending Admin canonical contract; no interface invented",
-      "replacement": "Admin aggregate operation for each existing transaction; Dream orchestration/FS preserved",
+      "admin_interface": "deck.default-plugin.resolve plus existing deck.create and deck.reconcile-default (Registry104); Dream consumer replacement pending",
+      "replacement": "Admin owns configured database selection and aggregate writes; Dream retains only local artifact/CLI verification",
       "admin_domain_group": "deck-voice-versions",
       "owner": "coordinator",
-      "status": "pending per-callable production replacement",
+      "status": "Admin Registry104 read and existing writes implemented with isolated validation; Dream production replacement pending",
       "atomic_operation_rule": "Preserve each original transaction as one named domain operation; no SQL/table/user identity parameter."
     },
     {

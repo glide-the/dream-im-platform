@@ -1,7 +1,7 @@
 // [Input] Named domain input/output DTOs and exact schema requirements.
 // [Output] Version/hash descriptors for implemented operations only.
 // [Pos] API compatibility registry; independent from the global Drizzle head.
-// [Sync] 2026-09-15: append two current-actor picture reads as Registry103 while preserving Registry101.
+// [Sync] 2026-09-15: append the configured default Deck plugin read as Registry104 while preserving Registry103.
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { claudeAgentResourcePolicy as policy } from "../../../config/claude-agent-resource-policy";
@@ -45,6 +45,8 @@ import { localDataImportOperationContracts } from "./localDataImportDto";
 import { localDataImportSchemaRequirements } from "./localDataImportService";
 import { pictureHistoryOperationContracts } from "./pictureHistoryDto";
 import { pictureHistorySchemaRequirements } from "./pictureHistoryService";
+import { deckDefaultPluginResolveOperationContracts } from "./deckDefaultPluginResolveDto";
+import { deckDefaultPluginResolveSchemaRequirements } from "./deckDefaultPluginResolveService";
 export function canonicalContractJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalContractJson).join(",")}]`;
   if (value !== null && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonicalContractJson(item)}`).join(",")}}`;
@@ -94,5 +96,9 @@ export const dreamOperations = [
   ...Object.entries(pictureHistoryOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...pictureHistorySchemaRequirements], operation.userScope,
+  )),
+  ...Object.entries(deckDefaultPluginResolveOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...deckDefaultPluginResolveSchemaRequirements], operation.userScope,
   )),
 ] as const;

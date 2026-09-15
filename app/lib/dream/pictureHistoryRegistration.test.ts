@@ -22,11 +22,11 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves the complete Registry101 prefix and appends exactly two OAuth reads as Registry103", () => {
-  expect(dreamOperations).toHaveLength(103);
+  expect(dreamOperations).toHaveLength(104);
   expect(generated103).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 101))).digest("hex")).toBe("8964d7dea090d83bf2795b1b0e1c1fc23da293b80182428c7bec7ebc9ded8147");
-  expect(dreamOperations.slice(101).map(item => item.contract.name)).toEqual(names);
-  for (const item of dreamOperations.slice(101)) {
+  expect(dreamOperations.slice(101, 103).map(item => item.contract.name)).toEqual(names);
+  for (const item of dreamOperations.slice(101, 103)) {
     expect(item.capability).toMatchObject({ kind: "read", user_scope: "dream:read", background_scope: null });
     expect(item.requirements).toEqual([identitySchemaRequirement, ...pictureHistorySchemaRequirements]);
   }
