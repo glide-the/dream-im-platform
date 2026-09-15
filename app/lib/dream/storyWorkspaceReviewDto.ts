@@ -139,5 +139,7 @@ export const storyWorkspaceReviewOperationContracts = {
 export type StoryWorkspaceReviewResourceType = z.infer<typeof storyWorkspaceReviewResourceTypeDto>;
 export type StoryWorkspaceReviewAction = z.infer<typeof storyWorkspaceReviewActionDto>;
 export type StoryWorkspaceReviewTransitionInput = z.infer<typeof storyWorkspaceReviewTransitionInputDto>;
+export type StoryWorkspaceReviewTransitionResult = z.infer<typeof storyWorkspaceReviewTransitionResultDto>;
 export type StoryWorkspaceReviewBatchInput = z.infer<typeof storyWorkspaceReviewBatchInputDto>;
+export type StoryWorkspaceReviewBatchResult = z.infer<typeof storyWorkspaceReviewBatchResultDto>;
 export type StoryWorkspaceReviewOperation = keyof typeof storyWorkspaceReviewOperationContracts;

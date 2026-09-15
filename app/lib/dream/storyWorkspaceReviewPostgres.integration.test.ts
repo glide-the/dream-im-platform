@@ -114,6 +114,7 @@ describe.skipIf(!enabled)("Story Workspace review PostgreSQL contract", () => {
         action: "archive", review_notes: null }, actor.principal, "dream-service", "review-scenes", tx));
     expect(batch).toMatchObject({ total_requested: 3, total_updated: 1,
       skipped_ids: ["scene-confirmed", "scene-missing"] });
+    if (batch.resource_type !== "scene") throw new Error("Expected Scene batch result");
     expect(batch.updated_items.map(item => item.id)).toEqual(["scene-archive"]);
     expect(batch.updated_items[0]).toMatchObject({ status: "archived" });
     expect(batch.updated_items[0].archived_at).toBeTruthy();

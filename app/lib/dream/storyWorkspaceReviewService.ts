@@ -1,7 +1,7 @@
 // [Input] Strict Registry111 command, OAuth principal and caller-owned Admin transaction.
 // [Output] Idempotent single or batch review result with ORM mutation, receipt and audit in one UOW.
 // [Pos] Dream product-review service; Admin management review and Dream Runtime remain separate.
-// [Sync] 2026-09-15: own Story Workspace review authorization and transaction semantics in Admin.
+// [Sync] 2026-09-15: retain operation-specific result types as Registry114 adds another Story domain.
 import { AuthBoundaryError } from "../auth/config";
 import { principalDto } from "../auth/dto";
 import type { DataTransaction } from "./database";
@@ -12,6 +12,18 @@ import * as dto from "./storyWorkspaceReviewDto";
 
 export const storyWorkspaceReviewSchemaRequirements = [dreamUnifiedSchemaRequirement] as const;
 
+export function runStoryWorkspaceReviewOperation(
+  operation: "story-workspace-review.transition", rawInput: unknown, rawPrincipal: unknown,
+  serviceId: string, requestId: string, tx: DataTransaction,
+): Promise<dto.StoryWorkspaceReviewTransitionResult>;
+export function runStoryWorkspaceReviewOperation(
+  operation: "story-workspace-review.batch", rawInput: unknown, rawPrincipal: unknown,
+  serviceId: string, requestId: string, tx: DataTransaction,
+): Promise<dto.StoryWorkspaceReviewBatchResult>;
+export function runStoryWorkspaceReviewOperation(
+  operation: dto.StoryWorkspaceReviewOperation, rawInput: unknown, rawPrincipal: unknown,
+  serviceId: string, requestId: string, tx: DataTransaction,
+): Promise<dto.StoryWorkspaceReviewTransitionResult | dto.StoryWorkspaceReviewBatchResult>;
 export async function runStoryWorkspaceReviewOperation(
   operation: dto.StoryWorkspaceReviewOperation,
   rawInput: unknown,

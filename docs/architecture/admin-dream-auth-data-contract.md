@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-15: register Story Workspace catalog browse/edit operations as Registry114. -->
 <!-- [Sync] 2026-09-15: register OAuth-only Story Workspace review operations as Registry111. -->
 <!-- [Sync] 2026-09-15: record Dream internal Agent output adoption of Registry109 without a contract change. -->
 <!-- [Input] Admin/Dream published baselines, PostgreSQL FK/transaction catalog, Better Auth 1.7.4 official protocol. -->
@@ -7,7 +8,15 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际111操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry109 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证；Registry108 Runtime activation继续使用当前Thread/Run grant。Dream公开Agent post-turn、旧 `/api/story-workspace/internal/agent-output` 与八个Story审核入口均已消费Admin operation；durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际114操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry111 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证；Registry108 Runtime activation继续使用当前Thread/Run grant。Dream公开Agent post-turn、旧 `/api/story-workspace/internal/agent-output`、八个Story审核入口与11个Story catalog入口均已消费Admin operation；durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+
+### Story Workspace Catalog（注册114）
+
+`story-workspace-catalog.workspace`只接受`{action:"ensure"}`或带明确`workspace_id`及`name/settings` patch的闭集写入；`story-workspace-catalog.read`以`view`闭集覆盖Story、Character、Scene的list/detail，列表只接受各自允许的query、状态、sort、order与page字段；`story-workspace-catalog.patch`以`resource_type`闭集限制三类实体的可编辑字段。调用方不能提供actor、owner、任意filter、SQL、表列、数据库、事务或路径选择器。
+
+Admin从current OAuth派生canonical actor。Repository通过typed Drizzle完成owner过滤、稳定排序、count/page、关系投影和受控patch；Scene的`story_id`只能为空或指向同owner Story。默认Workspace ensure先取得actor advisory lock，保持原最早owned Workspace或建立配置名下的新记录。read使用一个capability-checked UOW且不创建receipt；workspace/patch把业务写、严格公开DTO、实体audit、通用operation audit及receipt放在同一事务。相同request/input恢复原结果，输入改变返回409；未知结果仅允许查询原写操作receipt，read operation没有恢复入口。
+
+Dream的11个FastAPI路由保留原JSON外形、状态、过滤/排序/分页、详情关系、空patch与not-found反馈，通过Pydantic RootModel和present-fields DTO调用Admin。服务不可用、capability/响应/身份不匹配或提交未知均失败关闭，不回退Dream SQL。公开`artifact_available`只从canonical `artifact_status`派生；兼容物理列不进入Drizzle模型，避免第二个布尔真相源。Registry111前缀SHA为`01f1a9ffbd9daf44e9bc640768a13ae636d9e718cb42365ff2de1ba5c244efc3`；workspace/read/patch契约SHA分别为`3fbd32dd7343ae5008d7f71f2475db1b022a95060f2544b9dfbea606af894965`、`317ed15c2f827c44099e0641693d3dcf09bc01186e26586a9b2281226faa142b`、`0ef2cc94d01d488c46a9872efb389b43890e9267460705ebee33ac5ab47180cd`；完整Registry114 SHA为`dc80b77410aac58528dde77578154d9848d9dfc3bf55de4a35c8c315a81af704`。没有新增DDL、Drizzle schema字段或migration。
 
 ### Story Workspace 审核（注册111）
 

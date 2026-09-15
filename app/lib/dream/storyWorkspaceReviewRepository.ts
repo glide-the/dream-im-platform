@@ -1,7 +1,7 @@
 // [Input] Canonical actor, closed review command, original request ID and caller-owned Admin transaction.
 // [Output] Typed Drizzle transitions, bundle cascade, ordered safe projections and durable per-item audits.
 // [Pos] Registry111 Repository; callers cannot select tables, columns, SQL, actor or transaction behavior.
-// [Sync] 2026-09-15: move Dream product review persistence into one Admin-owned ORM unit of work.
+// [Sync] 2026-09-15: derive public artifact availability from canonical artifact_status.
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { adminAuditLogs, storyWorkspaceStories as stories } from "@ink-memory/db/schema";
@@ -170,7 +170,7 @@ export class StoryWorkspaceReviewRepository {
       confirmed_at: storyTime(row.confirmed_at), artifact_indexed_at: storyTime(row.artifact_indexed_at),
       artifact_sync_error_code: row.artifact_sync_error_code !== null && publicSyncErrors.has(row.artifact_sync_error_code)
         ? row.artifact_sync_error_code : null,
-      artifact_available: null,
+      artifact_available: row.artifact_status === null ? null : row.artifact_status === "available",
     }));
   }
 

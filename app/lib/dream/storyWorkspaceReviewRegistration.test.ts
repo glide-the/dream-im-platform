@@ -1,7 +1,7 @@
-// [Input] Frozen Registry109 prefix, live Registry111 DTOs, schema capability and production POST route.
+// [Input] Frozen Registry109/111 prefixes, live review DTOs, Registry114 inventory and production POST route.
 // [Output] Exact append, hashes, generated inventory and dispatch assertions.
 // [Pos] Registration gate for the two Story Workspace product-review writes.
-// [Sync] 2026-09-15: append two DTO/ORM operations without changing Registry109 bytes.
+// [Sync] 2026-09-15: preserve the two Registry111 DTO/ORM operations while Registry114 appends catalog operations.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 const names = new Set(["story-workspace-review.transition", "story-workspace-review.batch"]);
@@ -10,7 +10,7 @@ vi.mock("./storyWorkspaceReviewHandler", () => ({
   isStoryWorkspaceReviewOperation: (value: string) => names.has(value),
   handleStoryWorkspaceReview: mocks.handler,
 }));
-import generated111 from "../../../docs/architecture/admin-dream-operation-contracts.json";
+import generated114 from "../../../docs/architecture/admin-dream-operation-contracts.json";
 import { POST } from "../../api/internal/dream/v1/operations/[operation]/route";
 import { canonicalContractJson, dreamOperations } from "./operationRegistry";
 import { storyWorkspaceReviewOperationContracts } from "./storyWorkspaceReviewDto";
@@ -19,16 +19,16 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 
 beforeEach(() => vi.resetAllMocks());
 it("preserves Registry109 and appends exactly two Registry111 writes", () => {
-  expect(dreamOperations).toHaveLength(111); expect(generated111).toEqual(dreamOperations);
+  expect(dreamOperations).toHaveLength(114); expect(generated114).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 109))).digest("hex"))
     .toBe("48909feea302787bcbd0ed7a263212eeee163a0e3e7887acfda56cc2b421d513");
-  expect(createHash("sha256").update(canonicalContractJson(dreamOperations)).digest("hex"))
+  expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 111))).digest("hex"))
     .toBe("01f1a9ffbd9daf44e9bc640768a13ae636d9e718cb42365ff2de1ba5c244efc3");
-  expect(dreamOperations.slice(109).map(item => item.capability.contract_sha256)).toEqual([
+  expect(dreamOperations.slice(109, 111).map(item => item.capability.contract_sha256)).toEqual([
     "9f741208c6096b38f414fc5fb7c53d045d771233055dd68005571e7b47392392",
     "621206fde4e9322a042940e45234fadfa4bbe01ba5febea67faf7d2ad0050667",
   ]);
-  for (const registered of dreamOperations.slice(109)) expect(registered.requirements)
+  for (const registered of dreamOperations.slice(109, 111)) expect(registered.requirements)
     .toEqual([identitySchemaRequirement, ...storyWorkspaceReviewSchemaRequirements]);
 });
 

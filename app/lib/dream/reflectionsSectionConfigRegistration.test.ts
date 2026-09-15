@@ -1,7 +1,7 @@
 // [Input] Production operation/receipt Routes with captured Reflections handlers and OAuth/UOW seams.
 // [Output] Exact three-name Registry83 prefix, POST dispatch and bounded original write recovery.
 // [Pos] Reflections section-config registration gate; domain and PostgreSQL behavior remain separate.
-// [Sync] 2026-09-15: Registry111 extends only the total-length guard; this file still owns its frozen segment.
+// [Sync] 2026-09-15: Registry114 extends only the total-length guard; this file still owns its frozen segment.
 // [Sync] 2026-09-15: retain Registry83 assertions after the independent Registry106 append.
 // [Sync] 2026-09-15: Registry108 extends only the total-length guard; this file still owns its original frozen segment.
 import { beforeEach, expect, it, vi } from "vitest";
@@ -62,7 +62,7 @@ beforeEach(() => {
 });
 
 it("appends exactly three Reflections descriptors after the frozen Registry80 prefix", () => {
-    expect(dreamOperations).toHaveLength(111);
+    expect(dreamOperations).toHaveLength(114);
   expect(dreamOperations.slice(80, 83).map(item => ({
     name: item.contract.name,
     kind: item.capability.kind,
