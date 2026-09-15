@@ -1,7 +1,7 @@
 // [Input] Frozen Registry105 prefix, live Registry106 DTO and production POST route.
 // [Output] Exact append, OAuth/Thread dispatch, capability and generated-artifact parity evidence.
 // [Pos] Registration gate for deck-workspace-plugins.resolve.
-// [Sync] 2026-09-15: Registry109 extends only the total-length guard; this file still owns its frozen segment.
+// [Sync] 2026-09-15: Registry111 extends only the total-length guard; this file still owns its frozen segment.
 // [Sync] 2026-09-15: Registry108 extends only the total-length guard; this file still owns its original frozen segment.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
@@ -23,7 +23,7 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves Registry105 and appends exactly one Registry106 read", () => {
-  expect(dreamOperations).toHaveLength(109);
+  expect(dreamOperations).toHaveLength(111);
   expect(generated107).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 105))).digest("hex")).toBe("45c7723be490908d178a073b2272f11e29815cd8f3a7f055c457e94a21f7d49b");
   expect(dreamOperations.slice(105, 106).map(item => item.contract.name)).toEqual([name]);

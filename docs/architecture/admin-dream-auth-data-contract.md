@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-15: register OAuth-only Story Workspace review operations as Registry111. -->
 <!-- [Sync] 2026-09-15: record Dream internal Agent output adoption of Registry109 without a contract change. -->
 <!-- [Input] Admin/Dream published baselines, PostgreSQL FK/transaction catalog, Better Auth 1.7.4 official protocol. -->
 <!-- [Output] Shared authentication, delegation, domain persistence and recovery contract. -->
@@ -6,7 +7,15 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际109操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry108 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证；Registry108 Runtime activation继续使用当前Thread/Run grant。Dream公开Agent post-turn与旧 `/api/story-workspace/internal/agent-output` 均已消费Registry109，后者保留OAuth、Header与四字段响应并移除Dream SQL依赖；durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际111操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry109 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository、隔离UOW、原回执恢复和 Dream consumer 围栏验证；Registry108 Runtime activation继续使用当前Thread/Run grant。Dream公开Agent post-turn、旧 `/api/story-workspace/internal/agent-output` 与八个Story审核入口均已消费Admin operation；durable dispatcher和其他生产数据库入口仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+
+### Story Workspace 审核（注册111）
+
+`story-workspace-review.transition`接受严格`{resource_type, resource_id, action, notes}`；Story允许confirm/reject/archive，Character和Scene只允许confirm/reject。`story-workspace-review.batch`接受严格`{resource_type, resource_ids, action, notes}`；批量允许三类资源confirm/reject/archive，ID经trim后必须唯一，数量为1..100。两项均只接受current OAuth `dream:write`，所有Thread/Run/Editor实体scope为空，调用方不能提交actor、owner、Workspace、SQL、表列、数据库地址、路径或事务参数。
+
+Admin Repository使用Drizzle实体完成owner、`agent_generated=1`、pending/nonarchived过滤。Story confirm要求artifact revision可用且与当前script revision一致，并在同一事务确认该Story下仍pending的generated Character和Scene；reject/archive及批量操作保持原逐资源状态语义。每个实际更新写入一条`admin_audit_logs`，业务行、逐项审计、operation receipt和通用audit在同一UOW提交。相同request ID和相同输入回放原结果；不同输入冲突；未知响应只查询原operation/request回执，不重发非幂等写入。批量响应按请求顺序返回`updated_ids`与`skipped_ids`的完整互斥分区。
+
+Dream八个公开审核入口保留原HTTP状态与响应DTO，只通过统一Pydantic consumer调用Admin；Admin不可用、capability缺失、权限拒绝、DTO不匹配或未知提交均失败关闭，不回退Dream PostgreSQL。Registry109完整前缀SHA为`48909feea302787bcbd0ed7a263212eeee163a0e3e7887acfda56cc2b421d513`；transition/batch契约SHA分别为`9f741208c6096b38f414fc5fb7c53d045d771233055dd68005571e7b47392392`、`621206fde4e9322a042940e45234fadfa4bbe01ba5febea67faf7d2ad0050667`；完整Registry111 SHA为`01f1a9ffbd9daf44e9bc640768a13ae636d9e718cb42365ff2de1ba5c244efc3`。现有Drizzle结构与`dream.schema.unified.v1`已满足，无migration。
 
 ### Story Workspace 输出持久化（注册109）
 

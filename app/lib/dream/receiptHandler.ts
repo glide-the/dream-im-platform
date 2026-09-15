@@ -1,7 +1,7 @@
 // [Input] Original request ID plus an implemented operation name and its exact OAuth, background or task authority.
 // [Output] Strict original request evidence bound to the derived service, actor and Reflections task when applicable.
 // [Pos] Unknown-commit recovery ingress; absence never causes automatic retry.
-// [Sync] 2026-09-15: recover Registry109 Story output under its exact Thread delegation.
+// [Sync] 2026-09-15: recover OAuth-only Registry111 Story review receipts alongside Registry109 output.
 import { z } from "zod";
 import { AuthBoundaryError } from "../auth/config";
 import { requestIdDto } from "../auth/dto";
@@ -58,6 +58,9 @@ import { workflowRuntimeActivationSchemaRequirements } from "./workflowRuntimeAc
 import { storyWorkspaceOutputOperationContracts } from "./storyWorkspaceOutputDto";
 import { isStoryWorkspaceOutputOperation } from "./storyWorkspaceOutputHandler";
 import { storyWorkspaceOutputSchemaRequirements } from "./storyWorkspaceOutputService";
+import { storyWorkspaceReviewOperationContracts } from "./storyWorkspaceReviewDto";
+import { isStoryWorkspaceReviewOperation } from "./storyWorkspaceReviewHandler";
+import { storyWorkspaceReviewSchemaRequirements } from "./storyWorkspaceReviewService";
 export async function handleReceipt(request: Request, requestId: string) {
   return handleInternalAuthRequest(request, async (service, setRequestId) => {
     const parsed = requestIdDto.safeParse(requestId); if (!parsed.success) throw new AuthBoundaryError("INPUT_INVALID", 400);
@@ -159,20 +162,21 @@ export async function handleReceipt(request: Request, requestId: string) {
     const runtimeData = isDeckRuntimeDataOperation(name) ? deckRuntimeDataOperationContracts[name] : null;
     const runtimeActivation = isWorkflowRuntimeActivationOperation(name) ? workflowRuntimeActivationOperationContracts[name] : null;
     const storyOutput = isStoryWorkspaceOutputOperation(name) ? storyWorkspaceOutputOperationContracts[name] : null;
+    const storyReview = isStoryWorkspaceReviewOperation(name) ? storyWorkspaceReviewOperationContracts[name] : null;
     const preferences = isUserPreferencesOperation(name) ? userPreferencesOperationContracts[name] : null;
     const social = isSocialFriendshipOperation(name) ? socialFriendshipOperationContracts[name] : null;
-    if ((!background && !isChatThreadOperation(name) && !session && !deck && !userMessage && !workflowRun && !runtimeData && !runtimeActivation && !storyOutput && !preferences && !social) || [...query.keys()].some(key => key !== "operation") || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+    if ((!background && !isChatThreadOperation(name) && !session && !deck && !userMessage && !workflowRun && !runtimeData && !runtimeActivation && !storyOutput && !storyReview && !preferences && !social) || [...query.keys()].some(key => key !== "operation") || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
     if (background) requireBackgroundScope(service, "resource-observer:write");
-    const output = background ? resourceObserverPublishOutputDto : session ? session.output : deck ? deck.output : userMessage ? userMessage.output : workflowRun ? workflowRun.output : runtimeData ? runtimeData.output : runtimeActivation ? runtimeActivation.output : storyOutput ? storyOutput.output : preferences ? preferences.output : social ? social.output : chatThreadOperationContracts[name as keyof typeof chatThreadOperationContracts].output;
+    const output = background ? resourceObserverPublishOutputDto : session ? session.output : deck ? deck.output : userMessage ? userMessage.output : workflowRun ? workflowRun.output : runtimeData ? runtimeData.output : runtimeActivation ? runtimeActivation.output : storyOutput ? storyOutput.output : storyReview ? storyReview.output : preferences ? preferences.output : social ? social.output : chatThreadOperationContracts[name as keyof typeof chatThreadOperationContracts].output;
     const receiptResultDto = z.discriminatedUnion("status", [
       z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
       z.strictObject({ status: z.literal("committed"), operation: z.literal(name), request_id: requestIdDto, result: output }),
     ]);
     const bearer = request.headers.get("authorization") ?? "", delegated = bearer.startsWith("Bearer idg_"), reflectionAuthority = bearer.startsWith("Bearer rta_");
     if (reflectionAuthority && ((session && session.kind === "read") || (isChatThreadOperation(name) && chatThreadOperationContracts[name].kind === "read"))) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
-    return withDataTransaction([identitySchemaRequirement, ...(deck ? deckVoiceSchemaRequirements : []), ...(runtimeData ? deckRuntimeDataSchemaRequirements : []), ...(runtimeActivation ? workflowRuntimeActivationSchemaRequirements : []), ...(storyOutput ? storyWorkspaceOutputSchemaRequirements : []), ...(preferences ? userPreferencesSchemaRequirements : []), ...(social ? socialFriendshipSchemaRequirements : []), ...(userMessage ? [dreamUnifiedSchemaRequirement] : []), ...(workflowRun ? workflowRunCommandSchemaRequirements(name as keyof typeof workflowRunCommandOperationContracts) : []), ...(session ? [runtimePurposeSchemaRequirement] : []), ...(delegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : []), ...(reflectionAuthority ? [reflectionTaskSchemaRequirement] : [])], async tx => {
-      const userScope = session ? session.userScope : deck ? deck.kind === "read" ? "dream:read" : "dream:write" : userMessage ? userMessage.userScope : workflowRun ? workflowRun.userScope : runtimeData ? runtimeData.userScope : runtimeActivation ? runtimeActivation.userScope : storyOutput ? storyOutput.userScope : preferences ? preferences.userScope : social ? social.userScope : !background && chatThreadOperationContracts[name as keyof typeof chatThreadOperationContracts].kind === "write" ? "dream:write" : "dream:read";
-      const oauthOnly = deck || preferences || social || (runtimeData && !isThreadRuntimeDataOperation(name));
+    return withDataTransaction([identitySchemaRequirement, ...(deck ? deckVoiceSchemaRequirements : []), ...(runtimeData ? deckRuntimeDataSchemaRequirements : []), ...(runtimeActivation ? workflowRuntimeActivationSchemaRequirements : []), ...(storyOutput ? storyWorkspaceOutputSchemaRequirements : []), ...(storyReview ? storyWorkspaceReviewSchemaRequirements : []), ...(preferences ? userPreferencesSchemaRequirements : []), ...(social ? socialFriendshipSchemaRequirements : []), ...(userMessage ? [dreamUnifiedSchemaRequirement] : []), ...(workflowRun ? workflowRunCommandSchemaRequirements(name as keyof typeof workflowRunCommandOperationContracts) : []), ...(session ? [runtimePurposeSchemaRequirement] : []), ...(delegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : []), ...(reflectionAuthority ? [reflectionTaskSchemaRequirement] : [])], async tx => {
+      const userScope = session ? session.userScope : deck ? deck.kind === "read" ? "dream:read" : "dream:write" : userMessage ? userMessage.userScope : workflowRun ? workflowRun.userScope : runtimeData ? runtimeData.userScope : runtimeActivation ? runtimeActivation.userScope : storyOutput ? storyOutput.userScope : storyReview ? storyReview.userScope : preferences ? preferences.userScope : social ? social.userScope : !background && chatThreadOperationContracts[name as keyof typeof chatThreadOperationContracts].kind === "write" ? "dream:write" : "dream:read";
+      const oauthOnly = deck || storyReview || preferences || social || (runtimeData && !isThreadRuntimeDataOperation(name));
       const actor = background ? null : oauthOnly ? { principal: await principalForServiceToken(tx, request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", service, userScope), threadScope: null } : session && delegated ? await editorActorForBearer(tx, request.headers, userScope, undefined, service.id) : await requireDataActor(tx, request.headers, service, userScope, undefined, undefined, name);
       const row = await new ReceiptRepository(tx, service.id, actor?.principal.subject ?? `background:${service.id}`).find(name, parsed.data);
       if (row && storyOutput) {
@@ -182,6 +186,11 @@ export async function handleReceipt(request: Request, requestId: string) {
           || row.editorSessionScope !== null || row.runScope !== null) {
           throw new AuthBoundaryError("STORY_WORKSPACE_OUTPUT_DATA_INVALID");
         }
+      }
+      if (row && storyReview && (!storyReview.output.safeParse(row.result).success
+        || !/^[0-9a-f]{64}$/.test(row.inputSha256) || row.threadScope !== null
+        || row.editorSessionScope !== null || row.runScope !== null)) {
+        throw new AuthBoundaryError("STORY_WORKSPACE_REVIEW_DATA_INVALID");
       }
       if (row && actor?.threadScope && row.threadScope !== actor.threadScope) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
       if (row && actor && "editorSessionScope" in actor && row.editorSessionScope !== actor.editorSessionScope) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);

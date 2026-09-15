@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-15: Registry111 Story review DTO/ORM, concurrency, rollback and restricted-role PostgreSQL gates pass. -->
 <!-- [Input] Unified contract and explicit domain/identity permissions. -->
 <!-- [Output] Required validation coverage and exact stage receipts. -->
 <!-- [Pos] Admin acceptance matrix; fixtures never count as real-user acceptance. -->
@@ -7,6 +8,7 @@
 
 | 流程 | 模块/数据权限 | 方式 | 成功 | 失败与恢复 | 状态 |
 | --- | --- | --- | --- | --- | --- |
+| Story Workspace审核 | current OAuth owner；Story/Character/Scene generated pending rows | focused Vitest/Python consumer + runner-owned restricted PostgreSQL | 单项与批量DTO、Story级联、顺序、幂等回放、八公开入口无DB fallback | 非owner/非generated/非pending跳过；并发仅一提交；DTO/audit故障全回滚；未知仅查原回执 | 技术验证通过：Admin 16 tests、Dream 36 tests、PG 6/6；正常真实业务未执行 |
 | 配置/issuer/origin | auth config，无数据 | Luna unit | exact origin、HTTPS cookie、限定后台scope | secret缺失/非法redirect fail closed | 定向通过 |
 | OAuth access token | verifier，仅public keys | Luna unit | ES256 at+jwt/aud/scope/300s | Google/ID/Session/expired/lifetime/scope拒绝 | 定向通过 |
 | Google既有用户映射 | auth Account→subject_links→users | 协调隔离mapping+真实Google | 旧PK/Google sub关系保留 | 同邮箱冲突，不任意合并 | 显式采用隔离通过；真实Google未执行 |

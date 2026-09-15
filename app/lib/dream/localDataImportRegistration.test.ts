@@ -1,7 +1,7 @@
 // [Input] Frozen Registry99 prefix, live Registry101 DTOs and shared routes inside Registry103.
 // [Output] Exact local-data segment, OAuth dispatch and unknown-commit recovery evidence.
 // [Pos] Registration gate for local-data.import and first-login.complete.
-// [Sync] 2026-09-15: Registry109 extends only the total-length guard; this file still owns its frozen segment.
+// [Sync] 2026-09-15: Registry111 extends only the total-length guard; this file still owns its frozen segment.
 // [Sync] 2026-09-15: retain Registry101 assertions after the independent Registry106 append.
 // [Sync] 2026-09-15: Registry108 extends only the total-length guard; this file still owns its original frozen segment.
 import { beforeEach, expect, it, vi } from "vitest";
@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 
 it("preserves the complete Registry99 prefix and appends exactly two OAuth writes as Registry101", () => {
-    expect(dreamOperations).toHaveLength(109);
+    expect(dreamOperations).toHaveLength(111);
   expect(generated103).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 99))).digest("hex")).toBe("bc1d8c0c033673c91f5e5ba3c11316c366d20aa8e1693bdc71b9e4425a9b7e85");
   expect(dreamOperations.slice(99, 101).map(item => item.contract.name)).toEqual(names);
