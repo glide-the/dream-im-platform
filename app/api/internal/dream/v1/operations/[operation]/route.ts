@@ -1,7 +1,7 @@
 // [Input] Explicit registered local-data, Thread/message, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
 // [Output] Strict domain DTO, never generic SQL or arbitrary function dispatch.
 // [Pos] Thin named operation ingress.
-// [Sync] 2026-09-15: dispatch the OAuth local-data aggregate and first-login completion through Registry101.
+// [Sync] 2026-09-15: dispatch current-actor picture-history reads through Registry103.
 import { handleChatThreadOperation } from "../../../../../../lib/dream/chatThreadHandler";
 import { handleUserProfile } from "../../../../../../lib/dream/userProfileHandler";
 import { handleEditorSessionOperation, isEditorSessionOperation } from "../../../../../../lib/dream/editorSessionHandler";
@@ -24,9 +24,11 @@ import { handleThreadSystemConfig, isThreadSystemConfigOperation } from "../../.
 import { handleReflectionsSectionConfig, isReflectionsSectionConfigOperation } from "../../../../../../lib/dream/reflectionsSectionConfigHandler";
 import { handleReflectionTaskOperation, isReflectionTaskOperation } from "../../../../../../lib/dream/reflectionTaskHandler";
 import { handleLocalDataImport, isLocalDataImportOperation } from "../../../../../../lib/dream/localDataImportHandler";
+import { handlePictureHistory, isPictureHistoryOperation } from "../../../../../../lib/dream/pictureHistoryHandler";
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
+  if (isPictureHistoryOperation(name)) return handlePictureHistory(request, name);
   if (isLocalDataImportOperation(name)) return handleLocalDataImport(request, name);
   if (name === "dream-launch-failure.envelope") return handleDreamLaunchFailure(request, name);
   if (isUserSystemConfigOperation(name)) return handleUserSystemConfig(request, name);

@@ -1,11 +1,17 @@
 <!-- [Input] Admin/Dream published baselines, PostgreSQL FK/transaction catalog, Better Auth 1.7.4 official protocol. -->
 <!-- [Output] Shared authentication, delegation, domain persistence and recovery contract. -->
 <!-- [Pos] Canonical cross-project contract owned by the Admin implementation task. -->
-<!-- [Sync] 2026-09-15: register the atomic local-data import and first-login completion as Registry101. -->
+<!-- [Sync] 2026-09-15: register current-actor picture history reads as Registry103. -->
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际101操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry99 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。resource/Thread、Editor/Session、Deck19、refs6、Workflow context/确认保护、Run5、Preferences2、Social9已有隔离技术回执；Preflight独立剩余读取/恢复/阶段故障/中断补验通过，首完整失败保留。Run create/retry、Launch、默认Workspace、SystemConfig、Reflections section-config和十六项Reflections aggregate保留各自既有证据。Registry101新增本地数据原子导入与首次登录完成；Admin隔离UOW已通过，Dream consumer与正常首次登录验收pending。其余领域仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+版本 `0.1`。状态：实现中；[实际103操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry101 descriptor前缀保持，独立Preflight回执/委托artifact字节保持。resource/Thread、Editor/Session、Deck19、refs6、Workflow context/确认保护、Run5、Preferences2、Social9已有隔离技术回执；Preflight独立剩余读取/恢复/阶段故障/中断补验通过，首完整失败保留。Run create/retry、Launch、默认Workspace、SystemConfig、Reflections section-config和十六项Reflections aggregate保留各自既有证据。Registry101本地数据原子导入与首次登录完成已通过Admin隔离UOW；Registry103新增当前用户图片历史两个只读操作，Dream consumer与正常验收pending。其余领域仍按[全域映射](admin-dream-domain-implementation-map.md)关闭，本稿不是完整部署或真实业务回执。
+
+### 当前用户图片历史（注册103）
+
+`picture-history.list` 接受必填的 nullable `start_date`、nullable `end_date` 和非负安全整数 `limit`；日期必须是真实 `YYYY-MM-DD`。Repository只查询OAuth canonical actor，范围端点包含在内，按日期倒序并用行ID稳定同日次序，缩略图为NULL时回退原图；输出保留 nullable prompt 与 PostgreSQL 时区/微秒时间。无边界的普通列表和带边界的范围列表共用这一操作，Dream负责维持普通列表把空prompt映射为`""`的公开差异。
+
+`picture-history.full` 只接收一个严格日期，并在当前actor同日行中按创建时间倒序读取一张原图，无记录返回 `{image_base64:null}` 供Dream映射原404。两项均为OAuth `dream:read`，entity grant、friend/user/SQL/table/column selector、缺少identity/unified capability和畸形存储投影全部失败关闭。它们不执行好友关系授权，不生成receipt/audit，不新增migration、写操作或文件系统副作用。Runner-owned loopback PostgreSQL已用只有Picture/capability SELECT的随机DATA角色验证owner隔离、范围、fallback、重复日期、同日最新与完整cleanup。Dream三个公开路由替换与正常账户验收pending。
 
 ### 本地数据导入与首次登录（注册101）
 

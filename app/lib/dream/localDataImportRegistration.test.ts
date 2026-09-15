@@ -1,7 +1,7 @@
-// [Input] Frozen Registry99 artifact, live Registry101 DTOs and shared POST/original-receipt routes.
-// [Output] Exact two-operation append, OAuth dispatch and unknown-commit recovery evidence.
+// [Input] Frozen Registry99 prefix, live Registry101 DTOs and shared routes inside Registry103.
+// [Output] Exact local-data segment, OAuth dispatch and unknown-commit recovery evidence.
 // [Pos] Registration gate for local-data.import and first-login.complete.
-// [Sync] 2026-09-15: preserve every prior descriptor and append only the two reviewed OAuth writes.
+// [Sync] 2026-09-15: preserve the two reviewed OAuth writes before the Registry103 picture suffix.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 const names = ["local-data.import", "first-login.complete"] as const;
@@ -15,7 +15,7 @@ vi.mock("../auth/serviceAccessToken", () => ({ principalForServiceToken: mocks.p
 vi.mock("./database", () => ({ withDataTransaction: mocks.transaction }));
 vi.mock("./receipts", () => ({ ReceiptRepository: class { find = mocks.find; } }));
 
-import generated101 from "../../../docs/architecture/admin-dream-operation-contracts.json";
+import generated103 from "../../../docs/architecture/admin-dream-operation-contracts.json";
 import { POST } from "../../api/internal/dream/v1/operations/[operation]/route";
 import { GET } from "../../api/internal/dream/v1/receipts/[requestId]/route";
 import { canonicalContractJson, dreamOperations } from "./operationRegistry";
@@ -31,11 +31,11 @@ beforeEach(() => {
 });
 
 it("preserves the complete Registry99 prefix and appends exactly two OAuth writes as Registry101", () => {
-  expect(dreamOperations).toHaveLength(101);
-  expect(generated101).toEqual(dreamOperations);
+  expect(dreamOperations).toHaveLength(103);
+  expect(generated103).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 99))).digest("hex")).toBe("bc1d8c0c033673c91f5e5ba3c11316c366d20aa8e1693bdc71b9e4425a9b7e85");
-  expect(dreamOperations.slice(99).map(item => item.contract.name)).toEqual(names);
-  for (const item of dreamOperations.slice(99)) {
+  expect(dreamOperations.slice(99, 101).map(item => item.contract.name)).toEqual(names);
+  for (const item of dreamOperations.slice(99, 101)) {
     expect(item.capability).toMatchObject({ kind: "write", user_scope: "dream:write", background_scope: null });
     expect(item.requirements).toEqual([identitySchemaRequirement, ...localDataImportSchemaRequirements]);
   }

@@ -109,7 +109,9 @@
     "reflection-event.append",
     "reflection-report.ensure",
     "local-data.import",
-    "first-login.complete"
+    "first-login.complete",
+    "picture-history.list",
+    "picture-history.full"
   ],
   "entries": [
     {
@@ -11320,12 +11322,12 @@
           "signature": "date: str, current_user: dict=Depends(get_current_user)"
         }
       ],
-      "admin_interface": "pending Admin canonical contract; no interface invented",
-      "replacement": "Admin aggregate operation for each existing transaction; Dream orchestration/FS preserved",
+      "admin_interface": "picture-history.list and picture-history.full (Registry103); Dream consumer replacement pending",
+      "replacement": "Two strict current-actor Admin reads serve the three existing Dream routes; no friendship authorization or database fallback",
       "admin_domain_group": "user-memory-social",
       "owner": "admin",
-      "status": "pending per-callable production replacement",
-      "atomic_operation_rule": "Preserve each original transaction as one named domain operation; no SQL/table/user identity parameter."
+      "status": "Admin Registry103 implemented with restricted-role isolated validation; Dream production replacement pending",
+      "atomic_operation_rule": "Derive the actor from OAuth; list uses closed nullable date bounds and limit, full uses one closed date; no user/friend/SQL/table/column selector."
     },
     {
       "file": "backend/routers/preferences.py",
