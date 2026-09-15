@@ -25746,5 +25746,198 @@
       "output_schema_version": 1,
       "contract_sha256": "12aeed9beb6584354aa584ebadf7ce352d68084632c0d2c90a2c768c3a8626c6"
     }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-confirmation.claim-turn",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^dream_confirm_[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "claim_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        },
+        "required": [
+          "message_id",
+          "claim_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "dispatch": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "thread_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "actor_id": {
+                    "type": "string",
+                    "pattern": "^[1-9]\\d{0,18}$"
+                  },
+                  "message_id": {
+                    "type": "string",
+                    "pattern": "^dream_confirm_[0-9a-f]{64}$"
+                  },
+                  "parts_json": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "metadata_json": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "thread_id",
+                  "actor_id",
+                  "message_id",
+                  "parts_json",
+                  "metadata_json"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authority": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "pattern": "^idg_[A-Za-z0-9_-]{43}$"
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "maximum_expires_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "enum": [
+                      "server-persistence",
+                      "gateway-cli",
+                      "editor-stdio"
+                    ]
+                  },
+                  "thread_id": {
+                    "type": "string"
+                  },
+                  "run_id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "editor_session_id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "dream:read",
+                        "dream:write",
+                        "messages:create",
+                        "messages:count_tokens",
+                        "models:list",
+                        "editor:read",
+                        "editor:write"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "token",
+                  "expires_at",
+                  "maximum_expires_at",
+                  "purpose",
+                  "thread_id",
+                  "run_id",
+                  "editor_session_id",
+                  "scopes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "dispatch",
+          "authority"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "identity.runtime-confirmation-claim.v1",
+        "version": 1,
+        "contractSha256": "d9de67655e6d8d5ae9654d6502a2cf5d9ab1bb6d829975b243eb25e239b08919"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-confirmation.claim-turn",
+      "kind": "write",
+      "user_scope": null,
+      "background_scope": "story-confirmation:dispatch",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "c971b5f2ee3517eb9c078d70544bfaa46d74a293afc44b1b8386496d9d081e62"
+    }
   }
 ]

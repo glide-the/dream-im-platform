@@ -1,7 +1,7 @@
-// [Input] Admin OAuth user grant or existing opaque entity-bound delegation; capability-gated data UOW.
-// [Output] Encrypted-recoverable creation and bounded renewal/revocation/validated actor projection.
+// [Input] Admin OAuth user grant or exact Admin-owned confirmation claim; capability-gated data UOW.
+// [Output] Encrypted-recoverable creation and claim-fenced renewal/revocation/actor projection.
 // [Pos] Admin sole long-turn authority; no external actor IDs or Runtime service secrets.
-// [Sync] 2026-09-14: enforce mutually exclusive purpose grants, exact Editor binding and audited actions.
+// [Sync] 2026-09-16: issue server-persistence grants from exact live Story confirmation claims.
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -11,12 +11,24 @@ import { DelegationRepository } from "./delegationRepository";
 import { principalForAccessToken } from "./browserSessionService";
 import { SubjectRepository } from "./subjectRepository";
 import { encryptAuthBundle, decryptAuthBundle } from "./tokenEncryption";
-import { canonicalContractJson } from "../dream/operationRegistry";
+import { canonicalContractJson } from "../dream/canonicalContractJson";
 import { ReceiptRepository } from "../dream/receipts";
 import type { DataTransaction } from "../dream/database";
 import { requestIdDto, type PrincipalDto } from "./dto";
 import { gatewayClientForService } from "./gatewayBindings";
 import { authoritativeWorkflowContext } from "../dream/workflowContextService";
+import { storyWorkspaceConfirmationClaimIdDto, storyWorkspaceConfirmationMessageIdDto,
+  storyWorkspaceConfirmationMetadataDto } from "../dream/storyWorkspaceConfirmationDto";
+import { workflowRunIdDto } from "../dream/workflowRunDto";
+
+const confirmationGrantBindingDto = z.strictObject({
+  messageId: storyWorkspaceConfirmationMessageIdDto,
+  claimId: storyWorkspaceConfirmationClaimIdDto,
+  actorId: z.string().regex(/^[1-9][0-9]*$/),
+  threadId: z.string().min(1).max(255),
+  runId: workflowRunIdDto,
+});
+export type ConfirmationGrantBinding = z.infer<typeof confirmationGrantBindingDto>;
 
 export const delegationHash = (token: string) => createHash("sha256").update(token).digest("hex");
 function delegationPolicy() {
@@ -68,11 +80,140 @@ export class DelegationService {
     await this.repository.auditCreation(service.id, requestId, hash, delegationHash(token));
     return result;
   }
+
+  async createForConfirmationClaim(
+    service: { id: string; oauthClientId: string; backgroundScopes: readonly string[] },
+    rawBinding: ConfirmationGrantBinding,
+  ) {
+    const binding = confirmationGrantBindingDto.parse(rawBinding);
+    if (!service.backgroundScopes.includes("story-confirmation:dispatch")) {
+      throw new AuthBoundaryError("DREAM_SERVICE_SCOPE_REQUIRED", 403);
+    }
+    const source = await this.repository.confirmationClaimSource(
+      binding.messageId, binding.actorId, binding.threadId,
+    );
+    if (!this.validConfirmationSource(source, binding)) {
+      throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+    }
+    const identity = await new SubjectRepository(this.tx).findActiveByCanonicalUserId(binding.actorId);
+    if (!identity || !await this.repository.ownsEntities(binding.actorId, binding.threadId, binding.runId)) {
+      throw new AuthBoundaryError("ACTIVE_SUBJECT_REQUIRED", 403);
+    }
+    const requestId = `confirmation-claim_${delegationHash(canonicalContractJson([
+      service.id, binding.messageId, binding.claimId,
+    ]))}`;
+    const inputSha256 = delegationHash(canonicalContractJson({
+      authority_source: "story-confirmation-claim",
+      service_client_id: service.id,
+      auth_user_id: identity.authUserId,
+      canonical_user_id: binding.actorId,
+      thread_id: binding.threadId,
+      run_id: binding.runId,
+      source_message_id: binding.messageId,
+      source_claim_id: binding.claimId,
+      purpose: "server-persistence",
+      scopes: ["dream:read", "dream:write"],
+    }));
+    await this.tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${requestId}, 0))`);
+    const prior = await this.repository.findConfirmationClaimCreation(
+      service.id, binding.messageId, binding.claimId,
+    );
+    if (prior) {
+      if (prior.authUserId !== identity.authUserId
+        || prior.canonicalUserId.toString() !== binding.actorId
+        || prior.oauthClientId !== service.oauthClientId
+        || prior.requestId !== requestId
+        || prior.inputSha256 !== inputSha256
+        || prior.authoritySource !== "story-confirmation-claim"
+        || prior.sourceMessageId !== binding.messageId
+        || prior.sourceClaimId !== binding.claimId
+        || prior.threadId !== binding.threadId
+        || prior.runId !== binding.runId
+        || prior.purpose !== "server-persistence"
+        || prior.editorSessionId !== null
+        || prior.gatewayApiKeyId !== null
+        || canonicalContractJson(prior.scopes) !== canonicalContractJson(["dream:read", "dream:write"])
+        || prior.revokedAt || prior.expiresAt <= new Date() || !prior.tokenCiphertext) {
+        throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+      }
+      const recovered = delegationOutputDto.parse(decryptAuthBundle(prior.tokenCiphertext));
+      if (delegationHash(recovered.token) !== prior.tokenHash
+        || recovered.thread_id !== binding.threadId || recovered.run_id !== binding.runId
+        || recovered.purpose !== "server-persistence" || recovered.editor_session_id !== null
+        || canonicalContractJson(recovered.scopes) !== canonicalContractJson(["dream:read", "dream:write"])
+        || recovered.expires_at !== prior.expiresAt.toISOString()
+        || recovered.maximum_expires_at !== prior.maximumExpiresAt?.toISOString()) {
+        throw new AuthBoundaryError("DELEGATION_RECOVERY_INVALID");
+      }
+      await this.resolve(recovered.token, null, service.id, binding.threadId, binding.runId, null);
+      return recovered;
+    }
+    const policy = delegationPolicy(); const now = Date.now();
+    const token = `idg_${randomBytes(32).toString("base64url")}`;
+    const expiresAt = new Date(now + policy.ttl * 1_000);
+    const maximumExpiresAt = new Date(now + policy.maximumTtl * 1_000);
+    const result = delegationOutputDto.parse({
+      token, expires_at: expiresAt.toISOString(), maximum_expires_at: maximumExpiresAt.toISOString(),
+      purpose: "server-persistence", thread_id: binding.threadId, run_id: binding.runId,
+      editor_session_id: null, scopes: ["dream:read", "dream:write"],
+    });
+    await this.repository.create({
+      tokenHash: delegationHash(token), serviceClientId: service.id,
+      authUserId: identity.authUserId, oauthClientId: service.oauthClientId,
+      canonicalUserId: BigInt(binding.actorId), threadId: binding.threadId, runId: binding.runId,
+      purpose: "server-persistence", editorSessionId: null, scopes: ["dream:read", "dream:write"],
+      gatewayApiKeyId: null, requestId, inputSha256, tokenCiphertext: encryptAuthBundle(result),
+      authoritySource: "story-confirmation-claim", sourceMessageId: binding.messageId,
+      sourceClaimId: binding.claimId, expiresAt, maximumExpiresAt,
+    });
+    await this.repository.auditCreation(service.id, requestId, inputSha256, delegationHash(token));
+    return result;
+  }
+
+  private validConfirmationSource(
+    source: Awaited<ReturnType<DelegationRepository["confirmationClaimSource"]>>,
+    binding: ConfirmationGrantBinding,
+  ) {
+    if (!source || source.role !== "user" || source.metadataJson === null
+      || source.id !== binding.messageId || source.actorId !== binding.actorId
+      || !Number.isFinite(source.nowSeconds)) return false;
+    try {
+      const metadata = storyWorkspaceConfirmationMetadataDto.parse(JSON.parse(source.metadataJson));
+      return metadata.actor === binding.actorId
+        && metadata.thread_id === binding.threadId
+        && metadata.story_workspace_run_id === binding.runId
+        && metadata.dispatch_status === "dispatching"
+        && metadata.dispatch_claim_id === binding.claimId
+        && typeof metadata.dispatch_claim_lease_until === "number"
+        && metadata.dispatch_claim_lease_until > source.nowSeconds;
+    } catch { return false; }
+  }
+
+  private async requireActiveConfirmationSource(row: NonNullable<Awaited<ReturnType<DelegationRepository["lock"]>>>) {
+    const emptySource = row.authoritySource == null
+      && row.sourceMessageId == null && row.sourceClaimId == null;
+    if (emptySource) return;
+    if (row.authoritySource !== "story-confirmation-claim"
+      || !row.sourceMessageId || !row.sourceClaimId || !row.runId
+      || row.purpose !== "server-persistence" || row.editorSessionId !== null
+      || row.gatewayApiKeyId !== null) {
+      throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
+    }
+    const source = await this.repository.confirmationClaimSource(
+      row.sourceMessageId, row.canonicalUserId.toString(), row.threadId,
+    );
+    if (!this.validConfirmationSource(source, {
+      messageId: row.sourceMessageId, claimId: row.sourceClaimId,
+      actorId: row.canonicalUserId.toString(), threadId: row.threadId, runId: row.runId,
+    })) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+  }
+
   async resolve(token: string, requiredScope: string | null, serviceId?: string, threadId?: string, runId?: string | null, editorSessionId?: string | null): Promise<DelegatedPrincipal> {
     if (!delegationTokenDto.safeParse(token).success) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
     const row = await this.repository.lock(delegationHash(token));
     if (!row || row.revokedAt || row.expiresAt <= new Date() || !row.oauthClientId || !row.maximumExpiresAt || !row.tokenCiphertext || !row.requestId || !row.inputSha256 || !/^[0-9a-f]{64}$/.test(row.inputSha256) || !dreamServiceClients().some(client => client.id === row.serviceClientId)) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
     if (!validDelegationPurpose(row)) throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
+    await this.requireActiveConfirmationSource(row);
     if ((serviceId && row.serviceClientId !== serviceId) || (threadId !== undefined && row.threadId !== threadId) || (runId !== undefined && row.runId !== runId) || (editorSessionId !== undefined && row.editorSessionId !== editorSessionId)) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
     if (requiredScope && !row.scopes.includes(requiredScope)) throw new AuthBoundaryError("ACCESS_SCOPE_REQUIRED", 403);
     const identity = await new SubjectRepository(this.tx).findActive(row.authUserId);

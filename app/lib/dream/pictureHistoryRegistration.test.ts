@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: preserve this frozen segment while Registry120 appends confirmation operations.
+// [Sync] 2026-09-16: keep this frozen Registry103 segment append-safe through Registry121.
 // [Input] Frozen Registry101 prefix, live Registry103 DTOs and production POST route.
 // [Output] Exact two-read append, OAuth dispatch, capability and no-receipt registration evidence.
 // [Pos] Registration gate for picture-history.list and picture-history.full.
@@ -25,7 +25,7 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves the complete Registry101 prefix and appends exactly two OAuth reads as Registry103", () => {
-  expect(dreamOperations).toHaveLength(120);
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(103);
   expect(generated103).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 101))).digest("hex")).toBe("8964d7dea090d83bf2795b1b0e1c1fc23da293b80182428c7bec7ebc9ded8147");
   expect(dreamOperations.slice(101, 103).map(item => item.contract.name)).toEqual(names);

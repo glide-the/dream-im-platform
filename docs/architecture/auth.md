@@ -1,6 +1,7 @@
 <!-- [Input] Actual Better Auth composition, explicit legacy mapping and browser/service topology. -->
 <!-- [Output] Current authentication architecture, ownership and product interaction contract. -->
 <!-- [Pos] Auth domain entry document; complete domain/API state remains in the shared contract. -->
+<!-- [Sync] 2026-09-16: bind confirmation Runtime delegation use to the live Admin durable claim. -->
 <!-- [Sync] 2026-09-15: document the no-log rollback boundary for unknown auth failures. -->
 
 # 统一认证
@@ -26,7 +27,7 @@ Admin 负责身份和凭证生命周期。Dream 浏览器通过本方 BFF 使用
 | Session | Better Auth HttpOnly cookie；管理 Session 不替代 OAuth resource grant |
 | OAuth resource token | 本地受信 JWKS 验证 ES256 at+jwt、issuer、audience、client、scope、expiry，最长300秒；拒 Google/ID/Session token |
 | 服务身份 | 独立配置的服务 credential；用户 grant 必须属于该服务的 browser 或明确 device client |
-| Runtime delegation | 三种互斥 purpose；实体和权限在创建时绑定，renew 不扩张，解析重新检查 active/owner/key |
+| Runtime delegation | 三种互斥 purpose；实体和权限在创建时绑定，renew 不扩张，解析重新检查 active/owner/key；confirmation 来源还须匹配当前 message/claim 和未过期数据库租约 |
 
 Dream 的登录入口启动 `/api/auth/oauth2/authorize` code/S256 流程。未登录用户进入 Admin `/auth/sign-in`，该页支持密码登录、创建账户和 Google；这些选择保留 provider 签名 OAuth 上下文。没有自定义 `ui_hint` 或从 Dream 直接提交旧密码接口。密码注册保持原六字符 minimum；首次 Admin bootstrap 的十四字符规则和一次性 token 属于独立已有管理设置。
 

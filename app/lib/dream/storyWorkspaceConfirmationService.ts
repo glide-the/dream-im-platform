@@ -1,7 +1,7 @@
 // [Input] Verified OAuth principal or exact scoped background service and Registry120 command.
-// [Output] Durable confirmation submit/fact/claim/lease/ack through one caller-owned Admin UOW.
+// [Output] Durable confirmation state plus claim-bound Runtime authority through one Admin UOW.
 // [Pos] DTO-Service-Drizzle composition; Dream retains filesystem validation, Runtime, EventBus and SSE.
-// [Sync] 2026-09-16: implement the complete confirmation persistence and delivery claim state machine.
+// [Sync] 2026-09-16: issue Registry121 server-persistence authority in the claim transaction.
 import { createHash, randomUUID } from "node:crypto";
 import { AuthBoundaryError, requiredAuthValue, type DreamServiceClient } from "../auth/config";
 import { principalDto, type PrincipalDto } from "../auth/dto";
@@ -12,9 +12,22 @@ import { ReceiptRepository } from "./receipts";
 import { dreamUnifiedSchemaRequirement } from "./chatThreadService";
 import { StoryWorkspaceConfirmationRepository, type StoryWorkspaceConfirmationMessageRow } from "./storyWorkspaceConfirmationRepository";
 import * as dto from "./storyWorkspaceConfirmationDto";
+import { DelegationService } from "../auth/delegationService";
+import { runtimeConfirmationClaimSchemaRequirement } from "./schemaRequirements";
 
 export const storyWorkspaceConfirmationSchemaRequirements = [dreamUnifiedSchemaRequirement] as const;
-export type StoryWorkspaceConfirmationExecutionService = Pick<DreamServiceClient, "id"> & { backgroundScopes: readonly string[] };
+export const storyWorkspaceConfirmationClaimTurnSchemaRequirements = [
+  dreamUnifiedSchemaRequirement, runtimeConfirmationClaimSchemaRequirement,
+] as const;
+export function storyWorkspaceConfirmationRequirements(name: dto.StoryWorkspaceConfirmationOperation) {
+  return name === "story-workspace-confirmation.claim-turn"
+    ? storyWorkspaceConfirmationClaimTurnSchemaRequirements
+    : storyWorkspaceConfirmationSchemaRequirements;
+}
+export type StoryWorkspaceConfirmationExecutionService = Pick<DreamServiceClient, "id"> & {
+  oauthClientId?: string;
+  backgroundScopes: readonly string[];
+};
 const confirmationKind = "story-workspace-dream-confirmation";
 const lifecycle = [
   ["running", "output_validating", "dream_required_stages_present"],
@@ -270,6 +283,10 @@ export function runStoryWorkspaceConfirmationBackgroundOperation(
   service: StoryWorkspaceConfirmationExecutionService, tx: DataTransaction,
 ): Promise<dto.StoryWorkspaceConfirmationClaimOutput>;
 export function runStoryWorkspaceConfirmationBackgroundOperation(
+  name: "story-workspace-confirmation.claim-turn", rawInput: unknown,
+  service: StoryWorkspaceConfirmationExecutionService, tx: DataTransaction,
+): Promise<dto.StoryWorkspaceConfirmationClaimTurnOutput>;
+export function runStoryWorkspaceConfirmationBackgroundOperation(
   name: "story-workspace-confirmation.lease", rawInput: unknown,
   service: StoryWorkspaceConfirmationExecutionService, tx: DataTransaction,
 ): Promise<dto.StoryWorkspaceConfirmationLeaseOutput>;
@@ -280,7 +297,7 @@ export function runStoryWorkspaceConfirmationBackgroundOperation(
 export function runStoryWorkspaceConfirmationBackgroundOperation(
   name: dto.StoryWorkspaceConfirmationBackgroundOperation, rawInput: unknown,
   service: StoryWorkspaceConfirmationExecutionService, tx: DataTransaction,
-): Promise<dto.StoryWorkspaceConfirmationClaimOutput | dto.StoryWorkspaceConfirmationLeaseOutput | dto.StoryWorkspaceConfirmationAckOutput>;
+): Promise<dto.StoryWorkspaceConfirmationClaimOutput | dto.StoryWorkspaceConfirmationClaimTurnOutput | dto.StoryWorkspaceConfirmationLeaseOutput | dto.StoryWorkspaceConfirmationAckOutput>;
 export async function runStoryWorkspaceConfirmationBackgroundOperation(
   name: dto.StoryWorkspaceConfirmationBackgroundOperation,
   rawInput: unknown,
@@ -293,7 +310,7 @@ export async function runStoryWorkspaceConfirmationBackgroundOperation(
   if (!parsed.success) throw new AuthBoundaryError("INPUT_INVALID", 400);
   const store = new StoryWorkspaceConfirmationRepository(tx);
   const leaseSeconds = configuredStoryWorkspaceConfirmationLeaseSeconds();
-  if (name === "story-workspace-confirmation.claim") {
+  if (name === "story-workspace-confirmation.claim" || name === "story-workspace-confirmation.claim-turn") {
     const input = dto.storyWorkspaceConfirmationClaimInputDto.parse(parsed.data);
     const rows = await store.pendingCandidates(input.message_id);
     const sameClaim = [] as typeof rows;
@@ -305,9 +322,28 @@ export async function runStoryWorkspaceConfirmationBackgroundOperation(
     }
     for (const row of [...sameClaim, ...other]) {
       const dispatch = await claimExisting(store, row, input.claim_id, leaseSeconds);
-      if (dispatch) return dto.storyWorkspaceConfirmationClaimOutputDto.parse({ dispatch });
+      if (dispatch) {
+        if (name === "story-workspace-confirmation.claim") {
+          return dto.storyWorkspaceConfirmationClaimOutputDto.parse({ dispatch });
+        }
+        const metadata = parseMetadata(dispatch.metadata_json);
+        if (!metadata || !service.oauthClientId) throw new AuthBoundaryError("AUTH_NOT_CONFIGURED");
+        const authority = await new DelegationService(tx).createForConfirmationClaim({
+          id: service.id, oauthClientId: service.oauthClientId,
+          backgroundScopes: service.backgroundScopes,
+        }, {
+          messageId: dispatch.message_id,
+          claimId: input.claim_id,
+          actorId: dispatch.actor_id,
+          threadId: dispatch.thread_id,
+          runId: metadata.story_workspace_run_id,
+        });
+        return dto.storyWorkspaceConfirmationClaimTurnOutputDto.parse({ dispatch, authority });
+      }
     }
-    return dto.storyWorkspaceConfirmationClaimOutputDto.parse({ dispatch: null });
+    return name === "story-workspace-confirmation.claim"
+      ? dto.storyWorkspaceConfirmationClaimOutputDto.parse({ dispatch: null })
+      : dto.storyWorkspaceConfirmationClaimTurnOutputDto.parse({ dispatch: null, authority: null });
   }
 
   const identity = name === "story-workspace-confirmation.lease"

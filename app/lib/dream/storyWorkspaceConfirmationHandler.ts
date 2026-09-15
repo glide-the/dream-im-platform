@@ -1,7 +1,7 @@
 // [Input] Configured service request, Registry120 operation name and strict request envelope.
-// [Output] OAuth owner or service-only confirmation state transition in one capability-gated UOW.
+// [Output] OAuth owner or service-only state/claim-turn authority in one capability-gated UOW.
 // [Pos] Thin ingress; Admin Service/Repository own authorization, lifecycle and persistence.
-// [Sync] 2026-09-16: expose the closed confirmation DTO/ORM operations.
+// [Sync] 2026-09-16: gate Registry121 claim-turn on its exact Drizzle capability.
 import { z } from "zod";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 import { requestIdDto } from "../auth/dto";
@@ -12,7 +12,7 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 import { storyWorkspaceConfirmationOperationContracts, type StoryWorkspaceConfirmationBackgroundOperation,
   type StoryWorkspaceConfirmationOAuthOperation, type StoryWorkspaceConfirmationOperation } from "./storyWorkspaceConfirmationDto";
 import { runStoryWorkspaceConfirmationBackgroundOperation, runStoryWorkspaceConfirmationOAuthOperation,
-  storyWorkspaceConfirmationSchemaRequirements } from "./storyWorkspaceConfirmationService";
+  storyWorkspaceConfirmationRequirements } from "./storyWorkspaceConfirmationService";
 
 export function isStoryWorkspaceConfirmationOperation(name: string): name is StoryWorkspaceConfirmationOperation {
   return Object.hasOwn(storyWorkspaceConfirmationOperationContracts, name);
@@ -26,7 +26,7 @@ export async function handleStoryWorkspaceConfirmation(request: Request, name: s
       z.strictObject({ request_id: requestIdDto, input: operation.input }),
       Number(requiredAuthValue("DREAM_DATA_MAX_BODY_BYTES")));
     setRequestId(envelope.request_id);
-    return withDataTransaction([identitySchemaRequirement, ...storyWorkspaceConfirmationSchemaRequirements], async tx => {
+    return withDataTransaction([identitySchemaRequirement, ...storyWorkspaceConfirmationRequirements(name)], async tx => {
       if (operation.audience === "background") {
         if (request.headers.has("authorization")) throw new AuthBoundaryError("CONFIRMATION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
         return runStoryWorkspaceConfirmationBackgroundOperation(

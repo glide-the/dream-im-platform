@@ -1,7 +1,7 @@
-// [Input] Registry120 OAuth/background envelopes and mocked service/principal/Admin transaction.
-// [Output] Strict audience separation, scope binding and single-UOW dispatch assertions.
+// [Input] Registry120/121 envelopes and mocked service/principal/Admin transaction.
+// [Output] Strict audience separation and operation-specific capability UOW assertions.
 // [Pos] Provider-free HTTP ingress test for Story Workspace confirmation operations.
-// [Sync] 2026-09-16: verify bearer and service-only paths cannot be interchanged.
+// [Sync] 2026-09-16: gate claim-turn on the additive delegation source capability.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), transaction: vi.fn(), oauth: vi.fn(), background: vi.fn() }));
 vi.mock("../auth/serviceIdentity", async original => ({
@@ -16,10 +16,10 @@ vi.mock("./storyWorkspaceConfirmationService", async original => ({
 }));
 import { handleStoryWorkspaceConfirmation } from "./storyWorkspaceConfirmationHandler";
 import { identitySchemaRequirement } from "./schemaRequirements";
-import { storyWorkspaceConfirmationSchemaRequirements } from "./storyWorkspaceConfirmationService";
+import { storyWorkspaceConfirmationRequirements } from "./storyWorkspaceConfirmationService";
 
 const principal = { subject: "subject", canonical_user_id: "42", client_id: "dream", scopes: ["dream:write"], status: "active" as const };
-const service = { id: "dream-service", backgroundScopes: ["story-confirmation:dispatch"] };
+const service = { id: "dream-service", oauthClientId: "dream-browser", backgroundScopes: ["story-confirmation:dispatch"] };
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv("DREAM_DATA_MAX_BODY_BYTES", "65536");
@@ -43,7 +43,7 @@ it("binds OAuth submit to the canonical principal", async () => {
   const input = { command_json: "{}" };
   const response = await handleStoryWorkspaceConfirmation(request(name, input, "oauth"), name);
   expect(response.status).toBe(200);
-  expect(mocks.transaction.mock.calls[0][0]).toEqual([identitySchemaRequirement, ...storyWorkspaceConfirmationSchemaRequirements]);
+  expect(mocks.transaction.mock.calls[0][0]).toEqual([identitySchemaRequirement, ...storyWorkspaceConfirmationRequirements(name)]);
   expect(mocks.principal).toHaveBeenCalledExactlyOnceWith({ marker: "tx" }, "oauth", service, "dream:write");
   expect(mocks.oauth).toHaveBeenCalledExactlyOnceWith(name, input, principal, service.id, "request-1", { marker: "tx" });
   expect(mocks.background).not.toHaveBeenCalled();
@@ -56,6 +56,18 @@ it("runs claim only with configured service identity and rejects a browser beare
   expect(mocks.background).toHaveBeenCalledExactlyOnceWith(name, input, service, { marker: "tx" });
   expect(mocks.principal).not.toHaveBeenCalled();
   expect((await handleStoryWorkspaceConfirmation(request(name, input, "oauth"), name)).status).toBe(400);
+});
+
+it("runs claim-turn under its exact capability requirements without a bearer", async () => {
+  const name = "story-workspace-confirmation.claim-turn";
+  const input = { message_id: null, claim_id: "claim-1" };
+  expect((await handleStoryWorkspaceConfirmation(request(name, input), name)).status).toBe(200);
+  expect(mocks.transaction.mock.calls[0][0]).toEqual([
+    identitySchemaRequirement,
+    ...storyWorkspaceConfirmationRequirements(name),
+  ]);
+  expect(mocks.background).toHaveBeenCalledExactlyOnceWith(name, input, service, { marker: "tx" });
+  expect(mocks.principal).not.toHaveBeenCalled();
 });
 
 it("rejects extra actor/SQL selectors before either service", async () => {

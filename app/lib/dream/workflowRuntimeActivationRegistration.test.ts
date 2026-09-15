@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: preserve this frozen segment while Registry120 appends confirmation operations.
+// [Sync] 2026-09-16: keep this frozen Registry108 segment append-safe through Registry121.
 // [Input] Frozen Registry107 prefix, live Registry108 DTO, schema capability and production POST route.
 // [Output] Exact append, contract hash, requirements, generated inventory and dispatch assertions.
 // [Pos] Registration gate for workflow-runtime.activate.
@@ -23,7 +23,7 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves Registry107 and appends exactly one Registry108 atomic write", () => {
-  expect(dreamOperations).toHaveLength(120); expect(generated108).toEqual(dreamOperations);
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(108); expect(generated108).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 107))).digest("hex"))
     .toBe("d636ba4be69279e0e0d9bf84a249c61c1c02635798cb1ab2c56cb6bd42ed4a20");
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 108))).digest("hex"))

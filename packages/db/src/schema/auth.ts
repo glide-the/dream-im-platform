@@ -1,12 +1,12 @@
 // [Input] Canonical users/admin membership and installed Better Auth identity catalog.
-// [Output] Explicit subject links, encrypted BFF sessions, bound Runtime delegations, receipts and immutable Preflight requests.
+// [Output] Explicit subject links, encrypted BFF sessions, claim-bound Runtime delegations, receipts and immutable Preflight requests.
 // [Pos] Admin-owned identity and persistence control schema; all DDL uses forward Drizzle migration.
-// [Sync] 2026-09-15: bind original staged Preflight requests without changing existing business keys.
+// [Sync] 2026-09-16: add optional Story confirmation claim bindings to existing Runtime delegations.
 import { sql } from "drizzle-orm";
 import { bigint, boolean, check, foreignKey, index, jsonb, pgSchema, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { adminUsers, gatewayApiKeys, users } from "./index.js";
 import { identity, user } from "./auth-generated.js";
-import { chat_thread, reflection_task_section, user_sessions, workflow_preflights } from "./dream.js";
+import { chat_message, chat_thread, reflection_task_section, user_sessions, workflow_preflights } from "./dream.js";
 
 export const dream = pgSchema("dream");
 
@@ -53,6 +53,9 @@ export const runtimeDelegations = identity.table("runtime_delegations", {
   gatewayApiKeyId: text("gateway_api_key_id").references(() => gatewayApiKeys.id, { onDelete: "restrict" }),
   purpose: text("purpose"),
   editorSessionId: text("editor_session_id").references(() => user_sessions.id, { onDelete: "cascade" }),
+  authoritySource: text("authority_source"),
+  sourceMessageId: text("source_message_id").references(() => chat_message.id, { onDelete: "cascade" }),
+  sourceClaimId: text("source_claim_id"),
   canonicalUserId: bigint("canonical_user_id", { mode: "bigint" }).notNull().references(() => users.id, { onDelete: "restrict" }),
   threadId: text("thread_id").notNull(),
   runId: text("run_id"),
@@ -64,8 +67,22 @@ export const runtimeDelegations = identity.table("runtime_delegations", {
 }, table => [
   index("runtime_delegations_thread_idx").on(table.threadId, table.expiresAt),
   uniqueIndex("runtime_delegations_request_uidx").on(table.serviceClientId, table.authUserId, table.requestId),
+  uniqueIndex("runtime_delegations_confirmation_claim_uidx")
+    .on(table.serviceClientId, table.sourceMessageId, table.sourceClaimId)
+    .where(sql`${table.authoritySource} = 'story-confirmation-claim'`),
   check("runtime_delegations_maximum_expiry_check", sql`${table.maximumExpiresAt} IS NULL OR ${table.maximumExpiresAt} >= ${table.expiresAt}`),
   check("runtime_delegations_creation_check", sql`${table.requestId} IS NULL OR (${table.oauthClientId} IS NOT NULL AND ${table.inputSha256} IS NOT NULL AND ${table.inputSha256} ~ '^[0-9a-f]{64}$' AND ${table.tokenCiphertext} IS NOT NULL AND ${table.maximumExpiresAt} IS NOT NULL)`),
+  check("runtime_delegations_authority_source_check", sql`(
+    ${table.authoritySource} IS NULL AND ${table.sourceMessageId} IS NULL AND ${table.sourceClaimId} IS NULL
+  ) OR (
+    ${table.authoritySource} = 'story-confirmation-claim'
+    AND ${table.sourceMessageId} IS NOT NULL
+    AND ${table.sourceClaimId} IS NOT NULL
+    AND ${table.purpose} = 'server-persistence'
+    AND ${table.runId} IS NOT NULL
+    AND ${table.editorSessionId} IS NULL
+    AND ${table.gatewayApiKeyId} IS NULL
+  )`),
   check("runtime_delegations_purpose_check", sql`(${table.purpose} IS NULL AND ${table.editorSessionId} IS NULL) OR (${table.purpose} IS NOT NULL AND cardinality(${table.scopes}) > 0 AND array_position(${table.scopes}, NULL) IS NULL AND (
     (${table.purpose} = 'server-persistence' AND ${table.editorSessionId} IS NULL AND ${table.gatewayApiKeyId} IS NULL AND ${table.scopes} <@ ARRAY['dream:read','dream:write']::text[]) OR
     (${table.purpose} = 'gateway-cli' AND ${table.editorSessionId} IS NULL AND ${table.gatewayApiKeyId} IS NOT NULL AND ${table.scopes} <@ ARRAY['messages:create','messages:count_tokens','models:list']::text[]) OR

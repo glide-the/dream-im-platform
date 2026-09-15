@@ -1,11 +1,12 @@
 // [Input] Lossless canonical Dream confirmation command or exact background claim identity.
-// [Output] Strict Registry120 OAuth/background DTOs with server-derived durable dispatch facts.
+// [Output] Strict Registry120/121 DTOs with server-derived dispatch and claim-bound turn authority.
 // [Pos] Cross-project contract; no actor override, SQL, table, transaction or Runtime selector.
-// [Sync] 2026-09-16: define the complete Story Workspace confirmation persistence state machine.
+// [Sync] 2026-09-16: add claim-turn without exposing actor, Thread, Run, purpose or scope selectors.
 import { z } from "zod";
 import { decimalIdDto, requestIdDto } from "../auth/dto";
 import { stripPydanticString } from "./deckPluginManifestDto";
 import { workflowRunIdDto } from "./workflowRunDto";
+import { delegationOutputDto } from "../auth/delegationDto";
 
 const text = z.string().overwrite(stripPydanticString);
 const codePoints = (value: string, maximum: number) => Array.from(value).length <= maximum;
@@ -105,6 +106,10 @@ export const storyWorkspaceConfirmationFactOutputDto = z.strictObject({
 export const storyWorkspaceConfirmationClaimOutputDto = z.strictObject({
   dispatch: storyWorkspaceConfirmationDispatchDto.nullable(),
 });
+export const storyWorkspaceConfirmationClaimTurnOutputDto = z.strictObject({
+  dispatch: storyWorkspaceConfirmationDispatchDto.nullable(),
+  authority: delegationOutputDto.nullable(),
+}).refine(value => (value.dispatch === null) === (value.authority === null));
 export const storyWorkspaceConfirmationLeaseOutputDto = z.strictObject({
   renewed: z.boolean(),
   lease_until: z.number().nonnegative().finite().nullable(),
@@ -117,6 +122,7 @@ export const storyWorkspaceConfirmationOperationContracts = {
   "story-workspace-confirmation.claim": { audience: "background" as const, kind: "write" as const, backgroundScope: "story-confirmation:dispatch", input: storyWorkspaceConfirmationClaimInputDto, output: storyWorkspaceConfirmationClaimOutputDto },
   "story-workspace-confirmation.lease": { audience: "background" as const, kind: "write" as const, backgroundScope: "story-confirmation:dispatch", input: storyWorkspaceConfirmationLeaseInputDto, output: storyWorkspaceConfirmationLeaseOutputDto },
   "story-workspace-confirmation.ack": { audience: "background" as const, kind: "write" as const, backgroundScope: "story-confirmation:dispatch", input: storyWorkspaceConfirmationAckInputDto, output: storyWorkspaceConfirmationAckOutputDto },
+  "story-workspace-confirmation.claim-turn": { audience: "background" as const, kind: "write" as const, backgroundScope: "story-confirmation:dispatch", input: storyWorkspaceConfirmationClaimInputDto, output: storyWorkspaceConfirmationClaimTurnOutputDto },
 };
 export type StoryWorkspaceConfirmationOperation = keyof typeof storyWorkspaceConfirmationOperationContracts;
 export type StoryWorkspaceConfirmationOAuthOperation = "story-workspace-confirmation.submit" | "story-workspace-confirmation.fact";
@@ -127,5 +133,6 @@ export type StoryWorkspaceConfirmationDispatch = z.infer<typeof storyWorkspaceCo
 export type StoryWorkspaceConfirmationSubmitOutput = z.infer<typeof storyWorkspaceConfirmationSubmitOutputDto>;
 export type StoryWorkspaceConfirmationFactOutput = z.infer<typeof storyWorkspaceConfirmationFactOutputDto>;
 export type StoryWorkspaceConfirmationClaimOutput = z.infer<typeof storyWorkspaceConfirmationClaimOutputDto>;
+export type StoryWorkspaceConfirmationClaimTurnOutput = z.infer<typeof storyWorkspaceConfirmationClaimTurnOutputDto>;
 export type StoryWorkspaceConfirmationLeaseOutput = z.infer<typeof storyWorkspaceConfirmationLeaseOutputDto>;
 export type StoryWorkspaceConfirmationAckOutput = z.infer<typeof storyWorkspaceConfirmationAckOutputDto>;

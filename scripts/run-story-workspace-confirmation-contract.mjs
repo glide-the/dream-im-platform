@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// [Input] Admin Drizzle history and isolated Registry120 confirmation PostgreSQL integration test.
-// [Output] Disposable named database, least-privilege role receipt and cleanup.
+// [Input] Admin Drizzle history and isolated Registry120/121 confirmation integration test.
+// [Output] Disposable database, claim-bound delegation/least-privilege receipt and cleanup.
 // [Pos] Technical verification harness; never targets the configured normal business database.
-// [Sync] 2026-09-16: verify confirmation DTO/ORM transactions and durable claims on PostgreSQL.
+// [Sync] 2026-09-16: replay 0062 and verify claim-bound authority fencing on PostgreSQL.
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -51,12 +51,14 @@ try {
     sharedBuffers: "32MB", maxConnections: 28,
   }, { listenAddresses: "127.0.0.1" });
   const adminUrl = database.connectionString;
-  await run("node", ["scripts/migrate-provider-managed-accounts.mjs"], {
+  const migrationEnvironment = {
     ...process.env, MIGRATION_DATABASE_URL: adminUrl,
     AI_CREDENTIAL_ENCRYPTION_KEY: randomBytes(32).toString("hex"),
     AI_CREDENTIAL_ENCRYPTION_KEY_ID: `story-confirmation-test-${suffix}`,
     AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER: randomBytes(32).toString("base64url"),
-  });
+  };
+  await run("node", ["scripts/migrate-provider-managed-accounts.mjs"], migrationEnvironment);
+  await run("pnpm", ["--filter", "@ink-memory/db", "migrate"], migrationEnvironment);
   const admin = new pg.Client({ connectionString: adminUrl }); await admin.connect();
   try {
     const identity = await admin.query("SELECT current_database() AS database, current_user AS actor");
@@ -65,13 +67,17 @@ try {
     if (!/^[A-Za-z0-9_-]+$/.test(executorPassword)) throw new Error("Generated executor secret is invalid");
     await admin.query(`CREATE ROLE ink_story_confirmation_executor LOGIN PASSWORD '${executorPassword}'`);
     await admin.query(`GRANT CONNECT ON DATABASE ${databaseName} TO ink_story_confirmation_executor`);
-    await admin.query("GRANT USAGE ON SCHEMA public, dream TO ink_story_confirmation_executor");
+    await admin.query("GRANT USAGE ON SCHEMA public, dream, identity TO ink_story_confirmation_executor");
     await admin.query(`GRANT SELECT, UPDATE ON
       story_workspace_workspaces, workflow_runs, chat_thread TO ink_story_confirmation_executor`);
     await admin.query("GRANT SELECT, INSERT, UPDATE ON chat_message TO ink_story_confirmation_executor");
     await admin.query("GRANT SELECT, INSERT ON workflow_run_transitions TO ink_story_confirmation_executor");
     await admin.query("GRANT SELECT, INSERT ON dream.operation_receipts TO ink_story_confirmation_executor");
     await admin.query("GRANT INSERT ON admin_audit_logs TO ink_story_confirmation_executor");
+    await admin.query("GRANT SELECT ON identity.subject_links TO ink_story_confirmation_executor");
+    await admin.query("GRANT SELECT, INSERT, UPDATE ON identity.runtime_delegations TO ink_story_confirmation_executor");
+    await admin.query("GRANT SELECT (id, status) ON users TO ink_story_confirmation_executor");
+    await admin.query("GRANT SELECT (id, source, external_user_id, tier, status) ON platform_users TO ink_story_confirmation_executor");
   } finally { await admin.end(); }
   const restricted = new URL(adminUrl);
   restricted.username = "ink_story_confirmation_executor";
@@ -83,6 +89,18 @@ try {
     STORY_WORKSPACE_CONFIRMATION_TEST_DATABASE_URL: restricted.toString(),
     DREAM_DOMAIN_CANONICAL_TIMEOUT_MS: "5000",
     DREAM_CONFIRMATION_DISPATCH_LEASE_SECONDS: "120",
+    AUTH_RUNTIME_DELEGATION_TTL_SECONDS: "60",
+    AUTH_RUNTIME_DELEGATION_MAX_TTL_SECONDS: "600",
+    AUTH_TOKEN_ENCRYPTION_KEY: randomBytes(32).toString("hex"),
+    AUTH_DEVICE_CLIENT_ID: "dream-device",
+    DREAM_DATA_SERVICE_CLIENTS: JSON.stringify([{
+      id: "dream-service",
+      secret: randomBytes(32).toString("base64url"),
+      origin: "https://dream.example.test",
+      oauthClientId: "dream-browser",
+      redirectUri: "https://dream.example.test/auth/callback",
+      backgroundScopes: ["story-confirmation:dispatch"],
+    }]),
   });
   receipt = { status: "passed", database: databaseName,
     executor: "ink_story_confirmation_executor", migration_source: "Admin Drizzle" };

@@ -1,7 +1,7 @@
-// [Input] Registry120 service commands with an in-memory Drizzle repository seam.
-// [Output] Atomic submit/replay/fact/claim/lease/ack and scope-policy assertions.
+// [Input] Registry120/121 service commands with in-memory Repository/delegation seams.
+// [Output] Atomic state transitions and server-derived claim-turn authority assertions.
 // [Pos] Provider-free domain state-machine test; HTTP, PostgreSQL, Runtime and files stay outside.
-// [Sync] 2026-09-16: verify Admin owns confirmation persistence and durable delivery transitions.
+// [Sync] 2026-09-16: verify claim-turn derives authority without caller entity selectors.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DataTransaction } from "./database";
 
@@ -10,6 +10,25 @@ const state = vi.hoisted(() => ({
   run: { workflow_run_id: `run_${"a".repeat(32)}`, workspace_id: "workspace-1", status: "running", status_version: 2, source_voice_thread_id: "thread-1" },
   transitions: [] as string[],
   receiptActors: [] as string[],
+  authorities: [] as unknown[],
+}));
+
+vi.mock("../auth/delegationService", () => ({
+  DelegationService: class {
+    async createForConfirmationClaim(_service: unknown, binding: unknown) {
+      state.authorities.push(binding);
+      return {
+        token: `idg_${"a".repeat(43)}`,
+        expires_at: "2026-09-16T00:05:00.000Z",
+        maximum_expires_at: "2026-09-16T00:10:00.000Z",
+        purpose: "server-persistence",
+        thread_id: "thread-1",
+        run_id: `run_${"a".repeat(32)}`,
+        editor_session_id: null,
+        scopes: ["dream:read", "dream:write"],
+      };
+    }
+  },
 }));
 
 vi.mock("./storyWorkspaceConfirmationRepository", () => ({
@@ -70,7 +89,7 @@ const command = {
 };
 const principal = { subject: "oauth-subject", canonical_user_id: "42", client_id: "dream",
   scopes: ["dream:read", "dream:write"], status: "active" as const };
-const service = { id: "dream-service", backgroundScopes: ["story-confirmation:dispatch"] };
+const service = { id: "dream-service", oauthClientId: "dream-browser", backgroundScopes: ["story-confirmation:dispatch"] };
 const tx = {} as DataTransaction;
 
 beforeEach(() => {
@@ -78,6 +97,7 @@ beforeEach(() => {
   state.run = { workflow_run_id: runId, workspace_id: "workspace-1", status: "running", status_version: 2, source_voice_thread_id: "thread-1" };
   state.transitions.length = 0;
   state.receiptActors.length = 0;
+  state.authorities.length = 0;
   vi.stubEnv("DREAM_CONFIRMATION_DISPATCH_LEASE_SECONDS", "120");
   vi.stubEnv("DREAM_DOMAIN_CANONICAL_TIMEOUT_MS", "5000");
 });
@@ -132,6 +152,35 @@ it("owns the complete submit, claim, lease, ack and fact lifecycle", async () =>
     principal, service.id, "request-replay", tx,
   );
   expect(replay).toMatchObject({ replayed: true, dispatched: true, dispatch: null });
+});
+
+it("claims and issues one exact server-persistence turn authority in the same UOW", async () => {
+  const submitted = await runStoryWorkspaceConfirmationOAuthOperation(
+    "story-workspace-confirmation.submit", { command_json: JSON.stringify(command) },
+    principal, service.id, "request-submit", tx,
+  );
+  const claimed = await runStoryWorkspaceConfirmationBackgroundOperation(
+    "story-workspace-confirmation.claim-turn",
+    { message_id: submitted.message_id, claim_id: "claim-turn-1" }, service, tx,
+  );
+  expect(claimed.dispatch).toMatchObject({
+    message_id: submitted.message_id,
+    actor_id: "42",
+    thread_id: "thread-1",
+  });
+  expect(claimed.authority).toMatchObject({
+    purpose: "server-persistence",
+    thread_id: "thread-1",
+    run_id: runId,
+    scopes: ["dream:read", "dream:write"],
+  });
+  expect(state.authorities).toEqual([{
+    messageId: submitted.message_id,
+    claimId: "claim-turn-1",
+    actorId: "42",
+    threadId: "thread-1",
+    runId,
+  }]);
 });
 
 it("rejects missing OAuth/background scope before persistence", async () => {

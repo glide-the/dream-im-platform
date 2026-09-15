@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: preserve this frozen segment while Registry120 appends confirmation operations.
+// [Sync] 2026-09-16: keep this frozen Registry83 segment append-safe through Registry121.
 // [Input] Production operation/receipt Routes with captured Reflections handlers and OAuth/UOW seams.
 // [Output] Exact three-name Registry83 prefix, POST dispatch and bounded original write recovery.
 // [Pos] Reflections section-config registration gate; domain and PostgreSQL behavior remain separate.
@@ -63,7 +63,7 @@ beforeEach(() => {
 });
 
 it("appends exactly three Reflections descriptors after the frozen Registry80 prefix", () => {
-    expect(dreamOperations).toHaveLength(120);
+    expect(dreamOperations.length).toBeGreaterThanOrEqual(83);
   expect(dreamOperations.slice(80, 83).map(item => ({
     name: item.contract.name,
     kind: item.capability.kind,

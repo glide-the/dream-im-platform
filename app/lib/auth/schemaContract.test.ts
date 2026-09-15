@@ -1,7 +1,7 @@
 // [Input] Installed Better Auth schema, Drizzle declarations and frozen expand migration/snapshot.
 // [Output] Source descriptor, SQL capability ordering and immutable-candidate integrity evidence.
 // [Pos] Provider-free auth schema contract checks; never executes migrations.
-// [Sync] 2026-09-14: verify exact candidate bytes before coordinator isolated execution.
+// [Sync] 2026-09-16: verify additive confirmation-claim binding against current Drizzle ORM.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { getTableConfig } from "drizzle-orm/pg-core";
@@ -16,6 +16,8 @@ import registrationContract from "../../../drizzle/contracts/identity-registrati
 import registrationSnapshot from "../../../drizzle/meta/0056_snapshot.json";
 import purposeContract from "../../../drizzle/contracts/identity-runtime-purpose-v1.json";
 import purposeSnapshot from "../../../drizzle/meta/0058_snapshot.json";
+import confirmationClaimContract from "../../../drizzle/contracts/identity-runtime-confirmation-claim-v1.json";
+import confirmationClaimSnapshot from "../../../drizzle/meta/0062_snapshot.json";
 import { canonicalContractJson } from "../dream/operationRegistry";
 const migration = readFileSync("drizzle/0054_clean_network.sql", "utf8");
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -85,12 +87,13 @@ describe("frozen runtime delegation expand migration", () => {
   });
 });
 describe("frozen purpose and Editor binding migration", () => {
-  it("matches the entire current delegation schema and closes nullable purpose/array ambiguity", () => {
+  it("matches its original delegation columns and closes nullable purpose/array ambiguity", () => {
     const config = getTableConfig(runtimeDelegations), table = purposeContract.tables["identity.runtime_delegations"];
-    expect(config.columns).toHaveLength(18);
-    expect(config.columns.map(column => column.name).sort()).toEqual(Object.keys(table.columns).sort());
+    const originalColumns = config.columns.filter(column => column.name in table.columns);
+    expect(originalColumns).toHaveLength(18);
+    expect(originalColumns.map(column => column.name).sort()).toEqual(Object.keys(table.columns).sort());
     for (const [key, value] of Object.entries(purposeContract.tables)) expect(value).toEqual(purposeSnapshot.tables[key as keyof typeof purposeSnapshot.tables]);
-    for (const column of config.columns) {
+    for (const column of originalColumns) {
       const expected = table.columns[column.name as keyof typeof table.columns];
       expect(column.getSQLType()).toBe(expected.type); expect(column.notNull).toBe(expected.notNull);
     }
@@ -101,5 +104,28 @@ describe("frozen purpose and Editor binding migration", () => {
     expect(expand).toContain('REFERENCES "public"."user_sessions"("id") ON DELETE cascade');
     expect(validate).toContain('"purpose" IS NOT NULL'); expect(validate).toContain('array_position("identity"."runtime_delegations"."scopes", NULL) IS NULL');
     expect(validate.lastIndexOf("identity.runtime-purpose.v1")).toBeGreaterThan(validate.lastIndexOf("ADD CONSTRAINT"));
+  });
+});
+describe("confirmation claim delegation binding migration", () => {
+  it("matches the current ORM, snapshot, capability hash and additive SQL", () => {
+    const config = getTableConfig(runtimeDelegations);
+    const table = confirmationClaimContract.tables["identity.runtime_delegations"];
+    expect(config.columns).toHaveLength(21);
+    expect(config.columns.map(column => column.name).sort()).toEqual(Object.keys(table.columns).sort());
+    for (const [key, value] of Object.entries(confirmationClaimContract.tables)) {
+      expect(value).toEqual(confirmationClaimSnapshot.tables[key as keyof typeof confirmationClaimSnapshot.tables]);
+    }
+    for (const column of config.columns) {
+      const expected = table.columns[column.name as keyof typeof table.columns];
+      expect(column.getSQLType()).toBe(expected.type); expect(column.notNull).toBe(expected.notNull);
+    }
+    const { contract_sha256: hash, ...value } = confirmationClaimContract;
+    expect(sha(canonicalContractJson(value))).toBe(hash);
+    const expansion = readFileSync("drizzle/0062_foamy_otto_octavius.sql", "utf8");
+    expect(sha(expansion)).toBe("ef20e48432499a5565c2e3d42f24da8251c4651728e2e3fe7f2c9262123bb463");
+    expect(expansion).toContain('REFERENCES "public"."chat_message"("id") ON DELETE cascade');
+    expect(expansion.lastIndexOf("identity.runtime-confirmation-claim.v1"))
+      .toBeGreaterThan(expansion.lastIndexOf("ADD CONSTRAINT"));
+    expect(expansion).not.toMatch(/DROP|TRUNCATE|UPDATE\s+"?users/i);
   });
 });

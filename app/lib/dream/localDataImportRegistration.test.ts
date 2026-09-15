@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: preserve this frozen segment while Registry120 appends confirmation operations.
+// [Sync] 2026-09-16: keep this frozen Registry101 segment append-safe through Registry121.
 // [Input] Frozen Registry99 prefix, live Registry101 DTOs and shared routes inside Registry103.
 // [Output] Exact local-data segment, OAuth dispatch and unknown-commit recovery evidence.
 // [Pos] Registration gate for local-data.import and first-login.complete.
@@ -34,7 +34,7 @@ beforeEach(() => {
 });
 
 it("preserves the complete Registry99 prefix and appends exactly two OAuth writes as Registry101", () => {
-    expect(dreamOperations).toHaveLength(120);
+    expect(dreamOperations.length).toBeGreaterThanOrEqual(101);
   expect(generated103).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 99))).digest("hex")).toBe("bc1d8c0c033673c91f5e5ba3c11316c366d20aa8e1693bdc71b9e4425a9b7e85");
   expect(dreamOperations.slice(99, 101).map(item => item.contract.name)).toEqual(names);

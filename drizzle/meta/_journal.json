@@ -435,6 +435,13 @@
       "when": 1789442608063,
       "tag": "0061_outstanding_maverick",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1789491424417,
+      "tag": "0062_foamy_otto_octavius",
+      "breakpoints": true
     }
   ]
 }

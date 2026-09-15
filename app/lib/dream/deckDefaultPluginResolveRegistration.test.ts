@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: preserve this frozen segment while Registry120 appends confirmation operations.
+// [Sync] 2026-09-16: keep this frozen Registry104 segment append-safe through Registry121.
 // [Input] Frozen Registry103 prefix, live Registry104 DTO and production POST route.
 // [Output] Exact one-read append, OAuth dispatch, capability and artifact parity evidence.
 // [Pos] Registration gate for deck.default-plugin.resolve.
@@ -25,7 +25,7 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves the complete Registry103 prefix and appends exactly one OAuth read as Registry104", () => {
-  expect(dreamOperations).toHaveLength(120);
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(104);
   expect(generated104).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 103))).digest("hex")).toBe("b47e731abee6fd0a9b937333f9535817a5d7ffffe0a012440123fde6d6f6c824");
   expect(dreamOperations.slice(103, 104).map(item => item.contract.name)).toEqual([name]);

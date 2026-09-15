@@ -1,7 +1,7 @@
-// [Input] Named disposable PostgreSQL, restricted role and Registry120 confirmation DTO/ORM service.
-// [Output] Owner scope, lifecycle transitions, replay, durable claim/lease/ack and ACL evidence.
+// [Input] Named PostgreSQL, restricted role and Registry120/121 confirmation/delegation services.
+// [Output] Lifecycle, claim-bound grant recovery/fencing and least-privilege ACL evidence.
 // [Pos] Isolated destructive contract test; disabled unless the dedicated harness supplies both URLs.
-// [Sync] 2026-09-16: verify the complete confirmation state machine on Admin Drizzle PostgreSQL.
+// [Sync] 2026-09-16: verify claim-turn grant recovery, lease fencing and ACK invalidation.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -9,6 +9,7 @@ import {
   runStoryWorkspaceConfirmationBackgroundOperation,
   runStoryWorkspaceConfirmationOAuthOperation,
 } from "./storyWorkspaceConfirmationService";
+import { DelegationService } from "../auth/delegationService";
 
 const adminUrl = process.env.STORY_WORKSPACE_CONFIRMATION_TEST_ADMIN_URL;
 const restrictedUrl = process.env.STORY_WORKSPACE_CONFIRMATION_TEST_DATABASE_URL;
@@ -19,7 +20,8 @@ const foreignRunId = `run_${"c".repeat(32)}`;
 const principal = (id: string) => ({ subject: `confirmation-subject-${id}`,
   canonical_user_id: id, client_id: "dream-browser",
   scopes: ["dream:read", "dream:write"], status: "active" as const });
-const service = { id: "dream-service", backgroundScopes: ["story-confirmation:dispatch"] };
+const service = { id: "dream-service", oauthClientId: "dream-browser",
+  backgroundScopes: ["story-confirmation:dispatch"] };
 const command = (id = runId, threadId = "thread-confirmation-1", key = "swc_pg-1") => ({
   storyWorkspaceRunId: id,
   threadId,
@@ -38,10 +40,27 @@ describe.skipIf(!enabled)("Story Workspace confirmation PostgreSQL contract", ()
     const identity = await admin.query("SELECT current_database() AS database, current_user AS actor");
     expect(String(identity.rows[0].database)).toMatch(/^ink_story_workspace_confirmation_test_[a-z0-9_]+$/);
     expect(String(identity.rows[0].actor)).toBe("postgres");
+    const capability = await admin.query(`SELECT version, contract_sha256
+      FROM drizzle.schema_capabilities WHERE capability='identity.runtime-confirmation-claim.v1'`);
+    expect(capability.rows).toEqual([{ version: 1,
+      contract_sha256: "d9de67655e6d8d5ae9654d6502a2cf5d9ab1bb6d829975b243eb25e239b08919" }]);
     await admin.query(`
       INSERT INTO users (id, email, password_hash) VALUES
         (1, 'confirmation-one@example.invalid', 'fixture'),
         (2, 'confirmation-two@example.invalid', 'fixture');
+      INSERT INTO platform_users (id, source, external_user_id, email, status)
+      VALUES
+        ('platform-confirmation-1', 'ink-dream', '1', 'confirmation-one@example.invalid', 'active'),
+        ('platform-confirmation-2', 'ink-dream', '2', 'confirmation-two@example.invalid', 'active')
+      ON CONFLICT (source, external_user_id) DO NOTHING;
+      INSERT INTO identity."user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
+      VALUES
+        ('confirmation-subject-1', 'Writer One', 'confirmation-auth-one@example.invalid', true, now(), now()),
+        ('confirmation-subject-2', 'Writer Two', 'confirmation-auth-two@example.invalid', true, now(), now());
+      INSERT INTO identity.subject_links (auth_user_id, canonical_user_id, evidence)
+      VALUES
+        ('confirmation-subject-1', 1, 'fixture'),
+        ('confirmation-subject-2', 2, 'fixture');
       INSERT INTO story_workspace_workspaces (id, name, owner_id, settings) VALUES
         ('workspace-1', 'Writer One', 1, '{}'),
         ('workspace-2', 'Writer Two', 2, '{}');
@@ -140,22 +159,52 @@ describe.skipIf(!enabled)("Story Workspace confirmation PostgreSQL contract", ()
       transitions: 5, messages: 1, receipts: 1 });
   });
 
-  it("claims, renews and acknowledges through one exact service identity", async () => {
+  it("claims one turn grant, recovers it and fences lease/ACK before ORM access", async () => {
     const factBefore = await database.transaction(tx => runStoryWorkspaceConfirmationOAuthOperation(
       "story-workspace-confirmation.fact", { workflow_run_id: runId }, principal("1"),
       service.id, "confirmation-fact-before", tx));
     expect(factBefore).toMatchObject({ confirmation_accepted: true, confirmation_dispatched: false });
     const message = (await admin.query("SELECT id FROM chat_message WHERE thread_id='thread-confirmation-1'")).rows[0].id;
     const claim = await database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
-      "story-workspace-confirmation.claim", { message_id: message, claim_id: "claim-pg-1" }, service, tx));
+      "story-workspace-confirmation.claim-turn", { message_id: message, claim_id: "claim-pg-1" }, service, tx));
     expect(claim.dispatch).toMatchObject({ message_id: message, actor_id: "1" });
-    const lease = await database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
+    expect(claim.authority).toMatchObject({ purpose: "server-persistence",
+      thread_id: "thread-confirmation-1", run_id: runId,
+      scopes: ["dream:read", "dream:write"] });
+    const recovered = await database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
+      "story-workspace-confirmation.claim-turn", { message_id: message, claim_id: "claim-pg-1" }, service, tx));
+    expect(recovered.authority?.token).toBe(claim.authority?.token);
+    await expect(database.transaction(tx => new DelegationService(tx).resolve(
+      claim.authority!.token, "dream:read", service.id, "thread-confirmation-1", runId, null,
+    ))).resolves.toMatchObject({ principal: { canonical_user_id: "1" },
+      purpose: "server-persistence", threadId: "thread-confirmation-1", runId });
+    const expired = await database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
+      "story-workspace-confirmation.lease",
+      { message_id: message, claim_id: "claim-pg-1", duration_seconds: 0 }, service, tx));
+    expect(expired.renewed).toBe(true);
+    await expect(database.transaction(tx => new DelegationService(tx).resolve(
+      claim.authority!.token, "dream:read", service.id,
+    ))).rejects.toMatchObject({ code: "DELEGATION_REQUIRED", status: 401 });
+    const replacement = await database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
+      "story-workspace-confirmation.claim-turn",
+      { message_id: message, claim_id: "claim-pg-2" }, service, tx));
+    expect(replacement.authority?.token).not.toBe(claim.authority?.token);
+    await expect(database.transaction(tx => new DelegationService(tx).resolve(
+      claim.authority!.token, "dream:read", service.id,
+    ))).rejects.toMatchObject({ code: "DELEGATION_REQUIRED", status: 401 });
+    await expect(database.transaction(tx => new DelegationService(tx).resolve(
+      replacement.authority!.token, "dream:read", service.id,
+    ))).resolves.toMatchObject({ principal: { canonical_user_id: "1" } });
+    const staleLease = await database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
       "story-workspace-confirmation.lease",
       { message_id: message, claim_id: "claim-pg-1", duration_seconds: null }, service, tx));
-    expect(lease.renewed).toBe(true);
+    expect(staleLease.renewed).toBe(false);
     await expect(database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
-      "story-workspace-confirmation.ack", { message_id: message, claim_id: "claim-pg-1" }, service, tx)))
+      "story-workspace-confirmation.ack", { message_id: message, claim_id: "claim-pg-2" }, service, tx)))
       .resolves.toEqual({ acked: true });
+    await expect(database.transaction(tx => new DelegationService(tx).resolve(
+      replacement.authority!.token, "dream:write", service.id,
+    ))).rejects.toMatchObject({ code: "DELEGATION_REQUIRED", status: 401 });
     const factAfter = await database.transaction(tx => runStoryWorkspaceConfirmationOAuthOperation(
       "story-workspace-confirmation.fact", { workflow_run_id: runId }, principal("1"),
       service.id, "confirmation-fact-after", tx));
@@ -178,6 +227,23 @@ describe.skipIf(!enabled)("Story Workspace confirmation PostgreSQL contract", ()
     ]);
     expect([left.replayed, right.replayed].sort()).toEqual([false, true]);
     expect([left.dispatch, right.dispatch].filter(Boolean)).toHaveLength(1);
+    const message = (await admin.query(
+      "SELECT id FROM chat_message WHERE thread_id='thread-confirmation-concurrent'",
+    )).rows[0].id;
+    const [claimLeft, claimRight] = await Promise.all([
+      database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
+        "story-workspace-confirmation.claim-turn",
+        { message_id: message, claim_id: "claim-pg-concurrent" }, service, tx)),
+      database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
+        "story-workspace-confirmation.claim-turn",
+        { message_id: message, claim_id: "claim-pg-concurrent" }, service, tx)),
+    ]);
+    expect(claimLeft.authority?.token).toBe(claimRight.authority?.token);
+    const grantCount = await admin.query(`SELECT count(*)::int AS count
+      FROM identity.runtime_delegations
+      WHERE service_client_id=$1 AND source_message_id=$2 AND source_claim_id=$3`,
+    [service.id, message, "claim-pg-concurrent"]);
+    expect(grantCount.rows[0].count).toBe(1);
     await expect(database.transaction(tx => runStoryWorkspaceConfirmationOAuthOperation(
       "story-workspace-confirmation.submit",
       { command_json: JSON.stringify(command(foreignRunId, "thread-confirmation-foreign", "swc_pg-foreign")) },

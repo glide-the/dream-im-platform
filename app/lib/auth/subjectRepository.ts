@@ -1,7 +1,7 @@
 // [Input] Verified Google Account/User identity and explicit canonical subject links.
 // [Output] Typed identity linkage and active canonical user lookup, never implicit email merge.
 // [Pos] Admin auth ORM repository; hooks execute inside the same protocol transaction.
-// [Sync] 2026-09-14: preserve users primary keys and reject legacy email collisions pending explicit migration.
+// [Sync] 2026-09-16: resolve an active auth subject from a server-derived canonical confirmation owner.
 import { APIError } from "better-auth/api";
 import { and, eq, sql } from "drizzle-orm";
 import { adminUsers, platformUsers, users } from "@ink-memory/db/schema";
@@ -46,6 +46,16 @@ export class SubjectRepository {
     }).from(subjectLinks).innerJoin(users, eq(subjectLinks.canonicalUserId, users.id))
       .innerJoin(platformUsers, and(eq(platformUsers.source, "ink-dream"), eq(platformUsers.external_user_id, sql`${subjectLinks.canonicalUserId}::text`)))
       .where(and(eq(subjectLinks.authUserId, authUserId), eq(users.admin_deprecated_status, "active"), eq(platformUsers.status, "active"))).limit(1);
+    return rows[0] ?? null;
+  }
+
+  async findActiveByCanonicalUserId(canonicalUserId: string) {
+    const rows = await this.database.select({
+      canonicalUserId: subjectLinks.canonicalUserId, authUserId: subjectLinks.authUserId,
+      platformUserId: platformUsers.id, tier: platformUsers.tier,
+    }).from(subjectLinks).innerJoin(users, eq(subjectLinks.canonicalUserId, users.id))
+      .innerJoin(platformUsers, and(eq(platformUsers.source, "ink-dream"), eq(platformUsers.external_user_id, sql`${subjectLinks.canonicalUserId}::text`)))
+      .where(and(eq(subjectLinks.canonicalUserId, sql`${canonicalUserId}::bigint`), eq(users.admin_deprecated_status, "active"), eq(platformUsers.status, "active"))).limit(1);
     return rows[0] ?? null;
   }
 }

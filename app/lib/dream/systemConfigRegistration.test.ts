@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: preserve this frozen segment while Registry120 appends confirmation operations.
+// [Sync] 2026-09-16: keep this frozen Registry80 segment append-safe through Registry121.
 // [Input] Production operation/receipt Routes with captured new SystemConfig handler and auth/UOW seams.
 // [Output] Exact three-name POST routing plus OAuth-only bounded Original PATCH recovery routing.
 // [Pos] SystemConfig prefix gate inside registered99; domain/codec/PostgreSQL behavior stays separate.
@@ -28,7 +28,7 @@ beforeEach(() => {
   mocks.read.mockResolvedValue({ status: "committed", operation: "user-system-config.patch", request_id: "original", result: { success: true } });
 });
 it("appends exactly three SystemConfig descriptors after the frozen77 catalog", () => {
-  expect(dreamOperations).toHaveLength(120);
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(80);
   expect(dreamOperations.slice(77, 80).map(item => ({ name: item.contract.name, kind: item.capability.kind, scope: item.capability.user_scope, requirements: item.requirements }))).toEqual([
     { name: "user-system-config.get", kind: "read", scope: "dream:read", requirements: [identitySchemaRequirement, ...userSystemConfigSchemaRequirements] },
     { name: "user-system-config.patch", kind: "write", scope: "dream:write", requirements: [identitySchemaRequirement, ...userSystemConfigSchemaRequirements] },

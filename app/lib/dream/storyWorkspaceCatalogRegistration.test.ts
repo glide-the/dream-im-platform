@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: preserve this frozen segment while Registry120 appends confirmation operations.
+// [Sync] 2026-09-16: keep this frozen Registry114 segment append-safe through Registry121.
 // [Input] Frozen Registry111 prefix, live Registry114 catalog DTOs, schema capability, inventory, and POST route.
 // [Output] Exact append hashes, requirements, scopes, generated inventory, and dispatch assertions.
 // [Pos] Registration gate for the three Story Workspace catalog business operations.
@@ -22,7 +22,7 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 
 beforeEach(() => vi.resetAllMocks());
 it("preserves the exact three-operation Registry114 segment", () => {
-  expect(dreamOperations).toHaveLength(120); expect(generated115).toEqual(dreamOperations);
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(114); expect(generated115).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 111))).digest("hex"))
     .toBe("01f1a9ffbd9daf44e9bc640768a13ae636d9e718cb42365ff2de1ba5c244efc3");
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 114))).digest("hex"))

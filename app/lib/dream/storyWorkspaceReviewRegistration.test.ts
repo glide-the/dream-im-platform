@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: preserve this frozen segment while Registry120 appends confirmation operations.
+// [Sync] 2026-09-16: keep this frozen Registry111 segment append-safe through Registry121.
 // [Input] Frozen Registry109/111 prefixes, live review DTOs, Registry115 inventory and production POST route.
 // [Output] Exact append, hashes, generated inventory and dispatch assertions.
 // [Pos] Registration gate for the two Story Workspace product-review writes.
@@ -20,7 +20,7 @@ import { identitySchemaRequirement } from "./schemaRequirements";
 
 beforeEach(() => vi.resetAllMocks());
 it("preserves Registry109 and appends exactly two Registry111 writes", () => {
-  expect(dreamOperations).toHaveLength(120); expect(generated115).toEqual(dreamOperations);
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(111); expect(generated115).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 109))).digest("hex"))
     .toBe("48909feea302787bcbd0ed7a263212eeee163a0e3e7887acfda56cc2b421d513");
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 111))).digest("hex"))
