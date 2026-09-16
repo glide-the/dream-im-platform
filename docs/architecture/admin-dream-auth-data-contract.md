@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-16: record Registry191 source closure; normal database activation and real business acceptance remain pending. -->
 <!-- [Sync] 2026-09-16: register automatic-repair message settlement as Registry169. -->
 <!-- [Sync] 2026-09-16: register Notion connector persistence as Registry148-168. -->
 <!-- [Sync] 2026-09-16: register Dream launch Runtime scope/current/replay as Registry130-132. -->
@@ -14,7 +15,7 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本 `0.1`。状态：实现中；[实际169操作契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成。完整Registry168 descriptor前缀保持。Registry169 automatic repair message settlement、Registry148-168 Notion connector provider、Registry134-147 managed MCP、Registry130-133 Dream launch Runtime/replay、Registry127-129 Agent type、Registry122-126 Deck Plugin binding、Registry120 confirmation、Registry115 Guidance、Registry114 Story catalog、Registry111 Story review与Registry109 standalone Story output 已通过严格 DTO、Service、typed Drizzle Repository 和原回执边界验证。Notion Dream consumer 已完成；其余生产数据库入口继续按[全域映射](admin-dream-domain-implementation-map.md)关闭。本稿不是完整部署或真实业务回执。
+版本`0.1`。状态：源码实现完成，正常切换与真实业务验收待执行；[实际191操作契约](admin-dream-operation-contracts.json)由真实Zod输入/输出与注册表生成。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin和Registry185-191 Story Workspace artifact在既有Registry169前缀后追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；这不等于正常数据库54→63 migration、角色ACL、服务切换或Google/Device/模型业务验收已经完成。本稿不是完整部署或真实业务回执。
 
 ## Registry169：自动修复消息终态
 
@@ -449,7 +450,9 @@ sequenceDiagram
  D-->>B: product response
 ```
 
-### 领域迁移注册表（必须逐项实现，当前全部待验证）
+### 领域职责与验收覆盖表（源码迁移完成；正常切换与真实验收待执行）
+
+下表保留原领域拆分与事务/权限要求。对应191个命名operation已实现并由生成契约、隔离PostgreSQL/ACL与Dream源码关闭门禁覆盖；正常数据库migration/role activation、服务重启及真实账户业务旅程仍按发布计划单独验收。
 
 | 域/原模块 | Admin领域operation职责 | 必须保留的事务/权限 |
 | --- | --- | --- |
