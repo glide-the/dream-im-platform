@@ -36,9 +36,14 @@
 ```bash
 pnpm install
 pnpm env:setup
+${EDITOR:-vi} .env.local
+${EDITOR:-vi} docker/.env
+pnpm env:check
 pnpm db:migrate
 pnpm dev
 ```
+
+`env:setup` 只生成本机 secret 和明确的技术容量配置。Google client、三个不同受限数据库角色 DSN、Gateway client binding、Deck/Plugin/Runtime业务策略必须由部署负责人填写；`env:check` 会在服务启动前逐项拒绝空值、同角色 DSN、错误 origin/redirect、弱 secret 或非法 JSON。Dream 只取得与 Admin 注册项相同的 service ID/secret、issuer、resource 和 callback，不取得任何 PostgreSQL DSN。
 
 本机开发入口显式使用 Next Webpack，与 production build 共用 workspace NodeNext extension alias；`packages/db` 源码中的 `.js` 说明符会解析到对应 TypeScript 源文件。
 
@@ -86,10 +91,12 @@ Bootstrap 只允许成功一次；已有管理员时 `/admin/login` 只显示正
 
 ## Docker 部署
 
-环境初始化会同时生成 `docker/.env`，所以无需手工复制或填写随机密钥：
+环境初始化会同时生成 `docker/.env`，并生成本机可安全生成的随机密钥。Google OAuth、三个受限数据库角色 DSN、Gateway binding 与业务策略仍需由部署负责人显式填写并通过校验：
 
 ```bash
 pnpm env:setup
+${EDITOR:-vi} docker/.env
+pnpm env:check
 pnpm docker:up
 pnpm docker:logs
 ```
@@ -130,9 +137,11 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `AUTH_TRUSTED_ORIGINS/DREAM_API_RESOURCE` | trusted origins与OAuth resource | exact origins/resource |
 | `AUTH_TOKEN_ENCRYPTION_KEY` | BFF/委托恢复密文 | 32bytes AEAD，不能回显 |
 | `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON；Reflections执行服务需显式包含`reflections:execute`，confirmation dispatcher需显式包含`story-confirmation:dispatch`，均独立于用户Bearer |
+| `AUTH_DEVICE_CLIENT_ID` / `DREAM_GATEWAY_CLIENT_BINDINGS` | Device public client 与受限 Gateway client映射 | 显式注册；CLI不携带固定secret，binding不能由请求覆盖 |
 | `DREAM_DATA_MAX_BODY_BYTES` | Admin领域请求体技术容量 | 显式正安全整数 |
 | `DREAM_WORKSPACE_PLUGIN_POLICY_JSON` | Story Workspace server adapter 数据选择 | 严格JSON；package、marketplace与nullable版本由Admin配置，Dream请求不能覆盖 |
 | `DREAM_RUNTIME_ACTIVATION_POLICY_JSON` | Story Workspace Runtime激活placement、creating lease与built-in adapter | 严格JSON；lease为1..300秒，Admin Service读取，Dream请求不能覆盖node、policy或artifact path |
+| `DREAM_DECK_POLICY_JSON` | 默认Deck/Voice与插件事实 | 严格JSON；业务ID和模板来自部署配置，不由应用或请求硬编码 |
 | `DREAM_REFLECTION_REPORT_LIST_MAX_ROWS` | Reflections报告历史单次查询技术容量 | 必填正安全整数；Dream默认仍请求10条 |
 | `DREAM_REFLECTIONS_LAUNCH_SNAPSHOT_MAX_BYTES` | Reflections私有启动快照技术容量 | 必填正安全整数；超限在持久化前拒绝 |
 | `DREAM_REFLECTIONS_WORKSPACE_ROOT` | Reflections task workspace根目录 | 必填绝对路径；实际locator只追加task ID与`memory` |
