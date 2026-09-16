@@ -1,3 +1,6 @@
+<!-- [Sync] 2026-09-16: final Dream production consumers use Admin DTO/ORM operations; dated pending notes below remain implementation history. -->
+> **现行边界（2026-09-16）**：Admin 是唯一认证中心和生产数据库访问服务。Dream 生产代码不持有 PostgreSQL DSN、pool、SQL、ORM、UOW 或 DDL 路径；严格 Pydantic DTO 调用 Admin 具名 operation，Admin 以 Zod DTO、domain Service、typed Repository 和 Drizzle ORM 执行权限、事务与持久化。下方 Registry 段落按实施日期保存增量回执，其中“Dream consumer pending”或“其它领域 pending”只描述该阶段，不代表当前代码边界。正常 Google、Device OAuth、真实模型与完整业务验收仍受部署配置和正常数据库 capability 门禁约束。
+
 <!-- [Sync] 2026-09-16: Registry134-147 implements the Admin managed-MCP provider; Dream consumer evidence remains pending. -->
 Registry134-147 在完整 Registry133 前缀后新增十四个 managed-MCP 业务操作。严格 DTO 覆盖 Server、App settings、密文 credential、discovery snapshot 与 import receipt；Admin 从 OAuth 或精确 `server-persistence` Thread/Run delegation 派生 actor，使用 typed Drizzle Repository 执行 owner/workspace 过滤、CAS、snapshot invalidation、import serialization 与同事务 receipt/audit。接口不接受 actor、明文 secret、SQL、表列或事务选择器。完整 Registry147 SHA 为 `73a50db695af5170765f8473179b8a8dacd817c5c457161d75bec5b97c1e32f1`，既有两个 schema capability 足够，无 migration。Admin provider focused23/type/lint通过；Dream consumer、隔离 PostgreSQL 与正常真实业务验收仍待关闭。
 
