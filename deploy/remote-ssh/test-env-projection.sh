@@ -2,6 +2,7 @@
 # [Input] Remote SSH env projector plus a disposable complete Admin source env.
 # [Output] Provider-free assertions for issuer/resource/service-registration projection and fail-closed validation.
 # [Pos] Deterministic Remote SSH runtime configuration contract test.
+# [Sync] 2026-09-16: read generated-file mode through explicit Darwin/GNU stat branches.
 # [Sync] 2026-09-16: cover the unified auth/data deployment projection without touching a database.
 set -euo pipefail
 
@@ -54,7 +55,11 @@ grep -Fx 'AUTH_TRUSTED_ORIGINS=https://admin.example.test,https://dream.example.
 grep -Fx 'DREAM_API_RESOURCE=https://dream.example.test/api' "${OUTPUT_ENV}"
 grep -Fx "DREAM_DATA_SERVICE_CLIENTS=${SERVICE_CLIENTS}" "${OUTPUT_ENV}"
 grep -Fx 'DREAM_REFLECTIONS_WORKSPACE_ROOT=/artifacts/reflections' "${OUTPUT_ENV}"
-[[ "$(stat -f '%Lp' "${OUTPUT_ENV}" 2>/dev/null || stat -c '%a' "${OUTPUT_ENV}")" == "600" ]]
+case "$(uname -s)" in
+  Darwin) OUTPUT_MODE="$(stat -f '%Lp' "${OUTPUT_ENV}")" ;;
+  *) OUTPUT_MODE="$(stat -c '%a' "${OUTPUT_ENV}")" ;;
+esac
+[[ "${OUTPUT_MODE}" == "600" ]]
 
 if ADMIN_ENV_SOURCE="${SOURCE_ENV}" ADMIN_REMOTE_ENV_FILE="${OUTPUT_ENV}" \
   ADMIN_PUBLIC_ORIGIN=https://admin.example.test DREAM_PUBLIC_ORIGIN=https://other.example.test \
