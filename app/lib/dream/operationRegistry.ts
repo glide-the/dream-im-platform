@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: append Deck Plugin control plane as Registry170-174.
 // [Sync] 2026-09-16: append auto-repair message settlement as Registry169.
 // [Sync] 2026-09-16: append Notion connector persistence operations as Registry148-168.
 // [Sync] 2026-09-16: append managed-MCP persistence operations as Registry134-147.
@@ -82,6 +83,8 @@ import { notionConnectorOperationContracts } from "./notionConnectorDto";
 import { notionConnectorSchemaRequirements } from "./notionConnectorService";
 import { dreamAutoRepairOperationContracts } from "./dreamAutoRepairDto";
 import { dreamAutoRepairSchemaRequirements } from "./dreamAutoRepairService";
+import { deckPluginControlOperationContracts } from "./deckPluginControlDto";
+import { deckPluginControlSchemaRequirements } from "./deckPluginControlService";
 function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
@@ -196,5 +199,9 @@ export const dreamOperations = [
   ...Object.entries(dreamAutoRepairOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...dreamAutoRepairSchemaRequirements], operation.userScope,
+  )),
+  ...Object.entries(deckPluginControlOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...deckPluginControlSchemaRequirements], operation.userScope,
   )),
 ] as const;

@@ -36388,5 +36388,2766 @@
       "output_schema_version": 1,
       "contract_sha256": "155adcb6995b63e090cbc2906383ba4b78525c1f268a430ad6f2ba449b66b159"
     }
+  },
+  {
+    "contract": {
+      "name": "deck-plugin-control.list",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "workspace"
+            ]
+          },
+          "scope_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "scope_type",
+          "scope_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "installations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "deck_plugin_installation_id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^dpi_[0-9a-f]{32}$"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^preview:"
+                    }
+                  ]
+                },
+                "deck_plugin_id": {
+                  "type": "string",
+                  "minLength": 3,
+                  "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                },
+                "display_name": {
+                  "type": "string"
+                },
+                "deck_plugin_version": {
+                  "type": "string",
+                  "minLength": 5,
+                  "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                },
+                "installed_versions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 5,
+                    "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                  }
+                },
+                "default_version": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 5,
+                      "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "available_version": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 5,
+                      "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "installing",
+                    "ready",
+                    "disabled",
+                    "error",
+                    "upgrade_pending",
+                    "uninstalled"
+                  ]
+                },
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "controlled"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "verified": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "label",
+                    "verified"
+                  ],
+                  "additionalProperties": false
+                },
+                "approved_capabilities": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "capabilities": {
+                  "type": "object",
+                  "properties": {
+                    "manifest_requested": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "effective": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "required": [
+                    "manifest_requested",
+                    "effective"
+                  ],
+                  "additionalProperties": false
+                },
+                "compatibility": {
+                  "type": "object",
+                  "properties": {
+                    "passed": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "compatible",
+                        "pending"
+                      ]
+                    },
+                    "effective_capabilities": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "required": [
+                    "passed",
+                    "status",
+                    "effective_capabilities"
+                  ],
+                  "additionalProperties": false
+                },
+                "runtime_readiness": {
+                  "type": "object",
+                  "properties": {
+                    "declaration_status": {
+                      "type": "string",
+                      "enum": [
+                        "undeclared",
+                        "declared",
+                        "disabled"
+                      ]
+                    },
+                    "materialization_status": {
+                      "type": "string",
+                      "enum": [
+                        "missing",
+                        "materializing",
+                        "materialized",
+                        "failed"
+                      ]
+                    },
+                    "activation_status": {
+                      "type": "string",
+                      "enum": [
+                        "inactive",
+                        "loadable",
+                        "loaded",
+                        "load_failed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "declaration_status",
+                    "materialization_status",
+                    "activation_status"
+                  ],
+                  "additionalProperties": false
+                },
+                "health_status": {
+                  "type": "string",
+                  "enum": [
+                    "healthy",
+                    "unknown"
+                  ]
+                },
+                "last_error_code": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "last_error_summary": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "rollback_versions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 5,
+                    "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                  }
+                },
+                "manifest": {
+                  "type": "object",
+                  "properties": {
+                    "schema_version": {
+                      "type": "string",
+                      "const": "deck-plugin/v1"
+                    },
+                    "author": {
+                      "type": "string"
+                    },
+                    "workflow_references": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "input_schema_version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "output_schema_version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "deck_runtime_contract": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "capabilities": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "required": [
+                    "schema_version",
+                    "author",
+                    "workflow_references",
+                    "input_schema_version",
+                    "output_schema_version",
+                    "deck_runtime_contract",
+                    "capabilities"
+                  ],
+                  "additionalProperties": false
+                },
+                "runtime_plugins": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "claude_code_plugin_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "resolved_version": {
+                        "type": "string",
+                        "minLength": 5,
+                        "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                      },
+                      "version_constraint": {
+                        "type": "string",
+                        "minLength": 5,
+                        "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                      },
+                      "artifact_digest": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      },
+                      "declaration_status": {
+                        "type": "string",
+                        "enum": [
+                          "undeclared",
+                          "declared",
+                          "disabled"
+                        ]
+                      },
+                      "materialization_status": {
+                        "type": "string",
+                        "enum": [
+                          "missing",
+                          "materializing",
+                          "materialized",
+                          "failed"
+                        ]
+                      },
+                      "activation_status": {
+                        "type": "string",
+                        "enum": [
+                          "inactive",
+                          "loadable",
+                          "loaded",
+                          "load_failed"
+                        ]
+                      },
+                      "health_status": {
+                        "type": "string",
+                        "enum": [
+                          "healthy",
+                          "failed",
+                          "unknown"
+                        ]
+                      },
+                      "last_error_code": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "last_error_summary": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "updated_at": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "claude_code_plugin_id",
+                      "resolved_version",
+                      "version_constraint",
+                      "artifact_digest",
+                      "declaration_status",
+                      "materialization_status",
+                      "activation_status",
+                      "health_status",
+                      "last_error_code",
+                      "last_error_summary",
+                      "updated_at"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "history": {
+                  "type": "array",
+                  "items": {
+                    "not": {}
+                  }
+                },
+                "recent_runs": {
+                  "type": "array",
+                  "items": {
+                    "not": {}
+                  }
+                },
+                "operation_logs": {
+                  "type": "array",
+                  "items": {
+                    "not": {}
+                  }
+                },
+                "is_system": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "deck_plugin_installation_id",
+                "deck_plugin_id",
+                "display_name",
+                "deck_plugin_version",
+                "installed_versions",
+                "default_version",
+                "available_version",
+                "status",
+                "source",
+                "approved_capabilities",
+                "capabilities",
+                "compatibility",
+                "runtime_readiness",
+                "health_status",
+                "last_error_code",
+                "last_error_summary",
+                "updated_at",
+                "rollback_versions",
+                "manifest",
+                "runtime_plugins",
+                "history",
+                "recent_runs",
+                "operation_logs",
+                "is_system"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "runtime_plugins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "claude_code_plugin_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "resolved_version": {
+                  "type": "string",
+                  "minLength": 5,
+                  "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                },
+                "version_constraint": {
+                  "type": "string",
+                  "minLength": 5,
+                  "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                },
+                "artifact_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "declaration_status": {
+                  "type": "string",
+                  "enum": [
+                    "undeclared",
+                    "declared",
+                    "disabled"
+                  ]
+                },
+                "materialization_status": {
+                  "type": "string",
+                  "enum": [
+                    "missing",
+                    "materializing",
+                    "materialized",
+                    "failed"
+                  ]
+                },
+                "activation_status": {
+                  "type": "string",
+                  "enum": [
+                    "inactive",
+                    "loadable",
+                    "loaded",
+                    "load_failed"
+                  ]
+                },
+                "health_status": {
+                  "type": "string",
+                  "enum": [
+                    "healthy",
+                    "failed",
+                    "unknown"
+                  ]
+                },
+                "last_error_code": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "last_error_summary": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "updated_at": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "claude_code_plugin_id",
+                "resolved_version",
+                "version_constraint",
+                "artifact_digest",
+                "declaration_status",
+                "materialization_status",
+                "activation_status",
+                "health_status",
+                "last_error_code",
+                "last_error_summary",
+                "updated_at"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "installations",
+          "runtime_plugins"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.runtime.local-placement.v1",
+        "version": 1,
+        "contractSha256": "87fbd3c28bc077992bfa0e12674e71b59182ea08934314c02560c8b577c50983"
+      }
+    ],
+    "capability": {
+      "name": "deck-plugin-control.list",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "580809db8126d3f45cc233a7a4c32f38cfd19daa6cb5ccd2154cbec10ba359b2"
+    }
+  },
+  {
+    "contract": {
+      "name": "deck-plugin-control.version",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "workspace"
+            ]
+          },
+          "scope_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "deck_plugin_id": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+          },
+          "deck_plugin_version": {
+            "type": "string",
+            "minLength": 5,
+            "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+          }
+        },
+        "required": [
+          "scope_type",
+          "scope_id",
+          "deck_plugin_id",
+          "deck_plugin_version"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_plugin_installation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^dpi_[0-9a-f]{32}$"
+              },
+              {
+                "type": "string",
+                "pattern": "^preview:"
+              }
+            ]
+          },
+          "deck_plugin_id": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "deck_plugin_version": {
+            "type": "string",
+            "minLength": 5,
+            "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+          },
+          "installed_versions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 5,
+              "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+            }
+          },
+          "default_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "available_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "installing",
+              "ready",
+              "disabled",
+              "error",
+              "upgrade_pending",
+              "uninstalled"
+            ]
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "controlled"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "verified": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "label",
+              "verified"
+            ],
+            "additionalProperties": false
+          },
+          "approved_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "manifest_requested": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "effective": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "manifest_requested",
+              "effective"
+            ],
+            "additionalProperties": false
+          },
+          "compatibility": {
+            "type": "object",
+            "properties": {
+              "passed": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "compatible",
+                  "pending"
+                ]
+              },
+              "effective_capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "passed",
+              "status",
+              "effective_capabilities"
+            ],
+            "additionalProperties": false
+          },
+          "runtime_readiness": {
+            "type": "object",
+            "properties": {
+              "declaration_status": {
+                "type": "string",
+                "enum": [
+                  "undeclared",
+                  "declared",
+                  "disabled"
+                ]
+              },
+              "materialization_status": {
+                "type": "string",
+                "enum": [
+                  "missing",
+                  "materializing",
+                  "materialized",
+                  "failed"
+                ]
+              },
+              "activation_status": {
+                "type": "string",
+                "enum": [
+                  "inactive",
+                  "loadable",
+                  "loaded",
+                  "load_failed"
+                ]
+              }
+            },
+            "required": [
+              "declaration_status",
+              "materialization_status",
+              "activation_status"
+            ],
+            "additionalProperties": false
+          },
+          "health_status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "unknown"
+            ]
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_error_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "rollback_versions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 5,
+              "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+            }
+          },
+          "manifest": {
+            "type": "object",
+            "properties": {
+              "schema_version": {
+                "type": "string",
+                "const": "deck-plugin/v1"
+              },
+              "author": {
+                "type": "string"
+              },
+              "workflow_references": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "input_schema_version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "output_schema_version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "deck_runtime_contract": {
+                "type": "string",
+                "minLength": 1
+              },
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "schema_version",
+              "author",
+              "workflow_references",
+              "input_schema_version",
+              "output_schema_version",
+              "deck_runtime_contract",
+              "capabilities"
+            ],
+            "additionalProperties": false
+          },
+          "runtime_plugins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "claude_code_plugin_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "resolved_version": {
+                  "type": "string",
+                  "minLength": 5,
+                  "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                },
+                "version_constraint": {
+                  "type": "string",
+                  "minLength": 5,
+                  "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                },
+                "artifact_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "declaration_status": {
+                  "type": "string",
+                  "enum": [
+                    "undeclared",
+                    "declared",
+                    "disabled"
+                  ]
+                },
+                "materialization_status": {
+                  "type": "string",
+                  "enum": [
+                    "missing",
+                    "materializing",
+                    "materialized",
+                    "failed"
+                  ]
+                },
+                "activation_status": {
+                  "type": "string",
+                  "enum": [
+                    "inactive",
+                    "loadable",
+                    "loaded",
+                    "load_failed"
+                  ]
+                },
+                "health_status": {
+                  "type": "string",
+                  "enum": [
+                    "healthy",
+                    "failed",
+                    "unknown"
+                  ]
+                },
+                "last_error_code": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "last_error_summary": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "updated_at": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "claude_code_plugin_id",
+                "resolved_version",
+                "version_constraint",
+                "artifact_digest",
+                "declaration_status",
+                "materialization_status",
+                "activation_status",
+                "health_status",
+                "last_error_code",
+                "last_error_summary",
+                "updated_at"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "not": {}
+            }
+          },
+          "recent_runs": {
+            "type": "array",
+            "items": {
+              "not": {}
+            }
+          },
+          "operation_logs": {
+            "type": "array",
+            "items": {
+              "not": {}
+            }
+          },
+          "is_system": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deck_plugin_installation_id",
+          "deck_plugin_id",
+          "display_name",
+          "deck_plugin_version",
+          "installed_versions",
+          "default_version",
+          "available_version",
+          "status",
+          "source",
+          "approved_capabilities",
+          "capabilities",
+          "compatibility",
+          "runtime_readiness",
+          "health_status",
+          "last_error_code",
+          "last_error_summary",
+          "updated_at",
+          "rollback_versions",
+          "manifest",
+          "runtime_plugins",
+          "history",
+          "recent_runs",
+          "operation_logs",
+          "is_system"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.runtime.local-placement.v1",
+        "version": 1,
+        "contractSha256": "87fbd3c28bc077992bfa0e12674e71b59182ea08934314c02560c8b577c50983"
+      }
+    ],
+    "capability": {
+      "name": "deck-plugin-control.version",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "8fb594490a7766bc81aa273c2aee17e4616d22d0f0c724c718f5797d435ca589"
+    }
+  },
+  {
+    "contract": {
+      "name": "deck-plugin-control.readiness",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "workspace"
+            ]
+          },
+          "scope_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "deck_plugin_id": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+          }
+        },
+        "required": [
+          "scope_type",
+          "scope_id",
+          "deck_plugin_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "declaration_status": {
+            "type": "string",
+            "enum": [
+              "undeclared",
+              "declared",
+              "disabled"
+            ]
+          },
+          "materialization_status": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "materializing",
+              "materialized",
+              "failed"
+            ]
+          },
+          "activation_status": {
+            "type": "string",
+            "enum": [
+              "inactive",
+              "loadable",
+              "loaded",
+              "load_failed"
+            ]
+          }
+        },
+        "required": [
+          "declaration_status",
+          "materialization_status",
+          "activation_status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.runtime.local-placement.v1",
+        "version": 1,
+        "contractSha256": "87fbd3c28bc077992bfa0e12674e71b59182ea08934314c02560c8b577c50983"
+      }
+    ],
+    "capability": {
+      "name": "deck-plugin-control.readiness",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "8c41de9052a5036d48f52a0945174d654b0442dd43159953978310cca0fc5fa3"
+    }
+  },
+  {
+    "contract": {
+      "name": "deck-plugin-control.plan",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "install"
+              },
+              "scope_type": {
+                "type": "string",
+                "enum": [
+                  "instance",
+                  "workspace"
+                ]
+              },
+              "scope_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              },
+              "deck_plugin_version": {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              },
+              "source_type": {
+                "type": "string",
+                "enum": [
+                  "marketplace",
+                  "controlled",
+                  "local"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              }
+            },
+            "required": [
+              "action",
+              "scope_type",
+              "scope_id",
+              "deck_plugin_id",
+              "deck_plugin_version",
+              "source_type",
+              "source"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "enable"
+              },
+              "scope_type": {
+                "type": "string",
+                "enum": [
+                  "instance",
+                  "workspace"
+                ]
+              },
+              "scope_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              }
+            },
+            "required": [
+              "action",
+              "scope_type",
+              "scope_id",
+              "deck_plugin_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "disable"
+              },
+              "scope_type": {
+                "type": "string",
+                "enum": [
+                  "instance",
+                  "workspace"
+                ]
+              },
+              "scope_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "action",
+              "scope_type",
+              "scope_id",
+              "deck_plugin_id",
+              "reason"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "upgrade"
+              },
+              "scope_type": {
+                "type": "string",
+                "enum": [
+                  "instance",
+                  "workspace"
+                ]
+              },
+              "scope_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              },
+              "target_version": {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              }
+            },
+            "required": [
+              "action",
+              "scope_type",
+              "scope_id",
+              "deck_plugin_id",
+              "target_version"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "rollback"
+              },
+              "scope_type": {
+                "type": "string",
+                "enum": [
+                  "instance",
+                  "workspace"
+                ]
+              },
+              "scope_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              },
+              "target_version": {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              }
+            },
+            "required": [
+              "action",
+              "scope_type",
+              "scope_id",
+              "deck_plugin_id",
+              "target_version"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "approve_upgrade"
+              },
+              "scope_type": {
+                "type": "string",
+                "enum": [
+                  "instance",
+                  "workspace"
+                ]
+              },
+              "scope_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              }
+            },
+            "required": [
+              "action",
+              "scope_type",
+              "scope_id",
+              "deck_plugin_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "reject_upgrade"
+              },
+              "scope_type": {
+                "type": "string",
+                "enum": [
+                  "instance",
+                  "workspace"
+                ]
+              },
+              "scope_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              }
+            },
+            "required": [
+              "action",
+              "scope_type",
+              "scope_id",
+              "deck_plugin_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "uninstall"
+              },
+              "scope_type": {
+                "type": "string",
+                "enum": [
+                  "instance",
+                  "workspace"
+                ]
+              },
+              "scope_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              },
+              "purge": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "action",
+              "scope_type",
+              "scope_id",
+              "deck_plugin_id",
+              "purge"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "reconcile"
+              },
+              "scope_type": {
+                "type": "string",
+                "enum": [
+                  "instance",
+                  "workspace"
+                ]
+              },
+              "scope_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "deck_plugin_id": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+              }
+            },
+            "required": [
+              "action",
+              "scope_type",
+              "scope_id",
+              "deck_plugin_id"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "command": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "const": "install"
+                  },
+                  "scope_type": {
+                    "type": "string",
+                    "enum": [
+                      "instance",
+                      "workspace"
+                    ]
+                  },
+                  "scope_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "deck_plugin_id": {
+                    "type": "string",
+                    "minLength": 3,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                  },
+                  "deck_plugin_version": {
+                    "type": "string",
+                    "minLength": 5,
+                    "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                  },
+                  "source_type": {
+                    "type": "string",
+                    "enum": [
+                      "marketplace",
+                      "controlled",
+                      "local"
+                    ]
+                  },
+                  "source": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  }
+                },
+                "required": [
+                  "action",
+                  "scope_type",
+                  "scope_id",
+                  "deck_plugin_id",
+                  "deck_plugin_version",
+                  "source_type",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "const": "enable"
+                  },
+                  "scope_type": {
+                    "type": "string",
+                    "enum": [
+                      "instance",
+                      "workspace"
+                    ]
+                  },
+                  "scope_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "deck_plugin_id": {
+                    "type": "string",
+                    "minLength": 3,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                  }
+                },
+                "required": [
+                  "action",
+                  "scope_type",
+                  "scope_id",
+                  "deck_plugin_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "const": "disable"
+                  },
+                  "scope_type": {
+                    "type": "string",
+                    "enum": [
+                      "instance",
+                      "workspace"
+                    ]
+                  },
+                  "scope_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "deck_plugin_id": {
+                    "type": "string",
+                    "minLength": 3,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "action",
+                  "scope_type",
+                  "scope_id",
+                  "deck_plugin_id",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "const": "upgrade"
+                  },
+                  "scope_type": {
+                    "type": "string",
+                    "enum": [
+                      "instance",
+                      "workspace"
+                    ]
+                  },
+                  "scope_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "deck_plugin_id": {
+                    "type": "string",
+                    "minLength": 3,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                  },
+                  "target_version": {
+                    "type": "string",
+                    "minLength": 5,
+                    "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                  }
+                },
+                "required": [
+                  "action",
+                  "scope_type",
+                  "scope_id",
+                  "deck_plugin_id",
+                  "target_version"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "const": "rollback"
+                  },
+                  "scope_type": {
+                    "type": "string",
+                    "enum": [
+                      "instance",
+                      "workspace"
+                    ]
+                  },
+                  "scope_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "deck_plugin_id": {
+                    "type": "string",
+                    "minLength": 3,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                  },
+                  "target_version": {
+                    "type": "string",
+                    "minLength": 5,
+                    "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                  }
+                },
+                "required": [
+                  "action",
+                  "scope_type",
+                  "scope_id",
+                  "deck_plugin_id",
+                  "target_version"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "const": "approve_upgrade"
+                  },
+                  "scope_type": {
+                    "type": "string",
+                    "enum": [
+                      "instance",
+                      "workspace"
+                    ]
+                  },
+                  "scope_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "deck_plugin_id": {
+                    "type": "string",
+                    "minLength": 3,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                  }
+                },
+                "required": [
+                  "action",
+                  "scope_type",
+                  "scope_id",
+                  "deck_plugin_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "const": "reject_upgrade"
+                  },
+                  "scope_type": {
+                    "type": "string",
+                    "enum": [
+                      "instance",
+                      "workspace"
+                    ]
+                  },
+                  "scope_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "deck_plugin_id": {
+                    "type": "string",
+                    "minLength": 3,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                  }
+                },
+                "required": [
+                  "action",
+                  "scope_type",
+                  "scope_id",
+                  "deck_plugin_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "const": "uninstall"
+                  },
+                  "scope_type": {
+                    "type": "string",
+                    "enum": [
+                      "instance",
+                      "workspace"
+                    ]
+                  },
+                  "scope_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "deck_plugin_id": {
+                    "type": "string",
+                    "minLength": 3,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                  },
+                  "purge": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "action",
+                  "scope_type",
+                  "scope_id",
+                  "deck_plugin_id",
+                  "purge"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "const": "reconcile"
+                  },
+                  "scope_type": {
+                    "type": "string",
+                    "enum": [
+                      "instance",
+                      "workspace"
+                    ]
+                  },
+                  "scope_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "deck_plugin_id": {
+                    "type": "string",
+                    "minLength": 3,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                  }
+                },
+                "required": [
+                  "action",
+                  "scope_type",
+                  "scope_id",
+                  "deck_plugin_id"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deck_plugin_installation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^dpi_[0-9a-f]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_policy_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2304
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capability_diff": {
+            "type": "object",
+            "properties": {
+              "added": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "removed": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "added",
+              "removed"
+            ],
+            "additionalProperties": false
+          },
+          "requires_runtime_evidence": {
+            "type": "boolean"
+          },
+          "runtime_target": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "runtime_plugin_lock_id": {
+                    "type": "string",
+                    "pattern": "^rpl_[0-9a-f]{32}$"
+                  },
+                  "deck_plugin_manifest_hash": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "artifact_set_hash": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "claude_code_plugin_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "resolved_version": {
+                          "type": "string",
+                          "minLength": 5,
+                          "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                        },
+                        "source_ref": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "artifact_digest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "required": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "claude_code_plugin_id",
+                        "resolved_version",
+                        "source_ref",
+                        "artifact_digest",
+                        "required"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "runtime_plugin_lock_id",
+                  "deck_plugin_manifest_hash",
+                  "artifact_set_hash",
+                  "entries"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "expected_revision",
+          "deck_plugin_installation_id",
+          "target_version",
+          "source_policy_id",
+          "capability_diff",
+          "requires_runtime_evidence",
+          "runtime_target"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.runtime.local-placement.v1",
+        "version": 1,
+        "contractSha256": "87fbd3c28bc077992bfa0e12674e71b59182ea08934314c02560c8b577c50983"
+      }
+    ],
+    "capability": {
+      "name": "deck-plugin-control.plan",
+      "kind": "read",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "2e11a56d2e3efb491762cfc5559bd7a2cf1f2aee527632243424a62ef0e38df8"
+    }
+  },
+  {
+    "contract": {
+      "name": "deck-plugin-control.apply",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "plan": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "install"
+                      },
+                      "scope_type": {
+                        "type": "string",
+                        "enum": [
+                          "instance",
+                          "workspace"
+                        ]
+                      },
+                      "scope_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "deck_plugin_id": {
+                        "type": "string",
+                        "minLength": 3,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                      },
+                      "deck_plugin_version": {
+                        "type": "string",
+                        "minLength": 5,
+                        "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                      },
+                      "source_type": {
+                        "type": "string",
+                        "enum": [
+                          "marketplace",
+                          "controlled",
+                          "local"
+                        ]
+                      },
+                      "source": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "scope_type",
+                      "scope_id",
+                      "deck_plugin_id",
+                      "deck_plugin_version",
+                      "source_type",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "enable"
+                      },
+                      "scope_type": {
+                        "type": "string",
+                        "enum": [
+                          "instance",
+                          "workspace"
+                        ]
+                      },
+                      "scope_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "deck_plugin_id": {
+                        "type": "string",
+                        "minLength": 3,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "scope_type",
+                      "scope_id",
+                      "deck_plugin_id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "disable"
+                      },
+                      "scope_type": {
+                        "type": "string",
+                        "enum": [
+                          "instance",
+                          "workspace"
+                        ]
+                      },
+                      "scope_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "deck_plugin_id": {
+                        "type": "string",
+                        "minLength": 3,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "scope_type",
+                      "scope_id",
+                      "deck_plugin_id",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "upgrade"
+                      },
+                      "scope_type": {
+                        "type": "string",
+                        "enum": [
+                          "instance",
+                          "workspace"
+                        ]
+                      },
+                      "scope_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "deck_plugin_id": {
+                        "type": "string",
+                        "minLength": 3,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                      },
+                      "target_version": {
+                        "type": "string",
+                        "minLength": 5,
+                        "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "scope_type",
+                      "scope_id",
+                      "deck_plugin_id",
+                      "target_version"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "rollback"
+                      },
+                      "scope_type": {
+                        "type": "string",
+                        "enum": [
+                          "instance",
+                          "workspace"
+                        ]
+                      },
+                      "scope_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "deck_plugin_id": {
+                        "type": "string",
+                        "minLength": 3,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                      },
+                      "target_version": {
+                        "type": "string",
+                        "minLength": 5,
+                        "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "scope_type",
+                      "scope_id",
+                      "deck_plugin_id",
+                      "target_version"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "approve_upgrade"
+                      },
+                      "scope_type": {
+                        "type": "string",
+                        "enum": [
+                          "instance",
+                          "workspace"
+                        ]
+                      },
+                      "scope_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "deck_plugin_id": {
+                        "type": "string",
+                        "minLength": 3,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "scope_type",
+                      "scope_id",
+                      "deck_plugin_id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "reject_upgrade"
+                      },
+                      "scope_type": {
+                        "type": "string",
+                        "enum": [
+                          "instance",
+                          "workspace"
+                        ]
+                      },
+                      "scope_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "deck_plugin_id": {
+                        "type": "string",
+                        "minLength": 3,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "scope_type",
+                      "scope_id",
+                      "deck_plugin_id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "uninstall"
+                      },
+                      "scope_type": {
+                        "type": "string",
+                        "enum": [
+                          "instance",
+                          "workspace"
+                        ]
+                      },
+                      "scope_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "deck_plugin_id": {
+                        "type": "string",
+                        "minLength": 3,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                      },
+                      "purge": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "scope_type",
+                      "scope_id",
+                      "deck_plugin_id",
+                      "purge"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "reconcile"
+                      },
+                      "scope_type": {
+                        "type": "string",
+                        "enum": [
+                          "instance",
+                          "workspace"
+                        ]
+                      },
+                      "scope_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "deck_plugin_id": {
+                        "type": "string",
+                        "minLength": 3,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "scope_type",
+                      "scope_id",
+                      "deck_plugin_id"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "expected_revision": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deck_plugin_installation_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^dpi_[0-9a-f]{32}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "target_version": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 5,
+                    "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source_policy_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2304
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capability_diff": {
+                "type": "object",
+                "properties": {
+                  "added": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "removed": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "added",
+                  "removed"
+                ],
+                "additionalProperties": false
+              },
+              "requires_runtime_evidence": {
+                "type": "boolean"
+              },
+              "runtime_target": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "runtime_plugin_lock_id": {
+                        "type": "string",
+                        "pattern": "^rpl_[0-9a-f]{32}$"
+                      },
+                      "deck_plugin_manifest_hash": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      },
+                      "artifact_set_hash": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      },
+                      "entries": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "claude_code_plugin_id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 255
+                            },
+                            "resolved_version": {
+                              "type": "string",
+                              "minLength": 5,
+                              "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                            },
+                            "source_ref": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2048
+                            },
+                            "artifact_digest": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            },
+                            "required": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "claude_code_plugin_id",
+                            "resolved_version",
+                            "source_ref",
+                            "artifact_digest",
+                            "required"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "runtime_plugin_lock_id",
+                      "deck_plugin_manifest_hash",
+                      "artifact_set_hash",
+                      "entries"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "command",
+              "expected_revision",
+              "deck_plugin_installation_id",
+              "target_version",
+              "source_policy_id",
+              "capability_diff",
+              "requires_runtime_evidence",
+              "runtime_target"
+            ],
+            "additionalProperties": false
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "claude_code_plugin_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "resolved_version": {
+                  "type": "string",
+                  "minLength": 5,
+                  "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                },
+                "artifact_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "materialized_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "cache_ref": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "has_manifest": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "required": [
+                "claude_code_plugin_id",
+                "resolved_version",
+                "artifact_digest",
+                "materialized_digest",
+                "cache_ref",
+                "has_manifest"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "plan",
+          "evidence"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "pattern": "^op_[0-9a-f]{32}$"
+          },
+          "deck_plugin_id": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+          },
+          "target_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 5,
+                "pattern": "^(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)\\.(?:0|[1-9]\\p{Decimal_Number}*)(?:-(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\p{Decimal_Number}*|\\p{Decimal_Number}*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "const": "completed"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "upgrade_pending"
+            ]
+          },
+          "progress": {
+            "type": "number",
+            "const": 100
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "operation_id",
+          "deck_plugin_id",
+          "target_version",
+          "status",
+          "phase",
+          "progress",
+          "message",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.runtime.local-placement.v1",
+        "version": 1,
+        "contractSha256": "87fbd3c28bc077992bfa0e12674e71b59182ea08934314c02560c8b577c50983"
+      }
+    ],
+    "capability": {
+      "name": "deck-plugin-control.apply",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "fba707edfdad4ed88f82b8325d2cfd90a7f52f9ad24a34e07e05021c0978573e"
+    }
   }
 ]
