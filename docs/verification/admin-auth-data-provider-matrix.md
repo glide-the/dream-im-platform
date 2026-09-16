@@ -1,5 +1,6 @@
 <!-- [Sync] 2026-09-16: record normal database 0063, 64 migrations, nine release capabilities and actual-role activation. -->
 <!-- [Sync] 2026-09-17: record corrective normal ACL activation and same-browser Dream/Admin authorization separation. -->
+<!-- [Sync] 2026-09-17: record normal resource-policy desired/effective/revision/LKG and fresh observer parity. -->
 <!-- [Sync] 2026-09-17: close the normal Notion background-read DTO projection defect through public client_credentials ingress. -->
 <!-- [Sync] 2026-09-17: record independent Admin sessions, confidential service OAuth, complete deterministic suites and current real-acceptance boundary. -->
 <!-- [Sync] 2026-09-15: Registry115 Story Guidance DTO/ORM, receipt, concurrency and restricted-role PostgreSQL gates pass. -->
@@ -37,7 +38,7 @@
 | Social9 | OAuth owner/accepted relationship/invite/pair locks | 协调source + Luna受限具名Route | 原invite/request/friendship及图片权限 | 拒绝后原ID申请/消费与双向并发/原receipt | focused25/type/lint、actual AST22cases、完整9ops230公开断言通过；其余social写入pending |
 | Deck与Voice | owner/parent/fork/default/draft/version | Luna source对照 + 协调受限隔离Route | 全19具名领域合同 | 外部owner/CAS/依赖/invalid JSON/receipt | canonical storage前向修复后全19/246公开断言与type/lint通过；下游/refs/runtime pending |
 | 领域写/receipt | 用户所有权+ORM repository/UOW | Luna unit，协调隔离integration | 单事务业务+审计+receipt | CAS/冲突/早return默认rollback/unknown commit同键恢复 | 首批14 Thread操作公开Route通过；其余领域pending |
-| resource policy/observer | 分开的后台权限，真实capability | Luna unit + 隔离 | higher合法revision应用 | invalid/rollback/Admin失败LKG不传播turn | Admin unit与Dream111项provider-free通过；正常业务尚未执行 |
+| resource policy/observer | 分开的后台权限，真实capability | Luna unit + 隔离 + 正常公开read/Observer快照 | higher合法revision应用 | invalid/rollback/Admin失败LKG不传播turn | Admin unit与Dream111项provider-free通过；正常desired revision 4与新鲜Observer applied effective/effort精确一致，内存字节组合通过；未改desired或触发turn |
 | 全领域迁移 | Dream JSON/事务图全部入口 | 静态覆盖 + 领域integration | 无Dream driver/SQL/pool/secret | DTO失败/权限/状态/未知提交回归 | 生产源码静态门禁、完整Dream backend suite与正常进程零PG连接通过；E2E数据库探针仅保留在测试目录 |
 | 共享FS/Runtime/SSE | 原Dream入口与metadata | Dream负责技术与真实业务 | 0700/no-symlink/exact temp，persist→SSE | 路径/权限/断流恢复 | 两次真实文件上传、授权读取、Thread workspace与`.claude-tmp`边界通过；模型/Run/SSE终态受正常账户402额度阻塞 |
 
@@ -46,6 +47,8 @@
 统一范围以[Dream 仓库](https://github.com/glide-the/im-dream) 的 `docs/stage/stage_admin-auth-data-business-validation.md`为准；逐文件/原事务关闭状态见[领域映射](../architecture/admin-dream-domain-implementation-map.md)。此表的技术通过不能替代真实验收。
 
 ## 实际回执
+
+- 正常资源策略/LKG只读验收，2026-09-17：Dream生产`AdminResourceData`通过confidential service OAuth调用正常Admin公开`resource-policy.read`，返回configured revision 4；owner只读查询核对运行中Dream进程发布的正常`claude_agent_resource_snapshots`，最新心跳约0.23秒。四项effective、effort与revision全部匹配desired，`required_headroom_bytes`精确等于run budget与reserve的MiB和乘1,048,576，effective version为64字符SHA-256，queue dropped为0。命令exit0；没有修改desired、数据库业务记录、admission lease或启动Agent turn，历史pipeline write error计数不改变当前applied LKG。
 
 - Admin独立登录与正常ACL，2026-09-17：首次公开Admin登录为500，直接用正常`ink_auth`角色复现到PostgreSQL `42501`，确认该角色缺`admin_users.password_hash`读取与`admin_sessions`写入。停止本轮拥有的embedded PostgreSQL supervisor后生成新的owner-only mode-0600物理备份并恢复服务；精确绑定Admin/Dream commit的正常ACL命令依次dry-run、`--apply --production-approval`、重复apply均exit0，64 migrations、8门禁capabilities、active Gateway、四角色属性/credential与144条策略通过，policy SHA为`8dd2128cacb1577f4b5b2a9b9d5e358ee1600c66b29c15be2b382840b82f795e`。复查确认AUTH可读credential列、写Session/audit，仍不能读Dream `chat_thread`，Dream NOLOGIN role仍无CONNECT。随后公开登录从500恢复为明确401 credentials invalid；同一Chrome已有Dream登录态访问Admin me仍为401。两份用户记录、密码哈希与Session保持独立，未创建`admin_subject_links`。
 
