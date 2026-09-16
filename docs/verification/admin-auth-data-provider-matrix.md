@@ -1,6 +1,7 @@
 <!-- [Sync] 2026-09-17: close Deck detail empty/raw legacy Memory projection parity across Admin Repository and Dream consumer. -->
 <!-- [Sync] 2026-09-17: reconcile refresh/device protocol status and post-canary allowance totals. -->
 <!-- [Sync] 2026-09-17: record a normal-session public Deck list/detail read through the Admin DTO producer. -->
+<!-- [Sync] 2026-09-17: record normal public Thread create/history/status, terminal SSE/idempotent stop and restricted DATA-role persistence proof. -->
 <!-- [Sync] 2026-09-16: record normal database 0063, 64 migrations, nine release capabilities and actual-role activation. -->
 <!-- [Sync] 2026-09-17: record current-head full-suite recovery after replacing the retired static service-secret fixture field. -->
 <!-- [Sync] 2026-09-17: record real Dream client-local logout, same-subject SSO re-entry and continued Admin-login isolation. -->
@@ -50,7 +51,7 @@
 | 全领域迁移 | Dream JSON/事务图全部入口 | 静态覆盖 + 领域integration | 无Dream driver/SQL/pool/secret | DTO失败/权限/状态/未知提交回归 | 生产源码静态门禁、完整Dream backend suite与正常进程零PG连接通过；E2E数据库探针仅保留在测试目录 |
 | 共享FS/Runtime/SSE | 原Dream入口与metadata | Dream负责技术与真实业务 | 0700/no-symlink/exact temp，persist→SSE | 路径/权限/断流恢复 | 两次真实文件上传、授权读取、Thread workspace与`.claude-tmp`边界通过；真实Codex请求复现并修复空`Content-Type`兼容，正常账户旧失败预留使剩余额度不足以再次执行完整turn |
 
-真实验收用户已指定 `dmeck@suoxya.com`；凭据由协调保护。Google、Device、MCP replacement、文件和正常业务持久化已走本机日常公开入口并保留回执。真实模型链先遇到额度预估402、过期模型目录400、托管credential 401并完成规范刷新，随后正常Codex返回200和无`Content-Type`的SSE body，旧Gateway因此错误进入`settlement_failed`。代码已按Codex adapter的窄兼容修复并完成完整回归；该失败请求仍合法占用75,006 Token，小额settled canary消费16后剩余24,978，不足以启动下一次完整Agent turn。系统禁止人工改usage、直接释放预留或SQL加额度，因此模型回复、Run/Thread继续/取消与SSE终态仍未完成。迁移、回填和故障注入只由协调在具名隔离数据库执行。
+真实验收用户已指定 `dmeck@suoxya.com`；凭据由协调保护。Google、Device、MCP replacement、文件和正常业务持久化已走本机日常公开入口并保留回执。真实模型链先遇到额度预估402、过期模型目录400、托管credential 401并完成规范刷新，随后正常Codex返回200和无`Content-Type`的SSE body，旧Gateway因此错误进入`settlement_failed`。代码已按Codex adapter的窄兼容修复并完成完整回归；该失败请求仍合法占用75,006 Token，小额settled canary消费16后剩余24,978，不足以启动下一次完整Agent turn。系统禁止人工改usage、直接释放预留或SQL加额度；无模型Thread创建/历史/终态stop已通过，模型产生的新消息、continue、运行中cancel、live SSE与Workflow Run仍未完成。迁移、回填和故障注入只由协调在具名隔离数据库执行。
 
 统一范围以[Dream 仓库](https://github.com/glide-the/im-dream) 的 `docs/stage/stage_admin-auth-data-business-validation.md`为准；逐文件/原事务关闭状态见[领域映射](../architecture/admin-dream-domain-implementation-map.md)。此表的技术通过不能替代真实验收。
 
@@ -289,3 +290,9 @@ Registry104 default-plugin gate, 2026-09-15: exact Registry103 prefix canonical 
 验证回执：Admin聚焦2 files/18 tests exit0；Dream公开Deck detail provider-free路由37 tests exit0；Admin完整provider-free回归278 files/2106 passed、17 files/36 skipped，TypeScript、定向ESLint、production build均exit0。文档相对链接5 files/0 missing，两个worktree `git diff --check`均exit0。首次Dream pytest命令因错误venv路径exit127，第二次因缺少backend cwd/PYTHONPATH exit4；修正为`cwd=backend, PYTHONPATH=.`后同一测试真实通过，未修改断言或产品配置。
 
 正常公开读取回执：复用现有Dream Browser Session访问`GET /api/decks`返回200并取得1个既有Deck，再访问`GET /api/decks/86512acd-abc9-44d1-af72-ea5a60af225d`返回200且外层ID精确匹配，投影5个Voice，五项`memory_workspace_config`均为产品object。该步骤没有数据库直连、写入或模型调用，也未读取正文。当前真实行没有empty-text样本，因此不能用该canary替代上方empty/null/invalid/numeric-lexeme确定性断言。
+
+## 正常 Thread DTO/持久化回执（2026-09-17）
+
+正常Dream Browser Session通过公开`GET /api/claude-agent/threads?limit=50`读取16个Thread元数据；五个历史Thread包含assistant消息，`e6fd4e39-ce5f-4887-b585-1f508933b60a`经当前Admin DTO链读取6条交替角色历史。终态`GET .../stream`返回409，`POST .../stop`返回200且`stop_requested=false`。随后公开`POST /api/claude-agent/threads`创建并保留无模型Thread `1326f102-0db5-41e6-b8ec-8d0ef874e6cc`；列表、空消息读取、状态与幂等stop全部返回200，未启动Runtime或模型。
+
+Admin worktree在正常`.env.local`下使用受限`DREAM_DATA_DATABASE_URL`执行参数化只读查询，exit0，`public.chat_thread`精确返回该ID一行且标题匹配；未打印DSN、用户ID、Token或正文。公开订阅刷新仍为总额100,000、已消费16、可用24,978。唯一现有Deck的公开plugin binding为revision0/null，本轮没有修改既有Deck来制造Run；真实Preflight/Run仍待有合法binding的既有业务实体或正常产品配置后执行。
