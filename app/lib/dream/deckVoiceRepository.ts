@@ -1,6 +1,7 @@
 // [Input] Verified canonical actor, strict domain policy/input DTOs and caller-owned Drizzle transaction.
 // [Output] Owner/public filtered Deck/Voice aggregates, atomic refs/forks/updates and immutable CAS versions.
 // [Pos] Admin database repository; Runtime, artifact verification, shared filesystem and HTTP stay outside.
+// [Sync] 2026-09-17: preserve stored legacy Voice Memory text for the Dream response projector.
 // [Sync] 2026-09-15: exact canonical text, ordered cross-Deck locks and shared owner-lock reuse for refs/memory.
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, getTableColumns, inArray, max, notInArray, or, sql } from "drizzle-orm";
@@ -18,9 +19,9 @@ import { analyzeDeckSnapshot, canonicalMemory } from "./deckContentCanonical";
 const deckFields={...getTableColumns(decks),owner_id:sql<string|null>`${decks.owner_id}::text`};
 const voiceFields={...getTableColumns(voices),owner_id:sql<string|null>`${voices.owner_id}::text`};
 type DeckEntity=Omit<typeof decks.$inferSelect,"owner_id">&{owner_id:string|null};
-type VoiceEntity=Omit<typeof voices.$inferSelect,"owner_id">&{owner_id:string|null};
+export type VoiceEntity=Omit<typeof voices.$inferSelect,"owner_id">&{owner_id:string|null};
 function deckRow(row:DeckEntity){return dto.deckRowDto.parse({...row,created_at:pgTimestampToIso(row.created_at),updated_at:pgTimestampToIso(row.updated_at)});}
-function voiceRow(row:VoiceEntity){const {memory_workspace_config,...fields}=row;let raw=memory_workspace_config;try{if(raw!==null)JSON.parse(raw);}catch{raw=null;}return dto.deckVoiceRowDto.parse({...fields,memory_workspace_config_json:raw,created_at:pgTimestampToIso(row.created_at),updated_at:pgTimestampToIso(row.updated_at)});}
+export function projectDeckVoiceRow(row:VoiceEntity){const {memory_workspace_config,...fields}=row;return dto.deckVoiceRowDto.parse({...fields,memory_workspace_config_json:memory_workspace_config,created_at:pgTimestampToIso(row.created_at),updated_at:pgTimestampToIso(row.updated_at)});}
 function postgresCode(error:unknown):string|null {let current=error;for(let i=0;i<4&&current&&typeof current==="object";i++){if("code"in current&&typeof current.code==="string")return current.code;current="cause"in current?current.cause:null;}return null;}
 export function deckState(row:Pick<DeckEntity,"id"|"draft_revision"|"latest_version"|"published_draft_revision">){const latest=row.latest_version||null;const dirty=latest===null||row.draft_revision!==row.published_draft_revision;return dto.deckVersionStateDto.parse({deck_id:row.id,draft_revision:row.draft_revision,latest_version:latest,published_draft_revision:row.published_draft_revision,dirty,status:latest===null?"unpublished":dirty?"draft":"published",next_version:(latest||0)+1});}
 export class DeckVoiceRepository {
@@ -46,7 +47,7 @@ export class DeckVoiceRepository {
   for(const row of rows){const counts=(await this.transaction.select({total:sql<number>`count(*)::int`,enabled:sql<number>`count(*) FILTER(WHERE ${voices.enabled} IS TRUE)::int`}).from(voices).where(eq(voices.deck_id,row.id)))[0];const authors=row.owner_id===null?[]:await this.transaction.select({name:users.display_name}).from(users).where(eq(users.id,sql`${row.owner_id}::bigint`)).limit(1);result.push(dto.deckListItemDto.parse({...deckRow(row),...await this.decoration(row,community?counts.enabled:counts.total),voice_count:counts.enabled,total_voice_count:community?null:counts.total,author_display_name:community?authors[0]?.name??null:null}));}
   return result;
  }
- async detail(id:string){const row=await this.deck(id,"share");if(!row)return null;const agents=await this.allVoices(id);return dto.deckDetailDto.parse({...deckRow(row),...await this.decoration(row,agents.length),voices:agents.map(voiceRow)});}
+ async detail(id:string){const row=await this.deck(id,"share");if(!row)return null;const agents=await this.allVoices(id);return dto.deckDetailDto.parse({...deckRow(row),...await this.decoration(row,agents.length),voices:agents.map(projectDeckVoiceRow)});}
  private async defaultRef(id:string,evidence:z.infer<typeof dto.deckDefaultPluginEvidenceDto>){
   if(evidence.package_name!==this.policy.default_plugin_package_name||evidence.resolved_version!==this.policy.default_plugin_version)throw new AuthBoundaryError("DEFAULT_DECK_PLUGIN_UNAVAILABLE",409);
   const rows=await this.transaction.select({id:installations.id,package:installations.package_name,marketplace:installations.marketplace,version:installations.resolved_version,digest:installations.artifact_digest,status:installations.status}).from(installations).where(eq(installations.id,evidence.plugin_installation_id)).limit(1).for("share");
