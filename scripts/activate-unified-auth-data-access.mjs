@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-// [Input] Explicit migration DSN plus a private cutover manifest containing backup proof and limited-role secrets.
+// [Input] Exact clean Admin/Dream release worktrees, explicit migration DSN and a private cutover manifest containing backup proof and limited-role secrets.
 // [Output] Redacted dry-run evidence or one transactionally activated auth/control/data/Dream-no-DB ACL boundary.
 // [Pos] Human-approved normal-database release step; never invoked by migration, application startup or tests implicitly.
-// [Sync] 2026-09-16: add backup-bound, capability-gated production activation with actual-role probes.
+// [Sync] 2026-09-16: bind v2 activation to exact clean Admin/Dream commits before backup or database access.
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readFile } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import pg from "pg";
 import {
   assertLimitedRoles,
@@ -14,6 +15,9 @@ import {
   quoteIdentifier,
   validateRoleNames,
 } from "../drizzle/data/auth-access-policy-plan.mjs";
+import { verifyGitReleaseBinding } from "./unified-auth-data-release-binding.mjs";
+
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const requiredCapabilities = new Map([
   ["identity.better-auth.v1", 1],
@@ -62,9 +66,10 @@ function parseManifest(text) {
   let config;
   try { config = JSON.parse(text); } catch { fail("AUTH_DATA_CUTOVER_CONFIG_INVALID"); }
   if (!exactKeys(config, [
-    "schema", "admin_commit", "database", "backup", "roles", "gateway_client_id", "activation_state",
-  ]) || config.schema !== "admin-auth-data-cutover/v1"
+    "schema", "admin_commit", "dream_commit", "database", "backup", "roles", "gateway_client_id", "activation_state",
+  ]) || config.schema !== "admin-auth-data-cutover/v2"
     || !/^[0-9a-f]{40}$/.test(config.admin_commit)
+    || !/^[0-9a-f]{40}$/.test(config.dream_commit)
     || config.activation_state !== "prepared-not-applied"
     || typeof config.gateway_client_id !== "string" || !config.gateway_client_id) {
     fail("AUTH_DATA_CUTOVER_CONFIG_INVALID");
@@ -183,6 +188,16 @@ async function run() {
   if (!manifestPath) fail("AUTH_DATA_CUTOVER_CONFIG_REQUIRED");
   await privateRegularFile(manifestPath, "AUTH_DATA_CUTOVER_CONFIG_PRIVATE_REQUIRED");
   const { config, roles } = parseManifest(await readFile(manifestPath, "utf8"));
+  await verifyGitReleaseBinding({
+    directory: projectRoot,
+    expectedCommit: config.admin_commit,
+    codePrefix: "AUTH_DATA_ADMIN_RELEASE",
+  });
+  await verifyGitReleaseBinding({
+    directory: process.env.AUTH_DATA_DREAM_RELEASE_DIR,
+    expectedCommit: config.dream_commit,
+    codePrefix: "AUTH_DATA_DREAM_RELEASE",
+  });
   const backupInfo = await privateRegularFile(
     config.backup.path,
     "AUTH_DATA_CUTOVER_BACKUP_PRIVATE_REQUIRED",
@@ -292,6 +307,7 @@ async function run() {
       backup_sha256: config.backup.sha256,
       dream_database_access: "no-login-and-no-connect-after-apply",
       credential_probes: apply ? "passed" : existing.length === 4 ? "passed" : "pending-apply",
+      release_binding: "verified",
       redacted: true,
     }));
   } finally {
