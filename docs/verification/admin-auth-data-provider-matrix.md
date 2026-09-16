@@ -1,5 +1,6 @@
 <!-- [Sync] 2026-09-17: close Deck detail empty/raw legacy Memory projection parity across Admin Repository and Dream consumer. -->
 <!-- [Sync] 2026-09-17: reconcile refresh/device protocol status and post-canary allowance totals. -->
+<!-- [Sync] 2026-09-17: record a normal-session public Deck list/detail read through the Admin DTO producer. -->
 <!-- [Sync] 2026-09-16: record normal database 0063, 64 migrations, nine release capabilities and actual-role activation. -->
 <!-- [Sync] 2026-09-17: record current-head full-suite recovery after replacing the retired static service-secret fixture field. -->
 <!-- [Sync] 2026-09-17: record real Dream client-local logout, same-subject SSO re-entry and continued Admin-login isolation. -->
@@ -286,3 +287,5 @@ Registry104 default-plugin gate, 2026-09-15: exact Registry103 prefix canonical 
 `DeckVoiceRepository`现在把`voices.memory_workspace_config`作为nullable/raw text原样写入严格`deck.detail` DTO，不在Admin读取层执行`JSON.parse`或回写修复。Dream现有pure projector继续保留empty text，解析合法object/array/scalar/null，并把非法非空JSON映射为null；因此原始数字lexeme不会经过JavaScript重编码。DTO schema与operation hash未变化，也不需要migration。
 
 验证回执：Admin聚焦2 files/18 tests exit0；Dream公开Deck detail provider-free路由37 tests exit0；Admin完整provider-free回归278 files/2106 passed、17 files/36 skipped，TypeScript、定向ESLint、production build均exit0。文档相对链接5 files/0 missing，两个worktree `git diff --check`均exit0。首次Dream pytest命令因错误venv路径exit127，第二次因缺少backend cwd/PYTHONPATH exit4；修正为`cwd=backend, PYTHONPATH=.`后同一测试真实通过，未修改断言或产品配置。
+
+正常公开读取回执：复用现有Dream Browser Session访问`GET /api/decks`返回200并取得1个既有Deck，再访问`GET /api/decks/86512acd-abc9-44d1-af72-ea5a60af225d`返回200且外层ID精确匹配，投影5个Voice，五项`memory_workspace_config`均为产品object。该步骤没有数据库直连、写入或模型调用，也未读取正文。当前真实行没有empty-text样本，因此不能用该canary替代上方empty/null/invalid/numeric-lexeme确定性断言。
