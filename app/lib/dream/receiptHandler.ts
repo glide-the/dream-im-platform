@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: recover Registry187-188/190-191 Story Workspace Artifact writes.
 // [Sync] 2026-09-16: recover Registry175-184 Claude Plugin writes under their original user/background authority.
 // [Sync] 2026-09-16: recover Registry169 under the original turn authority.
 // [Sync] 2026-09-16: recover Registry148-168 Notion user/scheduler writes under separate original authorities.
@@ -92,6 +93,9 @@ import { claudePluginOperationContracts } from "./claudePluginDataDto";
 import { isClaudePluginOperation } from "./claudePluginDataHandler";
 import { claudePluginDataSchemaRequirements } from "./claudePluginDataService";
 import { DelegationService } from "../auth/delegationService";
+import { storyWorkspaceArtifactOperationContracts } from "./storyWorkspaceArtifactDto";
+import { isStoryWorkspaceArtifactOperation } from "./storyWorkspaceArtifactHandler";
+import { storyWorkspaceArtifactSchemaRequirements } from "./storyWorkspaceArtifactService";
 export async function handleReceipt(request: Request, requestId: string) {
   return handleInternalAuthRequest(request, async (service, setRequestId) => {
     const parsed = requestIdDto.safeParse(requestId); if (!parsed.success) throw new AuthBoundaryError("INPUT_INVALID", 400);
@@ -332,6 +336,9 @@ export async function handleReceipt(request: Request, requestId: string) {
     const runtimeData = isDeckRuntimeDataOperation(name) ? deckRuntimeDataOperationContracts[name] : null;
     const runtimeActivation = isWorkflowRuntimeActivationOperation(name) ? workflowRuntimeActivationOperationContracts[name] : null;
     const storyOutput = isStoryWorkspaceOutputOperation(name) ? storyWorkspaceOutputOperationContracts[name] : null;
+    const storyArtifact = isStoryWorkspaceArtifactOperation(name)
+      && storyWorkspaceArtifactOperationContracts[name].kind === "write"
+      ? storyWorkspaceArtifactOperationContracts[name] : null;
     const storyReview = isStoryWorkspaceReviewOperation(name) ? storyWorkspaceReviewOperationContracts[name] : null;
     const storyCatalog = isStoryWorkspaceCatalogOperation(name) ? storyWorkspaceCatalogOperationContracts[name] : null;
     const storyGuidance = isStoryWorkspaceGuidanceOperation(name) ? storyWorkspaceGuidanceOperationContracts[name] : null;
@@ -346,17 +353,17 @@ export async function handleReceipt(request: Request, requestId: string) {
     if (storyCatalog?.kind === "read") throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
     const preferences = isUserPreferencesOperation(name) ? userPreferencesOperationContracts[name] : null;
     const social = isSocialFriendshipOperation(name) ? socialFriendshipOperationContracts[name] : null;
-    if ((!background && !isChatThreadOperation(name) && !session && !deck && !userMessage && !workflowRun && !runtimeData && !runtimeActivation && !storyOutput && !storyReview && !storyCatalog && !storyGuidance && !storyConfirmation && !pluginBinding && !autoRepair && !preferences && !social) || [...query.keys()].some(key => key !== "operation") || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+    if ((!background && !isChatThreadOperation(name) && !session && !deck && !userMessage && !workflowRun && !runtimeData && !runtimeActivation && !storyOutput && !storyArtifact && !storyReview && !storyCatalog && !storyGuidance && !storyConfirmation && !pluginBinding && !autoRepair && !preferences && !social) || [...query.keys()].some(key => key !== "operation") || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
     if (background) requireBackgroundScope(service, "resource-observer:write");
-    const output = background ? resourceObserverPublishOutputDto : session ? session.output : deck ? deck.output : userMessage ? userMessage.output : workflowRun ? workflowRun.output : runtimeData ? runtimeData.output : runtimeActivation ? runtimeActivation.output : storyOutput ? storyOutput.output : storyReview ? storyReview.output : storyCatalog ? storyCatalog.output : storyGuidance ? storyGuidance.output : storyConfirmation ? storyConfirmation.output : pluginBinding ? pluginBinding.output : autoRepair ? autoRepair.output : preferences ? preferences.output : social ? social.output : chatThreadOperationContracts[name as keyof typeof chatThreadOperationContracts].output;
+    const output = background ? resourceObserverPublishOutputDto : session ? session.output : deck ? deck.output : userMessage ? userMessage.output : workflowRun ? workflowRun.output : runtimeData ? runtimeData.output : runtimeActivation ? runtimeActivation.output : storyOutput ? storyOutput.output : storyArtifact ? storyArtifact.output : storyReview ? storyReview.output : storyCatalog ? storyCatalog.output : storyGuidance ? storyGuidance.output : storyConfirmation ? storyConfirmation.output : pluginBinding ? pluginBinding.output : autoRepair ? autoRepair.output : preferences ? preferences.output : social ? social.output : chatThreadOperationContracts[name as keyof typeof chatThreadOperationContracts].output;
     const receiptResultDto = z.discriminatedUnion("status", [
       z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
       z.strictObject({ status: z.literal("committed"), operation: z.literal(name), request_id: requestIdDto, result: output }),
     ]);
     const bearer = request.headers.get("authorization") ?? "", delegated = bearer.startsWith("Bearer idg_"), reflectionAuthority = bearer.startsWith("Bearer rta_");
     if (reflectionAuthority && ((session && session.kind === "read") || (isChatThreadOperation(name) && chatThreadOperationContracts[name].kind === "read"))) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
-    return withDataTransaction([identitySchemaRequirement, ...(deck ? deckVoiceSchemaRequirements : []), ...(runtimeData ? deckRuntimeDataSchemaRequirements : []), ...(runtimeActivation ? workflowRuntimeActivationSchemaRequirements : []), ...(storyOutput ? storyWorkspaceOutputSchemaRequirements : []), ...(storyReview ? storyWorkspaceReviewSchemaRequirements : []), ...(storyCatalog ? storyWorkspaceCatalogSchemaRequirements : []), ...(storyGuidance ? storyWorkspaceGuidanceSchemaRequirements : []), ...(storyConfirmation ? storyWorkspaceConfirmationSchemaRequirements : []), ...(pluginBinding ? deckPluginBindingSchemaRequirements : []), ...(autoRepair ? dreamAutoRepairSchemaRequirements : []), ...(preferences ? userPreferencesSchemaRequirements : []), ...(social ? socialFriendshipSchemaRequirements : []), ...(userMessage ? [dreamUnifiedSchemaRequirement] : []), ...(workflowRun ? workflowRunCommandSchemaRequirements(name as keyof typeof workflowRunCommandOperationContracts) : []), ...(session ? [runtimePurposeSchemaRequirement] : []), ...(delegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : []), ...(reflectionAuthority ? [reflectionTaskSchemaRequirement] : [])], async tx => {
-      const userScope = session ? session.userScope : deck ? deck.kind === "read" ? "dream:read" : "dream:write" : userMessage ? userMessage.userScope : workflowRun ? workflowRun.userScope : runtimeData ? runtimeData.userScope : runtimeActivation ? runtimeActivation.userScope : storyOutput ? storyOutput.userScope : storyReview ? storyReview.userScope : storyCatalog ? storyCatalog.userScope : storyGuidance ? storyGuidance.userScope : storyConfirmation ? storyConfirmation.userScope : pluginBinding ? pluginBinding.userScope : autoRepair ? autoRepair.userScope : preferences ? preferences.userScope : social ? social.userScope : !background && chatThreadOperationContracts[name as keyof typeof chatThreadOperationContracts].kind === "write" ? "dream:write" : "dream:read";
+    return withDataTransaction([identitySchemaRequirement, ...(deck ? deckVoiceSchemaRequirements : []), ...(runtimeData ? deckRuntimeDataSchemaRequirements : []), ...(runtimeActivation ? workflowRuntimeActivationSchemaRequirements : []), ...(storyOutput ? storyWorkspaceOutputSchemaRequirements : []), ...(storyArtifact ? storyWorkspaceArtifactSchemaRequirements : []), ...(storyReview ? storyWorkspaceReviewSchemaRequirements : []), ...(storyCatalog ? storyWorkspaceCatalogSchemaRequirements : []), ...(storyGuidance ? storyWorkspaceGuidanceSchemaRequirements : []), ...(storyConfirmation ? storyWorkspaceConfirmationSchemaRequirements : []), ...(pluginBinding ? deckPluginBindingSchemaRequirements : []), ...(autoRepair ? dreamAutoRepairSchemaRequirements : []), ...(preferences ? userPreferencesSchemaRequirements : []), ...(social ? socialFriendshipSchemaRequirements : []), ...(userMessage ? [dreamUnifiedSchemaRequirement] : []), ...(workflowRun ? workflowRunCommandSchemaRequirements(name as keyof typeof workflowRunCommandOperationContracts) : []), ...(session ? [runtimePurposeSchemaRequirement] : []), ...(delegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : []), ...(reflectionAuthority ? [reflectionTaskSchemaRequirement] : [])], async tx => {
+      const userScope = session ? session.userScope : deck ? deck.kind === "read" ? "dream:read" : "dream:write" : userMessage ? userMessage.userScope : workflowRun ? workflowRun.userScope : runtimeData ? runtimeData.userScope : runtimeActivation ? runtimeActivation.userScope : storyOutput ? storyOutput.userScope : storyArtifact ? storyArtifact.userScope : storyReview ? storyReview.userScope : storyCatalog ? storyCatalog.userScope : storyGuidance ? storyGuidance.userScope : storyConfirmation ? storyConfirmation.userScope : pluginBinding ? pluginBinding.userScope : autoRepair ? autoRepair.userScope : preferences ? preferences.userScope : social ? social.userScope : !background && chatThreadOperationContracts[name as keyof typeof chatThreadOperationContracts].kind === "write" ? "dream:write" : "dream:read";
       const oauthOnly = deck || storyReview || storyCatalog || storyGuidance || storyConfirmation || pluginBinding || preferences || social || (runtimeData && !isThreadRuntimeDataOperation(name));
       const actor = background ? null : oauthOnly ? { principal: await principalForServiceToken(tx, request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", service, userScope), threadScope: null } : session && delegated ? await editorActorForBearer(tx, request.headers, userScope, undefined, service.id) : await requireDataActor(tx, request.headers, service, userScope, undefined, undefined, name);
       const row = await new ReceiptRepository(tx, service.id, actor?.principal.subject ?? `background:${service.id}`).find(name, parsed.data);
@@ -366,6 +373,18 @@ export async function handleReceipt(request: Request, requestId: string) {
           || row.threadScope === null || row.threadScope !== stored.data.chat_thread_id
           || row.editorSessionScope !== null || row.runScope !== null) {
           throw new AuthBoundaryError("STORY_WORKSPACE_OUTPUT_DATA_INVALID");
+        }
+      }
+      if (row && storyArtifact) {
+        const stored = storyArtifact.output.safeParse(row.result);
+        const resultRunId = !stored.success ? null
+          : name === "story-workspace-artifact.episode-authority.ensure" ? (stored.data as { authority: { workflow_run_id: string } }).authority.workflow_run_id
+          : name === "story-workspace-artifact.output-ready" ? (stored.data as { workflow_run_id: string }).workflow_run_id
+          : (stored.data as { observation: { run_id: string } }).observation.run_id;
+        if (!stored.success || !/^[0-9a-f]{64}$/.test(row.inputSha256)
+          || row.editorSessionScope !== null || row.runScope === null || row.runScope !== resultRunId
+          || (delegated ? row.threadScope === null : row.threadScope !== null)) {
+          throw new AuthBoundaryError("STORY_WORKSPACE_ARTIFACT_DATA_INVALID");
         }
       }
       if (row && storyReview && (!storyReview.output.safeParse(row.result).success
@@ -401,7 +420,7 @@ export async function handleReceipt(request: Request, requestId: string) {
       }
       if (row && actor?.threadScope && row.threadScope !== actor.threadScope) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
       if (row && actor && "editorSessionScope" in actor && row.editorSessionScope !== actor.editorSessionScope) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
-      if (row && (workflowRun || runtimeActivation || autoRepair) && delegated && actor && (!row.runScope || !("runScope" in actor) || row.runScope !== actor.runScope)) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
+      if (row && (workflowRun || runtimeActivation || autoRepair || storyArtifact) && delegated && actor && (!row.runScope || !("runScope" in actor) || row.runScope !== actor.runScope)) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
       return receiptResultDto.parse({ status: row ? "committed" : "absent", operation: name, request_id: parsed.data, ...(row ? { result: row.result } : {}) });
     });
   });

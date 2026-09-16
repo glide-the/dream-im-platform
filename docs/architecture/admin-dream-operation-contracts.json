@@ -42486,5 +42486,1799 @@
       "output_schema_version": 1,
       "contract_sha256": "77d2c856d3712d4861caff95553db35676539768c82e58d5ab3a29a1dc916aea"
     }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-artifact.runs",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "workflow_run_id": {
+                    "type": "string",
+                    "pattern": "^run_[0-9a-f]{32}$"
+                  }
+                },
+                "required": [
+                  "created_at",
+                  "workflow_run_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "limit",
+          "cursor"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "run": {
+                  "type": "object",
+                  "properties": {
+                    "workflow_run_id": {
+                      "type": "string",
+                      "pattern": "^run_[0-9a-f]{32}$"
+                    },
+                    "deck_plugin_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "deck_plugin_version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "workflow_definition_ref": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "deck_runtime_snapshot_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "preflight",
+                        "queued",
+                        "running",
+                        "output_validating",
+                        "pending_review",
+                        "confirmed",
+                        "rejected",
+                        "completed",
+                        "failed",
+                        "cancelled"
+                      ]
+                    },
+                    "failed_step": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "error_code": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retry_of_run_id": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^run_[0-9a-f]{32}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "deck_plugin_manifest_hash": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "deck_plugin_binding_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "binding_revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "runtime_plugin_lock_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "runtime_load_receipt_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workflow_preflight_id": {
+                      "type": "string",
+                      "pattern": "^pf_[0-9a-f]{32}$"
+                    },
+                    "agent_session_id": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^as_[0-9a-f]{32}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source_voice_thread_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source_message_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source_message_time": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workspace_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "idempotency_key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    "input_hash": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "semantic_fingerprint": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "status_version": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "created_by": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "started_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "completed_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "workflow_run_id",
+                    "deck_plugin_id",
+                    "deck_plugin_version",
+                    "workflow_definition_ref",
+                    "deck_runtime_snapshot_id",
+                    "status",
+                    "failed_step",
+                    "error_code",
+                    "retry_of_run_id",
+                    "deck_plugin_manifest_hash",
+                    "deck_plugin_binding_id",
+                    "binding_revision",
+                    "runtime_plugin_lock_id",
+                    "runtime_load_receipt_id",
+                    "workflow_preflight_id",
+                    "agent_session_id",
+                    "source_voice_thread_id",
+                    "source_message_id",
+                    "source_message_time",
+                    "workspace_id",
+                    "idempotency_key",
+                    "input_hash",
+                    "semantic_fingerprint",
+                    "status_version",
+                    "created_by",
+                    "created_at",
+                    "started_at",
+                    "completed_at"
+                  ],
+                  "additionalProperties": false
+                },
+                "thread_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "thread_updated_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "deck_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "deck_display_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "launch_agent_id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "goal": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 12000
+                },
+                "project_story_slug": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "episode_authority": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "schema": {
+                          "type": "string",
+                          "const": "story-workspace-episode-authority/v1"
+                        },
+                        "workflow_run_id": {
+                          "type": "string",
+                          "pattern": "^run_[0-9a-f]{32}$"
+                        },
+                        "episode_uid": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{32}$"
+                        },
+                        "story_slug": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80,
+                          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                        },
+                        "episode_code": {
+                          "type": "string",
+                          "pattern": "^EP(?:0[1-9]|[1-9][0-9])$"
+                        }
+                      },
+                      "required": [
+                        "schema",
+                        "workflow_run_id",
+                        "episode_uid",
+                        "story_slug",
+                        "episode_code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "project_title": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "confirmation_accepted": {
+                  "type": "boolean"
+                },
+                "confirmation_dispatched": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "run",
+                "thread_id",
+                "thread_updated_at",
+                "deck_id",
+                "deck_display_name",
+                "launch_agent_id",
+                "goal",
+                "project_story_slug",
+                "episode_authority",
+                "project_title",
+                "confirmation_accepted",
+                "confirmation_dispatched"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "workflow_run_id": {
+                    "type": "string",
+                    "pattern": "^run_[0-9a-f]{32}$"
+                  }
+                },
+                "required": [
+                  "created_at",
+                  "workflow_run_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "runs",
+          "next_cursor"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-artifact.runs",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "4a6d51e9768000a843c8a2fce68f4c98556368c05f504f5160786bfd3cff22dd"
+    }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-artifact.authority",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workflow_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          }
+        },
+        "required": [
+          "workflow_run_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "authority": {
+            "type": "object",
+            "properties": {
+              "run": {
+                "type": "object",
+                "properties": {
+                  "workflow_run_id": {
+                    "type": "string",
+                    "pattern": "^run_[0-9a-f]{32}$"
+                  },
+                  "deck_plugin_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "deck_plugin_version": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "workflow_definition_ref": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "deck_runtime_snapshot_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "preflight",
+                      "queued",
+                      "running",
+                      "output_validating",
+                      "pending_review",
+                      "confirmed",
+                      "rejected",
+                      "completed",
+                      "failed",
+                      "cancelled"
+                    ]
+                  },
+                  "failed_step": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "error_code": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "retry_of_run_id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^run_[0-9a-f]{32}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "deck_plugin_manifest_hash": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "deck_plugin_binding_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "binding_revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "runtime_plugin_lock_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "runtime_load_receipt_id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "workflow_preflight_id": {
+                    "type": "string",
+                    "pattern": "^pf_[0-9a-f]{32}$"
+                  },
+                  "agent_session_id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^as_[0-9a-f]{32}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "source_voice_thread_id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "source_message_id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "source_message_time": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "workspace_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "idempotency_key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "input_hash": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "semantic_fingerprint": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "status_version": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "created_by": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "started_at": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "completed_at": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "workflow_run_id",
+                  "deck_plugin_id",
+                  "deck_plugin_version",
+                  "workflow_definition_ref",
+                  "deck_runtime_snapshot_id",
+                  "status",
+                  "failed_step",
+                  "error_code",
+                  "retry_of_run_id",
+                  "deck_plugin_manifest_hash",
+                  "deck_plugin_binding_id",
+                  "binding_revision",
+                  "runtime_plugin_lock_id",
+                  "runtime_load_receipt_id",
+                  "workflow_preflight_id",
+                  "agent_session_id",
+                  "source_voice_thread_id",
+                  "source_message_id",
+                  "source_message_time",
+                  "workspace_id",
+                  "idempotency_key",
+                  "input_hash",
+                  "semantic_fingerprint",
+                  "status_version",
+                  "created_by",
+                  "created_at",
+                  "started_at",
+                  "completed_at"
+                ],
+                "additionalProperties": false
+              },
+              "thread_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "thread_updated_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "deck_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "deck_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "launch_agent_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "goal": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 12000
+              },
+              "project_story_slug": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "episode_authority": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "schema": {
+                        "type": "string",
+                        "const": "story-workspace-episode-authority/v1"
+                      },
+                      "workflow_run_id": {
+                        "type": "string",
+                        "pattern": "^run_[0-9a-f]{32}$"
+                      },
+                      "episode_uid": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{32}$"
+                      },
+                      "story_slug": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                      },
+                      "episode_code": {
+                        "type": "string",
+                        "pattern": "^EP(?:0[1-9]|[1-9][0-9])$"
+                      }
+                    },
+                    "required": [
+                      "schema",
+                      "workflow_run_id",
+                      "episode_uid",
+                      "story_slug",
+                      "episode_code"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "project_title": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "confirmation_accepted": {
+                "type": "boolean"
+              },
+              "confirmation_dispatched": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "run",
+              "thread_id",
+              "thread_updated_at",
+              "deck_id",
+              "deck_display_name",
+              "launch_agent_id",
+              "goal",
+              "project_story_slug",
+              "episode_authority",
+              "project_title",
+              "confirmation_accepted",
+              "confirmation_dispatched"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "authority"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-artifact.authority",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "2c7aa9af8fe8ea40c04a4065370ac77233911889a3d8658d4d7f7009e36732be"
+    }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-artifact.episode-authority.ensure",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workflow_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          "story_slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "episode_code": {
+            "type": "string",
+            "pattern": "^EP(?:0[1-9]|[1-9][0-9])$"
+          }
+        },
+        "required": [
+          "workflow_run_id",
+          "story_slug",
+          "episode_code"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "authority": {
+            "type": "object",
+            "properties": {
+              "schema": {
+                "type": "string",
+                "const": "story-workspace-episode-authority/v1"
+              },
+              "workflow_run_id": {
+                "type": "string",
+                "pattern": "^run_[0-9a-f]{32}$"
+              },
+              "episode_uid": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              "story_slug": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "episode_code": {
+                "type": "string",
+                "pattern": "^EP(?:0[1-9]|[1-9][0-9])$"
+              }
+            },
+            "required": [
+              "schema",
+              "workflow_run_id",
+              "episode_uid",
+              "story_slug",
+              "episode_code"
+            ],
+            "additionalProperties": false
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authority",
+          "replayed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-artifact.episode-authority.ensure",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "344f0c181d785370f3b98a6755d20fff3005db4bc46008640a5ddcad149dd792"
+    }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-artifact.output-ready",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workflow_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          "normalized_result_ready": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "workflow_run_id",
+          "normalized_result_ready"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workflow_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_review",
+              "confirmed",
+              "rejected",
+              "completed"
+            ]
+          },
+          "status_version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "workflow_run_id",
+          "status",
+          "status_version",
+          "replayed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-artifact.output-ready",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "dc56799f1c487f5a1e37b59d9369803558baedc3c015829abb7661133876d6fa"
+    }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-artifact.index.inspect",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workflow_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          "projection": {
+            "type": "object",
+            "properties": {
+              "source_project_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "episode_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99
+              },
+              "artifact_manifest_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "script_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "script_size_bytes": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "artifact_status": {
+                "type": "string",
+                "const": "available"
+              }
+            },
+            "required": [
+              "source_project_id",
+              "title",
+              "episode_count",
+              "artifact_manifest_revision",
+              "script_revision",
+              "script_size_bytes",
+              "artifact_status"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "workflow_run_id",
+          "projection"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "observation": {
+            "type": "object",
+            "properties": {
+              "run_id": {
+                "type": "string",
+                "pattern": "^run_[0-9a-f]{32}$"
+              },
+              "project_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "project_title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "story_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "missing",
+                  "stale",
+                  "indexed",
+                  "failed"
+                ]
+              },
+              "observed_manifest_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "observed_script_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "indexed_manifest_revision": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "indexed_script_revision": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "episode_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99
+              },
+              "last_indexed_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error_code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "story_index_row_missing",
+                      "story_index_write_failed",
+                      "story_index_conflict",
+                      "story_index_revision_conflict"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "etag": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "run_id",
+              "project_id",
+              "project_title",
+              "story_id",
+              "status",
+              "observed_manifest_revision",
+              "observed_script_revision",
+              "indexed_manifest_revision",
+              "indexed_script_revision",
+              "episode_count",
+              "last_indexed_at",
+              "error_code",
+              "retryable",
+              "etag"
+            ],
+            "additionalProperties": false
+          },
+          "write_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "created",
+                  "updated",
+                  "same_revision"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "observation",
+          "write_status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-artifact.index.inspect",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "514c48c5790736a94893712d5ed0c44795ee46cce8061ad3f531a842bf9b46e1"
+    }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-artifact.index.materialize",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workflow_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          "projection": {
+            "type": "object",
+            "properties": {
+              "source_project_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "episode_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99
+              },
+              "artifact_manifest_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "script_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "script_size_bytes": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "artifact_status": {
+                "type": "string",
+                "const": "available"
+              }
+            },
+            "required": [
+              "source_project_id",
+              "title",
+              "episode_count",
+              "artifact_manifest_revision",
+              "script_revision",
+              "script_size_bytes",
+              "artifact_status"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "workflow_run_id",
+          "projection"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "observation": {
+            "type": "object",
+            "properties": {
+              "run_id": {
+                "type": "string",
+                "pattern": "^run_[0-9a-f]{32}$"
+              },
+              "project_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "project_title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "story_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "missing",
+                  "stale",
+                  "indexed",
+                  "failed"
+                ]
+              },
+              "observed_manifest_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "observed_script_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "indexed_manifest_revision": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "indexed_script_revision": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "episode_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99
+              },
+              "last_indexed_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error_code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "story_index_row_missing",
+                      "story_index_write_failed",
+                      "story_index_conflict",
+                      "story_index_revision_conflict"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "etag": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "run_id",
+              "project_id",
+              "project_title",
+              "story_id",
+              "status",
+              "observed_manifest_revision",
+              "observed_script_revision",
+              "indexed_manifest_revision",
+              "indexed_script_revision",
+              "episode_count",
+              "last_indexed_at",
+              "error_code",
+              "retryable",
+              "etag"
+            ],
+            "additionalProperties": false
+          },
+          "write_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "created",
+                  "updated",
+                  "same_revision"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "observation",
+          "write_status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-artifact.index.materialize",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "555f6c9fad6dd659b5da6ae855325ef2af81edf6a21224bd3a1b2cd8c1b18a8a"
+    }
+  },
+  {
+    "contract": {
+      "name": "story-workspace-artifact.index.reconcile",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workflow_run_id": {
+            "type": "string",
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          "projection": {
+            "type": "object",
+            "properties": {
+              "source_project_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "episode_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99
+              },
+              "artifact_manifest_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "script_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "script_size_bytes": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "artifact_status": {
+                "type": "string",
+                "const": "available"
+              }
+            },
+            "required": [
+              "source_project_id",
+              "title",
+              "episode_count",
+              "artifact_manifest_revision",
+              "script_revision",
+              "script_size_bytes",
+              "artifact_status"
+            ],
+            "additionalProperties": false
+          },
+          "expected_etag": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "workflow_run_id",
+          "projection",
+          "expected_etag"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "observation": {
+            "type": "object",
+            "properties": {
+              "run_id": {
+                "type": "string",
+                "pattern": "^run_[0-9a-f]{32}$"
+              },
+              "project_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "project_title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "story_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "missing",
+                  "stale",
+                  "indexed",
+                  "failed"
+                ]
+              },
+              "observed_manifest_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "observed_script_revision": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "indexed_manifest_revision": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "indexed_script_revision": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "episode_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99
+              },
+              "last_indexed_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error_code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "story_index_row_missing",
+                      "story_index_write_failed",
+                      "story_index_conflict",
+                      "story_index_revision_conflict"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "etag": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "run_id",
+              "project_id",
+              "project_title",
+              "story_id",
+              "status",
+              "observed_manifest_revision",
+              "observed_script_revision",
+              "indexed_manifest_revision",
+              "indexed_script_revision",
+              "episode_count",
+              "last_indexed_at",
+              "error_code",
+              "retryable",
+              "etag"
+            ],
+            "additionalProperties": false
+          },
+          "write_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "created",
+                  "updated",
+                  "same_revision"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "observation",
+          "write_status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "story-workspace-artifact.index.reconcile",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "18dda46efa34060fbaf01b665cfd0f43a4ea6805295847b5d5f48acde79f08dc"
+    }
   }
 ]

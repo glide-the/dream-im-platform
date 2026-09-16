@@ -9,7 +9,7 @@ vi.mock("./claudePluginDataHandler", () => ({
   isClaudePluginOperation: (value: string) => value.startsWith("claude-plugin."),
   handleClaudePluginOperation: mocks.handler,
 }));
-import generated184 from "../../../docs/architecture/admin-dream-operation-contracts.json";
+import generated191 from "../../../docs/architecture/admin-dream-operation-contracts.json";
 import { POST } from "../../api/internal/dream/v1/operations/[operation]/route";
 import { canonicalContractJson, dreamOperations } from "./operationRegistry";
 import { claudePluginDataSchemaRequirements } from "./claudePluginDataService";
@@ -33,22 +33,23 @@ const hashes = ["9795d0b9465050b0d9032be3b227a32a70a6a4fca50742e5921006d5b408dee
 beforeEach(() => vi.resetAllMocks());
 
 it("preserves Registry182 and appends exactly Registry183-184", () => {
-  expect(dreamOperations).toHaveLength(184); expect(generated184).toEqual(dreamOperations);
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(184);
+  expect(generated191.slice(0, 184)).toEqual(dreamOperations.slice(0, 184));
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 174))).digest("hex"))
     .toBe("242ddb8e06c66058b4a6a0a015a08edb41353446ae00be46e6c2f1b946cf57dc");
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 182))).digest("hex"))
     .toBe("aba16ed638cd1a88b0471208223efa2f13476c5c33ae2e01481ec559b9777fc1");
-  expect(createHash("sha256").update(canonicalContractJson(dreamOperations)).digest("hex"))
+  expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 184))).digest("hex"))
     .toBe("f71ac328ad7670298d518e388b2fde89033387f97ac35b91a0ea66da487b40cd");
-  expect(dreamOperations.slice(174).map(item => item.contract.name)).toEqual(names);
-  expect(dreamOperations.slice(174).map(item => item.capability.contract_sha256)).toEqual(hashes);
-  for (const operation of dreamOperations.slice(174)) {
+  expect(dreamOperations.slice(174, 184).map(item => item.contract.name)).toEqual(names);
+  expect(dreamOperations.slice(174, 184).map(item => item.capability.contract_sha256)).toEqual(hashes);
+  for (const operation of dreamOperations.slice(174, 184)) {
     expect(operation.requirements).toEqual([identitySchemaRequirement, ...claudePluginDataSchemaRequirements]);
   }
   expect(dreamOperations.slice(174, 182).every(operation => operation.capability.background_scope === null)).toBe(true);
-  expect(dreamOperations.slice(182).map(operation => operation.capability.background_scope))
+  expect(dreamOperations.slice(182, 184).map(operation => operation.capability.background_scope))
     .toEqual(["plugins:catalog", "plugins:catalog"]);
-  expect(dreamOperations.slice(182).map(operation => operation.capability.user_scope)).toEqual([null, null]);
+  expect(dreamOperations.slice(182, 184).map(operation => operation.capability.user_scope)).toEqual([null, null]);
 });
 
 it("dispatches Registry175-184 through the dedicated handler", async () => {
