@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-16: record exact provider-sub adoption, successful Google return and the real Better Auth resource/userinfo audience shape. -->
 <!-- [Sync] 2026-09-16: fix the local auth topology at localhost for the Admin issuer, Google callback and Dream callback/resource registrations. -->
 <!-- [Sync] 2026-09-16: record Registry191 source closure; normal database activation is complete and real business acceptance remains partial. -->
 <!-- [Sync] 2026-09-16: register automatic-repair message settlement as Registry169. -->
@@ -16,7 +17,7 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本`0.1`。状态：源码实现、正常数据库54→63 migration、三服务角色/ACL/capability 激活与 Admin/Dream 服务切换已经完成；外部 Google、完整 Device 和 Dream 模型业务验收仍部分待执行。[实际191操作契约](admin-dream-operation-contracts.json)由真实Zod输入/输出与注册表生成。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin和Registry185-191 Story Workspace artifact在既有Registry169前缀后追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；该证据与真实 Google/Device/模型业务回执分别记录，不能相互替代。本稿不是完整生产部署声明。
+版本`0.1`。状态：源码实现、正常数据库54→63 migration、三服务角色/ACL/capability 激活与 Admin/Dream 服务切换已经完成；精确旧 Google 主体采用和真实 Google 返回 Dream 已通过，完整 Device、退出/失效和 Dream 模型业务验收仍部分待执行。[实际191操作契约](admin-dream-operation-contracts.json)由真实Zod输入/输出与注册表生成。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin和Registry185-191 Story Workspace artifact在既有Registry169前缀后追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；该证据与真实 Google/Device/模型业务回执分别记录，不能相互替代。本稿不是完整生产部署声明。
 
 本机浏览器验收使用单一显式拓扑：Admin issuer 为 `http://localhost:3000/api/auth`，Google 回调为 `http://localhost:3000/api/auth/callback/google`，Dream origin/callback/resource 分别为 `http://localhost:5173`、`http://localhost:5173/auth/callback` 和 `http://localhost:5173/api`。`127.0.0.1` 只可作为进程内部连接地址，不能混入 OAuth issuer、redirect URI、Cookie origin 或浏览器 CSRF 判断。
 
@@ -307,6 +308,10 @@ sequenceDiagram
 ```
 
 Better Auth `sub`是其User ID，不能覆盖reserved claim。显式 `identity.subject_links(auth_user_id → users.id)`保存canonical映射。验证签名后用映射查用户及active platform投影；不能把sub当任意数字user_id。已有Google `oauth_accounts(provider,provider_sub)`是唯一旧账号映射证据；同邮箱不自动合并，冲突阻止登录并给明确恢复步骤。现有管理员通过独立映射到admin_users/RBAC，不根据邮箱/Session/Google登录自动授予管理权。迁移旧Account凭据必须加密，历史PK/关系保留；旧token在cutover撤销，不迁作新OAuth grant。
+
+正常本机目标已经执行一次严格旧 Google 采用：owner-only `0600` DTO绑定精确database/port/data directory、canonical user、legacy Google row和两份源指纹；发布 CLI 默认dry-run，只有`--apply --production-approval`写入。Domain Service按精确`provider_sub`稳定派生Better Auth IDs，typed Drizzle Repository在同一事务创建`identity.user`、Google `identity.account`、Dream `identity.subject_links`和脱敏audit。旧canonical/Google行修改数为0，Admin link创建数为0，重复apply为`already-complete`。随后真实Google callback创建Session、browser session与refresh lineage并返回Dream；同一主体没有Admin membership。
+
+实际Better Auth 1.7.4 access token的`aud`是数组，包含已注册Dream resource和`${issuer}/oauth2/userinfo`。Dream Resource Server要求Dream resource存在，且数组只能由这两个配置派生值组成；标量形式仍必须精确等于Dream resource。任意额外resource、userinfo-only、重复、空值或非字符串受众均返回`INVALID_TOKEN_RESOURCE`，签名、ES256、`at+jwt`、issuer、最长300秒、client、scope、JWKS缓存和unknown-kid限速不变。
 
 ### Auth 协议路径与配置
 
