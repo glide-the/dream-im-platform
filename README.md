@@ -19,7 +19,7 @@
 
 模型网关提供 Anthropic `POST /v1/messages`、`POST /v1/messages/count_tokens`，以及 OpenAI `POST /v1/chat/completions`、`GET /v1/models` 兼容接口。
 
-统一认证与 Dream 数据访问正在实施：Better Auth 1.7.4 为唯一 Google/密码/Session/OAuth/device authority，Admin 管理权限按显式 membership 与 live RBAC；Dream 通过命名领域 DTO API 访问数据。当前技术证据与未闭合领域见[契约](docs/architecture/admin-dream-auth-data-contract.md)、[领域映射](docs/architecture/admin-dream-domain-implementation-map.md)与[回执](docs/verification/admin-auth-data-provider-matrix.md)。0054–0056 仅隔离重放通过，不能据此在正常数据库自动迁移或采用旧账户。
+统一认证与 Dream 数据访问正在实施：Better Auth 1.7.4 为唯一 Google/密码/Session/OAuth/device authority，Admin 管理权限按显式 membership 与 live RBAC；Dream 通过命名领域 DTO API 访问数据。当前技术证据与未闭合领域见[契约](docs/architecture/admin-dream-auth-data-contract.md)、[领域映射](docs/architecture/admin-dream-domain-implementation-map.md)与[回执](docs/verification/admin-auth-data-provider-matrix.md)。0054–0062 与受限角色合同已在具名隔离 PostgreSQL 重放通过；正常数据库 migration、角色激活、旧账户采用和真实 Google/模型验收仍是独立发布门禁。
 
 Remote Marketplace 同步按 UTF-8 路径组件顺序计算完整插件摘要，与 Dream 的
 canonical `pathlib` 算法一致。包含 `skills.md` 与 `skills/<name>/SKILL.md` 这类
@@ -208,10 +208,20 @@ Vercel Blob/外部 S3，并同时恢复部署配置与凭据校验。
 ```bash
 pnpm db:generate        # 修改 packages/db/src/schema/** 后生成前向 migration
 pnpm db:migrate:status  # 只读显示已应用连续前缀和待执行 migration
-pnpm db:migrate         # 统一前向迁移入口；需要时编排两个 Provider data gate
+pnpm db:migrate         # 统一前向迁移入口；需要时编排三个 Provider data gate
 pnpm db:migrate:provider-managed-accounts # 同一受控编排的兼容命名入口
 pnpm db:migrate:check   # 要求 journal、hash、数据库 receipt 全部 current
 ```
+
+正常数据库完成 migration/check 后，角色与 ACL 仍须独立预检和批准；该命令不会由应用启动或 migration 自动调用：
+
+```bash
+AUTH_DATA_CUTOVER_CONFIG=/private/0600/activation.json pnpm auth-data-access:activate
+AUTH_DATA_CUTOVER_CONFIG=/private/0600/activation.json \
+  pnpm auth-data-access:activate --apply --production-approval
+```
+
+manifest 必须绑定已校验的停机物理备份、目标 database/port/data directory、63 条 migration、八项认证/数据 capability、active canonical Gateway client、三个独立服务凭据与 Dream NOLOGIN role。默认命令只输出脱敏计划；apply 在同一事务创建/验证角色并应用最小权限，随后使用真实角色凭据与 allow/deny probes 复核。
 
 `packages/db/src/schema/**` 是唯一 TypeScript schema，`drizzle/**` 是不可变 SQL/
 journal/snapshot 历史。Dream 启动只检查 capability，不执行 DDL。runner 优先使用
@@ -225,12 +235,13 @@ migration，再发布依赖它的 Dream 代码；不需要业务数据回填。
 
 若存量数据库从 0046 升级，根命令 `pnpm db:migrate` 会针对同一个显式或内嵌
 migration target 顺序执行 `0047 → managed-account data → 0048 → 0049 →
-provider-owned data → 0050 → check`；`pnpm db:migrate:provider-managed-accounts`
-保留为同流程的命名入口。第二个 data runner 把旧 effective binding 收敛为“一个
-Provider 一个账号”，不复制、不删除、不重加密 token；如果一个 live credential 被多个
-Provider 共享或没有唯一 owner，命令会 fail closed，必须先显式断开/重新授权。运行前必须
-保留旧 credential encryption key，并配置 `AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER`；active
-attempt 或非终态 revoke job 也会阻断 contract migration。
+provider-owned data → 0050 → 0051 → deleted-provider orphan data → 0052 → remaining → check`；
+`pnpm db:migrate:provider-managed-accounts` 保留为同流程的命名入口。direct-ownership runner
+把旧 effective binding 收敛为“一个 Provider 一个账号”，不复制、不删除、不重加密 token；
+orphan runner 只清除已删除 Provider 遗留的本地 live credential material，并明确报告没有执行远端撤销。
+如果一个 live credential 被多个 Provider 共享或没有唯一 owner，命令会 fail closed，必须先显式
+断开/重新授权。运行前必须保留旧 credential encryption key，并配置
+`AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER`；active attempt 或非终态 revoke job 也会阻断 contract migration。
 
 Dream 的 43+5 张 SQLite 表不是静态 SQL seed。`drizzle/data/` 只在 Schema 已具备 `dream.schema.unified.v1` 后运行可审计的数据迁移；快照、staging、转换和业务完整性验证仍由 Dream 领域 importer 负责。全新数据库只需一个 Schema 命令：
 

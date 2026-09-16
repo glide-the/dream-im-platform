@@ -55,6 +55,7 @@ ASR 不进入 R8；release 前仅允许“禁用 endpoint”或“canonical 鉴�
 - 三表 fresh baseline、完整 Alembic 06/07 旧库均由 0032 精确验证；partial/未知 head/对象漂移 fail-closed。
 - `drizzle/**` 是唯一 Schema journal；Dream 启动只读检查 capability。
 - 真实 owner/ACL/role/constraint 先只读盘点；任何 `ALTER OWNER`、GRANT/REVOKE 有独立批准和回执。
+- 正常库角色/ACL只通过 `AUTH_DATA_CUTOVER_CONFIG=/private/0600/activation.json pnpm auth-data-access:activate` 预检；实际提交还必须同时提供 `--apply --production-approval`。runner逐字校验停机备份SHA、database/port/data directory、完整migration/capability、active canonical Gateway binding、四role属性与credential，再复用隔离验证过的ACL计划并执行allow/deny probes。它不由migration或应用启动调用。
 
 ### 迁移数据
 
