@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-17: record exact normal-account model reservation and Workflow release gates. -->
 <!-- [Sync] 2026-09-17: close Deck detail empty/raw legacy Memory projection parity across Admin Repository and Dream consumer. -->
 <!-- [Sync] 2026-09-17: reconcile refresh/device protocol status and post-canary allowance totals. -->
 <!-- [Sync] 2026-09-17: record a normal-session public Deck list/detail read through the Admin DTO producer. -->
@@ -315,3 +316,15 @@ Luna对最终Dream未提交树只读复跑同一Playwright 33/33、TypeScript、
 把两个ignored本机配置补到生成器、example和Docker模板既定的`28800`后，配置检查exit0。公开login返回200并签发HttpOnly `ink_admin_session`，me返回200且投影1个角色/28项权限，logout返回200并撤销该次命令Session；Chrome同样进入`/admin`。没有改动密码hash、Admin member、角色、Dream user、Better Auth account、OAuth client或subject link。README和现行交互稿同时移除旧“预填短默认密码”说明并登记TTL为必需配置。
 
 聚焦密码、Session、guard与bootstrap为5 files/22 tests通过；6份changed Markdown共17个本地链接0缺失，diff check通过。生产TypeScript、schema和migration未变，完整suite/type/lint/build沿用同一当前分支已通过回执。
+
+## 正常账户模型预留与 Workflow 前置条件（2026-09-17）
+
+Dream正常Browser Session经公开同源BFF读取Admin Gateway目录：9个模型均为`callable=true/included`，其中7个`max_output_tokens=128000`、2个为384000。Dream保存选择为`gateway/gpt-5.6-luna`。Admin `prepareGatewayRequest`严格以估算输入加请求有效最大输出作为`estimatedTokens`并在Provider前预留；Dream固定Runtime对当前Gateway alias的默认输出为32,000，认证目录capability只提供上界。公开Product usage显示Allowance为granted 100,000、reserved 75,006、consumed 16、remaining 24,978，所以零输入也不能满足32,000；本轮没有再次发起Gateway/Runtime写请求，也没有改订阅、Allowance、账本、模型或未知结算记录。成功完整Agent turn仍是实际额度前置阻塞，既有小额Device Gateway canary不能替代。
+
+同一Session读取唯一既有Deck的Admin DTO投影：binding revision 0、binding null。公开options唯一发布release `ink.dream.story-workflow@1.0.0`的installation为`missing`、compatibility为`failed`、runtime readiness为`unknown`、`selectable=false`，reason `DECK_PLUGIN_UNAVAILABLE`。没有已安装可选release时不允许写binding或创建成功Preflight/Run；本轮没有修改既有Deck、创建验收Deck或直写数据库。Workflow成功旅程继续等待正常产品安装流程提供可选release，先前Registry/隔离事务验证状态不变。
+
+同一canonical Dream user和同一Allowance的只读复核确认两类目录职责不同：Gateway `/v1/models`按`enabled` Model、Provider/Pricing、Subscription/period、显式Permission与Allowance计算实时调用资格；Plan Entitlement存在时追加模型级限制，缺失时写nullable快照与`allowance-only`，不是白名单拒绝。Product `/api/product/v1/me/model-catalog`只投影当前Plan Entitlement权益，所以当前旧Plan仅关联已不在enabled目录中的`deepseek-v4-flash`时返回空列表是准确产品视图，不是OAuth主体漂移。本轮同步现行设计稿，没有改Gateway/Product业务代码。
+
+公开release详情为200且状态`uninstalled`；当前Dream user访问Workspace installation列表与runtime-readiness均返回403 `WORKFLOW_PERMISSION_DENIED`，证明其没有`plugin:read/plugin:admin`。独立Admin operator不能冒充Dream Workspace subject；本轮没有执行install、enable、binding、Preflight或Run写操作。成功Workflow验收需先由正常产品管理流程为该Workspace或instance建立ready installation。
+
+设计校正后的聚焦回归命令为`corepack pnpm exec vitest run app/lib/auth/adminAuthService.test.ts app/lib/auth/oauthClientCatalog.test.ts app/lib/auth/serviceIdentity.test.ts app/lib/auth/subjectAdoption.test.ts app/lib/gateway/models.test.ts app/lib/subscriptions/gateway.test.ts app/lib/product/service.test.ts app/lib/product/auth.test.ts`，cwd为Admin worktree，exit0，8 files/52 tests。它同时证明独立Admin凭据/Session、public/confidential client、显式Dream subject adoption、Gateway allowance-only和Product Plan-rights投影。16份changed Markdown的最终链接扫描为79个本地链接/0缺失，`git diff --check` exit0；前两次临时内联链接脚本分别因引号SyntaxError和过度转义导致未形成有效链接计数，修正脚本后才采用最终回执。

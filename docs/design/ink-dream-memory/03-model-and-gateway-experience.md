@@ -2,10 +2,11 @@
 <!-- [Output] Current model/Gateway interaction, input estimation, failure handling, and acceptance design. -->
 <!-- [Pos] Dream-facing Gateway design; request lifecycle and actual settlement remain shared. -->
 <!-- [Sync] 2026-09-13: separate protocol-image token estimates from encoding byte limits. -->
+<!-- [Sync] 2026-09-17: align current Gateway callability with the approved allowance-only model contract. -->
 
 # 03 · Model and Gateway Experience
 
-> 2026-08-09合同修正：详细交互与Reader Testing见[06-model-catalog-and-default-subscription-plans](06-model-catalog-and-default-subscription-plans.md)。Admin `enabled=true`决定所有已登录canonical用户的可见目录；Subscription/Plan Version/Entitlement/Permission/Limit/Allowance只决定逐模型callability。无订阅不再让目录消失，也不再映射为503。
+> 2026-09-17现行合同：详细交互与Reader Testing见[06-model-catalog-and-default-subscription-plans](06-model-catalog-and-default-subscription-plans.md)。Admin `enabled=true`决定所有已登录canonical用户的可见目录；Subscription状态/周期、Permission、Provider/Pricing与Allowance决定逐模型callability。Plan Entitlement存在时提供更严格的模型级RPM/日/月Token限制，缺失本身不构成模型白名单拒绝。无订阅不再让目录消失，也不再映射为503。
 
 > 文档状态：**Implemented client / Release candidate**（外部 Provider/user canary 待执行）
 >
@@ -26,7 +27,7 @@
 ### Target
 
 - Dream 只显示 Admin 产品 API 对当前 canonical user 返回的模型 alias/capability，不暴露 Provider 路由、真实 model ID 或 Secret。
-- Dream 服务端以受控服务身份和签名 canonical subject 调用 Gateway；Gateway 顺序执行 Subscription→Entitlement→Model Permission→RPM/Token limit→月度 Token Allowance。
+- Dream 服务端以受控服务身份和签名 canonical subject 调用 Gateway；Gateway顺序执行Subscription状态/周期→可选Entitlement限额→Model Permission→RPM/Token limit→月度Token Allowance。
 - 订阅 Token 不足直接返 402；不在 Dream 推理路径展示或触发现金补扣、金额超额、充值或 Payment。
 
 ### Release Gate
@@ -65,7 +66,7 @@ Dream BFF `GET /api/story-workspace/models` 服务端调用 `GET /api/product/v1
 
 不得返回 Provider 名称、endpoint、credential reference、真实路由 model ID、内部 Pricing ID、价格、currency、cash balance 或 Payment 状态。用户可见 `monthlyTokenRemaining` 只用于资格提示，最终预留仍由 Gateway 在请求事务中决定。
 
-“Auto”只能是 Admin 发布的真实 routing alias，具有明确 capability 和 Entitlement；前端不能通过空值、本地 Provider 列表或错误 fallback 自行选型。
+“Auto”只能是Admin发布且实时callable的真实routing alias，具有明确capability；前端不能通过空值、本地Provider列表或错误fallback自行选型。Product catalog中的Plan权益投影不能替代Gateway目录授权。
 
 ## 3. Gateway 请求合同与流
 
@@ -86,7 +87,7 @@ sequenceDiagram
   UI->>BFF: Same-origin request with Dream Session + alias
   BFF->>BFF: Verify Session and bind canonical user
   BFF->>G: Service-authenticated request + signed subject
-  G->>G: Subscription -> Entitlement -> Permission -> RPM -> Token allowance
+  G->>G: Subscription -> optional Entitlement limits -> Permission -> RPM -> Token allowance
   alt blocked
     G-->>BFF: 402 / 403 / 404 / 429
     BFF-->>UI: Stable safe error envelope
@@ -104,11 +105,11 @@ sequenceDiagram
 
 1. canonical user 存在且 Session subject 一致；
 2. Subscription 状态允许 Gateway；
-3. Entitlement 包含请求 Scope；
-4. Model alias 已发布且属于允许集合；
-5. RPM/Token window 未超限；
-6. 当前用户个人周期 Token Allowance 足够预留；
-7. Provider 路由健康且 Secret 可解密。
+3. Model alias为Admin `enabled=true`并且Provider/Pricing可用；
+4. Entitlement存在时，请求Scope与模型级RPM/日/月Token限制必须匹配；缺失时记录`allowance-only`而不伪造Entitlement；
+5. 显式Model Permission未拒绝，RPM/Token window未超限；
+6. 当前用户个人周期Token Allowance足够预留；
+7. Provider路由健康且Secret可解密。
 
 任一步阻断都不得调用 Provider。Provider Pricing 可作为平台内部成本域存在，但 Dream 不接收或展示其价格窗口，也不能把它误认为套餐生效日。
 
@@ -233,7 +234,7 @@ Dream 不从客户端响应长度反算 Token，也不因请求失败删除 Usag
 |---|---|---|---|
 | 401 | Session 无效 | 不渲染 catalog 或推理内容 | 登录后返回原安全路由 |
 | 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED` | 当前个人周期 Token 不足 | 显示 `availableTokens/requiredTokens/periodEnd`，不显示金额或充值 | 查看套餐或等待周期重置 |
-| 403 | Subscription/Entitlement/Scope/Model Permission 不允许 | 说明受阻条件，不泄露隐藏路由 | 打开订阅权益或重选允许模型 |
+| 403 | Subscription、存在时的Entitlement限额、Scope或Model Permission不允许 | 说明受阻条件，不泄露隐藏路由；缺Entitlement本身显示`allowance-only`而不是403 | 打开订阅权益、恢复订阅或重选允许模型 |
 | 404 | alias 不存在、已下线或对象不可见 | 清除失效选择，不自动 fallback | refetch catalog 后重选 |
 | 409 | 保存版本、幂等或状态冲突 | 保留输入与选择，显示服务器新状态 | 重新确认后提交 |
 | 429 | RPM/Token 窗口限流 | 显示 window/current/limit/remaining 与 `Retry-After` | 计时后手动重试，不自动换模型 |
@@ -276,7 +277,7 @@ Dream 不从客户端响应长度反算 Token，也不因请求失败删除 Usag
 - `DREAM-GTW-01`：所有推理入口走 Gateway；直连 Provider/静态默认型号/失败 fallback 的调用计数为 0。
 - `DREAM-GTW-02`：Browser bundle/Network/DOM/Storage/log 扫描无 Gateway Key、Provider endpoint/secret、服务 credential 或用户替换 header。
 - `DREAM-GTW-03`：catalog 只含 alias/capability/eligibility/Token 权益，不含 Provider route、价格、currency、cash balance 或 Payment。
-- `DREAM-GTW-04`：Subscription、Entitlement、Permission、RPM、Token window、月度 Token Allowance 各阻断点返回正确 402/403/404/429，Provider 未被调用。
+- `DREAM-GTW-04`：Subscription、存在时的 Entitlement 限额、Permission、RPM、Token window、月度 Token Allowance 各阻断点返回正确 402/403/404/429；缺少 Entitlement 进入 `allowance-only`，实际资格拒绝均在调用 Provider 前停止。
 - `DREAM-GTW-05`：Token 不足只返 402 token details，不检查或扣除现金，不自动切换模型。
 - `DREAM-GTW-06`：success/failure/cancel/stream interruption/unknown usage 都产生确定或明确 unknown 的 Usage 终态，UI 不将 unknown 显示 0/成功。
 - `DREAM-GTW-07`：loading/empty/401/402/403/404/409/429/502/503 和 stream unknown 均有恢复动作且无静态 fallback。

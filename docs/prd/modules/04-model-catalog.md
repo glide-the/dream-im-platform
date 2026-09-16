@@ -1,10 +1,11 @@
+<!-- [Sync] 2026-09-17: separate the Gateway enabled-model catalog from the Product Plan-rights catalog. -->
 # 模块 PRD：Provider、Model 与 Pricing
 
 ## 2026-08-09 可见性与调用资格合同增量
 
 - Admin Registry `enabled=true`是Dream公共目录唯一可见性条件；所有authenticated canonical用户看到全部enabled alias。
 - catalog对每项计算`callable`与`included|upgrade_required|subscription_inactive|allowance_exhausted|permission_denied|maintenance`，但实际inference仍实时校验完整资格。
-- 无Subscription或无Entitlement不能把目录变空；正常返回200 availability metadata。enabled但缺Provider route/credential/pricing/published entitlement仍可见并标为maintenance。
+- Gateway `GET /v1/models`在无Subscription或无Entitlement时仍返回全部enabled alias及availability metadata；缺Entitlement使用`allowance-only`，缺Provider route/credential/pricing才标为maintenance。Product `GET /api/product/v1/me/model-catalog`独立表达当前Plan的Entitlement权益，可为空，不能替代Gateway调用资格。
 - 公共DTO只含alias、display name、protocol、capability、context/output limits、enabled/callable/availability、required plan和安全升级提示；严禁upstream model、Provider route、Pricing、Secret和key prefix。
 - Admin `AIModelRegistry`继续Admin Session + `models.read/write` RBAC，公共目录不复用Admin CRUD响应。
 
@@ -40,7 +41,7 @@
 - Pricing 使用整数 micro-USD / million tokens；活动窗口不可重叠；更新价格通过创建新版本并关闭旧窗口，Request 冻结 price snapshot。
 - models.dev 同步保留 source/ref/version/hash；只有 exact match 默认选，unmatched 不按 0 定价。
 - 用户—模型例外限制是 Gateway 的执行策略，不属于模型目录配置；唯一管理入口为 `/admin/gateway/rate-limits#user-model-permissions-manager`，且不能扩大 Subscription Entitlement。
-- Permission 的执行顺序是先取 Entitlement 可用集，再取用户例外的更严格交集；Request 保存实际命中的 entitlement/permission/limit 版本，后续配置变更不改历史结算。
+- Permission 在enabled Model/Provider/Pricing之后执行；Entitlement存在时提供额外模型/scope/RPM/Token限额，缺失时按`allowance-only`继续执行用户例外、平台限额与Allowance。Request保存nullable entitlement、permission和limit快照，后续配置变更不改历史结算。
 
 ## 4. API/表
 
@@ -53,6 +54,6 @@
 - MOD-03：Model alias 唯一，禁用模型在 Gateway 解析阶段拒绝。
 - MOD-04：Pricing overlap/陈旧 replacement 返回 409；历史价格快照不被修改。
 - MOD-05：模型中心只保留 Provider、Models、Pricing；不得重复提供用户—模型限制入口，历史 `/admin/models/permissions` 跳转至 Gateway 限流策略。
-- MOD-06（Implemented / release candidate）：`/api/product/v1/me/model-catalog` 只返回已发布、已定价、Entitlement 允许且未被用户例外禁用的 alias；空集是真实 empty，不回退静态模型。真实 Provider canary 仍是生产 Release Gate。
+- MOD-06（Implemented / release candidate）：`/api/product/v1/me/model-catalog`只返回当前Plan Entitlement权益投影，空集是真实empty；Gateway `/v1/models`另按enabled Model和实时资格返回目录，缺Entitlement为`allowance-only`。两者均不回退静态模型；真实Provider canary仍是生产Release Gate。
 
 交互验收映射：MOD-01 → UI-MOD-01；MOD-02 → UI-MOD-02；MOD-03/04 → UI-MOD-03；MOD-05 → UI-MOD-04。

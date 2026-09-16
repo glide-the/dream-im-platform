@@ -36,7 +36,7 @@
 9. Usage、Audit、Subscription Event 和 Token Allowance 变更是只追加事实；Dream 没有编辑或删除历史记录的控件。
 10. 浏览器永不持有 Gateway Key、Provider Secret、Payment Secret 或服务间凭据，也不提交 canonical user ID 替换当前身份。
 11. 503、维护和无数据时禁止回退静态套餐、默认模型、假 Token 或上次成功数据冒充当前状态。
-12. `enabled model` 决定所有canonical用户的可见目录；Subscription/Entitlement/Permission/Limit/Allowance只决定逐模型callability。正常未订阅必须返回200 availability metadata，而不是空目录或503。
+12. `enabled model`决定所有canonical用户的可见目录；Subscription状态/周期、Permission、Provider/Pricing、Limit和Allowance决定逐模型callability。Entitlement存在时提供套餐级模型限额，缺失时使用`allowance-only`，不能作为模型白名单。正常未订阅必须返回200 availability metadata，而不是空目录或503。
 13. 每个canonical用户自动拥有Billing Account；没有需要保留的有效订阅时自动获得默认Free月订阅。正式套餐code固定为`free`、`dream`、`is-dreaming`，展示字段来自Admin Product API。
 
 ## 3. 双跳 API 边界

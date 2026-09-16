@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-17: distinguish optional Plan Entitlement limits from Gateway allowance-only model eligibility. -->
 # Ink Memory 当前计费策略清单
 
 > 文档类型：现状清单，不是目标 PRD，也不代表新增配置需求。  
@@ -207,7 +208,7 @@ Runtime 会对以下已存在的限额取最小值：
 
 订阅请求当前按以下顺序选择覆盖方式：
 
-1. 有可调用 Subscription 时，验证 Plan Version、Model Entitlement、Gateway scope 与当前个人周期。
+1. 有可调用 Subscription 时，验证 Plan Version、`enabled=true` Model、Provider/Pricing、Gateway scope 与当前个人周期；对应 Model Entitlement 存在时再应用其模型级限额，缺失时记录 `allowance-only`。
 2. 计算 `available = granted_tokens + bonus_granted_tokens - reserved_tokens - consumed_tokens`。
 3. `available >= estimated_tokens` 时原子预留完整估算 Token；Provider 返回可靠 Usage 后 capture 实际 Token 并 release 差额。
 4. 不足时返回 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`，包含 `available_tokens/required_tokens/period_end`，不调用 Provider、不预留现金。
