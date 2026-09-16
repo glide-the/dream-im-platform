@@ -39149,5 +39149,2453 @@
       "output_schema_version": 1,
       "contract_sha256": "fba707edfdad4ed88f82b8325d2cfd90a7f52f9ad24a34e07e05021c0978573e"
     }
+  },
+  {
+    "contract": {
+      "name": "claude-plugin.installations.list",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "installations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "requested_package_spec": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 300
+                },
+                "marketplace_entry_id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "package_name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                },
+                "marketplace": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                },
+                "requested_version": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "resolved_version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "source_type": {
+                  "type": "string",
+                  "enum": [
+                    "claude-official",
+                    "marketplace",
+                    "github",
+                    "platform-builtin"
+                  ]
+                },
+                "artifact_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "artifact_path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "claude_cli_version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "cli_git_commit_sha": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "manifest_json": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "component_inventory_json": {
+                  "type": "string"
+                },
+                "compatibility_json": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "installing",
+                    "ready",
+                    "error",
+                    "uninstalled"
+                  ]
+                },
+                "operation_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "error_code": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "error_summary": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "file_count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "installed_at": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "deck_ref_count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id",
+                "requested_package_spec",
+                "marketplace_entry_id",
+                "package_name",
+                "marketplace",
+                "requested_version",
+                "resolved_version",
+                "source_type",
+                "artifact_digest",
+                "artifact_path",
+                "claude_cli_version",
+                "cli_git_commit_sha",
+                "manifest_json",
+                "component_inventory_json",
+                "compatibility_json",
+                "status",
+                "operation_id",
+                "error_code",
+                "error_summary",
+                "file_count",
+                "created_at",
+                "updated_at",
+                "installed_at",
+                "deck_ref_count"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "permissions": {
+            "type": "object",
+            "properties": {
+              "can_manage_shared_plugins": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "can_manage_shared_plugins"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "installations",
+          "permissions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.claude-plugin.remote-marketplace.v1",
+        "version": 1,
+        "contractSha256": "d215cb2764f656ab32e364a4900b3aac73fca60c77ef4c9f3a914fd192a8c314"
+      }
+    ],
+    "capability": {
+      "name": "claude-plugin.installations.list",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "9795d0b9465050b0d9032be3b227a32a70a6a4fca50742e5921006d5b408deeb"
+    }
+  },
+  {
+    "contract": {
+      "name": "claude-plugin.marketplace.list",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "package_name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                },
+                "marketplace_name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                },
+                "package_spec": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 300
+                },
+                "display_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "homepage": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "component_inventory": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "compatibility": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "revision": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    "commit_sha": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{40}$"
+                    },
+                    "marketplace_manifest_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "plugin_manifest_sha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "plugin_digest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "requested_ref": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "commit_sha",
+                    "marketplace_manifest_sha256",
+                    "plugin_manifest_sha256",
+                    "plugin_digest",
+                    "requested_ref"
+                  ],
+                  "additionalProperties": false
+                },
+                "marketplace": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    "display_name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    "remote_url": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "display_name",
+                    "remote_url"
+                  ],
+                  "additionalProperties": false
+                },
+                "installation": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "status": {
+                          "type": "string",
+                          "const": "ready"
+                        },
+                        "resolved_version": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "status",
+                        "resolved_version"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "package_name",
+                "marketplace_name",
+                "package_spec",
+                "display_name",
+                "description",
+                "version",
+                "homepage",
+                "component_inventory",
+                "compatibility",
+                "revision",
+                "marketplace",
+                "installation"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "scope": {
+            "type": "string",
+            "const": "platform-global"
+          },
+          "permissions": {
+            "type": "object",
+            "properties": {
+              "can_install_shared_plugins": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "can_install_shared_plugins"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "entries",
+          "scope",
+          "permissions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.claude-plugin.remote-marketplace.v1",
+        "version": 1,
+        "contractSha256": "d215cb2764f656ab32e364a4900b3aac73fca60c77ef4c9f3a914fd192a8c314"
+      }
+    ],
+    "capability": {
+      "name": "claude-plugin.marketplace.list",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "b7c05e5e460f36b5f8d8d03d3c595f405d58bf7f862f10e316b6e4b152cdd8bf"
+    }
+  },
+  {
+    "contract": {
+      "name": "claude-plugin.install.prepare",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "source_kind": {
+                "type": "string",
+                "const": "package"
+              },
+              "package_spec": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 300
+              },
+              "source_type": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "claude-official",
+                      "marketplace",
+                      "platform-builtin"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "source_kind",
+              "package_spec",
+              "source_type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "source_kind": {
+                "type": "string",
+                "const": "marketplace_entry"
+              },
+              "marketplace_entry_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              }
+            },
+            "required": [
+              "source_kind",
+              "marketplace_entry_id"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "const": true
+          },
+          "operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "package_spec": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          },
+          "marketplace_entry_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requested_source_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "claude-official",
+                  "marketplace",
+                  "platform-builtin"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "marketplace_source": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "entry_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "package_spec": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 300
+                  },
+                  "package_name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                  },
+                  "marketplace_name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                  },
+                  "remote_url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  },
+                  "requested_ref": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 255
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "approved_commit_sha": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  },
+                  "marketplace_manifest_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "plugin_manifest_sha256": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "approved_plugin_digest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "compatibility": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "entry_id",
+                  "package_spec",
+                  "package_name",
+                  "marketplace_name",
+                  "remote_url",
+                  "requested_ref",
+                  "approved_commit_sha",
+                  "marketplace_manifest_sha256",
+                  "plugin_manifest_sha256",
+                  "approved_plugin_digest",
+                  "compatibility"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "accepted",
+          "operation_id",
+          "package_spec",
+          "marketplace_entry_id",
+          "requested_source_type",
+          "marketplace_source"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.claude-plugin.remote-marketplace.v1",
+        "version": 1,
+        "contractSha256": "d215cb2764f656ab32e364a4900b3aac73fca60c77ef4c9f3a914fd192a8c314"
+      }
+    ],
+    "capability": {
+      "name": "claude-plugin.install.prepare",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "02e01bdd5681e2f62eda62ea65e879f693fc72ebbf0f299fca47998e88601fad"
+    }
+  },
+  {
+    "contract": {
+      "name": "claude-plugin.operations.list",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "limit"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "operation_kind": {
+                  "type": "string",
+                  "enum": [
+                    "install",
+                    "uninstall",
+                    "validate",
+                    "revalidate"
+                  ]
+                },
+                "requested_package_spec": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 300
+                },
+                "marketplace_entry_id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "running",
+                    "ready",
+                    "error"
+                  ]
+                },
+                "phase": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "starting",
+                    "cli-install",
+                    "cli-validate",
+                    "verify",
+                    "import",
+                    "ready",
+                    "error"
+                  ]
+                },
+                "progress": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "message": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "executable": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "argv_json": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cli_version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "exit_code": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "evidence_path": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installation_id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "error_code": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "error_summary": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "finished_at": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "operation_kind",
+                "requested_package_spec",
+                "marketplace_entry_id",
+                "status",
+                "phase",
+                "progress",
+                "message",
+                "executable",
+                "argv_json",
+                "cwd",
+                "cli_version",
+                "exit_code",
+                "evidence_path",
+                "installation_id",
+                "error_code",
+                "error_summary",
+                "created_at",
+                "updated_at",
+                "finished_at"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "operations"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.claude-plugin.remote-marketplace.v1",
+        "version": 1,
+        "contractSha256": "d215cb2764f656ab32e364a4900b3aac73fca60c77ef4c9f3a914fd192a8c314"
+      }
+    ],
+    "capability": {
+      "name": "claude-plugin.operations.list",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "3a27f57269a9fb4da02526aaed41655850c53c264bcca49e669c76e6c37663ae"
+    }
+  },
+  {
+    "contract": {
+      "name": "claude-plugin.operation.read",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "operation_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "operation_kind": {
+            "type": "string",
+            "enum": [
+              "install",
+              "uninstall",
+              "validate",
+              "revalidate"
+            ]
+          },
+          "requested_package_spec": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          },
+          "marketplace_entry_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "ready",
+              "error"
+            ]
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "starting",
+              "cli-install",
+              "cli-validate",
+              "verify",
+              "import",
+              "ready",
+              "error"
+            ]
+          },
+          "progress": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "executable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "argv_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cli_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "installation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "operation_kind",
+          "requested_package_spec",
+          "marketplace_entry_id",
+          "status",
+          "phase",
+          "progress",
+          "message",
+          "executable",
+          "argv_json",
+          "cwd",
+          "cli_version",
+          "exit_code",
+          "evidence_path",
+          "installation_id",
+          "error_code",
+          "error_summary",
+          "created_at",
+          "updated_at",
+          "finished_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.claude-plugin.remote-marketplace.v1",
+        "version": 1,
+        "contractSha256": "d215cb2764f656ab32e364a4900b3aac73fca60c77ef4c9f3a914fd192a8c314"
+      }
+    ],
+    "capability": {
+      "name": "claude-plugin.operation.read",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "edf3e075cb100ebe56ccd86703f80d08e9c7be952bca48e585484a29516b14b5"
+    }
+  },
+  {
+    "contract": {
+      "name": "claude-plugin.installation.read",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "installation_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "requested_package_spec": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          },
+          "marketplace_entry_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "package_name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+          },
+          "marketplace": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+          },
+          "requested_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolved_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "claude-official",
+              "marketplace",
+              "github",
+              "platform-builtin"
+            ]
+          },
+          "artifact_digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "artifact_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "claude_cli_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "cli_git_commit_sha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "manifest_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "component_inventory_json": {
+            "type": "string"
+          },
+          "compatibility_json": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "installing",
+              "ready",
+              "error",
+              "uninstalled"
+            ]
+          },
+          "operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deck_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "deck_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "order_index": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "deck_id",
+                "enabled",
+                "order_index"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "requested_package_spec",
+          "marketplace_entry_id",
+          "package_name",
+          "marketplace",
+          "requested_version",
+          "resolved_version",
+          "source_type",
+          "artifact_digest",
+          "artifact_path",
+          "claude_cli_version",
+          "cli_git_commit_sha",
+          "manifest_json",
+          "component_inventory_json",
+          "compatibility_json",
+          "status",
+          "operation_id",
+          "error_code",
+          "error_summary",
+          "file_count",
+          "created_at",
+          "updated_at",
+          "installed_at",
+          "deck_refs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.claude-plugin.remote-marketplace.v1",
+        "version": 1,
+        "contractSha256": "d215cb2764f656ab32e364a4900b3aac73fca60c77ef4c9f3a914fd192a8c314"
+      }
+    ],
+    "capability": {
+      "name": "claude-plugin.installation.read",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "690ae2a07b92258c11e36843cac1024f248aa8204410e39a4a2895bc07a8d620"
+    }
+  },
+  {
+    "contract": {
+      "name": "claude-plugin.install.report",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "event": {
+                "type": "string",
+                "const": "begin"
+              },
+              "operation_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              }
+            },
+            "required": [
+              "event",
+              "operation_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "event": {
+                    "type": "string",
+                    "const": "progress"
+                  },
+                  "operation_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "phase": {
+                    "type": "string",
+                    "const": "cli-install"
+                  },
+                  "progress": {
+                    "type": "number",
+                    "const": 20
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "event",
+                  "operation_id",
+                  "phase",
+                  "progress",
+                  "message"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "event": {
+                    "type": "string",
+                    "const": "progress"
+                  },
+                  "operation_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "phase": {
+                    "type": "string",
+                    "const": "cli-validate"
+                  },
+                  "progress": {
+                    "type": "number",
+                    "const": 20
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "event",
+                  "operation_id",
+                  "phase",
+                  "progress",
+                  "message"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "event": {
+                    "type": "string",
+                    "const": "progress"
+                  },
+                  "operation_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "phase": {
+                    "type": "string",
+                    "const": "verify"
+                  },
+                  "progress": {
+                    "type": "number",
+                    "const": 55
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "event",
+                  "operation_id",
+                  "phase",
+                  "progress",
+                  "message"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "event": {
+                    "type": "string",
+                    "const": "progress"
+                  },
+                  "operation_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "phase": {
+                    "type": "string",
+                    "const": "import"
+                  },
+                  "progress": {
+                    "type": "number",
+                    "const": 80
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "event",
+                  "operation_id",
+                  "phase",
+                  "progress",
+                  "message"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event": {
+                "type": "string",
+                "const": "fail"
+              },
+              "operation_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "error_code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "error_summary": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "evidence_path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": [
+              "event",
+              "operation_id",
+              "error_code",
+              "error_summary",
+              "evidence_path"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "event": {
+                "type": "string",
+                "const": "complete"
+              },
+              "operation_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "installation": {
+                "type": "object",
+                "properties": {
+                  "package_name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                  },
+                  "marketplace": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                  },
+                  "requested_version": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resolved_version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "source_type": {
+                    "type": "string",
+                    "enum": [
+                      "claude-official",
+                      "marketplace",
+                      "platform-builtin"
+                    ]
+                  },
+                  "artifact_digest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "artifact_path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "claude_cli_version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "cli_git_commit_sha": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 255
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "manifest_json": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1000000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "component_inventory_json": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "compatibility_json": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "file_count": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "package_name",
+                  "marketplace",
+                  "requested_version",
+                  "resolved_version",
+                  "source_type",
+                  "artifact_digest",
+                  "artifact_path",
+                  "claude_cli_version",
+                  "cli_git_commit_sha",
+                  "manifest_json",
+                  "component_inventory_json",
+                  "compatibility_json",
+                  "file_count"
+                ],
+                "additionalProperties": false
+              },
+              "execution": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "executable": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "argv": {
+                        "maxItems": 128,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 4096
+                        }
+                      },
+                      "cwd": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "cli_version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "exit_code": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "executable",
+                      "argv",
+                      "cwd",
+                      "cli_version",
+                      "exit_code"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "evidence_path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": [
+              "event",
+              "operation_id",
+              "installation",
+              "execution",
+              "evidence_path"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "operation_kind": {
+            "type": "string",
+            "enum": [
+              "install",
+              "uninstall",
+              "validate",
+              "revalidate"
+            ]
+          },
+          "requested_package_spec": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          },
+          "marketplace_entry_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "ready",
+              "error"
+            ]
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "starting",
+              "cli-install",
+              "cli-validate",
+              "verify",
+              "import",
+              "ready",
+              "error"
+            ]
+          },
+          "progress": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "executable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "argv_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cli_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "installation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "operation_kind",
+          "requested_package_spec",
+          "marketplace_entry_id",
+          "status",
+          "phase",
+          "progress",
+          "message",
+          "executable",
+          "argv_json",
+          "cwd",
+          "cli_version",
+          "exit_code",
+          "evidence_path",
+          "installation_id",
+          "error_code",
+          "error_summary",
+          "created_at",
+          "updated_at",
+          "finished_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.claude-plugin.remote-marketplace.v1",
+        "version": 1,
+        "contractSha256": "d215cb2764f656ab32e364a4900b3aac73fca60c77ef4c9f3a914fd192a8c314"
+      }
+    ],
+    "capability": {
+      "name": "claude-plugin.install.report",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "661e28352ec56257282f914091a6b33bc435d1dcdd4c1c7cf44482f2c16b7504"
+    }
+  },
+  {
+    "contract": {
+      "name": "claude-plugin.installation.uninstall",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "installation_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "requested_package_spec": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          },
+          "marketplace_entry_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "package_name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+          },
+          "marketplace": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+          },
+          "requested_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolved_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "claude-official",
+              "marketplace",
+              "github",
+              "platform-builtin"
+            ]
+          },
+          "artifact_digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "artifact_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "claude_cli_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "cli_git_commit_sha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "manifest_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "component_inventory_json": {
+            "type": "string"
+          },
+          "compatibility_json": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "installing",
+              "ready",
+              "error",
+              "uninstalled"
+            ]
+          },
+          "operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "requested_package_spec",
+          "marketplace_entry_id",
+          "package_name",
+          "marketplace",
+          "requested_version",
+          "resolved_version",
+          "source_type",
+          "artifact_digest",
+          "artifact_path",
+          "claude_cli_version",
+          "cli_git_commit_sha",
+          "manifest_json",
+          "component_inventory_json",
+          "compatibility_json",
+          "status",
+          "operation_id",
+          "error_code",
+          "error_summary",
+          "file_count",
+          "created_at",
+          "updated_at",
+          "installed_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.claude-plugin.remote-marketplace.v1",
+        "version": 1,
+        "contractSha256": "d215cb2764f656ab32e364a4900b3aac73fca60c77ef4c9f3a914fd192a8c314"
+      }
+    ],
+    "capability": {
+      "name": "claude-plugin.installation.uninstall",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "904b5e2796ac17378facb4b3e8d2afb9e4e9cd72dc79a57dbd0cd74b3947d2a3"
+    }
   }
 ]

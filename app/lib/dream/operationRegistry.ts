@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: append shared Claude Plugin persistence as Registry175-182.
 // [Sync] 2026-09-16: append Deck Plugin control plane as Registry170-174.
 // [Sync] 2026-09-16: append auto-repair message settlement as Registry169.
 // [Sync] 2026-09-16: append Notion connector persistence operations as Registry148-168.
@@ -85,6 +86,8 @@ import { dreamAutoRepairOperationContracts } from "./dreamAutoRepairDto";
 import { dreamAutoRepairSchemaRequirements } from "./dreamAutoRepairService";
 import { deckPluginControlOperationContracts } from "./deckPluginControlDto";
 import { deckPluginControlSchemaRequirements } from "./deckPluginControlService";
+import { claudePluginOperationContracts } from "./claudePluginDataDto";
+import { claudePluginDataSchemaRequirements } from "./claudePluginDataService";
 function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
@@ -203,5 +206,9 @@ export const dreamOperations = [
   ...Object.entries(deckPluginControlOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...deckPluginControlSchemaRequirements], operation.userScope,
+  )),
+  ...Object.entries(claudePluginOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...claudePluginDataSchemaRequirements], operation.userScope,
   )),
 ] as const;

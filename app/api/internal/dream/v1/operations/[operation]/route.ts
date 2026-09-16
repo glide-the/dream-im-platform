@@ -1,6 +1,7 @@
 // [Input] Explicit registered local-data, Thread/message, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
 // [Output] Strict domain DTO, never generic SQL or arbitrary function dispatch.
 // [Pos] Thin named operation ingress.
+// [Sync] 2026-09-16: dispatch Registry175-182 shared Claude Plugin persistence operations.
 // [Sync] 2026-09-16: dispatch Registry170-174 Deck Plugin control operations.
 // [Sync] 2026-09-16: dispatch Registry169 auto-repair message settlement.
 // [Sync] 2026-09-16: dispatch Registry148-168 Notion connector persistence operations.
@@ -45,9 +46,11 @@ import { handleManagedMcp, isManagedMcpOperation } from "../../../../../../lib/d
 import { handleNotionConnector, isNotionConnectorOperation } from "../../../../../../lib/dream/notionConnectorHandler";
 import { handleDreamAutoRepair, isDreamAutoRepairOperation } from "../../../../../../lib/dream/dreamAutoRepairHandler";
 import { handleDeckPluginControl, isDeckPluginControlOperation } from "../../../../../../lib/dream/deckPluginControlHandler";
+import { handleClaudePluginOperation, isClaudePluginOperation } from "../../../../../../lib/dream/claudePluginDataHandler";
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
+  if (isClaudePluginOperation(name)) return handleClaudePluginOperation(request, name);
   if (isDeckPluginControlOperation(name)) return handleDeckPluginControl(request, name);
   if (isDreamAutoRepairOperation(name)) return handleDreamAutoRepair(request, name);
   if (isNotionConnectorOperation(name)) return handleNotionConnector(request, name);

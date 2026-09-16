@@ -25,15 +25,15 @@ const hashes = ["580809db8126d3f45cc233a7a4c32f38cfd19daa6cb5ccd2154cbec10ba359b
 
 beforeEach(() => vi.resetAllMocks());
 
-it("preserves Registry169 and appends exactly Registry170-174", () => {
-  expect(dreamOperations).toHaveLength(174); expect(generated174).toEqual(dreamOperations);
+it("preserves Registry169 and the exact Registry170-174 prefix", () => {
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(174); expect(generated174).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 169))).digest("hex"))
     .toBe("adb90cec21e76f709d9d10638642051f33b1eb04df618f6984aaffb5c4a0962e");
-  expect(createHash("sha256").update(canonicalContractJson(dreamOperations)).digest("hex"))
+  expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 174))).digest("hex"))
     .toBe("242ddb8e06c66058b4a6a0a015a08edb41353446ae00be46e6c2f1b946cf57dc");
-  expect(dreamOperations.slice(169).map(item => item.contract.name)).toEqual(names);
-  expect(dreamOperations.slice(169).map(item => item.capability.contract_sha256)).toEqual(hashes);
-  for (const operation of dreamOperations.slice(169)) {
+  expect(dreamOperations.slice(169, 174).map(item => item.contract.name)).toEqual(names);
+  expect(dreamOperations.slice(169, 174).map(item => item.capability.contract_sha256)).toEqual(hashes);
+  for (const operation of dreamOperations.slice(169, 174)) {
     expect(operation.requirements).toEqual([identitySchemaRequirement, ...deckPluginControlSchemaRequirements]);
     expect(operation.capability.background_scope).toBeNull();
   }
