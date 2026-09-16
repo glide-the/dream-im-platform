@@ -1,6 +1,7 @@
 // [Input] Configuration-file location, workspace NodeNext sources, optional E2E dist name and production-build CPU budget.
 // [Output] Validated Next.js configuration with stable roots and Webpack TypeScript extension aliases.
 // [Pos] Shared Next.js configuration; remote build resources are supplied by deploy config.
+// [Sync] 2026-09-16: keep local dev on Webpack so NodeNext .js source specifiers use the same extension aliases as builds.
 // [Sync] 2026-09-15: resolve @ink-memory/db NodeNext .js specifiers to workspace TypeScript during Webpack builds.
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

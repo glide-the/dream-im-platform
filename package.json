@@ -20,7 +20,7 @@
     "plans:seed": "node scripts/seed-default-dream-plans.mjs --apply",
     "plans:check": "node scripts/seed-default-dream-plans.mjs",
     "dev": "pnpm run dev:embedded",
-    "dev:app": "next dev -H 0.0.0.0",
+    "dev:app": "next dev --webpack -H 0.0.0.0",
     "dev:embedded": "tsx packages/db/src/supervise.ts pnpm run dev:app",
     "build": "pnpm --filter @ink-memory/db build && next build --webpack",
     "start": "next start",

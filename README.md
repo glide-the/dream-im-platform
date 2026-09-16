@@ -40,6 +40,8 @@ pnpm db:migrate
 pnpm dev
 ```
 
+本机开发入口显式使用 Next Webpack，与 production build 共用 workspace NodeNext extension alias；`packages/db` 源码中的 `.js` 说明符会解析到对应 TypeScript 源文件。
+
 打开 [http://localhost:3000/admin](http://localhost:3000/admin)。根路径 `/` 会跳转到管理后台。
 
 Next.js 的 `turbopack.root` 从 `next.config.js` 的文件位置确定，不依赖启动进程的工作目录，也不让祖先目录的锁文件改变 Admin 的依赖解析边界。Webpack构建会把workspace NodeNext源码中的`.js`说明符解析到对应TypeScript文件，发布后的数据库包仍使用`dist/*.js`。无需删除用户目录或其他项目的锁文件；修改 Next.js 配置后需要重新启动开发服务。
