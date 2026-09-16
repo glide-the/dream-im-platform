@@ -1,6 +1,6 @@
 # Ink Memory Admin
 
-基于 Next.js 与 Refine 的 Ink Memory 运营控制台。一个项目内提供剧本数据运营、平台用户管理、AI Provider 与模型配置、Token 计费、Claude/OpenAI 兼容网关、文件存储、RBAC、系统设置和审计能力，结构化数据统一存储在 PostgreSQL `ink-memory`。
+基于 Next.js 与 Refine 的 Ink Memory 运营控制台。当前应用版本为 `0.1.1`。一个项目内提供剧本数据运营、平台用户管理、AI Provider 与模型配置、Token 计费、Claude/OpenAI 兼容网关、文件存储、RBAC、系统设置和审计能力，结构化数据统一存储在 PostgreSQL `ink-memory`。
 
 ## 核心能力
 
@@ -15,10 +15,15 @@
 | 权限管理 | 管理员、角色、权限与角色授权 | `/admin/access` |
 | 系统治理 | 系统设置与管理操作审计 | `/admin/system`、`/admin/audit` |
 | 文件存储 | 服务端上传、直传 URL、文件代理预览与下载 | `/api/storage/*` |
+| Claude 插件市场 | 远程来源、不可变 revision、完整插件摘要与批准策略 | `/admin/resources/claude-plugin-marketplaces` |
 
 模型网关提供 Anthropic `POST /v1/messages`、`POST /v1/messages/count_tokens`，以及 OpenAI `POST /v1/chat/completions`、`GET /v1/models` 兼容接口。
 
 统一认证与 Dream 数据访问正在实施：Better Auth 1.7.4 为唯一 Google/密码/Session/OAuth/device authority，Admin 管理权限按显式 membership 与 live RBAC；Dream 通过命名领域 DTO API 访问数据。当前技术证据与未闭合领域见[契约](docs/architecture/admin-dream-auth-data-contract.md)、[领域映射](docs/architecture/admin-dream-domain-implementation-map.md)与[回执](docs/verification/admin-auth-data-provider-matrix.md)。0054–0056 仅隔离重放通过，不能据此在正常数据库自动迁移或采用旧账户。
+
+Remote Marketplace 同步按 UTF-8 路径组件顺序计算完整插件摘要，与 Dream 的
+canonical `pathlib` 算法一致。包含 `skills.md` 与 `skills/<name>/SKILL.md` 这类
+同名前缀文件和目录的插件，Admin 批准值与 Dream 安装值保持相同。
 
 ## 技术栈
 
