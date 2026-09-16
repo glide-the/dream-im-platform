@@ -1,4 +1,6 @@
+<!-- [Sync] 2026-09-17: define exact legacy Dream credential adoption through DTO/service/typed Drizzle without Admin-domain merging. -->
 <!-- [Sync] 2026-09-17: register confidential service clients and freeze service-only versus dual-Bearer internal transport. -->
+<!-- [Sync] 2026-09-17: register exact-origin Dream browser form ingress ahead of the unchanged PKCE/OAuth flow. -->
 <!-- [Sync] 2026-09-16: record exact provider-sub adoption, successful Google return and the real Better Auth resource/userinfo audience shape. -->
 <!-- [Sync] 2026-09-16: publish normal database migration 0063 and document strict DTO/domain/Drizzle Gateway service-key rotation. -->
 <!-- [Sync] 2026-09-16: bind Reflections Runtime Gateway access to an Admin-issued source-fenced delegation. -->
@@ -20,11 +22,15 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本`0.1`。状态：源码实现、正常数据库54→64 migration、三服务角色/ACL/9项发布门槛capability 激活与 Admin/Dream 服务切换已经完成；精确旧 Google 主体采用、真实 Google 返回 Dream 和 Device approve/deny/refresh/revoke 已通过。0063 已在正常库发布，Dream 模型入口经 Gateway key exact-scope rotation 后返回200，启用的外部MCP OAuth replacement仍待完成后复测可见模型输出。[实际191操作契约](admin-dream-operation-contracts.json)由真实Zod输入/输出与注册表生成。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin和Registry185-191 Story Workspace artifact在既有Registry169前缀后追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；该证据与真实 Google/Device/模型业务回执分别记录，不能相互替代。本稿不是完整生产部署声明。
+版本`0.1`。状态：源码实现、正常数据库54→64 migration、三服务角色/ACL/9项发布门槛capability 激活与 Admin/Dream 服务切换已经完成；精确旧 Google 主体采用、精确旧 Dream credential 采用、真实 Google/credential 返回 Dream 和 Device approve/deny/refresh/revoke 已通过。0063 已在正常库发布，Dream 模型入口经 Gateway key exact-scope rotation 后返回200，启用的外部MCP OAuth replacement仍待完成后复测可见模型输出。[实际191操作契约](admin-dream-operation-contracts.json)由真实Zod输入/输出与注册表生成。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin和Registry185-191 Story Workspace artifact在既有Registry169前缀后追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；该证据与真实 Google/Device/模型业务回执分别记录，不能相互替代。本稿不是完整生产部署声明。
 
 本机浏览器验收使用单一显式拓扑：Admin issuer 为 `http://localhost:3000/api/auth`，Google 回调为 `http://localhost:3000/api/auth/callback/google`，Dream origin/callback/resource 分别为 `http://localhost:5173`、`http://localhost:5173/auth/callback` 和 `http://localhost:5173/api`。`127.0.0.1` 只可作为进程内部连接地址，不能混入 OAuth issuer、redirect URI、Cookie origin 或浏览器 CSRF 判断。
 
 内部业务接口的服务身份由单独的 confidential OAuth client 提供。无用户的 background operation 使用 `Authorization: Bearer <client_credentials token>`；用户 operation 使用 `Authorization: Bearer <user delegated token>`，并由 Dream 服务端添加 `X-Ink-Dream-Service-Authorization: Bearer <client_credentials token>`。Browser、设备和任意外部请求不能选择第二个头；Dream 代理会剥离浏览器注入和上游回传。Admin 独立验证 service token 与 user token，再进入 strict DTO → Domain Service → typed Drizzle Repository → UOW；旧静态 `X-Ink-Dream-Service`/`X-Ink-Dream-Credential` 被拒绝，接口不接受 caller-selected user ID 或数据库选择器。
+
+### 旧 Dream 密码身份兼容
+
+正常数据库中已存在但尚未进入 Better Auth 的 Dream credential 只通过发布期 `auth:adopt-legacy-credential` 采纳。私有 mode-0600 配置严格包含目标 database/port/data directory、canonical Dream user ID、用途证据和 inspect 后取得的源行 SHA-256；不接受 auth user ID、account ID、Admin user、邮箱选择器、SQL、表列或事务参数。Admin 领域服务从 canonical ID 与规范化邮箱稳定派生不含业务明文的 Better Auth ID，检查 active 状态和原 Dream bcrypt 格式，typed Drizzle Repository 在一个事务内锁定源行与目标 identity/subject/credential/Admin-link 状态。空目标才创建 `identity.user`、`identity.account(providerId='credential', accountId=authUserId)`、`identity.subject_links` 和脱敏 audit；精确完整目标幂等返回，任何部分状态或 Admin link 均拒绝。源 `public.users` 及全部业务外键不修改，`admin_users`、`admin_sessions`、Admin RBAC 和 `identity.admin_subject_links` 始终不读取、不创建。默认 dry-run，真实写入必须显式 `--apply --production-approval` 并绑定 migration credential 与精确物理目标。
 
 ## Registry169：自动修复消息终态
 
@@ -324,6 +330,8 @@ Better Auth与`@better-auth/oauth-provider`配对锁定`1.7.4`，peer `better-ca
 
 | 入口 | 合同 |
 | --- | --- |
+| `/auth/dream/password` | Dream-rendered browser form only；exact configured Origin + strict login/register DTO + relative return；Admin transaction invokes Better Auth email APIs and redirects to Dream `/auth/start`；Dream server never receives credentials |
+| `/auth/dream/google` | Dream-rendered Google entry only；exact Origin + relative return；Admin invokes built-in `socialProviders.google` with account selection and provider-signed state；success/error returns to the same Dream product context |
 | `/api/auth/sign-in/email`、`sign-up/email` | 原密码/注册保留，原Dream六字符minimum、bcrypt/Admin scrypt兼容；不新增Google emailVerified门槛 |
 | `/api/auth/sign-in/social` | Google内置provider，允许的callback由严格origin/redirect配置 |
 | `/api/auth/callback/google` | Better Auth OAuth state/provider签名验证 |

@@ -1,7 +1,7 @@
 // [Input] Strict auth configuration, dedicated ORM transaction and installed protocol schema.
 // [Output] Admin Better Auth handler with Google, OAuth access tokens, device grant and refresh rotation.
 // [Pos] Authentication composition root; Route Handlers only delegate here.
-// [Sync] 2026-09-17: advertise separate delegated and confidential-client background scope ceilings.
+// [Sync] 2026-09-17: keep Dream Google entry account-selectable while advertising separate delegated/background scopes.
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
@@ -25,7 +25,7 @@ export function createAdminAuth(database: AuthRepositoryDatabase) {
     trustedOrigins: configuration.origins,
     database: drizzleAdapter(database, { provider: "pg", schema: betterAuthSchema, transaction: true }),
     emailAndPassword: { enabled: true, requireEmailVerification: false, minPasswordLength: productPasswordMinimumLength, password: { hash: hashUnifiedPassword, verify: verifyUnifiedPassword } },
-    socialProviders: { google: { clientId: configuration.googleClientId, clientSecret: configuration.googleClientSecret } },
+    socialProviders: { google: { clientId: configuration.googleClientId, clientSecret: configuration.googleClientSecret, prompt: "select_account" } },
     account: { encryptOAuthTokens: true, accountLinking: { enabled: false, disableImplicitLinking: true } },
     advanced: { useSecureCookies: configuration.secureCookies, defaultCookieAttributes: { httpOnly: true, sameSite: "lax" } },
     disabledPaths: ["/token", "/device/token"],

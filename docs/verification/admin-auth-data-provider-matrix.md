@@ -328,3 +328,13 @@ Dream正常Browser Session经公开同源BFF读取Admin Gateway目录：9个模�
 公开release详情为200且状态`uninstalled`；当前Dream user访问Workspace installation列表与runtime-readiness均返回403 `WORKFLOW_PERMISSION_DENIED`，证明其没有`plugin:read/plugin:admin`。独立Admin operator不能冒充Dream Workspace subject；本轮没有执行install、enable、binding、Preflight或Run写操作。成功Workflow验收需先由正常产品管理流程为该Workspace或instance建立ready installation。
 
 设计校正后的聚焦回归命令为`corepack pnpm exec vitest run app/lib/auth/adminAuthService.test.ts app/lib/auth/oauthClientCatalog.test.ts app/lib/auth/serviceIdentity.test.ts app/lib/auth/subjectAdoption.test.ts app/lib/gateway/models.test.ts app/lib/subscriptions/gateway.test.ts app/lib/product/service.test.ts app/lib/product/auth.test.ts`，cwd为Admin worktree，exit0，8 files/52 tests。它同时证明独立Admin凭据/Session、public/confidential client、显式Dream subject adoption、Gateway allowance-only和Product Plan-rights投影。16份changed Markdown的最终链接扫描为79个本地链接/0缺失，`git diff --check` exit0；前两次临时内联链接脚本分别因引号SyntaxError和过度转义导致未形成有效链接计数，修正脚本后才采用最终回执。
+
+## 正常 Dream credential 采用与公开登录回执（2026-09-17）
+
+指定 canonical Dream user 原先只有 `public.users` 一条 active 记录，没有 Better Auth identity/account/subject link，也没有 legacy Google provider-sub；用户提供的 Dream 凭据只匹配该 canonical bcrypt。新增发布期 `auth:adopt-legacy-credential` 严格执行 Zod DTO → Domain Service → typed Drizzle Repository → 单事务，调用方不能提交 auth/account/Admin ID、邮箱选择器、SQL、表列或事务。inspect 和 dry-run 均绑定正常 `ink-memory:54329` 与正常 data directory，源 SHA-256 相同；显式 `--apply --production-approval` 返回 `action=create`、Dream subject/credential account 创建、Admin membership false、legacy rows modified 0。随后默认重放返回 `already-complete`，同一源指纹不变。
+
+正常库只读事务进一步核对：canonical Dream user 1、identity user 1、credential account 1、subject link 1、对应 `identity.admin_subject_links` 0；相同邮箱另有独立 Admin operator 1，二者没有业务关系。Provider-free Vitest 聚焦3 files/24 tests、TypeScript、定向 ESLint 与 diff check 均exit0。
+
+本机正常Dream/Admin/PostgreSQL服务下，Chrome从Dream原产品登录卡片提交 credential，Admin建立Better Auth Session后展示一次OAuth consent，允许后经code/S256 callback返回 `/story-workspace/chat`。可见用户菜单显示指定Dream账户，历史会话和Deck等公开读取恢复；Dream Next日志记录 `/auth/session` 200，Admin日志记录 browser-session resolve 与 `user-profile.current` 200。页面未启动Agent、模型或Workflow Run，Project/Episode/shared files未修改。该回执证明Dream credential与产品主体闭环，不代表Admin operator登录凭据相同；Admin管理Session仍按独立回执判断。
+
+同一正常拓扑在服务清洁重启后执行公开Dream注销：Dream `POST /auth/logout` 返回200，Admin `POST /api/internal/dream/v1/browser-sessions/revoke` 在1秒内返回200；随后受保护业务请求返回401且原Dream登录卡片重新显示。此前一次约10秒的`BFF_ADMIN_UNAVAILABLE`只在旧配置/服务切换状态出现，清洁启动Admin并重启Dream backend后没有复现；未修改BrowserSession领域代码、未清Cookie伪造成功、未直写数据库。重启后confidential client的`client_credentials`、capability与领域operation均持续返回200。该回执只证明客户端级注销与恢复，不声称关闭Admin-origin中央Better Auth SSO、撤销其他client或替代自然Session expiry测试。

@@ -1,6 +1,8 @@
 <!-- [Input] Actual Better Auth composition, explicit legacy mapping and browser/service topology. -->
 <!-- [Output] Current authentication architecture, ownership and product interaction contract. -->
 <!-- [Pos] Auth domain entry document; complete domain/API state remains in the shared contract. -->
+<!-- [Sync] 2026-09-17: adopt an exact legacy Dream credential through DTO/service/Drizzle while keeping Admin operators separate. -->
+<!-- [Sync] 2026-09-17: restore Dream's product login card through exact-origin Admin form ingress without moving credential authority. -->
 <!-- [Sync] 2026-09-17: record client-local Dream logout, retained central SSO, and independent Admin management sessions. -->
 <!-- [Sync] 2026-09-17: separate Admin operator sessions from Dream OAuth users and define public versus confidential Dream clients. -->
 <!-- [Sync] 2026-09-16: record exact provider-sub legacy adoption and successful real Google/Dream login without Admin membership. -->
@@ -20,7 +22,7 @@ Admin 是 Dream 的 OAuth Authorization Server 和数据服务端。Dream 浏览
 
 角色、ER、兼容顺序和设计评审以[Admin / Dream 认证业务域评审](auth-domain-boundaries-review.md)为准。该评审明确 `admin_users` 与 Dream `users` 无直接关系；相同邮箱不合并业务用户、不共享密码，也不把 Dream 登录转换为 Admin 权限。
 
-当前实现、公开接口及六张拓扑/状态图以[完整契约](admin-dream-auth-data-contract.md)为准。已通过的隔离技术检查与正常业务待验收状态见[验证矩阵](../verification/admin-auth-data-provider-matrix.md)。本机正常数据库已完成 migration/ACL、精确旧 Google 主体采用、真实 Google 返回 Dream、Device 全状态和 Dream 客户端级退出/重新登录；自然 Session 到期、Admin 独立登录和模型业务旅程仍按独立验收记录判断，不能由本文件代替。
+当前实现、公开接口及六张拓扑/状态图以[完整契约](admin-dream-auth-data-contract.md)为准。已通过的隔离技术检查与正常业务待验收状态见[验证矩阵](../verification/admin-auth-data-provider-matrix.md)。本机正常数据库已完成 migration/ACL、精确旧 Google 主体采用、真实 Google 返回 Dream、Device 全状态、Dream 客户端级退出/重新登录和独立 Admin operator 登录；自然 Session 到期与完整模型/Workflow 业务旅程仍按独立验收记录判断，不能由本文件代替。
 
 ## 概念与规则
 
@@ -41,9 +43,11 @@ Deck Plugin binding 的四项读取要求当前 OAuth `dream:read`，保存要�
 
 内部接口的凭据位置固定：background operation 使用 `Authorization: Bearer <service token>`；用户 operation 使用 `Authorization: Bearer <user token>`，并由 Dream 服务端增加 `X-Ink-Dream-Service-Authorization: Bearer <service token>`。该私有头不是 Browser API，Dream Next/Python 边界会剥离 Browser 注入；旧 `X-Ink-Dream-Service`/`X-Ink-Dream-Credential` 静态头被拒绝。Admin 分别验证 client 与用户，不从 client ID 推导 Dream user，也不从 Dream user 查 Admin operator。
 
-Dream 的登录入口启动 `/api/auth/oauth2/authorize` code/S256 流程。未登录 Dream 用户进入 Admin `/auth/sign-in`，该页支持 Dream 密码登录、创建账户和 Google；这些选择保留 provider 签名 OAuth 上下文。没有自定义 `ui_hint` 或从 Dream 直接提交旧密码接口。Dream 密码注册保持原六字符 minimum。Admin 管理登录使用 `/api/admin/auth/login`、Admin 密码规则和独立管理 Session，不进入这个 OAuth 登录页。
+Dream 页面保留原产品登录卡片、注册切换和 Google 按钮。页面先从本方 `/auth/options` 读取由服务端配置投影的 Admin action；浏览器端 handler 只把当前闭集表单直接 POST 到 Admin `/auth/dream/password` 或 `/auth/dream/google`，Dream Next/Python、日志和持久化不接收密码。Admin 精确校验配置的 Dream `Origin`、闭集字段和相对 `return_to`，在 Admin Drizzle 事务中调用同一个 Better Auth email/sign-up/social API；成功建立 Dream identity Session 后回到 Dream `/auth/start`，再执行注册 browser client 的 code/S256 流程。Google 固定请求账户选择并由 Admin callback 恢复同一个相对产品页面；失败只返回 `credentials|registration|google` 产品错误码，不把上游详情或凭据带入 URL。Dream 密码注册保持原六字符 minimum。Admin `/auth/sign-in` 仍服务直接 OAuth/Device 上下文，Admin 管理登录使用 `/api/admin/auth/login` 和独立管理 Session，两者都不会把 Dream 用户变成 Admin operator。
 
-Google 使用内置 provider 和 exact callback，不新增 emailVerified/domain 门槛。邮箱与旧 Dream 账户发生冲突时提示需要显式身份关联，不能以 Google 登录创建 Admin operator。Dream credential 兼容旧 canonical bcrypt；Admin 管理密码继续使用自己的 scrypt 校验。两类哈希不互验、不复制，也不要求由同一明文密码证明。
+Google 使用内置 provider 和 exact callback，不新增 emailVerified/domain 门槛。邮箱与旧 Dream 账户发生冲突时提示需要显式身份关联，不能以 Google 登录创建 Admin operator。Dream credential 兼容旧 canonical bcrypt；Admin 管理密码继续使用自己的 scrypt 校验，两类凭据不交叉验证，也不要求由同一明文密码证明。
+
+仅当发布人员以 canonical Dream user ID、正常数据库身份和该行精确 SHA-256 指纹确认目标后，release-only credential adoption 才可把原 `public.users.password_hash` 原样写入同一 Dream subject 的 Better Auth `identity.account(providerId='credential')`。入口是严格 Zod DTO，随后进入领域服务、typed Drizzle Repository 和单一事务；调用方不能选择 auth user ID、account ID、Admin user、SQL、表列或事务。操作默认 dry-run，正式执行必须同时给出 `--apply --production-approval`，并在创建 `identity.user`、credential account、`identity.subject_links` 和脱敏 audit 前锁定并复核源行。旧 canonical 行及密码哈希保持不变；完整映射重复执行返回 `already-complete`，源指纹漂移、部分目标、邮箱冲突、Admin subject link 或不支持的哈希格式均整笔失败。该兼容路径不读取 `admin_users`，也不创建 `admin_sessions`、RBAC 或 `identity.admin_subject_links`。
 
 本机正常目标的旧 Google 主体采用只接受已有 `public.oauth_accounts(provider='google', provider_sub)` 到 canonical user 的精确绑定。发布命令读取 owner-only `0600` DTO，校验数据库名、端口、data directory、canonical/Google 行指纹与现有目标状态；Better Auth user/account ID 由 `provider_sub` 在服务端稳定派生。默认 dry-run，正式写入要求 `--apply --production-approval`，同一 Drizzle 事务创建 Better Auth user、Google account、Dream subject link 和脱敏 audit；旧行保持不变，重复执行返回 `already-complete`。该操作永不创建 `admin_subject_links`。
 

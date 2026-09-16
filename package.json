@@ -51,6 +51,7 @@
     "auth-data-access:activate": "node scripts/activate-unified-auth-data-access.mjs",
     "auth:provision-dream-oauth": "tsx scripts/provision-dream-oauth-catalog.ts",
     "auth:adopt-legacy-google": "tsx scripts/adopt-legacy-google-subject.ts",
+    "auth:adopt-legacy-credential": "tsx scripts/adopt-legacy-credential-subject.ts",
     "db:push": "node scripts/db-push.mjs",
     "story:import": "node scripts/import-ink-dream-story-source.mjs",
     "docker:build": "cd docker && docker compose build",

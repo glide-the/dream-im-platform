@@ -1,6 +1,7 @@
 <!-- [Input] Current Admin/Dream auth documents, Better Auth 1.7.4 source, legacy Admin session schema and deployed identity records. -->
 <!-- [Output] Reviewed provider/client/operator/user boundaries and the required compatibility-first implementation sequence. -->
 <!-- [Pos] Authoritative cross-project auth-domain decision; Admin auth.md and Dream consumer documents must conform to it. -->
+<!-- [Sync] 2026-09-17: record exact legacy Dream credential adoption inside the Dream domain without Admin operator linkage. -->
 <!-- [Sync] 2026-09-17: freeze the RFC OAuth roles before any further business change; a Dream user is the delegated subject/resource owner, never a client registration. -->
 <!-- [Sync] 2026-09-17: record the completed separation of Admin operators, Dream users, OAuth clients and service principals. -->
 
@@ -21,7 +22,7 @@ Admin 同时承载 OAuth Authorization Server、Dream 数据接口和 Admin 管�
 - Dream 应用是 OAuth client。浏览器 BFF、设备客户端和服务端 client 是不同注册项，不能把 Dream 用户称为 OAuth client。
 - Admin Better Auth/OAuth Provider 负责 Dream 用户认证、Google callback、授权、token、refresh、JWKS 和 Device Flow；它不替代 Admin 管理员密码与后台 Session。
 - Admin 管理 Session 只能访问 Admin 管理路由；Dream OAuth access token 只能访问其 resource/scope 允许的 Dream 产品和数据接口。
-- 相同邮箱不创建 `admin_users ↔ users` 关系，不复制密码哈希，不把 Dream 登录结果转换为 Admin 权限。
+- 相同邮箱不创建 `admin_users ↔ users` 关系，不把 Dream 密码写入 `admin_users`，也不把 Dream 登录结果转换为 Admin 权限。
 - Dream 生产服务不持有 PostgreSQL 凭据；全部数据持久化仍通过 Admin 的 DTO → Domain Service → typed Repository → Drizzle 边界。
 
 ### OAuth 角色定论
@@ -57,6 +58,8 @@ Admin 同时承载 OAuth Authorization Server、Dream 数据接口和 Admin 管�
 内部数据接口按两种明确的 HTTP 传输形态执行。无用户后台请求把 service access token 放在标准 `Authorization: Bearer`；代表 Dream 用户的请求把用户 access token 放在 `Authorization: Bearer`，Dream 服务端另以 `X-Ink-Dream-Service-Authorization: Bearer <service access token>` 证明 confidential client。第二个头只由 Next/Python 服务端生成，Browser 代理必须剥离浏览器输入和上游输出中的该头。Admin 先验证 service token 的签名、issuer、resource、`sub == client_id` 和 background scope ceiling，再独立验证用户 token 的 `sub`、scope 与实体权限；两个 token 不能互相代替。
 
 数据接口始终执行 strict DTO → Domain Service → typed Drizzle Repository → 单一事务。Handler 不接受 SQL、表列、事务或 caller-selected user ID；Service 从已验证用户主体或明确 background actor 生成权限上下文；Repository 才能执行 ORM 查询、锁、幂等 receipt 与持久化。Dream 客户端只序列化 Pydantic/Zod 对齐的业务 DTO，Admin 不可用时失败关闭。
+
+旧 Dream credential 的显式采用仍属于 Dream 认证域。发布期私有 DTO 只指定 canonical Dream user ID、正常数据库物理目标、用途证据和 inspect 得到的源行指纹；Admin 服务端派生 Better Auth IDs，并在一个 typed Drizzle 事务内把原 Dream bcrypt 保存到该 Dream subject 的 credential account，同时建立 `identity.subject_links` 和脱敏 audit。该路径不读取 `admin_users.password_hash`，不创建 `admin_sessions`、Admin RBAC 或 `identity.admin_subject_links`，也不修改 canonical Dream user。运行时登录不能按相同邮箱执行该采用。
 
 ## 数据 ER
 
@@ -232,7 +235,7 @@ sequenceDiagram
 | --- | --- | --- |
 | Dream 密码提交到 Admin 管理登录 | `401 ADMIN_CREDENTIALS_INVALID` | 不查 Dream user，不创建 Admin Session |
 | Admin 密码提交到 Dream OAuth 登录 | Dream identity credential 不匹配 | 不查 Admin member，不签 Dream token |
-| 相同邮箱存在于两张用户表 | 两条业务记录继续独立 | 不建立跨表关系，不复制密码或角色 |
+| 相同邮箱存在于两张用户表 | 两条业务记录继续独立 | 不建立跨表关系，不在两个业务域之间复制密码或角色 |
 | Admin Session 有效但权限不足 | `403 ADMIN_PERMISSION_DENIED` | Session 保留，当前操作不执行 |
 | user token 缺 Dream subject link | `403` 或 `invalid_grant` | 不接受请求体 user ID 代替映射 |
 | public client 请求 client_credentials | `invalid_client` | 不签 service token |
