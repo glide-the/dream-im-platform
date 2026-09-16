@@ -1,4 +1,5 @@
 <!-- [Sync] 2026-09-17: close Deck detail empty/raw legacy Memory projection parity across Admin Repository and Dream consumer. -->
+<!-- [Sync] 2026-09-17: reconcile refresh/device protocol status and post-canary allowance totals. -->
 <!-- [Sync] 2026-09-16: record normal database 0063, 64 migrations, nine release capabilities and actual-role activation. -->
 <!-- [Sync] 2026-09-17: record current-head full-suite recovery after replacing the retired static service-secret fixture field. -->
 <!-- [Sync] 2026-09-17: record real Dream client-local logout, same-subject SSO re-entry and continued Admin-login isolation. -->
@@ -33,7 +34,7 @@
 | Dream服务身份 | confidential OAuth client；无canonical user | OAuth catalog + client_credentials + Admin verifier + Dream Next/Python clients | 后台请求使用service bearer；用户请求另带delegated user bearer | static service headers、超scope、`sub != client_id`、未知client、浏览器注入均拒绝 | 实现与unit/consumer/full suites通过；隔离合同fixture已改短期service access token |
 | Notion后台候选读取 | confidential Dream service client；`connectors:sync`；正常Notion connector表 | Repository行投影测试 + 本机正常Admin公开OAuth operation | storage `config_json`/`metadata_json`只在Repository解码为strict DTO `config`/`metadata`；公开读返回200 | malformed stored JSON继续fail closed；不放宽DTO、不回退Dream数据库 | focused 17/17、tsc、ESLint通过；正常token 200、`notion.sync-candidates.list` 200、读取1 connector；未创建或合并用户 |
 | Device grant | public native client+resource+user approval | 正常Admin/Dream公开入口与浏览器 | approve→OAuth token | deny/pending/slow_down/expire/重复/并发 | 允许、拒绝、兑换、重复兑换、refresh rotation/replay、独立revoke、access expiry与负例均通过 |
-| Refresh/handle | client/origin绑定与token lineage | 协调隔离 + Luna请求 | 串行rotation/handle恢复 | replay撤销/丢响应原transaction恢复 | 实现与unit通过；实际协议待验证 |
+| Refresh/handle | client/origin绑定与token lineage | 协调隔离 + Luna请求 + 正常公开Device协议 | 串行rotation/handle恢复 | replay撤销/丢响应原transaction恢复 | 实现与unit通过；正常Device refresh rotation/replay与refresh grant独立revoke已通过；Browser handle自然TTL未等待 |
 | 长turn委托 | subject/thread/run/editor/service/client/purpose/scope | 隔离技术 + 本机真实业务 | OAuth过期后限定persist | 禁用/失去owner/混合范围/撤销 fail closed | 三种窄授权、57–58隔离与公开Route通过；新Workflow完整context与keeper下游闭环pending |
 | Editor与Session | owned Session/严格EditorState/独立Editor bearer；list可用same-service persistence grant | Luna unit + 协调受限隔离Route/故障 | OAuth原行为、last-write/微秒/NULL/原列表预览、server-persistence list | wrong purpose/scope/service、expired/revoked/editor/cookie、其它Session操作拒绝 | 原8操作103断言公开Route通过；本次独立focused29/type/lint/docs/diff通过，新增委托public/consumer pending |
 | Workflow上下文 | owner/linear retry/frozen binding/source provenance | Luna unit + 协调受限隔离Route | 唯一active leaf/terminal返回普通Chat | 分叉/根/来源/绑定/父状态冲突fail closed | context31/delegation20/capability5与type/lint通过；5family公开170断言通过；其余Workflow pending |
@@ -48,7 +49,7 @@
 | 全领域迁移 | Dream JSON/事务图全部入口 | 静态覆盖 + 领域integration | 无Dream driver/SQL/pool/secret | DTO失败/权限/状态/未知提交回归 | 生产源码静态门禁、完整Dream backend suite与正常进程零PG连接通过；E2E数据库探针仅保留在测试目录 |
 | 共享FS/Runtime/SSE | 原Dream入口与metadata | Dream负责技术与真实业务 | 0700/no-symlink/exact temp，persist→SSE | 路径/权限/断流恢复 | 两次真实文件上传、授权读取、Thread workspace与`.claude-tmp`边界通过；真实Codex请求复现并修复空`Content-Type`兼容，正常账户旧失败预留使剩余额度不足以再次执行完整turn |
 
-真实验收用户已指定 `dmeck@suoxya.com`；凭据由协调保护。Google、Device、MCP replacement、文件和正常业务持久化已走本机日常公开入口并保留回执。真实模型链先遇到额度预估402、过期模型目录400、托管credential 401并完成规范刷新，随后正常Codex返回200和无`Content-Type`的SSE body，旧Gateway因此错误进入`settlement_failed`。代码已按Codex adapter的窄兼容修复并完成完整回归；该失败请求仍合法占用75,006 Token，当前只剩24,994，不足以启动下一次完整Agent turn。系统禁止人工改usage、直接释放预留或SQL加额度，因此模型回复、Run/Thread继续/取消与SSE终态仍未完成。迁移、回填和故障注入只由协调在具名隔离数据库执行。
+真实验收用户已指定 `dmeck@suoxya.com`；凭据由协调保护。Google、Device、MCP replacement、文件和正常业务持久化已走本机日常公开入口并保留回执。真实模型链先遇到额度预估402、过期模型目录400、托管credential 401并完成规范刷新，随后正常Codex返回200和无`Content-Type`的SSE body，旧Gateway因此错误进入`settlement_failed`。代码已按Codex adapter的窄兼容修复并完成完整回归；该失败请求仍合法占用75,006 Token，小额settled canary消费16后剩余24,978，不足以启动下一次完整Agent turn。系统禁止人工改usage、直接释放预留或SQL加额度，因此模型回复、Run/Thread继续/取消与SSE终态仍未完成。迁移、回填和故障注入只由协调在具名隔离数据库执行。
 
 统一范围以[Dream 仓库](https://github.com/glide-the/im-dream) 的 `docs/stage/stage_admin-auth-data-business-validation.md`为准；逐文件/原事务关闭状态见[领域映射](../architecture/admin-dream-domain-implementation-map.md)。此表的技术通过不能替代真实验收。
 
