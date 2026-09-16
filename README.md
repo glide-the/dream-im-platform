@@ -216,12 +216,15 @@ pnpm db:migrate:check   # 要求 journal、hash、数据库 receipt 全部 curre
 正常数据库完成 migration/check 后，角色与 ACL 仍须独立预检和批准；该命令不会由应用启动或 migration 自动调用：
 
 ```bash
-AUTH_DATA_CUTOVER_CONFIG=/private/0600/activation.json pnpm auth-data-access:activate
 AUTH_DATA_CUTOVER_CONFIG=/private/0600/activation.json \
+AUTH_DATA_DREAM_RELEASE_DIR=/absolute/clean/dream-worktree \
+  pnpm auth-data-access:activate
+AUTH_DATA_CUTOVER_CONFIG=/private/0600/activation.json \
+AUTH_DATA_DREAM_RELEASE_DIR=/absolute/clean/dream-worktree \
   pnpm auth-data-access:activate --apply --production-approval
 ```
 
-manifest 必须绑定已校验的停机物理备份、目标 database/port/data directory、63 条 migration、八项认证/数据 capability、active canonical Gateway client、三个独立服务凭据与 Dream NOLOGIN role。默认命令只输出脱敏计划；apply 在同一事务创建/验证角色并应用最小权限，随后使用真实角色凭据与 allow/deny probes 复核。
+v2 manifest 必须绑定 Admin 与 Dream 的精确 commit、已校验的停机物理备份、目标 database/port/data directory、63 条 migration、八项认证/数据 capability、active canonical Gateway client、三个独立服务凭据与 Dream NOLOGIN role。runner 在读取备份或连接数据库前验证执行中的 Admin checkout 与 `AUTH_DATA_DREAM_RELEASE_DIR` 都处于 manifest 指定 commit，且 tracked files 无修改。默认命令只输出脱敏计划；apply 在同一事务创建/验证角色并应用最小权限，随后使用真实角色凭据与 allow/deny probes 复核。
 
 `packages/db/src/schema/**` 是唯一 TypeScript schema，`drizzle/**` 是不可变 SQL/
 journal/snapshot 历史。Dream 启动只检查 capability，不执行 DDL。runner 优先使用
