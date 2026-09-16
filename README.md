@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-17: separate Dream Better Auth/OAuth authority from the independent Admin operator password/session domain in the repository overview. -->
 <!-- [Sync] 2026-09-17: align first-run instructions with the empty 14-character password form and required Admin Session TTL configuration. -->
 # Ink Memory Admin
 
@@ -20,7 +21,7 @@
 
 模型网关提供 Anthropic `POST /v1/messages`、`POST /v1/messages/count_tokens`，以及 OpenAI `POST /v1/chat/completions`、`GET /v1/models` 兼容接口。
 
-统一认证与 Dream 数据访问正在实施：Better Auth 1.7.4 为唯一 Google/密码/Session/OAuth/device authority，Admin 管理权限按显式 membership 与 live RBAC；Dream 通过命名领域 DTO API 访问数据。当前技术证据与未闭合领域见[契约](docs/architecture/admin-dream-auth-data-contract.md)、[领域映射](docs/architecture/admin-dream-domain-implementation-map.md)与[回执](docs/verification/admin-auth-data-provider-matrix.md)。0054–0062 与受限角色合同已在具名隔离 PostgreSQL 重放通过；正常数据库 migration、角色激活、旧账户采用和真实 Google/模型验收仍是独立发布门禁。
+Admin 同时提供两个隔离的认证边界：Better Auth 1.7.4 是 Dream 的 Google/credential Session、OAuth、Device Flow 与 JWKS authority；Admin operator 则只通过 `admin_users` 独立密码、`admin_sessions` 和实时 RBAC 进入管理后台。Dream browser/device/service 是 OAuth client，Dream user 是用户委托 token 的主体；相同邮箱不会合并 Dream user 与 Admin operator，也不共享密码、Session 或权限。Dream 通过命名领域 DTO API 访问数据，持久化链固定为 Dream Pydantic DTO → Admin Zod DTO → Domain Service → typed Repository → Drizzle/UOW。当前技术证据与未闭合业务验收见[认证业务域评审](docs/architecture/auth-domain-boundaries-review.md)、[契约](docs/architecture/admin-dream-auth-data-contract.md)、[领域映射](docs/architecture/admin-dream-domain-implementation-map.md)与[回执](docs/verification/admin-auth-data-provider-matrix.md)。本机正常数据库 migration/受限角色激活、旧 Google 主体采用、真实 Google callback、Device Flow 和独立 Admin 登录已经通过；自然 Session 到期与完整 Dream 模型/Workflow 旅程仍分别验收。
 
 Remote Marketplace 同步按 UTF-8 路径组件顺序计算完整插件摘要，与 Dream 的
 canonical `pathlib` 算法一致。包含 `skills.md` 与 `skills/<name>/SKILL.md` 这类
