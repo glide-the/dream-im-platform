@@ -2,7 +2,7 @@
 // [Input] Exact clean Admin/Dream release worktrees, explicit migration DSN and a private cutover manifest containing backup proof and limited-role secrets.
 // [Output] Redacted dry-run evidence or one transactionally activated auth/control/data/Dream-no-DB ACL boundary.
 // [Pos] Human-approved normal-database release step; never invoked by migration, application startup or tests implicitly.
-// [Sync] 2026-09-16: bind v2 activation to exact clean Admin/Dream commits before backup or database access.
+// [Sync] 2026-09-17: verify independent Admin credential/session/RBAC grants and legacy-link denial with the actual roles.
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readFile } from "node:fs/promises";
@@ -10,6 +10,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import {
+  assertAdminAuthPrivileges,
   assertLimitedRoles,
   buildAuthAccessPolicy,
   quoteIdentifier,
@@ -161,6 +162,7 @@ async function verifyRoleProbes(ownerUrl, config, roles) {
   const owner = new pg.Client({ connectionString: ownerUrl });
   await owner.connect();
   try {
+    await assertAdminAuthPrivileges(owner, roles);
     const denied = (await owner.query(
       `SELECT
          has_table_privilege($1, 'public.chat_thread', 'SELECT') AS auth_thread,

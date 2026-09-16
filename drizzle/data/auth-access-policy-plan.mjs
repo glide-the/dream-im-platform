@@ -1,7 +1,7 @@
 // [Input] A verified PostgreSQL connection, database name and four distinct limited role names.
 // [Output] One deterministic least-privilege statement plan and redacted policy digest.
 // [Pos] Shared ACL planner used by isolated validation and explicit normal-database activation.
-// [Sync] 2026-09-17: grant the auth/control UOW only the Admin session/member/RBAC columns required by independent management login.
+// [Sync] 2026-09-17: define and probe the exact independent Admin login/session/RBAC privileges while denying legacy subject links.
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
@@ -62,6 +62,46 @@ export async function assertLimitedRoles(
   );
   if (ownership.rows.length) throw new Error("Limited roles may not own database objects");
   return actualRoles;
+}
+
+export async function assertAdminAuthPrivileges(client, roles) {
+  const row = (await client.query(
+    `SELECT
+       ((SELECT bool_and(has_column_privilege($1, 'public.admin_users', column_name, 'SELECT'))
+           FROM unnest(ARRAY['id','email','display_name','password_hash','status']) AS columns(column_name))
+        AND has_column_privilege($1, 'public.admin_users', 'last_login_at', 'UPDATE')
+        AND has_column_privilege($1, 'public.admin_users', 'updated_at', 'UPDATE')
+        AND has_table_privilege($1, 'public.admin_sessions', 'SELECT')
+        AND has_table_privilege($1, 'public.admin_sessions', 'INSERT')
+        AND has_table_privilege($1, 'public.admin_sessions', 'UPDATE')
+        AND has_table_privilege($1, 'public.admin_sessions', 'DELETE')
+        AND has_table_privilege($1, 'public.admin_audit_logs', 'INSERT')
+        AND has_table_privilege($1, 'public.admin_user_roles', 'SELECT')
+        AND has_table_privilege($1, 'public.admin_roles', 'SELECT')
+        AND has_table_privilege($1, 'public.admin_role_permissions', 'SELECT')
+        AND has_table_privilege($1, 'public.admin_permissions', 'SELECT')) AS auth_ready,
+       ((SELECT bool_and(has_column_privilege($2, 'public.admin_users', column_name, 'SELECT'))
+           FROM unnest(ARRAY['id','email','display_name','password_hash','status']) AS columns(column_name))
+        AND has_column_privilege($2, 'public.admin_users', 'last_login_at', 'UPDATE')
+        AND has_column_privilege($2, 'public.admin_users', 'updated_at', 'UPDATE')
+        AND has_table_privilege($2, 'public.admin_sessions', 'SELECT')
+        AND has_table_privilege($2, 'public.admin_sessions', 'INSERT')
+        AND has_table_privilege($2, 'public.admin_sessions', 'UPDATE')
+        AND has_table_privilege($2, 'public.admin_sessions', 'DELETE')
+        AND has_table_privilege($2, 'public.admin_audit_logs', 'INSERT')
+        AND has_table_privilege($2, 'public.admin_user_roles', 'SELECT')
+        AND has_table_privilege($2, 'public.admin_roles', 'SELECT')
+        AND has_table_privilege($2, 'public.admin_role_permissions', 'SELECT')
+        AND has_table_privilege($2, 'public.admin_permissions', 'SELECT')) AS control_ready,
+       has_table_privilege($1, 'identity.admin_subject_links', 'SELECT') AS auth_legacy_link_select,
+       has_table_privilege($2, 'identity.admin_subject_links', 'SELECT') AS control_legacy_link_select`,
+    [roles.auth, roles.control],
+  )).rows[0];
+  if (!row?.auth_ready || !row?.control_ready
+    || row.auth_legacy_link_select || row.control_legacy_link_select) {
+    throw new Error("Independent Admin auth privileges do not match the required boundary");
+  }
+  return row;
 }
 
 export async function buildAuthAccessPolicy(client, database, roles) {

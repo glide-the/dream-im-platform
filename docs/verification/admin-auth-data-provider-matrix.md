@@ -1,4 +1,5 @@
 <!-- [Sync] 2026-09-16: record normal database 0063, 64 migrations, nine release capabilities and actual-role activation. -->
+<!-- [Sync] 2026-09-17: record corrective normal ACL activation and same-browser Dream/Admin authorization separation. -->
 <!-- [Sync] 2026-09-17: close the normal Notion background-read DTO projection defect through public client_credentials ingress. -->
 <!-- [Sync] 2026-09-17: record independent Admin sessions, confidential service OAuth, complete deterministic suites and current real-acceptance boundary. -->
 <!-- [Sync] 2026-09-15: Registry115 Story Guidance DTO/ORM, receipt, concurrency and restricted-role PostgreSQL gates pass. -->
@@ -21,7 +22,7 @@
 | 配置/issuer/origin | auth config，无数据 | Luna unit | exact origin、HTTPS cookie、限定后台scope | secret缺失/非法redirect fail closed | 定向通过 |
 | OAuth access token | verifier，仅public keys | Luna unit | ES256 at+jwt/aud/scope/300s | Google/ID/Session/expired/lifetime/scope拒绝 | 定向通过 |
 | Google既有用户映射 | auth Account→subject_links→users | 协调隔离mapping+真实Google | 旧PK/Google sub关系保留 | 同邮箱冲突，不任意合并 | release-only adoption与真实Google callback/consent/返回Dream通过；Admin link为0 |
-| Admin管理权限 | 独立Admin Session→admin_users/RBAC | unit/API/browser；受限AUTH角色 | Admin密码创建opaque Session，每请求读取active member与实时权限 | Dream Better Auth Session/OAuth token、禁用member、无权限请求均拒绝 | 独立Session实现、完整Admin suite/type/lint/build通过；真实后台登录只待现有Admin自身凭据复核 |
+| Admin管理权限 | 独立Admin Session→admin_users/RBAC | unit/API/browser；受限AUTH角色 | Admin密码创建opaque Session，每请求读取active member与实时权限 | Dream Better Auth Session/OAuth token、禁用member、无权限请求均拒绝 | 独立Session实现、完整Admin suite/type/lint/build通过；同一Chrome的Dream登录态访问Admin me为401；正常ACL已补齐credential/session/RBAC权限并拒绝旧link；候选Admin凭据不匹配，未复制Dream密码或重置Admin密码 |
 | Dream服务身份 | confidential OAuth client；无canonical user | OAuth catalog + client_credentials + Admin verifier + Dream Next/Python clients | 后台请求使用service bearer；用户请求另带delegated user bearer | static service headers、超scope、`sub != client_id`、未知client、浏览器注入均拒绝 | 实现与unit/consumer/full suites通过；隔离合同fixture已改短期service access token |
 | Notion后台候选读取 | confidential Dream service client；`connectors:sync`；正常Notion connector表 | Repository行投影测试 + 本机正常Admin公开OAuth operation | storage `config_json`/`metadata_json`只在Repository解码为strict DTO `config`/`metadata`；公开读返回200 | malformed stored JSON继续fail closed；不放宽DTO、不回退Dream数据库 | focused 17/17、tsc、ESLint通过；正常token 200、`notion.sync-candidates.list` 200、读取1 connector；未创建或合并用户 |
 | Device grant | public native client+resource+user approval | 正常Admin/Dream公开入口与浏览器 | approve→OAuth token | deny/pending/slow_down/expire/重复/并发 | 允许、拒绝、兑换、重复兑换、refresh rotation/replay、独立revoke、access expiry与负例均通过 |
@@ -45,6 +46,10 @@
 统一范围以[Dream 仓库](https://github.com/glide-the/im-dream) 的 `docs/stage/stage_admin-auth-data-business-validation.md`为准；逐文件/原事务关闭状态见[领域映射](../architecture/admin-dream-domain-implementation-map.md)。此表的技术通过不能替代真实验收。
 
 ## 实际回执
+
+- Admin独立登录与正常ACL，2026-09-17：首次公开Admin登录为500，直接用正常`ink_auth`角色复现到PostgreSQL `42501`，确认该角色缺`admin_users.password_hash`读取与`admin_sessions`写入。停止本轮拥有的embedded PostgreSQL supervisor后生成新的owner-only mode-0600物理备份并恢复服务；精确绑定Admin/Dream commit的正常ACL命令依次dry-run、`--apply --production-approval`、重复apply均exit0，64 migrations、8门禁capabilities、active Gateway、四角色属性/credential与144条策略通过，policy SHA为`8dd2128cacb1577f4b5b2a9b9d5e358ee1600c66b29c15be2b382840b82f795e`。复查确认AUTH可读credential列、写Session/audit，仍不能读Dream `chat_thread`，Dream NOLOGIN role仍无CONNECT。随后公开登录从500恢复为明确401 credentials invalid；同一Chrome已有Dream登录态访问Admin me仍为401。两份用户记录、密码哈希与Session保持独立，未创建`admin_subject_links`。
+
+- ACL探针修正，2026-09-17：`pnpm test:config` exit0，16 tests与remote/AutoDL拓扑通过；新增owner-side probe强制检查auth/control实际角色的Admin credential列、Session四权限、RBAC读取、audit写入，并要求两角色都不能读取`identity.admin_subject_links`。定向ESLint与diff check均exit0。正常库在该精确commit上重复apply后才计入最终发布回执。
 
 - Notion正常后台读取，2026-09-17：`pnpm exec vitest run app/lib/dream/notionConnectorRepository.test.ts app/lib/dream/notionConnectorService.test.ts` exit0，2 files/17 tests；`pnpm exec tsc --noEmit`与定向ESLint均exit0。随后使用正常本机Admin、正常PostgreSQL和已发布confidential client，通过公开`/api/auth/oauth2/token`取得300秒`client_credentials` bearer（HTTP 200），再调用公开`notion.sync-candidates.list`（HTTP 200、request ID一致、1 connector）。响应只含strict DTO字段，connector无`config_json`、resource无`metadata_json`；此后台scope没有Dream canonical user，也未读取或写入Admin operator。
 
