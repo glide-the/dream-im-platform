@@ -4,6 +4,7 @@
 <!-- [Sync] 2026-09-17: record corrective normal ACL activation and same-browser Dream/Admin authorization separation. -->
 <!-- [Sync] 2026-09-17: record normal resource-policy desired/effective/revision/LKG and fresh observer parity. -->
 <!-- [Sync] 2026-09-17: close the normal Notion background-read DTO projection defect through public client_credentials ingress. -->
+<!-- [Sync] 2026-09-17: record audited same-scope emergency Gateway service-key rotation after credential exposure. -->
 <!-- [Sync] 2026-09-17: record independent Admin sessions, confidential service OAuth, complete deterministic suites and current real-acceptance boundary. -->
 <!-- [Sync] 2026-09-17: record the headerless Codex SSE fix, complete regression and remaining real allowance boundary. -->
 <!-- [Sync] 2026-09-15: Registry115 Story Guidance DTO/ORM, receipt, concurrency and restricted-role PostgreSQL gates pass. -->
@@ -52,6 +53,8 @@
 ## 实际回执
 
 - Codex Responses空类型头兼容，2026-09-17：正常Dream公开Agent请求到达正常Gateway与托管Codex，上游HTTP 200、body存在、响应类型头为空；旧Gateway记录`UPSTREAM_STREAM_INVALID`并把请求`req_262cd2eb37c94e4a8ec0952f0a268540`置为`settlement_failed/usageUnknown`。修复只允许`adapterKind=codex`在body存在且类型头为空时进入原SSE parser；其他Provider缺头、空body和显式非SSE类型继续502。`pnpm exec vitest run app/lib/gateway/proxy-handler.test.ts app/lib/gateway/provider-transport.test.ts app/lib/gateway/protocol-adapters.test.ts` exit0，3 files/32 tests；定向ESLint、`pnpm exec tsc --noEmit`、`pnpm build`和完整`pnpm test:run`均exit0，完整277 files/2096 tests通过，17 files/36 tests按既有合同跳过。正常Product BFF只读回执为granted100,000/reserved75,006/remaining24,994；没有修改订阅、Allowance、Gateway request或账本。
+
+- Gateway凭据事件处置，2026-09-17：诊断输出意外暴露一枚Dream canonical-subject Gateway service key和一枚旧fixed-user key。前者使用现有strict DTO → domain service → typed Drizzle transaction轮换路径，并新增显式`force=true`/`--force`以允许scope不变时执行紧急轮换；dry-run仍不写数据，apply仍要求当前key证明、mode-0600普通env文件、原子撤销/创建和不含secret的Admin audit。旧fixed-user key已撤销，Dream私有env中的旧入口已清空。复查仅比较hash与client绑定：旧值不再匹配active key，新值匹配active `ink-dream-memory` client；任何回执、提交和本文件都不包含明文凭据。`pnpm test:run` exit0，277 files/2097 tests通过、17 files/36 tests按既有合同跳过；`pnpm exec tsc --noEmit`、定向ESLint、`pnpm build`、diff check和本次Markdown本地链接检查均exit0。
 
 - 当前HEAD完整确定性回归，2026-09-17：第一次`pnpm test:run`中276 files / 2087 tests通过，`dreamLaunchFailureContinuation.test.ts`的6项guard因synthetic fixture仍传已退役`service_secret`而被strict DTO拒绝；生产处理器、DTO与其余测试没有放宽或失败。fixture改为短期`service_access_token`后定向12/12、ESLint和diff检查通过；随后完整`pnpm test:run`单次exit0，277 files / 2093 tests通过，17 files / 36 tests按仓库合同跳过。
 

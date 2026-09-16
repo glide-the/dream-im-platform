@@ -3,7 +3,7 @@
 // [Input] Admin private env, an explicit mode-0600 Dream backend env path and an idempotency request ID.
 // [Output] Redacted dry-run/apply receipt while atomically rotating the canonical-subject key through Drizzle.
 // [Pos] Release operator entry point; plaintext moves only from the private Dream env into the in-process proof/replace boundary.
-// [Sync] 2026-09-16: add DTO/ORM Gateway service-key scope reconciliation without direct SQL.
+// [Sync] 2026-09-17: add explicit force rotation for compromised same-scope service keys.
 import { randomUUID } from "node:crypto";
 import { lstat, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -16,23 +16,25 @@ import {
   gatewayServiceKeyTargetDto,
 } from "../app/lib/gateway/service-key-rotation";
 
-type Arguments = { apply: boolean; dreamEnvPath: string; requestId: string };
+type Arguments = { apply: boolean; force: boolean; dreamEnvPath: string; requestId: string };
 
 function parseArguments(argv: string[]): Arguments {
   let apply = false;
+  let force = false;
   let dreamEnvPath: string | undefined;
   let requestId: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--apply" && !apply) apply = true;
+    else if (argument === "--force" && !force) force = true;
     else if (argument === "--dream-env" && !dreamEnvPath) dreamEnvPath = argv[++index];
     else if (argument === "--request-id" && !requestId) requestId = argv[++index];
-    else throw new Error("Usage: pnpm gateway:rotate-dream-service-key --dream-env <absolute-mode-0600-path> --request-id <id> [--apply]");
+    else throw new Error("Usage: pnpm gateway:rotate-dream-service-key --dream-env <absolute-mode-0600-path> --request-id <id> [--force] [--apply]");
   }
   if (!dreamEnvPath || !requestId) {
-    throw new Error("Usage: pnpm gateway:rotate-dream-service-key --dream-env <absolute-mode-0600-path> --request-id <id> [--apply]");
+    throw new Error("Usage: pnpm gateway:rotate-dream-service-key --dream-env <absolute-mode-0600-path> --request-id <id> [--force] [--apply]");
   }
-  return { apply, dreamEnvPath, requestId };
+  return { apply, force, dreamEnvPath, requestId };
 }
 
 function replaceGatewayKey(source: string, plaintextKey: string) {
@@ -79,6 +81,7 @@ const target = gatewayServiceKeyTargetDto.parse({
   serviceClientId: binding.gateway_client_id,
   scopes: ["messages:create", "messages:count_tokens", "models:list"],
   requestId: arguments_.requestId,
+  force: arguments_.force,
 });
 const databaseUrl = process.env.DATABASE_URL?.trim();
 if (!databaseUrl) throw new Error("GATEWAY_SERVICE_KEY_DATABASE_NOT_CONFIGURED");

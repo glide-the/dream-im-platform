@@ -1,7 +1,7 @@
 // [Input] Strict canonical-subject target DTO, one-time current-key proof and an Admin-owned Drizzle transaction.
 // [Output] Redacted drift plan or one atomic Gateway service-key rotation with an audit record.
 // [Pos] Gateway control-plane domain boundary; plaintext keys never enter DTOs, database rows or receipts.
-// [Sync] 2026-09-16: add DTO-to-domain-to-Drizzle rotation for Dream Runtime Gateway scopes.
+// [Sync] 2026-09-17: support explicit audited emergency rotation when scopes are unchanged.
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
@@ -23,6 +23,7 @@ export const gatewayServiceKeyTargetDto = z.strictObject({
     .refine(scopes => new Set(scopes).size === scopes.length, "Scopes must be unique"),
   requestId: z.string().trim().min(8).max(128)
     .regex(/^[A-Za-z0-9._:-]+$/),
+  force: z.boolean().optional().default(false),
 });
 export type GatewayServiceKeyTargetDto = z.infer<typeof gatewayServiceKeyTargetDto>;
 
@@ -149,7 +150,7 @@ export class GatewayServiceKeyRotationService {
     const proofMatches = hashGatewayApiKey(currentPlaintextKey) === current.keyHash;
     return gatewayServiceKeyPlanDto.parse({
       serviceClientId: target.serviceClientId,
-      action: sameScopes(current.scopes, target.scopes) ? "unchanged" : "rotate",
+      action: !target.force && sameScopes(current.scopes, target.scopes) ? "unchanged" : "rotate",
       currentScopes: current.scopes,
       targetScopes: target.scopes,
       currentKeyMatchesSecret: proofMatches,
@@ -163,7 +164,7 @@ export class GatewayServiceKeyRotationService {
     if (hashGatewayApiKey(currentPlaintextKey) !== current.keyHash) {
       throw new GatewayServiceKeyRotationError("GATEWAY_SERVICE_KEY_SECRET_MISMATCH");
     }
-    if (sameScopes(current.scopes, target.scopes)) {
+    if (!target.force && sameScopes(current.scopes, target.scopes)) {
       return {
         receipt: gatewayServiceKeyPlanDto.parse({
           serviceClientId: target.serviceClientId,
