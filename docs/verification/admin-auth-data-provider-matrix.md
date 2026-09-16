@@ -5,6 +5,7 @@
 <!-- [Sync] 2026-09-17: record normal resource-policy desired/effective/revision/LKG and fresh observer parity. -->
 <!-- [Sync] 2026-09-17: close the normal Notion background-read DTO projection defect through public client_credentials ingress. -->
 <!-- [Sync] 2026-09-17: record independent Admin sessions, confidential service OAuth, complete deterministic suites and current real-acceptance boundary. -->
+<!-- [Sync] 2026-09-17: record the headerless Codex SSE fix, complete regression and remaining real allowance boundary. -->
 <!-- [Sync] 2026-09-15: Registry115 Story Guidance DTO/ORM, receipt, concurrency and restricted-role PostgreSQL gates pass. -->
 <!-- [Sync] 2026-09-16: normal-database ACL release runner passes isolated dry/apply/repeat, approval and actual-role probes. -->
 <!-- [Sync] 2026-09-15: Registry114 Story catalog DTO/ORM, route, receipt and restricted-role PostgreSQL gates pass. -->
@@ -42,13 +43,15 @@
 | 领域写/receipt | 用户所有权+ORM repository/UOW | Luna unit，协调隔离integration | 单事务业务+审计+receipt | CAS/冲突/早return默认rollback/unknown commit同键恢复 | 首批14 Thread操作公开Route通过；其余领域pending |
 | resource policy/observer | 分开的后台权限，真实capability | Luna unit + 隔离 + 正常公开read/Observer快照 | higher合法revision应用 | invalid/rollback/Admin失败LKG不传播turn | Admin unit与Dream111项provider-free通过；正常desired revision 4与新鲜Observer applied effective/effort精确一致，内存字节组合通过；未改desired或触发turn |
 | 全领域迁移 | Dream JSON/事务图全部入口 | 静态覆盖 + 领域integration | 无Dream driver/SQL/pool/secret | DTO失败/权限/状态/未知提交回归 | 生产源码静态门禁、完整Dream backend suite与正常进程零PG连接通过；E2E数据库探针仅保留在测试目录 |
-| 共享FS/Runtime/SSE | 原Dream入口与metadata | Dream负责技术与真实业务 | 0700/no-symlink/exact temp，persist→SSE | 路径/权限/断流恢复 | 两次真实文件上传、授权读取、Thread workspace与`.claude-tmp`边界通过；模型/Run/SSE终态受正常账户402额度阻塞 |
+| 共享FS/Runtime/SSE | 原Dream入口与metadata | Dream负责技术与真实业务 | 0700/no-symlink/exact temp，persist→SSE | 路径/权限/断流恢复 | 两次真实文件上传、授权读取、Thread workspace与`.claude-tmp`边界通过；真实Codex请求复现并修复空`Content-Type`兼容，正常账户旧失败预留使剩余额度不足以再次执行完整turn |
 
-真实验收用户已指定 `dmeck@suoxya.com`；凭据由协调保护。Google、Device、MCP replacement、文件和正常业务持久化已走本机日常公开入口并保留回执；两种真实模型调用均由正常账户返回`402 SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED`，因此模型回复、Run/Thread继续/取消与SSE终态仍未完成。迁移、回填和故障注入只由协调在具名隔离数据库执行。
+真实验收用户已指定 `dmeck@suoxya.com`；凭据由协调保护。Google、Device、MCP replacement、文件和正常业务持久化已走本机日常公开入口并保留回执。真实模型链先遇到额度预估402、过期模型目录400、托管credential 401并完成规范刷新，随后正常Codex返回200和无`Content-Type`的SSE body，旧Gateway因此错误进入`settlement_failed`。代码已按Codex adapter的窄兼容修复并完成完整回归；该失败请求仍合法占用75,006 Token，当前只剩24,994，不足以启动下一次完整Agent turn。系统禁止人工改usage、直接释放预留或SQL加额度，因此模型回复、Run/Thread继续/取消与SSE终态仍未完成。迁移、回填和故障注入只由协调在具名隔离数据库执行。
 
 统一范围以[Dream 仓库](https://github.com/glide-the/im-dream) 的 `docs/stage/stage_admin-auth-data-business-validation.md`为准；逐文件/原事务关闭状态见[领域映射](../architecture/admin-dream-domain-implementation-map.md)。此表的技术通过不能替代真实验收。
 
 ## 实际回执
+
+- Codex Responses空类型头兼容，2026-09-17：正常Dream公开Agent请求到达正常Gateway与托管Codex，上游HTTP 200、body存在、响应类型头为空；旧Gateway记录`UPSTREAM_STREAM_INVALID`并把请求`req_262cd2eb37c94e4a8ec0952f0a268540`置为`settlement_failed/usageUnknown`。修复只允许`adapterKind=codex`在body存在且类型头为空时进入原SSE parser；其他Provider缺头、空body和显式非SSE类型继续502。`pnpm exec vitest run app/lib/gateway/proxy-handler.test.ts app/lib/gateway/provider-transport.test.ts app/lib/gateway/protocol-adapters.test.ts` exit0，3 files/32 tests；定向ESLint、`pnpm exec tsc --noEmit`、`pnpm build`和完整`pnpm test:run`均exit0，完整277 files/2096 tests通过，17 files/36 tests按既有合同跳过。正常Product BFF只读回执为granted100,000/reserved75,006/remaining24,994；没有修改订阅、Allowance、Gateway request或账本。
 
 - 当前HEAD完整确定性回归，2026-09-17：第一次`pnpm test:run`中276 files / 2087 tests通过，`dreamLaunchFailureContinuation.test.ts`的6项guard因synthetic fixture仍传已退役`service_secret`而被strict DTO拒绝；生产处理器、DTO与其余测试没有放宽或失败。fixture改为短期`service_access_token`后定向12/12、ESLint和diff检查通过；随后完整`pnpm test:run`单次exit0，277 files / 2093 tests通过，17 files / 36 tests按仓库合同跳过。
 

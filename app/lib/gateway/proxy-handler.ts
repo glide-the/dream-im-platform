@@ -1,7 +1,7 @@
 // [Input] Prepared billable request, product dialect, client cancellation, protocol body, and provider response.
 // [Output] Adapted JSON/SSE response with payload capture, renewal snapshot, usage accounting, and settlement.
 // [Pos] Core provider proxy lifecycle joining protocol adapters, transport, billing, and response persistence.
-// [Sync] 2026-09-04: persist managed credential revision/renewal and adapt Responses JSON/SSE without replay.
+// [Sync] 2026-09-17: accept headerless Codex Responses SSE while keeping other provider content-type checks strict.
 
 import type { z } from "zod";
 import { createHash } from "node:crypto";
@@ -92,12 +92,18 @@ function parseProviderJson(raw: string) {
   }
 }
 
+function isProviderEventStream(response: Response, adapterKind?: string) {
+  const contentType = response.headers.get("content-type")?.trim().toLowerCase() ?? "";
+  return contentType.includes("text/event-stream")
+    || (adapterKind === "codex" && contentType.length === 0 && response.body !== null);
+}
+
 async function readProviderJsonResponse(
   transport: Awaited<ReturnType<typeof sendProviderRequest>>,
   adapterKind?: string,
 ) {
   const isResponsesAdapter = adapterKind === "codex" || adapterKind === "xai";
-  if (!isResponsesAdapter || !transport.response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
+  if (!isResponsesAdapter || !isProviderEventStream(transport.response, adapterKind)) {
     return parseProviderJson(await transport.response.text());
   }
   if (!transport.response.body) {
@@ -293,7 +299,7 @@ export async function proxyStreaming(input: {
   }
   const upstream = transport.response;
   const upstreamHeaderRequestId = responseRequestId(upstream);
-  if (!upstream.body || !upstream.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
+  if (!upstream.body || !isProviderEventStream(upstream, input.prepared.resolved.provider.adapterKind)) {
     transport.abort.cleanup();
     const error = new GatewayError("UPSTREAM_STREAM_INVALID", "The upstream provider did not return an SSE stream", 502, "upstream_error");
     await finalizeProviderFailure({ requestId: input.prepared.requestId, protocol: input.externalProtocol, error, startedAt });
