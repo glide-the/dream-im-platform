@@ -3,6 +3,7 @@
 // [Output] Mode-0600 local/Compose config preserving unified auth/data policy and Provider overrides.
 // [Pos] Base configuration generator for the Admin workspace.
 // [Sync] 2026-09-16: preserve, render and validate the complete Better Auth/Dream DTO service configuration.
+// [Sync] 2026-09-16: validate embedded PostgreSQL connection capacity as a positive safe integer, independent of TCP port bounds.
 // [Sync] 2026-09-04: leave product overrides empty so built-in cc-switch-compatible defaults remain active.
 
 import { randomBytes } from "node:crypto";
@@ -1191,10 +1192,15 @@ function validateConfiguration(root, docker, rootParsed, dockerParsed) {
       errors.push(`.env.local: ${key} must be a positive integer`);
     }
   }
-  for (const key of ["APP_PORT", "POSTGRES_PORT", "EMBEDDED_POSTGRES_MAX_CONNECTIONS"]) {
+  for (const key of ["APP_PORT", "POSTGRES_PORT"]) {
     if (!isInteger(docker.get(key) ?? "", 1, 65_535)) {
       errors.push(`docker/.env: ${key} must be a valid TCP port`);
     }
+  }
+  if (!isInteger(docker.get("EMBEDDED_POSTGRES_MAX_CONNECTIONS") ?? "", 1)) {
+    errors.push(
+      "docker/.env: EMBEDDED_POSTGRES_MAX_CONNECTIONS must be a positive safe integer",
+    );
   }
   if (!isInteger(root.get("EMBEDDED_POSTGRES_PORT") ?? "", 1, 65_535)) {
     errors.push(".env.local: EMBEDDED_POSTGRES_PORT must be a valid TCP port");

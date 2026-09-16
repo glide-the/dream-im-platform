@@ -2,6 +2,7 @@
 // [Output] Provider-free tests for mode, preservation, complete validation and fail-closed role/origin checks.
 // [Pos] Deterministic configuration contract for unified auth and Admin-owned Dream DTO/ORM data access.
 // [Sync] 2026-09-16: cover generated secrets and explicit external configuration without touching a real env file.
+// [Sync] 2026-09-16: distinguish PostgreSQL connection capacity validation from TCP port validation.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -96,6 +97,13 @@ test('a complete role, OAuth, Gateway and policy configuration validates and pre
     DREAM_DECK_POLICY_JSON: '{"version":1}',
   };
   for (const path of paths) await patchEnv(path, common);
+  assert.match(run('--check'), /Environment configuration is valid/);
+  await patchEnv(paths[1], { EMBEDDED_POSTGRES_MAX_CONNECTIONS: '0' });
+  assert.match(
+    failure('--check'),
+    /EMBEDDED_POSTGRES_MAX_CONNECTIONS must be a positive safe integer/,
+  );
+  await patchEnv(paths[1], { EMBEDDED_POSTGRES_MAX_CONNECTIONS: '50' });
   assert.match(run('--check'), /Environment configuration is valid/);
   const beforeSecret = JSON.parse((await readEnv(paths[0])).get('DREAM_DATA_SERVICE_CLIENTS'))[0].secret;
   run();
