@@ -1,7 +1,7 @@
 <!-- [Input] Current Admin/Dream auth documents, Better Auth 1.7.4 source, legacy Admin session schema and deployed identity records. -->
 <!-- [Output] Reviewed provider/client/operator/user boundaries and the required compatibility-first implementation sequence. -->
 <!-- [Pos] Authoritative cross-project auth-domain decision; Admin auth.md and Dream consumer documents must conform to it. -->
-<!-- [Sync] 2026-09-17: separate Admin operators, Dream users, OAuth clients and service principals before changing runtime login behavior. -->
+<!-- [Sync] 2026-09-17: record the completed separation of Admin operators, Dream users, OAuth clients and service principals. -->
 
 # Admin / Dream 认证业务域评审
 
@@ -9,7 +9,7 @@
 
 Admin 同时承载 OAuth Authorization Server、Dream 数据接口和 Admin 管理后台。Dream 是独立产品，有自己的用户、内容、订阅、Thread、Run 和文件权限。两边可以出现相同邮箱，但 `public.admin_users` 和 `public.users` 表示不同业务域中的主体，不能复制、合并或互相替代。
 
-现行设计正确地把 Dream 浏览器和设备注册为 OAuth client，也正确地保留了 Dream canonical user 主键；但 Admin 登录路径被改为先验证 Better Auth credential，再通过 `identity.admin_subject_links` 查 Admin member。这会让 Admin 管理登录依赖 Dream/OAuth 用户身份，并造成“同邮箱、不同密码”无法登录。该路径不符合本次确认的业务边界。
+评审时，Dream 浏览器和设备已经注册为 OAuth client，Dream canonical user 主键也已保留；但当时的 Admin 登录路径先验证 Better Auth credential，再通过 `identity.admin_subject_links` 查 Admin member。这会让 Admin 管理登录依赖 Dream/OAuth 用户身份，并造成“同邮箱、不同密码”无法登录，因此被判定为不符合业务边界。现行代码已经恢复 `admin_users.password_hash → admin_sessions → Admin RBAC` 的独立路径；Better Auth Session 和 `identity.admin_subject_links` 均不再参与 Admin 登录或权限检查。
 
 已安装的 `@better-auth/oauth-provider` 版本为 `1.7.4`。本地包源码确认它支持 `client_credentials`，并明确拒绝 public client 使用该 grant。因此浏览器和设备继续作为 public client；Dream 服务端需要单独的 confidential service client。
 
@@ -223,18 +223,18 @@ sequenceDiagram
 | service token 调用户操作 | `403` | 不推导 canonical user |
 | Admin/Dream 数据服务不可用 | 明确 `503`/业务错误 | Dream 不回退 PostgreSQL，Admin 登录不回退 Dream credential |
 
-## 修改范围与顺序
+## 已实施范围与后续顺序
 
-1. Admin 先恢复独立管理登录：严格 DTO → Admin auth service → typed Drizzle repository，在一个事务校验 `admin_users`、创建 `admin_sessions`、更新登录时间并写 audit。
-2. Admin guard 只读取 Admin Session cookie并实时计算 RBAC。旧 Better Auth/Dream Session 不再进入管理鉴权；新登录不创建 `admin_subject_links`，也不依赖 Dream identity。
+1. 已恢复 Admin 独立管理登录：严格 DTO → Admin auth service → typed Drizzle repository，在一个事务校验 `admin_users`、创建 `admin_sessions`、更新登录时间并写 audit。
+2. Admin guard 只读取 `ink_admin_session` 并实时计算 RBAC。旧 Better Auth/Dream Session 不再进入管理鉴权；首次 bootstrap 也只创建 Admin operator、RBAC、audit 与独立 Admin Session。
 3. Better Auth 保持 Dream OAuth/Google/Device authority；`identity.subject_links` 只映射 Dream canonical user。
-4. 注册独立 confidential service client，为没有用户的后台操作使用 `client_credentials`；public browser/device client 保持 PKCE/Device Flow。
-5. Dream consumer 按 capability 切换 service token；用户调用以双 Bearer 形态同时传递用户委托 token 和独立 service token。切换期间不允许回退数据库。
-6. 验证旧 Session 结束、调用方完成后，再单独评审 `identity.admin_subject_links` 的 contract migration。
+4. 已注册独立 confidential service client，为没有用户的后台操作使用 `client_credentials`；public browser/device client 保持 PKCE/Device Flow。
+5. Dream consumer 已按 capability 切换 service token；用户调用以双 Bearer 形态同时传递用户委托 token 和独立 service token，不回退数据库。
+6. 待旧实验 Session 最大有效期结束并确认无消费者后，再单独评审 `identity.admin_subject_links` 的 contract migration。
 
 ## 评审结论与验收
 
-现行数据接口 DTO/ORM 边界、Dream OAuth code/device 流程、Google callback 和 Dream subject mapping 可以保留。需要修改的是 Admin 管理登录/Session 边界和服务身份的 OAuth client 模式；不能通过把 Admin member 绑定到 Dream canonical user 来修复登录。
+现行数据接口 DTO/ORM 边界、Dream OAuth code/device 流程、Google callback 和 Dream subject mapping 均按评审结论保留。Admin 管理登录/Session 已恢复独立业务域，服务身份已采用 confidential OAuth client；修复过程中没有把 Admin member 绑定到 Dream canonical user。
 
 实施完成必须证明：
 

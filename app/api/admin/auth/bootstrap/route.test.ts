@@ -1,3 +1,7 @@
+// [Input] First-admin bootstrap status/request with the Admin-only session response mocked at the domain boundary.
+// [Output] Route contract proof for one-time bootstrap policy and the independent Admin session cookie.
+// [Pos] Provider-free bootstrap route test; Dream Better Auth sessions are outside this boundary.
+// [Sync] 2026-09-17: reject the stale Better Auth cookie fixture and assert ink_admin_session bootstrap output.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -28,7 +32,7 @@ describe("/api/admin/auth/bootstrap", () => {
     vi.clearAllMocks();
     mocks.isAdminBootstrapRequired.mockResolvedValue(true);
     mocks.verifyBootstrapToken.mockReturnValue(true);
-    mocks.bootstrapFirstAdmin.mockImplementation(async () => Response.json({ data: { id: "admin_1", email: "dmeck@suoxya.com" } }, { status: 201, headers: { "set-cookie": "better-auth.session_token=opaque; Path=/; HttpOnly" } }));
+    mocks.bootstrapFirstAdmin.mockImplementation(async () => Response.json({ data: { id: "admin_1", email: "dmeck@suoxya.com" } }, { status: 201, headers: { "set-cookie": "ink_admin_session=adm_fixture; Path=/; HttpOnly" } }));
   });
 
   it("reports whether first-run setup is required without caching", async () => {
@@ -72,7 +76,8 @@ describe("/api/admin/auth/bootstrap", () => {
         requestId: "admin_request_test",
       }),
     );
-    expect(response.headers.get("set-cookie")).toContain("better-auth.session_token=");
+    expect(response.headers.get("set-cookie")).toContain("ink_admin_session=");
+    expect(response.headers.get("set-cookie")).not.toContain("better-auth.session_token=");
   });
 
   it("rejects passwords shorter than the first-run minimum", async () => {
