@@ -1,4 +1,5 @@
 <!-- [Sync] 2026-09-16: record normal database 0063, 64 migrations, nine release capabilities and actual-role activation. -->
+<!-- [Sync] 2026-09-17: record real Dream client-local logout, same-subject SSO re-entry and continued Admin-login isolation. -->
 <!-- [Sync] 2026-09-17: record corrective normal ACL activation and same-browser Dream/Admin authorization separation. -->
 <!-- [Sync] 2026-09-17: record normal resource-policy desired/effective/revision/LKG and fresh observer parity. -->
 <!-- [Sync] 2026-09-17: close the normal Notion background-read DTO projection defect through public client_credentials ingress. -->
@@ -47,6 +48,8 @@
 统一范围以[Dream 仓库](https://github.com/glide-the/im-dream) 的 `docs/stage/stage_admin-auth-data-business-validation.md`为准；逐文件/原事务关闭状态见[领域映射](../architecture/admin-dream-domain-implementation-map.md)。此表的技术通过不能替代真实验收。
 
 ## 实际回执
+
+- Dream退出与管理权限隔离，2026-09-17：本机Chrome从正常Story Workspace用户菜单执行`Logout`后只显示Dream登录入口，受保护历史不再展示；随后同一公开登录入口利用仍有效的Admin-origin Dream SSO完成code/PKCE并返回同一产品主体。相同Chrome profile打开`/admin`仍停留在独立管理员登录页。退出只撤销当前Dream browser client的refresh grant/lineage和BFF handle，不结束中央Dream SSO、不影响其他client，也不创建或撤销Admin `admin_sessions`。Dream frontend焦点合同27/27通过；自然TTL到期未等待。
 
 - 正常资源策略/LKG只读验收，2026-09-17：Dream生产`AdminResourceData`通过confidential service OAuth调用正常Admin公开`resource-policy.read`，返回configured revision 4；owner只读查询核对运行中Dream进程发布的正常`claude_agent_resource_snapshots`，最新心跳约0.23秒。四项effective、effort与revision全部匹配desired，`required_headroom_bytes`精确等于run budget与reserve的MiB和乘1,048,576，effective version为64字符SHA-256，queue dropped为0。命令exit0；没有修改desired、数据库业务记录、admission lease或启动Agent turn，历史pipeline write error计数不改变当前applied LKG。
 

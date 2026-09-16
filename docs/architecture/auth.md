@@ -1,6 +1,7 @@
 <!-- [Input] Actual Better Auth composition, explicit legacy mapping and browser/service topology. -->
 <!-- [Output] Current authentication architecture, ownership and product interaction contract. -->
 <!-- [Pos] Auth domain entry document; complete domain/API state remains in the shared contract. -->
+<!-- [Sync] 2026-09-17: record client-local Dream logout, retained central SSO, and independent Admin management sessions. -->
 <!-- [Sync] 2026-09-17: separate Admin operator sessions from Dream OAuth users and define public versus confidential Dream clients. -->
 <!-- [Sync] 2026-09-16: record exact provider-sub legacy adoption and successful real Google/Dream login without Admin membership. -->
 <!-- [Sync] 2026-09-16: bind confirmation Runtime delegation use to the live Admin durable claim. -->
@@ -19,7 +20,7 @@ Admin 是 Dream 的 OAuth Authorization Server 和数据服务端。Dream 浏览
 
 角色、ER、兼容顺序和设计评审以[Admin / Dream 认证业务域评审](auth-domain-boundaries-review.md)为准。该评审明确 `admin_users` 与 Dream `users` 无直接关系；相同邮箱不合并业务用户、不共享密码，也不把 Dream 登录转换为 Admin 权限。
 
-当前实现、公开接口及六张拓扑/状态图以[完整契约](admin-dream-auth-data-contract.md)为准。已通过的隔离技术检查与正常业务待验收状态见[验证矩阵](../verification/admin-auth-data-provider-matrix.md)。本机正常数据库已完成 migration/ACL、精确旧 Google 主体采用和真实 Google 返回 Dream；完整 Device、退出/失效、模型与业务旅程仍按独立验收记录判断，不能由本文件代替。
+当前实现、公开接口及六张拓扑/状态图以[完整契约](admin-dream-auth-data-contract.md)为准。已通过的隔离技术检查与正常业务待验收状态见[验证矩阵](../verification/admin-auth-data-provider-matrix.md)。本机正常数据库已完成 migration/ACL、精确旧 Google 主体采用、真实 Google 返回 Dream、Device 全状态和 Dream 客户端级退出/重新登录；自然 Session 到期、Admin 独立登录和模型业务旅程仍按独立验收记录判断，不能由本文件代替。
 
 ## 概念与规则
 
@@ -48,7 +49,7 @@ Google 使用内置 provider 和 exact callback，不新增 emailVerified/domain
 
 实际 Google callback 已在上述采用后成功恢复同一 OAuth 上下文，创建 Better Auth Session 和 browser-session/refresh lineage，并返回 Dream 原业务页面。Dream 产品历史可读；同一浏览器访问 Admin 管理入口仍进入 Admin 登录页。实际 access token 为 ES256 `at+jwt`，`aud` 含 Dream resource 与 issuer userinfo endpoint；Dream 只允许这两个配置派生的受众并要求 Dream resource 存在，不能据此接受任意额外 resource。
 
-Dream 退出调用 Better Auth sign-out 并撤销 BFF refresh lineage/handle。Admin 退出独立撤销 `admin_sessions` 并清管理 cookie；任一退出都不改变另一业务域的 Session。旧的 Better Auth Admin 管理兼容路径已停止读取和签发；`identity.admin_subject_links` 只保留 migration 历史，待确认无旧消费者后按 contract 阶段移除。
+Dream 退出只撤销当前 Dream browser client 的 OAuth refresh grant/lineage和BFF handle，成功后清 Dream host-only cookie；它不结束 Admin origin 上用于 Dream OAuth 授权页的 Better Auth SSO Session，也不撤销其他browser/device client。用户再次从Dream发起登录时，如中央Session仍有效且原授权仍可用，可以直接完成code/PKCE并返回Dream；中央Session失效或账户被禁用时才要求重新认证。Admin 管理退出独立撤销 `admin_sessions` 并清管理cookie；Dream SSO或退出都不创建、撤销或授予Admin管理Session。旧的 Better Auth Admin 管理兼容路径已停止读取和签发；`identity.admin_subject_links` 只保留 migration 历史，待确认无旧消费者后按 contract 阶段移除。
 
 身份、领域和 Admin control 分别配置显式 PostgreSQL credential，启动不执行 migration。角色、物理 catalog、精确能力、应用输入/输出 hash 和公开 Route 证据互相独立，缺必需条件关闭对应边界。配置和源文件见 `app/lib/auth`、`packages/db/src/schema/auth*`、`drizzle/data/auth-*`；完整权限和旧主体 runner 见共享契约。
 

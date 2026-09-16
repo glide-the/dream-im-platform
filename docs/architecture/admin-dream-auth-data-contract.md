@@ -336,7 +336,7 @@ Better Auth与`@better-auth/oauth-provider`配对锁定`1.7.4`，peer `better-ca
 | `/api/auth/jwks` | 公开非私钥JWKS；kid轮换 |
 | issuer discovery | issuer=`BETTER_AUTH_URL` (exact origin + `/api/auth`)，公开metadata需转到handler |
 | `/auth/sign-in`、`/auth/consent`、`/auth/device` | Admin登录/授权/设备交互页；保留管理UI独立权限 |
-| `/api/admin/auth/login/logout/bootstrap/me` | 兼容原Admin响应、唯一BA Session；每次显式Admin mapping+active RBAC；旧HMAC发行/lookup退役 |
+| `/api/admin/auth/login/logout/bootstrap/me` | 独立`admin_users/admin_sessions`管理会话；每次检查active member与RBAC，不读取Dream identity/subject link；旧HMAC发行/lookup退役 |
 
 统一配置：`BETTER_AUTH_URL`、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_ID/SECRET`、`AUTH_TRUSTED_ORIGINS`、`DREAM_API_RESOURCE`、`AUTH_DATABASE_URL`（Admin专用身份角色）、已注册BFF/CLI client、`DREAM_DATA_SERVICE_CLIENTS`（分客户端服务间配置）、`AUTH_TOKEN_ENCRYPTION_KEY`（32byte AEAD）。URL必须HTTPS或exact loopback HTTP，无credentials/query/fragment；origin/redirect分别精确校验。secret/capability缺失503，不能生成固定test secret或环境分支。
 
