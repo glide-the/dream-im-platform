@@ -1,12 +1,11 @@
-// [Input] Actual Dream DeckChatContextService through a fixed source oracle and Registry105 DTO.
-// [Output] Source field/error/order/provenance parity plus explicit Admin storage-status projection.
+// [Input] Actual Dream DeckChatContextAssembler through a fixed source oracle and Registry105 DTO.
+// [Output] Current consumer field/error/prompt/provenance parity plus Admin status projection.
 // [Pos] Cross-project source gate; it opens no pool, plugin artifact, workspace or Runtime.
-// [Sync] 2026-09-15: bind the Admin aggregate read to current Dream behavior before consumer replacement.
+// [Sync] 2026-09-16: follow Dream's DTO-only assembler after retirement of its SQL resolver.
 import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
 import { deckChatContextOutputDto } from "./deckChatContextDto";
 
-type SourceStatement = { sql: string; parameters: unknown[] };
 type SourcePluginRef = {
   plugin_installation_id: string;
   package_spec: string;
@@ -15,7 +14,7 @@ type SourcePluginRef = {
   order_index: number;
 };
 type SourceSuccess = {
-  status: "ok";
+  status: "resolved";
   context: {
     deck_id: string;
     deck_name: string;
@@ -23,22 +22,17 @@ type SourceSuccess = {
     plugin_provenance: { source: string; plugins: SourcePluginRef[] };
     system_prompt: string;
   };
-  statements: SourceStatement[];
-  ref_calls: string[];
 };
 type SourceFailure = {
   status: "error";
   code: string;
   status_code: number;
   message: string;
-  statements: SourceStatement[];
-  ref_calls: string[];
 };
 type SourceOracleResult = {
   all: SourceSuccess;
   dream: SourceSuccess;
   selected: SourceSuccess;
-  missing_deck: SourceFailure;
   disabled_deck: SourceFailure;
   missing_voice: SourceFailure;
   nonready_plugin: SourceFailure;
@@ -48,7 +42,6 @@ const sourceRoot = process.env.INK_DREAM_SOURCE, python = process.env.INK_DREAM_
 
 it.skipIf(!sourceRoot || !python)("matches the actual Dream Deck chat-context source and freezes the strict Admin extension", () => {
   const request = {
-    actor_id: "9007199254740993",
     deck: {
       id: "deck-owned", name: "创作组", name_zh: "创作组", name_en: null,
       description: "说明", description_zh: null, description_en: "Description", enabled: true,
@@ -93,15 +86,10 @@ it.skipIf(!sourceRoot || !python)("matches the actual Dream Deck chat-context so
   expect(result.selected.context.system_prompt).toContain("voice-2");
   expect(result.selected.context.system_prompt).not.toContain("voice-1");
 
-  expect(result.all.statements).toHaveLength(2);
-  expect(result.all.statements[0].sql).toContain("WHERE id = %s AND owner_id = %s");
-  expect(result.all.statements[0].parameters).toEqual([request.deck.id, request.actor_id]);
-  expect(result.all.statements[1].sql).toContain("enabled IS TRUE ORDER BY order_index, created_at, id");
-  expect(result.all.ref_calls).toEqual([request.deck.id]);
-  expect(result.missing_deck).toMatchObject({ status: "error", code: "DECK_ACCESS_DENIED", status_code: 404, ref_calls: [] });
-  expect(result.disabled_deck).toMatchObject({ status: "error", code: "DECK_DISABLED", status_code: 409, ref_calls: [] });
-  expect(result.missing_voice).toMatchObject({ status: "error", code: "AGENT_ACCESS_DENIED", status_code: 404, ref_calls: [] });
-  expect(result.nonready_plugin).toMatchObject({ status: "error", code: "DECK_PLUGIN_UNAVAILABLE", status_code: 409, ref_calls: [request.deck.id] });
+  expect(result.all.status).toBe("resolved");
+  expect(result.disabled_deck).toMatchObject({ status: "error", code: "DECK_DISABLED", status_code: 409 });
+  expect(result.missing_voice).toMatchObject({ status: "error", code: "AGENT_ACCESS_DENIED", status_code: 404 });
+  expect(result.nonready_plugin).toMatchObject({ status: "error", code: "DECK_PLUGIN_UNAVAILABLE", status_code: 409 });
   expect(result.nonready_plugin.message).toContain("drama-forge@official (status=error)");
   // Admin projects storage status; Dream retains disabled/non-ready decisions before Runtime.
 });
