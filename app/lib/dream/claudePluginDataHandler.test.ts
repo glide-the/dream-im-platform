@@ -1,14 +1,15 @@
-// [Input] Registry175-182 HTTP envelopes, mocked service identity/OAuth principal and Admin UOW seams.
-// [Output] Scope, schema-gate, strict body and original-receipt assertions.
+// [Input] Registry175-184 HTTP envelopes, mocked service identity/OAuth principal and Admin UOW seams.
+// [Output] OAuth/background scope, bearer separation, schema-gate and original-receipt assertions.
 // [Pos] Provider-free shared Claude Plugin ingress test.
-// [Sync] 2026-09-16: verify read and lifecycle write authority without database selectors.
+// [Sync] 2026-09-16: verify scoped builtin reconciliation without a fabricated user bearer.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ service: vi.fn(), transaction: vi.fn(), principal: vi.fn(), run: vi.fn(), receipt: vi.fn() }));
 vi.mock("../auth/serviceIdentity", async original => ({ ...await original<typeof import("../auth/serviceIdentity")>(), requireDreamService: mocks.service }));
 vi.mock("./database", async original => ({ ...await original<typeof import("./database")>(), withDataTransaction: mocks.transaction }));
 vi.mock("../auth/serviceAccessToken", async original => ({ ...await original<typeof import("../auth/serviceAccessToken")>(), principalForServiceToken: mocks.principal }));
-vi.mock("./claudePluginDataService", async original => ({ ...await original<typeof import("./claudePluginDataService")>(), runClaudePluginOperation: mocks.run }));
+vi.mock("./claudePluginDataService", async original => ({ ...await original<typeof import("./claudePluginDataService")>(),
+  runClaudePluginOperation: mocks.run, runClaudePluginBackgroundOperation: mocks.run }));
 vi.mock("./receipts", () => ({ ReceiptRepository: class { constructor(..._args: unknown[]) {} execute = mocks.receipt; } }));
 
 import { handleClaudePluginOperation } from "./claudePluginDataHandler";
@@ -24,10 +25,16 @@ function request(operation: string, input: unknown) {
     "x-ink-dream-service": "dream", "x-ink-dream-credential": "x".repeat(32), origin: "http://dream.local",
   }, body: JSON.stringify({ request_id: "request-original", input }) });
 }
+function backgroundRequest(operation: string, input: unknown, bearer = false) {
+  return new Request(`http://admin.local/api/internal/dream/v1/operations/${operation}`, { method: "POST", headers: {
+    ...(bearer ? { authorization: "Bearer oauth-token" } : {}), "content-type": "application/json",
+    "x-ink-dream-service": "dream", "x-ink-dream-credential": "x".repeat(32), origin: "http://dream.local",
+  }, body: JSON.stringify({ request_id: "request-builtin", input }) });
+}
 
 beforeEach(() => {
   vi.resetAllMocks(); vi.stubEnv("DREAM_DATA_MAX_BODY_BYTES", "65536");
-  mocks.service.mockReturnValue({ id: "dream" }); mocks.principal.mockResolvedValue(principal);
+  mocks.service.mockReturnValue({ id: "dream", backgroundScopes: ["plugins:catalog"] }); mocks.principal.mockResolvedValue(principal);
   mocks.transaction.mockImplementation(async (_requirements, action) => action(tx));
   mocks.receipt.mockImplementation(async (...args: unknown[]) => (args[4] as () => Promise<unknown>)());
 });
@@ -68,4 +75,21 @@ it("commits prepare/report under their original receipts and rejects query autho
     expect(response.status).toBe(400);
   }
   expect(mocks.run).toHaveBeenCalledTimes(2);
+});
+
+it("uses service-only plugins:catalog authority and forbids browser credentials", async () => {
+  mocks.run.mockResolvedValue({ action: "install", plan: { accepted: true, operation_id: "cop_builtin",
+    package_spec: "ink-dream-story@platform-builtin", marketplace_entry_id: null,
+    requested_source_type: "platform-builtin", marketplace_source: null } });
+  let response = await handleClaudePluginOperation(backgroundRequest("claude-plugin.builtin.ensure",
+    { package_spec: "ink-dream-story@platform-builtin" }), "claude-plugin.builtin.ensure");
+  expect(response.status).toBe(200);
+  expect(mocks.principal).not.toHaveBeenCalled();
+  expect(mocks.receipt.mock.calls[0].slice(0, 3)).toEqual(["claude-plugin.builtin.ensure", "request-builtin",
+    { package_spec: "ink-dream-story@platform-builtin" }]);
+
+  response = await handleClaudePluginOperation(backgroundRequest("claude-plugin.builtin.ensure",
+    { package_spec: "ink-dream-story@platform-builtin" }, true), "claude-plugin.builtin.ensure");
+  expect(response.status).toBe(400);
+  expect(mocks.run).toHaveBeenCalledTimes(1);
 });

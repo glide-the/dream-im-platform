@@ -1,14 +1,16 @@
-// [Input] Registered Claude Plugin operation, active OAuth principal and caller-owned Admin transaction.
-// [Output] Global catalog projections and atomic operation/installation lifecycle transitions.
-// [Pos] Registry175-182 domain authority; Dream retains CLI, Git and shared-filesystem execution.
-// [Sync] 2026-09-16: preserve the production Claude Plugin state machine behind DTO-Service-Drizzle.
+// [Input] Registered Claude Plugin operation, OAuth principal or scoped Dream service, and Admin transaction.
+// [Output] Catalog projections, lifecycle transitions and manifest-derived builtin Deck reference reconciliation.
+// [Pos] Registry175-184 domain authority; Dream retains CLI, Git and shared-filesystem execution.
+// [Sync] 2026-09-16: add service-only builtin ensure/report while preserving the shared lifecycle state machine.
 import { randomUUID } from "node:crypto";
-import { AuthBoundaryError } from "../auth/config";
+import { AuthBoundaryError, type DreamServiceClient } from "../auth/config";
 import { principalDto } from "../auth/dto";
+import { requireBackgroundScope } from "../auth/serviceIdentity";
 import type { DataTransaction, SchemaRequirement } from "./database";
 import { pgTimestampToIso } from "./chatThreadDto";
 import { dreamUnifiedSchemaRequirement } from "./chatThreadService";
 import { ClaudePluginDataRepository, type ClaudePluginInstallationInsert } from "./claudePluginDataRepository";
+import { parseDeckPluginManifest } from "./deckPluginManifestDto";
 import * as dto from "./claudePluginDataDto";
 
 export const claudePluginMarketplaceSchemaRequirement: SchemaRequirement = {
@@ -211,10 +213,62 @@ async function uninstall(store: ClaudePluginDataRepository, installationId: stri
   return installationView(current);
 }
 
+async function reconcileBuiltinRefs(store: ClaudePluginDataRepository, packageSpec: string,
+  installationId: string, resolvedVersion: string, artifactDigest: string) {
+  const refs = [];
+  for (const row of await store.activeDeckReleaseManifests()) {
+    const manifest = parseDeckPluginManifest(row.manifest_json);
+    if (!manifest.success) continue;
+    const orderIndex = manifest.data.runtime.claude_code_plugins
+      .findIndex(plugin => plugin.claude_code_plugin_id === packageSpec);
+    if (orderIndex < 0) continue;
+    refs.push({ deck_id: row.deck_id, plugin_installation_id: installationId, package_spec: packageSpec,
+      resolved_version: resolvedVersion, artifact_digest: artifactDigest, enabled: 1, order_index: orderIndex });
+  }
+  return store.insertDeckRefs(refs);
+}
+
+async function ensureBuiltin(store: ClaudePluginDataRepository, packageSpec: string) {
+  const parsed = parsePackageSpec(packageSpec);
+  const existing = await store.readyBuiltinInstallation(parsed.canonical);
+  if (existing) {
+    const refsCreated = await reconcileBuiltinRefs(store, parsed.canonical, existing.id,
+      existing.resolved_version, existing.artifact_digest);
+    return dto.claudePluginBuiltinEnsureOutputDto.parse({ action: "ready", package_spec: parsed.canonical,
+      installation_id: existing.id, refs_created: refsCreated });
+  }
+  const plan = await prepareInstall(store, { source_kind: "package", package_spec: parsed.canonical,
+    source_type: "platform-builtin" });
+  return dto.claudePluginBuiltinEnsureOutputDto.parse({ action: "install", plan });
+}
+
+export async function runClaudePluginBackgroundOperation(operation: dto.ClaudePluginBackgroundOperation,
+  rawInput: unknown, service: DreamServiceClient, tx: DataTransaction) {
+  requireBackgroundScope(service, "plugins:catalog");
+  const contract = dto.claudePluginOperationContracts[operation];
+  const parsed = contract.input.safeParse(rawInput);
+  if (!parsed.success) fail("INPUT_INVALID", 400);
+  const store = new ClaudePluginDataRepository(tx);
+  if (operation === "claude-plugin.builtin.ensure") {
+    const input = dto.claudePluginBuiltinEnsureInputDto.parse(parsed.data);
+    return ensureBuiltin(store, input.package_spec);
+  }
+  const input = dto.claudePluginInstallReportInputDto.parse(parsed.data);
+  if (input.event === "complete" && input.installation.source_type !== "platform-builtin") {
+    fail("CLAUDE_PLUGIN_INSTALL_EVIDENCE_INVALID", 409);
+  }
+  const result = await reportInstall(store, input);
+  const refsCreated = input.event === "complete" && result.installation_id
+    ? await reconcileBuiltinRefs(store, result.requested_package_spec, result.installation_id,
+      input.installation.resolved_version, input.installation.artifact_digest)
+    : 0;
+  return dto.claudePluginBuiltinReportOutputDto.parse({ operation: result, refs_created: refsCreated });
+}
+
 export async function runClaudePluginOperation(operation: dto.ClaudePluginOperation, rawInput: unknown,
   rawPrincipal: unknown, tx: DataTransaction) {
   const contract = dto.claudePluginOperationContracts[operation];
-  if (!contract) fail("OPERATION_UNAVAILABLE", 404);
+  if (!contract || contract.audience !== "user" || contract.userScope === null) fail("OPERATION_UNAVAILABLE", 404);
   const parsed = contract.input.safeParse(rawInput);
   if (!parsed.success) fail("INPUT_INVALID", 400);
   const principal = principalDto.parse(rawPrincipal);

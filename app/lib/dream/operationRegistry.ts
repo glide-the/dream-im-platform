@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: append shared Claude Plugin persistence as Registry175-182.
+// [Sync] 2026-09-16: append service-only builtin reconciliation as Registry183-184.
 // [Sync] 2026-09-16: append Deck Plugin control plane as Registry170-174.
 // [Sync] 2026-09-16: append auto-repair message settlement as Registry169.
 // [Sync] 2026-09-16: append Notion connector persistence operations as Registry148-168.
@@ -208,7 +208,7 @@ export const dreamOperations = [
     [identitySchemaRequirement, ...deckPluginControlSchemaRequirements], operation.userScope,
   )),
   ...Object.entries(claudePluginOperationContracts).map(([name, operation]) => descriptor(
-    name, operation.kind, null, operation.input, operation.output,
+    name, operation.kind, operation.backgroundScope, operation.input, operation.output,
     [identitySchemaRequirement, ...claudePluginDataSchemaRequirements], operation.userScope,
   )),
 ] as const;

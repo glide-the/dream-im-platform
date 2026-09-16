@@ -1,7 +1,7 @@
 // [Input] Caller-owned Admin transaction plus validated Claude Plugin domain identities.
-// [Output] Typed Drizzle reads, locks and lifecycle writes for the shared plugin aggregate.
-// [Pos] Registry175-182 persistence boundary; no filesystem, CLI or caller-selected query surface.
-// [Sync] 2026-09-16: move Claude Plugin operation/catalog/installation persistence into Admin.
+// [Output] Typed Drizzle reads, locks, lifecycle writes and manifest-derived Deck reference writes.
+// [Pos] Registry175-184 persistence boundary; no filesystem, CLI or caller-selected query surface.
+// [Sync] 2026-09-16: add builtin installation/release-manifest/ref persistence for startup reconciliation.
 import { and, asc, count, desc, eq, or, sql } from "drizzle-orm";
 import {
   claude_plugin_installations as installations,
@@ -11,6 +11,8 @@ import {
   claude_plugin_marketplaces as marketplaces,
   claude_plugin_operations as operations,
   deck_claude_plugin_refs as deckRefs,
+  deck_plugin_bindings as deckBindings,
+  deck_plugin_releases as deckReleases,
 } from "@ink-memory/db/schema/dream";
 import type { DataTransaction } from "./database";
 
@@ -201,6 +203,31 @@ export class ClaudePluginDataRepository {
       status: installations.status, installed_at: installations.installed_at, created_at: installations.created_at })
       .from(installations).where(eq(installations.status, "ready"))
       .orderBy(desc(installations.installed_at), desc(installations.created_at), desc(installations.id)).for("share");
+  }
+
+  async readyBuiltinInstallation(packageSpec: string) {
+    return (await this.tx.select(installationFields).from(installations).where(and(
+      eq(installations.requested_package_spec, packageSpec),
+      eq(installations.source_type, "platform-builtin"),
+      eq(installations.status, "ready"),
+    )).orderBy(desc(installations.installed_at), desc(installations.created_at), desc(installations.id))
+      .limit(1).for("share"))[0] ?? null;
+  }
+
+  async activeDeckReleaseManifests() {
+    return this.tx.select({ deck_id: deckBindings.deck_id, manifest_json: deckReleases.manifest_json })
+      .from(deckBindings).innerJoin(deckReleases, and(
+        eq(deckReleases.deck_plugin_id, deckBindings.deck_plugin_id),
+        eq(deckReleases.deck_plugin_version, deckBindings.deck_plugin_version),
+      )).where(eq(deckBindings.status, "active")).orderBy(asc(deckBindings.deck_id)).for("share");
+  }
+
+  async insertDeckRefs(values: Array<{ deck_id: string; plugin_installation_id: string; package_spec: string;
+    resolved_version: string; artifact_digest: string; enabled: number; order_index: number }>) {
+    if (values.length === 0) return 0;
+    const inserted = await this.tx.insert(deckRefs).values(values).onConflictDoNothing()
+      .returning({ deck_id: deckRefs.deck_id });
+    return inserted.length;
   }
 
   async marketplaceSource(entryId: string) {

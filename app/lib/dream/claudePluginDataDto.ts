@@ -1,7 +1,7 @@
 // [Input] Closed shared Claude Plugin catalog selectors, install commands and Dream-produced local execution evidence.
-// [Output] Strict global catalog, operation, installation and lifecycle DTO contracts.
-// [Pos] Registry175-182 wire contract; callers cannot select actors, SQL, tables, columns or transactions.
-// [Sync] 2026-09-16: define Admin-owned Claude Plugin persistence operations while Dream retains CLI/filesystem execution.
+// [Output] Strict global catalog, operation, installation, lifecycle and builtin-reconciliation DTO contracts.
+// [Pos] Registry175-184 wire contract; callers cannot select actors, Decks, SQL, tables, columns or transactions.
+// [Sync] 2026-09-16: append service-only builtin ensure/report without changing Registry175-182 contracts.
 import { z } from "zod";
 import { isoTimeDto } from "../auth/dto";
 
@@ -197,18 +197,32 @@ const completeReport = z.strictObject({
 });
 export const claudePluginInstallReportInputDto = z.discriminatedUnion("event", [beginReport, progressReport, failReport, completeReport]);
 
+export const claudePluginBuiltinEnsureInputDto = z.strictObject({ package_spec: claudePluginPackageSpecDto });
+export const claudePluginBuiltinEnsureOutputDto = z.discriminatedUnion("action", [
+  z.strictObject({ action: z.literal("ready"), package_spec: claudePluginPackageSpecDto,
+    installation_id: identifier, refs_created: z.number().int().nonnegative() }),
+  z.strictObject({ action: z.literal("install"), plan: claudePluginInstallPlanDto }),
+]);
+export const claudePluginBuiltinReportOutputDto = z.strictObject({
+  operation: claudePluginOperationDto,
+  refs_created: z.number().int().nonnegative(),
+});
+
 export const claudePluginOperationContracts = {
-  "claude-plugin.installations.list": { kind: "read" as const, userScope: "dream:read", input: claudePluginEmptyInputDto, output: claudePluginInstallationsListDto },
-  "claude-plugin.marketplace.list": { kind: "read" as const, userScope: "dream:read", input: claudePluginEmptyInputDto, output: claudePluginMarketplaceListDto },
-  "claude-plugin.install.prepare": { kind: "write" as const, userScope: "dream:write", input: claudePluginInstallPrepareInputDto, output: claudePluginInstallPlanDto },
-  "claude-plugin.operations.list": { kind: "read" as const, userScope: "dream:read", input: claudePluginOperationsListInputDto, output: claudePluginOperationsListDto },
-  "claude-plugin.operation.read": { kind: "read" as const, userScope: "dream:read", input: claudePluginOperationReadInputDto, output: claudePluginOperationDto },
-  "claude-plugin.installation.read": { kind: "read" as const, userScope: "dream:read", input: claudePluginInstallationReadInputDto, output: claudePluginInstallationDetailDto },
-  "claude-plugin.install.report": { kind: "write" as const, userScope: "dream:write", input: claudePluginInstallReportInputDto, output: claudePluginOperationDto },
-  "claude-plugin.installation.uninstall": { kind: "write" as const, userScope: "dream:write", input: claudePluginInstallationUninstallInputDto, output: claudePluginInstallationDto },
+  "claude-plugin.installations.list": { audience: "user" as const, kind: "read" as const, userScope: "dream:read", backgroundScope: null, input: claudePluginEmptyInputDto, output: claudePluginInstallationsListDto },
+  "claude-plugin.marketplace.list": { audience: "user" as const, kind: "read" as const, userScope: "dream:read", backgroundScope: null, input: claudePluginEmptyInputDto, output: claudePluginMarketplaceListDto },
+  "claude-plugin.install.prepare": { audience: "user" as const, kind: "write" as const, userScope: "dream:write", backgroundScope: null, input: claudePluginInstallPrepareInputDto, output: claudePluginInstallPlanDto },
+  "claude-plugin.operations.list": { audience: "user" as const, kind: "read" as const, userScope: "dream:read", backgroundScope: null, input: claudePluginOperationsListInputDto, output: claudePluginOperationsListDto },
+  "claude-plugin.operation.read": { audience: "user" as const, kind: "read" as const, userScope: "dream:read", backgroundScope: null, input: claudePluginOperationReadInputDto, output: claudePluginOperationDto },
+  "claude-plugin.installation.read": { audience: "user" as const, kind: "read" as const, userScope: "dream:read", backgroundScope: null, input: claudePluginInstallationReadInputDto, output: claudePluginInstallationDetailDto },
+  "claude-plugin.install.report": { audience: "user" as const, kind: "write" as const, userScope: "dream:write", backgroundScope: null, input: claudePluginInstallReportInputDto, output: claudePluginOperationDto },
+  "claude-plugin.installation.uninstall": { audience: "user" as const, kind: "write" as const, userScope: "dream:write", backgroundScope: null, input: claudePluginInstallationUninstallInputDto, output: claudePluginInstallationDto },
+  "claude-plugin.builtin.ensure": { audience: "background" as const, kind: "write" as const, userScope: null, backgroundScope: "plugins:catalog" as const, input: claudePluginBuiltinEnsureInputDto, output: claudePluginBuiltinEnsureOutputDto },
+  "claude-plugin.builtin.report": { audience: "background" as const, kind: "write" as const, userScope: null, backgroundScope: "plugins:catalog" as const, input: claudePluginInstallReportInputDto, output: claudePluginBuiltinReportOutputDto },
 };
 
 export type ClaudePluginOperation = keyof typeof claudePluginOperationContracts;
+export type ClaudePluginBackgroundOperation = "claude-plugin.builtin.ensure" | "claude-plugin.builtin.report";
 export type ClaudePluginInstallPrepareInput = z.infer<typeof claudePluginInstallPrepareInputDto>;
 export type ClaudePluginInstallReportInput = z.infer<typeof claudePluginInstallReportInputDto>;
 export type ClaudePluginInstallationEvidence = z.infer<typeof claudePluginInstallationEvidenceDto>;

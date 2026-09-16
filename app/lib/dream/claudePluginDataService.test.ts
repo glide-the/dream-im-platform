@@ -1,17 +1,35 @@
 // [Input] Strict Claude Plugin DTOs and mocked typed Repository state.
-// [Output] Catalog, prepare, lifecycle, replay, drift, uninstall and closed-input verification.
-// [Pos] Provider-free Registry175-182 domain tests; no database, filesystem or CLI process.
-// [Sync] 2026-09-16: verify the Admin-owned shared Claude Plugin persistence aggregate.
+// [Output] Catalog, lifecycle, builtin manifest reconciliation and closed-input verification.
+// [Pos] Provider-free Registry175-184 domain tests; no database, filesystem or CLI process.
+// [Sync] 2026-09-16: verify service-only builtin ensure/report and manifest-derived Deck refs.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DataTransaction } from "./database";
 import { ClaudePluginDataRepository } from "./claudePluginDataRepository";
-import { runClaudePluginOperation } from "./claudePluginDataService";
+import { runClaudePluginBackgroundOperation, runClaudePluginOperation } from "./claudePluginDataService";
 
 const principal = { subject: "subject", canonical_user_id: "42", client_id: "dream",
   scopes: ["dream:read", "dream:write"], status: "active" as const };
 const tx = {} as DataTransaction;
 const time = "2026-09-16 00:00:00.123456+00";
 const digest = `sha256:${"d".repeat(64)}`;
+const builtinSpec = "ink-dream-story@platform-builtin";
+const service = { id: "dream", secret: "x".repeat(32), origin: "http://dream.local",
+  oauthClientId: "dream", redirectUri: "http://dream.local/auth/callback",
+  backgroundScopes: ["plugins:catalog" as const] };
+
+function manifest(pluginId = builtinSpec) {
+  return JSON.stringify({ schema_version: "deck-plugin/v1", deck_plugin_id: "ink.dream.story-workflow",
+    deck_plugin_version: "1.0.0", display_name: "Story", description: "Story plugin", author: "Ink",
+    status: "published", workflow: { workflow_definition_ref: "workflow", input_schema_ref: "input",
+      output_schema_ref: "output", steps: [{ step_id: "start" }] }, compatibility: { deck_host_api: "1.0.0",
+      claude_agent_contract: "1.0.0", claude_code: "1.0.0", story_output_schema: "1.0.0",
+      deck_runtime_snapshot_contract: "1.0.0" }, runtime_configuration: { profile_contract: "profile/v1",
+      required_config_keys: [], secret_ref_kinds: [], allow_profile_versions: "1.x" },
+    capabilities: ["story.workspace.propose"], runtime: { claude_code_plugins: [
+      { claude_code_plugin_id: pluginId, source_ref: "builtin://ink-dream-story", version_constraint: "1.0.0",
+        required: true, capability_bindings: ["story.workspace.propose"] }], degraded_modes: [] },
+    dependencies: { deck_plugin_releases: [] } });
+}
 
 function operation(patch: Record<string, unknown> = {}) {
   return { id: "cop_operation", operation_kind: "install", requested_package_spec: "demo@market",
@@ -58,6 +76,9 @@ beforeEach(() => {
   vi.spyOn(ClaudePluginDataRepository.prototype, "readyInstallationsForMarketplace").mockResolvedValue([]);
   vi.spyOn(ClaudePluginDataRepository.prototype, "marketplaceSource").mockResolvedValue(marketplaceSource() as never);
   vi.spyOn(ClaudePluginDataRepository.prototype, "marketplaceEntryExists").mockResolvedValue({ id: "cpme_demo" } as never);
+  vi.spyOn(ClaudePluginDataRepository.prototype, "readyBuiltinInstallation").mockResolvedValue(null);
+  vi.spyOn(ClaudePluginDataRepository.prototype, "activeDeckReleaseManifests").mockResolvedValue([]);
+  vi.spyOn(ClaudePluginDataRepository.prototype, "insertDeckRefs").mockResolvedValue(0);
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -138,5 +159,61 @@ describe("Claude Plugin Admin data domain", () => {
         { installation_id: "cpi_installation", [key]: "caller" }, principal, tx))
         .rejects.toMatchObject({ code: "INPUT_INVALID", status: 400 });
     }
+  });
+
+  it("returns a builtin install plan without accepting Deck or actor selectors", async () => {
+    const result = await runClaudePluginBackgroundOperation("claude-plugin.builtin.ensure",
+      { package_spec: builtinSpec }, service, tx);
+    expect(result).toMatchObject({ action: "install", plan: { accepted: true, package_spec: builtinSpec,
+      requested_source_type: "platform-builtin" } });
+    for (const key of ["deck_id", "actor_id", "user_id", "sql", "table", "transaction"]) {
+      await expect(runClaudePluginBackgroundOperation("claude-plugin.builtin.ensure",
+        { package_spec: builtinSpec, [key]: "caller" }, service, tx))
+        .rejects.toMatchObject({ code: "INPUT_INVALID", status: 400 });
+    }
+  });
+
+  it("derives ready builtin Deck refs from valid active release manifests", async () => {
+    vi.mocked(ClaudePluginDataRepository.prototype.readyBuiltinInstallation).mockResolvedValue(installation({
+      requested_package_spec: builtinSpec, package_name: "ink-dream-story", marketplace: "platform-builtin",
+      source_type: "platform-builtin", resolved_version: "1.0.0",
+    }) as never);
+    vi.mocked(ClaudePluginDataRepository.prototype.activeDeckReleaseManifests).mockResolvedValue([
+      { deck_id: "deck-match", manifest_json: manifest() },
+      { deck_id: "deck-other", manifest_json: manifest("other@market") },
+      { deck_id: "deck-invalid", manifest_json: "{" },
+    ] as never);
+    vi.mocked(ClaudePluginDataRepository.prototype.insertDeckRefs).mockResolvedValue(1);
+    const result = await runClaudePluginBackgroundOperation("claude-plugin.builtin.ensure",
+      { package_spec: builtinSpec }, service, tx);
+    expect(result).toEqual({ action: "ready", package_spec: builtinSpec,
+      installation_id: "cpi_installation", refs_created: 1 });
+    expect(ClaudePluginDataRepository.prototype.insertDeckRefs).toHaveBeenCalledWith([
+      expect.objectContaining({ deck_id: "deck-match", plugin_installation_id: "cpi_installation",
+        package_spec: builtinSpec, order_index: 0 }),
+    ]);
+  });
+
+  it("commits builtin completion and ref reconciliation in the caller UOW", async () => {
+    let state = operation({ requested_package_spec: builtinSpec, status: "running", phase: "verify", progress: 55 });
+    vi.mocked(ClaudePluginDataRepository.prototype.operation).mockImplementation(async () => state as never);
+    vi.mocked(ClaudePluginDataRepository.prototype.updateOperation).mockImplementation(async (_id, value) => {
+      state = { ...state, ...value, updated_at: time }; return state as never;
+    });
+    vi.mocked(ClaudePluginDataRepository.prototype.activeDeckReleaseManifests)
+      .mockResolvedValue([{ deck_id: "deck-match", manifest_json: manifest() }] as never);
+    vi.mocked(ClaudePluginDataRepository.prototype.insertDeckRefs).mockResolvedValue(1);
+    const input = { event: "complete" as const, operation_id: "cop_operation", installation: {
+      package_name: "ink-dream-story", marketplace: "platform-builtin", requested_version: null,
+      resolved_version: "1.0.0", source_type: "platform-builtin" as const, artifact_digest: digest,
+      artifact_path: "/shared/plugins/story", claude_cli_version: "2.1.220", cli_git_commit_sha: null,
+      manifest_json: "{}", component_inventory_json: "{}", compatibility_json: "{}", file_count: 3,
+    }, execution: null, evidence_path: "/shared/evidence/cop.json" };
+    const result = await runClaudePluginBackgroundOperation("claude-plugin.builtin.report", input, service, tx);
+    expect(result).toMatchObject({ operation: { status: "ready", installation_id: expect.stringMatching(/^cpi_/) },
+      refs_created: 1 });
+    await expect(runClaudePluginBackgroundOperation("claude-plugin.builtin.report", { ...input,
+      installation: { ...input.installation, source_type: "marketplace" } }, service, tx))
+      .rejects.toMatchObject({ code: "CLAUDE_PLUGIN_INSTALL_EVIDENCE_INVALID", status: 409 });
   });
 });

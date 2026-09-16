@@ -1,3 +1,4 @@
+// [Sync] 2026-09-16: recover Registry175-184 Claude Plugin writes under their original user/background authority.
 // [Sync] 2026-09-16: recover Registry169 under the original turn authority.
 // [Sync] 2026-09-16: recover Registry148-168 Notion user/scheduler writes under separate original authorities.
 // [Sync] 2026-09-16: recover Registry134-147 managed-MCP writes under original OAuth or server-persistence authority.
@@ -87,6 +88,9 @@ import { notionBackgroundReceiptActor, notionConnectorSchemaRequirements } from 
 import { dreamAutoRepairOperationContracts } from "./dreamAutoRepairDto";
 import { isDreamAutoRepairOperation } from "./dreamAutoRepairHandler";
 import { dreamAutoRepairSchemaRequirements } from "./dreamAutoRepairService";
+import { claudePluginOperationContracts } from "./claudePluginDataDto";
+import { isClaudePluginOperation } from "./claudePluginDataHandler";
+import { claudePluginDataSchemaRequirements } from "./claudePluginDataService";
 import { DelegationService } from "../auth/delegationService";
 export async function handleReceipt(request: Request, requestId: string) {
   return handleInternalAuthRequest(request, async (service, setRequestId) => {
@@ -94,6 +98,35 @@ export async function handleReceipt(request: Request, requestId: string) {
     setRequestId(parsed.data);
     const query = new URL(request.url).searchParams;
     const name = query.get("operation") ?? "";
+    if (isClaudePluginOperation(name)) {
+      const operation = claudePluginOperationContracts[name];
+      if (operation.kind !== "write" || query.size !== 1 || query.getAll("operation").length !== 1) {
+        throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+      }
+      const receiptResultDto = z.discriminatedUnion("status", [
+        z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
+        z.strictObject({ status: z.literal("committed"), operation: z.literal(name), request_id: requestIdDto, result: operation.output }),
+      ]);
+      return withDataTransaction([identitySchemaRequirement, ...claudePluginDataSchemaRequirements], async tx => {
+        let actor: string;
+        if (operation.audience === "background") {
+          if (request.headers.has("authorization")) throw new AuthBoundaryError("CLAUDE_PLUGIN_BROWSER_CREDENTIAL_FORBIDDEN", 400);
+          requireBackgroundScope(service, "plugins:catalog");
+          actor = `background:${service.id}`;
+        } else {
+          actor = (await principalForServiceToken(tx,
+            request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "",
+            service, operation.userScope)).subject;
+        }
+        const row = await new ReceiptRepository(tx, service.id, actor).find(name, parsed.data);
+        if (row && (!/^[0-9a-f]{64}$/.test(row.inputSha256) || row.threadScope !== null
+          || row.editorSessionScope !== null || row.runScope !== null || !operation.output.safeParse(row.result).success)) {
+          throw new AuthBoundaryError("CLAUDE_PLUGIN_RECEIPT_INVALID");
+        }
+        return receiptResultDto.parse({ status: row ? "committed" : "absent", operation: name,
+          request_id: parsed.data, ...(row ? { result: row.result } : {}) });
+      });
+    }
     if (isNotionConnectorOperation(name)) {
       const operation = notionConnectorOperationContracts[name];
       if (operation.kind !== "write") throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
