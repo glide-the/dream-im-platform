@@ -1,9 +1,9 @@
 #!/usr/bin/env tsx
 
 // [Input] Private Admin env, exact identity capability and optional explicit --apply.
-// [Output] Redacted dry-run/apply receipt for the configured Dream OAuth resource and public clients.
+// [Output] Redacted dry-run/apply receipt for the Dream resource, public clients and confidential service clients.
 // [Pos] Release operator entry point; default execution never mutates the auth catalog.
-// [Sync] 2026-09-16: add bounded DTO/Drizzle OAuth client provisioning.
+// [Sync] 2026-09-17: reconcile client_credentials service registrations without emitting client secrets.
 import { resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
 import { closeAuthDatabaseConnections, withAuthTransaction } from "../app/lib/auth/database";
