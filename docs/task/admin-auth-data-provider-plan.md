@@ -2,6 +2,7 @@
 <!-- [Output] Before-code optimized prompts, ownership boundaries and actual validation receipts. -->
 <!-- [Pos] Admin execution plan; candidate/source/static stages never close public or real-business acceptance. -->
 <!-- [Sync] 2026-09-17: historical Round instructions that merged Admin and Dream identity are superseded by the domain-boundary review. -->
+<!-- [Sync] 2026-09-17: add the pre-business-change OAuth role and user-domain design audit round. -->
 <!-- [Sync] 2026-09-15: register configured default Deck plugin resolution as Registry104. -->
 # Admin 统一认证与 Dream 数据访问执行计划
 
@@ -347,3 +348,13 @@ Admin静态门禁覆盖日期/limit/selector、owner/scope/delegation、NULL/微
 读取Dream `backend/services/deck/defaults.py`、`PluginInstallService.list_installations`和Deck默认创建阶段合同后，只在Admin新增一个OAuth只读操作。`deck.default-plugin.resolve`使用strict `{}`，从Admin `DREAM_DECK_POLICY_JSON`取得package/version，在typed Drizzle Repository中只匹配ready行，并按原 `created_at DESC, id DESC` 选择最新候选。输出nullable installation，非空只含安装ID、package、marketplace、resolved version、digest和raw compatibility JSON；禁止caller actor、policy、candidate/evidence、SQL/table/column selector。
 
 Handler要求 `dream:read`、null entity scope和identity/既有Deck capability，不生成receipt/audit。Admin不读取artifact、不调用CLI；现有 `deck.create` 与 `deck.reconcile-default` 的事务内安装ID、policy、digest、ready二次匹配保持不变。领域/Handler/registration及实际Dream source oracle focused门禁通过；runner-owned具名loopback PostgreSQL用SELECT-only DATA role验证exact/absent/unready/mismatch、同时间ID次序、raw compatibility、scope/entity/capability拒绝、row count不变和owned cleanup。无migration、configured database、provider、正常账户或Dream consumer执行；Dream本机verifier与两条公开路由替换属于后续独立提交。
+
+## Round 34 — 用户业务域与 OAuth 角色设计复核
+
+Optimized Prompt:
+
+你是跨项目认证架构评审与实现负责人。目标是在继续业务修改前，核对 Admin operator、Dream user、OAuth client、Authorization Server、Resource Server 与 service principal 的现行设计和实际代码。已有证据包括独立 `admin_users/admin_sessions/RBAC`、Dream `identity.user → subject_links → public.users`、Better Auth 1.7.4、public browser/device client、confidential Dream server client、双 Bearer内部接口和 strict DTO/Service/typed Repository/Drizzle。读取 Admin/Dream 的认证总设计、ER/流程图、项目架构、operation contract、Better Auth composition、Admin login/guard、service identity、Dream BFF/Python transport及现有聚焦测试。
+
+先输出并写入可核验评审结论，不先改业务代码。明确 `client_credentials` 只证明 Dream server client，不携带 Dream user；Dream user 是 Authorization Code/Device token 的 delegated subject/resource owner；Admin 是授权服务与管理系统，Admin operator 是独立管理主体。相同邮箱不得合并、复制密码/Session/角色或把 Dream 登录提升为 Admin 权限。用户 operation 必须同时验证用户委托和服务身份，后台 operation 只允许具名 background scope。全部数据库调用继续遵循 Dream strict Pydantic DTO → Admin Zod DTO → Domain Service → typed Repository → Drizzle/UOW，不接受外部 user ID、SQL、表列或通用 CRUD。
+
+保持 Dream Runtime、SSE、EventBus、turn/resume/cancel、资源策略 LKG、共享文件系统和 `.claude-tmp` 不变。正常流程覆盖 Admin 管理登录、Dream code/PKCE、Google callback、Device approval、service `client_credentials` 和用户数据双 Bearer；失败覆盖同邮箱冲突、错误业务域密码、service token 调用户接口、user token 访问 Admin、public client 请求 `client_credentials`、缺 subject link 与 Admin 不可用。验收为设计稿/ER/时序图一致、实际代码没有 `admin_subject_links` 登录依赖、聚焦认证/服务身份/BFF测试通过、Markdown索引和链接有效、`git diff --check` 通过。只有发现真实实现偏离评审结论时才修改业务代码；已符合目标的部分不重写。

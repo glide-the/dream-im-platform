@@ -4,6 +4,7 @@
 <!-- [Sync] 2026-09-17: record normal public Thread create/history/status, terminal SSE/idempotent stop and restricted DATA-role persistence proof. -->
 <!-- [Sync] 2026-09-16: record normal database 0063, 64 migrations, nine release capabilities and actual-role activation. -->
 <!-- [Sync] 2026-09-17: record current-head full-suite recovery after replacing the retired static service-secret fixture field. -->
+<!-- [Sync] 2026-09-17: record the identity-domain review and normal Dream-session read-only DTO/BFF acceptance. -->
 <!-- [Sync] 2026-09-17: record real Dream client-local logout, same-subject SSO re-entry and continued Admin-login isolation. -->
 <!-- [Sync] 2026-09-17: record corrective normal ACL activation and same-browser Dream/Admin authorization separation. -->
 <!-- [Sync] 2026-09-17: record normal resource-policy desired/effective/revision/LKG and fresh observer parity. -->
@@ -296,3 +297,13 @@ Registry104 default-plugin gate, 2026-09-15: exact Registry103 prefix canonical 
 正常Dream Browser Session通过公开`GET /api/claude-agent/threads?limit=50`读取16个Thread元数据；五个历史Thread包含assistant消息，`e6fd4e39-ce5f-4887-b585-1f508933b60a`经当前Admin DTO链读取6条交替角色历史。该历史以`limit=2`遍历三页，六个ID跨页不重复，前两页有cursor、末页`has_more=false`；携带最新ID重读返回空集与`unchanged=true`。坏cursor返回400，未知Thread的messages/stop返回404。终态`GET .../stream`返回409，`POST .../stop`返回200且`stop_requested=false`。随后公开`POST /api/claude-agent/threads`创建并保留无模型Thread `1326f102-0db5-41e6-b8ec-8d0ef874e6cc`；列表、空消息读取、状态与幂等stop全部返回200，未启动Runtime或模型，也未读取正文。
 
 Admin worktree在正常`.env.local`下使用受限`DREAM_DATA_DATABASE_URL`执行参数化只读查询，exit0，`public.chat_thread`精确返回该ID一行且标题匹配；未打印DSN、用户ID、Token或正文。公开订阅刷新仍为总额100,000、已消费16、可用24,978。唯一现有Deck的公开plugin binding为revision0/null，本轮没有修改既有Deck来制造Run。合法格式未知ID的公开Run GET/cancel和Preflight GET均返回404；Run按既有产品映射为`AGENT_EXECUTION_FAILED`，Preflight为`WORKFLOW_PERMISSION_DENIED`。负向路径通过，真实成功Preflight/Run仍待有合法binding的既有业务实体或正常产品配置后执行。
+
+## 用户业务域与正常只读数据链路回执（2026-09-17）
+
+设计复核确认五种角色没有混用：Admin Better Auth/OAuth Provider是Authorization Server，Admin operator是独立管理主体，Dream browser/device是public client，Dream server是confidential client，Dream user是delegated subject/resource owner。`client_credentials`只为Dream server签发service token；用户实体操作仍要求user bearer与server-only service bearer。相同邮箱不会合并Admin member与Dream user，也不会复制密码、Session、RBAC或产品所有权。
+
+Admin聚焦7 files/35 tests、Dream Python身份与双bearer 109 tests、Dream Next BFF 23 tests全部通过。正常Dream Browser Session随后从18组公开同源入口读取个人资料、偏好、Session、图片/报告/社交、Product/Gateway目录、Plugin、MCP、Connector与Notion状态，全部返回200且符合公开DTO。仅保存字段名、状态与计数。Browser伪造user bearer、私有service header和user ID时，BFF仍按HttpOnly Session生成服务器身份并返回真实Session主体，调用方头未越过边界。
+
+迁移读取域的Dream backend 8 files/198 tests通过。前端正确Playwright runner初轮为27 passed、4 not run、2 failed；两项失败只来自旧测试继续期望绝对URL和Browser Bearer。生产实现已是同源Cookie/CSRF，因此仅更新测试/目录合同，fresh复跑5 files/33 tests全部通过。没有修改认证业务、Admin operator、Dream user映射、订阅或数据。Product model catalog当前为空而Gateway catalog有9项；当前用户Product context无entitlement，严格DTO和既有合同均通过，未擅自改变授权语义。真实模型完整turn、成功Workflow Run、独立Admin管理凭据与自然Session TTL仍待单独验收。
+
+Luna对最终Dream未提交树只读复跑同一Playwright 33/33、TypeScript、完整backend 3535 passed/24 skipped/615 subtests、lint、Next production build、无PostgreSQL运行路径6/6和两套部署投影，全部exit0；没有访问正常数据库、浏览器、账户、网络或secret。

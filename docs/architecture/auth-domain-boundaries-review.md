@@ -1,6 +1,7 @@
 <!-- [Input] Current Admin/Dream auth documents, Better Auth 1.7.4 source, legacy Admin session schema and deployed identity records. -->
 <!-- [Output] Reviewed provider/client/operator/user boundaries and the required compatibility-first implementation sequence. -->
 <!-- [Pos] Authoritative cross-project auth-domain decision; Admin auth.md and Dream consumer documents must conform to it. -->
+<!-- [Sync] 2026-09-17: freeze the RFC OAuth roles before any further business change; a Dream user is the delegated subject/resource owner, never a client registration. -->
 <!-- [Sync] 2026-09-17: record the completed separation of Admin operators, Dream users, OAuth clients and service principals. -->
 
 # Admin / Dream 认证业务域评审
@@ -22,6 +23,21 @@ Admin 同时承载 OAuth Authorization Server、Dream 数据接口和 Admin 管�
 - Admin 管理 Session 只能访问 Admin 管理路由；Dream OAuth access token 只能访问其 resource/scope 允许的 Dream 产品和数据接口。
 - 相同邮箱不创建 `admin_users ↔ users` 关系，不复制密码哈希，不把 Dream 登录结果转换为 Admin 权限。
 - Dream 生产服务不持有 PostgreSQL 凭据；全部数据持久化仍通过 Admin 的 DTO → Domain Service → typed Repository → Drizzle 边界。
+
+### OAuth 角色定论
+
+“客户端模式”只能表示 OAuth `client_credentials` grant，它证明调用应用，不携带用户身份。这里的 OAuth 角色固定如下，后续业务实现不得交换这些角色：
+
+| OAuth / 业务角色 | 本项目实体 | Token 中的身份 | 允许的调用 |
+| --- | --- | --- | --- |
+| Authorization Server | Admin Better Auth/OAuth Provider | token issuer，不是被委托用户 | 校验 client、登录/同意、签发/刷新 token、提供 JWKS |
+| Admin operator | `public.admin_users` + `public.admin_sessions` | 不进入 Dream OAuth token | 登录 `/admin`，按 Admin RBAC 操作管理资源 |
+| Public OAuth client | Dream browser BFF、CLI/device | `client_id`，无 client secret | Authorization Code + PKCE 或 RFC 8628，代表已登录 Dream user 请求授权 |
+| Confidential OAuth client | Dream server | service token 中 `sub == client_id` | `client_credentials` 仅执行具名无用户后台操作；用户操作时另作为服务身份 |
+| Resource owner / delegated subject | Dream user：`identity.user → identity.subject_links → public.users` | 用户 token 的 `sub` | 访问本人 Deck、Thread、Run、订阅、文件和其他产品实体 |
+| Resource Server | Admin Dream data API、适用的 Dream/Gateway API | 校验 user/service token | 从用户 `sub` 派生 canonical user，并执行 scope 与实体权限过滤 |
+
+因此，Admin 是授权服务和管理系统，Admin operator 是管理业务主体；Dream 应用才是 OAuth client；Dream user 是被委托的产品主体。若把每个 Dream user 注册成 `client_credentials` client，token 将只证明一组 client credential，无法表达用户同意、个人实体所有权、账户禁用、用户 Session、Device approval 或同一用户跨多个 client 的授权关系，本方案明确禁止这种建模。
 
 ## 概念与规则
 
@@ -235,6 +251,19 @@ sequenceDiagram
 ## 评审结论与验收
 
 现行数据接口 DTO/ORM 边界、Dream OAuth code/device 流程、Google callback 和 Dream subject mapping 均按评审结论保留。Admin 管理登录/Session 已恢复独立业务域，服务身份已采用 confidential OAuth client；修复过程中没有把 Admin member 绑定到 Dream canonical user。
+
+本轮在业务修改前完成的设计复核结果如下：
+
+| 需求 | 设计结论 | 实现证据 | 评审状态 |
+| --- | --- | --- | --- |
+| Dream 与 Admin 用户视角分离 | 两张用户表、两套密码/Session/状态/RBAC，无跨表业务关系 | `adminAuthService.ts`、`adminSessionRepository.ts` 只读 Admin 表；Dream OAuth 用 `subject_links` | 通过 |
+| OAuth 客户端模式 | Browser/device 是 public client；Dream server 是 confidential client | `serviceIdentity.ts` 要求 service token `sub == client_id`；public client 不用 secret | 通过 |
+| 用户委托与服务身份分离 | 用户 operation 同时要求 user bearer 与 server-only service bearer | internal handler 与 Dream BFF/Python transport 使用双 Bearer，拒绝 caller user ID | 通过 |
+| 相同邮箱兼容 | 只做冲突检测和显式 legacy adoption，不合并 Admin member | release-time adoption 只创建 Dream `subject_links`，`admin_membership_created=false` | 通过 |
+| DTO/ORM 数据边界 | strict DTO → Service → typed Repository → Drizzle/UOW | operation registry 和领域 handler 不接受 SQL、表列或事务选择器 | 通过 |
+| 历史 `admin_subject_links` | 仅 schema/迁移兼容及 legacy adoption 冲突检测；不参加登录/RBAC | 管理登录/guard 无该表依赖 | 通过，contract 删除另立迁移 |
+
+结论是现行身份业务代码与本次分域方案一致；本轮无需为了“把 Dream user 变成 OAuth client”改写认证代码。后续业务变更必须以本表为门禁，只有发现与该边界不一致的实际调用才修改实现。
 
 实施完成必须证明：
 
