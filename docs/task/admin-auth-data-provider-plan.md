@@ -358,3 +358,23 @@ Optimized Prompt:
 先输出并写入可核验评审结论，不先改业务代码。明确 `client_credentials` 只证明 Dream server client，不携带 Dream user；Dream user 是 Authorization Code/Device token 的 delegated subject/resource owner；Admin 是授权服务与管理系统，Admin operator 是独立管理主体。相同邮箱不得合并、复制密码/Session/角色或把 Dream 登录提升为 Admin 权限。用户 operation 必须同时验证用户委托和服务身份，后台 operation 只允许具名 background scope。全部数据库调用继续遵循 Dream strict Pydantic DTO → Admin Zod DTO → Domain Service → typed Repository → Drizzle/UOW，不接受外部 user ID、SQL、表列或通用 CRUD。
 
 保持 Dream Runtime、SSE、EventBus、turn/resume/cancel、资源策略 LKG、共享文件系统和 `.claude-tmp` 不变。正常流程覆盖 Admin 管理登录、Dream code/PKCE、Google callback、Device approval、service `client_credentials` 和用户数据双 Bearer；失败覆盖同邮箱冲突、错误业务域密码、service token 调用户接口、user token 访问 Admin、public client 请求 `client_credentials`、缺 subject link 与 Admin 不可用。验收为设计稿/ER/时序图一致、实际代码没有 `admin_subject_links` 登录依赖、聚焦认证/服务身份/BFF测试通过、Markdown索引和链接有效、`git diff --check` 通过。只有发现真实实现偏离评审结论时才修改业务代码；已符合目标的部分不重写。
+
+## Round 35 — 独立 Admin 登录兼容诊断与修复
+
+Optimized Prompt:
+
+你是 Admin 独立用户域的认证兼容负责人。设计复核已经冻结：Admin operator 与 Dream user 可以使用相同邮箱字符串，但属于不同表、密码凭据、Session、角色和业务权限；Dream Better Auth/Google/OAuth user 不得被合并、复制或自动提升为 Admin member。先读取 Admin login route、密码哈希实现、`admin_users/admin_credentials/admin_sessions/RBAC` schema与migration、bootstrap流程、页面提交DTO、受限AUTH角色ACL、现有测试和正常服务结构化响应，再用只读方式核对正常数据库中 Admin operator/credential/session 的存在性、状态与算法元数据，不输出邮箱、hash、salt、Session、DSN或secret。
+
+诊断必须区分：账号不存在、账号禁用、credential缺失、旧密码算法不兼容、提交DTO错误、AUTH角色权限缺失、Session持久化失败、cookie/origin问题与实际密码不匹配。不要用Dream密码哈希验证或回填Admin，不读取`identity.subject_links`作为Admin登录依据，不修改Dream user、Better Auth account、OAuth client或RBAC。若发现代码兼容缺口，按现有DTO → Service → typed Repository/Drizzle边界做最小前向修复并增加真实算法fixture测试；若代码和数据边界正确而凭据本身不匹配，明确记录为独立Admin凭据问题，不伪造业务修复。
+
+验证覆盖正确/错误密码、旧合法hash、损坏hash、禁用/无角色用户、Session创建与后续guard、Dream OAuth/Session访问Admin拒绝、相同邮箱双域无关系、ACL与结构化错误。先执行不含secret的静态和公开只读检查；任何账户创建、密码重置、角色变更或正常数据库写入只在现有明确授权与可审计入口下进行。保持Dream登录、Device Flow、双Bearer、数据库接口、Runtime/SSE/共享文件系统不变。记录命令、cwd、exit、HTTP状态和脱敏计数，不能把错误密码401改成跨域账户合并。
+
+### Round 35 实际回执
+
+正常`GET /api/admin/auth/bootstrap`返回200且`required=false`，未登录`GET /api/admin/auth/me`返回401。受限AUTH只读核对显示一个active Admin operator、一个角色绑定、当前scrypt参数格式；目标邮箱在Admin域精确存在，没有读取或输出邮箱、hash、salt、DSN与Session值。错误候选凭据经真实页面返回401；仓库现有独立Admin凭据越过密码检查后最初返回503，由此排除Dream user、OAuth、页面DTO和哈希算法。
+
+根因是正常`.env.local`与`docker/.env`漏配必需的`ADMIN_SESSION_TTL_SECONDS`。AUTH角色对`admin_sessions` INSERT、`admin_users`登录时间列UPDATE和`admin_audit_logs` INSERT均已有权限；session secret、issuer与AUTH DSN存在。补齐生成器既定默认`28800`后，`pnpm env:check`由明确的两项缺失exit1变为exit0。公开生产入口随后完成login200、Session Cookie签发、me200（1 role/28 permissions）、logout200；真实Chrome重新登录并进入`/admin`。没有重置密码、修改Admin member/RBAC、读取Dream密码、创建subject link或合并两个用户域。
+
+README与现行交互稿已删除失真的预填短密码说明，改为页面实际行为：邮箱/密码均为空、独立Admin密码至少14字符；配置表补充Admin Session secret/TTL缺失时失败关闭。当前Chrome保留用户发起验收所需的正常Admin Session；历史撤销/过期Session和Dream登录态不参与该Session。
+
+最终聚焦Admin密码、独立Session、guard与bootstrap共5 files/22 tests通过；6份changed Markdown检查17个本地相对链接、0缺失，`git diff --check`通过。业务修复只修改ignored本机配置和现行文档，没有生产TypeScript或Drizzle变更，因此复用当前分支既有完整suite/type/lint/build通过回执，不重复无新风险的全仓测试。

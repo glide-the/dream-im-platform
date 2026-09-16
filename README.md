@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-17: align first-run instructions with the empty 14-character password form and required Admin Session TTL configuration. -->
 # Ink Memory Admin
 
 基于 Next.js 与 Refine 的 Ink Memory 运营控制台。当前应用版本为 `0.1.1`。一个项目内提供剧本数据运营、平台用户管理、AI Provider 与模型配置、Token 计费、Claude/OpenAI 兼容网关、文件存储、RBAC、系统设置和审计能力，结构化数据统一存储在 PostgreSQL `ink-memory`。
@@ -85,14 +86,11 @@ pnpm env:check
 
 第一次打开 `/admin` 时，系统先检查 PostgreSQL 中是否存在管理员。若数据库为空，登录入口会自动弹出“设置首位管理员”页面，不再要求手工调用 Bootstrap API。
 
-页面默认填写：
-
-- 管理员邮箱：`dmeck@suoxya.com`
-- 初始密码：`test123456`
+页面不预填管理员邮箱或密码。管理员输入独立于 Dream 用户域的邮箱和至少 14 个字符的新密码；相同邮箱字符串不会共享密码、Session 或权限。
 
 将 `.env.local` 中由 `pnpm env:setup` 自动生成的 `ADMIN_BOOTSTRAP_TOKEN` 粘贴到“首次启动密钥”，然后点击“创建管理员并进入控制台”。初始化会在同一事务中创建超级管理员、内置角色、权限和审计记录，并立即建立管理 Session。
 
-Bootstrap 只允许成功一次；已有管理员时 `/admin/login` 只显示正常登录。默认密码仅用于本地首次设置，生产环境应在提交前改成独立强密码。
+Bootstrap 只允许成功一次；已有管理员时 `/admin/login` 只显示正常登录。登录使用 `admin_users` 中的独立凭据，不读取 Dream 用户密码或 OAuth Session。
 
 ## Docker 部署
 
@@ -161,6 +159,7 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `DREAM_WORKFLOW_CONTEXT_MAX_ATTEMPTS` | 完整retry链查询技术容量 | 保留原256默认；与权限独立 |
 | `DREAM_CHAT_AUTO_TITLE_MAX_CHARACTERS` | 首条普通user消息自动title容量 | 保留原50默认，Python whitespace/Unicode字符 |
 | `AUTH_RUNTIME_DELEGATION_TTL_SECONDS/MAX_TTL_SECONDS` | 窄授权续期与原最大寿命 | 显式正安全整数，renew不能扩张最大寿命 |
+| `ADMIN_SESSION_SECRET` / `ADMIN_SESSION_TTL_SECONDS` | Admin 管理 Session 的HMAC密钥与有效期 | secret至少32 bytes；TTL为正安全整数，本机默认28800秒；缺失时登录在建Session前失败关闭 |
 | `ADMIN_BOOTSTRAP_TOKEN` | 首次设置页面的一次性初始化授权 | 自动生成，至少 32 bytes；不发送给页面，需手工粘贴 |
 | `ADMIN_ORIGIN_ALLOWLIST` | 管理写操作允许的 Origin，逗号分隔 | 本地默认 `http://localhost:3000` |
 | `GATEWAY_API_KEY_PEPPER` | Gateway Key HMAC | 自动生成，至少 32 bytes |

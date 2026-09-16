@@ -33,7 +33,7 @@
 | 配置/issuer/origin | auth config，无数据 | Luna unit | exact origin、HTTPS cookie、限定后台scope | secret缺失/非法redirect fail closed | 定向通过 |
 | OAuth access token | verifier，仅public keys | Luna unit | ES256 at+jwt/aud/scope/300s | Google/ID/Session/expired/lifetime/scope拒绝 | 定向通过 |
 | Google既有用户映射 | auth Account→subject_links→users | 协调隔离mapping+真实Google | 旧PK/Google sub关系保留 | 同邮箱冲突，不任意合并 | release-only adoption与真实Google callback/consent/返回Dream通过；Admin link为0 |
-| Admin管理权限 | 独立Admin Session→admin_users/RBAC | unit/API/browser；受限AUTH角色 | Admin密码创建opaque Session，每请求读取active member与实时权限 | Dream Better Auth Session/OAuth token、禁用member、无权限请求均拒绝 | 独立Session实现、完整Admin suite/type/lint/build通过；同一Chrome的Dream登录态访问Admin me为401；正常ACL已补齐credential/session/RBAC权限并拒绝旧link；候选Admin凭据不匹配，未复制Dream密码或重置Admin密码 |
+| Admin管理权限 | 独立Admin Session→admin_users/RBAC | unit/API/browser；受限AUTH角色 | Admin密码创建opaque Session，每请求读取active member与实时权限 | Dream Better Auth Session/OAuth token、禁用member、无权限请求均拒绝 | 独立Session实现与完整门禁通过；同一Chrome的Dream登录态访问Admin me为401；正常ACL拒绝旧link；补齐缺失Session TTL后真实Admin login/me/logout为200并进入后台，1 role/28 permissions；未复制Dream密码或重置Admin密码 |
 | Dream服务身份 | confidential OAuth client；无canonical user | OAuth catalog + client_credentials + Admin verifier + Dream Next/Python clients | 后台请求使用service bearer；用户请求另带delegated user bearer | static service headers、超scope、`sub != client_id`、未知client、浏览器注入均拒绝 | 实现与unit/consumer/full suites通过；隔离合同fixture已改短期service access token |
 | Notion后台候选读取 | confidential Dream service client；`connectors:sync`；正常Notion connector表 | Repository行投影测试 + 本机正常Admin公开OAuth operation | storage `config_json`/`metadata_json`只在Repository解码为strict DTO `config`/`metadata`；公开读返回200 | malformed stored JSON继续fail closed；不放宽DTO、不回退Dream数据库 | focused 17/17、tsc、ESLint通过；正常token 200、`notion.sync-candidates.list` 200、读取1 connector；未创建或合并用户 |
 | Device grant | public native client+resource+user approval | 正常Admin/Dream公开入口与浏览器 | approve→OAuth token | deny/pending/slow_down/expire/重复/并发 | 允许、拒绝、兑换、重复兑换、refresh rotation/replay、独立revoke、access expiry与负例均通过 |
@@ -307,3 +307,11 @@ Admin聚焦7 files/35 tests、Dream Python身份与双bearer 109 tests、Dream N
 迁移读取域的Dream backend 8 files/198 tests通过。前端正确Playwright runner初轮为27 passed、4 not run、2 failed；两项失败只来自旧测试继续期望绝对URL和Browser Bearer。生产实现已是同源Cookie/CSRF，因此仅更新测试/目录合同，fresh复跑5 files/33 tests全部通过。没有修改认证业务、Admin operator、Dream user映射、订阅或数据。Product model catalog当前为空而Gateway catalog有9项；当前用户Product context无entitlement，严格DTO和既有合同均通过，未擅自改变授权语义。真实模型完整turn、成功Workflow Run、独立Admin管理凭据与自然Session TTL仍待单独验收。
 
 Luna对最终Dream未提交树只读复跑同一Playwright 33/33、TypeScript、完整backend 3535 passed/24 skipped/615 subtests、lint、Next production build、无PostgreSQL运行路径6/6和两套部署投影，全部exit0；没有访问正常数据库、浏览器、账户、网络或secret。
+
+## 独立 Admin 登录运行配置回执（2026-09-17）
+
+正常数据库存在一个active Admin operator、一个角色绑定和当前scrypt格式hash；AUTH角色具有Admin Session插入、member登录时间更新和审计写入权限。错误候选凭据稳定返回401；现有独立Admin凭据在密码校验后曾返回503。`pnpm env:check`明确指出正常`.env.local`与`docker/.env`缺少`ADMIN_SESSION_TTL_SECONDS`，使`adminSessionExpiry`在任何Session写入前失败关闭。
+
+把两个ignored本机配置补到生成器、example和Docker模板既定的`28800`后，配置检查exit0。公开login返回200并签发HttpOnly `ink_admin_session`，me返回200且投影1个角色/28项权限，logout返回200并撤销该次命令Session；Chrome同样进入`/admin`。没有改动密码hash、Admin member、角色、Dream user、Better Auth account、OAuth client或subject link。README和现行交互稿同时移除旧“预填短默认密码”说明并登记TTL为必需配置。
+
+聚焦密码、Session、guard与bootstrap为5 files/22 tests通过；6份changed Markdown共17个本地链接0缺失，diff check通过。生产TypeScript、schema和migration未变，完整suite/type/lint/build沿用同一当前分支已通过回执。
