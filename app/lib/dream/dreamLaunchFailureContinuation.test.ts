@@ -1,6 +1,7 @@
 // [Input] Synthetic strict continuation facts with no private files, credentials, HTTP or database.
 // [Output] Required evidence, coverage and zero-positive-POST/full-row preservation guard checks.
 // [Pos] Harness integrity tests under the existing Vitest app include; not production/source acceptance.
+// [Sync] 2026-09-17: build the synthetic fixture with the confidential client's OAuth access token field.
 // [Sync] 2026-09-15: preserve first failure; literal token typing leaves the twelve guard cases unchanged.
 import { expect, it } from "vitest";
 import type { z } from "zod";
@@ -25,7 +26,7 @@ function fixture() {
   receipts[7] = { ...receipts[5], query_tail: "", status: 409, expected_code: "OPERATION_REQUEST_CONFLICT" };
   const bearers = Object.fromEntries(["user", "other", "read_only", "matching_run", "wrong_run", "editor"].map(label => [label, "value"]));
   return failureContinuationFixtureDto.parse({ database: "ink_auth_data_codex_test_guard", port: 9999, data_directory: "/private/tmp/ink-auth-data-migration-guard", target_verification_url: "value",
-    issuer: "value", service_id: "value", service_secret: "value", auth_role: "value", data_role: "value", verification_role: "value", source_root: "value", oracle_python: "value", source_oracle_secret: "value",
+    issuer: "value", service_id: "value", service_access_token: "value", auth_role: "value", data_role: "value", verification_role: "value", source_root: "value", oracle_python: "value", source_oracle_secret: "value",
     operation_contract_sha256: "a".repeat(64), subjects: bearers, tokens: bearers, canonical_ids: Object.fromEntries(Object.keys(bearers).map(key => [key, "1"])), cases: [...positive, ...denied], receipts });
 }
 function evidence() { return failureContinuationEvidenceDto.parse({ schema_version: 1, database: "ink_auth_data_codex_test_guard", partial_assertions: 287,

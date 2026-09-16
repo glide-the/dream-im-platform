@@ -1,4 +1,5 @@
 <!-- [Sync] 2026-09-16: record normal database 0063, 64 migrations, nine release capabilities and actual-role activation. -->
+<!-- [Sync] 2026-09-17: record current-head full-suite recovery after replacing the retired static service-secret fixture field. -->
 <!-- [Sync] 2026-09-17: record real Dream client-local logout, same-subject SSO re-entry and continued Admin-login isolation. -->
 <!-- [Sync] 2026-09-17: record corrective normal ACL activation and same-browser Dream/Admin authorization separation. -->
 <!-- [Sync] 2026-09-17: record normal resource-policy desired/effective/revision/LKG and fresh observer parity. -->
@@ -48,6 +49,8 @@
 统一范围以[Dream 仓库](https://github.com/glide-the/im-dream) 的 `docs/stage/stage_admin-auth-data-business-validation.md`为准；逐文件/原事务关闭状态见[领域映射](../architecture/admin-dream-domain-implementation-map.md)。此表的技术通过不能替代真实验收。
 
 ## 实际回执
+
+- 当前HEAD完整确定性回归，2026-09-17：第一次`pnpm test:run`中276 files / 2087 tests通过，`dreamLaunchFailureContinuation.test.ts`的6项guard因synthetic fixture仍传已退役`service_secret`而被strict DTO拒绝；生产处理器、DTO与其余测试没有放宽或失败。fixture改为短期`service_access_token`后定向12/12、ESLint和diff检查通过；随后完整`pnpm test:run`单次exit0，277 files / 2093 tests通过，17 files / 36 tests按仓库合同跳过。
 
 - Dream退出与管理权限隔离，2026-09-17：本机Chrome从正常Story Workspace用户菜单执行`Logout`后只显示Dream登录入口，受保护历史不再展示；随后同一公开登录入口利用仍有效的Admin-origin Dream SSO完成code/PKCE并返回同一产品主体。相同Chrome profile打开`/admin`仍停留在独立管理员登录页。退出只撤销当前Dream browser client的refresh grant/lineage和BFF handle，不结束中央Dream SSO、不影响其他client，也不创建或撤销Admin `admin_sessions`。Dream frontend焦点合同27/27通过；自然TTL到期未等待。
 
