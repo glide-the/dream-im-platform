@@ -1,7 +1,7 @@
 // [Input] Strict auth configuration, dedicated ORM transaction and installed protocol schema.
 // [Output] Admin Better Auth handler with Google, OAuth access tokens, device grant and refresh rotation.
 // [Pos] Authentication composition root; Route Handlers only delegate here.
-// [Sync] 2026-09-15: rethrow protocol internals to the no-log outer rollback/error boundary.
+// [Sync] 2026-09-17: advertise separate delegated and confidential-client background scope ceilings.
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
@@ -10,7 +10,7 @@ import { oauthProvider, oauthDeviceAuthorization } from "@better-auth/oauth-prov
 import { and, eq, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { betterAuthSchema, deviceCode } from "@ink-memory/db/schema/auth-generated";
-import { accessTokenLifetimeSeconds, authConfiguration, authScopes, AuthBoundaryError } from "./config";
+import { accessTokenLifetimeSeconds, authConfiguration, oauthProviderScopes, AuthBoundaryError } from "./config";
 import { withAuthTransaction, type AuthRepositoryDatabase, type AuthTransaction } from "./database";
 import { SubjectRepository } from "./subjectRepository";
 import { requiredAuthValue } from "./config";
@@ -38,14 +38,14 @@ export function createAdminAuth(database: AuthRepositoryDatabase) {
         await subjects.linkNewAccount(account.userId, account.providerId, account.password);
       } } },
       session: { create: { before: async session => {
-        if (!await subjects.findActive(session.userId) && !await subjects.hasActiveAdmin(session.userId)) throw new APIError("FORBIDDEN", { code: "ACTIVE_SUBJECT_REQUIRED", message: "An active linked account is required." });
+        if (!await subjects.findActive(session.userId)) throw new APIError("FORBIDDEN", { code: "ACTIVE_SUBJECT_REQUIRED", message: "An active linked Dream account is required." });
       } } },
     },
     plugins: [
       jwt({ jwks: { keyPairConfig: { alg: "ES256" } }, jwt: { issuer: configuration.issuer, audience: configuration.resource, expirationTime: "5m" } }),
       oauthProvider({
-        loginPage: "/auth/sign-in", consentPage: "/auth/consent", scopes: [...authScopes],
-        resources: [{ identifier: configuration.resource, name: "Dream API", accessTokenTtl: accessTokenLifetimeSeconds, signingAlgorithm: "ES256", allowedScopes: [...authScopes] }],
+        loginPage: "/auth/sign-in", consentPage: "/auth/consent", scopes: [...oauthProviderScopes],
+        resources: [{ identifier: configuration.resource, name: "Dream API", accessTokenTtl: accessTokenLifetimeSeconds, signingAlgorithm: "ES256", allowedScopes: [...oauthProviderScopes] }],
         resourceSeedMode: "insertOnly", enforcePerClientResources: true,
         accessTokenExpiresIn: accessTokenLifetimeSeconds, m2mAccessTokenExpiresIn: accessTokenLifetimeSeconds,
         refreshTokenReuseInterval: 0, storeTokens: "hashed",

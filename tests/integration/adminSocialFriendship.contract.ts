@@ -1,7 +1,7 @@
 // [Input] Primary-prepared named Social61 facts and restricted AUTH/DATA OAuth actors; private0600 config required.
 // [Output] All nine production operations, relationship permissions, precise projections and original concurrent receipts.
 // [Pos] Provider-free contract harness; verification connection executes SELECT only, no fixture/fault SQL.
-// [Sync] 2026-09-15: preserve friend product results and prove invitation/pair/decision transaction boundaries.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -13,7 +13,7 @@ import { socialFriendshipOperationContracts as contracts, type SocialFriendshipO
 import { pgTimestampToIso } from "../../app/lib/dream/chatThreadDto";
 const text = z.string().min(1);
 const fixtureDto = z.strictObject({
- database:text, port:z.number().int().positive(), data_directory:text, target_verification_url:text, issuer:text, service_id:text, service_secret:text,
+ database:text, port:z.number().int().positive(), data_directory:text, target_verification_url:text, issuer:text, service_id:text, service_access_token:text,
  actors:z.strictObject({a:text,b:text,c:text}), tokens:z.strictObject({a:text,b:text,c:text,read_only:text,thread:text}),
  labels:z.strictObject({a:text,b:text,c:text}), emails:z.strictObject({a:text,b:text,c:text}),
 });
@@ -24,7 +24,7 @@ const verification=new Client({connectionString:f.target_verification_url});awai
 const proof=await verification.query("SELECT current_database() AS name,current_setting('port')::int AS port,current_setting('data_directory') AS root");assert.deepEqual(proof.rows[0],{name:f.database,port:f.port,root:f.data_directory});
 const origin=f.issuer.replace(/\/api\/auth$/,"");let assertions=0;const seen=new Set<SocialFriendshipOperation>();
 const id=()=>`social_${randomUUID()}`;
-function headers(token:string,requestId:string){return {authorization:`Bearer ${token}`,"content-type":"application/json","x-request-id":requestId,"x-ink-dream-service":f.service_id,"x-ink-dream-credential":f.service_secret};}
+function headers(token:string,requestId:string){return {authorization:`Bearer ${token}`,"content-type":"application/json","x-request-id":requestId,"x-ink-dream-service-authorization":`Bearer ${f.service_access_token}`};}
 function same(actual:unknown,expected:unknown,label?:string){assert.deepEqual(actual,expected,label);assertions++;}
 function check(value:unknown,label:string){assert(value,label);assertions++;}
 type Result<N extends SocialFriendshipOperation>=z.output<(typeof contracts)[N]["output"]>;

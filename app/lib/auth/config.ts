@@ -1,7 +1,7 @@
 // [Input] Explicit Admin auth origin, Google secrets, token key and configured service clients.
 // [Output] Strict single-topology authentication configuration; missing capability fails closed.
 // [Pos] Server-only configuration boundary shared by auth/domain services.
-// [Sync] 2026-09-16: admit the exact Story confirmation dispatcher scope for Registry120.
+// [Sync] 2026-09-17: separate delegated scopes from confidential-client background scopes.
 import { z } from "zod";
 import type { DreamDomainErrorDetails } from "../dream/errorDto";
 
@@ -30,6 +30,8 @@ export function exactAuthUrl(value: string, originOnly = false): string {
 }
 
 export const authScopes = ["openid", "profile", "email", "offline_access", "dream:read", "dream:write", "editor:read", "editor:write", "product:read", "product:write", "messages:create", "messages:count_tokens", "models:list"] as const;
+export const backgroundAuthScopes = ["capabilities:read", "resource-policy:read", "resource-observer:write", "connectors:sync", "plugins:catalog", "reflections:execute", "story-confirmation:dispatch"] as const;
+export const oauthProviderScopes = [...authScopes, ...backgroundAuthScopes] as const;
 export const accessTokenLifetimeSeconds = 300;
 
 const serviceClientSchema = z.strictObject({
@@ -38,7 +40,7 @@ const serviceClientSchema = z.strictObject({
   origin: z.string(),
   oauthClientId: z.string().min(1).max(160),
   redirectUri: z.string(),
-  backgroundScopes: z.array(z.enum(["capabilities:read", "resource-policy:read", "resource-observer:write", "connectors:sync", "plugins:catalog", "reflections:execute", "story-confirmation:dispatch"])),
+  backgroundScopes: z.array(z.enum(backgroundAuthScopes)).min(1),
 });
 
 export type DreamServiceClient = z.infer<typeof serviceClientSchema>;

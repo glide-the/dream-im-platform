@@ -1,3 +1,5 @@
+<!-- [Sync] 2026-09-17: constrain this operation to Dream identity adoption; Admin operators keep independent sessions and credentials. -->
+
 # Google 旧主体接管执行计划
 
 ## Optimized Prompt
@@ -10,7 +12,7 @@
 
 ## Optional Enhancers
 
-- 若未来需要同时接管 Admin 成员，必须使用独立 DTO、独立证据与独立审计操作，不能扩展本操作按邮箱添加 `admin_subject_links`。
+- Admin operator 不属于本操作。Admin 继续使用 `admin_users/admin_sessions/RBAC`；不得增加把 Admin member 连接到 Dream identity 或 canonical user 的 adoption 操作。
 - 若旧 Google 行缺少精确 `provider_sub` 或源指纹变化，保留原数据并转入人工冲突处理，不提供弱化门禁。
 
 ## 本轮影响与验收

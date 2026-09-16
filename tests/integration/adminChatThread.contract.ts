@@ -1,7 +1,7 @@
 // [Input] Primary-prepared named disposable PostgreSQL and short-lived provider-free fixture credentials.
 // [Output] Actual production Route/DTO/ORM/receipt integration assertions, never real Google/model acceptance.
 // [Pos] Explicit standalone isolated contract harness; excluded from default app unit discovery.
-// [Sync] 2026-09-14: cover owner/CAS/immutable replay/audit/receipt/keyset through public production routes.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -28,7 +28,7 @@ const proof = await verificationDatabase.execute(sql`SELECT current_database() A
 assert.deepEqual(proof.rows[0], { name: f.database, port: f.port, root: f.data_directory });
 let assertions = 0;
 const visitedOperations = new Set<string>();
-function headers(token = f.access_token, requestId: string) { return { "x-request-id": requestId, "content-type": "application/json", "x-ink-dream-service": f.service_id, "x-ink-dream-credential": f.service_secret, authorization: `Bearer ${token}` }; }
+function headers(token = f.access_token, requestId: string) { return { "x-request-id": requestId, "content-type": "application/json", "x-ink-dream-service-authorization": `Bearer ${f.service_access_token}`, authorization: `Bearer ${token}` }; }
 async function call(name: keyof typeof chatThreadOperationContracts, input: unknown, options: { token?: string; requestId?: string; status?: number } = {}) {
   const requestId = options.requestId ?? `contract_${randomUUID()}`;
   const response = await POST(new Request(`${f.issuer.replace("/api/auth", "")}/api/internal/dream/v1/operations/${name}`, { method: "POST", headers: headers(options.token, requestId), body: JSON.stringify({ request_id: requestId, input }) }), { params: Promise.resolve({ operation: name }) });

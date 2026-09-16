@@ -1,7 +1,7 @@
 // [Input] Original strict22 cases/27 GET facts and primary-owned partial287/Editor6 full-row evidence.
 // [Output] Exactly six read-only restorations, sixteen denied POSTs and all twenty-seven original GETs.
 // [Pos] Pure harness guards; no credentials, pools, HTTP, production fallback or inferred progress.
-// [Sync] 2026-09-15: independently continue the retained failed first run without any positive POST.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { z } from "zod";
 import { decimalIdDto, requestIdDto } from "../../app/lib/auth/dto";
@@ -23,7 +23,7 @@ const receiptDto = z.strictObject({ after_label: label, request_id: requestIdDto
 const bearerFields = { user: text, other: text, read_only: text, matching_run: text, wrong_run: text, editor: text };
 const canonicalFields = { user: decimalIdDto, other: decimalIdDto, read_only: decimalIdDto, matching_run: decimalIdDto, wrong_run: decimalIdDto, editor: decimalIdDto };
 export const failureContinuationFixtureDto = z.strictObject({ database: text, port: z.number().int().positive(), data_directory: text, target_verification_url: text,
-  issuer: text, service_id: text, service_secret: text, auth_role: text, data_role: text, verification_role: text,
+  issuer: text, service_id: text, service_access_token: text, auth_role: text, data_role: text, verification_role: text,
   source_root: text, oracle_python: text, source_oracle_secret: text, operation_contract_sha256: z.string().regex(/^[0-9a-f]{64}$/),
   subjects: z.strictObject(bearerFields), canonical_ids: z.strictObject(canonicalFields), tokens: z.strictObject(bearerFields),
   cases: z.array(failureContinuationCaseDto).length(22), receipts: z.array(receiptDto).length(27) });

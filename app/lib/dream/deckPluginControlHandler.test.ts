@@ -1,7 +1,7 @@
 // [Input] Registry170-174 HTTP envelopes, mocked service identity/OAuth principal and Admin UOW seams.
 // [Output] Strict body, capability, schema-gate and original-receipt assertions.
 // [Pos] Provider-free Deck Plugin control ingress test.
-// [Sync] 2026-09-16: verify read/plan/apply authority and DTO rejection.
+// [Sync] 2026-09-17: verify dual-bearer user delegation after service OAuth cutover.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ service: vi.fn(), transaction: vi.fn(), principal: vi.fn(), run: vi.fn(), receipt: vi.fn() }));
@@ -21,8 +21,8 @@ const principal = { subject: "subject", canonical_user_id: "42", client_id: "dre
 
 function request(operation: string, input: unknown) {
   return new Request(`http://admin.local/api/internal/dream/v1/operations/${operation}`, { method: "POST", headers: {
-    authorization: "Bearer oauth-token", "content-type": "application/json",
-    "x-ink-dream-service": "dream", "x-ink-dream-credential": "x".repeat(32), origin: "http://dream.local",
+    authorization: "Bearer oauth-token", "x-ink-dream-service-authorization": "Bearer service-token",
+    "content-type": "application/json", origin: "http://dream.local",
   }, body: JSON.stringify({ request_id: "request-original", input }) });
 }
 

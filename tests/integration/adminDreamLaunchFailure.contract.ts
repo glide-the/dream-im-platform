@@ -1,7 +1,7 @@
 // [Input] Strict primary-owned disposable target, OAuth/original grants and complete precommitted failed-Run facts.
 // [Output] Production metadata POST/original GET, entire original recorder parity and protected17 full-state effects.
 // [Pos] SELECT-only provider-free component verifier; primary owns fixtures/faults, no new Run-failure/Runtime claim.
-// [Sync] 2026-09-15: validate registered77 independent envelope UOW after the prior authoritative Run COMMIT.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { readFile, stat } from "node:fs/promises";
@@ -27,7 +27,7 @@ const receiptDto = z.strictObject({ after_label: text, request_id: requestIdDto,
 const bearerFields = { user: text, other: text, read_only: text, matching_run: text, wrong_run: text, editor: text };
 const canonicalFields = { user: decimalIdDto, other: decimalIdDto, read_only: decimalIdDto, matching_run: decimalIdDto, wrong_run: decimalIdDto, editor: decimalIdDto };
 const fixtureDto = z.strictObject({ database: text, port: z.number().int().positive(), data_directory: text, target_verification_url: text,
-  issuer: text, service_id: text, service_secret: text, auth_role: text, data_role: text, verification_role: text,
+  issuer: text, service_id: text, service_access_token: text, auth_role: text, data_role: text, verification_role: text,
   source_root: text, oracle_python: text, source_oracle_secret: text, operation_contract_sha256: z.string().regex(/^[0-9a-f]{64}$/),
   subjects: z.strictObject(bearerFields), canonical_ids: z.strictObject(canonicalFields), tokens: z.strictObject(bearerFields), cases: z.array(caseDto).min(1), receipts: z.array(receiptDto).min(1) });
 type Case = z.output<typeof caseDto>;
@@ -84,7 +84,7 @@ async function state() {
   const entries = await Promise.all(Object.entries(tables).map(async ([key, relation]) => [key, (await verification.query<{ value: string }>(`SELECT to_jsonb(r)::text AS value FROM ${relation} r ORDER BY to_jsonb(r)::text`)).rows.map(row => row.value)] as const));
   return Object.fromEntries(entries) as Record<keyof typeof tables, string[]>;
 }
-function headers(token: z.output<typeof tokens>, requestId: string) { return { authorization: `Bearer ${token === "none" ? "" : f.tokens[token]}`, "content-type": "application/json", "x-request-id": requestId, "x-ink-dream-service": f.service_id, "x-ink-dream-credential": f.service_secret }; }
+function headers(token: z.output<typeof tokens>, requestId: string) { return { authorization: `Bearer ${token === "none" ? "" : f.tokens[token]}`, "content-type": "application/json", "x-request-id": requestId, "x-ink-dream-service-authorization": `Bearer ${f.service_access_token}` }; }
 async function runRow(runId: string) { return (await verification.query<Record<string, unknown>>("SELECT r.*,r.created_at::text AS created_at,r.started_at::text AS started_at,r.completed_at::text AS completed_at,r.source_message_time::text AS source_message_time FROM public.workflow_runs r WHERE r.id=$1", [runId])).rows[0] ?? null; }
 async function sourceRow(messageId: string | null, threadId: string | null) {
   return (await verification.query<Record<string, unknown>>("SELECT m.*,m.created_at::text AS created_at,t.user_id::text AS user_id,t.deck_id,t.voice_id FROM public.chat_message m JOIN public.chat_thread t ON t.id=m.thread_id WHERE m.id=$1 AND m.thread_id=$2", [messageId, threadId])).rows[0] ?? null;

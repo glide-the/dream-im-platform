@@ -1,7 +1,7 @@
 // [Input] Registry120/121 envelopes and mocked service/principal/Admin transaction.
 // [Output] Strict audience separation and operation-specific capability UOW assertions.
 // [Pos] Provider-free HTTP ingress test for Story Workspace confirmation operations.
-// [Sync] 2026-09-16: gate claim-turn on the additive delegation source capability.
+// [Sync] 2026-09-17: distinguish client_credentials background calls from dual-bearer user delegation.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), transaction: vi.fn(), oauth: vi.fn(), background: vi.fn() }));
 vi.mock("../auth/serviceIdentity", async original => ({
@@ -33,7 +33,8 @@ afterEach(() => vi.unstubAllEnvs());
 function request(name: string, input: unknown, bearer?: string) {
   return new Request(`http://localhost/api/internal/dream/v1/operations/${name}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) },
+    headers: { "content-type": "application/json", authorization: `Bearer ${bearer ?? "service-token"}`,
+      ...(bearer ? { "x-ink-dream-service-authorization": "Bearer service-token" } : {}) },
     body: JSON.stringify({ request_id: "request-1", input }),
   });
 }
@@ -58,7 +59,7 @@ it("runs claim only with configured service identity and rejects a browser beare
   expect((await handleStoryWorkspaceConfirmation(request(name, input, "oauth"), name)).status).toBe(400);
 });
 
-it("runs claim-turn under its exact capability requirements without a bearer", async () => {
+it("runs claim-turn under its exact capability requirements with only the service bearer", async () => {
   const name = "story-workspace-confirmation.claim-turn";
   const input = { message_id: null, claim_id: "claim-1" };
   expect((await handleStoryWorkspaceConfirmation(request(name, input), name)).status).toBe(200);

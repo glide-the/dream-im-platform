@@ -3,6 +3,7 @@
 // [Output] Mode-0600 local/Compose config preserving unified auth/data policy and Provider overrides.
 // [Pos] Base configuration generator for the Admin workspace.
 // [Sync] 2026-09-16: use localhost as the single local Admin OAuth origin so the Google callback matches the registered web client.
+// [Sync] 2026-09-17: preserve and validate the independent Admin management-session TTL.
 // [Sync] 2026-09-16: emit dotenv-compatible lossless quoting for structured Better Auth/Dream DTO configuration.
 // [Sync] 2026-09-16: preserve, render and validate the complete Better Auth/Dream DTO service configuration.
 // [Sync] 2026-09-16: validate embedded PostgreSQL connection capacity as a positive safe integer, independent of TCP port bounds.
@@ -102,6 +103,7 @@ const ROOT_KEYS = new Set([
   "PG_CONNECTION_TIMEOUT_MS",
   "ADMIN_CONSOLE_ENABLED",
   "ADMIN_SESSION_SECRET",
+  "ADMIN_SESSION_TTL_SECONDS",
   "ADMIN_BOOTSTRAP_TOKEN",
   "ADMIN_ORIGIN_ALLOWLIST",
   "GATEWAY_API_KEY_PEPPER",
@@ -136,6 +138,7 @@ const DOCKER_KEYS = new Set([
   "EMBEDDED_POSTGRES_MAX_CONNECTIONS",
   "ADMIN_CONSOLE_ENABLED",
   "ADMIN_SESSION_SECRET",
+  "ADMIN_SESSION_TTL_SECONDS",
   "ADMIN_BOOTSTRAP_TOKEN",
   "ADMIN_ORIGIN_ALLOWLIST",
   "GATEWAY_API_KEY_PEPPER",
@@ -554,6 +557,7 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
       configuredValue(rootExisting, "ADMIN_CONSOLE_ENABLED", isBoolean, "true"),
     ],
     ["ADMIN_SESSION_SECRET", adminSessionSecret.root],
+    ["ADMIN_SESSION_TTL_SECONDS", configuredValue(rootExisting, "ADMIN_SESSION_TTL_SECONDS", (value) => isInteger(value, 1), "28800")],
     ["ADMIN_BOOTSTRAP_TOKEN", adminBootstrapToken.root],
     ["ADMIN_ORIGIN_ALLOWLIST", rootOriginAllowlist],
     ["GATEWAY_API_KEY_PEPPER", gatewayPepper.root],
@@ -694,6 +698,7 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
       ),
     ],
     ["ADMIN_SESSION_SECRET", adminSessionSecret.docker],
+    ["ADMIN_SESSION_TTL_SECONDS", configuredValue(dockerExisting, "ADMIN_SESSION_TTL_SECONDS", (value) => isInteger(value, 1), "28800")],
     ["ADMIN_BOOTSTRAP_TOKEN", adminBootstrapToken.docker],
     ["ADMIN_ORIGIN_ALLOWLIST", dockerOriginAllowlist],
     ["GATEWAY_API_KEY_PEPPER", gatewayPepper.docker],
@@ -848,6 +853,7 @@ PG_CONNECTION_TIMEOUT_MS=${values.get("PG_CONNECTION_TIMEOUT_MS")}
 # Refine Admin authentication and same-origin protection.
 ADMIN_CONSOLE_ENABLED=${values.get("ADMIN_CONSOLE_ENABLED")}
 ADMIN_SESSION_SECRET=${encodeValue(values.get("ADMIN_SESSION_SECRET"))}
+ADMIN_SESSION_TTL_SECONDS=${values.get("ADMIN_SESSION_TTL_SECONDS")}
 ADMIN_BOOTSTRAP_TOKEN=${encodeValue(values.get("ADMIN_BOOTSTRAP_TOKEN"))}
 ADMIN_ORIGIN_ALLOWLIST=${encodeValue(values.get("ADMIN_ORIGIN_ALLOWLIST"))}
 
@@ -898,6 +904,7 @@ EMBEDDED_POSTGRES_MAX_CONNECTIONS=${values.get("EMBEDDED_POSTGRES_MAX_CONNECTION
 
 ADMIN_CONSOLE_ENABLED=${values.get("ADMIN_CONSOLE_ENABLED")}
 ADMIN_SESSION_SECRET=${encodeValue(values.get("ADMIN_SESSION_SECRET"))}
+ADMIN_SESSION_TTL_SECONDS=${values.get("ADMIN_SESSION_TTL_SECONDS")}
 ADMIN_BOOTSTRAP_TOKEN=${encodeValue(values.get("ADMIN_BOOTSTRAP_TOKEN"))}
 ADMIN_ORIGIN_ALLOWLIST=${encodeValue(values.get("ADMIN_ORIGIN_ALLOWLIST"))}
 
@@ -1121,6 +1128,9 @@ function validateConfiguration(root, docker, rootParsed, dockerParsed) {
         errors.push(`${file}: ${key} must contain at least 32 bytes`);
       }
     }
+  }
+  for (const [file, values] of [[".env.local", root], ["docker/.env", docker]]) {
+    if (!isInteger(values.get("ADMIN_SESSION_TTL_SECONDS") ?? "", 1)) errors.push(`${file}: ADMIN_SESSION_TTL_SECONDS must be a positive safe integer`);
   }
   const productKeys = [
     "PRODUCT_API_JWT_SECRET",

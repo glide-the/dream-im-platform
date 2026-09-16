@@ -1,8 +1,11 @@
 <!-- [Input] Authorized Admin provider scope, original Dream sources and coordination stage evidence. -->
 <!-- [Output] Before-code optimized prompts, ownership boundaries and actual validation receipts. -->
 <!-- [Pos] Admin execution plan; candidate/source/static stages never close public or real-business acceptance. -->
+<!-- [Sync] 2026-09-17: historical Round instructions that merged Admin and Dream identity are superseded by the domain-boundary review. -->
 <!-- [Sync] 2026-09-15: register configured default Deck plugin resolution as Registry104. -->
 # Admin 统一认证与 Dream 数据访问执行计划
+
+> 现行身份边界以 [`../architecture/auth-domain-boundaries-review.md`](../architecture/auth-domain-boundaries-review.md) 为准。本文保留各轮执行历史；其中“Admin 使用 Better Auth Session / admin_subject_links”的旧指令已经废止，不能再作为实现依据。Admin operator 使用独立 `admin_users/admin_sessions/RBAC`，Dream Better Auth/OAuth 主体只映射 Dream canonical user。
 
 ## Round 1 — 现状、边界与首版契约
 

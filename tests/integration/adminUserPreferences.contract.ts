@@ -1,7 +1,7 @@
 // [Input] Primary-prepared named isolated PG, restricted pools, OAuth owners and one Thread grant.
 // [Output] Both public preference operations, original concurrent merge/NULL/precision/receipt boundaries.
 // [Pos] Provider-free public harness; all owner database queries are SELECT and no fixture/fault is executed.
-// [Sync] 2026-09-15: preserve first-login/server config, absent reads and confirmed atomic persistence.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -11,7 +11,7 @@ import { POST } from "../../app/api/internal/dream/v1/operations/[operation]/rou
 import { GET } from "../../app/api/internal/dream/v1/receipts/[requestId]/route";
 import { userPreferencesOperationContracts as contracts, type UserPreferencesOperation } from "../../app/lib/dream/userPreferencesDto";
 const text=z.string().min(1);
-const fixtureDto=z.strictObject({database:text,port:z.number().int().positive(),data_directory:text,target_verification_url:text,issuer:text,service_id:text,service_secret:text,user_id:text,other_user_id:text,tokens:z.strictObject({user:text,other:text,read_only:text,thread:text}),raw_voice:text,raw_state:text,system_config:text});
+const fixtureDto=z.strictObject({database:text,port:z.number().int().positive(),data_directory:text,target_verification_url:text,issuer:text,service_id:text,service_access_token:text,user_id:text,other_user_id:text,tokens:z.strictObject({user:text,other:text,read_only:text,thread:text}),raw_voice:text,raw_state:text,system_config:text});
 const path=process.env.INK_AUTH_USER_PREFERENCES_FIXTURE;assert(path,"Explicit primary-prepared private fixture required");assert.equal((await stat(path)).mode&0o777,0o600);
 const parsed=fixtureDto.safeParse(JSON.parse(await readFile(path,"utf8")));assert(parsed.success,"Strict private fixture required");const f=parsed.data;
 assert(f.database.startsWith("ink_auth_data_codex_test_")&&f.port!==5433&&f.data_directory.startsWith("/private/tmp/ink-auth-data-migration-"));
@@ -20,7 +20,7 @@ const verification=new Client({connectionString:f.target_verification_url});awai
 const proof=await verification.query("SELECT current_database() AS name,current_setting('port')::int AS port,current_setting('data_directory') AS root");assert.deepEqual(proof.rows[0],{name:f.database,port:f.port,root:f.data_directory});
 const origin=f.issuer.replace(/\/api\/auth$/,""),empty={voice_configs_json:null,meta_prompt:null,state_config_json:null,selected_state:null,timezone:null};let assertions=0;
 const id=()=>`preferences_${randomUUID()}`;
-function headers(token:string,requestId:string){return {authorization:`Bearer ${token}`,"content-type":"application/json","x-request-id":requestId,"x-ink-dream-service":f.service_id,"x-ink-dream-credential":f.service_secret};}
+function headers(token:string,requestId:string){return {authorization:`Bearer ${token}`,"content-type":"application/json","x-request-id":requestId,"x-ink-dream-service-authorization":`Bearer ${f.service_access_token}`};}
 async function call(name:UserPreferencesOperation,input:unknown,options:{token?:string;status?:number;requestId?:string}={}){
  const requestId=options.requestId??id(),response=await POST(new Request(`${origin}/api/internal/dream/v1/operations/${name}`,{method:"POST",headers:headers(options.token??f.tokens.user,requestId),body:JSON.stringify({request_id:requestId,input})}),{params:Promise.resolve({operation:name})});const body=await response.json();
  const code=typeof body.error?.code==="string"&&/^[A-Z0-9_]{1,100}$/.test(body.error.code)?body.error.code:"NO_PUBLIC_ERROR_CODE";assert.equal(response.status,options.status??200,`${name} public status (${code})`);assert.equal(body.request_id,requestId);assertions+=2;

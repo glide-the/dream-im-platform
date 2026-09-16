@@ -1,7 +1,7 @@
 // [Input] Claude Plugin user/background write request IDs and exact original service authority.
 // [Output] Strict committed/absent recovery bound to OAuth subject or plugins:catalog service actor.
 // [Pos] Provider-free unknown-COMMIT recovery test; it never reissues a plugin mutation.
-// [Sync] 2026-09-16: cover Registry175-184 original receipt recovery.
+// [Sync] 2026-09-17: cover dual-bearer user and client_credentials background receipt recovery.
 import { beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -37,7 +37,9 @@ beforeEach(() => {
 function read(operation: string, authorization = false, suffix = "") {
   return GET(new Request(
     `http://localhost/api/internal/dream/v1/receipts/${requestId}?operation=${operation}${suffix}`,
-    { headers: authorization ? { authorization: "Bearer oauth" } : {} },
+    { headers: authorization
+      ? { authorization: "Bearer oauth", "x-ink-dream-service-authorization": "Bearer service-token" }
+      : { authorization: "Bearer service-token" } },
   ), { params: Promise.resolve({ requestId }) });
 }
 

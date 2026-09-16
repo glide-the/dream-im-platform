@@ -1,7 +1,7 @@
 // [Input] Validated Admin auth/service configuration and the dedicated auth Drizzle transaction.
-// [Output] Redacted plan/receipt plus an idempotently reconciled Dream OAuth resource and public clients.
+// [Output] Redacted plan/receipt plus public browser/device and confidential service OAuth clients.
 // [Pos] Release-time OAuth client catalog service; runtime auth routes only consume the registered rows.
-// [Sync] 2026-09-16: add DTO-to-ORM provisioning for Dream browser/device public clients.
+// [Sync] 2026-09-17: provision confidential client_credentials registrations for background service calls.
 import { createHash } from "node:crypto";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import {
@@ -15,6 +15,7 @@ import {
   authScopes,
   AuthBoundaryError,
   dreamServiceClients,
+  oauthProviderScopes,
   requiredAuthValue,
 } from "./config";
 import type { AuthRepositoryDatabase } from "./database";
@@ -29,12 +30,14 @@ export type OAuthCatalogClientDto = {
   scopes: string[];
   grantTypes: string[];
   responseTypes: string[];
-  tokenEndpointAuthMethod: "none";
+  tokenEndpointAuthMethod: "none" | "client_secret_basic";
   applicationType: "web" | "native";
   requirePKCE: boolean;
   subjectType: "public";
   disabled: false;
   skipConsent: false;
+  clientCredentialsScopes: string[];
+  clientSecretHash: string | null;
 };
 
 export type OAuthCatalogDto = {
@@ -76,6 +79,7 @@ function normalizedClient(client: OAuthCatalogClientDto): OAuthCatalogClientDto 
     scopes: uniqueSorted(client.scopes),
     grantTypes: uniqueSorted(client.grantTypes),
     responseTypes: uniqueSorted(client.responseTypes),
+    clientCredentialsScopes: uniqueSorted(client.clientCredentialsScopes),
   };
 }
 
@@ -94,7 +98,9 @@ export function dreamOAuthCatalogDto(environment: Record<string, string | undefi
     current.redirects.add(service.redirectUri);
     browsers.set(service.oauthClientId, current);
   }
-  if (browsers.has(deviceClientId)) throw new AuthBoundaryError("AUTH_CLIENT_CATALOG_INVALID");
+  const serviceClientIds = new Set(services.map(service => service.id));
+  if (browsers.has(deviceClientId) || serviceClientIds.has(deviceClientId)
+    || [...browsers.keys()].some(clientId => serviceClientIds.has(clientId))) throw new AuthBoundaryError("AUTH_CLIENT_CATALOG_INVALID");
 
   const browserClients = [...browsers.entries()].sort(([left], [right]) => left.localeCompare(right)).map(
     ([clientId, values]): OAuthCatalogClientDto => normalizedClient({
@@ -111,6 +117,8 @@ export function dreamOAuthCatalogDto(environment: Record<string, string | undefi
       subjectType: "public",
       disabled: false,
       skipConsent: false,
+      clientCredentialsScopes: [],
+      clientSecretHash: null,
     }),
   );
   const deviceClient = normalizedClient({
@@ -127,17 +135,36 @@ export function dreamOAuthCatalogDto(environment: Record<string, string | undefi
     subjectType: "public",
     disabled: false,
     skipConsent: false,
+    clientCredentialsScopes: [],
+    clientSecretHash: null,
   });
+  const serviceClients = services.map((service): OAuthCatalogClientDto => normalizedClient({
+    clientId: service.id,
+    name: "Ink Dream Service",
+    uri: service.origin,
+    redirectUris: [],
+    scopes: [...service.backgroundScopes],
+    grantTypes: ["client_credentials"],
+    responseTypes: [],
+    tokenEndpointAuthMethod: "client_secret_basic",
+    applicationType: "web",
+    requirePKCE: false,
+    subjectType: "public",
+    disabled: false,
+    skipConsent: false,
+    clientCredentialsScopes: [...service.backgroundScopes],
+    clientSecretHash: createHash("sha256").update(service.secret).digest("base64url"),
+  }));
   return {
     resource: {
       identifier: configuration.resource,
       name: "Dream API",
       accessTokenTtl: accessTokenLifetimeSeconds,
       signingAlgorithm: "ES256",
-      allowedScopes: uniqueSorted(authScopes),
+      allowedScopes: uniqueSorted(oauthProviderScopes),
       disabled: false,
     },
-    clients: [...browserClients, deviceClient],
+    clients: [...browserClients, deviceClient, ...serviceClients],
   };
 }
 
@@ -191,6 +218,8 @@ async function readSnapshot(database: AuthRepositoryDatabase, target: OAuthCatal
       subjectType: oauthClient.subjectType,
       disabled: oauthClient.disabled,
       skipConsent: oauthClient.skipConsent,
+      clientCredentialsScopes: oauthClient.clientCredentialsScopes,
+      clientSecretHash: oauthClient.clientSecret,
     }).from(oauthClient).where(inArray(oauthClient.clientId, target.clients.map(client => client.clientId))),
     database.select({ clientId: oauthClientResource.clientId, resourceId: oauthClientResource.resourceId })
       .from(oauthClientResource)
@@ -214,12 +243,14 @@ async function readSnapshot(database: AuthRepositoryDatabase, target: OAuthCatal
       scopes: row.scopes ?? [],
       grantTypes: row.grantTypes ?? [],
       responseTypes: row.responseTypes ?? [],
-      tokenEndpointAuthMethod: row.tokenEndpointAuthMethod as "none",
+      tokenEndpointAuthMethod: row.tokenEndpointAuthMethod as "none" | "client_secret_basic",
       applicationType: row.applicationType as "web" | "native",
       requirePKCE: Boolean(row.requirePKCE),
       subjectType: row.subjectType as "public",
       disabled: Boolean(row.disabled) as false,
       skipConsent: Boolean(row.skipConsent) as false,
+      clientCredentialsScopes: row.clientCredentialsScopes ?? [],
+      clientSecretHash: row.clientSecretHash,
     })),
     links: linkRows,
   };
@@ -247,16 +278,27 @@ async function applyCatalog(database: AuthRepositoryDatabase, target: OAuthCatal
     await database.insert(oauthClient).values({
       id: catalogId("client", client.clientId),
       clientId: client.clientId,
-      clientSecret: null,
-      clientCredentialsScopes: [],
+      clientSecret: client.clientSecretHash,
+      name: client.name,
+      uri: client.uri,
+      redirectUris: client.redirectUris,
+      scopes: client.scopes,
+      grantTypes: client.grantTypes,
+      responseTypes: client.responseTypes,
+      tokenEndpointAuthMethod: client.tokenEndpointAuthMethod,
+      applicationType: client.applicationType,
+      requirePKCE: client.requirePKCE,
+      subjectType: client.subjectType,
+      disabled: client.disabled,
+      skipConsent: client.skipConsent,
+      clientCredentialsScopes: client.clientCredentialsScopes,
       dpopBoundAccessTokens: false,
-      ...client,
       createdAt: now,
       updatedAt: now,
     }).onConflictDoUpdate({
       target: oauthClient.clientId,
       set: {
-        clientSecret: null,
+        clientSecret: client.clientSecretHash,
         name: client.name,
         uri: client.uri,
         redirectUris: client.redirectUris,
@@ -269,6 +311,7 @@ async function applyCatalog(database: AuthRepositoryDatabase, target: OAuthCatal
         subjectType: client.subjectType,
         disabled: client.disabled,
         skipConsent: client.skipConsent,
+        clientCredentialsScopes: client.clientCredentialsScopes,
         dpopBoundAccessTokens: false,
         updatedAt: now,
       },

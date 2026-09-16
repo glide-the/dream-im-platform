@@ -1,7 +1,7 @@
 # [Input] docker/.env secrets, managed Provider registrations, and local topology settings.
 # [Output] One local Admin container with embedded PostgreSQL and optional product OAuth capability.
 # [Pos] Local container parity path for the production single-container architecture.
-# [Sync] 2026-09-16: pass the complete unified auth, limited-role data service and policy configuration.
+# [Sync] 2026-09-17: pass the independent Admin Session lifetime with unified auth/data configuration.
 # [Sync] 2026-09-04: pass optional Codex/xAI/Copilot product-profile overrides and credential key-id settings.
 services:
   ink-memory-admin:
@@ -27,6 +27,7 @@ services:
       MIGRATION_DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:?Run pnpm env:setup from the repository root}@127.0.0.1:5432/${POSTGRES_DB:-ink-memory}
       ADMIN_CONSOLE_ENABLED: ${ADMIN_CONSOLE_ENABLED:-true}
       ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:?Run pnpm env:setup from the repository root}
+      ADMIN_SESSION_TTL_SECONDS: ${ADMIN_SESSION_TTL_SECONDS:-28800}
       ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:?Run pnpm env:setup from the repository root}
       ADMIN_ORIGIN_ALLOWLIST: ${ADMIN_ORIGIN_ALLOWLIST:-http://localhost:3000}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Configure unified authentication}

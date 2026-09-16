@@ -1,6 +1,7 @@
 // [Input] Public Admin compatibility auth requests with Origin and strict credentials.
-// [Output] Existing Admin response envelope using the sole Better Auth Session service.
+// [Output] Existing Admin response envelope using the independent Admin Session service.
 // [Pos] Thin ingress; validation/UOW/audit stay in auth domain modules.
+// [Sync] 2026-09-17: issue and revoke independent Admin sessions without Dream identity adoption.
 import { z } from "zod";
 import { AdminError, adminErrorResponse } from "../admin/errors";
 import { adminRequestId, assertAdminMutationOrigin } from "../admin/guard";

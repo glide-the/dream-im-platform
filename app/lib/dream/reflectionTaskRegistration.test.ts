@@ -1,4 +1,4 @@
-// [Sync] 2026-09-16: keep this frozen Registry99 segment append-safe through Registry121.
+// [Sync] 2026-09-17: model service-only and dual-Bearer receipt recovery after confidential-client cutover.
 // [Input] Frozen Registry83, reviewed Reflections candidate and production POST/original-receipt Routes.
 // [Output] Exact Registry99 segment plus OAuth/background dispatch and recovery routing evidence inside Registry103.
 // [Pos] Reflections registration gate; repository behavior and PostgreSQL migration execution remain separate.
@@ -81,7 +81,9 @@ it.each(operationNames)("production POST dispatches registered %s exactly once",
 });
 
 it.each(oauthWrites)("OAuth original GET resolves %s with the live write principal", async operation => {
-  const request = new Request(`http://localhost/api/internal/dream/v1/receipts/original?operation=${operation}`, { headers: { authorization: "Bearer user" } });
+  const request = new Request(`http://localhost/api/internal/dream/v1/receipts/original?operation=${operation}`, { headers: {
+    authorization: "Bearer user", "x-ink-dream-service-authorization": "Bearer service-token",
+  } });
   const response = await GET(request, { params: Promise.resolve({ requestId: "original" }) });
   expect(response.status).toBe(200);
   expect((await response.json()).data).toEqual({ status: "absent", operation, request_id: "original" });
@@ -92,7 +94,9 @@ it.each(oauthWrites)("OAuth original GET resolves %s with the live write princip
 
 it.each(backgroundWrites)("background original GET resolves %s by exact service/task without browser bearer", async operation => {
   const taskId = "11111111-1111-4111-8111-111111111111";
-  const request = new Request(`http://localhost/api/internal/dream/v1/receipts/original?operation=${operation}&task_id=${taskId}`);
+  const request = new Request(`http://localhost/api/internal/dream/v1/receipts/original?operation=${operation}&task_id=${taskId}`, {
+    headers: { authorization: "Bearer service-token" },
+  });
   const response = await GET(request, { params: Promise.resolve({ requestId: "original" }) });
   expect(response.status).toBe(200);
   expect((await response.json()).data).toEqual({ status: "absent", operation, request_id: "original" });
@@ -106,7 +110,9 @@ it("rejects Reflections read receipts, duplicate selectors and browser credentia
     ["operation=reflection-task.get", {}, 404],
     [`operation=reflection-event.append&task_id=${taskId}&actor_id=caller`, {}, 404],
     [`operation=reflection-event.append&operation=reflection-event.append&task_id=${taskId}`, {}, 404],
-    [`operation=reflection-event.append&task_id=${taskId}`, { authorization: "Bearer user" }, 400],
+    [`operation=reflection-event.append&task_id=${taskId}`, {
+      authorization: "Bearer user", "x-ink-dream-service-authorization": "Bearer service-token",
+    }, 400],
   ] as const;
   for (const [query, headers, status] of cases) {
     const response = await GET(new Request(`http://localhost/api/internal/dream/v1/receipts/original?${query}`, { headers }), { params: Promise.resolve({ requestId: "original" }) });

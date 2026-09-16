@@ -1,7 +1,7 @@
 // [Input] Primary-prepared disposable PG, restricted OAuth and complete independent launch component facts.
 // [Output] Public source/claim/finish/original results, actual source parity and exact protected effects.
 // [Pos] Provider-free component harness; verification only SELECTs and primary owns all seeds/faults.
-// [Sync] 2026-09-15: check75 components without claiming prepare, failure recorder or Runtime acceptance.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { readFile, stat } from "node:fs/promises";
@@ -31,7 +31,7 @@ const caseDto = z.strictObject({ label: text, operation: nameDto, request_id: re
 const receiptDto = z.strictObject({ after_label: text, operation: nameDto, request_id: requestIdDto, token: tokenDto,
   query_tail: z.string(), status: statusDto, expected_code: codeDto.nullable(), state: z.enum(["absent", "committed"]).nullable(), source_label: text.nullable() });
 const fixtureDto = z.strictObject({ database: text, port: z.number().int().positive(), data_directory: text, target_verification_url: text,
-  issuer: text, service_id: text, service_secret: text, user_subject: text, canonical_user_id: decimalIdDto,
+  issuer: text, service_id: text, service_access_token: text, user_subject: text, canonical_user_id: decimalIdDto,
   source_root: text, oracle_python: text, auth_role: text, data_role: text, verification_role: text,
   operation_contracts: z.strictObject({ "dream-launch-source.ensure": z.string().regex(/^[0-9a-f]{64}$/), "dream-launch-dispatch.claim": z.string().regex(/^[0-9a-f]{64}$/), "dream-launch-dispatch.finish": z.string().regex(/^[0-9a-f]{64}$/) }),
   tokens: z.strictObject({ user: text, other: text, read_only: text, thread: text }), cases: z.array(caseDto).min(1), receipts: z.array(receiptDto).min(1),
@@ -109,7 +109,7 @@ const equal = (left: unknown, right: unknown, message: string) => { assert(isDee
 const check = (value: unknown, message: string) => { assert(value, message); assertions++; };
 const outputs = new Map<string, unknown>();
 function headers(token: z.output<typeof tokenDto>, requestId: string) { return { authorization: `Bearer ${token === "none" ? "" : f.tokens[token]}`, "content-type": "application/json",
-  "x-request-id": requestId, "x-ink-dream-service": f.service_id, "x-ink-dream-credential": f.service_secret }; }
+  "x-request-id": requestId, "x-ink-dream-service-authorization": `Bearer ${f.service_access_token}` }; }
 // Fixed verifier inventory: caller DTOs never select a relation, column or SQL.
 const tables = { threads: "public.chat_thread", messages: "public.chat_message", workspaces: "public.story_workspace_workspaces", decks: "public.decks", voices: "public.voices",
   runs: "public.workflow_runs", transitions: "public.workflow_run_transitions", consumptions: "public.workflow_run_token_consumptions", preflights: "public.workflow_preflights",

@@ -1,7 +1,7 @@
 // [Input] Candidate OAuth/background requests with fixed service, principal and transaction collaborators.
 // [Output] Strict pre-UOW parsing and credential-separated Reflections dispatch evidence.
 // [Pos] Provider-free ingress gate; shared operation registry and public Route remain unchanged.
-// [Sync] 2026-09-15: cover OAuth, credential-only worker, invalid input and browser-credential denial.
+// [Sync] 2026-09-17: cover dual-bearer OAuth, client_credentials worker and user-credential denial.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -33,7 +33,8 @@ const tx = { marker: "tx" };
 function request(input: unknown, authorization?: string) {
   return new Request("http://localhost/api/internal/dream/v1/operations/reflection", {
     method: "POST",
-    headers: { "content-type": "application/json", ...(authorization ? { authorization } : {}) },
+    headers: { "content-type": "application/json", authorization: authorization ?? "Bearer service-token",
+      ...(authorization ? { "x-ink-dream-service-authorization": "Bearer service-token" } : {}) },
     body: JSON.stringify({ request_id: "original", input }),
   });
 }
@@ -58,7 +59,7 @@ it("dispatches OAuth report history with the exact scope, principal and schema r
   expect(mocks.background).not.toHaveBeenCalled();
 });
 
-it("dispatches a worker operation only without a browser Authorization header", async () => {
+it("dispatches a worker operation with only the service bearer", async () => {
   const input = { task_id: "11111111-1111-4111-8111-111111111111" };
   const response = await handleReflectionTaskOperation(request(input), "reflection-task.worker-load");
   expect(response.status).toBe(200);

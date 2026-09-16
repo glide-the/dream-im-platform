@@ -1,6 +1,7 @@
-// [Input] Admin-host Better Auth Session and live Admin membership/RBAC.
+// [Input] Independent Admin Session and live Admin membership/RBAC.
 // [Output] Protected Refine workspace navigation.
 // [Pos] Admin layout; authorization is repeated by every server API.
+// [Sync] 2026-09-17: require the independent Admin management session rather than a Dream OAuth identity.
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import {

@@ -36,6 +36,7 @@ vi.mock("./config", () => ({
     secureCookies: true,
   }),
   authScopes: ["threads:read"],
+  oauthProviderScopes: ["threads:read", "capabilities:read"],
   AuthBoundaryError: class AuthBoundaryError extends Error {
     readonly code = "AUTH_NOT_CONFIGURED";
     readonly status = 503;
@@ -48,7 +49,6 @@ vi.mock("./subjectRepository", () => ({
     assertNewEmail = vi.fn();
     linkNewAccount = vi.fn();
     findActive = vi.fn();
-    hasActiveAdmin = vi.fn();
   },
 }));
 

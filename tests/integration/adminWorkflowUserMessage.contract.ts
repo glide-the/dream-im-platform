@@ -1,7 +1,7 @@
 // [Input] Primary-prepared disposable PostgreSQL facts, limited auth/data roles and fresh scoped proofs.
 // [Output] Actual production Workflow context/user-turn/receipt/delegation Route evidence.
 // [Pos] Provider-free non-destructive contract harness; primary alone prepares or faults owned fixtures.
-// [Sync] 2026-09-15: preserve raw numeric bytes, atomic title and authoritative confirmation claims.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
@@ -18,7 +18,7 @@ import { delegationOutputDto } from "../../app/lib/auth/delegationDto";
 const nonempty = z.string().min(1);
 const fixtureDto = z.strictObject({
   database: nonempty, port: z.number().int().positive(), data_directory: nonempty, target_verification_url: nonempty,
-  issuer: nonempty, service_id: nonempty, service_secret: nonempty, access_token: nonempty, other_access_token: nonempty,
+  issuer: nonempty, service_id: nonempty, service_access_token: nonempty, access_token: nonempty, other_access_token: nonempty,
   ordinary_thread_id: nonempty, untitled_thread_id: nonempty, terminal_thread_id: nonempty,
   split_thread_id: nonempty, split_message_id: nonempty,
   active_thread_id: nonempty, active_run_id: nonempty, terminal_run_id: nonempty, terminal_existing_grant: nonempty,
@@ -44,7 +44,7 @@ assert.deepEqual(proof.rows[0], { name: f.database, port: f.port, root: f.data_d
 const origin = f.issuer.replace(/\/api\/auth$/, "");
 const id = (prefix: string) => `${prefix}_${randomUUID()}`;
 let assertions = 0;
-function headers(token: string, requestId: string) { return { authorization: `Bearer ${token}`, "content-type": "application/json", "x-request-id": requestId, "x-ink-dream-service": f.service_id, "x-ink-dream-credential": f.service_secret }; }
+function headers(token: string, requestId: string) { return { authorization: `Bearer ${token}`, "content-type": "application/json", "x-request-id": requestId, "x-ink-dream-service-authorization": `Bearer ${f.service_access_token}` }; }
 async function checked(response: Response, status: number, requestId: string) {
   const body = await response.json();
   const code = typeof body.error?.code === "string" && /^[A-Z0-9_]{1,100}$/.test(body.error.code) ? body.error.code : "NO_PUBLIC_ERROR_CODE";

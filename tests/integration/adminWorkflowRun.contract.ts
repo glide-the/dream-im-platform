@@ -1,7 +1,7 @@
 // [Input] Primary-prepared named disposable PG, restricted auth/data roles and fresh OAuth/original Run grants.
 // [Output] Actual Run read/history/start/fail/cancel Route and atomic scope/replay/receipt evidence.
 // [Pos] Provider-free public-contract harness; verification credential only SELECTs owned fixture state.
-// [Sync] 2026-09-15: keep Runtime fixture/fault creation with the primary and exact lifecycle expectations private.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { readFile, stat } from "node:fs/promises";
@@ -31,7 +31,7 @@ const failCase = z.strictObject({ ...common, operation: z.literal("workflow-run.
 const cancelCase = z.strictObject({ ...common, operation: z.literal("workflow-run.cancel"), input: workflowRunCommandOperationContracts["workflow-run.cancel"].input, expected: commandExpectation.nullable() });
 const caseDto = z.discriminatedUnion("operation", [readCase, historyCase, startCase, failCase, cancelCase]);
 const fixtureDto = z.strictObject({ database: text, port: z.number().int().positive(), data_directory: text, target_verification_url: text,
-  issuer: text, service_id: text, service_secret: text, tokens: z.strictObject({ user: text, other: text, run: text, other_run: text }),
+  issuer: text, service_id: text, service_access_token: text, tokens: z.strictObject({ user: text, other: text, run: text, other_run: text }),
   cases: z.array(caseDto).min(1), receipt_request_id: requestIdDto, receipt_operation: z.enum(["workflow-run.start", "workflow-run.fail", "workflow-run.cancel"]),
 });
 const path = process.env.INK_AUTH_WORKFLOW_RUN_FIXTURE;
@@ -75,7 +75,7 @@ const equal = (left: unknown, right: unknown, message: string) => {
   assert(matches, message); assertions++;
 };
 function headers(token: string, requestId: string) { return { authorization: `Bearer ${token}`, "content-type": "application/json", "x-request-id": requestId,
-  "x-ink-dream-service": f.service_id, "x-ink-dream-credential": f.service_secret }; }
+  "x-ink-dream-service-authorization": `Bearer ${f.service_access_token}` }; }
 async function call(item: z.infer<typeof caseDto>, input: unknown = item.input, expectedStatus: number = item.status, requestId = item.request_id) {
   const response = await operationRoute(new Request(`${origin}/api/internal/dream/v1/operations/${item.operation}`, { method: "POST", headers: headers(f.tokens[item.token], requestId),
     body: JSON.stringify({ request_id: requestId, input }) }), { params: Promise.resolve({ operation: item.operation }) });

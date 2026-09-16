@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-17: register confidential service clients and freeze service-only versus dual-Bearer internal transport. -->
 <!-- [Sync] 2026-09-16: record exact provider-sub adoption, successful Google return and the real Better Auth resource/userinfo audience shape. -->
 <!-- [Sync] 2026-09-16: publish normal database migration 0063 and document strict DTO/domain/Drizzle Gateway service-key rotation. -->
 <!-- [Sync] 2026-09-16: bind Reflections Runtime Gateway access to an Admin-issued source-fenced delegation. -->
@@ -22,6 +23,8 @@
 版本`0.1`。状态：源码实现、正常数据库54→64 migration、三服务角色/ACL/9项发布门槛capability 激活与 Admin/Dream 服务切换已经完成；精确旧 Google 主体采用、真实 Google 返回 Dream 和 Device approve/deny/refresh/revoke 已通过。0063 已在正常库发布，Dream 模型入口经 Gateway key exact-scope rotation 后返回200，启用的外部MCP OAuth replacement仍待完成后复测可见模型输出。[实际191操作契约](admin-dream-operation-contracts.json)由真实Zod输入/输出与注册表生成。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin和Registry185-191 Story Workspace artifact在既有Registry169前缀后追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；该证据与真实 Google/Device/模型业务回执分别记录，不能相互替代。本稿不是完整生产部署声明。
 
 本机浏览器验收使用单一显式拓扑：Admin issuer 为 `http://localhost:3000/api/auth`，Google 回调为 `http://localhost:3000/api/auth/callback/google`，Dream origin/callback/resource 分别为 `http://localhost:5173`、`http://localhost:5173/auth/callback` 和 `http://localhost:5173/api`。`127.0.0.1` 只可作为进程内部连接地址，不能混入 OAuth issuer、redirect URI、Cookie origin 或浏览器 CSRF 判断。
+
+内部业务接口的服务身份由单独的 confidential OAuth client 提供。无用户的 background operation 使用 `Authorization: Bearer <client_credentials token>`；用户 operation 使用 `Authorization: Bearer <user delegated token>`，并由 Dream 服务端添加 `X-Ink-Dream-Service-Authorization: Bearer <client_credentials token>`。Browser、设备和任意外部请求不能选择第二个头；Dream 代理会剥离浏览器注入和上游回传。Admin 独立验证 service token 与 user token，再进入 strict DTO → Domain Service → typed Drizzle Repository → UOW；旧静态 `X-Ink-Dream-Service`/`X-Ink-Dream-Credential` 被拒绝，接口不接受 caller-selected user ID 或数据库选择器。
 
 ## Registry169：自动修复消息终态
 
@@ -256,9 +259,9 @@ Admin 是唯一认证中心和数据库服务。没有任意 SQL endpoint、表�
 
 | 能力 | 当前 | 目标 | 调用方式与回归 |
 | --- | --- | --- | --- |
-| Google、Account/User/Session | Dream 认证 + Admin 管理 Session | Admin Better Auth | 内置 socialProviders.google；旧业务PK不变 |
+| Google、Dream Account/User/Session | Dream 认证 | Admin Better Auth/OAuth Provider | 内置 socialProviders.google；Dream 旧业务PK不变 |
 | OAuth client/code/token/device/refresh | Dream 自有 | Admin OAuth Provider | API接受目标 access token；设备 OAuth grant |
-| 管理授权 | Admin RBAC | Admin RBAC | Session只证明登录，每次验证显式管理员映射与permission |
+| Admin 管理认证与授权 | Admin 独立 Session + RBAC | Admin `admin_users/admin_sessions/RBAC` | 不读取Dream user/subject link；每次请求验证active member与permission |
 | 数据权限/SQL/事务 | Dream repositories + Admin domains | Admin domains | 服务身份与用户委托分别检查，实体行过滤 |
 | Agent执行/流事件/leases | Dream | Dream | 数据持久化成功后原顺序发SSE，原失败语义 |
 | 资源default/desired/effective | Admin desired + Dream PG provider | Admin desired + Dream HTTP provider | default/effective/LKG仍Dream composition root拥有 |
@@ -282,7 +285,7 @@ Admin 是唯一认证中心和数据库服务。没有任意 SQL endpoint、表�
 
 ### 认证拓扑（双方已同意）
 
-Dream浏览器全部REST/SSE/Voice WebSocket经Dream同源BFF；Google登录发生在Admin origin。Admin Better Auth Session为host-only、HttpOnly、SameSite=Lax，Secure按明确URL HTTPS能力配置；跨站不共享cookie、不使用通配CORS。Dream cookie只含随机opaque browser handle，tokens保存在Admin加密browser-session领域，绑定服务client/origin/有效期。浏览器不保存access/refresh token。
+Dream浏览器全部REST/SSE/Voice WebSocket经Dream同源BFF；Google登录发生在Admin origin。用于Dream OAuth授权页的Better Auth Session为host-only、HttpOnly、SameSite=Lax，Secure按明确URL HTTPS能力配置；Admin管理后台另用独立Admin Session cookie，两者不互相授权。跨站不共享cookie、不使用通配CORS。Dream cookie只含随机opaque browser handle，tokens保存在Admin加密browser-session领域，绑定服务client/origin/有效期。浏览器不保存access/refresh token。
 
 Dream BFF start创建state/nonce/S256 PKCE verifier并放签名HttpOnly短期cookie；return_to只允许同源相对路径，阻止scheme、协议相对、反斜线、编码绕过。转Admin authorization code flow；callback核验state、issuer、callback exact URI、PKCE、单次cookie后由server兑换handle。所有写入验证exact Origin + BFF CSRF token；BFF代理只用配置的Admin/Dream backend，不接任意URL/用户头，WebSocket握手同样验证Origin/handle并服务端委托；连接不能把refresh/token放URL。Admin token端点按OAuth client认证而非依赖浏览器cookie。
 
@@ -309,7 +312,7 @@ sequenceDiagram
  F-->>B: host-only HttpOnly handle cookie + relative return
 ```
 
-Better Auth `sub`是其User ID，不能覆盖reserved claim。显式 `identity.subject_links(auth_user_id → users.id)`保存canonical映射。验证签名后用映射查用户及active platform投影；不能把sub当任意数字user_id。已有Google `oauth_accounts(provider,provider_sub)`是唯一旧账号映射证据；同邮箱不自动合并，冲突阻止登录并给明确恢复步骤。现有管理员通过独立映射到admin_users/RBAC，不根据邮箱/Session/Google登录自动授予管理权。迁移旧Account凭据必须加密，历史PK/关系保留；旧token在cutover撤销，不迁作新OAuth grant。
+Better Auth `sub`是其Dream OAuth User ID，不能覆盖reserved claim。显式 `identity.subject_links(auth_user_id → users.id)`保存Dream canonical映射。验证签名后用映射查Dream用户及active platform投影；不能把sub当任意数字user_id。已有Google `oauth_accounts(provider,provider_sub)`是唯一旧Dream账号映射证据；同邮箱不自动合并，冲突阻止登录并给明确恢复步骤。Admin operator 直接使用`admin_users/admin_sessions/RBAC`，不通过Dream `sub`、canonical user、邮箱或Google Session取得管理权。`identity.admin_subject_links`只作为迁移历史保留，不参与新登录路径。迁移旧Dream Account凭据必须加密，历史PK/关系保留；旧token在cutover撤销，不迁作新OAuth grant。
 
 正常本机目标已经执行一次严格旧 Google 采用：owner-only `0600` DTO绑定精确database/port/data directory、canonical user、legacy Google row和两份源指纹；发布 CLI 默认dry-run，只有`--apply --production-approval`写入。Domain Service按精确`provider_sub`稳定派生Better Auth IDs，typed Drizzle Repository在同一事务创建`identity.user`、Google `identity.account`、Dream `identity.subject_links`和脱敏audit。旧canonical/Google行修改数为0，Admin link创建数为0，重复apply为`already-complete`。随后真实Google callback创建Session、browser session与refresh lineage并返回Dream；同一主体没有Admin membership。
 
@@ -337,7 +340,7 @@ Better Auth与`@better-auth/oauth-provider`配对锁定`1.7.4`，peer `better-ca
 
 统一配置：`BETTER_AUTH_URL`、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_ID/SECRET`、`AUTH_TRUSTED_ORIGINS`、`DREAM_API_RESOURCE`、`AUTH_DATABASE_URL`（Admin专用身份角色）、已注册BFF/CLI client、`DREAM_DATA_SERVICE_CLIENTS`（分客户端服务间配置）、`AUTH_TOKEN_ENCRYPTION_KEY`（32byte AEAD）。URL必须HTTPS或exact loopback HTTP，无credentials/query/fragment；origin/redirect分别精确校验。secret/capability缺失503，不能生成固定test secret或环境分支。
 
-`ADMIN_CONTROL_DATABASE_URL` 明确仅用于一次性bootstrap control UOW；`DREAM_DATA_DATABASE_URL` 明确用于领域UOW，无凭据fallback。browser/runtime lifetime采用明确policy配置，不能将任意30天技术常量包装产品限制。原canonical/Admin采用通过显式 `drizzle/data/auth-subject-adoption.mjs` manifest/source fingerprint/Google-sub-FK或credential证据；同email不隐式提升或合并。两个旧密码冲突时停止，只有私有共同密码实际验证两旧hash后才可在明确manifest中采用一份兼容hash；历史行/PK/hash不修改，mapping/account/audit同事务。
+`ADMIN_CONTROL_DATABASE_URL` 明确仅用于一次性bootstrap control UOW；`DREAM_DATA_DATABASE_URL` 明确用于领域UOW，无凭据fallback。browser/runtime lifetime采用明确policy配置，不能将任意30天技术常量包装产品限制。Dream canonical adoption 通过显式 manifest/source fingerprint/Google-sub-FK或Dream credential证据；同email不隐式提升或合并。Admin member 不进入Dream adoption，不要求两类密码相同，也不把任一密码复制到另一业务域；历史行/PK/hash保持不变。
 
 Access token使用JWT ES256、typ=`at+jwt`、issuer exact、audience exact `DREAM_API_RESOURCE`、exp/iat/jti/client_id/scope，最大生命周期300s；ID token和Session JWT拒绝。scope `dream:read`/`dream:write`/`product:read`/`product:write`分别显式grant；offline_access才可刷新。客户端配置值通过发布能力返回而非硬编码主机。Dream JWKS仅从配置issuer获取，缓存/未知kid受限刷新、不能按token jku/x5u访问网络。Admin每次重新检查canonical用户状态/授权；Dream在需要即时状态边界走Admin principal验证，不宣称JWT离线即时撤销。JWT退出后既发token最多保留300s，自行添加grant/session denylist如实现必须明确并测。目标scope/aud错误403或invalid_grant，签名/过期/typ错误401。
 

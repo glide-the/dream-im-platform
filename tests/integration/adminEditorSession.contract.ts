@@ -1,7 +1,7 @@
 // [Input] Primary-prepared private named disposable PG, limited AUTH/DATA credentials and ES256 grants.
 // [Output] Actual production Session/Editor/delegation Route and receipt/ACL contract evidence.
 // [Pos] Provider-free isolated harness; never a normal-user, Google or model acceptance substitute.
-// [Sync] 2026-09-14: preserve exact Session binding, scopes, lost-response recovery and ownership.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
@@ -23,7 +23,7 @@ let f: Record<string, string | number>;
 try { f = JSON.parse(await readFile(configPath, "utf8")); } catch { throw new Error("Invalid private fixture configuration"); }
 assert(typeof f.database === "string" && f.database.startsWith("ink_auth_data_codex_test_"));
 assert(typeof f.data_directory === "string" && f.data_directory.startsWith("/private/tmp/ink-auth-data-migration-"));
-for (const key of ["target_verification_url", "issuer", "service_id", "service_secret", "access_token", "other_access_token", "thread_id"]) assert(typeof f[key] === "string" && String(f[key]).length > 0, "Required private fixture field missing");
+for (const key of ["target_verification_url", "issuer", "service_id", "service_access_token", "access_token", "other_access_token", "thread_id"]) assert(typeof f[key] === "string" && String(f[key]).length > 0, "Required private fixture field missing");
 let verificationDsn: URL;
 try { verificationDsn = new URL(String(f.target_verification_url)); } catch { throw new Error("Explicit PostgreSQL verification credential required"); }
 assert(["postgres:", "postgresql:"].includes(verificationDsn.protocol) && verificationDsn.username && decodeURIComponent(verificationDsn.pathname.slice(1)) === f.database, "Explicit named PostgreSQL credential required");
@@ -36,7 +36,7 @@ let assertions = 0;
 const visited = new Set<string>();
 const id = (prefix: string) => `${prefix}_${randomUUID()}`;
 function bearer(token: string, requestId: string, service = false) {
-  return { authorization: `Bearer ${token}`, "content-type": "application/json", "x-request-id": requestId, ...(service ? { "x-ink-dream-service": String(f.service_id), "x-ink-dream-credential": String(f.service_secret) } : {}) };
+  return { authorization: `Bearer ${token}`, "content-type": "application/json", "x-request-id": requestId, ...(service ? { "x-ink-dream-service-authorization": `Bearer ${String(f.service_access_token)}` } : {}) };
 }
 async function checked(response: Response, status: number, requestId: string) {
   const body = await response.json();

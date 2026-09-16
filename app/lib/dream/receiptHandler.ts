@@ -1,3 +1,4 @@
+// [Sync] 2026-09-17: distinguish service-only client_credentials receipts from dual-bearer user receipts.
 // [Sync] 2026-09-16: recover Registry187-188/190-191 Story Workspace Artifact writes.
 // [Sync] 2026-09-16: recover Registry175-184 Claude Plugin writes under their original user/background authority.
 // [Sync] 2026-09-16: recover Registry169 under the original turn authority.
@@ -13,7 +14,7 @@ import { z } from "zod";
 import { AuthBoundaryError } from "../auth/config";
 import { requestIdDto } from "../auth/dto";
 import { handleInternalAuthRequest } from "../auth/internalHandler";
-import { requireBackgroundScope } from "../auth/serviceIdentity";
+import { hasDelegatedUserBearer, requireBackgroundScope } from "../auth/serviceIdentity";
 import { withDataTransaction } from "./database";
 import { identitySchemaRequirement, reflectionTaskSchemaRequirement, reflectionTaskSchemaRequirements, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement, workflowPreflightExecutionSchemaRequirements } from "./schemaRequirements";
 import { ReceiptRepository } from "./receipts";
@@ -114,7 +115,7 @@ export async function handleReceipt(request: Request, requestId: string) {
       return withDataTransaction([identitySchemaRequirement, ...claudePluginDataSchemaRequirements], async tx => {
         let actor: string;
         if (operation.audience === "background") {
-          if (request.headers.has("authorization")) throw new AuthBoundaryError("CLAUDE_PLUGIN_BROWSER_CREDENTIAL_FORBIDDEN", 400);
+          if (hasDelegatedUserBearer(request)) throw new AuthBoundaryError("CLAUDE_PLUGIN_BROWSER_CREDENTIAL_FORBIDDEN", 400);
           requireBackgroundScope(service, "plugins:catalog");
           actor = `background:${service.id}`;
         } else {
@@ -143,7 +144,7 @@ export async function handleReceipt(request: Request, requestId: string) {
         if (!connectorId.success || query.size !== 2 || query.getAll("operation").length !== 1 || query.getAll("connector_id").length !== 1) {
           throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
         }
-        if (request.headers.has("authorization")) throw new AuthBoundaryError("NOTION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
+        if (hasDelegatedUserBearer(request)) throw new AuthBoundaryError("NOTION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
         requireBackgroundScope(service, "connectors:sync");
         return withDataTransaction([identitySchemaRequirement, ...notionConnectorSchemaRequirements], async tx => {
           const row = await new ReceiptRepository(tx, service.id, notionBackgroundReceiptActor(connectorId.data)).find(name, parsed.data);
@@ -265,7 +266,7 @@ export async function handleReceipt(request: Request, requestId: string) {
       if (reflectionTaskOperation.audience === "background") {
         const taskId = query.get("task_id") ?? "", parsedTaskId = reflectionTaskIdDto.safeParse(taskId);
         if (query.size !== 2 || query.getAll("operation").length !== 1 || query.getAll("task_id").length !== 1 || !parsedTaskId.success) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
-        if (request.headers.has("authorization")) throw new AuthBoundaryError("REFLECTION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
+        if (hasDelegatedUserBearer(request)) throw new AuthBoundaryError("REFLECTION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
         return withDataTransaction([identitySchemaRequirement, ...reflectionTaskSchemaRequirements], async tx => {
           const result = await readOriginalReflectionTaskBackgroundReceipt(name as ReflectionTaskBackgroundOperation, parsedTaskId.data, parsed.data, service, tx);
           return receiptResultDto.parse({ status: result === null ? "absent" : "committed", operation: name, request_id: parsed.data, ...(result === null ? {} : { result }) });

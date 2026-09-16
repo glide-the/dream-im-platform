@@ -1,7 +1,7 @@
 // [Input] Notion user/background write request IDs and exact original authority selectors.
 // [Output] Strict committed/absent recovery bound to OAuth subject or stored connector-derived sync actor.
 // [Pos] Provider-free unknown-COMMIT recovery test; it never reissues a Notion mutation.
-// [Sync] 2026-09-16: verify separate user and scheduled-sync receipt authority.
+// [Sync] 2026-09-17: verify separate user/service Bearers and scheduled-sync receipt authority.
 import { beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -41,12 +41,13 @@ beforeEach(() => {
 function userRead(suffix = "") {
   return GET(new Request(
     `http://localhost/api/internal/dream/v1/receipts/${requestId}?operation=notion.connector.patch${suffix}`,
-    { headers: { authorization: "Bearer oauth" } },
+    { headers: { authorization: "Bearer oauth", "x-ink-dream-service-authorization": "Bearer service-token" } },
   ), { params: Promise.resolve({ requestId }) });
 }
 function backgroundRead(suffix = "") {
   return GET(new Request(
     `http://localhost/api/internal/dream/v1/receipts/${requestId}?operation=notion.sync-connector.patch&connector_id=${connectorId}${suffix}`,
+    { headers: { authorization: "Bearer service-token" } },
   ), { params: Promise.resolve({ requestId }) });
 }
 
@@ -80,7 +81,7 @@ it("rejects extra selectors, browser credentials and malformed stored evidence",
   expect((await userRead("&user_id=42")).status).toBe(404);
   const withBrowser = GET(new Request(
     `http://localhost/api/internal/dream/v1/receipts/${requestId}?operation=notion.sync-connector.patch&connector_id=${connectorId}`,
-    { headers: { authorization: "Bearer oauth" } },
+    { headers: { authorization: "Bearer oauth", "x-ink-dream-service-authorization": "Bearer service-token" } },
   ), { params: Promise.resolve({ requestId }) });
   expect((await withBrowser).status).toBe(400);
   mocks.find.mockResolvedValue({

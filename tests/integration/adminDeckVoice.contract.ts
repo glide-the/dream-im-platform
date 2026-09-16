@@ -1,7 +1,7 @@
 // [Input] Primary-prepared named disposable PG, limited AUTH/DATA roles and private short-lived OAuth fixture.
 // [Output] Actual public Deck/Voice/version routes, strict DTO/permission/atomic receipt/revision/CAS evidence.
 // [Pos] Isolated provider-free contract harness; no raw SQL mutations, DDL, Runtime or real-account acceptance.
-// [Sync] 2026-09-15: verify all19 operations through existing production handlers; verification SQL is read-only.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import {randomUUID,createHash} from "node:crypto";
 import {readFile,stat} from "node:fs/promises";
@@ -20,7 +20,7 @@ assert.deepEqual(proof,{name:f.database,port:f.port,root:f.data_directory});
 for(const key of ["AUTH_DATABASE_URL","DREAM_DATA_DATABASE_URL"])assert.notEqual(new URL(process.env[key]??"").username,new URL(f.target_verification_url).username,"Production pool must use limited role");
 const origin=f.issuer.replace(/\/api\/auth$/,""),visited=new Set<string>();let assertions=0;
 const id=(prefix:string)=>prefix+"_"+randomUUID();
-function headers(requestId:string,token=f.access_token){return {"x-request-id":requestId,"content-type":"application/json","x-ink-dream-service":f.service_id,"x-ink-dream-credential":f.service_secret,authorization:"Bearer "+token};}
+function headers(requestId:string,token=f.access_token){return {"x-request-id":requestId,"content-type":"application/json","x-ink-dream-service-authorization":`Bearer ${f.service_access_token}`,authorization:"Bearer "+token};}
 async function invoke(name:DeckVoiceOperation,input:unknown,requestId:string,token=f.access_token){const response=await POST(new Request(origin+"/api/internal/dream/v1/operations/"+name,{method:"POST",headers:headers(requestId,token),body:JSON.stringify({request_id:requestId,input})}),{params:Promise.resolve({operation:name})});const body=await response.json();assert.equal(body.request_id,requestId);assertions++;visited.add(name);if(response.ok)deckVoiceOperationContracts[name].output.parse(body.data);return {status:response.status,body};}
 async function call(name:DeckVoiceOperation,input:unknown,options:{token?:string;requestId?:string;status?:number}={}){const result=await invoke(name,input,options.requestId??id("deck_contract"),options.token);const code=typeof result.body.error?.code==="string"&&/^[A-Z0-9_]{1,100}$/.test(result.body.error.code)?result.body.error.code:"NO_PUBLIC_ERROR_CODE";assert.equal(result.status,options.status??200,name+" unexpected public status ("+code+")");assertions++;return result.body;}
 async function receipt(operation:string,requestId:string,token=f.access_token){const response=await GET(new Request(origin+"/api/internal/dream/v1/receipts/"+requestId+"?operation="+encodeURIComponent(operation),{headers:headers(requestId,token)}),{params:Promise.resolve({requestId})});assert.equal(response.status,200);const body=await response.json();assert.equal(body.request_id,requestId);assertions+=2;return body.data;}

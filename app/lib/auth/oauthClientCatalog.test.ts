@@ -1,7 +1,7 @@
 // [Input] Provider-free auth configuration and catalog snapshots.
 // [Output] Deterministic DTO, drift plan and collision validation evidence.
 // [Pos] Unit contract for release-time Dream OAuth client catalog provisioning.
-// [Sync] 2026-09-16: cover browser/device public client DTO and idempotent planning.
+// [Sync] 2026-09-17: cover public clients plus confidential client_credentials registration.
 import { describe, expect, it } from "vitest";
 import { dreamOAuthCatalogDto, planDreamOAuthCatalog } from "./oauthClientCatalog";
 
@@ -25,14 +25,16 @@ const environment = {
 };
 
 describe("Dream OAuth client catalog", () => {
-  it("derives two public clients and one configured resource without secrets", () => {
+  it("derives two public clients, one confidential service client and one configured resource without plaintext secrets", () => {
     const target = dreamOAuthCatalogDto(environment);
     expect(target.resource).toMatchObject({ identifier: environment.DREAM_API_RESOURCE, signingAlgorithm: "ES256", accessTokenTtl: 300 });
     expect(target.clients).toEqual(expect.arrayContaining([
       expect.objectContaining({ clientId: "dream-browser", redirectUris: [service.redirectUri], tokenEndpointAuthMethod: "none", requirePKCE: true, grantTypes: ["authorization_code", "refresh_token"] }),
       expect.objectContaining({ clientId: "dream-device", redirectUris: [], tokenEndpointAuthMethod: "none", applicationType: "native", requirePKCE: false, grantTypes: ["refresh_token", "urn:ietf:params:oauth:grant-type:device_code"] }),
+      expect.objectContaining({ clientId: "dream-service", redirectUris: [], tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], clientCredentialsScopes: ["capabilities:read"] }),
     ]));
     expect(JSON.stringify(target)).not.toContain(service.secret);
+    expect(target.clients.find(client => client.clientId === service.id)?.clientSecretHash).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
 
   it("plans create, converged no-op and controlled drift", () => {
@@ -49,7 +51,7 @@ describe("Dream OAuth client catalog", () => {
       clients: target.clients.map(client => ({ clientId: client.clientId, action: "unchanged" })),
       links: target.clients.map(client => ({ clientId: client.clientId, action: "unchanged" })),
     });
-    expect(planDreamOAuthCatalog(target, { ...exact, clients: [{ ...target.clients[0], scopes: [] }, target.clients[1]] }).clients[0].action).toBe("update");
+    expect(planDreamOAuthCatalog(target, { ...exact, clients: [{ ...target.clients[0], scopes: [] }, ...target.clients.slice(1)] }).clients[0].action).toBe("update");
     expect(planDreamOAuthCatalog(target, {
       ...exact,
       links: [...exact.links, { clientId: target.clients[0].clientId, resourceId: "https://stale.example.test/api" }],
@@ -58,5 +60,10 @@ describe("Dream OAuth client catalog", () => {
 
   it("rejects reusing one identifier for browser and device roles", () => {
     expect(() => dreamOAuthCatalogDto({ ...environment, AUTH_DEVICE_CLIENT_ID: service.oauthClientId })).toThrow("AUTH_CLIENT_CATALOG_INVALID");
+  });
+
+  it("rejects reusing a service identifier for a public client role", () => {
+    expect(() => dreamOAuthCatalogDto({ ...environment, AUTH_DEVICE_CLIENT_ID: service.id })).toThrow("AUTH_CLIENT_CATALOG_INVALID");
+    expect(() => dreamOAuthCatalogDto({ ...environment, DREAM_DATA_SERVICE_CLIENTS: JSON.stringify([{ ...service, id: service.oauthClientId }]) })).toThrow("AUTH_CLIENT_CATALOG_INVALID");
   });
 });

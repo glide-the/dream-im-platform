@@ -4,8 +4,8 @@
 // [Sync] 2026-09-16: resolve an active auth subject from a server-derived canonical confirmation owner.
 import { APIError } from "better-auth/api";
 import { and, eq, sql } from "drizzle-orm";
-import { adminUsers, platformUsers, users } from "@ink-memory/db/schema";
-import { adminSubjectLinks, subjectLinks } from "@ink-memory/db/schema/auth";
+import { platformUsers, users } from "@ink-memory/db/schema";
+import { subjectLinks } from "@ink-memory/db/schema/auth";
 import type { AuthRepositoryDatabase } from "./database";
 import { AuthBoundaryError } from "./config";
 import { schemaCapabilities } from "@ink-memory/db/schema/capabilities";
@@ -30,13 +30,6 @@ export class SubjectRepository {
       if (capabilities[0]?.hash !== registrationContract.contract_sha256) throw new AuthBoundaryError("REGISTRATION_NOT_READY");
       await this.database.execute(sql`SELECT identity.register_canonical_user(${authUserId}, ${providerId}, ${passwordHash ?? null})`);
     } catch { throw new AuthBoundaryError("REGISTRATION_NOT_READY"); }
-  }
-
-  async hasActiveAdmin(authUserId: string) {
-    const rows = await this.database.select({ id: adminUsers.id }).from(adminSubjectLinks)
-      .innerJoin(adminUsers, eq(adminSubjectLinks.adminUserId, adminUsers.id))
-      .where(and(eq(adminSubjectLinks.authUserId, authUserId), eq(adminUsers.status, "active"))).limit(1);
-    return rows.length > 0;
   }
 
   async findActive(authUserId: string) {

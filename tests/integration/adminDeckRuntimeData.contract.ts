@@ -1,7 +1,7 @@
 // [Input] Primary-prepared named isolated target, restricted pools and private short-lived actor proofs.
 // [Output] Actual six production operation contracts and receipt/permission/semantic atomicity evidence.
 // [Pos] Public-only provider-free harness; every owner SQL query is SELECT, never fixture/fault execution.
-// [Sync] 2026-09-15: preserve raw memory, enabled pack refs, rollback and exact original-request recovery.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -11,7 +11,7 @@ import { POST } from "../../app/api/internal/dream/v1/operations/[operation]/rou
 import { GET } from "../../app/api/internal/dream/v1/receipts/[requestId]/route";
 import { deckRuntimeDataOperationContracts as contracts, pluginRefEvidenceDto, type DeckRuntimeDataOperation } from "../../app/lib/dream/deckRuntimeDataDto";
 const id = z.string().min(1);
-const fixtureDto = z.strictObject({ database: id, port: z.number().int().positive(), data_directory: id, target_verification_url: id, issuer: id, service_id: id, service_secret: id, access_token: id, other_access_token: id, read_only_token: id, thread_grant: id, deck_id: id, foreign_deck_id: id, thread_id: id, other_owned_thread_id: id, repair_thread_id: id, repair_voice_id: id, unbound_thread_id: id, analysis_voice_id: id, disabled_voice_id: id, disabled_deck_voice_id: id, retired_voice_id: id, changed_retired_voice_id: id, not_ready_installation_id: id, refs: z.array(pluginRefEvidenceDto).length(2), raw_memory: id, default_memory: id });
+const fixtureDto = z.strictObject({ database: id, port: z.number().int().positive(), data_directory: id, target_verification_url: id, issuer: id, service_id: id, service_access_token: id, access_token: id, other_access_token: id, read_only_token: id, thread_grant: id, deck_id: id, foreign_deck_id: id, thread_id: id, other_owned_thread_id: id, repair_thread_id: id, repair_voice_id: id, unbound_thread_id: id, analysis_voice_id: id, disabled_voice_id: id, disabled_deck_voice_id: id, retired_voice_id: id, changed_retired_voice_id: id, not_ready_installation_id: id, refs: z.array(pluginRefEvidenceDto).length(2), raw_memory: id, default_memory: id });
 const path = process.env.INK_AUTH_DECK_RUNTIME_FIXTURE; assert(path, "Explicit private primary-prepared fixture required"); assert.equal((await stat(path)).mode & 0o777, 0o600);
 const raw = JSON.parse(await readFile(path, "utf8"));const parsed = fixtureDto.safeParse(raw);assert(parsed.success, "Strict private fixture contract required");const f = parsed.data;
 assert(f.database.startsWith("ink_auth_data_codex_test_") && f.port !== 5433 && f.data_directory.startsWith("/private/tmp/ink-auth-data-migration-"));
@@ -20,7 +20,7 @@ const verification = new Client({ connectionString: f.target_verification_url })
 const proof = await verification.query("SELECT current_database() AS name,current_setting('port')::int AS port,current_setting('data_directory') AS root");assert.deepEqual(proof.rows[0], { name: f.database, port: f.port, root: f.data_directory });
 const origin = f.issuer.replace(/\/api\/auth$/, "");let assertions = 0;const visited = new Set<string>();
 const requestId = () => `deck_runtime_${randomUUID()}`;
-function headers(token: string, correlation: string) { return { authorization: `Bearer ${token}`, "content-type": "application/json", "x-request-id": correlation, "x-ink-dream-service": f.service_id, "x-ink-dream-credential": f.service_secret }; }
+function headers(token: string, correlation: string) { return { authorization: `Bearer ${token}`, "content-type": "application/json", "x-request-id": correlation, "x-ink-dream-service-authorization": `Bearer ${f.service_access_token}` }; }
 async function call(name: DeckRuntimeDataOperation, input: unknown, options: { status?: number; token?: string; correlation?: string } = {}) {
   const correlation = options.correlation ?? requestId();const response = await POST(new Request(`${origin}/api/internal/dream/v1/operations/${name}`, { method: "POST", headers: headers(options.token ?? f.access_token, correlation), body: JSON.stringify({ request_id: correlation, input }) }), { params: Promise.resolve({ operation: name }) });const body = await response.json();
   const code = typeof body.error?.code === "string" && /^[A-Z0-9_]{1,100}$/.test(body.error.code) ? body.error.code : "NO_PUBLIC_ERROR_CODE";assert.equal(response.status, options.status ?? 200, `${name} public status (${code})`);assert.equal(body.request_id, correlation);assertions += 2;visited.add(name);

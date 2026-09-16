@@ -1,12 +1,13 @@
 // [Input] Configured service request, named registered operation and strict request envelope.
 // [Output] OAuth owner or task-bound background dispatch inside one capability-gated Admin UOW.
 // [Pos] Registry99 Reflections ingress; Route delegates while the service owns business rules.
-// [Sync] 2026-09-15: register credential-separated OAuth/background dispatch after strict parsing.
+// [Sync] 2026-09-17: distinguish service-only client_credentials from dual-bearer user delegation.
 import { z } from "zod";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 import { requestIdDto } from "../auth/dto";
 import { handleInternalAuthRequest, parseAuthDto } from "../auth/internalHandler";
 import { principalForServiceToken } from "../auth/serviceAccessToken";
+import { hasDelegatedUserBearer } from "../auth/serviceIdentity";
 import { identitySchemaRequirement } from "./schemaRequirements";
 import { withDataTransaction } from "./database";
 import { reflectionTaskOperationContracts, type ReflectionTaskBackgroundOperation, type ReflectionTaskOperation, type ReflectionTaskUserOperation } from "./reflectionTaskDto";
@@ -21,7 +22,7 @@ export async function handleReflectionTaskOperation(request: Request, name: stri
     setRequestId(envelope.request_id);
     return withDataTransaction([identitySchemaRequirement, ...reflectionTaskSchemaRequirements], async tx => {
       if (contract.audience === "background") {
-        if (request.headers.has("authorization")) throw new AuthBoundaryError("REFLECTION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
+        if (hasDelegatedUserBearer(request)) throw new AuthBoundaryError("REFLECTION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
         return runReflectionTaskBackgroundOperation(name as ReflectionTaskBackgroundOperation, envelope.input, service, tx, envelope.request_id);
       }
       const principal = await principalForServiceToken(tx, request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", service, contract.userScope);

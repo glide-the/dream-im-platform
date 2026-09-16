@@ -1,7 +1,7 @@
 // [Input] Primary-prepared named disposable PG, live restricted OAuth and independent original creation facts.
 // [Output] Public create/retry/receipt, full actual-source parameters and atomic replay/failure evidence.
 // [Pos] Provider-free contract harness; verification only SELECTs, primary owns every seed and fault.
-// [Sync] 2026-09-15: preserve full original creation acceptance and explicit remaining denied/receipt scope.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { readFile, stat } from "node:fs/promises";
@@ -29,7 +29,7 @@ const caseDto = z.strictObject({ label: text, operation: nameDto, request_id: re
 const receiptCaseDto = z.strictObject({ operation: nameDto, request_id: requestIdDto, token: tokenDto, status: statusDto,
   state: z.enum(["absent", "committed"]).nullable(), source_label: text.nullable() });
 const fixtureDto = z.strictObject({ database: text, port: z.number().int().positive(), data_directory: text, target_verification_url: text,
-  issuer: text, service_id: text, service_secret: text, user_subject: text, canonical_user_id: decimalIdDto,
+  issuer: text, service_id: text, service_access_token: text, user_subject: text, canonical_user_id: decimalIdDto,
   source_root: text, oracle_python: text, auth_role: text, data_role: text, verification_role: text,
   tokens: z.strictObject({ user: text, other: text, read_only: text, thread: text }), cases: z.array(caseDto).min(1), receipts: z.array(receiptCaseDto).min(1),
   validation_scope: z.enum(["full", "remaining_denied_receipts"]).default("full"),
@@ -81,7 +81,7 @@ const check = (value: unknown, message: string) => { assert(value, message); ass
 const outputs = new Map<string, z.output<typeof workflowRunReadOutputDto>>();
 const origin = f.issuer.replace(/\/api\/auth$/, "");
 function headers(token: z.output<typeof tokenDto>, requestId: string) { return { authorization: `Bearer ${token === "none" ? "" : f.tokens[token]}`, "content-type": "application/json",
-  "x-request-id": requestId, "x-ink-dream-service": f.service_id, "x-ink-dream-credential": f.service_secret }; }
+  "x-request-id": requestId, "x-ink-dream-service-authorization": `Bearer ${f.service_access_token}` }; }
 async function state() {
   return (await verification.query("SELECT (SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]'::jsonb)::text FROM public.workflow_runs r) AS runs,(SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY workflow_run_id,transition_seq),'[]'::jsonb)::text FROM public.workflow_run_transitions t) AS transitions,(SELECT coalesce(jsonb_agg(to_jsonb(c) ORDER BY token_digest),'[]'::jsonb)::text FROM public.workflow_run_token_consumptions c) AS consumption,(SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY workflow_preflight_id),'[]'::jsonb)::text FROM public.workflow_preflights p) AS preflights,(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY service_client_id,actor,operation,request_id),'[]'::jsonb)::text FROM dream.operation_receipts r) AS receipts,(SELECT coalesce(jsonb_agg(to_jsonb(a) ORDER BY id),'[]'::jsonb)::text FROM public.admin_audit_logs a) AS audits,(SELECT count(*)::int FROM public.workflow_runs) AS run_count,(SELECT count(*)::int FROM public.workflow_run_transitions) AS transition_count,(SELECT count(*)::int FROM public.workflow_run_token_consumptions) AS consumption_count,(SELECT count(*)::int FROM public.agent_sessions) AS sessions")).rows[0];
 }

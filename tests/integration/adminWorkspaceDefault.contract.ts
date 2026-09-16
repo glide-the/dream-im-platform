@@ -1,7 +1,7 @@
 // [Input] Primary-prepared disposable PostgreSQL, restricted OAuth and independent default Workspace facts.
 // [Output] Public default/original results, first-write concurrency, actual source and full protected effects.
 // [Pos] Provider-free SELECT-only verifier; primary owns fixtures, faults, DDL and cleanup.
-// [Sync] 2026-09-15: verify76 without claiming normal business, Runtime or complete database closure.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { readFile, stat } from "node:fs/promises";
@@ -24,7 +24,7 @@ const caseDto = z.strictObject({ label: text, request_id: requestIdDto, token: t
 const receiptDto = z.strictObject({ after_label: text, request_id: requestIdDto, token: text, query_tail: z.string(), status,
   expected_code: code.nullable(), state: z.enum(["absent", "committed"]).nullable(), source_label: text.nullable() });
 const fixtureDto = z.strictObject({ database: text, port: z.number().int().positive(), data_directory: text, target_verification_url: text,
-  issuer: text, service_id: text, service_secret: text, auth_role: text, data_role: text, verification_role: text,
+  issuer: text, service_id: text, service_access_token: text, auth_role: text, data_role: text, verification_role: text,
   source_root: text, oracle_python: text, operation_contract_sha256: z.string().regex(/^[0-9a-f]{64}$/),
   expected_default_name: text, expected_created_status: text, canonical_ids: z.record(z.string(), decimalIdDto), subjects: z.record(z.string(), text),
   tokens: z.record(z.string(), text), cases: z.array(caseDto).min(1), receipts: z.array(receiptDto).min(1) });
@@ -81,7 +81,7 @@ const tables = { threads: "public.chat_thread", messages: "public.chat_message",
 async function state() { return Object.fromEntries(await Promise.all(Object.entries(tables).map(async ([key, relation]) => [key,
   (await verification.query<{ value: string }>(`SELECT to_jsonb(r)::text AS value FROM ${relation} r ORDER BY to_jsonb(r)::text`)).rows.map(row => row.value)] as const))) as Record<keyof typeof tables, string[]>; }
 function headers(token: string, requestId: string) { return { authorization: `Bearer ${token === "none" ? "" : f.tokens[token]}`, "content-type": "application/json",
-  "x-request-id": requestId, "x-ink-dream-service": f.service_id, "x-ink-dream-credential": f.service_secret }; }
+  "x-request-id": requestId, "x-ink-dream-service-authorization": `Bearer ${f.service_access_token}` }; }
 async function clock() { return projectWorkflowTimestamp((await verification.query<{ now: string }>("SELECT clock_timestamp()::text AS now")).rows[0].now)!; }
 function sourceOracle(actor: string, workspaceId: string, existing: string | null) {
   const child = spawnSync(f.oracle_python, ["-B", fileURLToPath(new URL("./workspaceDefaultSourceOracle.py", import.meta.url))], { encoding: "utf8", timeout: 15000,

@@ -1,12 +1,13 @@
 // [Input] Configured service request, Registry120 operation name and strict request envelope.
 // [Output] OAuth owner or service-only state/claim-turn authority in one capability-gated UOW.
 // [Pos] Thin ingress; Admin Service/Repository own authorization, lifecycle and persistence.
-// [Sync] 2026-09-16: gate Registry121 claim-turn on its exact Drizzle capability.
+// [Sync] 2026-09-17: distinguish service-only client_credentials from dual-bearer user delegation.
 import { z } from "zod";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 import { requestIdDto } from "../auth/dto";
 import { handleInternalAuthRequest, parseAuthDto } from "../auth/internalHandler";
 import { principalForServiceToken } from "../auth/serviceAccessToken";
+import { hasDelegatedUserBearer } from "../auth/serviceIdentity";
 import { withDataTransaction } from "./database";
 import { identitySchemaRequirement } from "./schemaRequirements";
 import { storyWorkspaceConfirmationOperationContracts, type StoryWorkspaceConfirmationBackgroundOperation,
@@ -28,7 +29,7 @@ export async function handleStoryWorkspaceConfirmation(request: Request, name: s
     setRequestId(envelope.request_id);
     return withDataTransaction([identitySchemaRequirement, ...storyWorkspaceConfirmationRequirements(name)], async tx => {
       if (operation.audience === "background") {
-        if (request.headers.has("authorization")) throw new AuthBoundaryError("CONFIRMATION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
+        if (hasDelegatedUserBearer(request)) throw new AuthBoundaryError("CONFIRMATION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
         return runStoryWorkspaceConfirmationBackgroundOperation(
           name as StoryWorkspaceConfirmationBackgroundOperation, envelope.input, service, tx,
         );

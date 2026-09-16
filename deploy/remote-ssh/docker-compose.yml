@@ -1,7 +1,7 @@
 # [Input] mode-0600 deploy env, managed Provider registrations, and the pre-created platform network.
 # [Output] One Admin/Gateway container with embedded PostgreSQL, product OAuth, and persistent volumes.
 # [Pos] Alibaba Cloud ECS stack owned by Admin; MinIO and standalone PostgreSQL are absent.
-# [Sync] 2026-09-16: pass the complete unified auth, limited-role data service and policy configuration.
+# [Sync] 2026-09-17: pass the independent Admin Session lifetime with unified auth/data configuration.
 # [Sync] 2026-09-04: pass optional Codex/xAI/Copilot product-profile overrides and credential key-id settings.
 
 services:
@@ -33,6 +33,7 @@ services:
       MIGRATION_DATABASE_URL: postgres://${POSTGRES_USER:-ink_memory}:${POSTGRES_PASSWORD:?Generate deploy/remote-ssh/.env}@127.0.0.1:5432/${POSTGRES_DB:-ink-memory}
       ADMIN_CONSOLE_ENABLED: ${ADMIN_CONSOLE_ENABLED:-true}
       ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:?Generate deploy/remote-ssh/.env}
+      ADMIN_SESSION_TTL_SECONDS: ${ADMIN_SESSION_TTL_SECONDS:-28800}
       ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:?Generate deploy/remote-ssh/.env}
       ADMIN_ORIGIN_ALLOWLIST: ${ADMIN_ORIGIN_ALLOWLIST:?Generate deploy/remote-ssh/.env}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Configure unified authentication}

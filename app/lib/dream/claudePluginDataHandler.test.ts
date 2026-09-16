@@ -1,7 +1,7 @@
 // [Input] Registry175-184 HTTP envelopes, mocked service identity/OAuth principal and Admin UOW seams.
 // [Output] OAuth/background scope, bearer separation, schema-gate and original-receipt assertions.
 // [Pos] Provider-free shared Claude Plugin ingress test.
-// [Sync] 2026-09-16: verify scoped builtin reconciliation without a fabricated user bearer.
+// [Sync] 2026-09-17: verify client_credentials background and dual-bearer user calls.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ service: vi.fn(), transaction: vi.fn(), principal: vi.fn(), run: vi.fn(), receipt: vi.fn() }));
@@ -21,14 +21,15 @@ const principal = { subject: "subject", canonical_user_id: "42", client_id: "dre
   scopes: ["dream:read", "dream:write"], status: "active" as const };
 function request(operation: string, input: unknown) {
   return new Request(`http://admin.local/api/internal/dream/v1/operations/${operation}`, { method: "POST", headers: {
-    authorization: "Bearer oauth-token", "content-type": "application/json",
-    "x-ink-dream-service": "dream", "x-ink-dream-credential": "x".repeat(32), origin: "http://dream.local",
+    authorization: "Bearer oauth-token", "x-ink-dream-service-authorization": "Bearer service-token",
+    "content-type": "application/json", origin: "http://dream.local",
   }, body: JSON.stringify({ request_id: "request-original", input }) });
 }
 function backgroundRequest(operation: string, input: unknown, bearer = false) {
   return new Request(`http://admin.local/api/internal/dream/v1/operations/${operation}`, { method: "POST", headers: {
-    ...(bearer ? { authorization: "Bearer oauth-token" } : {}), "content-type": "application/json",
-    "x-ink-dream-service": "dream", "x-ink-dream-credential": "x".repeat(32), origin: "http://dream.local",
+    authorization: bearer ? "Bearer oauth-token" : "Bearer service-token",
+    ...(bearer ? { "x-ink-dream-service-authorization": "Bearer service-token" } : {}),
+    "content-type": "application/json", origin: "http://dream.local",
   }, body: JSON.stringify({ request_id: "request-builtin", input }) });
 }
 

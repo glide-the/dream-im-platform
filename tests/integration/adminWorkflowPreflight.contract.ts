@@ -1,7 +1,7 @@
 // [Input] Primary-prepared Preflight61 facts, restricted OAuth actors and a private source interpreter fixture.
 // [Output] Complete execution/read contract or remaining reads, with full original source projection evidence.
 // [Pos] Provider-free isolated harness; verification only SELECTs, primary owns migration, seeds and faults.
-// [Sync] 2026-09-15: mark required active/expired facts explicitly while preserving extra consumed read coverage.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { readFile, stat } from "node:fs/promises";
@@ -36,7 +36,7 @@ const readCase = z.strictObject({ ...common, operation: z.literal("workflow-pref
   expiry_fact: z.enum(["active_unconsumed", "expired_unconsumed"]).nullable().default(null) });
 const caseDto = z.discriminatedUnion("operation", [executeCase, readCase]);
 export const workflowPreflightFixtureDto = z.strictObject({ database: text, port: z.number().int().positive(), data_directory: text,
-  target_verification_url: text, issuer: text, service_id: text, service_secret: text, user_subject: text,
+  target_verification_url: text, issuer: text, service_id: text, service_access_token: text, user_subject: text,
   canonical_user_id: decimalIdDto, source_root: text, oracle_python: text,
   tokens: z.strictObject({ user: text, other: text, read_only: text, thread: text }), cases: z.array(caseDto).min(1).max(100),
   validation_scope: z.enum(["complete", "remaining_reads"]).default("complete") });
@@ -97,7 +97,7 @@ const equal = (left: unknown, right: unknown, message: string) => { assert(isDee
 const check = (value: unknown, message: string) => { assert(value, message); assertions++; };
 const origin = f.issuer.replace(/\/api\/auth$/, "");
 function headers(token: string, requestId: string) { return { authorization: `Bearer ${token}`, "content-type": "application/json",
-  "x-request-id": requestId, "x-ink-dream-service": f.service_id, "x-ink-dream-credential": f.service_secret }; }
+  "x-request-id": requestId, "x-ink-dream-service-authorization": `Bearer ${f.service_access_token}` }; }
 async function state() {
   const result = await verification.query("SELECT (SELECT jsonb_agg(to_jsonb(p) ORDER BY workflow_preflight_id) FROM public.workflow_preflights p) AS preflights,(SELECT jsonb_agg(to_jsonb(m) ORDER BY service_client_id,actor,request_id) FROM dream.workflow_preflight_requests m) AS mappings,(SELECT count(*)::int FROM dream.operation_receipts) AS receipts,(SELECT count(*)::int FROM public.admin_audit_logs) AS audits,(SELECT count(*)::int FROM public.workflow_runs) AS runs,(SELECT count(*)::int FROM public.agent_sessions) AS sessions");
   return result.rows[0];

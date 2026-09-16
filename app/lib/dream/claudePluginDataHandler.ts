@@ -1,13 +1,13 @@
 // [Input] Registered Registry175-184 name, service identity, optional OAuth bearer and strict envelope.
 // [Output] DTO-validated Claude Plugin result; writes commit domain state, receipt and audit in one transaction.
 // [Pos] Thin OAuth/background ingress; no filesystem, CLI or generic database dispatch.
-// [Sync] 2026-09-16: admit scoped builtin reconciliation without a fabricated user principal.
+// [Sync] 2026-09-17: distinguish service-only client_credentials from dual-bearer user delegation.
 import { z } from "zod";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 import { requestIdDto } from "../auth/dto";
 import { handleInternalAuthRequest, parseAuthDto } from "../auth/internalHandler";
 import { principalForServiceToken } from "../auth/serviceAccessToken";
-import { requireBackgroundScope } from "../auth/serviceIdentity";
+import { hasDelegatedUserBearer, requireBackgroundScope } from "../auth/serviceIdentity";
 import { identitySchemaRequirement } from "./schemaRequirements";
 import { withDataTransaction } from "./database";
 import { claudePluginOperationContracts, type ClaudePluginBackgroundOperation, type ClaudePluginOperation } from "./claudePluginDataDto";
@@ -27,7 +27,7 @@ export async function handleClaudePluginOperation(request: Request, name: string
     setRequestId(envelope.request_id);
     return withDataTransaction([identitySchemaRequirement, ...claudePluginDataSchemaRequirements], async tx => {
       if (operation.audience === "background") {
-        if (request.headers.has("authorization")) throw new AuthBoundaryError("CLAUDE_PLUGIN_BROWSER_CREDENTIAL_FORBIDDEN", 400);
+        if (hasDelegatedUserBearer(request)) throw new AuthBoundaryError("CLAUDE_PLUGIN_BROWSER_CREDENTIAL_FORBIDDEN", 400);
         requireBackgroundScope(service, "plugins:catalog");
         const action = () => runClaudePluginBackgroundOperation(name as ClaudePluginBackgroundOperation, envelope.input, service, tx);
         return new ReceiptRepository(tx, service.id, `background:${service.id}`)

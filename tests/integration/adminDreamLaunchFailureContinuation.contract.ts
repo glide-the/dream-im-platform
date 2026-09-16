@@ -1,7 +1,7 @@
 // [Input] Strict original22/27 fixture and mandatory primary-owned partial287/Editor6/raw17 continuation evidence.
 // [Output] Six full existing originals restored, all16 denied POSTs/all27 GETs with zero positive POST calls.
 // [Pos] Independent disposable provider-free verifier; original failed harness and production77 stay frozen.
-// [Sync] 2026-09-15: retain first exit1 and independently verify every negative/checkpoint without inferred progress.
+// [Sync] 2026-09-17: require delegated user OAuth plus a short-lived client_credentials service access token.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { readFile, lstat } from "node:fs/promises";
@@ -53,7 +53,7 @@ async function state(): Promise<FailureProtectedRows> {
   const entries = await Promise.all(failureProtectedRelations.map(async relation => [relation, (await verification.query<{ value: string }>(`SELECT to_jsonb(r)::text AS value FROM ${relation} r ORDER BY to_jsonb(r)::text`)).rows.map(row => row.value)] as const));
   return Object.fromEntries(entries) as FailureProtectedRows;
 }
-function headers(token: z.output<typeof failureContinuationFixtureDto>["cases"][number]["token"], requestId: string) { return { authorization: `Bearer ${token === "none" ? "" : f.tokens[token]}`, "content-type": "application/json", "x-request-id": requestId, "x-ink-dream-service": f.service_id, "x-ink-dream-credential": f.service_secret }; }
+function headers(token: z.output<typeof failureContinuationFixtureDto>["cases"][number]["token"], requestId: string) { return { authorization: `Bearer ${token === "none" ? "" : f.tokens[token]}`, "content-type": "application/json", "x-request-id": requestId, "x-ink-dream-service-authorization": `Bearer ${f.service_access_token}` }; }
 async function runRow(runId: string) { return (await verification.query<Record<string, unknown>>("SELECT r.*,r.created_at::text AS created_at,r.started_at::text AS started_at,r.completed_at::text AS completed_at,r.source_message_time::text AS source_message_time FROM public.workflow_runs r WHERE r.id=$1", [runId])).rows[0] ?? null; }
 async function sourceRow(messageId: string | null, threadId: string | null) {
   return (await verification.query<Record<string, unknown>>("SELECT m.*,m.created_at::text AS created_at,t.user_id::text AS user_id,t.deck_id,t.voice_id FROM public.chat_message m JOIN public.chat_thread t ON t.id=m.thread_id WHERE m.id=$1 AND m.thread_id=$2", [messageId, threadId])).rows[0] ?? null;

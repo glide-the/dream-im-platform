@@ -1,7 +1,7 @@
 // [Input] OAuth/delegated/background Notion envelopes and mocked Admin auth/UOW seams.
 // [Output] Strict ingress, capability, background-scope and write-receipt assertions.
 // [Pos] Provider-free HTTP handler contract for the Notion connector data domain.
-// [Sync] 2026-09-16: verify one canonical ingress for browser, Runtime and scheduler callers.
+// [Sync] 2026-09-17: distinguish client_credentials scheduler calls from dual-bearer user delegation.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -51,8 +51,11 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 function request(operation: string, input: unknown, token: string | null = "oauth-token") {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (token !== null) headers.authorization = `Bearer ${token}`;
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    authorization: `Bearer ${token ?? "service-token"}`,
+  };
+  if (token !== null) headers["x-ink-dream-service-authorization"] = "Bearer service-token";
   return new Request(`http://localhost/api/internal/dream/v1/operations/${operation}`, {
     method: "POST", headers, body: JSON.stringify({ request_id: "request-1", input }),
   });

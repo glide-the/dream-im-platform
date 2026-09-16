@@ -1,7 +1,7 @@
 // [Input] Admin session cookies, permission codes, request identifiers, and mutation Origin headers.
 // [Output] Fail-closed Admin authentication/RBAC/Origin guards shared by route handlers.
 // [Pos] Server-side Admin trust boundary; missing mutation Origin is always denied.
-// [Sync] 2026-09-14: sole Better Auth Session plus explicit active Admin mapping/live RBAC.
+// [Sync] 2026-09-17: authorize only the independent Admin Session plus live Admin RBAC.
 
 import { randomUUID } from "node:crypto";
 import {

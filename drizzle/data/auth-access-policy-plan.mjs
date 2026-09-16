@@ -1,7 +1,7 @@
 // [Input] A verified PostgreSQL connection, database name and four distinct limited role names.
 // [Output] One deterministic least-privilege statement plan and redacted policy digest.
 // [Pos] Shared ACL planner used by isolated validation and explicit normal-database activation.
-// [Sync] 2026-09-16: extract the reviewed auth/control/data/Dream policy without changing grants.
+// [Sync] 2026-09-17: grant the auth/control UOW only the Admin session/member/RBAC columns required by independent management login.
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
@@ -107,13 +107,14 @@ export async function buildAuthAccessPolicy(client, database, roles) {
   grant(roles.data, "SELECT (id, email, display_name, avatar_url, role, status, created_at, updated_at)", "TABLE public.users");
   grant(roles.control, "SELECT (id, email, status)", "TABLE public.users");
   for (const role of [roles.auth, roles.control]) {
-    grant(role, "SELECT", "TABLE identity.admin_subject_links, public.admin_user_roles, public.admin_roles, public.admin_role_permissions, public.admin_permissions");
-    grant(role, "SELECT (id, email, display_name, status)", "TABLE public.admin_users");
+    grant(role, "SELECT", "TABLE public.admin_user_roles, public.admin_roles, public.admin_role_permissions, public.admin_permissions");
+    grant(role, "SELECT (id, email, display_name, password_hash, status)", "TABLE public.admin_users");
     grant(role, "UPDATE (last_login_at, updated_at)", "TABLE public.admin_users");
+    grant(role, "SELECT, INSERT, UPDATE, DELETE", "TABLE public.admin_sessions");
     grant(role, "INSERT", "TABLE public.admin_audit_logs");
   }
   grant(roles.auth, "EXECUTE", "FUNCTION identity.register_canonical_user(text, text, text)");
-  grant(roles.control, "SELECT, INSERT, UPDATE, DELETE", "TABLE public.admin_users, public.admin_user_roles, public.admin_roles, public.admin_role_permissions, public.admin_permissions, identity.admin_subject_links, identity.subject_links");
+  grant(roles.control, "SELECT, INSERT, UPDATE, DELETE", "TABLE public.admin_users, public.admin_user_roles, public.admin_roles, public.admin_role_permissions, public.admin_permissions, identity.subject_links");
   grant(roles.data, "SELECT (id, \"publicKey\", alg)", "TABLE identity.jwks");
   grant(roles.data, "SELECT (\"userId\", \"providerId\")", "TABLE identity.account");
   grant(roles.data, "SELECT, INSERT, UPDATE, DELETE", "TABLE identity.runtime_delegations, dream.operation_receipts");

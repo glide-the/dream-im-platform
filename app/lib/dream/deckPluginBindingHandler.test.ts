@@ -1,7 +1,7 @@
 // [Input] Internal operation request, service/OAuth mocks and Registry122-129 Handler.
 // [Output] Exact schema gates, principal scopes, read execution and write receipt ownership.
 // [Pos] Provider-free Deck Plugin binding ingress verification.
-// [Sync] 2026-09-16: lock OAuth-only binding/Runtime dispatch and atomic receipt behavior.
+// [Sync] 2026-09-17: lock dual-bearer OAuth/service dispatch and atomic receipt behavior.
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ service: vi.fn(), transaction: vi.fn(), principal: vi.fn(), run: vi.fn(), receipt: vi.fn() }));
 vi.mock("../auth/serviceIdentity", async original => ({ ...await original<typeof import("../auth/serviceIdentity")>(), requireDreamService: mocks.service }));
@@ -24,7 +24,7 @@ beforeEach(() => {
 it("executes a read with dream:read and exact schema requirements", async () => {
   mocks.run.mockResolvedValue({ deck_id: "deck", binding_revision: 0, applied_to: "next_run", binding: null });
   const request = new Request("http://admin.local/operations/deck-plugin-binding.current", { method: "POST", headers: {
-    authorization: "Bearer oauth", "content-type": "application/json", "x-ink-dream-service": "dream", "x-ink-dream-credential": "x".repeat(32), origin: "http://dream.local",
+    authorization: "Bearer oauth", "x-ink-dream-service-authorization": "Bearer service-token", "content-type": "application/json", origin: "http://dream.local",
   }, body: JSON.stringify({ request_id: "req", input: { deck_id: "deck", workspace_id: "workspace" } }) });
   const response = await handleDeckPluginBinding(request, "deck-plugin-binding.current");
   expect(response.status).toBe(200); expect(mocks.transaction.mock.calls[0][0]).toEqual([identitySchemaRequirement, ...deckPluginBindingSchemaRequirements]);
@@ -38,7 +38,7 @@ it("wraps save in the original actor receipt", async () => {
   mocks.receipt.mockResolvedValue(result);
   const input = { deck_id: "deck", workspace_id: "workspace", deck_plugin_id: "example.story", deck_plugin_version: "1.0.0", apply_to: "next_run", expected_binding_revision: 0 };
   const request = new Request("http://admin.local/operations/deck-plugin-binding.save", { method: "POST", headers: {
-    authorization: "Bearer oauth", "content-type": "application/json", "x-ink-dream-service": "dream", "x-ink-dream-credential": "x".repeat(32), origin: "http://dream.local",
+    authorization: "Bearer oauth", "x-ink-dream-service-authorization": "Bearer service-token", "content-type": "application/json", origin: "http://dream.local",
   }, body: JSON.stringify({ request_id: "req", input }) });
   const response = await handleDeckPluginBinding(request, "deck-plugin-binding.save");
   expect(response.status).toBe(200); expect(mocks.principal).toHaveBeenCalledWith(expect.anything(), "oauth", expect.anything(), "dream:write");

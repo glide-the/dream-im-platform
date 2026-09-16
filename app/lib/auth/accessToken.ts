@@ -1,7 +1,7 @@
 // [Input] Admin-issued RFC9068 access token, configured issuer/resource and public signing keys.
-// [Output] Verified immutable OAuth identity/scopes; canonical mapping stays in the subject repository.
+// [Output] Verified immutable delegated or client_credentials OAuth identity/scopes.
 // [Pos] Shared Product/Dream/Gateway verifier; Google, ID and Session tokens cannot pass.
-// [Sync] 2026-09-14: verify ES256 at+jwt with exact lifetime and no token-controlled network fetch.
+// [Sync] 2026-09-17: share strict RFC 9068 verification with the confidential service-client boundary.
 import { createLocalJWKSet, jwtVerify, type JSONWebKeySet } from "jose";
 import { accessTokenLifetimeSeconds, AuthBoundaryError, authConfiguration } from "./config";
 import { authDatabase, type AuthRepositoryDatabase } from "./database";
@@ -20,7 +20,7 @@ export async function adminPublicKeys(database: AuthRepositoryDatabase = authDat
   } catch { throw new AuthBoundaryError("AUTH_SIGNING_KEYS_UNAVAILABLE"); }
 }
 
-export async function verifyAdminAccessToken(headers: Headers, requiredScope: string, dependencies: AccessTokenDependencies = {}): Promise<VerifiedAdminAccessToken> {
+export async function verifyAdminAccessToken(headers: Headers, requiredScope?: string, dependencies: AccessTokenDependencies = {}): Promise<VerifiedAdminAccessToken> {
   const match = headers.get("authorization")?.match(/^Bearer ([A-Za-z0-9._~-]+)$/);
   if (!match || match[1].length > 16_384) throw new AuthBoundaryError("ACCESS_TOKEN_REQUIRED", 401);
   const configuration = dependencies.configuration ?? authConfiguration();
@@ -39,7 +39,7 @@ export async function verifyAdminAccessToken(headers: Headers, requiredScope: st
         typeof payload.scope !== "string" || payload.scope.length > 1_000 || payload.cnf) throw new Error("invalid access token");
     const scopes = [...new Set(payload.scope.split(/\s+/).filter(Boolean))];
     if (!scopes.length || scopes.some(scope => !/^[a-z][a-z0-9:*._-]{1,79}$/.test(scope))) throw new Error("invalid scope");
-    if (!scopes.includes(requiredScope)) throw new AuthBoundaryError("ACCESS_SCOPE_REQUIRED", 403);
+    if (requiredScope && !scopes.includes(requiredScope)) throw new AuthBoundaryError("ACCESS_SCOPE_REQUIRED", 403);
     return { subject: payload.sub, clientId: payload.client_id, tokenId: payload.jti, scopes };
   } catch (error) {
     if (error instanceof AuthBoundaryError) throw error;

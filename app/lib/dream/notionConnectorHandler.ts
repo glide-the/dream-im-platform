@@ -1,13 +1,14 @@
 // [Input] Configured Dream service, OAuth/server-persistence bearer or connector-sync service, and strict Notion envelope.
 // [Output] Capability-gated Notion result from one Admin-owned DTO/Drizzle transaction.
 // [Pos] Thin internal ingress; no Notion SDK, filesystem path, generic CRUD or caller-selected actor.
-// [Sync] 2026-09-16: register OAuth, delegated Runtime and scheduled Notion persistence operations.
+// [Sync] 2026-09-17: distinguish service-only client_credentials from dual-bearer user delegation.
 import { z } from "zod";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 import { DelegationService } from "../auth/delegationService";
 import { requestIdDto } from "../auth/dto";
 import { handleInternalAuthRequest, parseAuthDto } from "../auth/internalHandler";
 import { principalForServiceToken } from "../auth/serviceAccessToken";
+import { hasDelegatedUserBearer } from "../auth/serviceIdentity";
 import { withDataTransaction } from "./database";
 import {
   notionConnectorOperationContracts,
@@ -41,7 +42,7 @@ export async function handleNotionConnector(request: Request, name: string) {
     );
     setRequestId(envelope.request_id);
     if (operation.audience === "background") {
-      if (request.headers.has("authorization")) throw new AuthBoundaryError("NOTION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
+      if (hasDelegatedUserBearer(request)) throw new AuthBoundaryError("NOTION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
       return withDataTransaction([identitySchemaRequirement, ...notionConnectorSchemaRequirements], async tx => {
         const action = () => runNotionConnectorBackgroundOperation(
           name as NotionConnectorBackgroundOperation, envelope.input, service, tx,

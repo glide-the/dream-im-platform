@@ -1,7 +1,7 @@
 // [Input] Injected ORM/grant boundaries with controlled OAuth, confirmation claim or Reflections authority ownership.
 // [Output] Long-turn binding, source fencing, encrypted recovery and bounded renewal.
 // [Pos] Provider-free delegation domain tests; no fixtures in production modules.
-// [Sync] 2026-09-16: verify RTA-to-Gateway exchange and live source revocation.
+// [Sync] 2026-09-17: provision the confidential service fixture with a valid background scope ceiling.
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ lock: vi.fn(), creation: vi.fn(), claimCreation: vi.fn(), claimSource: vi.fn(), reflection: vi.fn(), owns: vi.fn(), editor: vi.fn(), audit: vi.fn(), key: vi.fn(), active: vi.fn(), activeCanonical: vi.fn(), principal: vi.fn(), create: vi.fn(), renew: vi.fn(), revoke: vi.fn(), receipt: vi.fn(), context: vi.fn() }));
 vi.mock("../dream/workflowContextService", () => ({ authoritativeWorkflowContext: mocks.context }));
@@ -18,7 +18,7 @@ import { DelegationService, delegationHash } from "./delegationService";
 import type { DataTransaction } from "../dream/database";
 import type { DreamServiceClient } from "./config";
 import { canonicalContractJson } from "../dream/operationRegistry";
-const service: DreamServiceClient = { id: "dream", secret: "s".repeat(32), origin: "https://dream.example", oauthClientId: "browser", redirectUri: "https://dream.example/callback", backgroundScopes: [] };
+const service: DreamServiceClient = { id: "dream", secret: "s".repeat(32), origin: "https://dream.example", oauthClientId: "browser", redirectUri: "https://dream.example/callback", backgroundScopes: ["capabilities:read"] };
 const token = `idg_${"x".repeat(43)}`, now = Date.parse("2026-09-14T00:00:00Z");
 const tx = { execute: vi.fn() } as unknown as DataTransaction;
 const input = { purpose: "server-persistence" as const, thread_id: "owned-thread", run_id: null, editor_session_id: null, scopes: ["dream:read", "dream:write"] as const };

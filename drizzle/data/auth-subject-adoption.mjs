@@ -1,7 +1,7 @@
 // [Input] Private explicit owned disposable PG configuration and reviewed identity adoption manifest.
-// [Output] Default dry-run/inspect or same-transaction subject/account/Admin mapping with aggregate audit.
-// [Pos] Explicit legacy identity migration runner; never startup, email inference or normal database fallback.
-// [Sync] 2026-09-14: preserve every legacy PK/hash/body/subscription, refuse conflicting identity evidence.
+// [Output] Default dry-run/inspect or same-transaction Dream subject/account mapping with aggregate audit.
+// [Pos] Explicit Dream legacy identity runner; Admin operators cannot enter this adoption path.
+// [Sync] 2026-09-17: preserve Dream PK/hash/body/subscription while rejecting all Admin-domain adoption.
 import { readFile, stat } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import pg from "pg";
@@ -34,30 +34,27 @@ try {
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", ["identity-subject-adoption-v1"]);
     let created = 0, reused = 0; const inspection = [];
     for (const entry of manifest.entries) {
+      if (entry.admin_user_id !== null || entry.expected_admin_sha256 !== null || entry.credential_source === "admin" || entry.common_password_proof !== null) throw new Error("ADOPTION_ADMIN_DOMAIN_SEPARATE");
       const canonical = entry.canonical_user_id === null ? null : (await client.query("SELECT id::text, email, display_name, avatar_url, password_hash, status, created_at::text, updated_at::text FROM public.users WHERE id=$1::bigint FOR UPDATE", [entry.canonical_user_id])).rows[0] ?? null;
-      const admin = entry.admin_user_id === null ? null : (await client.query("SELECT id, email, display_name, password_hash, status, created_at::text, updated_at::text FROM public.admin_users WHERE id=$1 FOR UPDATE", [entry.admin_user_id])).rows[0] ?? null;
       const google = entry.google_account_id === null ? null : (await client.query("SELECT id::text, user_id::text, provider, provider_sub, email, created_at::text, updated_at::text FROM public.oauth_accounts WHERE id=$1::bigint FOR UPDATE", [entry.google_account_id])).rows[0] ?? null;
-      if (args.includes("--inspect")) { inspection.push({ entry_index: inspection.length, expected_canonical_sha256: legacySourceFingerprint(canonical), expected_admin_sha256: legacySourceFingerprint(admin), expected_google_sha256: legacySourceFingerprint(google) }); continue; }
-      const plan = await planSubjectAdoption(entry, canonical, admin, google);
+      if (args.includes("--inspect")) { inspection.push({ entry_index: inspection.length, expected_canonical_sha256: legacySourceFingerprint(canonical), expected_admin_sha256: null, expected_google_sha256: legacySourceFingerprint(google) }); continue; }
+      const plan = await planSubjectAdoption(entry, canonical, null, google);
       const authUsers = await client.query('SELECT id, email FROM identity."user" WHERE id=$1 OR email=$2 FOR UPDATE', [plan.authUserId, plan.email]);
       if (authUsers.rows.some(user => user.id !== plan.authUserId || user.email !== plan.email)) throw new Error("ADOPTION_AUTH_IDENTITY_CONFLICT");
       const subject = await client.query("SELECT auth_user_id,canonical_user_id::text FROM identity.subject_links WHERE auth_user_id=$1 OR canonical_user_id=$2::bigint FOR UPDATE", [plan.authUserId, plan.canonicalUserId]);
       if (subject.rows.some(link => link.auth_user_id !== plan.authUserId || link.canonical_user_id !== plan.canonicalUserId)) throw new Error("ADOPTION_CANONICAL_MAPPING_CONFLICT");
-      const adminLinks = await client.query("SELECT auth_user_id,admin_user_id FROM identity.admin_subject_links WHERE auth_user_id=$1 OR admin_user_id=$2 FOR UPDATE", [plan.authUserId, plan.adminUserId]);
-      if (adminLinks.rows.some(link => link.auth_user_id !== plan.authUserId || link.admin_user_id !== plan.adminUserId)) throw new Error("ADOPTION_ADMIN_MAPPING_CONFLICT");
       const credentials = await client.query('SELECT "accountId",password FROM identity.account WHERE "userId"=$1 AND "providerId"=\'credential\' FOR UPDATE', [plan.authUserId]);
       if (credentials.rows.some(account => account.accountId !== plan.authUserId || account.password !== plan.passwordHash)) throw new Error("ADOPTION_CREDENTIAL_CONFLICT");
       const googleAccounts = plan.googleAccountId === null ? { rows: [] } : await client.query('SELECT "userId","accountId" FROM identity.account WHERE "providerId"=\'google\' AND ("userId"=$1 OR "accountId"=$2) FOR UPDATE', [plan.authUserId, plan.googleAccountId]);
       if (googleAccounts.rows.some(account => account.userId !== plan.authUserId || account.accountId !== plan.googleAccountId)) throw new Error("ADOPTION_GOOGLE_MAPPING_CONFLICT");
-      const complete = authUsers.rows.length && (plan.canonicalUserId === null || subject.rows.length) && (plan.adminUserId === null || adminLinks.rows.length) && (plan.passwordHash === null || credentials.rows.length) && (plan.googleAccountId === null || googleAccounts.rows.length);
+      const complete = authUsers.rows.length && subject.rows.length && (plan.passwordHash === null || credentials.rows.length) && (plan.googleAccountId === null || googleAccounts.rows.length);
       if (complete) { reused++; continue; }
       if (!args.includes("--apply")) { created++; continue; }
       if (!authUsers.rows.length) await client.query('INSERT INTO identity."user" (id,name,email,"emailVerified",image,"createdAt","updatedAt") VALUES ($1,$2,$3,false,$4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)', [plan.authUserId, plan.name, plan.email, plan.image]);
-      if (plan.canonicalUserId !== null && !subject.rows.length) await client.query("INSERT INTO identity.subject_links (auth_user_id,canonical_user_id,evidence) VALUES ($1,$2::bigint,$3)", [plan.authUserId, plan.canonicalUserId, `${plan.evidence};manifest-sha256:${manifestHash}`]);
-      if (plan.adminUserId !== null && !adminLinks.rows.length) await client.query("INSERT INTO identity.admin_subject_links (auth_user_id,admin_user_id) VALUES ($1,$2)", [plan.authUserId, plan.adminUserId]);
+      if (!subject.rows.length) await client.query("INSERT INTO identity.subject_links (auth_user_id,canonical_user_id,evidence) VALUES ($1,$2::bigint,$3)", [plan.authUserId, plan.canonicalUserId, `${plan.evidence};manifest-sha256:${manifestHash}`]);
       if (plan.passwordHash !== null && !credentials.rows.length) await client.query('INSERT INTO identity.account (id,"accountId","providerId","userId",password,"createdAt","updatedAt") VALUES ($1,$2,\'credential\',$2,$3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)', [randomUUID(), plan.authUserId, plan.passwordHash]);
       if (plan.googleAccountId !== null && !googleAccounts.rows.length) await client.query('INSERT INTO identity.account (id,"accountId","providerId","userId","createdAt","updatedAt") VALUES ($1,$2,\'google\',$3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)', [randomUUID(), plan.googleAccountId, plan.authUserId]);
-      await client.query("INSERT INTO public.admin_audit_logs(id,actor_type,action,resource_type,resource_id,request_id,metadata) VALUES($1,'system','auth.subject-adopted','auth_subject',$2,$3,$4::jsonb)", [randomUUID(), plan.authUserId, `adoption_${manifestHash}`, JSON.stringify({ manifest_sha256: manifestHash, canonical_source_sha256: entry.expected_canonical_sha256, admin_source_sha256: entry.expected_admin_sha256, google_source_sha256: entry.expected_google_sha256, redacted: true })]);
+      await client.query("INSERT INTO public.admin_audit_logs(id,actor_type,action,resource_type,resource_id,request_id,metadata) VALUES($1,'system','auth.subject-adopted','auth_subject',$2,$3,$4::jsonb)", [randomUUID(), plan.authUserId, `adoption_${manifestHash}`, JSON.stringify({ manifest_sha256: manifestHash, canonical_source_sha256: entry.expected_canonical_sha256, google_source_sha256: entry.expected_google_sha256, admin_domain_adopted: false, redacted: true })]);
       created++;
     }
     await client.query(args.includes("--apply") ? "COMMIT" : "ROLLBACK");

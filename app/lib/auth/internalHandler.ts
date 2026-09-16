@@ -1,7 +1,7 @@
-// [Input] Internal service request and strict domain-specific DTO/schema handler.
+// [Input] Internal request with a confidential-client token and strict domain-specific DTO/schema handler.
 // [Output] Stable data/error/request_id envelope without secret/body/SQL diagnostics.
 // [Pos] Internal auth ingress orchestration shared by thin Route Handlers.
-// [Sync] 2026-09-14: byte-bounded JSON parsing and per-service identity validation.
+// [Sync] 2026-09-17: await OAuth client_credentials service authentication before domain dispatch.
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { AuthBoundaryError } from "./config";
@@ -37,7 +37,7 @@ export async function handleInternalAuthRequest(request: Request, handler: (serv
   let requestId = requestIdDto.safeParse(request.headers.get("x-request-id")).data ?? `dream_${randomUUID().replaceAll("-", "")}`;
   const headers = { "Cache-Control": "no-store" };
   try {
-    const data = await handler(requireDreamService(request), value => { requestId = requestIdDto.parse(value); });
+    const data = await handler(await requireDreamService(request), value => { requestId = requestIdDto.parse(value); });
     return Response.json({ data, request_id: requestId }, { headers });
   } catch (error) {
     const code = error instanceof AuthBoundaryError ? error.code : "AUTH_SERVICE_UNAVAILABLE";
