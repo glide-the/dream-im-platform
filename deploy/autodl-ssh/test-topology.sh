@@ -2,6 +2,7 @@
 # [Input] Admin AutoDL env projector and persistent-directory initializer.
 # [Output] Topology, idempotency, owner/mode, legacy-data, and symlink checks.
 # [Pos] Provider-free AutoDL Admin deployment contract test.
+# [Sync] 2026-09-16: read owner and mode through explicit Darwin/GNU stat branches.
 # [Sync] 2026-09-16: assert the unified auth issuer/resource/service registration deployment projection.
 # [Sync] 2026-09-04: assert AutoDL releases use the ordered Provider migration orchestrator.
 set -euo pipefail
@@ -84,8 +85,18 @@ for _ in 1 2; do
     "${SCRIPT_DIR}/runtime/init-admin-data.sh"
 done
 
-mode_of() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
-owner_of() { stat -f '%Su:%Sg' "$1" 2>/dev/null || stat -c '%U:%G' "$1"; }
+mode_of() {
+  case "$(uname -s)" in
+    Darwin) stat -f '%Lp' "$1" ;;
+    *) stat -c '%a' "$1" ;;
+  esac
+}
+owner_of() {
+  case "$(uname -s)" in
+    Darwin) stat -f '%Su:%Sg' "$1" ;;
+    *) stat -c '%U:%G' "$1" ;;
+  esac
+}
 [[ "$(mode_of "${ADMIN_HOME}/postgres")" == "700" ]]
 [[ "$(owner_of "${ADMIN_HOME}/postgres")" == "${CURRENT_USER}:${CURRENT_GROUP}" ]]
 [[ "$(mode_of "${DATA_ROOT}/artifacts")" == "750" ]]
