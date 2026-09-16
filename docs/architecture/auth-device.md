@@ -116,6 +116,6 @@ ES256 access token 是最长 300 秒的离线 JWT。当前资源服务每次重�
 
 本机正常 Admin/Dream 服务已经通过公开入口验证：完整 RFC 8628 六字段、`authorization_pending`、`slow_down`、approve、deny、过期、重复和并发决定、OAuth token 兑换、refresh rotation/replay、refresh revoke、access expiry、未知 client/resource、外部 user ID 与未授权 scope。设备码与 token 未写入公开回执。
 
-2026-09-17 追加真实 Gateway canary：现有 Dream 用户 Session 批准 public device client，请求 scope 仅为 `messages:create`；兑换得到无 refresh 的短期用户 token后，与已轮换的 Dream canonical-subject Gateway service key 同时调用公开 `/v1/messages`。Gateway 返回 200，记录 request `req_b912a4968bbc464fb66bf4b656a7aa6d`、11 input tokens 和 5 output tokens。该回执证明 service client 不能代替用户主体，也没有创建 Admin Session。它是小额真实模型/Gateway验收，不能替代完整 Thread/Run/continue/cancel/SSE 业务旅程。
+2026-09-17 追加真实 Gateway canary：现有 Dream 用户 Session 批准 public device client，请求 scope 仅为 `messages:create`；兑换得到无 refresh 的短期用户 token后，与已轮换的 Dream canonical-subject Gateway service key 同时调用公开 `/v1/messages`。Gateway 返回 200，记录 request `req_b912a4968bbc464fb66bf4b656a7aa6d`、11 input tokens 和 5 output tokens；公开产品用量将该请求标记为 `completed/settled`，预留85、消费16、释放69 tokens。该回执证明 service client 不能代替用户主体，也没有创建 Admin Session。它是小额真实模型/Gateway验收，不能替代完整 Thread/Run/continue/cancel/SSE 业务旅程。
 
 发布顺序仍为 Admin OAuth catalog/capability → Dream client compatibility → 正常公开验收 → 旧入口 contract。回滚不能恢复 Dream 自签 token、Session-token device exchange 或固定 public-client secret。完整身份、数据库与发布关系见[跨项目契约](admin-dream-auth-data-contract.md)，当前通过/待验收项见[验证矩阵](../verification/admin-auth-data-provider-matrix.md)。
