@@ -31,6 +31,7 @@
 | `pnpm exec vitest run app/lib/auth/legacyGoogleAdoptionService.test.ts` | exit 0；8 tests passed |
 | `pnpm exec tsc --noEmit` | exit 0 |
 | focused `pnpm exec eslint ...` | exit 0 |
+| `pnpm build` | exit 0；DB package、Next 16.1.6 TypeScript、19个静态页面与生产路由构建通过 |
 | `pnpm test:auth-adoption:contract` | exit 0；全量Admin Drizzle迁移、inspect/dry-run/apply/replay、无Admin membership、旧行不变、invalid-mode脱敏和自有数据库清理通过 |
 | 正常库inspect/dry-run/apply/replay/read-only probe | exit 0；精确目标与源指纹通过，重复执行幂等 |
 | Dream → Admin → Google → callback → consent → Dream | 浏览器返回 `http://localhost:5173/story-workspace/chat`，产品历史加载；Admin管理入口未授权 |
