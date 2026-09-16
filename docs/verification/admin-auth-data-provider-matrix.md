@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-16: record normal database 0063, 64 migrations, nine release capabilities and actual-role activation. -->
 <!-- [Sync] 2026-09-15: Registry115 Story Guidance DTO/ORM, receipt, concurrency and restricted-role PostgreSQL gates pass. -->
 <!-- [Sync] 2026-09-16: normal-database ACL release runner passes isolated dry/apply/repeat, approval and actual-role probes. -->
 <!-- [Sync] 2026-09-15: Registry114 Story catalog DTO/ORM, route, receipt and restricted-role PostgreSQL gates pass. -->
@@ -11,7 +12,7 @@
 
 | 流程 | 模块/数据权限 | 方式 | 成功 | 失败与恢复 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| 正常库角色/ACL发布 | migration owner；AUTH/CONTROL/DATA/Dream-no-DB | 私有manifest+备份SHA+具名隔离PostgreSQL | 63 migrations/8 capabilities/active Gateway、dry/apply/repeat、3 credential与allow probes、deny introspection | 缺production approval直接拒绝；target/backup/capability/Gateway/partial role任一不符fail closed；事务失败回滚 | runner实现与隔离验证通过；正常数据库未执行 |
+| 正常库角色/ACL发布 | migration owner；AUTH/CONTROL/DATA/Dream-no-DB | 私有manifest+备份SHA+具名隔离PostgreSQL | 64 migrations/9 capabilities/active Gateway、dry/apply/repeat、3 credential与allow probes、deny introspection | 缺production approval直接拒绝；target/backup/capability/Gateway/partial role任一不符fail closed；事务失败回滚 | runner隔离验证通过；命名本机正常数据库已完成0063、64/64、9 capabilities与actual-role probes，其他部署目标仍需独立执行 |
 | Story Workspace Guidance | current OAuth owner；Workflow Run/Workspace/source Thread | Admin focused Vitest + Dream provider-free Python + runner-owned restricted PostgreSQL | confirmed/failed命令、immutable message、exact/business replay、concurrent duplicate、same-Thread dispatch | foreign/non-guidable/changed input/unsafe DTO失败关闭；未知只查原receipt；无PG fallback | Registry115实现与PG 5/5通过，Dream源码扫描减少1 SQL模块、2 SQL literal、1 driver模块、2 legacy helper；正常Runtime业务未执行 |
 | Story Workspace catalog | current OAuth owner；Workspace/Story/Character/Scene | Admin focused Vitest + Dream provider-free Python + runner-owned restricted PostgreSQL | 六view过滤/分页/关系、controlled patch、default Workspace、原FastAPI外形、read无receipt | 非owner/foreign Story/非法selector/unsafe DTO失败关闭；write未知只查原receipt；无PG fallback | Registry114实现与PG 6/6通过，Dream源码扫描减少1 SQL/driver模块；正常真实业务未执行 |
 | Story Workspace审核 | current OAuth owner；Story/Character/Scene generated pending rows | focused Vitest/Python consumer + runner-owned restricted PostgreSQL | 单项与批量DTO、Story级联、顺序、幂等回放、八公开入口无DB fallback | 非owner/非generated/非pending跳过；并发仅一提交；DTO/audit故障全回滚；未知仅查原回执 | 技术验证通过：Admin 16 tests、Dream 36 tests、PG 6/6；正常真实业务未执行 |
@@ -41,7 +42,7 @@
 
 ## 实际回执
 
-- Auth/data ACL release runner，2026-09-16：在自有 `/private/tmp/ink-auth-data-activation-gateway-3041736`、端口54332、database `ink-memory` 应用全部63 migrations后，写入一个隔离canonical Gateway fixture；default dry-run、首次 `--apply --production-approval`、重复apply均exit0，固定8 capabilities、142 statements、Gateway binding、三个NOINHERIT service credential、Dream NOLOGIN/无CONNECT、AUTH/CONTROL无Dream表读取、DATA无JWKS privateKey读取全部通过。独立旧 `auth-access-policy.mjs` 在自有 `ink_auth_data_codex_test_3041736`、端口54333继续dry/apply/repeat exit0并保持原脱敏回执。缺production approval的apply exit1且返回 `AUTH_DATA_PRODUCTION_APPROVAL_REQUIRED`。两套cluster均停止、目录删除、端口释放；正常数据库、Provider、账户、Runtime与共享FS未触碰。
+- Auth/data ACL release runner，2026-09-16：最初在自有 `/private/tmp/ink-auth-data-activation-gateway-3041736`、端口54332、database `ink-memory` 应用当时全部63 migrations后，写入一个隔离canonical Gateway fixture；default dry-run、首次 `--apply --production-approval`、重复apply均exit0，固定8 capabilities、142 statements、Gateway binding、三个NOINHERIT service credential、Dream NOLOGIN/无CONNECT、AUTH/CONTROL无Dream表读取、DATA无JWKS privateKey读取全部通过。独立旧 `auth-access-policy.mjs` 在自有 `ink_auth_data_codex_test_3041736`、端口54333继续dry/apply/repeat exit0并保持原脱敏回执。缺production approval的apply exit1且返回 `AUTH_DATA_PRODUCTION_APPROVAL_REQUIRED`。两套cluster均停止、目录删除、端口释放。随后命名本机正常数据库完成0063、64/64 migrations、9 release capabilities和实际角色allow/deny probes；其他数据库不能复用该回执。
 
 - Reflections83 isolated public/atomic：具名目标`ink_auth_data_codex_test_792494523a17_reflections83`完成组合48逻辑请求、125表保持258项、事务/恢复2568项。公开主段前43项和第44实际响应完成；harness预期错误保留后只读尾段22项通过，实际损坏回执为503 `REFLECTIONS_SECTION_CONFIG_RECEIPT_INVALID`，外部user_id selector为400 `USER_OVERRIDE_FORBIDDEN`，与production/unit一致。最终5 public receipt、5 audit、净1 config且仅三关系变化。config insert/update/delete、receipt、audit五故障点均503并保持125表逐行回滚；save/delete各一次真实final-COMMIT响应丢失后Original GET200、同input replay200、各一次effect/receipt/audit，`console.error`0。一次性JWK精确清理；普通库/Provider/Runtime/FS未触碰。项目回执为Dream `docs/exec/admin-auth-data-verification/reflections-section-config-registry83-public-atomic.md`；这是隔离技术证据，不是真实业务完成。
 

@@ -1,6 +1,7 @@
 // [Input] Installed Better Auth schema, Drizzle declarations and frozen expand migration/snapshot.
 // [Output] Source descriptor, SQL capability ordering and immutable-candidate integrity evidence.
 // [Pos] Provider-free auth schema contract checks; never executes migrations.
+// [Sync] 2026-09-16: verify additive Reflections-authority binding against current Drizzle ORM.
 // [Sync] 2026-09-16: verify additive confirmation-claim binding against current Drizzle ORM.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -18,6 +19,8 @@ import purposeContract from "../../../drizzle/contracts/identity-runtime-purpose
 import purposeSnapshot from "../../../drizzle/meta/0058_snapshot.json";
 import confirmationClaimContract from "../../../drizzle/contracts/identity-runtime-confirmation-claim-v1.json";
 import confirmationClaimSnapshot from "../../../drizzle/meta/0062_snapshot.json";
+import reflectionAuthorityContract from "../../../drizzle/contracts/identity-runtime-reflection-authority-v1.json";
+import reflectionAuthoritySnapshot from "../../../drizzle/meta/0063_snapshot.json";
 import { canonicalContractJson } from "../dream/operationRegistry";
 const migration = readFileSync("drizzle/0054_clean_network.sql", "utf8");
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -110,12 +113,13 @@ describe("confirmation claim delegation binding migration", () => {
   it("matches the current ORM, snapshot, capability hash and additive SQL", () => {
     const config = getTableConfig(runtimeDelegations);
     const table = confirmationClaimContract.tables["identity.runtime_delegations"];
-    expect(config.columns).toHaveLength(21);
-    expect(config.columns.map(column => column.name).sort()).toEqual(Object.keys(table.columns).sort());
+    const originalColumns = config.columns.filter(column => column.name in table.columns);
+    expect(originalColumns).toHaveLength(21);
+    expect(originalColumns.map(column => column.name).sort()).toEqual(Object.keys(table.columns).sort());
     for (const [key, value] of Object.entries(confirmationClaimContract.tables)) {
       expect(value).toEqual(confirmationClaimSnapshot.tables[key as keyof typeof confirmationClaimSnapshot.tables]);
     }
-    for (const column of config.columns) {
+    for (const column of originalColumns) {
       const expected = table.columns[column.name as keyof typeof table.columns];
       expect(column.getSQLType()).toBe(expected.type); expect(column.notNull).toBe(expected.notNull);
     }
@@ -127,5 +131,29 @@ describe("confirmation claim delegation binding migration", () => {
     expect(expansion.lastIndexOf("identity.runtime-confirmation-claim.v1"))
       .toBeGreaterThan(expansion.lastIndexOf("ADD CONSTRAINT"));
     expect(expansion).not.toMatch(/DROP|TRUNCATE|UPDATE\s+"?users/i);
+  });
+});
+describe("Reflections authority delegation binding migration", () => {
+  it("matches the current ORM, snapshot, capability hash and source-fencing SQL", () => {
+    const config = getTableConfig(runtimeDelegations);
+    const table = reflectionAuthorityContract.tables["identity.runtime_delegations"];
+    expect(config.columns).toHaveLength(22);
+    expect(config.columns.map(column => column.name).sort()).toEqual(Object.keys(table.columns).sort());
+    for (const [key, value] of Object.entries(reflectionAuthorityContract.tables)) {
+      expect(value).toEqual(reflectionAuthoritySnapshot.tables[key as keyof typeof reflectionAuthoritySnapshot.tables]);
+    }
+    for (const column of config.columns) {
+      const expected = table.columns[column.name as keyof typeof table.columns];
+      expect(column.getSQLType()).toBe(expected.type); expect(column.notNull).toBe(expected.notNull);
+    }
+    const { contract_sha256: hash, ...value } = reflectionAuthorityContract;
+    expect(sha(canonicalContractJson(value))).toBe(hash);
+    const expansion = readFileSync("drizzle/0063_smiling_microbe.sql", "utf8");
+    expect(sha(expansion)).toBe("fcb512225031f2f439bd0fee39f61f816e546f40ecca9c2fca74fce3bc7700f6");
+    expect(expansion).toContain('REFERENCES "dream"."reflection_task_authorities"("token_hash") ON DELETE cascade');
+    expect(expansion).toContain("'reflection-task-authority'");
+    expect(expansion.lastIndexOf("identity.runtime-reflection-authority.v1"))
+      .toBeGreaterThan(expansion.lastIndexOf("ADD CONSTRAINT"));
+    expect(expansion).not.toMatch(/DROP\s+(?:TABLE|SCHEMA)|TRUNCATE|UPDATE\s+"?users/i);
   });
 });

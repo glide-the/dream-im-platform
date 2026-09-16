@@ -1,6 +1,7 @@
 // [Input] Task-bound service authority, child Thread binding and encrypted server-side token storage.
 // [Output] Short-lived Reflections worker bearer with exact operation allowlist, renewal and revocation.
 // [Pos] Registered child persistence authority; separate from frozen runtime_delegations semantics.
+// [Sync] 2026-09-16: authorize one Admin-side gateway-cli exchange without exposing the RTA to CLI.
 // [Sync] 2026-09-15: expose only six exact existing operation names without a service bypass.
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -20,6 +21,7 @@ export const reflectionTaskAuthorityOperationScopes = Object.freeze({
   "chat-thread.update-session": "dream:write",
   "thread-system-config.get": "dream:read",
   "session.list": "dream:read",
+  "runtime-delegation.create": "dream:write",
 } as const);
 export type ReflectionTaskAuthorityOperation = keyof typeof reflectionTaskAuthorityOperationScopes;
 export function requireReflectionTaskAuthorityOperation(name: string): ReflectionTaskAuthorityOperation {
@@ -88,9 +90,10 @@ export async function revokeReflectionTaskAuthority(tx: DataTransaction, taskId:
 }
 export async function revokeReflectionTaskAuthorities(tx: DataTransaction, taskId: string) { await new ReflectionTaskAuthorityRepository(tx).revokeTask(taskId); }
 
-export async function resolveReflectionTaskAuthority(tx: DataTransaction, token: string, operation: string, serviceId?: string) {
-  reflectionAuthorityTokenDto.parse(token); const name = requireReflectionTaskAuthorityOperation(operation), scope = reflectionTaskAuthorityOperationScopes[name];
-  const store = new ReflectionTaskAuthorityRepository(tx), row = await store.lockToken(reflectionAuthorityHash(token)), now = new Date();
+export async function resolveReflectionTaskAuthorityHash(tx: DataTransaction, tokenHash: string, operation: string, serviceId?: string) {
+  if (!/^[0-9a-f]{64}$/.test(tokenHash)) throw new AuthBoundaryError("REFLECTION_AUTHORITY_REQUIRED", 401);
+  const name = requireReflectionTaskAuthorityOperation(operation), scope = reflectionTaskAuthorityOperationScopes[name];
+  const store = new ReflectionTaskAuthorityRepository(tx), row = await store.lockToken(tokenHash), now = new Date();
   if (!row || row.revokedAt || row.expiresAt <= now || row.maximumExpiresAt <= now || (serviceId !== undefined && row.serviceClientId !== serviceId)) throw new AuthBoundaryError("REFLECTION_AUTHORITY_REQUIRED", 401);
   const authority = decode(row);
   if (!row.scopes.includes(scope) || !await store.verifyAggregate(row)) throw new AuthBoundaryError("REFLECTION_AUTHORITY_ENTITY_DENIED", 403);
@@ -101,4 +104,8 @@ export async function resolveReflectionTaskAuthority(tx: DataTransaction, token:
     serviceClientId: row.serviceClientId, threadScope: row.threadId, editorSessionScope: null, runScope: null,
     purpose: "reflections-worker" as const, taskId: row.taskId, section: row.section, tokenHash: row.tokenHash, authority,
   };
+}
+export async function resolveReflectionTaskAuthority(tx: DataTransaction, token: string, operation: string, serviceId?: string) {
+  reflectionAuthorityTokenDto.parse(token);
+  return resolveReflectionTaskAuthorityHash(tx, reflectionAuthorityHash(token), operation, serviceId);
 }

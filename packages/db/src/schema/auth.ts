@@ -1,6 +1,7 @@
 // [Input] Canonical users/admin membership and installed Better Auth identity catalog.
 // [Output] Explicit subject links, encrypted BFF sessions, claim-bound Runtime delegations, receipts and immutable Preflight requests.
 // [Pos] Admin-owned identity and persistence control schema; all DDL uses forward Drizzle migration.
+// [Sync] 2026-09-16: bind background Reflections Gateway grants to their live task authority.
 // [Sync] 2026-09-16: add optional Story confirmation claim bindings to existing Runtime delegations.
 import { sql } from "drizzle-orm";
 import { bigint, boolean, check, foreignKey, index, jsonb, pgSchema, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
@@ -56,6 +57,7 @@ export const runtimeDelegations = identity.table("runtime_delegations", {
   authoritySource: text("authority_source"),
   sourceMessageId: text("source_message_id").references(() => chat_message.id, { onDelete: "cascade" }),
   sourceClaimId: text("source_claim_id"),
+  sourceReflectionAuthorityHash: text("source_reflection_authority_hash"),
   canonicalUserId: bigint("canonical_user_id", { mode: "bigint" }).notNull().references(() => users.id, { onDelete: "restrict" }),
   threadId: text("thread_id").notNull(),
   runId: text("run_id"),
@@ -70,18 +72,36 @@ export const runtimeDelegations = identity.table("runtime_delegations", {
   uniqueIndex("runtime_delegations_confirmation_claim_uidx")
     .on(table.serviceClientId, table.sourceMessageId, table.sourceClaimId)
     .where(sql`${table.authoritySource} = 'story-confirmation-claim'`),
+  foreignKey({
+    columns: [table.sourceReflectionAuthorityHash],
+    foreignColumns: [reflectionTaskAuthorities.tokenHash],
+    name: "runtime_delegations_reflection_authority_fk",
+  }).onDelete("cascade"),
   check("runtime_delegations_maximum_expiry_check", sql`${table.maximumExpiresAt} IS NULL OR ${table.maximumExpiresAt} >= ${table.expiresAt}`),
   check("runtime_delegations_creation_check", sql`${table.requestId} IS NULL OR (${table.oauthClientId} IS NOT NULL AND ${table.inputSha256} IS NOT NULL AND ${table.inputSha256} ~ '^[0-9a-f]{64}$' AND ${table.tokenCiphertext} IS NOT NULL AND ${table.maximumExpiresAt} IS NOT NULL)`),
   check("runtime_delegations_authority_source_check", sql`(
-    ${table.authoritySource} IS NULL AND ${table.sourceMessageId} IS NULL AND ${table.sourceClaimId} IS NULL
+    ${table.authoritySource} IS NULL
+    AND ${table.sourceMessageId} IS NULL
+    AND ${table.sourceClaimId} IS NULL
+    AND ${table.sourceReflectionAuthorityHash} IS NULL
   ) OR (
     ${table.authoritySource} = 'story-confirmation-claim'
     AND ${table.sourceMessageId} IS NOT NULL
     AND ${table.sourceClaimId} IS NOT NULL
+    AND ${table.sourceReflectionAuthorityHash} IS NULL
     AND ${table.purpose} = 'server-persistence'
     AND ${table.runId} IS NOT NULL
     AND ${table.editorSessionId} IS NULL
     AND ${table.gatewayApiKeyId} IS NULL
+  ) OR (
+    ${table.authoritySource} = 'reflection-task-authority'
+    AND ${table.sourceMessageId} IS NULL
+    AND ${table.sourceClaimId} IS NULL
+    AND ${table.sourceReflectionAuthorityHash} IS NOT NULL
+    AND ${table.purpose} = 'gateway-cli'
+    AND ${table.runId} IS NULL
+    AND ${table.editorSessionId} IS NULL
+    AND ${table.gatewayApiKeyId} IS NOT NULL
   )`),
   check("runtime_delegations_purpose_check", sql`(${table.purpose} IS NULL AND ${table.editorSessionId} IS NULL) OR (${table.purpose} IS NOT NULL AND cardinality(${table.scopes}) > 0 AND array_position(${table.scopes}, NULL) IS NULL AND (
     (${table.purpose} = 'server-persistence' AND ${table.editorSessionId} IS NULL AND ${table.gatewayApiKeyId} IS NULL AND ${table.scopes} <@ ARRAY['dream:read','dream:write']::text[]) OR

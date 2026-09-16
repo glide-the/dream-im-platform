@@ -60,6 +60,7 @@ describe("original Plugin compatibility", () => {
     expect(storedPluginStringSet('[" a ",3,"\u001c b \u001c",""]')).toEqual(new Set());
     expect(storedPluginStringSet('[" a ",3,"\\u001c b \\u001c",""]', true)).toEqual(new Set(["a", "b"]));
     vi.stubEnv("INK_DECK_HOST_COMPATIBLE", "\u001c YeS \u001c"); vi.stubEnv("INK_CLAUDE_AGENT_CONTRACT_COMPATIBLE", "\ufefftrue\ufeff");
+    vi.stubEnv("INK_STORY_SCHEMA_COMPATIBLE", "disabled"); vi.stubEnv("INK_DECK_RUNTIME_CONFIG_COMPATIBLE", "disabled");
     expect(deckRuntimeCompatibilityPolicy()).toEqual({ deck_host_compatible: true, claude_agent_compatible: false, story_schema_compatible: false, deck_runtime_config_compatible: false });
   });
   it("rejects caller-selected readiness, grants and actor fields", () => {

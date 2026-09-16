@@ -1,6 +1,7 @@
 // [Input] Fixed task/section bindings, encrypted rta bearer rows, clock and repository seams.
-// [Output] Exact allowlist, restart recovery, maximum-expiry, revocation and entity-denial evidence.
+// [Output] Exact persistence/exchange allowlist, restart recovery, maximum-expiry, revocation and entity-denial evidence.
 // [Pos] Provider-free Reflections authority gate; no Registry, Route, PostgreSQL, network or Agent.
+// [Sync] 2026-09-16: admit only the Admin-side Gateway grant exchange beyond child persistence operations.
 // [Sync] 2026-09-15: prove a worker restart can recover within the hard maximum without exposing bearer receipts.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
@@ -45,10 +46,11 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
-it("keeps the child persistence surface at the reviewed six operations", () => {
+it("keeps six child persistence operations plus one Admin-only Gateway exchange", () => {
   expect(reflectionTaskAuthorityOperationScopes).toEqual({
     "chat-user-message.persist": "dream:write", "chat-message.persist": "dream:write", "chat-thread.get": "dream:read",
     "chat-thread.update-session": "dream:write", "thread-system-config.get": "dream:read", "session.list": "dream:read",
+    "runtime-delegation.create": "dream:write",
   });
   expect(() => requireReflectionTaskAuthorityOperation("chat-thread.create")).toThrow("REFLECTION_AUTHORITY_OPERATION_DENIED");
 });

@@ -1,20 +1,33 @@
 // [Input] Strict internal creation request or public opaque bearer renewal/revocation request.
 // [Output] Entity-limited DTO; runtime needs only its delegation and Admin endpoint.
 // [Pos] Delegation ingress; all identity/entity/receipt persistence stays in Admin domain UOW.
+// [Sync] 2026-09-16: exchange server-only Reflections authority only through the source-fenced DTO path.
 // [Sync] 2026-09-14: public bearer actions never consume cookies or service secrets.
 import { randomUUID } from "node:crypto";
 import { AuthBoundaryError } from "./config";
 import { delegationCreateRequestDto, delegationActionRequestDto, delegationTokenDto, delegationRenewOutputDto, delegationRevokeOutputDto, delegationReceiptInputDto } from "./delegationDto";
 import { handleInternalAuthRequest, parseAuthDto } from "./internalHandler";
 import { withDataTransaction } from "../dream/database";
-import { identitySchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement } from "../dream/schemaRequirements";
+import { identitySchemaRequirement, reflectionTaskSchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement, runtimeReflectionAuthoritySchemaRequirement } from "../dream/schemaRequirements";
 import { DelegationService } from "./delegationService";
 import { dreamUnifiedSchemaRequirement } from "../dream/chatThreadService";
-const requirements = [identitySchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement];
+const requirements = [identitySchemaRequirement, runtimeDelegationSchemaRequirement,
+  runtimePurposeSchemaRequirement, runtimeReflectionAuthoritySchemaRequirement];
 export async function handleDelegationCreate(request: Request) {
   return handleInternalAuthRequest(request, async (service, setRequestId) => {
     const input = await parseAuthDto(request, delegationCreateRequestDto); setRequestId(input.request_id);
-    return withDataTransaction([...requirements, dreamUnifiedSchemaRequirement], tx => new DelegationService(tx).create(service, request.headers, input.request_id, input.input));
+    const bearer = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
+    const reflectionAuthority = bearer.startsWith("rta_");
+    return withDataTransaction([
+      ...requirements, dreamUnifiedSchemaRequirement,
+      ...(reflectionAuthority ? [reflectionTaskSchemaRequirement] : []),
+    ], tx => reflectionAuthority
+      ? new DelegationService(tx).createForReflectionAuthority(
+        service, bearer, input.request_id, input.input,
+      )
+      : new DelegationService(tx).create(
+        service, request.headers, input.request_id, input.input,
+      ));
   });
 }
 async function handleBearerAction(request: Request, action: "renew" | "revoke") {

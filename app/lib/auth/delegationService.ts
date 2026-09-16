@@ -1,6 +1,7 @@
 // [Input] Admin OAuth user grant or exact Admin-owned confirmation claim; capability-gated data UOW.
 // [Output] Encrypted-recoverable creation and claim-fenced renewal/revocation/actor projection.
 // [Pos] Admin sole long-turn authority; no external actor IDs or Runtime service secrets.
+// [Sync] 2026-09-16: exchange live Reflections task authority for source-fenced gateway-cli grants.
 // [Sync] 2026-09-16: issue server-persistence grants from exact live Story confirmation claims.
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
@@ -78,6 +79,103 @@ export class DelegationService {
     const result = delegationOutputDto.parse({ token, expires_at: expiresAt.toISOString(), maximum_expires_at: maximumExpiresAt.toISOString(), purpose: input.purpose, thread_id: input.thread_id, run_id: input.run_id, editor_session_id: input.editor_session_id, scopes: input.scopes });
     await this.repository.create({ tokenHash: delegationHash(token), serviceClientId: service.id, authUserId: principal.subject, oauthClientId: principal.client_id, canonicalUserId: BigInt(principal.canonical_user_id), threadId: input.thread_id, runId: input.run_id, purpose: input.purpose, editorSessionId: input.editor_session_id, scopes: input.scopes, gatewayApiKeyId, requestId, inputSha256: hash, tokenCiphertext: encryptAuthBundle(result), expiresAt, maximumExpiresAt });
     await this.repository.auditCreation(service.id, requestId, hash, delegationHash(token));
+    return result;
+  }
+
+  async createForReflectionAuthority(service: DreamServiceClient, token: string, requestId: string,
+    input: z.infer<typeof delegationCreateInputDto>) {
+    delegationCreateInputDto.parse(input);
+    if (input.purpose !== "gateway-cli" || input.run_id !== null || input.editor_session_id !== null
+      || !validDelegationPurpose({ purpose: input.purpose, scopes: input.scopes, editorSessionId: input.editor_session_id })) {
+      throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
+    }
+    const { resolveReflectionTaskAuthority } = await import(
+      "../dream/reflectionTaskAuthorityService"
+    );
+    const source = await resolveReflectionTaskAuthority(
+      this.tx, token, "runtime-delegation.create", service.id,
+    );
+    if (input.thread_id !== source.threadScope) {
+      throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
+    }
+    if (!await this.repository.ownsEntities(
+      source.principal.canonical_user_id, input.thread_id, null,
+    )) throw new AuthBoundaryError("ENTITY_NOT_FOUND", 404);
+    const binding = gatewayClientForService(service.id);
+    if (!binding.oauth_client_ids.includes(service.oauthClientId)) {
+      throw new AuthBoundaryError("DELEGATION_CLIENT_DENIED", 403);
+    }
+    const gatewayKey = await this.repository.gatewayKeyForClient(binding.gateway_client_id);
+    if (!gatewayKey || input.scopes.some(scope => !gatewayKey.scopes.includes(scope))) {
+      throw new AuthBoundaryError("GATEWAY_SCOPE_REQUIRED", 403);
+    }
+    const inputSha256 = delegationHash(canonicalContractJson({
+      authority_source: "reflection-task-authority",
+      source_reflection_authority_hash: source.tokenHash,
+      input,
+    }));
+    const key = delegationHash(canonicalContractJson([
+      service.id, source.principal.subject, requestId,
+    ]));
+    await this.tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+    const prior = await this.repository.findCreation(
+      service.id, source.principal.subject, requestId,
+    );
+    if (prior) {
+      if (prior.inputSha256 !== inputSha256 || prior.authoritySource !== "reflection-task-authority"
+        || prior.sourceMessageId !== null || prior.sourceClaimId !== null
+        || prior.sourceReflectionAuthorityHash !== source.tokenHash
+        || prior.authUserId !== source.principal.subject
+        || prior.canonicalUserId.toString() !== source.principal.canonical_user_id
+        || prior.oauthClientId !== service.oauthClientId || prior.threadId !== input.thread_id
+        || prior.runId !== null || prior.purpose !== "gateway-cli" || prior.editorSessionId !== null
+        || prior.gatewayApiKeyId !== gatewayKey.id
+        || canonicalContractJson(prior.scopes) !== canonicalContractJson(input.scopes)
+        || prior.revokedAt || prior.expiresAt <= new Date() || !prior.tokenCiphertext
+        || !prior.maximumExpiresAt) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+      const recovered = delegationOutputDto.parse(decryptAuthBundle(prior.tokenCiphertext));
+      if (delegationHash(recovered.token) !== prior.tokenHash
+        || recovered.purpose !== "gateway-cli" || recovered.thread_id !== input.thread_id
+        || recovered.run_id !== null || recovered.editor_session_id !== null
+        || canonicalContractJson(recovered.scopes) !== canonicalContractJson(input.scopes)
+        || recovered.expires_at !== prior.expiresAt.toISOString()
+        || recovered.maximum_expires_at !== prior.maximumExpiresAt.toISOString()) {
+        throw new AuthBoundaryError("DELEGATION_RECOVERY_INVALID");
+      }
+      await this.resolve(recovered.token, null, service.id, input.thread_id, null, null);
+      return recovered;
+    }
+    const policy = delegationPolicy(); const now = Date.now();
+    const sourceMaximum = new Date(source.authority.maximum_expires_at).getTime();
+    const maximumMillis = Math.min(now + policy.maximumTtl * 1_000, sourceMaximum);
+    const expiresMillis = Math.min(now + policy.ttl * 1_000, maximumMillis);
+    if (!Number.isFinite(maximumMillis) || expiresMillis <= now) {
+      throw new AuthBoundaryError("REFLECTION_AUTHORITY_REQUIRED", 401);
+    }
+    const tokenValue = `idg_${randomBytes(32).toString("base64url")}`;
+    const expiresAt = new Date(expiresMillis), maximumExpiresAt = new Date(maximumMillis);
+    const result = delegationOutputDto.parse({
+      token: tokenValue, expires_at: expiresAt.toISOString(),
+      maximum_expires_at: maximumExpiresAt.toISOString(), purpose: "gateway-cli",
+      thread_id: input.thread_id, run_id: null, editor_session_id: null,
+      scopes: input.scopes,
+    });
+    await this.repository.create({
+      tokenHash: delegationHash(tokenValue), serviceClientId: service.id,
+      authUserId: source.principal.subject, oauthClientId: service.oauthClientId,
+      canonicalUserId: BigInt(source.principal.canonical_user_id),
+      threadId: input.thread_id, runId: null, purpose: "gateway-cli",
+      editorSessionId: null, scopes: input.scopes, gatewayApiKeyId: gatewayKey.id,
+      requestId, inputSha256, tokenCiphertext: encryptAuthBundle(result),
+      authoritySource: "reflection-task-authority",
+      sourceMessageId: null,
+      sourceClaimId: null,
+      sourceReflectionAuthorityHash: source.tokenHash,
+      expiresAt, maximumExpiresAt,
+    });
+    await this.repository.auditCreation(
+      service.id, requestId, inputSha256, delegationHash(tokenValue),
+    );
     return result;
   }
 
@@ -164,7 +262,8 @@ export class DelegationService {
       purpose: "server-persistence", editorSessionId: null, scopes: ["dream:read", "dream:write"],
       gatewayApiKeyId: null, requestId, inputSha256, tokenCiphertext: encryptAuthBundle(result),
       authoritySource: "story-confirmation-claim", sourceMessageId: binding.messageId,
-      sourceClaimId: binding.claimId, expiresAt, maximumExpiresAt,
+      sourceClaimId: binding.claimId, sourceReflectionAuthorityHash: null,
+      expiresAt, maximumExpiresAt,
     });
     await this.repository.auditCreation(service.id, requestId, inputSha256, delegationHash(token));
     return result;
@@ -189,23 +288,46 @@ export class DelegationService {
     } catch { return false; }
   }
 
-  private async requireActiveConfirmationSource(row: NonNullable<Awaited<ReturnType<DelegationRepository["lock"]>>>) {
+  private async requireActiveAuthoritySource(row: NonNullable<Awaited<ReturnType<DelegationRepository["lock"]>>>) {
     const emptySource = row.authoritySource == null
-      && row.sourceMessageId == null && row.sourceClaimId == null;
+      && row.sourceMessageId == null && row.sourceClaimId == null
+      && row.sourceReflectionAuthorityHash == null;
     if (emptySource) return;
-    if (row.authoritySource !== "story-confirmation-claim"
-      || !row.sourceMessageId || !row.sourceClaimId || !row.runId
-      || row.purpose !== "server-persistence" || row.editorSessionId !== null
-      || row.gatewayApiKeyId !== null) {
-      throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
+    if (row.authoritySource === "story-confirmation-claim") {
+      if (!row.sourceMessageId || !row.sourceClaimId || row.sourceReflectionAuthorityHash !== null
+        || !row.runId || row.purpose !== "server-persistence" || row.editorSessionId !== null
+        || row.gatewayApiKeyId !== null) throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
+      const source = await this.repository.confirmationClaimSource(
+        row.sourceMessageId, row.canonicalUserId.toString(), row.threadId,
+      );
+      if (!this.validConfirmationSource(source, {
+        messageId: row.sourceMessageId, claimId: row.sourceClaimId,
+        actorId: row.canonicalUserId.toString(), threadId: row.threadId, runId: row.runId,
+      })) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+      return;
     }
-    const source = await this.repository.confirmationClaimSource(
-      row.sourceMessageId, row.canonicalUserId.toString(), row.threadId,
-    );
-    if (!this.validConfirmationSource(source, {
-      messageId: row.sourceMessageId, claimId: row.sourceClaimId,
-      actorId: row.canonicalUserId.toString(), threadId: row.threadId, runId: row.runId,
-    })) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+    if (row.authoritySource === "reflection-task-authority") {
+      if (row.sourceMessageId !== null || row.sourceClaimId !== null
+        || !row.sourceReflectionAuthorityHash || row.runId !== null
+        || row.purpose !== "gateway-cli" || row.editorSessionId !== null
+        || row.gatewayApiKeyId === null) throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
+      const { resolveReflectionTaskAuthorityHash } = await import(
+        "../dream/reflectionTaskAuthorityService"
+      );
+      const source = await resolveReflectionTaskAuthorityHash(
+        this.tx, row.sourceReflectionAuthorityHash,
+        "runtime-delegation.create", row.serviceClientId,
+      );
+      if (source.principal.subject !== row.authUserId
+        || source.principal.canonical_user_id !== row.canonicalUserId.toString()
+        || source.threadScope !== row.threadId
+        || !row.maximumExpiresAt
+        || row.maximumExpiresAt > new Date(source.authority.maximum_expires_at)) {
+        throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+      }
+      return;
+    }
+    throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
   }
 
   async resolve(token: string, requiredScope: string | null, serviceId?: string, threadId?: string, runId?: string | null, editorSessionId?: string | null): Promise<DelegatedPrincipal> {
@@ -213,7 +335,7 @@ export class DelegationService {
     const row = await this.repository.lock(delegationHash(token));
     if (!row || row.revokedAt || row.expiresAt <= new Date() || !row.oauthClientId || !row.maximumExpiresAt || !row.tokenCiphertext || !row.requestId || !row.inputSha256 || !/^[0-9a-f]{64}$/.test(row.inputSha256) || !dreamServiceClients().some(client => client.id === row.serviceClientId)) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
     if (!validDelegationPurpose(row)) throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
-    await this.requireActiveConfirmationSource(row);
+    await this.requireActiveAuthoritySource(row);
     if ((serviceId && row.serviceClientId !== serviceId) || (threadId !== undefined && row.threadId !== threadId) || (runId !== undefined && row.runId !== runId) || (editorSessionId !== undefined && row.editorSessionId !== editorSessionId)) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
     if (requiredScope && !row.scopes.includes(requiredScope)) throw new AuthBoundaryError("ACCESS_SCOPE_REQUIRED", 403);
     const identity = await new SubjectRepository(this.tx).findActive(row.authUserId);

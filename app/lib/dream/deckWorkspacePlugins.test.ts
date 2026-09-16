@@ -79,6 +79,7 @@ describe("Registry106 service", () => {
   });
 
   it("fails before ORM when Story adapter policy is missing", async () => {
+    vi.stubEnv("DREAM_WORKSPACE_PLUGIN_POLICY_JSON", "");
     await expect(runDeckWorkspacePluginsOperation(
       "deck-workspace-plugins.resolve",
       { ...standard, profile: "story_workspace" },

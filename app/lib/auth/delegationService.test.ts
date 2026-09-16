@@ -1,9 +1,14 @@
-// [Input] Injected ORM/grant boundaries with controlled OAuth or confirmation claim ownership.
-// [Output] Long-turn binding, claim fencing, encrypted recovery and bounded renewal.
+// [Input] Injected ORM/grant boundaries with controlled OAuth, confirmation claim or Reflections authority ownership.
+// [Output] Long-turn binding, source fencing, encrypted recovery and bounded renewal.
 // [Pos] Provider-free delegation domain tests; no fixtures in production modules.
+// [Sync] 2026-09-16: verify RTA-to-Gateway exchange and live source revocation.
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ lock: vi.fn(), creation: vi.fn(), claimCreation: vi.fn(), claimSource: vi.fn(), owns: vi.fn(), editor: vi.fn(), audit: vi.fn(), key: vi.fn(), active: vi.fn(), activeCanonical: vi.fn(), principal: vi.fn(), create: vi.fn(), renew: vi.fn(), revoke: vi.fn(), receipt: vi.fn(), context: vi.fn() }));
+const mocks = vi.hoisted(() => ({ lock: vi.fn(), creation: vi.fn(), claimCreation: vi.fn(), claimSource: vi.fn(), reflection: vi.fn(), owns: vi.fn(), editor: vi.fn(), audit: vi.fn(), key: vi.fn(), active: vi.fn(), activeCanonical: vi.fn(), principal: vi.fn(), create: vi.fn(), renew: vi.fn(), revoke: vi.fn(), receipt: vi.fn(), context: vi.fn() }));
 vi.mock("../dream/workflowContextService", () => ({ authoritativeWorkflowContext: mocks.context }));
+vi.mock("../dream/reflectionTaskAuthorityService", () => ({
+  resolveReflectionTaskAuthority: mocks.reflection,
+  resolveReflectionTaskAuthorityHash: mocks.reflection,
+}));
 vi.mock("./delegationRepository", () => ({ DelegationRepository: class { lock = mocks.lock; findCreation = mocks.creation; findConfirmationClaimCreation = mocks.claimCreation; confirmationClaimSource = mocks.claimSource; ownsEntities = mocks.owns; ownsEditorSession = mocks.editor; auditCreation = mocks.audit; gatewayKeyForClient = mocks.key; gatewayKeyById = mocks.key; create = mocks.create; renew = mocks.renew; revoke = mocks.revoke; } }));
 vi.mock("./subjectRepository", () => ({ SubjectRepository: class { findActive = mocks.active; findActiveByCanonicalUserId = mocks.activeCanonical; } }));
 vi.mock("./browserSessionService", () => ({ principalForAccessToken: mocks.principal }));
@@ -17,7 +22,7 @@ const service: DreamServiceClient = { id: "dream", secret: "s".repeat(32), origi
 const token = `idg_${"x".repeat(43)}`, now = Date.parse("2026-09-14T00:00:00Z");
 const tx = { execute: vi.fn() } as unknown as DataTransaction;
 const input = { purpose: "server-persistence" as const, thread_id: "owned-thread", run_id: null, editor_session_id: null, scopes: ["dream:read", "dream:write"] as const };
-const row = () => ({ tokenHash: delegationHash(token), serviceClientId: service.id, authUserId: "auth-user", canonicalUserId: 9007199254740993n, oauthClientId: "browser", requestId: "request1", inputSha256: delegationHash(canonicalContractJson(input)), tokenCiphertext: "encrypted", threadId: "owned-thread", runId: null, purpose: "server-persistence", editorSessionId: null, authoritySource: null, sourceMessageId: null, sourceClaimId: null, scopes: ["dream:read", "dream:write"], expiresAt: new Date(now + 300_000), maximumExpiresAt: new Date(now + 600_000), revokedAt: null, gatewayApiKeyId: null });
+const row = () => ({ tokenHash: delegationHash(token), serviceClientId: service.id, authUserId: "auth-user", canonicalUserId: 9007199254740993n, oauthClientId: "browser", requestId: "request1", inputSha256: delegationHash(canonicalContractJson(input)), tokenCiphertext: "encrypted", threadId: "owned-thread", runId: null, purpose: "server-persistence", editorSessionId: null, authoritySource: null, sourceMessageId: null, sourceClaimId: null, sourceReflectionAuthorityHash: null, scopes: ["dream:read", "dream:write"], expiresAt: new Date(now + 300_000), maximumExpiresAt: new Date(now + 600_000), revokedAt: null, gatewayApiKeyId: null });
 beforeEach(() => {
   vi.clearAllMocks(); vi.useFakeTimers(); vi.setSystemTime(now);
   vi.stubEnv("DREAM_DATA_SERVICE_CLIENTS", JSON.stringify([service])); vi.stubEnv("AUTH_DEVICE_CLIENT_ID", "device");
@@ -28,6 +33,12 @@ beforeEach(() => {
   mocks.editor.mockResolvedValue(true);
   mocks.receipt.mockResolvedValue(null);
   mocks.context.mockResolvedValue(null);
+  mocks.reflection.mockResolvedValue({
+    principal: { subject: "auth-user", canonical_user_id: "9007199254740993", client_id: "reflections-worker:dream", scopes: ["dream:read", "dream:write"], status: "active" },
+    serviceClientId: service.id, threadScope: "owned-thread", runScope: null,
+    tokenHash: "a".repeat(64),
+    authority: { maximum_expires_at: new Date(now + 500_000).toISOString() },
+  });
   mocks.principal.mockResolvedValue({ subject: "auth-user", canonical_user_id: "9007199254740993", client_id: "browser", scopes: ["dream:read", "dream:write"], status: "active" });
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
@@ -108,6 +119,32 @@ describe("entity-limited runtime delegation", () => {
     expect(mocks.create).not.toHaveBeenCalled();
     await new DelegationService(tx).create(service, new Headers(), "new2", { ...input, run_id: "actual-run", scopes: [...input.scopes] });
     expect(mocks.create).toHaveBeenCalledOnce();
+  });
+
+  it("exchanges live Reflections authority for a separate source-fenced Gateway grant", async () => {
+    vi.stubEnv("DREAM_GATEWAY_CLIENT_BINDINGS", JSON.stringify([{ service_client_id: service.id, gateway_client_id: "gateway", oauth_client_ids: ["browser"] }]));
+    mocks.key.mockResolvedValue({ id: "gateway-key", clientId: "gateway", scopes: ["messages:create", "messages:count_tokens", "models:list"] });
+    const gatewayInput = { purpose: "gateway-cli" as const, thread_id: "owned-thread", run_id: null, editor_session_id: null, scopes: ["messages:create", "messages:count_tokens", "models:list"] as const };
+    const created = await new DelegationService(tx).createForReflectionAuthority(
+      service, `rta_${"r".repeat(43)}`, "reflection-request", { ...gatewayInput, scopes: [...gatewayInput.scopes] },
+    );
+    const stored = mocks.create.mock.calls[0][0];
+    expect(stored).toMatchObject({
+      authoritySource: "reflection-task-authority",
+      sourceReflectionAuthorityHash: "a".repeat(64),
+      authUserId: "auth-user", canonicalUserId: 9007199254740993n,
+      purpose: "gateway-cli", gatewayApiKeyId: "gateway-key",
+      threadId: "owned-thread", runId: null,
+    });
+    expect(stored.tokenCiphertext).not.toContain("rta_");
+    expect(created.maximum_expires_at).toBe(new Date(now + 500_000).toISOString());
+    mocks.lock.mockResolvedValue(stored);
+    expect(await new DelegationService(tx).resolve(
+      created.token, "messages:create", service.id, "owned-thread", null,
+    )).toMatchObject({ purpose: "gateway-cli", threadId: "owned-thread" });
+    mocks.reflection.mockRejectedValueOnce(new Error("source revoked"));
+    await expect(new DelegationService(tx).resolve(created.token, "messages:create"))
+      .rejects.toThrow("source revoked");
   });
 
   it("derives and recovers one server-persistence grant from the exact live confirmation claim", async () => {
