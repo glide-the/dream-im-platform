@@ -1,4 +1,5 @@
 <!-- [Sync] 2026-09-16: record normal database 0063, 64 migrations, nine release capabilities and actual-role activation. -->
+<!-- [Sync] 2026-09-17: close the normal Notion background-read DTO projection defect through public client_credentials ingress. -->
 <!-- [Sync] 2026-09-17: record independent Admin sessions, confidential service OAuth, complete deterministic suites and current real-acceptance boundary. -->
 <!-- [Sync] 2026-09-15: Registry115 Story Guidance DTO/ORM, receipt, concurrency and restricted-role PostgreSQL gates pass. -->
 <!-- [Sync] 2026-09-16: normal-database ACL release runner passes isolated dry/apply/repeat, approval and actual-role probes. -->
@@ -22,6 +23,7 @@
 | Google既有用户映射 | auth Account→subject_links→users | 协调隔离mapping+真实Google | 旧PK/Google sub关系保留 | 同邮箱冲突，不任意合并 | release-only adoption与真实Google callback/consent/返回Dream通过；Admin link为0 |
 | Admin管理权限 | 独立Admin Session→admin_users/RBAC | unit/API/browser；受限AUTH角色 | Admin密码创建opaque Session，每请求读取active member与实时权限 | Dream Better Auth Session/OAuth token、禁用member、无权限请求均拒绝 | 独立Session实现、完整Admin suite/type/lint/build通过；真实后台登录只待现有Admin自身凭据复核 |
 | Dream服务身份 | confidential OAuth client；无canonical user | OAuth catalog + client_credentials + Admin verifier + Dream Next/Python clients | 后台请求使用service bearer；用户请求另带delegated user bearer | static service headers、超scope、`sub != client_id`、未知client、浏览器注入均拒绝 | 实现与unit/consumer/full suites通过；隔离合同fixture已改短期service access token |
+| Notion后台候选读取 | confidential Dream service client；`connectors:sync`；正常Notion connector表 | Repository行投影测试 + 本机正常Admin公开OAuth operation | storage `config_json`/`metadata_json`只在Repository解码为strict DTO `config`/`metadata`；公开读返回200 | malformed stored JSON继续fail closed；不放宽DTO、不回退Dream数据库 | focused 17/17、tsc、ESLint通过；正常token 200、`notion.sync-candidates.list` 200、读取1 connector；未创建或合并用户 |
 | Device grant | public native client+resource+user approval | 正常Admin/Dream公开入口与浏览器 | approve→OAuth token | deny/pending/slow_down/expire/重复/并发 | 允许、拒绝、兑换、重复兑换、refresh rotation/replay、独立revoke、access expiry与负例均通过 |
 | Refresh/handle | client/origin绑定与token lineage | 协调隔离 + Luna请求 | 串行rotation/handle恢复 | replay撤销/丢响应原transaction恢复 | 实现与unit通过；实际协议待验证 |
 | 长turn委托 | subject/thread/run/editor/service/client/purpose/scope | 隔离技术 + 本机真实业务 | OAuth过期后限定persist | 禁用/失去owner/混合范围/撤销 fail closed | 三种窄授权、57–58隔离与公开Route通过；新Workflow完整context与keeper下游闭环pending |
@@ -43,6 +45,8 @@
 统一范围以[Dream 仓库](https://github.com/glide-the/im-dream) 的 `docs/stage/stage_admin-auth-data-business-validation.md`为准；逐文件/原事务关闭状态见[领域映射](../architecture/admin-dream-domain-implementation-map.md)。此表的技术通过不能替代真实验收。
 
 ## 实际回执
+
+- Notion正常后台读取，2026-09-17：`pnpm exec vitest run app/lib/dream/notionConnectorRepository.test.ts app/lib/dream/notionConnectorService.test.ts` exit0，2 files/17 tests；`pnpm exec tsc --noEmit`与定向ESLint均exit0。随后使用正常本机Admin、正常PostgreSQL和已发布confidential client，通过公开`/api/auth/oauth2/token`取得300秒`client_credentials` bearer（HTTP 200），再调用公开`notion.sync-candidates.list`（HTTP 200、request ID一致、1 connector）。响应只含strict DTO字段，connector无`config_json`、resource无`metadata_json`；此后台scope没有Dream canonical user，也未读取或写入Admin operator。
 
 - Auth/data ACL release runner，2026-09-16：最初在自有 `/private/tmp/ink-auth-data-activation-gateway-3041736`、端口54332、database `ink-memory` 应用当时全部63 migrations后，写入一个隔离canonical Gateway fixture；default dry-run、首次 `--apply --production-approval`、重复apply均exit0，固定8 capabilities、142 statements、Gateway binding、三个NOINHERIT service credential、Dream NOLOGIN/无CONNECT、AUTH/CONTROL无Dream表读取、DATA无JWKS privateKey读取全部通过。独立旧 `auth-access-policy.mjs` 在自有 `ink_auth_data_codex_test_3041736`、端口54333继续dry/apply/repeat exit0并保持原脱敏回执。缺production approval的apply exit1且返回 `AUTH_DATA_PRODUCTION_APPROVAL_REQUIRED`。两套cluster均停止、目录删除、端口释放。随后命名本机正常数据库完成0063、64/64 migrations、9 release capabilities和实际角色allow/deny probes；其他数据库不能复用该回执。
 

@@ -1,7 +1,7 @@
 // [Input] Canonical actor or background connector ID plus one caller-owned Admin data transaction.
 // [Output] Owner-filtered connector, resource, snapshot and Thread-binding persistence.
 // [Pos] Typed Drizzle Repository for the Notion connector domain; no HTTP, Notion SDK or filesystem access.
-// [Sync] 2026-09-16: move all five Notion connector tables behind Admin ORM operations.
+// [Sync] 2026-09-17: project storage-only JSON columns into strict public DTO fields without leaking ORM row keys.
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -86,18 +86,20 @@ export class NotionConnectorRepository {
   }
 
   private projectResource(row: Record<string, unknown>) {
+    const { metadata_json, ...publicRow } = row;
     return dto.notionResourceDto.parse({
-      ...row,
-      metadata: parseObject(String(row.metadata_json), "NOTION_RESOURCE_DATA_INVALID"),
+      ...publicRow,
+      metadata: parseObject(String(metadata_json), "NOTION_RESOURCE_DATA_INVALID"),
       created_at: pgTimestampToIso(String(row.created_at)),
       updated_at: pgTimestampToIso(String(row.updated_at)),
     });
   }
 
   private async projectConnector(row: Record<string, unknown>) {
+    const { config_json, ...publicRow } = row;
     return dto.notionConnectorDto.parse({
-      ...row,
-      config: parseObject(String(row.config_json), "NOTION_CONNECTOR_DATA_INVALID"),
+      ...publicRow,
+      config: parseObject(String(config_json), "NOTION_CONNECTOR_DATA_INVALID"),
       last_synced_at: timestamp(row.last_synced_at === null ? null : String(row.last_synced_at)),
       created_at: pgTimestampToIso(String(row.created_at)),
       updated_at: pgTimestampToIso(String(row.updated_at)),
@@ -256,13 +258,16 @@ export class NotionConnectorRepository {
       fetched_at: snapshots.fetched_at, state: snapshots.state, snapshot_json: snapshots.snapshot_json,
       created_at: snapshots.created_at, updated_at: snapshots.updated_at,
     }).from(snapshots).where(eq(snapshots.connector_id, connectorId)).orderBy(desc(snapshots.created_at));
-    return rows.map(row => dto.notionSnapshotRecordDto.parse({
-      ...row,
-      fetched_at: pgTimestampToIso(row.fetched_at),
-      created_at: pgTimestampToIso(row.created_at),
-      updated_at: pgTimestampToIso(row.updated_at),
-      snapshot: parseObject(row.snapshot_json, "NOTION_SNAPSHOT_DATA_INVALID"),
-    }));
+    return rows.map(row => {
+      const { snapshot_json, ...publicRow } = row;
+      return dto.notionSnapshotRecordDto.parse({
+        ...publicRow,
+        fetched_at: pgTimestampToIso(row.fetched_at),
+        created_at: pgTimestampToIso(row.created_at),
+        updated_at: pgTimestampToIso(row.updated_at),
+        snapshot: parseObject(snapshot_json, "NOTION_SNAPSHOT_DATA_INVALID"),
+      });
+    });
   }
 
   async saveSnapshot(input: SnapshotSave, background = false) {
