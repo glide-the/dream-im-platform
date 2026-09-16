@@ -1,6 +1,7 @@
 <!-- [Input] Frozen canonical Drizzle catalog and actual explicit isolated ACL deployment runner. -->
 <!-- [Output] Chosen minimum data ownership, physical locations, credential boundaries and evidence gaps. -->
 <!-- [Pos] Concrete database ownership decision for the Admin takeover; no runtime DDL or physical-schema claim. -->
+<!-- [Sync] 2026-09-16: record the named local normal-database role/ACL activation while keeping external business acceptance separate. -->
 <!-- [Sync] 2026-09-15: retain original public business tables and prove isolation through explicit restricted ACL. -->
 # Admin / Dream 数据区域方案
 
@@ -16,7 +17,7 @@ Admin、Gateway、Billing 与 Dream 使用同一 PostgreSQL。既有 users、Sto
 | --- | --- | --- |
 | `identity` | 唯一Better Auth协议13表、显式subject/admin映射、encrypted BFF、purpose-bound Runtime delegation | AUTH协议/BFF读写与受控注册函数；DATA仅必要映射/public JWKS/provider label读取及窄委托领域写；CONTROL仅明确bootstrap/RBAC/provision职责 |
 | `public` Dream业务表 | 下列实际领域表；既有Story控制面表仍由Admin领域负责，Dream仅消费API | DATA角色领域读写，server DTO与owner/permission再次过滤；不会授予canonical/entitlement/账本/Provider控制表写权限 |
-| `public` Admin/Gateway/Billing共享控制 | users/platform、Admin RBAC、model/Provider、Gateway请求与金钱/订阅/账本 | 明确共享投影及注册函数；旧Admin/Gateway实际credential进一步收缩与正常激活仍待完成 |
+| `public` Admin/Gateway/Billing共享控制 | users/platform、Admin RBAC、model/Provider、Gateway请求与金钱/订阅/账本 | 明确共享投影及注册函数；本机正常AUTH/DATA/CONTROL与Dream NOLOGIN边界已激活，其他部署目标仍需独立执行同一门禁 |
 | `dream` | operation receipts与0060 immutable Preflight原请求关联 | DATA receipts写；request表仅SELECT/INSERT，UPDATE/DELETE/TRUNCATE由ACL与immutable trigger拒绝 |
 | `drizzle` | 唯一DDL历史/迁移收据/独立capability | application仅capability读取，专用migrator拥有DDL；启动只检查不迁移 |
 
@@ -85,4 +86,4 @@ AUTH仅identity协议/BFF读写、subject links与active canonical/platform/必�
 
 私有部署配置必须为0600且所有者匹配，明确实际database/port/datadir和四个不同role。隔离runner继续只接受具名可删除PG；正常库使用独立 `scripts/activate-unified-auth-data-access.mjs`，默认dry-run，只有 `--apply --production-approval`、停机备份SHA、完整migration/capability和目标身份全部匹配才整体事务激活。两者复用同一ACL planner，均拒superuser/createdb/createrole/replication/bypassRLS/继承membership/table或schema owner；正常Dream role额外是NOLOGIN。策略撤销PUBLIC database CONNECT/CREATE/TEMP与function EXECUTE；Dream没有CONNECT/schema/table/function权限，AUTH/DATA/CONTROL没有DDL。仅存在runner或capability回执不能冒称正常库已经激活。
 
-协调已实际验证隔离dry/apply/repeat及16次角色权限尝试，受限AUTH/DATA的Thread14、Editor8、Deck19、refs6、Run5、Preferences2公开生产Route分别通过93/103/246/104/163/78断言；均为技术证据。[验证矩阵](../verification/admin-auth-data-provider-matrix.md)保留原失败与修复证据。新0060 immutable request capability/catalog已通过upgrade/repeat/concurrent/fresh/partial rollback；最新ACL3dry/apply/repeat通过，15次actual受限角色查询验证request SELECT+INSERT且禁止mutation/TRUNCATE/guard、AUTH/control隔离、user_model_permissions禁止I/U/D、private JWK禁止和Dream CONNECT拒绝。新增正常库发布runner也已在另一具名隔离PG通过缺批准拒绝、63 migrations/8 capabilities/active Gateway、dry/apply/repeat、credential与allow/deny probes。正常库实际激活、Google/账户与真实模型全业务验收仍未完成，不得据隔离结果宣称最终数据库访问隔离闭环。
+协调已实际验证隔离dry/apply/repeat及16次角色权限尝试，受限AUTH/DATA的Thread14、Editor8、Deck19、refs6、Run5、Preferences2公开生产Route分别通过93/103/246/104/163/78断言；均为技术证据。[验证矩阵](../verification/admin-auth-data-provider-matrix.md)保留原失败与修复证据。新0060 immutable request capability/catalog已通过upgrade/repeat/concurrent/fresh/partial rollback；最新ACL3dry/apply/repeat通过，15次actual受限角色查询验证request SELECT+INSERT且禁止mutation/TRUNCATE/guard、AUTH/control隔离、user_model_permissions禁止I/U/D、private JWK禁止和Dream CONNECT拒绝。正常库发布runner先在另一具名隔离PG通过缺批准拒绝、63 migrations/8 capabilities/active Gateway、dry/apply/repeat、credential与allow/deny probes，随后在本机命名正常目标完成migration/capability、三服务LOGIN角色、Dream NOLOGIN和actual-role allow/deny激活。Google/旧账户adoption与真实模型全业务验收仍未完成；其他部署目标不能复用本机回执冒称已激活。

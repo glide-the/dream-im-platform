@@ -1,4 +1,5 @@
-<!-- [Sync] 2026-09-16: record Registry191 source closure; normal database activation and real business acceptance remain pending. -->
+<!-- [Sync] 2026-09-16: fix the local auth topology at localhost for the Admin issuer, Google callback and Dream callback/resource registrations. -->
+<!-- [Sync] 2026-09-16: record Registry191 source closure; normal database activation is complete and real business acceptance remains partial. -->
 <!-- [Sync] 2026-09-16: register automatic-repair message settlement as Registry169. -->
 <!-- [Sync] 2026-09-16: register Notion connector persistence as Registry148-168. -->
 <!-- [Sync] 2026-09-16: register Dream launch Runtime scope/current/replay as Registry130-132. -->
@@ -15,7 +16,9 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本`0.1`。状态：源码实现完成，正常切换与真实业务验收待执行；[实际191操作契约](admin-dream-operation-contracts.json)由真实Zod输入/输出与注册表生成。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin和Registry185-191 Story Workspace artifact在既有Registry169前缀后追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；这不等于正常数据库54→63 migration、角色ACL、服务切换或Google/Device/模型业务验收已经完成。本稿不是完整部署或真实业务回执。
+版本`0.1`。状态：源码实现、正常数据库54→63 migration、三服务角色/ACL/capability 激活与 Admin/Dream 服务切换已经完成；外部 Google、完整 Device 和 Dream 模型业务验收仍部分待执行。[实际191操作契约](admin-dream-operation-contracts.json)由真实Zod输入/输出与注册表生成。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin和Registry185-191 Story Workspace artifact在既有Registry169前缀后追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；该证据与真实 Google/Device/模型业务回执分别记录，不能相互替代。本稿不是完整生产部署声明。
+
+本机浏览器验收使用单一显式拓扑：Admin issuer 为 `http://localhost:3000/api/auth`，Google 回调为 `http://localhost:3000/api/auth/callback/google`，Dream origin/callback/resource 分别为 `http://localhost:5173`、`http://localhost:5173/auth/callback` 和 `http://localhost:5173/api`。`127.0.0.1` 只可作为进程内部连接地址，不能混入 OAuth issuer、redirect URI、Cookie origin 或浏览器 CSRF 判断。
 
 ## Registry169：自动修复消息终态
 
@@ -264,15 +267,15 @@ Admin 是唯一认证中心和数据库服务。没有任意 SQL endpoint、表�
 | --- | --- | --- |
 | 同实例不同database | users、platform投影、Story、Deck、Thread、Gateway/账本存在跨表FK和事务；PG无跨database FK | 不采用：需重复身份或分布式补偿，扩大数据搬迁 |
 | 同database整域迁入dream schema | 跨schema FK保留，但需同步所有Drizzle查询、固定function/trigger引用和旧catalog契约，兼容视图增加第二访问名 | 当前不采用整域搬迁，额外DDL与兼容面不增强同一受限role的表级授权边界 |
-| 同database identity独立schema、public按表职责、dream专用请求/回执 | 保留已有OID/PK/FK/原事务，独立credential与实际表/列/function ACL能拒绝跨领域权限 | 采用最小充分方案；正常credential与应用actual-role检查通过后才能宣称访问隔离已激活 |
+| 同database identity独立schema、public按表职责、dream专用请求/回执 | 保留已有OID/PK/FK/原事务，独立credential与实际表/列/function ACL能拒绝跨领域权限 | 采用最小充分方案；正常credential与应用actual-role检查已通过，访问隔离按本机目标激活 |
 
 确定的数据归属为：`identity` 保存唯一 Better Auth 协议/主体映射/BFF/委托；既有 Dream 业务表继续在 `public`，以领域表归属和表级 ACL 与 Admin/Gateway/Billing 共享控制表区分；`dream` 保存专用operation receipts和0060 immutable Preflight request绑定；`drizzle` 保存唯一迁移收据/capability。不存在已完成的整域物理dream schema迁移。users保留原PK/ID，identity显式映射FK引用它。选择与逐表范围见[数据库区域方案](admin-dream-data-ownership.md)。
 
 角色合同：专用migrator拥有schema/DDL，Admin auth服务角色只访问identity和主体映射/必要users读取，Admin Dream服务角色只读写其明确归属的public业务表及dream专用请求/回执，并读取显式共享控制投影，Admin控制面角色不因此得到全部Dream表写权限；Dream应用没有PG DSN、登录role或连接能力。所有app角色非superuser、非createdb/createrole、NOINHERIT、无schema CREATE且不拥有表；PUBLIC无CREATE/业务表权限。`scripts/activate-unified-auth-data-access.mjs` 默认dry-run，通过备份、目标、journal、capability和私有四role manifest门禁；只有显式 `--apply --production-approval` 才创建三个LOGIN服务role与Dream NOLOGIN role、应用共享ACL计划并执行实际credential/allow/deny probes。未满足任一门禁fail closed；runner已实现不表示正常库已执行。
 
-`drizzle/data/auth-access-policy-plan.mjs` 是两类发布入口的唯一语句计划。`drizzle/data/auth-access-policy.mjs` 只接受私有0600配置和既有具名可删除目标；正常库入口则额外绑定停机备份与人工批准。auth仅协议/BFF读写、subject和必要active canonical/platform/RBAC列读取、登录timestamp和append audit、受限注册函数EXECUTE；不直接写canonical/订阅/账本/历史正文。data持有Dream领域表与runtime/receipts、必要profile/provider-label/public-key/Gateway授权列，排除旧auth、Provider密文、账本/canonical写。control仅bootstrap Admin RBAC/identity权限；当前其他既有Admin API credential切分仍需全域收缩验证，不能以runner存在宣称全部ACL完成。协调已通过隔离 runner 与公开业务合同；正常库激活和真实Google/模型业务验收仍pending，详见验证矩阵。
+`drizzle/data/auth-access-policy-plan.mjs` 是两类发布入口的唯一语句计划。`drizzle/data/auth-access-policy.mjs` 只接受私有0600配置和既有具名可删除目标；正常库入口则额外绑定停机备份与人工批准。auth仅协议/BFF读写、subject和必要active canonical/platform/RBAC列读取、登录timestamp和append audit、受限注册函数EXECUTE；不直接写canonical/订阅/账本/历史正文。data持有Dream领域表与runtime/receipts、必要profile/provider-label/public-key/Gateway授权列，排除旧auth、Provider密文、账本/canonical写。control仅bootstrap Admin RBAC/identity权限；当前其他既有Admin API credential切分仍需全域收缩验证，不能以runner存在宣称全部ACL完成。协调已完成隔离 runner、公开业务合同和本机正常库 actual-role 激活；真实 Google、完整 Device 和模型业务验收仍部分待执行，详见验证矩阵与跨项目真实验收回执。
 
-0054–0058仅在协调隔离PG通过normal Drizzle replay；0055 creation CHECK 对NULL hash的三值缺口由0056前向修复，历史字节不改。0056 `identity.register_canonical_user` 以固定pg_catalog search_path和qualified表验证BA User、旧email/link冲突，插users触发原Free/default-model初始化并验证正allowance/activation，subject link同事务；PUBLIC EXECUTE撤销，调用前精确registration-integrity capability。0057 expand purpose/真实Editor Session FK，0058以显式非NULL和无NULL-array validation前向关闭ambiguity后才激活 runtime-purpose capability；冻结候选的升级/重复/并发/空库/两partial异常回滚、实际purpose拒绝和Session限定cascade均通过。正常业务库尚未激活。
+0054–0058先在协调隔离PG通过normal Drizzle replay；0055 creation CHECK 对NULL hash的三值缺口由0056前向修复，历史字节不改。0056 `identity.register_canonical_user` 以固定pg_catalog search_path和qualified表验证BA User、旧email/link冲突，插users触发原Free/default-model初始化并验证正allowance/activation，subject link同事务；PUBLIC EXECUTE撤销，调用前精确registration-integrity capability。0057 expand purpose/真实Editor Session FK，0058以显式非NULL和无NULL-array validation前向关闭ambiguity后才激活 runtime-purpose capability；冻结候选的升级/重复/并发/空库/两partial异常回滚、实际purpose拒绝和Session限定cascade均通过。随后本机正常业务库完成至0062的journal/capability与角色ACL激活；该结果不替代旧主体 adoption 或真实登录验收。
 
 ### 认证拓扑（双方已同意）
 
@@ -372,6 +375,8 @@ sequenceDiagram
 
 前缀`/api/internal/dream/v1`。每次验证`X-Ink-Dream-Service`客户端ID与独立`X-Ink-Dream-Credential` secret（constant-time比较，TLS/loopback网络）+ `Authorization: Bearer <user access token>`，拒绝user_id/query/header覆盖。`DREAM_DATA_SERVICE_CLIENTS`是严格JSON数组：每项`{id,secret,origin,oauthClientId,redirectUri,backgroundScopes}`；secret最少32bytes，id唯一，origin精确，redirect同origin精确，backgroundScopes只取`capabilities:read/resource-policy:read/resource-observer:write/connectors:sync/plugins:catalog/reflections:execute/story-confirmation:dispatch`的明确子集。每个请求重新按所选client验证，handle绑定该service client/origin/OAuth client，不能跨client resolve。Dream使用`INK_ADMIN_DREAM_SERVICE_CLIENT_ID`和`INK_ADMIN_DREAM_SERVICE_SECRET`。后台policy/observer/startup/scheduled connector及Reflections worker走服务限定scope，不能借它查询任意user数据。后续可轮换service credential；不得把用户token当服务身份。
 
+OAuth客户端目录不由Dream或浏览器动态注册。发布阶段运行`pnpm auth:provision-dream-oauth`只读取并输出脱敏计划；显式追加`--apply`后，Admin把同一份已校验配置转换为资源、浏览器public client、设备public client和client-resource关联DTO，在一个认证数据库UOW中通过Drizzle ORM幂等写入并回读校验。浏览器client固定使用Authorization Code、PKCE和无client secret；设备client固定使用RFC 8628 grant且无client secret；二者都不能绕过consent。地址、client id、resource和scope来自服务端配置。动态客户端注册继续关闭，运行时启动不执行DDL或客户端写入。
+
 | Endpoint | 输入与输出 |
 | --- | --- |
 | `GET /capabilities` | service only；`{version,auth:{issuer,jwks_uri,algorithm,resource,clients,scopes},schema_capabilities,operations}`；schema capability真实读Drizzle ledger/catalog，operations仅列实现可调用名称 |
@@ -450,7 +455,7 @@ sequenceDiagram
  D-->>B: product response
 ```
 
-### 领域职责与验收覆盖表（源码迁移完成；正常切换与真实验收待执行）
+### 领域职责与验收覆盖表（源码和本机正常切换完成；真实验收部分待执行）
 
 下表保留原领域拆分与事务/权限要求。对应191个命名operation已实现并由生成契约、隔离PostgreSQL/ACL与Dream源码关闭门禁覆盖；正常数据库migration/role activation、服务重启及真实账户业务旅程仍按发布计划单独验收。
 

@@ -1,6 +1,8 @@
 // [Input] Admin environment generator executed against disposable directories.
 // [Output] Provider-free tests for mode, preservation, complete validation and fail-closed role/origin checks.
 // [Pos] Deterministic configuration contract for unified auth and Admin-owned Dream DTO/ORM data access.
+// [Sync] 2026-09-16: pin the local Better Auth issuer to localhost for the registered Google callback.
+// [Sync] 2026-09-16: require generated structured values to survive the same dotenv parser used by Next.js.
 // [Sync] 2026-09-16: cover generated secrets and explicit external configuration without touching a real env file.
 // [Sync] 2026-09-16: distinguish PostgreSQL connection capacity validation from TCP port validation.
 import assert from 'node:assert/strict';
@@ -10,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const scriptPath = join(repositoryRoot, 'scripts/setup-env.mjs');
@@ -77,6 +80,18 @@ test('generated files are private and incomplete external configuration fails cl
   run();
   assert.equal((await stat(join(fixtureRoot, '.env.local'))).mode & 0o777, 0o600);
   assert.equal((await stat(join(fixtureRoot, 'docker/.env'))).mode & 0o777, 0o600);
+  for (const path of [join(fixtureRoot, '.env.local'), join(fixtureRoot, 'docker/.env')]) {
+    const runtimeValues = dotenv.parse(await readFile(path, 'utf8'));
+    const clients = JSON.parse(runtimeValues.DREAM_DATA_SERVICE_CLIENTS);
+    assert.equal(clients.length, 1);
+    assert.equal(clients[0].id, 'ink-dream-service');
+    assert.equal(clients[0].origin, 'http://localhost:5173');
+    assert.equal(clients[0].redirectUri, 'http://localhost:5173/auth/callback');
+    assert.equal(runtimeValues.BETTER_AUTH_URL, 'http://localhost:3000/api/auth');
+    assert.equal(runtimeValues.AUTH_TRUSTED_ORIGINS, 'http://localhost:3000,http://localhost:5173');
+    assert.equal(runtimeValues.DREAM_API_RESOURCE, 'http://localhost:5173/api');
+    assert.ok(clients[0].secret.length >= 32);
+  }
   const output = failure('--check');
   assert.match(output, /AUTH_DATABASE_URL/);
   assert.match(output, /GOOGLE_CLIENT_ID/);
@@ -85,6 +100,7 @@ test('generated files are private and incomplete external configuration fails cl
 
 test('a complete role, OAuth, Gateway and policy configuration validates and preserves the service secret', async () => {
   const paths = [join(fixtureRoot, '.env.local'), join(fixtureRoot, 'docker/.env')];
+  const deckPolicy = JSON.stringify({ version: 1, description: "O'Reilly uses `code`, #tags and a literal \\n sequence" });
   const common = {
     AUTH_DATABASE_URL: 'postgres://ink_auth:test@127.0.0.1:54329/ink-memory',
     ADMIN_CONTROL_DATABASE_URL: 'postgres://ink_admin_control:test@127.0.0.1:54329/ink-memory',
@@ -94,7 +110,7 @@ test('a complete role, OAuth, Gateway and policy configuration validates and pre
     DREAM_GATEWAY_CLIENT_BINDINGS: '[{"service_client_id":"ink-dream-service","gateway_client_id":"test-gateway","oauth_client_ids":["ink-dream-browser","ink-dream-device"]}]',
     DREAM_WORKSPACE_PLUGIN_POLICY_JSON: '{"version":1}',
     DREAM_RUNTIME_ACTIVATION_POLICY_JSON: '{"version":1}',
-    DREAM_DECK_POLICY_JSON: '{"version":1}',
+    DREAM_DECK_POLICY_JSON: deckPolicy,
   };
   for (const path of paths) await patchEnv(path, common);
   assert.match(run('--check'), /Environment configuration is valid/);
@@ -109,6 +125,10 @@ test('a complete role, OAuth, Gateway and policy configuration validates and pre
   run();
   const afterSecret = JSON.parse((await readEnv(paths[0])).get('DREAM_DATA_SERVICE_CLIENTS'))[0].secret;
   assert.equal(afterSecret, beforeSecret);
+  for (const path of paths) {
+    const runtimeValues = dotenv.parse(await readFile(path, 'utf8'));
+    assert.deepEqual(JSON.parse(runtimeValues.DREAM_DECK_POLICY_JSON), JSON.parse(deckPolicy));
+  }
 });
 
 test('duplicate database roles and cross-origin service registration are rejected', async () => {

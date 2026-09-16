@@ -1,6 +1,7 @@
 // [Input] Explicit dedicated auth PostgreSQL credential and Drizzle capability ledger.
 // [Output] Typed ORM transaction, capability gate and one Admin-owned auth connection pool.
 // [Pos] Authentication repository/UOW boundary; never runs migrations at startup.
+// [Sync] 2026-09-16: expose an explicit CLI-only pool shutdown for bounded auth catalog provisioning.
 // [Sync] 2026-09-14: require explicit dedicated database capability without environment-name fallbacks.
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -56,4 +57,14 @@ export async function withAuthTransaction<T>(handler: (transaction: AuthTransact
     await assertAuthCapability(tx);
     return handler(tx);
   });
+}
+
+export async function closeAuthDatabaseConnections(): Promise<void> {
+  const global = globalThis as AuthGlobal;
+  const pools = [global.__ink_auth_pool, global.__ink_admin_auth_control_pool].filter(
+    (pool): pool is Pool => Boolean(pool),
+  );
+  global.__ink_auth_pool = undefined;
+  global.__ink_admin_auth_control_pool = undefined;
+  await Promise.all(pools.map(pool => pool.end()));
 }

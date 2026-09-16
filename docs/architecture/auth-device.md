@@ -1,6 +1,7 @@
 <!-- [Input] Installed OAuth Device Authorization routes and Admin device UI. -->
 <!-- [Output] Actual device interaction/state/credential boundaries and pending protocol proof. -->
 <!-- [Pos] Device domain document linked from unified auth architecture. -->
+<!-- [Sync] 2026-09-16: record normal-service device creation, pending/slow_down and client/resource/scope negative receipts. -->
 <!-- [Sync] 2026-09-15: define generic rollback handling without protocol credential logs. -->
 
 # 设备授权
@@ -26,6 +27,8 @@ CLI 不能持有服务端 OAuth client secret，也不能读取 Dream 的用户�
 `/api/auth/device/token` 的 Session token 通道被关闭。OAuth resource token 仍执行统一 ES256 at+jwt 与主体/client/scope验证；Google/ID/Session token 不能替代它。
 
 pending 返回 authorization_pending；过快轮询返回 slow_down 并增加5秒间隔，这是实际协议要求。expiry/denial优先于轮询状态；批准和兑换在同一Admin事务锁定设备记录，并发只允许原决定完成一次，consumed/expired不会复活。用户不需要第二套 Dream 批准页面或本地决定存储。
+
+本机正常服务已通过公开入口验证：注册 public device client 返回完整 RFC 8628 字段、`expires_in=1800`、`interval=5`；首次轮询返回 `authorization_pending`，立即重复轮询返回 `slow_down`；未知client/resource、外部`user_id`和未授权scope分别返回`invalid_client`、`invalid_target`、`invalid_request`和`invalid_scope`，全部响应为`no-store`。设备码和user code未写入回执或公开日志。真实用户批准/拒绝、token兑换、refresh/revoke仍需有效登录主体后完成。
 
 device_code、user_code、access/refresh token 不进入公开日志或浏览器存储。未知插件或 ORM 异常必须触发事务回滚，由统一边界返回 no-store 的 `temporarily_unavailable` 503，服务端不得记录包含 SQL 参数或协议凭证的异常对象。到期或拒绝由 CLI 重新启动用户可见授权；配置、mapping、scope、client或能力缺失分别在对应边界失败，不通过部署名称猜测事实。长turn创建目的受限委托后仍需在expiry前由持有该bearer的keeper续期，CLI Gateway和Editor stdio使用不同授权。
 

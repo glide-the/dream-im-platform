@@ -2,6 +2,8 @@
 // [Input] Existing ignored Admin env files and secure random material.
 // [Output] Mode-0600 local/Compose config preserving unified auth/data policy and Provider overrides.
 // [Pos] Base configuration generator for the Admin workspace.
+// [Sync] 2026-09-16: use localhost as the single local Admin OAuth origin so the Google callback matches the registered web client.
+// [Sync] 2026-09-16: emit dotenv-compatible lossless quoting for structured Better Auth/Dream DTO configuration.
 // [Sync] 2026-09-16: preserve, render and validate the complete Better Auth/Dream DTO service configuration.
 // [Sync] 2026-09-16: validate embedded PostgreSQL connection capacity as a positive safe integer, independent of TCP port bounds.
 // [Sync] 2026-09-04: leave product overrides empty so built-in cc-switch-compatible defaults remain active.
@@ -651,9 +653,9 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
       authTokenEncryptionKey: authTokenEncryptionKey.root,
       workflowTokenSecret: workflowTokenSecret.root,
       serviceSecret: dreamServiceSecret.root,
-      adminOrigin: "http://127.0.0.1:3000",
-      dreamOrigin: "http://127.0.0.1:5173",
-      betterAuthUrl: "http://127.0.0.1:3000/api/auth",
+      adminOrigin: "http://localhost:3000",
+      dreamOrigin: "http://localhost:5173",
+      betterAuthUrl: "http://localhost:3000/api/auth",
       reflectionsRoot: resolve(projectRoot, "../ink-dream-memory/backend/data/agent-workspace/reflections"),
     }),
   ]);
@@ -796,7 +798,7 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
       workflowTokenSecret: workflowTokenSecret.docker,
       serviceSecret: dreamServiceSecret.docker,
       adminOrigin: "http://localhost:3000",
-      dreamOrigin: "http://127.0.0.1:5173",
+      dreamOrigin: "http://localhost:5173",
       betterAuthUrl: "http://localhost:3000/api/auth",
       reflectionsRoot: "/artifacts/reflections",
     }),
@@ -810,7 +812,15 @@ function encodeValue(value) {
     throw new Error("Environment values must not contain newlines");
   }
   if (/^[A-Za-z0-9_./:@%+,=\-]*$/.test(value)) return value;
-  return JSON.stringify(value);
+  for (const quote of ["'", "`"]) {
+    if (!value.includes(quote)) return `${quote}${value}${quote}`;
+  }
+  try {
+    JSON.parse(value);
+    return `'${value.replaceAll("'", "\\u0027")}'`;
+  } catch {
+    throw new Error("Environment values containing both apostrophes and backticks must be valid JSON");
+  }
 }
 
 function renderUnifiedAuthDataEnv(values) {
