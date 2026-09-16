@@ -1,13 +1,18 @@
-# Dream 业务接入与 Admin/Gateway 边界
+<!-- [Input] Pre-unified Dream/Admin PostgreSQL boundary and current Admin-only auth/data-service decision. -->
+<!-- [Output] Preserved historical topology with an explicit current replacement and no competing deployment guidance. -->
+<!-- [Pos] Historical architecture index; current implementation is defined by the unified auth/data contract. -->
+<!-- [Sync] 2026-09-16: supersede Dream PG Repository, role and Alembic ownership while preserving the original design record. -->
 
-> **Schema 权威更新（2026-08-12）**：本文关于独立 Alembic/Drizzle DDL 账本的设计已由 [统一 PostgreSQL Schema 权威](../database-schema-authority.md)替代。Dream 业务数据、权限、repository 和领域写边界继续有效。
+# Dream 业务接入与 Admin/Gateway 边界（历史方案）
 
-> 文档状态：**Implemented / Release candidate**（逻辑边界已落地；物理 owner/ACL 与生产 cutover 待审批）
+> **2026-08-12 历史说明**：本文当时记录“独立 Alembic/Drizzle DDL 账本已由统一 Schema 权威替代，但 Dream repository 继续有效”。该后半句又被 2026-09-16 的 Admin 数据服务接管目标替代，仅保留为实施历史。
+
+> 文档状态：**Superseded / historical evidence**。当前方案见 [Admin/Dream 认证与数据接口契约](../admin-dream-auth-data-contract.md)与[数据区域方案](../admin-dream-data-ownership.md)：Admin 是唯一认证中心与数据库访问服务；Dream 无 PostgreSQL DSN/role/connection，所有生产持久化走严格 DTO → Service → typed Repository → Drizzle。下文 Dream PG Repository、`ink_dream_app`、Dream Alembic 和直接业务写只说明接管前状态。
 > 返回：[总索引](README.md)  
 > 依赖：[当前基线](01-current-scope-and-source-baseline.md) · [Billing/Subscription/Gateway](06-billing-subscription-gateway-integration.md)  
 > 主要读者：Dream 后端、Admin/Gateway 后端、DBA、安全审计
 
-## 1. 已实现集成拓扑
+## 1. 历史已实现拓扑（Admin 数据服务接管前）
 
 ```mermaid
 flowchart LR

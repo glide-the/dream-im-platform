@@ -1,18 +1,25 @@
+<!-- [Input] Historical Dream PostgreSQL cutover evidence plus the current Admin auth/data-service contract. -->
+<!-- [Output] One indexed reading order that separates the current Admin-only database boundary from dated migration evidence. -->
+<!-- [Pos] Cross-project architecture index; current authority is the unified auth/data contract, while numbered files retain history. -->
+<!-- [Sync] 2026-09-16: supersede Dream runtime PostgreSQL ownership with Admin DTO/Service/typed Repository/Drizzle ownership. -->
+
 # ink-dream-memory PostgreSQL、Token 订阅与 Gateway 改造总索引
 
-> 文档状态：**Current / Release candidate**（权威入口；实现已完成，生产发布门禁仍开放）
-> 更新：2026-08-10
+> 文档状态：**Current index / historical migration evidence**（当前认证与数据库边界见下方；编号稿保留实施历史）
+> 更新：2026-09-16
 > 目标项目：`/Users/dmeck/project/ink-dream-memory`  
 > 编写位置：`/Users/dmeck/project/ink-admin-memory/docs/architecture/ink-dream-memory/`  
 > 事实基线：[处理判断](../../verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md)
 
 > **Schema 权威更新（2026-08-12）**：本文中关于“Dream Alembic 拥有 DDL”以及 `Admin 0000–0026 → Dream Alembic → Admin 0027+` 的内容已被 [统一 PostgreSQL Schema 权威](../database-schema-authority.md)替代。历史数据与发布回执仍按原时点保留。
 
+> **统一认证与数据访问更新（2026-09-16）**：当前方案由 [Admin/Dream 认证与数据接口契约](../admin-dream-auth-data-contract.md) 和 [数据区域方案](../admin-dream-data-ownership.md)定义。Admin 是唯一 Better Auth authority 和 PostgreSQL 访问服务；Dream 生产进程没有 PostgreSQL DSN、driver、SQL、ORM、UOW 或 DDL 路径，只通过严格 Pydantic DTO 调用 Admin 的 Zod DTO → Domain Service → typed Repository → Drizzle 操作。本文及编号稿中的 Dream Repository、Dream PG role、Alembic 和 `DATABASE_URL` 描述是迁移历史，不是现行部署合同。
+
 ## 1. 当前范围决策
 
 Round 29–30 已替代 Round 24–28 的“全面延期”决定。当前主线同时包含：
 
-1. Dream 主库 43 表与 Notion Connector 5 表全量迁入统一 PostgreSQL `ink-memory`；Dream 运行时最终不保留 SQLite、JSON DB 或内存数据库回退。
+1. Dream 主库 43 表与 Notion Connector 5 表保留在统一 PostgreSQL `ink-memory`，由 Admin Drizzle 唯一管理并由 Admin 数据服务访问；Dream 运行时不保留 PostgreSQL、SQLite、JSON DB 或内存数据库访问与回退。
 2. canonical PostgreSQL `users` 继续作为唯一平台用户全集，也是唯一订阅主体全集；不存在“计费用户”产品实体、名册、筛选或手工开户。现有 `platform_users`/Billing Account 只是内部兼容与独立现金计费投影。
 3. Admin 完成 Token-only Plan Version、Entitlement、Subscription、用户独立月度 Token Allowance、Gateway 与 Token Usage 闭环；套餐可包含整数 micro-USD 月费，但不包含金额额度、cash overage 或平台全局生效窗口。
 4. Dream 既有 Claude Agent、Dream、Chat、Workflow 与受支持模型调用分阶段切入 Admin Gateway，浏览器不持有 Gateway Key 或 Provider Secret。
@@ -23,7 +30,7 @@ Round 29–30 已替代 Round 24–28 的“全面延期”决定。当前主线
 
 | 能力 | 当前状态 | 目标状态 | 权威文档 |
 |---|---|---|---|
-| Dream PostgreSQL 43+5 | **Capability-only implemented**：Admin `0032` 已成为 48 表 DDL 接管点；Dream runtime 只接受 capabilities，仓库无 Alembic/DDL generator；真实一次性 E2E 当前导入 4,930 行 | **Release Gate**：盘点并采纳各预发布/生产环境，确认 PITR/回滚窗口 | [统一 Schema 权威](../database-schema-authority.md) |
+| Dream 43+5 数据区域 | **Admin API-only source implemented**：Admin Drizzle 是唯一 DDL journal，191 个命名 DTO 操作覆盖现行生产持久化；Dream runtime 没有数据库凭据、driver、SQL、ORM、UOW 或 fallback | **Release Gate**：正常库应用 `0054–0062`、激活受限角色/ACL并完成真实业务验收 | [统一数据接口契约](../admin-dream-auth-data-contract.md)、[数据区域方案](../admin-dream-data-ownership.md) |
 | 共享 Schema 版本 | **Admin/Drizzle sole authority**：空库只需 `pnpm db:migrate`；V1 数据回执继续有效，新库使用 V2 | **Release Gate**：生产专用 migrator role/ACL 与单实例发布回执 | [统一 Schema 权威](../database-schema-authority.md) |
 | 用户与内部投影 | **Implemented / Release candidate**：canonical-driven projection、Gateway 反查、服务端用户分页/搜索及 QA-only 回归均已修复验证 | **Release Gate**：生产历史 orphan 只读盘点、映射/隔离回执 | [02](02-business-integration-and-admin-boundary.md)、[06](06-billing-subscription-gateway-integration.md) |
 | Token Subscription/Gateway | **Implemented / Release candidate**：Admin `0017–0028`、Product/Payment API、个人月度状态机、Token Allowance/Token Ledger/Gateway 结算、三套餐 seed 与 Dream BFF/client 已通过 Admin 69 files/340 tests、隔离 PG 与 Dream full/real-PG 合同 | **Release Gate**：真实外部 Provider canary、生产角色切换/凭据注入与用户级流量切换；角色矩阵已在 clone 通过 | [06](06-billing-subscription-gateway-integration.md) |
@@ -41,7 +48,7 @@ Round 29–30 已替代 Round 24–28 的“全面延期”决定。当前主线
 |---|---|---|
 | [统一 PostgreSQL Schema 权威](../database-schema-authority.md) | **Current** | Admin/Drizzle 唯一 DDL、0032 adoption、capability、发布和回滚 |
 | [01-current-scope-and-source-baseline.md](01-current-scope-and-source-baseline.md) | **Current** | 两个项目当前真实实现、43+5 表、推理入口与缺口是什么 |
-| [02-business-integration-and-admin-boundary.md](02-business-integration-and-admin-boundary.md) | **Implemented / Release candidate** | Dream/Admin/Gateway 如何共享事实又保持最小权限 |
+| [02-business-integration-and-admin-boundary.md](02-business-integration-and-admin-boundary.md) | **Historical boundary** | Admin-only 数据服务接管前，Dream/Admin/Gateway 如何共享事实；现行边界转到统一接口契约 |
 | [03-page-refactor-checklist.md](03-page-refactor-checklist.md) | **Implemented / Release candidate** | Dream 哪些页面已改造，以及哪些真实发布步骤仍开放 |
 | [04-postgresql-migration-plan.md](04-postgresql-migration-plan.md) | **Superseded DDL design / historical data requirements retained** | 历史 Alembic 方案与仍有效的 43+5 数据完整性要求 |
 | [05-release-rollout-and-rollback.md](05-release-rollout-and-rollback.md) | **Current release plan** | 已通过门禁、生产 PG/Gateway 灰度与回滚边界 |
@@ -78,9 +85,10 @@ flowchart LR
 | 领域 | 逻辑所有者 | 约束 |
 |---|---|---|
 | 共享 PostgreSQL Schema/DDL 版本 | Admin Drizzle | 唯一 journal/runner；应用启动不迁移 |
-| Dream repository、事务、workflow 与业务写 | Dream | Admin 仅批准读取、白名单更新或领域命令；无通用硬删 |
+| 数据库 Repository、事务与业务持久化 | Admin 数据服务 | 严格 DTO、权限、锁、事务、receipt/audit 与 Drizzle；Dream 不连接 PostgreSQL |
+| Dream workflow、Runtime、SSE 与共享文件系统 | Dream | 调用 Admin 命名接口持久化；不把执行编排、文件字节或 Runtime 控制迁入 Admin |
 | Admin/RBAC/Audit、Provider/Model/Pricing、Token Subscription、独立 Billing、Gateway/Usage/Ledger | Admin / Gateway | Dream 只经产品 API/Gateway；Subscription DTO 不携带金额；不直接写表 |
-| `users` | Dream canonical User 领域 | 唯一用户全集；`platform_users` 仅内部兼容映射 |
+| `users` 与身份映射 | Admin 统一认证/数据服务 | 保留唯一 canonical 用户与稳定主键；Better Auth subject 显式映射，不按邮箱自动合并 |
 | physical PostgreSQL owner/ACL | 目标环境 DBA/审批流程 | 本文逻辑所有权不授权 `ALTER OWNER`、GRANT 或 REVOKE |
 
 ## 6. 实现证据与剩余发布阻断项

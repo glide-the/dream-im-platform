@@ -1,6 +1,13 @@
+<!-- [Input] Historical PostgreSQL/Gateway rollout stages and the current unified Admin auth/data release gate. -->
+<!-- [Output] Current release ordering plus retained pre-unified rollout and rollback evidence. -->
+<!-- [Pos] Release runbook; normal database/ACL mutations remain separately approved operations. -->
+<!-- [Sync] 2026-09-16: make Admin Drizzle/API deployment precede a database-free Dream rollout. -->
+
 # Dream PostgreSQL、产品 API 与 Gateway 发布回滚
 
 > **Schema 发布更新（2026-08-12）**：Alembic 命令与交错初始化顺序已由 [统一 PostgreSQL Schema 权威](../database-schema-authority.md)替代；本文其他产品/Gateway 灰度要求继续有效。
+
+> **统一认证与数据访问发布更新（2026-09-16）**：当前顺序是正常库备份 → Admin Drizzle `0054–0062` → 受限 AUTH/DATA/CONTROL 与 Dream NOLOGIN ACL → Admin Better Auth/数据服务 → 无数据库凭据的 Dream → Google/Device/Run/Thread/文件/模型真实验收。Dream 不再执行 PostgreSQL cutover、连接检查或 Repository rollback。下方早期 43+5 PG cutover 图保留历史顺序；现行门禁以 [统一接口契约](../admin-dream-auth-data-contract.md) 和本文件第4节真实 owner/ACL 规则为准。
 
 > 文档状态：**Current release plan**（R1–R4 与本地 R5 已完成；其他生产 R0/R5 及 R6–R8 仍开放）
 > 返回：[总索引](README.md)
@@ -17,7 +24,7 @@
 - PG 已产生业务写后默认前向修复；没有演练 delta exporter 时禁止回切 SQLite。
 - PaymentAdapter、Webhook、Fake guard 与付费开通已实现；真实第三方支付渠道与 ASR Gateway 明确 Deferred。生产 Fake 必须 fail closed，UI 不得伪造成功。
 
-## 2. 发布依赖序列
+## 2. 历史 PostgreSQL/Gateway 发布依赖序列
 
 ```mermaid
 flowchart LR
