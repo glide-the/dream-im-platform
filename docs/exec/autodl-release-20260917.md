@@ -3,6 +3,7 @@
 <!-- [Pos] Admin AutoDL release receipt; secrets and business payloads are excluded. -->
 <!-- [Sync] 2026-09-17: define candidate smoke, candidate-owned migration, atomic activation, pruning, and public acceptance gates. -->
 <!-- [Sync] 2026-09-17: record limited-role activation, OAuth catalog provisioning, and the protected capability gate. -->
+<!-- [Sync] 2026-09-17: record the final activated release, public auth acceptance, and pruning evidence. -->
 
 # Admin AutoDL 发布回执
 
@@ -29,3 +30,13 @@ AutoDL 发布现在在 migration 后同步 OAuth catalog，并在 `verify` 中�
 - 第三次候选通过隔离端口，但 Next standalone 中已有 `drizzle` 占位目录，复制后形成 `drizzle/drizzle/meta/_journal.json`，迁移器按合同拒绝缺失的根级 journal。同一 commit 重试还暴露了 release ID 不唯一会覆盖 current 目录的问题。发布脚本现以 commit 加 UTC 时间生成不可变 candidate ID，复制前移除占位目录，并在候选落盘前断言根级 journal；该次不作为成功发布回执。
 - `7c3719793a26.20260917110115` 完成 64/64 migration 并切换后，未携带凭据的 capability 探针返回 `AUTH_NOT_CONFIGURED`。根因是生成的 `DREAM_DATA_SERVICE_CLIENTS` JSON 未做 shell 编码，启动器 source 后丢失 JSON 引号。生成器与测试现按远端真实 source 语义修复；在 capability 恢复前不推进 Dream 发布。
 - 原先以 `suoxya.com` 验证的公网值已按用户指定撤销。当前实例只使用部署变量注入的 SeetaCloud 6008 映射作为 Admin origin，Dream 6006 映射作为 trusted origin/resource/callback；这些实例值只进入 gitignored 配置和本发布回执，不成为脚本默认值。
+
+## 最终发布结果
+
+Admin `main` 的 `88d4507faeff01f0a7be939f1f78a15d2eee810a` 已激活为 `/root/ink-autodl/admin/releases/88d4507faeff.20260917145247`。目录只保留该 release；`current` 精确指向它，`previous` 与 `candidate` 均不存在。PostgreSQL、共享业务数据和 artifact/workspace 持久目录未删除。
+
+[PR #22](https://github.com/glide-the/dream-im-platform/pull/22) 已合入 `main`；Deterministic checks 与 Drizzle migration journal 两项 GitHub checks 均通过。部署完成 64/64 migration，最新 journal 为 `0063_smiling_microbe`；OAuth catalog 重放返回 unchanged，真实 service-token 与受保护 capability 均为 200。
+
+公开 Admin `/admin/login` 为 200。独立 Admin operator 通过仓库恢复命令执行密码替换、21 个旧 Session 撤销与脱敏审计；公开 `/api/admin/auth/login` 为 200，测试 logout 为 200，`dreamIdentityChanged=false`。Dream legacy credential 另由 Dream subject adoption 处理，Admin operator 与 Dream 用户没有合并。
+
+最终 `./deploy/autodl-ssh/deploy.sh verify` exit 0，输出 `{"service_token":200,"capabilities":200,"redacted":true}`，并确认 local port、screen supervisor 与 public mapping 通过。Dream 的对应发布验证也已通过，公开 Dream `/`、health 与 auth options 均为 200。

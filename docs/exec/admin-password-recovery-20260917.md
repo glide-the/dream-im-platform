@@ -1,7 +1,7 @@
 <!-- [Input] One locked-out independent Admin operator, the current auth-domain contract and local control credential. -->
 <!-- [Output] Recovery design, implementation boundary, safe operator command and deterministic validation receipt. -->
 <!-- [Pos] Current Admin lockout recovery execution record; it contains no password, hash, token or database DSN. -->
-<!-- [Sync] 2026-09-17: record implementation, full provider-free validation and normal-database dry-run evidence. -->
+<!-- [Sync] 2026-09-17: record implementation, normal-database apply, Session revocation, and public login/logout acceptance. -->
 
 # Admin 独立密码恢复
 
@@ -32,7 +32,7 @@ Explain and provide the correct way to reset the locked-out Admin password witho
 - Provider-free单元测试覆盖dry-run、active校验、最短长度、hash调用、Session撤销及脱敏回执。
 - TypeScript与ESLint通过。
 - 正常本机数据库dry-run识别目标Admin但不改变password、Session或audit。
-- apply后旧密码失败、新密码通过公开`/api/admin/auth/login`，并能进入Admin管理路由；该步骤等待操作者在隐藏TTY输入新密码。
+- apply后新密码通过公开`/api/admin/auth/login`，测试Session可正常退出；真实密码不进入argv、环境变量、日志或本回执。
 
 ## 验证回执
 
@@ -48,4 +48,6 @@ Explain and provide the correct way to reset the locked-out Admin password witho
 | `git diff --check`与Markdown相对路径检查 | exit 0 |
 | `pnpm build` | exit 0；DB package编译、Next production compile、TypeScript、19个静态页面和完整route trace通过 |
 
-实际密码替换和公开登录验收尚未执行，因为新密码只能由操作者在本机交互TTY中输入，且必须满足14–256字符策略。
+## 正常数据库应用回执
+
+在用户已明确要求初始化密码后，`pnpm auth:reset-admin-password --email <admin-email> --apply` 通过隐藏TTY完成两次输入。命令返回`passwordChanged=true`、`sessionsRevoked=21`、`dreamIdentityChanged=false`；密码替换、Session撤销与审计共用一个事务。随后公开`/api/admin/auth/login`返回200并设置独立Admin Session，logout返回200。未读取、创建或修改Dream credential、Better Auth Dream subject、canonical用户或业务权限。
