@@ -297,6 +297,8 @@ start_admin() {
   remote "set -euo pipefail
 INK_AUTODL_ADMIN_HOME=$(quote "${AUTODL_ADMIN_HOME}") INK_AUTODL_DATA_ROOT=$(quote "${AUTODL_DATA_ROOT}") INK_AUTODL_SERVICE_USER=$(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/source/deploy/autodl-ssh/runtime/init-admin-data.sh")
 test -L $(quote "${AUTODL_APP_ROOT}/current")
+test -f $(quote "${AUTODL_APP_ROOT}/current/start-admin.sh")
+chmod 0755 $(quote "${AUTODL_APP_ROOT}/current/start-admin.sh")
 uid=\$(id -u $(quote "${AUTODL_SERVICE_USER}")); gid=\$(id -g $(quote "${AUTODL_SERVICE_USER}"))
 rm -f $(quote "${AUTODL_APP_ROOT}/run/admin.pid")
 screen -S $(quote "${AUTODL_SCREEN_NAME}") -X quit >/dev/null 2>&1 || true

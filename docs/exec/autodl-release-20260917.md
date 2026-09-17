@@ -14,3 +14,5 @@
 ## 初始证据
 
 设备重启后服务未运行，但 `/root/ink-autodl/admin/current` 和持久目录仍存在。本段不声明部署成功；实际 commit、migration 数、health 与公开入口结果在执行后追加。
+
+- 首次恢复旧 current 失败：远端历史 `start-admin.sh` 缺少执行位；候选未构建、未切换。启动器改为启动前验证普通文件并幂等修复 `0755`。
