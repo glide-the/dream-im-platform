@@ -2,6 +2,7 @@
 # [Input] Admin AutoDL env projector and persistent-directory initializer.
 # [Output] Topology, idempotency, owner/mode, legacy-data, and symlink checks.
 # [Pos] Provider-free AutoDL Admin deployment contract test.
+# [Sync] 2026-09-17: assert examples keep AutoDL public origins deployment-injected.
 # [Sync] 2026-09-17: assert generated service-client JSON survives the source-based remote launcher.
 # [Sync] 2026-09-17: assert candidates are unique per attempt and contain a non-nested Drizzle journal.
 # [Sync] 2026-09-16: read owner and mode through explicit Darwin/GNU stat branches.
@@ -21,6 +22,13 @@ DATA_ROOT="${TEMP_ROOT}/dream-data"
 PROJECTED_DATA_ROOT="/root/autodl-tmp/ink-memory"
 CURRENT_USER="$(id -un)"
 CURRENT_GROUP="$(id -gn)"
+
+if grep -Fq 'suoxya.com' "${SCRIPT_DIR}/platform.env.example"; then
+  printf 'AutoDL example retained a product-domain public origin\n' >&2
+  exit 1
+fi
+grep -Fq 'AUTODL_ADMIN_PUBLIC_ORIGIN=https://admin-tunnel.example.com:8443' "${SCRIPT_DIR}/platform.env.example"
+grep -Fq 'AUTODL_DREAM_PUBLIC_ORIGIN=https://dream-tunnel.example.com:8443' "${SCRIPT_DIR}/platform.env.example"
 
 grep -Fq 'cp scripts/migrate-provider-managed-accounts.mjs' "${SCRIPT_DIR}/deploy.sh"
 grep -Fq 'smoke_candidate' "${SCRIPT_DIR}/deploy.sh"
