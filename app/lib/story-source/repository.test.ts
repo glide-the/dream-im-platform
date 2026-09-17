@@ -82,6 +82,24 @@ describe("Story PostgreSQL repository", () => {
     expect(query.mock.calls[0][0]).toContain("LIKE");
   });
 
+  it("filters a Dream run by its exact allowlisted id", async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: "run-test", status: "pending_review" }] })
+      .mockResolvedValueOnce({ rows: [{ total: "1" }] });
+
+    const response = await queryStorySourceList(
+      new Request(
+        "http://localhost/api/admin/story-workflow-runs?filter[id][eq]=run-test",
+      ),
+      "story-workflow-runs",
+    );
+
+    expect(response.data[0]).toMatchObject({ id: "run-test" });
+    expect(query.mock.calls[0][0]).toContain("r.id = $1");
+    expect(query.mock.calls[0][1]).toEqual(["run-test", 20, 0]);
+    expect(query.mock.calls[1][1]).toEqual(["run-test"]);
+  });
+
   it("never selects the source password hash", async () => {
     query.mockResolvedValueOnce({
       rows: [{ id: "7", email: "user@example.com", role: "user" }],

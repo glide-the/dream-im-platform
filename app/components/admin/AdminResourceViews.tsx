@@ -3,7 +3,7 @@
 // [Input] Versioned Admin policies, safe Provider auth projections, and generic resource-manager field contracts.
 // [Output] Canonical resource forms, including Provider auth revision CAS and model-scoped Runtime controls.
 // [Pos] Admin resource-view declaration layer; server validation and capability gates stay in app/lib.
-// [Sync] 2026-09-17: add audited Dream product-role commands without changing Admin membership or auth subjects.
+// [Sync] 2026-09-17: map the Dream Run URL identity to the allowlisted Repository id filter.
 import { gatewayDefaultLimitsPolicy } from "../../../config/gateway-default-limits.mjs";
 import { CLAUDE_CODE_RUNTIME_INTEGER_MAX } from "../../../config/claude-agent-resource-policy";
 import AdminResourceManager, {
@@ -258,6 +258,7 @@ export function StoryWorkflowRunsResourceView() {
       fields={[]}
       defaultSort="created_at"
       filters={[
+        { field: "runId", apiField: "id", label: "Run ID", operator: "eq" },
         { field: "display_title", label: "工作空间标题" },
         { field: "workspace_id", label: "Workspace ID" },
         { field: "status", label: "运行状态", operator: "eq" },

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { modelFields, pricingFields, providerFields } from "./AdminResourceViews";
 import {
@@ -9,7 +9,11 @@ import {
   validateJsonEditorValue,
   valuesFromRecord,
 } from "./AdminResourceManager";
-import { canonicalAdminResource } from "./providers";
+import {
+  adminAccessControlProvider,
+  adminDataProvider,
+  canonicalAdminResource,
+} from "./providers";
 
 describe("admin resource form serialization", () => {
   it("mounts Claude Code Runtime fields on both real AIModelRegistry form routes", () => {
@@ -213,5 +217,51 @@ describe("admin resource form serialization", () => {
         Object.assign(new Error("bad filter"), { statusCode: 400 }),
       ).kind,
     ).toBe("reset");
+  });
+
+  it("registers Dream Workflow Runs with story.read and sends an exact id filter", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/auth/me") {
+        return new Response(JSON.stringify({
+          data: {
+            id: "admin-test",
+            email: "operator@example.com",
+            name: "Operator",
+            roles: ["SUPER_ADMIN"],
+            permissions: ["story.read"],
+          },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ data: [], meta: { total: 0 } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(adminAccessControlProvider.can({
+      resource: "story-workflow-runs",
+      action: "list",
+    })).resolves.toMatchObject({ can: true });
+
+    await adminDataProvider.getList!({
+      resource: "story-workflow-runs",
+      pagination: { currentPage: 1, pageSize: 12 },
+      sorters: [{ field: "created_at", order: "desc" }],
+      filters: [{ field: "id", operator: "eq", value: "run-test" }],
+      meta: {},
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/story-workflow-runs?page=1&pageSize=12&sort=created_at&order=desc&filter%5Bid%5D%5Beq%5D=run-test",
+      expect.objectContaining({ headers: expect.objectContaining({ accept: "application/json" }) }),
+    );
+    const providerSource = readFileSync(new URL("./AdminProviders.tsx", import.meta.url), "utf8");
+    expect(providerSource).toContain('name: "story-workflow-runs"');
+    const resourceViewSource = readFileSync(new URL("./AdminResourceViews.tsx", import.meta.url), "utf8");
+    expect(resourceViewSource).toContain('{ field: "runId", apiField: "id"');
+
+    vi.unstubAllGlobals();
   });
 });
