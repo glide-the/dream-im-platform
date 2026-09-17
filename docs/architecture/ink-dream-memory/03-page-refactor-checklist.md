@@ -1,6 +1,11 @@
+<!-- [Input] Dream product journey checklist and the final Admin-only production data boundary. -->
+<!-- [Output] Current page behavior with database access attributed to Admin named DTO operations. -->
+<!-- [Pos] Product regression checklist; Runtime/UI remain Dream-owned while persistence is Admin-owned. -->
+<!-- [Sync] 2026-09-16: replace page-level Dream PostgreSQL assumptions with the Admin data client. -->
+
 # Dream 页面与交互改造清单
 
-> 文档状态：**Implemented / Release candidate**（真实订阅页/BFF 已完成；外部 Provider canary 与生产 cutover 待执行）
+> 文档状态：**Implemented source / deployment gate open**（页面/BFF与 Admin DTO consumer 已完成；正常切换、外部 Provider 和真实业务验收待执行）
 > 返回：[总索引](README.md)  
 > 依赖：[业务边界](02-business-integration-and-admin-boundary.md) · [Dream 产品与推理集成](07-dream-subscription-and-inference-integration.md)  
 > 详细交互：[Dream 交互设计](../../design/ink-dream-memory/README.md)  
@@ -8,7 +13,7 @@
 
 ## 1. 页面状态定义
 
-- **保留/回归**：主要产品行为不变，只适配 PostgreSQL 与 Gateway 错误。
+- **保留/回归**：主要产品行为不变，只适配 Admin 数据接口与 Gateway 错误。
 - **数据层改造**：路由/信息架构不变，真实数据源或模型目录发生改变。
 - **真实能力改造**：删除静态/虚构事实，改接 Admin 产品 API。
 - **Deferred**：全部 Payment/订阅支付页面与未具备 Gateway capability 的 ASR 管理。
@@ -17,7 +22,7 @@
 
 | 页面/路由 | Current implementation | 已完成动作 / 剩余 Release Gate | Release Gate |
 |---|---|---|---|
-| Story/Character/Scene | PostgreSQL-only runtime 与 Repository/UoW 已落地 | 生产真实数据 cutover 待执行；保持筛选、分页、审阅和显式排序 | JSON/time/total/409 与迁移前合同一致 |
+| Story/Character/Scene | Dream Pydantic consumer → Admin Zod DTO/Service/typed Repository/Drizzle 已落地；Dream 无数据库入口 | 正常 Admin capability/ACL与公开业务验收待执行；保持筛选、分页、审阅和显式排序 | JSON/time/total/409 与迁移前合同一致；Admin 不可用时无 PG fallback |
 | Dream 工作台、Execution/Review | server-only Gateway client/canary 边界已落地 | 外部 Provider 与逐角色生产 canary 待执行；保留 deep link、tool confirmation、run/review 状态 | Agent/Workflow 协议与行为回归通过 |
 | Chat | 服务端 canonical subject 与 allowlisted alias/Gateway adapter 已落地 | 真实 Provider streaming/cancel canary 待执行 | streaming/cancel/usage missing/502 结算确定 |
 | Settings / 模型 | Product model-catalog BFF 与权限投影已实现 | 预发布真实 Admin API 冒烟待执行 | empty/403/503 不使用静态 fallback；Secret 不展示 |
@@ -25,7 +30,7 @@
 | Token Usage 详情 | **已实现**订阅页内摘要与服务端分页数据合同 | 真实预发布大分页数据冒烟 | input/output/cache/total Tokens 分列；不换算金额或预计超额费用 |
 | 生命周期影响预览 | **已实现** create/renew/upgrade/downgrade/pause/resume/cancel/revoke_cancel 服务端 preview→execute | 真实预发布并发/网络未知冒烟 | 显示用户当前/下周期边界、Version 与 Token 影响；无金额 quote |
 | Payment/订阅支付 | **Implemented / Release candidate**：订阅页展示真实月费、创建/读取 Intent、等待签名 Webhook | 真实渠道 Deferred | 不显示 Fake 成功；三条桌面/移动 Playwright 通过 |
-| 迁移维护 | PG-only fail-fast、409/503 与无 fallback 合同已实现 | 生产维护窗口/cutover runbook 待演练 | 不写回 SQLite、不使用本地假数据 |
+| 迁移维护 | Admin-only database fail-fast、409/503 与无 fallback 合同已实现 | Admin Drizzle `0054–0062`、角色/ACL和服务切换待批准执行 | Dream 不连接 PostgreSQL、不写回 SQLite、不使用本地假数据 |
 | ASR | endpoint 已 fail-closed | credential owner 吊销/轮换回执待完成 | ASR Gateway 管理仍 Deferred |
 
 ## 3. `/story-workspace/subscription` 改造合同

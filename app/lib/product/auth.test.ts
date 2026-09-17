@@ -1,161 +1,40 @@
-import { SignJWT } from "jose";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+// [Input] Shared Admin grant verifier and explicit active subject/repository boundaries.
+// [Output] Product canonical mapping, scope/outage refusal and existing entitlement projection checks.
+// [Pos] Provider-free Product authentication integration of the sole Admin authority.
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
-import { ProductError } from "./errors";
+const mocks = vi.hoisted(() => ({ verify: vi.fn(), active: vi.fn() }));
+vi.mock("../auth/accessToken", () => ({ verifyAdminAccessToken: mocks.verify }));
+vi.mock("../auth/database", () => ({ withAuthTransaction: (callback: (tx: unknown) => unknown) => callback({}) }));
+vi.mock("../auth/subjectRepository", () => ({ SubjectRepository: class { findActive = mocks.active; } }));
+import { AuthBoundaryError } from "../auth/config";
 import { requireProductPrincipal, verifyProductJwt } from "./auth";
-
-const original = {
-  secret: process.env.PRODUCT_API_JWT_SECRET,
-  issuer: process.env.PRODUCT_API_JWT_ISSUER,
-  audience: process.env.PRODUCT_API_JWT_AUDIENCE,
-};
-const secret = "jwt-test-secret-material-32-bytes-minimum";
-
 beforeEach(() => {
-  process.env.PRODUCT_API_JWT_SECRET = secret;
-  process.env.PRODUCT_API_JWT_ISSUER = "https://dream.example.test";
-  process.env.PRODUCT_API_JWT_AUDIENCE = "ink-memory-product-api";
+  vi.clearAllMocks();
+  mocks.verify.mockResolvedValue({ subject: "auth-independent-sub", clientId: "browser", tokenId: "jti", scopes: ["product:read"] });
+  mocks.active.mockResolvedValue({ canonicalUserId: 9007199254740993n });
 });
-
-afterEach(() => {
-  for (const [key, value] of Object.entries(original)) {
-    const name = {
-      secret: "PRODUCT_API_JWT_SECRET",
-      issuer: "PRODUCT_API_JWT_ISSUER",
-      audience: "PRODUCT_API_JWT_AUDIENCE",
-    }[key]!;
-    if (value === undefined) delete process.env[name];
-    else process.env[name] = value;
-  }
-});
-
-async function token(input: {
-  subject?: string;
-  scope?: string;
-  clientId?: string;
-  issuedAt?: number;
-  expiresAt?: number;
-} = {}) {
-  const now = Math.floor(Date.now() / 1_000);
-  return await new SignJWT({
-    scope: input.scope ?? "product:read",
-    client_id: input.clientId ?? "dream-bff",
-  })
-    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-    .setIssuer("https://dream.example.test")
-    .setAudience("ink-memory-product-api")
-    .setSubject(input.subject ?? "7")
-    .setJti("token-jti-1")
-    .setIssuedAt(input.issuedAt ?? now)
-    .setExpirationTime(input.expiresAt ?? now + 120)
-    .sign(new TextEncoder().encode(secret));
-}
-
-describe("Product JWT authentication", () => {
-  it("verifies every required claim and required scope", async () => {
-    const verified = await verifyProductJwt(
-      new Headers({ authorization: `Bearer ${await token()}` }),
-      "product:read",
-    );
-    expect(verified).toEqual({
-      canonicalUserId: "7",
-      clientId: "dream-bff",
-      tokenId: "token-jti-1",
-      scopes: ["product:read"],
-    });
+describe("Product Admin OAuth authentication", () => {
+  it("maps opaque auth subject to exact canonical bigint through the explicit link", async () => {
+    const headers = new Headers({ authorization: "Bearer admin-grant" });
+    expect(await verifyProductJwt(headers, "product:read")).toEqual({ canonicalUserId: "9007199254740993", clientId: "browser", tokenId: "jti", scopes: ["product:read"] });
+    expect(mocks.verify).toHaveBeenCalledWith(headers, "product:read");
+    expect(mocks.active).toHaveBeenCalledWith("auth-independent-sub");
   });
-
-  it("rejects non-canonical subjects, missing client identity and long tokens", async () => {
-    await expect(
-      verifyProductJwt(
-        new Headers({ authorization: `Bearer ${await token({ subject: "007" })}` }),
-        "product:read",
-      ),
-    ).rejects.toThrowError(
-      expect.objectContaining<Partial<ProductError>>({ status: 401 }),
-    );
-    await expect(
-      verifyProductJwt(
-        new Headers({
-          authorization: `Bearer ${await token({ clientId: "" })}`,
-        }),
-        "product:read",
-      ),
-    ).rejects.toThrowError(
-      expect.objectContaining<Partial<ProductError>>({ status: 401 }),
-    );
-    const now = Math.floor(Date.now() / 1_000);
-    await expect(
-      verifyProductJwt(
-        new Headers({
-          authorization: `Bearer ${await token({ issuedAt: now, expiresAt: now + 301 })}`,
-        }),
-        "product:read",
-      ),
-    ).rejects.toThrowError(
-      expect.objectContaining<Partial<ProductError>>({ status: 401 }),
-    );
+  it.each([[401, "PRODUCT_AUTH_REQUIRED"], [403, "PRODUCT_SCOPE_REQUIRED"], [503, "PRODUCT_AUTH_NOT_CONFIGURED"]] as const)("preserves grant boundary status %s", async (status, code) => {
+    mocks.verify.mockRejectedValue(new AuthBoundaryError("BOUNDARY", status));
+    await expect(verifyProductJwt(new Headers(), "product:read")).rejects.toMatchObject({ status, code });
+    expect(mocks.active).not.toHaveBeenCalled();
   });
-
-  it("requires scope and reverse-resolves users to an active platform projection", async () => {
-    await expect(
-      verifyProductJwt(
-        new Headers({ authorization: `Bearer ${await token()}` }),
-        "product:write",
-      ),
-    ).rejects.toThrowError(
-      expect.objectContaining<Partial<ProductError>>({
-        code: "PRODUCT_SCOPE_REQUIRED",
-        status: 403,
-      }),
-    );
-
-    const verifyToken = vi.fn().mockResolvedValue({
-      canonicalUserId: "7",
-      clientId: "dream-bff",
-      tokenId: "jti",
-      scopes: ["product:read"],
-    });
-    const readUnitOfWork = vi.fn(async (handler) =>
-      await handler({} as PoolClient),
-    );
-    const principal = await requireProductPrincipal(
-      new Request("https://admin.test/api/product/v1/plans"),
-      "product:read",
-      {
-        verifyToken,
-        readUnitOfWork,
-        findIdentity: vi.fn().mockResolvedValue({
-          canonical_user_id: "7",
-          platform_user_id: "usr_projection",
-          platform_status: "active",
-          tier: "creator",
-        }),
-      },
-    );
-    expect(principal.platformUserId).toBe("usr_projection");
-
-    await expect(
-      requireProductPrincipal(
-        new Request("https://admin.test/api/product/v1/plans"),
-        "product:read",
-        {
-          verifyToken,
-          readUnitOfWork,
-          findIdentity: vi.fn().mockResolvedValue({
-            canonical_user_id: "7",
-            platform_user_id: null,
-            platform_status: null,
-            tier: null,
-          }),
-        },
-      ),
-    ).rejects.toThrowError(
-      expect.objectContaining<Partial<ProductError>>({
-        code: "CANONICAL_USER_REQUIRED",
-        status: 403,
-      }),
-    );
+  it("rejects disabled/unlinked canonical identities even with a valid grant", async () => {
+    mocks.active.mockResolvedValue(null);
+    await expect(verifyProductJwt(new Headers(), "product:read")).rejects.toMatchObject({ status: 403, code: "CANONICAL_USER_REQUIRED" });
+  });
+  it("retains platform entitlement projection and refuses inactive projection", async () => {
+    const dependencies = { verifyToken: vi.fn().mockResolvedValue({ canonicalUserId: "9007199254740993", clientId: "browser", tokenId: "jti", scopes: ["product:read"] }), readUnitOfWork: async <T,>(handler: (client: PoolClient) => Promise<T>) => handler({} as PoolClient), findIdentity: vi.fn().mockResolvedValue({ canonical_user_id: "9007199254740993", platform_user_id: "usr_projection", platform_status: "active", tier: "creator" }) };
+    const request = new Request("https://admin.example/api/product/v1/plans");
+    expect(await requireProductPrincipal(request, "product:read", dependencies)).toMatchObject({ platformUserId: "usr_projection", tier: "creator" });
+    dependencies.findIdentity.mockResolvedValue({ canonical_user_id: "9007199254740993", platform_user_id: "usr_projection", platform_status: "disabled", tier: "creator" });
+    await expect(requireProductPrincipal(request, "product:read", dependencies)).rejects.toMatchObject({ status: 403, code: "CANONICAL_USER_REQUIRED" });
   });
 });
-

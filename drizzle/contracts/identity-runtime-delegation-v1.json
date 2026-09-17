@@ -1,0 +1,215 @@
+{
+  "contract_sha256": "1a682e29c2fcfa6d870a64c131773f0fa2ce49866fc56b30f334e07040e79a83",
+  "version": 1,
+  "tables": {
+    "identity.runtime_delegations": {
+      "name": "runtime_delegations",
+      "schema": "identity",
+      "columns": {
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "service_client_id": {
+          "name": "service_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_user_id": {
+          "name": "auth_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "oauth_client_id": {
+          "name": "oauth_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "input_sha256": {
+          "name": "input_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_ciphertext": {
+          "name": "token_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gateway_api_key_id": {
+          "name": "gateway_api_key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "canonical_user_id": {
+          "name": "canonical_user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scopes": {
+          "name": "scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "maximum_expires_at": {
+          "name": "maximum_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "runtime_delegations_thread_idx": {
+          "name": "runtime_delegations_thread_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "runtime_delegations_request_uidx": {
+          "name": "runtime_delegations_request_uidx",
+          "columns": [
+            {
+              "expression": "service_client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "auth_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "runtime_delegations_auth_user_id_user_id_fk": {
+          "name": "runtime_delegations_auth_user_id_user_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "user",
+          "schemaTo": "identity",
+          "columnsFrom": [
+            "auth_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "runtime_delegations_gateway_api_key_id_gateway_api_keys_id_fk": {
+          "name": "runtime_delegations_gateway_api_key_id_gateway_api_keys_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "gateway_api_keys",
+          "columnsFrom": [
+            "gateway_api_key_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "runtime_delegations_canonical_user_id_users_id_fk": {
+          "name": "runtime_delegations_canonical_user_id_users_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "canonical_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "runtime_delegations_maximum_expiry_check": {
+          "name": "runtime_delegations_maximum_expiry_check",
+          "value": "\"identity\".\"runtime_delegations\".\"maximum_expires_at\" IS NULL OR \"identity\".\"runtime_delegations\".\"maximum_expires_at\" >= \"identity\".\"runtime_delegations\".\"expires_at\""
+        },
+        "runtime_delegations_creation_check": {
+          "name": "runtime_delegations_creation_check",
+          "value": "\"identity\".\"runtime_delegations\".\"request_id\" IS NULL OR (\"identity\".\"runtime_delegations\".\"oauth_client_id\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"input_sha256\" ~ '^[0-9a-f]{64}$' AND \"identity\".\"runtime_delegations\".\"token_ciphertext\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"maximum_expires_at\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "contract_sha256": "97a95f92efecf3435890fcb3f9c1ce46e33fbed8a3de4dca3a632484de4f1c76",
+  "version": 1,
+  "tables": {
+    "public.deck_versions": {
+      "name": "deck_versions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "deck_id": {
+          "name": "deck_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base_version": {
+          "name": "base_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_draft_revision": {
+          "name": "source_draft_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snapshot_json": {
+          "name": "snapshot_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "snapshot_canonical_json": {
+          "name": "snapshot_canonical_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_deck_versions_deck_created": {
+          "name": "idx_deck_versions_deck_created",
+          "columns": [
+            {
+              "expression": "deck_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_deck_versions_deck_id_decks": {
+          "name": "fk_deck_versions_deck_id_decks",
+          "tableFrom": "deck_versions",
+          "tableTo": "decks",
+          "columnsFrom": [
+            "deck_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "fk_deck_versions_created_by_users": {
+          "name": "fk_deck_versions_created_by_users",
+          "tableFrom": "deck_versions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_deck_versions_deck_id_version": {
+          "name": "uq_deck_versions_deck_id_version",
+          "nullsNotDistinct": false,
+          "columns": [
+            "deck_id",
+            "version"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "ck_deck_versions_version": {
+          "name": "ck_deck_versions_version",
+          "value": "version >= 1"
+        },
+        "ck_deck_versions_base_version": {
+          "name": "ck_deck_versions_base_version",
+          "value": "base_version IS NULL OR base_version >= 1"
+        },
+        "ck_deck_versions_source_draft_revision": {
+          "name": "ck_deck_versions_source_draft_revision",
+          "value": "source_draft_revision >= 1"
+        },
+        "ck_deck_versions_canonical_projection": {
+          "name": "ck_deck_versions_canonical_projection",
+          "value": "\"snapshot_canonical_json\" IS NULL OR \"snapshot_canonical_json\"::jsonb = \"snapshot_json\""
+        }
+      },
+      "isRLSEnabled": false
+    }
+  }
+}

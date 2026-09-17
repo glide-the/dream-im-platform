@@ -1,0 +1,454 @@
+{
+  "contract_sha256": "d9de67655e6d8d5ae9654d6502a2cf5d9ab1bb6d829975b243eb25e239b08919",
+  "version": 1,
+  "tables": {
+    "identity.runtime_delegations": {
+      "name": "runtime_delegations",
+      "schema": "identity",
+      "columns": {
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "service_client_id": {
+          "name": "service_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_user_id": {
+          "name": "auth_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "oauth_client_id": {
+          "name": "oauth_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "input_sha256": {
+          "name": "input_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_ciphertext": {
+          "name": "token_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gateway_api_key_id": {
+          "name": "gateway_api_key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "editor_session_id": {
+          "name": "editor_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "authority_source": {
+          "name": "authority_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_message_id": {
+          "name": "source_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_claim_id": {
+          "name": "source_claim_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "canonical_user_id": {
+          "name": "canonical_user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scopes": {
+          "name": "scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "maximum_expires_at": {
+          "name": "maximum_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "runtime_delegations_thread_idx": {
+          "name": "runtime_delegations_thread_idx",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "runtime_delegations_request_uidx": {
+          "name": "runtime_delegations_request_uidx",
+          "columns": [
+            {
+              "expression": "service_client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "auth_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "runtime_delegations_confirmation_claim_uidx": {
+          "name": "runtime_delegations_confirmation_claim_uidx",
+          "columns": [
+            {
+              "expression": "service_client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"identity\".\"runtime_delegations\".\"authority_source\" = 'story-confirmation-claim'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "runtime_delegations_auth_user_id_user_id_fk": {
+          "name": "runtime_delegations_auth_user_id_user_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "user",
+          "schemaTo": "identity",
+          "columnsFrom": [
+            "auth_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "runtime_delegations_gateway_api_key_id_gateway_api_keys_id_fk": {
+          "name": "runtime_delegations_gateway_api_key_id_gateway_api_keys_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "gateway_api_keys",
+          "columnsFrom": [
+            "gateway_api_key_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "runtime_delegations_editor_session_id_user_sessions_id_fk": {
+          "name": "runtime_delegations_editor_session_id_user_sessions_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "user_sessions",
+          "columnsFrom": [
+            "editor_session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "runtime_delegations_source_message_id_chat_message_id_fk": {
+          "name": "runtime_delegations_source_message_id_chat_message_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "chat_message",
+          "columnsFrom": [
+            "source_message_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "runtime_delegations_canonical_user_id_users_id_fk": {
+          "name": "runtime_delegations_canonical_user_id_users_id_fk",
+          "tableFrom": "runtime_delegations",
+          "tableTo": "users",
+          "columnsFrom": [
+            "canonical_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "runtime_delegations_maximum_expiry_check": {
+          "name": "runtime_delegations_maximum_expiry_check",
+          "value": "\"identity\".\"runtime_delegations\".\"maximum_expires_at\" IS NULL OR \"identity\".\"runtime_delegations\".\"maximum_expires_at\" >= \"identity\".\"runtime_delegations\".\"expires_at\""
+        },
+        "runtime_delegations_creation_check": {
+          "name": "runtime_delegations_creation_check",
+          "value": "\"identity\".\"runtime_delegations\".\"request_id\" IS NULL OR (\"identity\".\"runtime_delegations\".\"oauth_client_id\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"input_sha256\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"input_sha256\" ~ '^[0-9a-f]{64}$' AND \"identity\".\"runtime_delegations\".\"token_ciphertext\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"maximum_expires_at\" IS NOT NULL)"
+        },
+        "runtime_delegations_authority_source_check": {
+          "name": "runtime_delegations_authority_source_check",
+          "value": "(\n    \"identity\".\"runtime_delegations\".\"authority_source\" IS NULL AND \"identity\".\"runtime_delegations\".\"source_message_id\" IS NULL AND \"identity\".\"runtime_delegations\".\"source_claim_id\" IS NULL\n  ) OR (\n    \"identity\".\"runtime_delegations\".\"authority_source\" = 'story-confirmation-claim'\n    AND \"identity\".\"runtime_delegations\".\"source_message_id\" IS NOT NULL\n    AND \"identity\".\"runtime_delegations\".\"source_claim_id\" IS NOT NULL\n    AND \"identity\".\"runtime_delegations\".\"purpose\" = 'server-persistence'\n    AND \"identity\".\"runtime_delegations\".\"run_id\" IS NOT NULL\n    AND \"identity\".\"runtime_delegations\".\"editor_session_id\" IS NULL\n    AND \"identity\".\"runtime_delegations\".\"gateway_api_key_id\" IS NULL\n  )"
+        },
+        "runtime_delegations_purpose_check": {
+          "name": "runtime_delegations_purpose_check",
+          "value": "(\"identity\".\"runtime_delegations\".\"purpose\" IS NULL AND \"identity\".\"runtime_delegations\".\"editor_session_id\" IS NULL) OR (\"identity\".\"runtime_delegations\".\"purpose\" IS NOT NULL AND cardinality(\"identity\".\"runtime_delegations\".\"scopes\") > 0 AND array_position(\"identity\".\"runtime_delegations\".\"scopes\", NULL) IS NULL AND (\n    (\"identity\".\"runtime_delegations\".\"purpose\" = 'server-persistence' AND \"identity\".\"runtime_delegations\".\"editor_session_id\" IS NULL AND \"identity\".\"runtime_delegations\".\"gateway_api_key_id\" IS NULL AND \"identity\".\"runtime_delegations\".\"scopes\" <@ ARRAY['dream:read','dream:write']::text[]) OR\n    (\"identity\".\"runtime_delegations\".\"purpose\" = 'gateway-cli' AND \"identity\".\"runtime_delegations\".\"editor_session_id\" IS NULL AND \"identity\".\"runtime_delegations\".\"gateway_api_key_id\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"scopes\" <@ ARRAY['messages:create','messages:count_tokens','models:list']::text[]) OR\n    (\"identity\".\"runtime_delegations\".\"purpose\" = 'editor-stdio' AND \"identity\".\"runtime_delegations\".\"editor_session_id\" IS NOT NULL AND \"identity\".\"runtime_delegations\".\"gateway_api_key_id\" IS NULL AND \"identity\".\"runtime_delegations\".\"scopes\" <@ ARRAY['editor:read','editor:write']::text[])\n  ))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.chat_message": {
+      "name": "chat_message",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parts": {
+          "name": "parts",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'"
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "history_final_text": {
+          "name": "history_final_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "history_process_available": {
+          "name": "history_process_available",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "history_projection_version": {
+          "name": "history_projection_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_chat_message_thread": {
+          "name": "idx_chat_message_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_chat_message_thread_created_id_desc": {
+          "name": "idx_chat_message_thread_created_id_desc",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_chat_message_thread_id_chat_thread": {
+          "name": "fk_chat_message_thread_id_chat_thread",
+          "tableFrom": "chat_message",
+          "tableTo": "chat_thread",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_chat_message_1": {
+          "name": "ck_chat_message_1",
+          "value": "role = ANY (ARRAY['user'::text, 'assistant'::text])"
+        },
+        "ck_chat_message_history_projection_v1": {
+          "name": "ck_chat_message_history_projection_v1",
+          "value": "(\n\t\t(history_projection_version IS NULL\n\t\t\tAND history_final_text IS NULL\n\t\t\tAND history_process_available = false)\n\t\tOR\n\t\t(history_projection_version = 1\n\t\t\tAND role = 'assistant'\n\t\t\tAND history_final_text IS NOT NULL\n\t\t\tAND btrim(history_final_text) <> '')\n\t)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  }
+}

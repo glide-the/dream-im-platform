@@ -1,3 +1,5 @@
+<!-- [Sync] 2026-09-17: add the narrow headerless Codex Responses SSE compatibility and real-request evidence. -->
+
 # Gateway 协议、流式与完整报文审计
 
 > 审计日期：2026-08-08（Asia/Shanghai）  
@@ -30,6 +32,14 @@
 日志缺报文有独立的真实根因：`beginGatewayRequest()` 已为限额拒绝创建 `gateway_requests` 行，但旧 `prepareGatewayRequest()` 仅在 `reserved` 分支调用 `recordGatewayRequestPayload()`，所以 429/402/409 预授权拒绝会停在 `payload_capture_status=pending`，响应体也没有写入 `gateway_response_payloads`；订阅暂停/失效等策略拒绝甚至发生在主行 INSERT 前。修复后，认证并解析成功的请求会先建立主行再执行订阅策略，除 idempotency replay 外，rejected 分支同样保存完整脱敏请求，并把外部协议正确的 JSON 错误响应保存为 complete；replay 不覆盖原始请求报文。实际 Dream 后续重试的只读元数据已显示 request/response 两侧均为 `complete`，未读取或输出 Prompt 内容。
 
 429 的运营可见性随后补齐：限额判定将 `limit_window`、`limit_metric`、`current`、`requested`、`limit`、`remaining`、`exceeded_by` 固化到 `gateway_requests.response_summary`，并生成包含同一快照的 `error_message` 和协议错误体。Admin 列表直接显示错误码/具体原因，详情在完整报文权限门之前显示中文诊断卡，因此定位 `/v1/messages?beta=true 429` 不需要加载大型 payload 或查看 Prompt。Token 429 携带用户/模型定位到可编辑的用户默认 Token 上限，并补充模型覆盖与套餐权益检查链接。`gateway_rate_limits` 明确展示为自动累加的实时用量计数，保持只读。隔离 E2E 已证明将测试用户日上限从 1 提高到 1000 后，同一 Gateway Key 重试由 429 变为 200。请求频率策略暂缓交付，相关 Admin 表单、列表和操作入口已隐藏，数据库兼容字段与内部读取暂时保留。
+
+### 1.3 托管 Codex 缺少响应类型头
+
+2026-09-17 的正常 Dream 公开入口请求已到达托管 Codex Responses 端点。上游返回 HTTP 200 和合法的 Responses SSE body，但没有返回 `Content-Type`；旧 Gateway 因而在 SSE parser 之前写入 `UPSTREAM_STREAM_INVALID`，请求进入 `settlement_failed`。受控诊断只记录状态、响应类型是否为空和 body 是否存在，不输出凭据或正文。
+
+现行兼容只在 `adapterKind=codex`、响应 body 存在且 `Content-Type` 缺失或为空时成立。该响应仍进入同一个增量 SSE parser、Responses adapter、usage 校验、payload 持久化与结算；空 body、Codex 显式返回非 SSE 类型和其他 Provider 缺少类型头继续返回 502。流式与非流式 public client 都覆盖此规则，因为 Codex 的非流式兼容也由 Gateway 内部消费 Responses stream 后组装 JSON。
+
+聚焦测试为 3 files / 32 tests，完整 Admin 回归为 277 files / 2096 tests（17 files / 36 tests按既有合同跳过），TypeScript、定向 ESLint 与生产 build 均通过。正常账户的再次模型调用尚未执行：此前失败请求合法保留 75,006 tokens 为 `usageUnknown`，当前周期仅剩 24,994，系统没有人工改 usage、释放预留或直接写余额的接口。后台固定流程最终会保守 capture 原预留；在新的正常额度或正式 Admin 授权的产品变更前，不能用 SQL 或伪造 usage 制造通过回执。
 
 ## 2. Route、Handler、Adapter、Transform 链路
 
@@ -78,7 +88,7 @@ Anthropic 下游逐个输出 `event: <type>\ndata: <json>\n\n`。OpenAI 下游�
 Gateway 先等待上游返回响应头：
 
 - 首字节前 HTTP 错误：映射为 Anthropic/OpenAI 对应 JSON 错误与真实非 200 Gateway 状态；Provider 原始错误只进入受保护 payload，不直接回显。
-- 200 但不是 `text/event-stream`：在下游流开始前返回 `UPSTREAM_STREAM_INVALID` 502。
+- 200 但不是 `text/event-stream`：在下游流开始前返回 `UPSTREAM_STREAM_INVALID` 502；唯一例外是上节定义的托管 Codex 空类型头响应，且仍必须通过 SSE 内容与终态 usage 校验。
 - 流开始后解析、网络或 Provider 中断：保持已经发送的 200，输出协议内 error event，标记 `interrupted`，按已获得 Usage 决定结算或 `settlement_failed`。
 
 ### 3.3 Headers

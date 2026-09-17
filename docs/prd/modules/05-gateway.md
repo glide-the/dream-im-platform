@@ -1,9 +1,10 @@
+<!-- [Sync] 2026-09-17: align the current Gateway flow and errors with optional Entitlement limits and allowance-only callability. -->
 # 模块 PRD：Gateway、Key、Request、Payload 与限流
 
 ## 2026-08-09 Catalog / Inference边界增量
 
 - `GET /v1/models`是server-to-server canonical-subject公共目录：正常无订阅返回200并附逐模型availability；仅service identity错误、Admin/PG不可达或配置故障返回503。
-- 推理入口资格顺序保持canonical user→Subscription状态/周期→published Plan Version→Entitlement/Scope→Model Permission→RPM/Token limits→当前周期Token Allowance→reserve→Provider。
+- 推理入口资格顺序保持canonical user→Subscription状态/周期→enabled Model与Provider/Pricing→可选Entitlement模型级限额→Model Permission→RPM/Token limits→当前周期Token Allowance→reserve→Provider；缺少Entitlement使用`allowance-only`审计语义，不构成模型白名单拒绝。
 - Token不足为402；无模型/Scope/Permission为403；保存alias在并发中停用或失权为409；Provider失败为502；限流为429。
 - Dream保存和Claude Agent不得使用静态upstream型号或绕过实时资格；解析顺序为保存且仍callable alias→Free Plan明确默认alias→结构化业务错误。
 
@@ -15,7 +16,7 @@
 
 | 分层 | 范围 |
 |---|---|
-| Current / Implemented | Anthropic/OpenAI 代理、Key hash、Request/Payload、canonical user→Subscription→Entitlement→Permission→limit→Token Allowance→reserve/settlement→Token Ledger、cash-only 禁回退与终态 guard 已实现；Dream 使用 canonical-subject server client。`GET /v1/models` 只列出当前月订阅、Entitlement、当前周期 Allowance、用户权限与有效定价共同允许的模型，并由 Dream 设置页和 Claude Agent 共用；Allowance 为 0 不把 alias 从设置中下架，调用时由 Gateway 返回 402。 |
+| Current / Implemented | Anthropic/OpenAI代理、Key hash、Request/Payload、canonical user→Subscription→enabled Model/Provider/Pricing→可选Entitlement限额→Permission→Token Allowance→reserve/settlement→Token Ledger、cash-only禁回退与终态guard已实现；Dream使用canonical-subject server client。`GET /v1/models`列出全部enabled alias并附当前用户callability；无Entitlement仍可按Allowance调用并以nullable entitlement审计，Allowance为0不把alias从设置中下架，调用时由Gateway返回402。 |
 | Release candidate evidence | Admin `0000–0024`、66 files/313 tests、tsc/lint/build；隔离 Gateway 精确验证 reserve 40/capture 12/release 28 与 Token Ledger 顺序/幂等/不可变。Dream backend 1,679 passed/14 skipped/652 subtests、推理聚焦 61 passed，全入口禁 direct fallback，Secret/未知字段不透传。 |
 | Release Gate | 生产 Key/Secret 注入、真实 Provider stream/cancel/usage-missing 与用户级 canary；关闭 canary 后不得 direct Provider。 |
 
@@ -40,8 +41,9 @@
 ```mermaid
 flowchart LR
   K["Hashed service/user Gateway Key"] --> Q["Scope + canonical User"]
-  Q --> S["Subscription + Plan Version"] --> E["Entitlement"]
-  E --> M["Model Permission + Limits"]
+  Q --> S["Subscription + Plan Version"] --> M["Enabled Model + Permission"]
+  S -. "Optional model limits" .-> E["Entitlement"]
+  E -.-> M
   M --> B["Current-period Token Reserve"]
   B --> P["Provider Transport"]
   P --> U["Final Usage"]
@@ -49,7 +51,7 @@ flowchart LR
   Q -. "Explicit independent cash mode only" .-> P
 ```
 
-资格拒绝发生在上游调用前。请求创建时冻结 Subscription/Entitlement/Pricing/limit snapshot。订阅请求只使用 Token Allowance；Token 用尽不得隐式转为 cash。Provider Pricing、Provider cost 和显式独立按量现金模式可继续记账，但不能由套餐 overage 字段开启或称为订阅额度。流式响应必须支持真实增量、backpressure、client cancel 和协议正确的 SSE error；Usage 未知时不得按 0 成功结算。
+资格拒绝发生在上游调用前。请求创建时冻结Subscription、nullable Entitlement、Pricing与limit snapshot；无Entitlement时快照明确记录`allowance-only`。订阅请求只使用Token Allowance；Token用尽不得隐式转为cash。Provider Pricing、Provider cost和显式独立按量现金模式可继续记账，但不能由套餐overage字段开启或称为订阅额度。流式响应必须支持真实增量、backpressure、client cancel和协议正确的SSE error；Usage未知时不得按0成功结算。
 
 ## 4. Key 与 Secret
 
@@ -75,9 +77,9 @@ flowchart LR
 | Key scope | 403 `GATEWAY_SCOPE_REQUIRED` | 否 | 更换具备最小必要 scope 的 Key；写部署告警 |
 | Canonical 用户 | 403 `CANONICAL_USER_REQUIRED` | 否；Key 有效但 mapping 是 orphan | 停止调用；审计 Key/余额/Usage/Ledger/Subscription 后映射或隔离，不创建第二用户/删除财务历史 |
 | 平台访问策略 | 401 `GATEWAY_AUTH_REQUIRED`（canonical 用户存在但非 active 时统一处理） | 否 | 在平台用户控制面检查访问状态；不泄露更多身份细节 |
-| 无可调用订阅 | 403 `ENTITLEMENT_REQUIRED` / 对应订阅状态错误 | 是，`rejected` | 不进入 cash-only；独立现金模式必须由不同的显式产品资格/request mode 进入 |
+| 无可调用订阅 | 403 `ENTITLEMENT_REQUIRED` / 对应订阅状态错误 | 是，`rejected` | 该兼容 code 表示缺少可调用 Subscription，不表示每个模型必须有 Entitlement；不进入 cash-only |
 | Subscription 状态 | 403 `SUBSCRIPTION_PAUSED` / `SUBSCRIPTION_INACTIVE` / `SUBSCRIPTION_PERIOD_EXPIRED` | 是，`rejected` | 恢复、续费或重新订阅；同请求不循环重试 |
-| Entitlement | 403 `SUBSCRIPTION_MODEL_NOT_ALLOWED` / `SUBSCRIPTION_SCOPE_NOT_ALLOWED` | 是，`rejected` | 选择允许 alias/scope 或调整下一版权益 |
+| 可选 Entitlement 限额 | 403 `SUBSCRIPTION_MODEL_NOT_ALLOWED` / `SUBSCRIPTION_SCOPE_NOT_ALLOWED` | 是，`rejected` | 仅在当前 Plan Version 确实发布该模型 Entitlement 时应用其模型/scope限制；缺失则使用 `allowance-only` |
 | Allowance 未就绪/并发 | 409 `SUBSCRIPTION_ALLOWANCE_NOT_READY` / `SUBSCRIPTION_ALLOWANCE_CONFLICT` | 是，`rejected` | 刷新订阅/Allowance；并发冲突可按幂等边界重试 |
 | 订阅 Token | 402 `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED` | 是，`rejected` | 只展示个人周期重置时间与下期换版；`metric/unit=tokens`，使用 `available_tokens/required_tokens/period_end`；不得 fallback 到 cash 或返回 micro-USD 字段 |
 | 独立现金模式 | 402 `INSUFFICIENT_BALANCE` | 是，`rejected` | 只在显式独立按量产品模式使用；`metric=money`、`unit=microusd`，使用 `available_microusd/required_microusd`；不得称为订阅余额 |

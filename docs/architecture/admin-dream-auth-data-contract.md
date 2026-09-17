@@ -1,0 +1,573 @@
+<!-- [Sync] 2026-09-17: define exact legacy Dream credential adoption through DTO/service/typed Drizzle without Admin-domain merging. -->
+<!-- [Sync] 2026-09-17: register confidential service clients and freeze service-only versus dual-Bearer internal transport. -->
+<!-- [Sync] 2026-09-17: register exact-origin Dream browser form ingress ahead of the unchanged PKCE/OAuth flow. -->
+<!-- [Sync] 2026-09-16: record exact provider-sub adoption, successful Google return and the real Better Auth resource/userinfo audience shape. -->
+<!-- [Sync] 2026-09-16: publish normal database migration 0063 and document strict DTO/domain/Drizzle Gateway service-key rotation. -->
+<!-- [Sync] 2026-09-16: bind Reflections Runtime Gateway access to an Admin-issued source-fenced delegation. -->
+<!-- [Sync] 2026-09-16: fix the local auth topology at localhost for the Admin issuer, Google callback and Dream callback/resource registrations. -->
+<!-- [Sync] 2026-09-16: record Registry191 source closure; normal database activation is complete and real business acceptance remains partial. -->
+<!-- [Sync] 2026-09-16: register automatic-repair message settlement as Registry169. -->
+<!-- [Sync] 2026-09-16: register Notion connector persistence as Registry148-168. -->
+<!-- [Sync] 2026-09-16: register Dream launch Runtime scope/current/replay as Registry130-132. -->
+<!-- [Sync] 2026-09-16: register Agent-type clear/Runtime plan/prepare as Registry127-129. -->
+<!-- [Sync] 2026-09-16: register Story Workspace confirmation persistence and durable delivery as Registry120. -->
+<!-- [Sync] 2026-09-15: register Story Workspace Guidance persistence as Registry115. -->
+<!-- [Sync] 2026-09-15: register Story Workspace catalog browse/edit operations as Registry114. -->
+<!-- [Sync] 2026-09-15: register OAuth-only Story Workspace review operations as Registry111. -->
+<!-- [Sync] 2026-09-15: record Dream internal Agent output adoption of Registry109 without a contract change. -->
+<!-- [Input] Admin/Dream published baselines, PostgreSQL FK/transaction catalog, Better Auth 1.7.4 official protocol. -->
+<!-- [Output] Shared authentication, delegation, domain persistence and recovery contract. -->
+<!-- [Pos] Canonical cross-project contract owned by the Admin implementation task. -->
+<!-- [Sync] 2026-09-15: register standalone Story Workspace output persistence as Registry109. -->
+
+# Admin / Dream 认证与领域数据契约
+
+版本`0.1`。状态：源码实现、正常数据库54→64 migration、三服务角色/ACL/9项发布门槛capability 激活与 Admin/Dream 服务切换已经完成；精确旧 Google 主体采用、精确旧 Dream credential 采用、真实 Google/credential 返回 Dream 和 Device approve/deny/refresh/revoke 已通过。0063 已在正常库发布，Dream 模型入口经 Gateway key exact-scope rotation 后返回200，启用的外部MCP OAuth replacement仍待完成后复测可见模型输出。[实际191操作契约](admin-dream-operation-contracts.json)由真实Zod输入/输出与注册表生成。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin和Registry185-191 Story Workspace artifact在既有Registry169前缀后追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；该证据与真实 Google/Device/模型业务回执分别记录，不能相互替代。本稿不是完整生产部署声明。
+
+本机浏览器验收使用单一显式拓扑：Admin issuer 为 `http://localhost:3000/api/auth`，Google 回调为 `http://localhost:3000/api/auth/callback/google`，Dream origin/callback/resource 分别为 `http://localhost:5173`、`http://localhost:5173/auth/callback` 和 `http://localhost:5173/api`。`127.0.0.1` 只可作为进程内部连接地址，不能混入 OAuth issuer、redirect URI、Cookie origin 或浏览器 CSRF 判断。
+
+内部业务接口的服务身份由单独的 confidential OAuth client 提供。无用户的 background operation 使用 `Authorization: Bearer <client_credentials token>`；用户 operation 使用 `Authorization: Bearer <user delegated token>`，并由 Dream 服务端添加 `X-Ink-Dream-Service-Authorization: Bearer <client_credentials token>`。Browser、设备和任意外部请求不能选择第二个头；Dream 代理会剥离浏览器注入和上游回传。Admin 独立验证 service token 与 user token，再进入 strict DTO → Domain Service → typed Drizzle Repository → UOW；旧静态 `X-Ink-Dream-Service`/`X-Ink-Dream-Credential` 被拒绝，接口不接受 caller-selected user ID 或数据库选择器。
+
+### 旧 Dream 密码身份兼容
+
+正常数据库中已存在但尚未进入 Better Auth 的 Dream credential 只通过发布期 `auth:adopt-legacy-credential` 采纳。私有 mode-0600 配置严格包含目标 database/port/data directory、canonical Dream user ID、用途证据和 inspect 后取得的源行 SHA-256；不接受 auth user ID、account ID、Admin user、邮箱选择器、SQL、表列或事务参数。Admin 领域服务从 canonical ID 与规范化邮箱稳定派生不含业务明文的 Better Auth ID，检查 active 状态和原 Dream bcrypt 格式，typed Drizzle Repository 在一个事务内锁定源行与目标 identity/subject/credential/Admin-link 状态。空目标才创建 `identity.user`、`identity.account(providerId='credential', accountId=authUserId)`、`identity.subject_links` 和脱敏 audit；精确完整目标幂等返回，任何部分状态或 Admin link 均拒绝。源 `public.users` 及全部业务外键不修改，`admin_users`、`admin_sessions`、Admin RBAC 和 `identity.admin_subject_links` 始终不读取、不创建。默认 dry-run，真实写入必须显式 `--apply --production-approval` 并绑定 migration credential 与精确物理目标。
+
+## Registry169：自动修复消息终态
+
+Dream 检测到 Story Workspace 验证失败后，仍由现有 Registry44 `chat-user-message.persist` 保存同一条自动修复用户消息。新操作 `dream-auto-repair.settle` 只接收 `thread_id`、`message_id`、完整 `expected_identity` 与目标状态 `dispatched|failed`。`expected_identity` 包含 schema、来源 message/turn、Workflow Run、首次 repair attempt、validation code、幂等摘要和可空 project cleanup；DTO 不接受 actor、任意 metadata patch、SQL、表列或事务选择器。
+
+Admin 从 OAuth 或精确绑定该 Thread/Run 的 `server-persistence` grant 派生 actor，在一个 receipt UOW 中通过 typed Drizzle 锁定 actor-owned user message，解析并比较全部持久化身份，再执行 `dispatching -> dispatched|failed` 或 `dispatched -> failed`。相同终态重放返回 `changed=false`；身份不一致、跨 owner、错误 role、`failed -> dispatched`、未知状态和缺失消息均拒绝。写响应未知时，Dream 只按原 request ID 查询 receipt，不重发写入，也不回退 PostgreSQL。
+
+Dream 继续负责验证错误识别、自动修复消息构造、Runtime 投递、失败反馈、EventBus/SSE 与共享文件系统。本操作复用 `identity.better-auth.v1` 和 `dream.schema.unified.v1`，没有新增 schema 或 migration。operation SHA 为 `155adcb6995b63e090cbc2906383ba4b78525c1f268a430ad6f2ba449b66b159`；Registry168 prefix SHA 保持 `5b165b20d82ba48a47ada70db497df54552ec256f673f53a977e9c177a6a1961`；完整 Registry169 SHA 为 `adb90cec21e76f709d9d10638642051f33b1eb04df618f6984aaffb5c4a0962e`。
+
+### Dream Launch Runtime（注册130–132）
+
+`dream-launch.runtime-scope` 接受 Deck、Workspace 与 nullable Voice；Admin 从 OAuth 主体校验 enabled Deck、同 owner Workspace 与可选 enabled Voice。`runtime-plan` 使用闭集 `mode`：`current` 要求 Run/Thread 均为 null，并派生当前 active binding；`replay` 要求精确 `run_*` 与 source Thread，并从 actor-owned Run、Preflight 和 binding 关系派生已冻结的 revision 与 Runtime lock。调用方不能提交 actor、Plugin/version、lock、路径、placement、policy、SQL、表列或事务选择器。
+
+plan 只返回 binding projection 和本地校验所需的 installation/package/version/digest/compatibility，不返回 `artifact_path` 或 `cache_ref`。Dream 从受控共享 artifact store 推导路径并校验 digest、manifest 与 Claude CLI。`runtime-prepare` 接收原 mode identity、plan revision 和精确 evidence，在 receipt UOW 中重新锁定 scope 与 current/frozen 关系，拒绝 revision 或 evidence 漂移，幂等写或刷新 materialization；current 模式同时确保 Workspace installation，replay 模式不切换至更新的 active binding。当前部署策略不再允许已冻结 lock 时返回明确失败，Dream 不回退数据库或隐式安装。
+
+```mermaid
+sequenceDiagram
+  participant UI as Dream Browser
+  participant D as Dream Launch
+  participant A as Admin Registry130-132
+  participant F as Shared artifact + Claude CLI
+  participant P as Admin PostgreSQL
+  UI->>D: start Deck/goal/idempotency key
+  D->>A: runtime-scope + current OAuth
+  A->>P: Drizzle enabled Deck/Workspace/Voice check
+  D->>D: resolve existing idempotent Run
+  alt new launch
+    D->>A: runtime-plan(current, Run=null, Thread=null)
+    A->>P: active binding + policy lock + ready installation
+  else queued replay
+    D->>A: runtime-plan(replay, Run, source Thread)
+    A->>P: owned Run + Preflight + frozen binding/lock
+  end
+  A-->>D: binding + verification candidate without path
+  D->>F: verify artifact digest + manifest + CLI
+  D->>A: runtime-prepare + exact evidence
+  A->>P: recheck + materialization + optional Workspace installation + receipt
+  A-->>D: runtime_ready + same binding
+  D->>D: existing Preflight/Run/source/Agent dispatch flow
+```
+
+三个 operation SHA 依次为 `67dbe0a6eb7ddfd9bd1fa668e38f143add53201b725b19506af976319bba2b92`、`efd986cef6f891202c4d3ceb889d7491e8227dc097eeb009202a2be92549e9a6`、`d9c2faeb03b86cf562286f283e5bfcd3098e1da81c1b628c2e9aaa5a7b897882`。Registry129 prefix SHA 保持 `686f0668c72ca6114d894392d2dd2a2fde228b87fa31a1b858fd1dd553663881`，完整 Registry132 SHA 为 `6e0149b3d3354d081564af21349f364cc092087d5aadce0d5164654a6c005bb2`。63 个既有 Admin migration 已满足本阶段，无新 schema 或 migration。
+
+### Deck Plugin Binding 与 Agent Type（注册122–129）
+
+`deck-plugin-binding.current/history/options/validate/save` 分别接受严格的 Deck/Workspace scope、历史 limit、Plugin/version/apply target 与 expected revision。current OAuth 是唯一用户身份；actor、owner、SQL、表列、数据库连接、readiness、Runtime grant、文件路径和事务选择器不能由 Dream 提交。Admin 从 token 派生 canonical actor，并在每项 operation 内重新验证 Deck 和 Workspace 归属。
+
+四项 read 在一个 capability-checked transaction 中通过 typed Drizzle Repository 读取 binding、release、installation、runtime lock 与 materialization 状态；Service 复用既有 compatibility evaluator 并返回原 selection summary。save 先锁 owned Deck/Workspace，再锁 active binding、比较最新 revision、计算当前 compatibility，随后在同一 receipt UOW 把旧 active 记录改为 stale、插入新 revision 并推进 Deck draft revision。同 plugin/version 且 expected revision 正确时返回原记录，不增加 binding 或 draft revision。CAS 冲突只公开 current revision；selection 失败只公开 closed validation；未知提交只允许按原 operation/request/actor 回执恢复，禁止自动重发。
+
+| Operation | Scope | Input | Transaction result |
+| --- | --- | --- | --- |
+| `deck-plugin-binding.current` | `dream:read` | deck/workspace | current revision、nullable binding 与 current compatibility |
+| `deck-plugin-binding.history` | `dream:read` | deck/workspace/limit | revision 倒序历史与 latest revision |
+| `deck-plugin-binding.options` | `dream:read` | deck/workspace | published/deprecated/revoked options 与逐项 summary |
+| `deck-plugin-binding.validate` | `dream:read` | deck/workspace/plugin/version/next_run | side-effect-free selection result |
+| `deck-plugin-binding.save` | `dream:write` | validate fields + expected revision | owner lock、CAS、stale/insert、draft advance、receipt |
+| `deck-plugin-binding.clear` | `dream:write` | deck/workspace/expected revision | owner lock、CAS、可选 stale/draft advance、receipt；binding revision 不新增 |
+| `deck-agent-type.runtime-plan` | `dream:read` | deck/workspace | 服务端策略选择唯一 release/lock/ready installation；返回不含路径的验证候选 |
+| `deck-agent-type.runtime-prepare` | `dream:write` | deck/workspace/expected revision + verified plugin evidence | 重新核对策略与 installation；幂等写/刷新 materialization 并确保 Workspace installation |
+
+```mermaid
+sequenceDiagram
+  participant B as Dream Browser
+  participant D as Dream FastAPI
+  participant A as Admin Registry122-129
+  participant F as Dream shared artifact/CLI
+  participant P as Admin PostgreSQL
+  B->>D: binding request + current OAuth
+  D->>A: strict DTO + bearer + request_id
+  A->>P: Drizzle owner/compatibility read
+  alt ordinary read
+    P-->>A: state/history/options/validation
+  else binding save/clear
+    A->>P: lock + CAS + stale/insert + draft + receipt
+    P-->>A: committed binding
+  end
+  B->>D: select Dream Agent type
+  D->>A: runtime-plan DTO
+  A->>P: select policy release/lock/installation
+  A-->>D: closed candidate without path
+  D->>F: verify digest + manifest + CLI
+  D->>A: runtime-prepare + exact evidence
+  A->>P: recheck + materialization + Workspace installation + receipt
+  D->>A: existing binding.save CAS
+  A-->>D: strict DTO or closed domain error
+  D-->>B: original public response
+```
+
+前五项契约 SHA 保持不变。新增 clear、runtime-plan、runtime-prepare SHA 依次为 `9a89ec380e280fc64b67b9725a68edf3244df0f76e41df8db5fd89b3e3fd44fc`、`87a3f0497e3927aa8c8048e6bc79de1b042631f096f85184568201dce378e5f7`、`9cc1a08d15e0279ed977bb5b7ee25a5ab270cf32a4f67ded719c23e33d000716`。完整 Registry126 prefix SHA 保持 `67a18f69f0674270c5f316959a7d962ef7a8c201249f4c45ac3a780ed710eada`，完整 Registry129 SHA 为 `686f0668c72ca6114d894392d2dd2a2fde228b87fa31a1b858fd1dd553663881`。现有 Admin Drizzle schema 与 unified capability 足够，无 migration；launch Runtime 的三项后续契约见上节 Registry130-132。
+
+### Story Workspace Confirmation（注册120）
+
+`story-workspace-confirmation.submit`只接受一份完整confirmation command JSON；current OAuth `dream:write`是唯一用户身份。Admin重新解析严格命令，派生canonical actor、owned Run/Workspace/source Thread、确定性message ID、command fingerprint、Chat parts和metadata。首次提交在一个capability-checked UOW内锁定业务identity，写入普通user消息、更新Thread时间、按`running → output_validating → pending_review → confirmed`推进合法Run并写transition、result和operation receipt。完全相同的业务重放返回原消息且`dispatch:null`；第二份确认或内容变化返回409。只有实际创建持久行的提交返回即时dispatch，避免并发HTTP响应重复启动Runtime。
+
+`fact`要求OAuth `dream:read`，从owned Run派生Thread并只读accepted/dispatched状态，不获取更新锁。`claim/lease/ack`只接受配置了`story-confirmation:dispatch`的Dream服务身份，不接受用户Bearer、actor、数据库、表列、SQL、路径、状态或Runtime选择器。claim锁定指定或最早eligible消息，以exact claim ID取得pending或过期租约；lease只续期当前claim且不能超过Admin配置；ack只在Run为confirmed/completed时将同一claim标为dispatched，并保存不可逆claim摘要。同claim重试可恢复，其他claim不能覆盖；服务中断后由租约过期和reconcile接管。
+
+Dream在submit前后读取并验证共享文件系统投影，接收Admin DTO后继续使用既有same-Thread Runtime、heartbeat、EventBus与SSE。Admin不可用、scope/capability/hash/DTO不匹配、越权、状态冲突或未知提交均失败关闭；OAuth未知写只读取原request receipt，不重发POST，后台claim用同claim ID重试并由后续扫描恢复，绝不回退Dream PostgreSQL。文件路径、文件字节及`.dream`投影不穿越接口，也不进入Admin。
+
+五个operation SHA依次为`2571aa2cc9c19656c4ac90d33221da65e8a631657adebf9f535ab0fe3c76bb12`、`f455a6075161751d25a229dd64479e2a6d6ca781ea7aacfa5575ec4561f52beb`、`c049317c4383584a7574b11daea1b8c626875d589e0dbbd45dfb739c4ca8cde1`、`a5720992e5a0cbc39773481dd3f98a32e6b535c34ea24df230de6ad5646817e6`与`12aeed9beb6584354aa584ebadf7ce352d68084632c0d2c90a2c768c3a8626c6`；Registry115 prefix SHA为`58ab3cd933165dca7d6ae2d6eb50f46ff8f148e8e7eaf3dd5e46ceab1ad2ba9b`，完整Registry120 SHA为`4b0bbfa8caecd42acf0ecc89be4153b6d6fb1e124aac4ff27e937ecb14904795`。现有Run、Transition、Thread、Message与receipt结构满足本阶段，无Drizzle schema或migration变更。
+
+### Story Workspace Guidance（注册115）
+
+`story-workspace-guidance.submit`只接受`workflow_run_id`、`kind`、nullable `text`、nullable `step_id`和`idempotency_key`。`kind=free-text`要求非空text且step为空；`kind=continue`要求非空step且text为空。current OAuth是唯一调用身份，actor、Workspace、Thread、message ID、request metadata、SQL、表列、数据库、事务与Runtime选择器均不能由调用方提供。
+
+Admin从owned Workflow Run派生Workspace及`source_voice_thread_id`，锁定Run、Workspace与Thread并要求Run处于`confirmed`或`failed`。Service从幂等key派生`guide_`消息ID和canonical fingerprint；Repository用事务级advisory lock串行化该identity。首次调用插入immutable user message并更新Thread时间；完全相同的业务重放返回原request ID且不更新Thread，输入改变返回409。首次业务效果、严格结果DTO、通用audit与operation receipt在同一个UOW提交；exact request recovery只接受相同actor、Run/Thread scope和安全结果。
+
+结果只在首次提交或原receipt恢复时携带`dispatch`，其内容是已持久化的同一Thread、消息、parts及受限metadata；业务幂等重放返回`dispatch:null`。Dream提交后调用现有同Thread Runtime dispatcher；Runtime投递失败不撤销已经提交的用户命令，公开202仍报告持久化结果与`dispatched:false`。Admin不可用、权限/状态/capability/DTO不匹配或未知提交均失败关闭，不重发POST且不回退Dream PostgreSQL。operation SHA为`a061ed38d2ca10073bbb7fd078e679f072f0cbd4ff1ce900792fbf8725223727`，Registry114 prefix SHA为`dc80b77410aac58528dde77578154d9848d9dfc3bf55de4a35c8c315a81af704`，完整Registry115 SHA为`58ab3cd933165dca7d6ae2d6eb50f46ff8f148e8e7eaf3dd5e46ceab1ad2ba9b`。现有Run、Workspace、Thread、Message、receipt与audit结构足够，无migration。
+
+### Story Workspace Catalog（注册114）
+
+`story-workspace-catalog.workspace`只接受`{action:"ensure"}`或带明确`workspace_id`及`name/settings` patch的闭集写入；`story-workspace-catalog.read`以`view`闭集覆盖Story、Character、Scene的list/detail，列表只接受各自允许的query、状态、sort、order与page字段；`story-workspace-catalog.patch`以`resource_type`闭集限制三类实体的可编辑字段。调用方不能提供actor、owner、任意filter、SQL、表列、数据库、事务或路径选择器。
+
+Admin从current OAuth派生canonical actor。Repository通过typed Drizzle完成owner过滤、稳定排序、count/page、关系投影和受控patch；Scene的`story_id`只能为空或指向同owner Story。默认Workspace ensure先取得actor advisory lock，保持原最早owned Workspace或建立配置名下的新记录。read使用一个capability-checked UOW且不创建receipt；workspace/patch把业务写、严格公开DTO、实体audit、通用operation audit及receipt放在同一事务。相同request/input恢复原结果，输入改变返回409；未知结果仅允许查询原写操作receipt，read operation没有恢复入口。
+
+Dream的11个FastAPI路由保留原JSON外形、状态、过滤/排序/分页、详情关系、空patch与not-found反馈，通过Pydantic RootModel和present-fields DTO调用Admin。服务不可用、capability/响应/身份不匹配或提交未知均失败关闭，不回退Dream SQL。公开`artifact_available`只从canonical `artifact_status`派生；兼容物理列不进入Drizzle模型，避免第二个布尔真相源。Registry111前缀SHA为`01f1a9ffbd9daf44e9bc640768a13ae636d9e718cb42365ff2de1ba5c244efc3`；workspace/read/patch契约SHA分别为`3fbd32dd7343ae5008d7f71f2475db1b022a95060f2544b9dfbea606af894965`、`317ed15c2f827c44099e0641693d3dcf09bc01186e26586a9b2281226faa142b`、`0ef2cc94d01d488c46a9872efb389b43890e9267460705ebee33ac5ab47180cd`；完整Registry114 SHA为`dc80b77410aac58528dde77578154d9848d9dfc3bf55de4a35c8c315a81af704`。没有新增DDL、Drizzle schema字段或migration。
+
+### Story Workspace 审核（注册111）
+
+`story-workspace-review.transition`接受严格`{resource_type, resource_id, action, notes}`；Story允许confirm/reject/archive，Character和Scene只允许confirm/reject。`story-workspace-review.batch`接受严格`{resource_type, resource_ids, action, notes}`；批量允许三类资源confirm/reject/archive，ID经trim后必须唯一，数量为1..100。两项均只接受current OAuth `dream:write`，所有Thread/Run/Editor实体scope为空，调用方不能提交actor、owner、Workspace、SQL、表列、数据库地址、路径或事务参数。
+
+Admin Repository使用Drizzle实体完成owner、`agent_generated=1`、pending/nonarchived过滤。Story confirm要求artifact revision可用且与当前script revision一致，并在同一事务确认该Story下仍pending的generated Character和Scene；reject/archive及批量操作保持原逐资源状态语义。每个实际更新写入一条`admin_audit_logs`，业务行、逐项审计、operation receipt和通用audit在同一UOW提交。相同request ID和相同输入回放原结果；不同输入冲突；未知响应只查询原operation/request回执，不重发非幂等写入。批量响应按请求顺序返回`updated_ids`与`skipped_ids`的完整互斥分区。
+
+Dream八个公开审核入口保留原HTTP状态与响应DTO，只通过统一Pydantic consumer调用Admin；Admin不可用、capability缺失、权限拒绝、DTO不匹配或未知提交均失败关闭，不回退Dream PostgreSQL。Registry109完整前缀SHA为`48909feea302787bcbd0ed7a263212eeee163a0e3e7887acfda56cc2b421d513`；transition/batch契约SHA分别为`9f741208c6096b38f414fc5fb7c53d045d771233055dd68005571e7b47392392`、`621206fde4e9322a042940e45234fadfa4bbe01ba5febea67faf7d2ad0050667`；完整Registry111 SHA为`01f1a9ffbd9daf44e9bc640768a13ae636d9e718cb42365ff2de1ba5c244efc3`。现有Drizzle结构与`dream.schema.unified.v1`已满足，无migration。
+
+### Story Workspace 输出持久化（注册109）
+
+`story-workspace-output.store` 接受严格 `{thread_id, story}`。`story` 只包含title/description/type/content、按name唯一的Characters与按`order_index`唯一的Scenes；调用方不能提交actor、user、Workspace、database、SQL、表列、路径或事务参数。Admin从OAuth或精确Thread `server-persistence` delegation派生canonical actor，使用既有actor advisory lock与default Workspace policy串行化初始化，再锁定owner Thread并派生Deck。
+
+DTO进入一个Admin UOW。typed Drizzle Repository按`author_id + agent_session_id(thread_id) + title`复用最早Story，按当前Story关系中的Character name与Scene order复用identity，重建Story/Scene Character关系，删除重复或已移除Scene，并重算Story及受影响Character计数。Story保持draft/pending review；更新会清空旧review notes、confirmed/published时间。业务图、输出DTO、operation receipt和audit同事务提交。相同request ID和输入恢复原结果，变化输入或scope返回409；提交结果未知时Dream只读取original receipt，Admin要求合法input SHA、nonnull Thread scope与结果`chat_thread_id`一致，且Run/Editor scope均为null。
+
+输出仅为Story/Character/Scene ID、pending review状态、source Thread和Deck显示字段。解析Story输出、Runtime、turn/resume/cancel、EventBus、SSE、共享FS及`.claude-tmp`规则仍由Dream执行；post-turn调用使用精确Thread grant，内部REST调用使用当前OAuth actor。未知响应只查询同operation的原request回执且不重发；两条路径均不回退Dream PostgreSQL。当前Drizzle表与`dream.schema.unified.v1`已覆盖该聚合，不新增migration。契约SHA为`2b7d9180c78829df86289d717037ddbfd20ecee517d8213e0e71b9388cee65ed`；Registry108前缀SHA为`a631f9dbae964079af9fbd92eebd212b1d5294ebdeba9aa8e164668831352583`，完整Registry109 SHA为`48909feea302787bcbd0ed7a263212eeee163a0e3e7887acfda56cc2b421d513`。
+
+### Story Workspace Runtime 激活（注册108）
+
+`workflow-runtime.activate` 只接受 `{thread_id, workflow_run_id, remote_session_ref, verified_plugins[]}`。每个插件只包含 `package_spec`、`resolved_version`、`artifact_digest` 与 `has_manifest`；Dream 在调用前读取并验证共享工作区 launch manifest，物理路径和文件字节不穿越接口。Admin 从 OAuth 或精确 Thread/Run `server-persistence` delegation 派生主体，在同一事务锁定 owner/workspace/source Thread 匹配的 Run，校验 frozen Runtime lock、配置的 built-in adapter、Admin installation 与 materialization，并写入 Runtime load receipt/entries；Agent Session 先按现有数据库约束以配置的1..300秒lease和server owner token进入`creating`，记录已观察的SDK Thread后转为`active`并清除lease/owner，再执行queued→running Run CAS、transition、operation receipt 和 audit。调用方不能提供 actor、workspace、table、column、SQL、artifact path、runtime node、lease 或 placement policy。
+
+placement、creating lease 与 built-in adapter policy 只从 Admin `DREAM_RUNTIME_ACTIVATION_POLICY_JSON` 读取。queued 激活缺少安装、materialization、Session owner转换、CAS 或证据匹配时返回409并回滚整个UOW；已处于 running/output_validating/pending_review/confirmed 的 Run 会重新校验 materialization、active Session及其`remote_session_ref`后返回 `replayed:true`，不要求安装仍处于ready，也不追加生命周期记录。相同 request ID 恢复原结果，输入或Thread/Run scope改变返回409；Dream收到未知写结果时只查询原receipt，不重发非幂等写。Dream保留Runtime进程、turn/resume/cancel、EventBus、SSE与共享文件系统。当前表和 capability 已存在，无Drizzle migration。
+
+### Managed MCP Workspace Scope（注册107）
+
+`workflow-managed-mcp-scope.resolve` 只接受严格 `{thread_id, workflow_run_id}`。Admin 从 OAuth 或精确 `server-persistence` delegation 派生主体和实体范围，在同一 read UOW 内校验 Run creator、source Thread 及 Story Workspace owner，返回 `{thread_id, workflow_run_id, workspace_id}`。调用方不能提供 actor、workspace、表、列、SQL、路径或 runtime node。Dream 使用返回的 workspace scope 加载原有 managed MCP snapshot；MCP配置应用、Agent Runtime、SSE与共享文件系统不迁入Admin。Admin不可用、capability缺失、实体不匹配或DTO错误时失败关闭，不回退Dream PostgreSQL。
+
+### Managed MCP 数据领域（注册134-147）
+
+十四个具名操作覆盖 Server list/get/create/update/delete、App settings get/update、加密 credential get/upsert/delete、discovery snapshot get/save 和 import receipt get/import。输入使用严格 Zod DTO；actor 由 Admin 根据 OAuth principal 或 `server-persistence` delegation 派生，调用方不能提交 actor/user、SQL、表列、连接、事务或明文凭据。远程 endpoint 只允许无 userinfo、query、fragment 的 HTTP(S) URL；stdio 只接受已配置的 profile key。凭据接口传输 Dream 已使用 AES-GCM 封装的 ciphertext/iv/tag/fingerprint/key version，Admin 不接收解密密钥也不执行第三方 MCP OAuth。
+
+`ManagedMcpRepository` 使用现有 Drizzle schema 完成 owner/workspace 可见性、Workspace owner 校验、Server/App revision CAS、配置变化时 credential/discovery invalidation、snapshot TTL 与 canonical hash 计算、import source serialization 和 receipt 持久化。snapshot 摘要是 Admin 存储派生值，不由 Python 调用方提交，避免跨语言 JSON 数字编码影响业务请求。数据查询与变更均使用 typed Drizzle；固定 `pg_advisory_xact_lock` 只用于相同 import/request 的事务串行化，不构成通用 SQL 接口。所有写操作在同一个 Admin transaction 中提交业务变更、operation receipt 和 audit；响应未知时 Dream 只能按原 operation/request ID 查询 receipt，不能盲目重试。
+
+浏览器产品调用使用 service-bound OAuth 且 `authority:null`。Agent Runtime 调用必须提供与 bearer 完全一致的 `{thread_id, workflow_run_id}`；Admin 还会校验 `server-persistence` purpose，并从 owned Run 推导允许的 Workspace。Dream 继续负责 MCP SDK discovery、外部 MCP OAuth 状态机、credential 加密/解密、Runtime snapshot、Agent Runtime、SSE 和产品页面。既有 `dream.managed-mcp-resources.v1` 与 `dream.mcp-app-connection-settings.v1` capability 已覆盖数据结构，因此不新增 migration。Registry133 prefix SHA 保持 `951a3ee9d26354d0094dafec6233a13638a430672ddacd730cefc95f654b5ec3`，完整 Registry147 SHA 为 `73a50db695af5170765f8473179b8a8dacd817c5c457161d75bec5b97c1e32f1`。
+
+### 工作区插件元数据（注册106）
+
+`deck-workspace-plugins.resolve` 接受严格 `{thread_id, profile}`，其中 profile 只能是 `standard` 或 `story_workspace`。Admin 从 OAuth principal 或精确 Thread delegation 派生 actor，在一个 read UOW 内校验 Thread 与 Deck owner，按 `order_index, created_at, plugin_installation_id` 返回 enabled Deck refs。Story Workspace adapter 的 package、marketplace 与 nullable version 只从 `DREAM_WORKSPACE_PLUGIN_POLICY_JSON` 读取；Repository按 `installed_at DESC NULLS LAST, created_at DESC, id DESC` 返回 latest status 与首个 ready 候选。输出不含 artifact path/bytes、workspace path、SQL selector或Runtime参数。Dream校验本机artifact digest并负责共享文件系统复制、freeze/repair、launch manifest、Dream surface、Runtime与SSE；Admin不可用、配置缺失或DTO不匹配时禁止回退Dream PostgreSQL。
+
+### 默认 Deck 插件候选（注册104）
+
+`deck.default-plugin.resolve` 只接受严格空对象。Admin从 `DREAM_DECK_POLICY_JSON` 取得默认package/version，Repository只查询ready的精确匹配，并按 `created_at DESC, id DESC` 稳定选择一行。输出是nullable installation，非空时只包含 `plugin_installation_id`、`package_name`、`marketplace`、`resolved_version`、`artifact_digest` 与原始 `compatibility_json`；调用方不能提供actor、配置、候选、evidence或物理选择器。
+
+操作要求OAuth `dream:read`、null entity scope及identity/三个既有Deck capability，不生成receipt/audit，不读取artifact或执行Claude CLI。Dream后续使用这六字段完成本机artifact/CLI校验，并缩减为已有四字段evidence；现有 `deck.create` 与 `deck.reconcile-default` 在写事务内继续按安装ID、Admin policy package/version、digest和ready状态重新匹配，因此读写竞态失败关闭。Runner-owned loopback PostgreSQL已用只有installation/capability SELECT的随机DATA角色验证exact/absent/unready/mismatch、同时间ID稳定次序、raw compatibility、无写入与完整cleanup。无需migration；Dream consumer与正常Deck验收pending。
+
+### 当前用户图片历史（注册103）
+
+`picture-history.list` 接受必填的 nullable `start_date`、nullable `end_date` 和非负安全整数 `limit`；日期必须是真实 `YYYY-MM-DD`。Repository只查询OAuth canonical actor，范围端点包含在内，按日期倒序并用行ID稳定同日次序，缩略图为NULL时回退原图；输出保留 nullable prompt 与 PostgreSQL 时区/微秒时间。无边界的普通列表和带边界的范围列表共用这一操作，Dream负责维持普通列表把空prompt映射为`""`的公开差异。
+
+`picture-history.full` 只接收一个严格日期，并在当前actor同日行中按创建时间倒序读取一张原图，无记录返回 `{image_base64:null}` 供Dream映射原404。两项均为OAuth `dream:read`，entity grant、friend/user/SQL/table/column selector、缺少identity/unified capability和畸形存储投影全部失败关闭。它们不执行好友关系授权，不生成receipt/audit，不新增migration、写操作或文件系统副作用。Runner-owned loopback PostgreSQL已用只有Picture/capability SELECT的随机DATA角色验证owner隔离、范围、fallback、重复日期、同日最新与完整cleanup。Dream三个公开路由替换与正常账户验收pending。
+
+### 本地数据导入与首次登录（注册101）
+
+`local-data.import` 接受严格规范化的 Session、Picture、Preferences 和 Report 集合。Editor、config 和 report data 以已验证的 JSON object text 穿越边界，Admin只校验而不重新编码，因此 bigint、`1.0`、Unicode和未知字段原文保留。Report `timestamp` 是带时区RFC3339；Dream必须把旧安全整数毫秒转换后发送，Admin将其写入 `analysis_reports.created_at`，不能接受后丢弃。Preferences 四字段执行原全量import替换，公开计数按非空字段保持0–4。
+
+Handler从OAuth principal派生canonical owner，并在identity/unified capability满足后开启一个UOW。Repository先锁定全部已存在Session ID；同owner按原name/editor state覆盖，任何foreign owner冲突在其它类别写入前拒绝。Picture与Report插入、Preferences替换、result receipt和audit在同一事务。相同request恢复原结果，payload变化409，并发相同request只有一次业务效果；未知COMMIT只查original receipt。`first-login.complete` 对缺失行insert 1、现有行update 1、重复1仍返回 `{success:true, first_login_completed:1}`，不修改其它Preferences字段。当前schema已覆盖这些语义，不新增migration。Dream三旧入口替换与正常账户验收仍pending。
+
+### 创建与重试合同（注册72，独立隔离验证）
+
+`workflow-run.create` 只接收 workspace_id、workflow_preflight_id、preflight_token、idempotency_key 与全NULL或完整 source_voice_thread_id/source_message_id/source_message_time。`workflow-run.retry` 只接收 workspace_id、workflow_run_id、workflow_preflight_id、preflight_token、idempotency_key，原来源不能替换。二者输出完整 `{run: WorkflowRun}`，OAuth dream:write 与 exact identity/unified0033 capabilities 必需；entity bearer不能创建或重试。Run key按原255 Unicode码点计数，stored display保留原Pydantic control/BOM接受规则，request另有原Python blank拒绝；旧70schema/hash不变。
+
+Fresh创建在一事务内保存初始preflight1 Run、token map/PF consumed CAS、初始Transition1、queued2/Transition2和result/audit；fresh semantic只消费新PF并映射旧Run，consumed原token仅完整scope/key/fingerprint匹配时恢复旧Run。Retry保留原只读rollback后clean write，并重复terminal/source/current owner。原回执GET仅operation/request ID与OAuth，从结果推导owned workspace/Run/Thread、重验current immutable/frozen/source facts，返回原bounded DTO且不签发token；absent不推断rollback。新SHA create `531d41a45a7a745b120a83c57a88bdb0cf40ffcdc52d245d56bc0d372342eb08`，retry `01c72910ed713ce10c86e03c426f98549c81d1991cbaf05415b6bbcdbb8e9bd7`。代码注册与deterministic/source门禁不等于公开、真实模型或全领域验收。
+
+### Launch 三个组件合同（注册75，独立隔离续验通过）
+
+三个v1 write操作均要求OAuth `dream:write`及精确identity.better-auth.v1和unified0033；不接受entity grant，不新增DDL。`dream-launch-source.ensure`只接workspace、Deck、可空Agent、goal和业务key，由current actor派生UUIDv5 Thread/message、fingerprint、隐藏metadata与PG微秒时间；原application在Agent为NULL时省略fingerprint payload中的agent_id，隐藏metadata仍保存agentId:null。原source事务与receipt/audit同提交，replay保留parts/dispatch metadata/Thread ordering。
+
+`dream-launch-dispatch.claim`只接owned workspace/Run与Dream原纯函数生成的instruction_text；current owned Run/binding/Thread/message完整事实派生Context10和issued claim，raw canonical overlay保持bigint/1.0/-0.0。claim提交后由Dream读取Voice并执行Runtime，`dream-launch-dispatch.finish`独立接issued claim与accepted布尔，将matching claim固定映射pending/dispatched，stale claim no-op。原source/finish GET恢复当前owner有效的历史bounded事实；claimed=true GET只在stored matching lease仍fresh且parts/context/Runtime metadata一致时恢复，finish后或过期409 DREAM_LAUNCH_CLAIM_STALE，不重新授权Runtime。
+
+SHA source `cb498be127a6aca92c9e6e0cde099c9c80cf78ca2486186e9d043457c2263503`，claim `958549a9bfe4b02d8b31e1e538c81ffad020bb4525a328f542f865b377e8ec43`，finish `5aa3b738bef5319ee705f5851d83588e1d18dcaf37bdc5789267494fec480f2e`。Actual application-source修正2及受影响GET24、公开POST3/GET7和whole type/lint通过；新public harness static type/lint通过；首full公开query断言exit1保留，严格continuation只读核对唯一accepted Source后，余37POST/21GET/974断言与17表保护通过。Primary11故障/3实际COMMIT-loss补验exit0/308，自有22fault对象cleanup及独立SELECT-only preservation19通过，不声明单次38PASS。完整Agent/model/binding准备、failure recorder、Runtime和真实Launch22仍未完成；可空Agent的底层组件测试不代表完整application允许缺Agent启动。
+
+### Launch replay 与生产组合（注册133）
+
+`dream-launch-replay.lookup` 是 OAuth `dream:read` 的只读操作，严格复用 `{workspace_id, deck_id, agent_id, goal, idempotency_key}`。输入不接受 actor、Run/Preflight/source ID、SQL、表列、路径、锁或事务选项。Handler 从 Better Auth OAuth principal 派生 canonical actor；Service 先通过 typed Drizzle Repository 校验 owned enabled Workspace/Deck，再按 actor、Workspace 和业务 key 查找原 Run。无记录返回 `{replay:null}`；有记录时重新计算确定性 Thread/message/fingerprint，校验隐藏 source、Run source tuple、Preflight creator/Deck 及 `{goal}` canonical input hash，任一不一致返回幂等冲突。输出只含原 Run、Preflight、Thread 与 message ID。
+
+Dream 生产启动顺序为 runtime scope → replay lookup → current 或 frozen Runtime plan/prepare → source ensure → Preflight execute/read → Run create/read → dispatch claim → Dream Agent turn → dispatch finish；终止错误先 `workflow-run.fail`，确认 failed 后再写 failure envelope。所有写操作保留各自事务与 request ID，结果未知只读取原 receipt，不重发。Voice prompt 使用现有 `deck.detail`。Admin 的 Zod DTO、Service、typed Drizzle Repository 负责全部 SQL、权限过滤、锁与提交；Dream 仅使用 Pydantic DTO，保留 Runtime、EventBus、SSE 和共享文件系统。该组合不新增 schema 或 migration。
+
+Operation SHA 为 `af4d06490d6d030d9aa0a3b68460c15813786130a85c5133b438439a3fcb11fb`；Registry132 prefix SHA 保持 `6e0149b3d3354d081564af21349f364cc092087d5aadce0d5164654a6c005bb2`，完整 Registry133 SHA 为 `951a3ee9d26354d0094dafec6233a13638a430672ddacd730cefc95f654b5ec3`。Focused 18 项测试与 script-owned restricted-role PostgreSQL 9 项集成测试通过，包含 found/missing/changed-goal replay、ACL fence、63 migration 应用和自有数据库清理。真实 Google、正常账户和真实模型 launch 仍单独验收。
+
+### 默认 Workspace 合同（注册76，独立公开/故障/保留隔离合同通过）
+
+`workspace-default.ensure` 严格接 `{}` 并输出 `{workspace_id:string}`，旧text ID不改为UUID。服务绑定OAuth dream:write、exact identity1/unified0033必需，不接受entity grant或actor/settings/default selectors。当前actor初始化锁先于original receipt锁；已有owned最早created_at/id记录按原顺序返回（不新增status filter），否则原default label/empty settings与server UUID在同UOW保存，result/audit同提交。原GET只 operation/request，重验empty inputSHA/allnullscope/current canonical owner；不存在明确absent，已转移资源403。
+
+SHA `5fb0f70b1790979687090e6c04dd837f24ff0a4c0598d95d5085117e65aa2b95`；实际76生成与全部旧75 FULL descriptor/独立PFreceipt/delegation byte parity通过，新入口11/原GET领域9和whole type/lint通过。Root candidate21 source/unit是独立证据。Primary具名隔离target上的实际 public wrapper及 `node --import tsx tests/integration/adminWorkspaceDefault.contract.ts` exit0：14case、22原GET、347断言、17fullstate，首次3同original及2不同original共同启动，whole original helper与完整row/参数、legacy/tie/archived/currentowner及digest/scope拒绝通过。三事务fault/实际final-COMMIT-loss90及独立preservation159补验通过；正常业务/Runtime未执行，不据注册数声称全生产SQL关闭。
+
+默认Workspace独立closing实际 `workspace76-atomic-recovery.mts` exit0/90：三Workspace/receipt/audit INSERTfault均503及protected17完整回滚，实际final COMMIT单次response loss后originalGET/replay200、Workspace/receipt/audit各一条；自有六fault对象cleanup PASS/none/history保留。SELECT-only `run-verify-workspace76-preservation.py` exit0/159保留旧125/首准备17表fullrows与五个positive originals。首fixture准备exit1及续准备exit0/16setup/17exact记录分别保留。Primary释放76冻结；这些独立技术范围不代替正常Google/业务/模型验收。
+
+### 失败元数据合同（注册77，独立公开/故障/保留隔离合同通过）
+
+注册77阶段全部已释放76完整描述/requirements/capability与独立PFreceipt/delegation字节保持。新增 `dream-launch-failure.envelope` strict `{workspace_id,workflow_run_id,error_code}` 输出完整 `{updated,workflow_run_id,thread_id,message_id,error_code}`，SHA `5967ae40f60858553f27f43dd83f021f93928e7c25c582d2e711d68df4d4e042`、schema1/write/dream:write/backgroundnull/exactidentity1/unified0033，无DDL。POST fixed server codec，原Run.fail已提交失败lifecycle后此metadata独立UOW保存fixedfailed/error/removeclaim及receipt/audit；OAuth或原Run/Thread persistence grant重复当前owner/source/µs验证。原GETOAuthwrite onlyoperation/request，通过原outputerror重建inputSHA/currentworkspace/source/scopes，历史completion不授予Runtime。实际continuation恢复6原结果、拒绝16 POST、完成27 GET、0正向POST、556断言；三事务fault与实际final-COMMIT loss通过126，SELECT-only preservation通过293并清理全部自有fault对象。该范围仅关闭已FAILED Run后的metadata组件，不代表新FAILED转换、完整启动或全域真实验收。
+
+### SystemConfig 合同（注册80，公开与消费验收 pending）
+
+`user-system-config.get` strict `{}`→`{config_json}`，`user-system-config.patch` strict十字段normalized patch→`{success:true}`；两者仅允许service-bound live OAuth，分别要求dream:read/dream:write和all-null Thread/Run/Editor scope。PATCH在同一identity/unified UOW内锁定当前`user_preferences`行，只更新`system_config_json`与时间，并将result/receipt/audit一起提交。Original GET仅接operation/request，要求OAuth write、合法小写SHA与null实体scope，只返回stored success，不读取或重放后来配置。
+
+`thread-system-config.get` strict `{thread_id}`→raw `{config_json}`，重复当前owner SELECT。OAuth使用null实体scope；delegation必须是同Thread的`server-persistence`、Editor为null，nonnull Run必须等于`authoritativeWorkflowContext`当前Run。固定`userSystemConfigCodec.py`只接受server选择的read/merge action，保留bigint/1.0/-0.0/Unicode和未知stored keys；请求不能选path/executable/SQL/table/actor/Run。三SHA依次为get `6e9b75cccbc6e843a9c25a0cbec041fef4c6dff3919af8449eff03c23e779dd5`、patch `4f596ea05fe6adc5d881f5484b41ce40ae3a08358a7332f1b3b964112bd38b72`、Thread get `50ca46f131005c0e9831797fc9f2590984da8c8878fec92db61656ec9eefec8b`；artifact SHA `661823a292301a67b70ccff8068492a035cc6a3b90fe7abe4eb623f4bc161879`。Prior77 full descriptor、Preflight receipt、delegation artifact和Failure77 harness保持；当前只有静态合同门禁，公开PG/并发/故障/保留、Dream consumer和正常模型验收仍pending。
+
+### Reflections Section Config 合同（注册83，公开与消费验收 pending）
+
+`reflections-section-config.get` 只接 `{section}` 并输出原始 `{prompt_files_json:string|null}`；缺行返回null，空存储文本保持原业务的空对象结果，合法legacy object文本保持bigint、`1.0`、`-0.0`、Unicode和未知key字节。`save`只接section与Dream route已按五个允许文件名过滤的`prompt_files_json`，输出`{saved:true}`；`delete`只接section并输出`{deleted:boolean}`，缺行是成功no-op。三个操作仅接受service-bound live OAuth、对应`dream:read`/`dream:write`和all-null实体scope，要求exact identity/unified capability；不得传user/actor、path、SQL、default/effective或Runtime selector。
+
+save/delete与result/receipt/audit在同一Admin UOW提交；相同request ID/输入恢复原结果，不同输入冲突。Original GET仅接write operation/request ID，以相同service与当前subject查找schema1、合法stored inputSHA、all-null scope的完整bounded result，不读取或重放后来配置。Dream继续拥有三个section/五文件策略、静态default、effective合并、空白处理、Agent编排和共享FS。三个SHA依次为get `2e1057f1cdd9248c2dbd603057310399e7ea5a51c90c601405ebb86868ccb640`、save `dc2ba4ee442618b4fd39d75b8ddf9ca834b25913d85e4bee0cba76d20b4b047f`、delete `8b03792f711e79c1d12343a93980da91d7675d280f9713ab454e6369b2b45967`；Registry83 artifact SHA `2ce9712bf6d5d16867ae4cc2d68c167b834cacee45d25b647d1ea18f7367d566`。Corrected57/57、whole type/owned lint/AST/JSON/Markdown/diff和生成parity已通过；旧80完整descriptor与独立Preflight/delegation字节保持。具名隔离公开组合48逻辑请求、258保留断言和2568事务/恢复断言通过；五注入故障保持125关系逐行回滚，save/delete各一次实际final-COMMIT响应丢失均由Original GET及同input replay恢复且无重复effect/receipt/audit。Dream consumer仍pending；普通数据库、Provider/model/Runtime/FS未执行。
+
+## 背景与问题
+
+Admin baseline `017f3ac` 使用自有管理 Session，Product API 使用 Dream 签发的 HS256 5 分钟 token；Dream baseline `7d38715c` 在 database、UOW、Notion、MCP、Plugin、Workflow、Story、后台资源 provider 和 startup/health 直接访问 PostgreSQL。迁移清单见 [Admin 初筛](dream-database-access-inventory.json) 和 Dream 任务 `docs/exec/dream-admin-data-inventory.json` 的函数/事务明细（跨 worktree依赖，交付时需纳入发布记录）。
+
+旧 `database-schema-authority.md` 的 Dream repository/事务所有权与本次用户目标冲突。本次 Admin 接管全部生产 SQL、ORM、池、数据权限与持久化；Dream 保留产品交互、FastAPI 编排、Agent Runtime、SSE/EventBus、admission/leases 与共享 FS。
+
+## 目标与边界
+
+Admin 是唯一认证中心和数据库服务。没有任意 SQL endpoint、表列 CRUD、任意外部 user_id、Google token/ID token 当 API bearer、部署名称旁路或 Dream PG fallback。后台数据接口不能成为 Runtime control/restart/kill/shell 通道。Schema/DDL 仍仅由 Admin Drizzle 前向迁移管理。
+
+## 概念与规则
+
+### 主体与能力归属
+
+| 能力 | 当前 | 目标 | 调用方式与回归 |
+| --- | --- | --- | --- |
+| Google、Dream Account/User/Session | Dream 认证 | Admin Better Auth/OAuth Provider | 内置 socialProviders.google；Dream 旧业务PK不变 |
+| OAuth client/code/token/device/refresh | Dream 自有 | Admin OAuth Provider | API接受目标 access token；设备 OAuth grant |
+| Admin 管理认证与授权 | Admin 独立 Session + RBAC | Admin `admin_users/admin_sessions/RBAC` | 不读取Dream user/subject link；每次请求验证active member与permission |
+| 数据权限/SQL/事务 | Dream repositories + Admin domains | Admin domains | 服务身份与用户委托分别检查，实体行过滤 |
+| Agent执行/流事件/leases | Dream | Dream | 数据持久化成功后原顺序发SSE，原失败语义 |
+| 资源default/desired/effective | Admin desired + Dream PG provider | Admin desired + Dream HTTP provider | default/effective/LKG仍Dream composition root拥有 |
+| FS/线程workspace/Notion拉取 | Dream | Dream | Admin保存元数据/权限，Dream执行已校验FS路径 |
+
+### PostgreSQL 区域与角色
+
+| 候选 | 证据 | 决策 |
+| --- | --- | --- |
+| 同实例不同database | users、platform投影、Story、Deck、Thread、Gateway/账本存在跨表FK和事务；PG无跨database FK | 不采用：需重复身份或分布式补偿，扩大数据搬迁 |
+| 同database整域迁入dream schema | 跨schema FK保留，但需同步所有Drizzle查询、固定function/trigger引用和旧catalog契约，兼容视图增加第二访问名 | 当前不采用整域搬迁，额外DDL与兼容面不增强同一受限role的表级授权边界 |
+| 同database identity独立schema、public按表职责、dream专用请求/回执 | 保留已有OID/PK/FK/原事务，独立credential与实际表/列/function ACL能拒绝跨领域权限 | 采用最小充分方案；正常credential与应用actual-role检查已通过，访问隔离按本机目标激活 |
+
+确定的数据归属为：`identity` 保存唯一 Better Auth 协议/主体映射/BFF/委托；既有 Dream 业务表继续在 `public`，以领域表归属和表级 ACL 与 Admin/Gateway/Billing 共享控制表区分；`dream` 保存专用operation receipts和0060 immutable Preflight request绑定；`drizzle` 保存唯一迁移收据/capability。不存在已完成的整域物理dream schema迁移。users保留原PK/ID，identity显式映射FK引用它。选择与逐表范围见[数据库区域方案](admin-dream-data-ownership.md)。
+
+角色合同：专用migrator拥有schema/DDL，Admin auth服务角色只访问identity和主体映射/必要users读取，Admin Dream服务角色只读写其明确归属的public业务表及dream专用请求/回执，并读取显式共享控制投影，Admin控制面角色不因此得到全部Dream表写权限；Dream应用没有PG DSN、登录role或连接能力。所有app角色非superuser、非createdb/createrole、NOINHERIT、无schema CREATE且不拥有表；PUBLIC无CREATE/业务表权限。`scripts/activate-unified-auth-data-access.mjs` 默认dry-run，通过备份、目标、journal、capability和私有四role manifest门禁；只有显式 `--apply --production-approval` 才创建三个LOGIN服务role与Dream NOLOGIN role、应用共享ACL计划并执行实际credential/allow/deny probes。未满足任一门禁fail closed；runner已实现不表示正常库已执行。
+
+`drizzle/data/auth-access-policy-plan.mjs` 是两类发布入口的唯一语句计划。`drizzle/data/auth-access-policy.mjs` 只接受私有0600配置和既有具名可删除目标；正常库入口则额外绑定停机备份与人工批准。auth仅协议/BFF读写、subject和必要active canonical/platform/RBAC列读取、登录timestamp和append audit、受限注册函数EXECUTE；不直接写canonical/订阅/账本/历史正文。data持有Dream领域表与runtime/receipts、必要profile/provider-label/public-key/Gateway授权列，排除旧auth、Provider密文、账本/canonical写。control仅bootstrap Admin RBAC/identity权限；当前其他既有Admin API credential切分仍需全域收缩验证，不能以runner存在宣称全部ACL完成。协调已完成隔离 runner、公开业务合同和本机正常库 actual-role 激活；真实 Google、完整 Device 和模型业务验收仍部分待执行，详见验证矩阵与跨项目真实验收回执。
+
+0054–0058先在协调隔离PG通过normal Drizzle replay；0055 creation CHECK 对NULL hash的三值缺口由0056前向修复，历史字节不改。0056 `identity.register_canonical_user` 以固定pg_catalog search_path和qualified表验证BA User、旧email/link冲突，插users触发原Free/default-model初始化并验证正allowance/activation，subject link同事务；PUBLIC EXECUTE撤销，调用前精确registration-integrity capability。0057 expand purpose/真实Editor Session FK，0058以显式非NULL和无NULL-array validation前向关闭ambiguity后才激活 runtime-purpose capability；冻结候选的升级/重复/并发/空库/两partial异常回滚、实际purpose拒绝和Session限定cascade均通过。随后本机正常业务库完成至0062的journal/capability与角色ACL激活。0063 只增加 Reflections authority source 列/FK/CHECK 和精确 capability；具名隔离库已从0000重放至0063并验证64条receipt，正常库随后以前向方式应用0063并复核64/64 receipt与9项发布门槛capability。该结果不替代旧主体 adoption 或真实登录验收。
+
+### 认证拓扑（双方已同意）
+
+Dream浏览器全部REST/SSE/Voice WebSocket经Dream同源BFF；Google登录发生在Admin origin。用于Dream OAuth授权页的Better Auth Session为host-only、HttpOnly、SameSite=Lax，Secure按明确URL HTTPS能力配置；Admin管理后台另用独立Admin Session cookie，两者不互相授权。跨站不共享cookie、不使用通配CORS。Dream cookie只含随机opaque browser handle，tokens保存在Admin加密browser-session领域，绑定服务client/origin/有效期。浏览器不保存access/refresh token。
+
+Dream BFF start创建state/nonce/S256 PKCE verifier并放签名HttpOnly短期cookie；return_to只允许同源相对路径，阻止scheme、协议相对、反斜线、编码绕过。转Admin authorization code flow；callback核验state、issuer、callback exact URI、PKCE、单次cookie后由server兑换handle。所有写入验证exact Origin + BFF CSRF token；BFF代理只用配置的Admin/Dream backend，不接任意URL/用户头，WebSocket握手同样验证Origin/handle并服务端委托；连接不能把refresh/token放URL。Admin token端点按OAuth client认证而非依赖浏览器cookie。
+
+```mermaid
+sequenceDiagram
+ participant B as Browser
+ participant F as Dream BFF
+ participant A as Admin Auth
+ participant G as Google
+ B->>F: start(relative return_to)
+ F->>F: state/nonce/PKCE HttpOnly transaction cookie
+ F-->>B: redirect Admin authorize
+ B->>A: authorize(code,S256,resource,state)
+ A-->>B: Admin login
+ B->>A: Google sign-in
+ A->>G: built-in Google OAuth
+ G-->>A: callback + provider subject
+ A->>A: Account/subject conflict check + Session
+ A-->>B: code + state + iss to registered Dream callback
+ B->>F: callback
+ F->>F: validate state/iss/redirect + consume transaction
+ F->>A: server code exchange→encrypted browser handle
+ A-->>F: handle + expiry
+ F-->>B: host-only HttpOnly handle cookie + relative return
+```
+
+Better Auth `sub`是其Dream OAuth User ID，不能覆盖reserved claim。显式 `identity.subject_links(auth_user_id → users.id)`保存Dream canonical映射。验证签名后用映射查Dream用户及active platform投影；不能把sub当任意数字user_id。已有Google `oauth_accounts(provider,provider_sub)`是唯一旧Dream账号映射证据；同邮箱不自动合并，冲突阻止登录并给明确恢复步骤。Admin operator 直接使用`admin_users/admin_sessions/RBAC`，不通过Dream `sub`、canonical user、邮箱或Google Session取得管理权。`identity.admin_subject_links`只作为迁移历史保留，不参与新登录路径。迁移旧Dream Account凭据必须加密，历史PK/关系保留；旧token在cutover撤销，不迁作新OAuth grant。
+
+正常本机目标已经执行一次严格旧 Google 采用：owner-only `0600` DTO绑定精确database/port/data directory、canonical user、legacy Google row和两份源指纹；发布 CLI 默认dry-run，只有`--apply --production-approval`写入。Domain Service按精确`provider_sub`稳定派生Better Auth IDs，typed Drizzle Repository在同一事务创建`identity.user`、Google `identity.account`、Dream `identity.subject_links`和脱敏audit。旧canonical/Google行修改数为0，Admin link创建数为0，重复apply为`already-complete`。随后真实Google callback创建Session、browser session与refresh lineage并返回Dream；同一主体没有Admin membership。
+
+实际Better Auth 1.7.4 access token的`aud`是数组，包含已注册Dream resource和`${issuer}/oauth2/userinfo`。Dream Resource Server要求Dream resource存在，且数组只能由这两个配置派生值组成；标量形式仍必须精确等于Dream resource。任意额外resource、userinfo-only、重复、空值或非字符串受众均返回`INVALID_TOKEN_RESOURCE`，签名、ES256、`at+jwt`、issuer、最长300秒、client、scope、JWKS缓存和unknown-kid限速不变。
+
+### Auth 协议路径与配置
+
+Better Auth与`@better-auth/oauth-provider`配对锁定`1.7.4`，peer `better-call1.4.0/core1.7.4/utils0.4.2/better-fetch1.3.1`已registry核验；安装源码完成核验前列出的选项需验证。使用`jwt()`、`oauthProvider()`、`oauthDeviceAuthorization()`；disabledPaths包含Session JWT `/token`与Session device兑换 `/device/token`。
+
+| 入口 | 合同 |
+| --- | --- |
+| `/auth/dream/password` | Dream-rendered browser form only；exact configured Origin + strict login/register DTO + relative return；Admin transaction invokes Better Auth email APIs and redirects to Dream `/auth/start`；Dream server never receives credentials |
+| `/auth/dream/google` | Dream-rendered Google entry only；exact Origin + relative return；Admin invokes built-in `socialProviders.google` with account selection and provider-signed state；success/error returns to the same Dream product context |
+| `/api/auth/sign-in/email`、`sign-up/email` | 原密码/注册保留，原Dream六字符minimum、bcrypt/Admin scrypt兼容；不新增Google emailVerified门槛 |
+| `/api/auth/sign-in/social` | Google内置provider，允许的callback由严格origin/redirect配置 |
+| `/api/auth/callback/google` | Better Auth OAuth state/provider签名验证 |
+| `/api/auth/get-session`、`sign-out` | Admin浏览器Session；不会直接作为Dream API认证 |
+| `/api/auth/oauth2/authorize` | code only、S256、注册exact redirect、resource |
+| `/api/auth/oauth2/token` | auth code/device/refresh grants，form-urlencoded |
+| `/api/auth/device/code` | 注册CLI公有native client，无secret；scope/resource受限 |
+| `/api/auth/device`、`device/approve`、`device/deny` | user_code检查与登录后的approve/deny；不得显示device_code |
+| `/api/auth/oauth2/revoke`、`oauth2/introspect` | 按安装实现的适用撤销/客户端权限；JWT不可虚报即时撤销 |
+| `/api/auth/jwks` | 公开非私钥JWKS；kid轮换 |
+| issuer discovery | issuer=`BETTER_AUTH_URL` (exact origin + `/api/auth`)，公开metadata需转到handler |
+| `/auth/sign-in`、`/auth/consent`、`/auth/device` | Admin登录/授权/设备交互页；保留管理UI独立权限 |
+| `/api/admin/auth/login/logout/bootstrap/me` | 独立`admin_users/admin_sessions`管理会话；每次检查active member与RBAC，不读取Dream identity/subject link；旧HMAC发行/lookup退役 |
+
+统一配置：`BETTER_AUTH_URL`、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_ID/SECRET`、`AUTH_TRUSTED_ORIGINS`、`DREAM_API_RESOURCE`、`AUTH_DATABASE_URL`（Admin专用身份角色）、已注册BFF/CLI client、`DREAM_DATA_SERVICE_CLIENTS`（分客户端服务间配置）、`AUTH_TOKEN_ENCRYPTION_KEY`（32byte AEAD）。URL必须HTTPS或exact loopback HTTP，无credentials/query/fragment；origin/redirect分别精确校验。secret/capability缺失503，不能生成固定test secret或环境分支。
+
+`ADMIN_CONTROL_DATABASE_URL` 明确仅用于一次性bootstrap control UOW；`DREAM_DATA_DATABASE_URL` 明确用于领域UOW，无凭据fallback。browser/runtime lifetime采用明确policy配置，不能将任意30天技术常量包装产品限制。Dream canonical adoption 通过显式 manifest/source fingerprint/Google-sub-FK或Dream credential证据；同email不隐式提升或合并。Admin member 不进入Dream adoption，不要求两类密码相同，也不把任一密码复制到另一业务域；历史行/PK/hash保持不变。
+
+Access token使用JWT ES256、typ=`at+jwt`、issuer exact、audience exact `DREAM_API_RESOURCE`、exp/iat/jti/client_id/scope，最大生命周期300s；ID token和Session JWT拒绝。scope `dream:read`/`dream:write`/`product:read`/`product:write`分别显式grant；offline_access才可刷新。客户端配置值通过发布能力返回而非硬编码主机。Dream JWKS仅从配置issuer获取，缓存/未知kid受限刷新、不能按token jku/x5u访问网络。Admin每次重新检查canonical用户状态/授权；Dream在需要即时状态边界走Admin principal验证，不宣称JWT离线即时撤销。JWT退出后既发token最多保留300s，自行添加grant/session denylist如实现必须明确并测。目标scope/aud错误403或invalid_grant，签名/过期/typ错误401。
+
+### Device 与刷新状态
+
+```mermaid
+sequenceDiagram
+ participant C as CLI public client
+ participant A as Admin Auth
+ participant B as Browser
+ C->>A: device/code(client_id,scope,resource)
+ A-->>C: device_code,user_code,verification_uri,expires_in,interval
+ B->>A: verification user_code + Admin login
+ A->>A: session/origin/client/scope/user_code check
+ B->>A: approve or deny
+ C->>A: oauth2/token(device grant,client_id,device_code)
+ A->>A: atomic poll/expiry/approval/consume
+ A-->>C: OAuth access(+refresh) or pending/slow_down/access_denied/expired_token
+```
+
+重复approve/deny不改变已完成决定；并发token兑换只能一个成功，过快轮询slow_down并增加interval，expired/consumed不能复活。CLI不内置client_secret。code/user_code/token不写公开日志，设备页显示已注册client与scope及错误恢复。
+
+```mermaid
+sequenceDiagram
+ participant F as BFF or CLI
+ participant A as Admin Auth
+ participant DB as identity store
+ F->>A: refresh(client_id,refresh_token,resource,scope)
+ A->>DB: lock grant/token, verify binding/expiry/replay
+ A->>DB: rotate old→used + successor atomically
+ DB-->>A: commit
+ A-->>F: new token pair
+ Note over F,A: BFF serializes per handle; never blindly retry unknown refresh
+ F->>A: old token replay
+ A->>DB: revoke associated grant/token lineage per package behavior
+ A-->>F: invalid_grant → login required
+```
+
+严格refresh replay interval=0；BFF每handle行锁串行刷新，失去响应后查询handle状态，不能重复外部refresh。如包无法提供并发/重放原子保证，Admin领域补齐并测试后发布capability。
+
+### 服务身份、领域请求与恢复
+
+前缀`/api/internal/dream/v1`。Dream 服务端先用 `INK_ADMIN_DREAM_SERVICE_CLIENT_ID` 和仅服务端持有的 `INK_ADMIN_DREAM_SERVICE_SECRET` 调用 Admin `/oauth2/token` 的 `client_credentials` grant，取得最长300秒、`sub == client_id`且只含配置 background scope 的 service access token。后台operation把该token放在`Authorization: Bearer`；用户operation把用户delegated access token放在`Authorization`，再以`X-Ink-Dream-Service-Authorization: Bearer <service access token>`证明同一confidential client。Browser代理剥离该私有头的输入和输出；旧`X-Ink-Dream-Service`/`X-Ink-Dream-Credential`静态头直接拒绝。Admin分别验证两个token的签名、issuer、resource、client、scope和主体，再从用户token `sub`映射canonical Dream user；任一缺失或错配都失败关闭，不能从client ID、邮箱或请求体user ID推导用户。`DREAM_DATA_SERVICE_CLIENTS`是严格服务端配置：每项`{id,secret,origin,oauthClientId,redirectUri,backgroundScopes}`，其中secret只用于配置/目录校验与client注册，数据请求不传明文secret；backgroundScopes只取`capabilities:read/resource-policy:read/resource-observer:write/connectors:sync/plugins:catalog/reflections:execute/story-confirmation:dispatch`明确子集。handle绑定service client/origin/OAuth client，不能跨client resolve。后台policy/observer/startup/scheduled connector及Reflections worker只走服务scope，不能借它查询任意user数据或取得Admin RBAC。
+
+OAuth客户端目录不由Dream或浏览器动态注册。发布阶段运行`pnpm auth:provision-dream-oauth`只读取并输出脱敏计划；显式追加`--apply`后，Admin把同一份已校验配置转换为资源、浏览器public client、设备public client和client-resource关联DTO，在一个认证数据库UOW中通过Drizzle ORM幂等写入并回读校验。浏览器client固定使用Authorization Code、PKCE和无client secret；设备client固定使用RFC 8628 grant且无client secret；二者都不能绕过consent。地址、client id、resource和scope来自服务端配置。动态客户端注册继续关闭，运行时启动不执行DDL或客户端写入。
+
+| Endpoint | 输入与输出 |
+| --- | --- |
+| `GET /capabilities` | service only；`{version,auth:{issuer,jwks_uri,algorithm,resource,clients,scopes},schema_capabilities,operations}`；schema capability真实读Drizzle ledger/catalog，operations仅列实现可调用名称 |
+| `GET /principal` | service + user token；`{subject,canonical_user_id,client_id,scopes,status}`，不接受外部ID |
+| `POST /browser-sessions/exchange` | service + code/verifier/redirect_uri/transaction_id，注册BFF绑定；Admin兑换并加密存token，返回handle/expiry |
+| `POST /browser-sessions/resolve` | service + handle；锁定handle、刷新、验证有效主体，返回token/principal供BFF服务端代理 |
+| `POST /browser-sessions/revoke` | service + handle；关闭handle并适用grant撤销，重复成功 |
+| `POST /operations/{operation}` | service + user委托（或明确后台scope）；严格每操作schema；`{request_id,input}`，不接受SQL/table/column/user_id |
+| `GET /receipts/{request_id}?operation=...` | 同服务+同用户/后台scope；只读自身请求；committed/result或absent，无记录不代表未知提交已失败 |
+
+领域responses：`{data,request_id}`，错误`{error:{code,message},request_id}`；status 400输入、401身份、403scope/主体、404不存在或无权实体、409幂等/状态/CAS冲突、422领域规则、503配置/能力/数据库、504超时。错误与诊断脱敏，不回显SQL/DSN/正文/token；授权业务DTO保留原业务字段。严格请求/响应DTO（Zod）→领域服务→类型化Repository→Drizzle ORM/UOW，ORM实体与DTO分开显式映射，不返回原始rows；所有bigint/decimal标识为十进制string，时间ISO8601、null保留、页面cursor/limit明确。必要参数化SQL只在ORM事务内封装catalog/锁/复杂现有语义并记录依据，Dream只消费DTO。
+
+DTO v1：principal=`{subject:string,canonical_user_id:decimal-string,client_id:string,scopes:string[],status:'active'}`。capabilities data=`{version:'1',auth:{issuer,jwks_uri,algorithm:'ES256',resource,clients:{browser:string,device:string},scopes:string[]},schema_capabilities:[{capability,version,contract_sha256}],operations:[{name,kind:'read'|'write',user_scope:string|null,background_scope:string|null,input_schema_version:1}]}`。browser exchange=`{request_id,transaction_id,code,code_verifier,redirect_uri}`→`{handle,expires_at:ISO8601}`；resolve=`{request_id,handle}`→`{access_token,expires_at:ISO8601,principal}`；revoke同resolve→`{revoked:true}`。exchange同client/transaction唯一+input SHA256绑定，handle与tokens一起加密以原transaction恢复，不重新消费code。receipt data=`{status:'committed',operation,request_id,result}`或`{status:'absent',operation,request_id}`。
+
+operation capability还包含 `output_schema_version:1` 和 `contract_sha256`，摘要覆盖name/输入输出版本与真实JSON schemas；客户端必须核验全部字段。error仅允许已命名领域的封闭details；目前 `DECK_VERSION_CONFLICT` 的严格 `{current_draft_revision,current_version}` 保留原409反馈，未知/额外字段不输出。资源policy为configured/not_configured/invalid DTO，unavailable为503，不混淆非法持久值与连接失败。
+
+实际capabilities.auth另有required `delegations` 数组，四项descriptor分别含name/method/path/输入输出v1/hash；special Runtime routes不经generic data dispatch。全部exact identity/delegation/purpose/unified schema满足后才广告四项。物理capability与API DTO hash独立，未发布或不匹配不可尝试旧hash并行fallback。
+
+`workflow-context.resolve` 只接受 `{thread_id}` 与绑定服务的OAuth，反查完整linear retry graph、frozen source/binding/workspace、隐藏启动消息的root/source role/actor/goal/Deck/Agent/fingerprint/input hash与父/叶状态。全部事实通过后唯一active leaf输出原10字段context，valid terminal/普通Thread为null；缺/外部owned Thread无authority。冲突仅409安全code，不输出图或正文。operation容量由server policy保留256默认，与业务权限独立。
+
+`chat-user-message.persist` 接收闭集 `{thread_id,message_id,parts_json,metadata_json:null|string,title_candidate}`，raw业务JSON保持数字类别，不经JS重编码；title candidate由Dream复用原pure parts/attachment算法，Admin按原50默认policy/Python whitespace/Unicode字符只填缺title。ownedThread lock后同事务调用stored confirmation guard，reserved namespace或DB metadata分类control；核对原derived PK/command hash/run/workspace/dispatching/有效current lease，允许较旧queued lease但不更新原row。generic user persist也按DB分类guard。原部分persist/新原子persist、result/receipt/audit同UOW；current focused87与type/lint及restricted public5families170断言通过。
+
+`workflow-run.read` 和 `workflow-run.history` 接收 `{workspace_id,workflow_run_id}`，actor只从已验证主体推导。重复校验Run.created_by、workspace和当前workspace.owner；existing Run grant必须匹配原Run/source Thread。read投影原完整WorkflowRun，history按原transition_seq顺序并投影原Transition；共同receipt/session、failed details、source tuple、start/terminal time等lifecycle校验保留，微秒以整数比较不经Date重编码。缺owned Run为404，损坏数据503；新增read focused22/type/lint已通过，完整Run5公开163断言通过。`workflow-run.start/fail/cancel`为三个独立write合同：start要求OAuth并读取已持久化回执五字段、完整joint Session placement与rawPython lockhash，无client readiness booleans；fail/cancel只用原允许边/失败详情，既有Run grant保持原Run/Thread范围。三者owned Run/workspace lock、Session/status CAS、单history与receipt/audit同UOW，原current-target replay不增状态事件；新run_scope只加入内部receipt JSON可选字段，旧Thread/Editor receipt兼容。新增commands focused55/type/lint及完整Run5公开163断言通过，preflight/create/retry/output/confirmation组合commands尚未广告。
+
+Deck19具名aggregate来源原事务，mutation discovery投影为write，OAuth逐owner校验，runtime bearer无Deck管理权限。版本raw JSON DTO与原Python canonical hash不变；全19公开合同发现JSONB负零normalization，前向0059追加nullable canonical text与JSONB一致CHECK和独立exact capability，新write同时保存两种投影、read优先text。历史NULL保留jsonb::text且不猜测旧numeric类别、不改hash/backfill；隔离迁移/catalog与修复后全部19公开246断言通过，正常库与consumer/refs/runtime验收尚未关闭。
+
+长turn actor续期必须是Admin server-owned delegation：以当前目标access token与owned thread/run签发随机opaque凭据，绑定subject/service/client/thread/run/scopes/expiry；renew只接受既有该凭据并重新校验active user、实体关系及撤销，不接受任意actor_id。OAuth用户token过期不应迫使持久化丢失，也不能扩大后台权限。Runtime只拿必要entity范围API凭据，移除DATABASE_URL传递。Gateway保持原计费用户和模型scope；用户token签发权只能在Admin，Dream不能继续HS256签发Product/Gateway主体。具体delegation/Gateway DTO在实现与权限测试后冻结。
+
+当前DTO：POST internal `/runtime-delegations` `{request_id,input:{purpose,thread_id,run_id:null|string,editor_session_id:null|string,scopes:[闭集]}}`→`{token:idg_43base64url,expires_at,maximum_expires_at,purpose,thread_id,run_id,editor_session_id,scopes}`，实际schema/hash见[委托artifact](admin-dream-delegation-contracts.json)。三种purpose互斥：server-persistence仅dream:read/write；gateway-cli仅messages:create/count_tokens/models:list；editor-stdio仅editor:read/write且绑定owned真实user_sessions.id。禁止混合范围，旧无purpose记录不解析为有效授权。public `/api/runtime-delegations/renew/revoke`只Bearer opaque+`{request_id}`并拒Cookie，renew只返回原expiry/context不另发token或扩范围。创建encrypted原结果同键恢复且核对token/context/max，append安全audit；renew/revoke同事务receipt/audit。服务重新检查active link/thread/optional run+workspace owner/Editor Session/Gateway key scope与配置 `DREAM_GATEWAY_CLIENT_BINDINGS:[{service_client_id,gateway_client_id,oauth_client_ids}]`，Gateway用原key.id/entitlement/billing。0057–0058隔离replay/catalog与用途、Session限定级联和公开Route通过。新create额外要求exact unified capability，并调用完整workflow-context.resolve比对authorityRun/null；原creation恢复/已创建resolve保留原实体范围供终态final persistence。
+
+Reflections worker 不把 `rta_` 交给 Runtime。它只在上述 create DTO 边界使用 `rta_`；Admin 固定要求 `purpose=gateway-cli`、Run/Editor 为空和三个精确 Gateway scope，再从 authority 反查 service、subject、canonical owner、task/section/Thread 与配置的 Gateway key，创建独立 `idg_`。0063 的 source FK/CHECK 与 `identity.runtime-reflection-authority.v1` 记录该来源；resolve/renew 每次重查 `rta_` 未撤销、未到最大期限且 task/section 仍可执行。终态、撤销或来源删除立即阻止后续 Gateway 使用。Dream Chat、Story Guidance 和 Reflections 已使用独立 keeper 并在失败、取消和终态关闭；本地HS256主体签发与 child `apiKeyHelper` service key 已删除。
+
+正常 Dream Agent 的 canonical-subject Gateway key 使用独立 release-only rotation 边界。operator 提交严格 target DTO `{gateway_client_id,subject_id,scopes}`，当前 plaintext secret proof 作为一次性函数参数与DTO分离；Domain Service 在同一Drizzle事务锁定当前active key、核对subject/client binding和secret hash、撤销旧行、创建新hash并写无secret audit。CLI默认dry-run，正式执行还需owner-only `0600` Dream env路径与request ID；新secret只原子写回该私有文件，失败时恢复旧文件。receipt只报告scope drift/proof/action，不返回secret/hash。当前Runtime exact scopes为`models:list`、`messages:create`、`messages:count_tokens`；退休`chat:create`不再投影。非幂等rotation不盲重试，未知结果通过同request/audit与active binding复核。
+
+Editor stdio公开POST `/api/dream/v1/editor/operations/editor-state.load|editor-state.replace` 仅接收对应Session bearer和严格 `{request_id,input:{session_id[,editor_state]}}`，无需服务/数据库凭据。load返回 `{session_id,editor_state:null|完整EditorState,updated_at:null|ISO}`；缺失与存储损坏503区分。replace只更新owned现有Session，保留原最后写入生效；完整state.id必须等于Session，WritingThread引用验证owned。回执GET `/api/dream/v1/editor/receipts/{originalID}?operation=editor-state.replace` 同一Thread/Editor Session绑定，absent不声称rollback。换Session只能由OAuth授权的Dream服务新建grant。内部session.save/get/batch/list/text-list/delete采用同一严格DTO/所有权事务，upsert拒外部账户同名Session，保留name/labels NULL的COALESCE、PG微秒与Unicode预览；SSE/指标留Dream。`session.list` 可额外接收同一configured service的opaque委托，但必须先完整resolve token的有效期/撤销、`dream:read`、service、active canonical owner与Thread/Run ownership，再要求purpose=`server-persistence`且Editor Session为NULL；domain层重复只允许这一actor形态。其它Session操作不获得委托权限，`editor-stdio`仍只限Editor load/replace，Cookie拒绝。当前Editor/Session8操作已有受限AUTH/DATA实际公开103断言；本次权限扩展由独立Luna确认focused29、whole type、focused lint、Markdown与diff全通过，Registry83 DTO/hash/schema/artifact不变，consumer/真实业务仍pending。
+
+Preflight ownerread/原token signing已完成43focused/type/lint，read已注册、公开待验证。原pft签发固定六字段按原Python JSON/HMAC与UTC六位微秒保留，Admin唯一明确INK_WORKFLOW_TOKEN_SECRET，无JWT fallback。ownerOAuth read只给active passed/unconsumed/unexpired记录token；passed但expired或consumed仍按原status返回null token，不隐式修改状态。实际原PreflightService的with-connection正常exit明确commit，而最终只读与Run cleanwrite边界rollback；execute保存checking、binding、immutable snapshot、PF snapshot绑定四次提交，再在最后同事务保存passed/failed、token hash、加密原result、receipt和audit。不能用笼统defaultrollback描述全部with-db。完整公开/故障验收和Run create/retry仍pending。
+
+`workflow-preflight.execute` 只接受 `{workspace_id,deck_id,binding_revision,input_json}`，最后一项是原object JSON文本。每段重新验证service-bound OAuth与当前workspace owner，不接收actor/check/readiness selectors，不创建Run/Session或调用Runtime/FS。原request绑定由0060的九列immutable表保存，旧checking单独证明in_progress；新request遇到旧checking/pass可获得committed的bounded原模型，不能据status checking推断该request仍在执行。并发原request只运行一个pipeline，重复原request保留原ID/expiry/完整结果。已提交结果使用原AEAD密钥和完整service/subject/operation/request/input/PF/canonical/workspace绑定加密恢复；损坏状态503，不转换为absent。原response中的过期token可用于核对先前结果，但恢复不延长任何执行权限。
+
+原receipt GET仍用 `/api/internal/dream/v1/receipts/{originalID}?operation=workflow-preflight.execute`，只允许相同service和OAuth owner、`dream:write`。返回严格absent/in_progress/committed；只有committed带先前加密恢复的bounded result，in_progress带当前checking完整模型和null token。实际独立[三态回执契约](admin-dream-workflow-preflight-receipt-contract.json) v1 hash `ad144287942f6f3ad2db82dda7c7b0f20cdf3578e68df4bd8e8b86e8dbbec2f2`；execute v1 hash `413db72b5d4bfc1fdf572d801aec4339a7b00549ea19ebc4025c67f5ae2cf494`，要求identity、unified0033、`dream.workflow-preflight-request.v1`精确cap。旧69 operation descriptor完整不变。checking结果不自动resume，absent不证明整体事务回滚；调用方必须保留原request并查询原证据。
+
+Refs/Voice metadata新增6操作：refs list/prepare/replace和voice-analysis只OAuth，Threadruntime-read/voice-memory.resolve严格绑定owned Thread且允许原server-persistence grant。prepare投影metadata/rawcompat/manifest/digest供Dream原FS+CLI验证，replace持有installation共享锁校验bound evidence后原子refs与semanticdraft/receipt/audit。memory resolve保留原Python dict/legacy nonfinite判断与default Voice repair，只改Voice、不增Deckdraft，写回执独立Thread scope。metadata不回显artifact路径或接受客户端readiness声明；focused37/type/lint及公开6的104断言通过，实际artifact/CLI消费pending。OAuth-only管理与原回执在共用service边界明确拒绝idg为403，不送入JWT解析；Thread/Run/Editor的独立grant边界保持。
+
+原RunService与Transition读取调用 `_parse_datetime(...).astimezone(UTC)`，Workflow层投影以整数微秒规范化UTC六位fraction；不改变Chat/Deck共享PG offset投影。完整Run5公开初轮firstread时间表示差异已据实际source修复，最小40unit、全typecheck与focused lint通过；原fixture预期/DB/严格完整时间断言未改变，原21cases重跑通过163断言。安全harness诊断仅列差异字段名与合法ISO时间/类型，不输出正文或凭据。
+
+Preferences2仅当前OAuth owner：get严格返回原五配置字段、first_login_completed与可空微秒time，save只接受五个null/string字段，raw配置必须为JSONobject。NULL保留原COALESCE merge，空白文本仍可写入；不提供first-login/system配置或任意user selector。Coordinator原DTO/Repo/Service focused19/type/lint通过，薄Handler与same-UOW receipt分类已注册，公开2已通过78断言（owner/scope/idg403/NULL merge/raw config/rollback/并发/original receipt/单audit/first-login与system config保持），正常业务验收独立。
+
+原RuntimeLock/固定八链compatibility与Preflight依赖正在Admin实施，暂未advertise：模型与显式Python业务strip分别按实际source oracle验证；两个安装优先规则、五域capability intersection、declared lock全集、context ANY历史materialization与Preflight latest smoke保持。四明确server capability flags默认不兼容，legacy production_ready仅保留元数据。原Snapshot按固定Deck/Voice/binding/profile内容生成canonical/hash，在caller UOW写入immutable存储；Runtime/FS/CLI不迁入Admin。
+
+所有写入在同一Admin领域事务内验证主体/实体归属/前置状态，写业务与审计、持久化request receipt后commit。幂等键唯一(service,canonical subject或后台scope,operation,request_id)，绑定canonical JSON SHA256 input和独立Thread/Editor scope。同键同值返回既有结果，同键异值409；并发键串行，不能再执行写；失败事务无receipt，未知commit用原request_id重试/查询、不能新建ID。Runtime action回执 GET `/api/runtime-delegations/receipts/{request_id}?operation=runtime-delegation.renew|runtime-delegation.revoke` 只接受原opaque bearer；过期或撤销后仅可读取已提交原bounded DTO，不解析新principal/执行新renew/复活权限。POST renew先找同键已提交回执，再对新动作执行expiry/active/owner/Gateway校验；absent与过期不推断rollback。实际[四项委托契约](admin-dream-delegation-contracts.json)与受限公开Route恢复验证通过；新增Workflow/确认公开5family170断言通过；新Run读写公开pending。DB statement/lock/connection timeout配置明确，与HTTP deadline独立；HTTP abort不能声称rollback。Runtime尚未确认persist成功不能发该持久化成功事件；SSE/EventBus本身留Dream原实现。
+
+```mermaid
+sequenceDiagram
+ participant R as Dream Runtime
+ participant D as Dream orchestration
+ participant A as Admin domain API
+ participant DB as PG
+ participant B as Browser SSE
+ R-->>D: original Runtime event
+ D->>A: named persist operation(service,user token,request_id)
+ A->>DB: identity/owner + lock + mutation + audit + receipt
+ DB-->>A: commit
+ A-->>D: data + request_id
+ D-->>B: original EventBus/SSE event
+ Note over D,A: unknown response→same receipt/key recovery; no second Run/message
+```
+
+```mermaid
+sequenceDiagram
+ participant B as Browser
+ participant D as Dream API
+ participant A as Admin data service
+ participant DB as PostgreSQL
+ B->>D: BFF-authorized request
+ D->>A: service + target user access token + named operation
+ A->>DB: subject mapping + active state + owned aggregate query
+ DB-->>A: owned rows
+ A-->>D: exact domain DTO
+ D-->>B: product response
+```
+
+### 领域职责与验收覆盖表（源码和本机正常切换完成；真实验收部分待执行）
+
+下表保留原领域拆分与事务/权限要求。对应191个命名operation已实现并由生成契约、隔离PostgreSQL/ACL与Dream源码关闭门禁覆盖；正常数据库migration/role activation、服务重启及真实账户业务旅程仍按发布计划单独验收。
+
+| 域/原模块 | Admin领域operation职责 | 必须保留的事务/权限 |
+| --- | --- | --- |
+| database user/auth | canonical principal /明确映射迁移，旧auth入口退役 | 不转发旧任意注册/密码/token存储API |
+| Deck/Voice/content_versioning/default/plugin refs | owned list/get/create/edit/delete/publish/fork/sync/version commit/default reconcile | owned deck锁、删除运行冲突、version/draft revision/plugin refs同事务 |
+| user_sessions/preferences/config/analysis/daily_picture | owned note/preferences/report/timeline领域操作 | typed config patch、first login、友人访问验证；batch/import原子 |
+| friendship/invite/reflections | invite use/accept/reject/remove与用户范围任务结果 | requester/receiver验证、唯一friend/CAS、result/events同事务 |
+| chat_thread/chat_message | thread create/bind/select/delete/title/session；message persist/page/process | immutable message envelope+final projection+thread touch、keyset顺序、owner检查 |
+| workflow preflight/run/transitions/token/launch checkpoint | preflight/create run/consume one-time token/transition/bind/launch checkpoint | 原CAS/locks/receipt/run-thread状态原子，绝不重复run |
+| agent_sessions/tool confirmations/remote guards | session attempt/lease metadata/receipt/confirm/result/restore validation | attempt/Run/thread一致性、旧lease语义；不移动Runtime执行 |
+| Deck Plugin release/install/bind/revoke/rollback/runtime locks | domain release/install binding与lock/reconcile receipt | revoked不能重生；release/manifest/blob digest/checkpoint一致 |
+| Claude Plugin install/catalog/workspace packer | catalog source、install operation lineage、owned refs/materialization metadata | filesystem执行留Dream，DB operation状态/CAS/审计Admin |
+| Story Workspace/guidance/artifact index/launch/reentry/repair | owned workspace/story/character/scene关系与guidance+projection/checkpoint | 原复合事务；FS与DB版本/Run匹配，不删历史正文 |
+| Notion connector/store | connector link/auth/scope/resource selection/snapshot commit/page/thread/scheduled candidate | connector owner/known scope、snapshot已提交ID、同步OAuth凭据加密 |
+| Claude MCP repository/app settings/credentials/discovery/import | server/domain配置/credential/snapshot/import receipt | workspace权限、exact revision CAS、deny default apps、secret加密不回显 |
+| resource_policy / resource_postgres_sink | `resource-policy.read` / `resource-observer.publish` | 后台scope；四项技术范围与精确组合、higher revision/LKG、observer实例顺序 |
+| persistence/startup/health/catalog | capabilities/health read | 无Dream pool/PG secret/DDL；不依赖global head |
+| model catalog/admin_product identity | 现Product catalog/principal | OAuth verifier替换HS256，保留权限/read UOW/定价快照 |
+
+不是按SQL片段直接生成endpoint；先审原事务和正常/失败DTO再注册具体operation。最终交付表需对应每文件/函数的接口与验证回执，覆盖不全不得complete。
+
+### 资源策略与共享文件系统
+
+`resource-policy.read`仅取既有desired行及真实schema capabilities，不计算Dream effective、不推送控制。default/effective/revision/LKG独立，higher合法revision替换；同revision同值仅diagnostics，同revision异值/rollback invalid；后台Admin不可用保持LKG且不传播turn。四值1..9007199254740991正安全整数，组合memory bytes精确（BigInt检查），global effort属于policy，compact/context/output属于最终model，缺失不投影。
+
+```mermaid
+sequenceDiagram
+ participant R as Dream Runtime
+ participant FS as Shared FS
+ participant A as Admin metadata
+ participant DB as PG
+ R->>A: owned artifact metadata/permission lookup
+ A->>DB: subject/workspace/thread/Run relationships
+ DB-->>A: bounded artifact DTO
+ A-->>R: relative path + entity/revision/permission
+ R->>R: realpath/root/thread/no-symlink checks
+ R->>FS: exact permitted filesystem operation
+ R->>A: artifact checkpoint(request_id,entity/revision,digest)
+ A->>DB: atomic metadata/CAS + receipt
+ Note over R,FS: CLAUDE_CODE_TMPDIR={AGENT_CWD}/{thread_id}/.claude-tmp; 0700; sandbox exact path
+```
+
+共享FS根由配置解析，不接受浏览器任意绝对path；Admin不执行Dream shell或管理Runtime。Workspace Mode关闭仍只建runtime root和`.claude-tmp`，不借此启用cwd/context/sidebar/sandbox。
+
+## 验收与发布回滚
+
+实现前补流程/模块/数据权限/测试方式/成功/失败恢复表；确定性与provider-free browser交Luna exact command/cwd/exit/output，migration/backfill/破坏性只由协调在具名隔离数据库验证。真实Google/业务/模型缺用户指定existing account/entity/model/credential时明确未执行。
+
+Expand增加identity/handle/receipts/能力而不删旧auth；application compatibility双方按真实capability切换；显式可审计backfill保存旧PK/Google sub；validate mapping/ACL/catalog/事务；contract关闭Dream PG权限与旧auth、按schema迁移计划收缩兼容视图。回滚应用保留前向DDL与receipt；旧已撤销token不能通过回滚复活，必要时重新登录。发布前必须完成领域清单、同源REST/SSE/WS、Google/device/refresh/permission、data未知commit恢复与Runtime/FS回归；未满足不发布可用operation/capability。
+
+Phase11完整execute实现但尚未注册：输入仅workspace/Deck/revision/raw object JSON，OAuth-only且每阶段重验原live subject/client/scope与capability；checking/binding/snapshot/snapshot-binding各自提交，final passed/failed+encrypted original receipt+audit同txn。独立0060绑定原service/actor/request/input digest/PF/canonical/workspace及execution ownership，拒后续同request换input；原request checking lookup仅返回in-progress evidence，不自动重做orphan。新request同fingerprint可复用checking/passed-unconsumed并提交其bounded原结果。receipt lookup三态absent/in_progress/committed，先原request digest lock再读association/receipt；absence不代表任何已有事务回滚。pft只在AEAD完整绑定bundle中恢复，原expiry保持，不能由旧结果获得新TTL。首轮55确定性/lint通过，完整source/receipt/公开事务与normal activation待验。
+
+Social9由协调primary独占实际DTO/Repository/Service/source设计与fixtures；本任务薄Handler/Registry/Receipt复用严格service OAuth、identity+unified0033、same-UOW原result/audit。九项friend invite/request/relationship与好友图片只读仅OAuth owner可调用，idg无管理authority；read不依赖邀请码生成policy，closed原业务failure结果同样绑定原request。原60contract/hash逐项保持，新增9actualZod/hash与primarysafe artifact一致；focused25/type/lint passed，实际原AST22source cases和受限公开9/230断言exit0，原首次typegate2记录保留。DREAM_FRIENDSHIP_POLICY_JSON显式原code_length6/lifetime604800秒/generation_attempts64，最后一项仅碰撞执行预算。
+
+<!-- [Sync] 2026-09-15: registered77 first public failure and bounded independent harness continuation. -->
+
+Failure77 first public verifier exited1 on Editor expected-code mismatch. Independent SELECT-only partial proof287 retains six complete originals and full protected17/old125; actual Editor probe6 returns403 DELEGATION_ENTITY_DENIED because required Run binding is checked before scope. Production authorization/registered77 DTO/hash remain unchanged. New independent harness restores all six complete originals/current owned failed Runs/source UPDATE bytes without POST, then executes all16 denied POSTs/all27 GETs from unchanged strict22/27 facts. Mandatory private full17 prepublic/current evidence prevents historical-row mutation or skipped coverage. Static/public continuation and atomic recovery remain pending; original first exit1 retained, no single22 full-pass or normal-model claim.
+
+<!-- [Sync] 2026-09-15: independent continuation PUBLIC READY after actual raw gate review. -->
+
+Actual document/freeze gate read: Markdown221/356/247/0missing, frozen8 changed[] and diff each exit0. Newguard12/12/no skips and focused type correction/ownedlint all passed; first tsc2 retained. Producer sent exact mandatory evidence schema/command and PUBLIC READY to primary, then refroze new verifier/helper and production77/original failed harness. Primary may now prepare independent negatives/current17 anchor and last freshOAuth; actual public16/27/6/0 counts, fault/COMMIT-loss/preservation remain pending. No private fixture/credentials/PG or normal-model execution by producer.
+
+<!-- [Sync] 2026-09-15: independent continuation actual public preflight exit1 retained. -->
+
+Producer read actual node/public-wrapper continuation receipts: both exit1, safe FAIL label preflight/status null/code null. The6 restored-original/16 denied-POST/27GET contract did not complete. Earlier static12/type-correction/lint/docs/frozen8 PASS remains separate; original firstpublic exit1/partial287/Editor6 retained. Actual fresh-negative prepare exit0/23setup retained six positives/full17/oldRun states/oldexpiry with zero positive replay; earlier fixture continuation exit0/55setup/12operands/old125 retained independently. Primary private SELECT-only staged diagnostic requested, no production/harness guard weakening or accepted-index inference. Source remains frozen, public/atomic/preservation and release pending.
+
+Round27 actual diagnosis: producer逐字读取safe sandbox/network command receipts。默认sandbox preflight exit1，stage verification.target_role/classification loopback_permission_denied/assertions0/public_cases0/business_mutation false/normal untouched；同一Root-owned SELECT-only诊断在明确隔离loopback network permission下exit0/23，strict fixture/evidence/coverage/retention与target/三role/fivefalse/dataDir/current17均通过，public_cases0/business_mutation false。归类harness权限前置，不是production/fixture/guard defect；不修改77或new continuation。Root只因300s凭据实际过期准备exclusive新signer/fixture/evidence和2个新的public negative grants，复用已存在queued operand/ordinaryEditor事实，不重演source/claim/positivePOST，不重置oldgrant expiry/Run/graph；随后只在相同scoped-network边界重试冻结continuation。原两次exit1均保留，retry结果未通过前不claim6/16/27。
+
+Round27 scoped-network retry actual acceptance: producer逐字读取actual node command receipt与Luna wrapper receipt。`node --import tsx tests/integration/adminDreamLaunchFailureContinuation.contract.ts` exit0；6个原结果只读恢复、16 denied POST、27原GET、0 positive POST、556 assertions、17 protected tables。First public exit1、first continuation preflight exit1、partial287与Editor6均独立保留；不能表述为单次22全PASS。Whole original recorder already-FAILED source path被恢复验证，prior FAILED Run保持；new FAILED transition、Runtime、provider、FS、normal account/model均未执行。Root retryprep exit0/8仅复用1 queued operand/new graph0/2fresh negative grants/full17 oldrows保留/新300s OAuth last-signed。Producer未读取privatefixture/evidence/credentials或PG正文。Production77、首次harness、新continuation源继续冻结；Primary metadata/receipt/audit fault、actual final-COMMIT-loss/preservation/own cleanup及RELEASE仍pending。
+
+Failure77 final isolated evidence actual raw receipts read: atomic command exit0/126. Faults source_update, receipt_insert and audit_insert each returned503 AUTH_SERVICE_UNAVAILABLE with all17 relations byte-exact rollback and prior FAILED Run preserved; each owned trigger/function pair cleanup passed. Actual final-COMMIT loss injected once: initial503, original GET200 and replay200, exactly one source metadata effect/receipt/audit; whole original recorder and prior Run full row retained. Cleanup removed six owned objects, active fault objects none, history retained. SELECT-only preservation exit0/293 retained original125/prepublic125/postpublic17 full rows, all six positive owner/digest/scopes and complete already-FAILED Run transitions/PF/bindings/history; active fault functions0. Normal database/services, provider/model/Runtime/FS untouched. Together with independent public6/16/27/0/556, registered77 already-FAILED envelope component is isolated-closed; no claim of a newly executed FAILED transition, whole failure application, normal/real model or ALL-domain closure. Production/harness remains frozen until primary explicit RELEASE before Round26 wiring.
+
+## Reflections aggregate and future Runtime persistence owner
+
+Registry99 contains sixteen Reflections operations. Live OAuth owns `reflection-task.create/start/get/latest/events` and `analysis-report.list/save`; all entity scopes are null and reads never adopt or write. Report data crosses Admin as validated lossless JSON text so Python can preserve integers above `2^53-1`, `1.0`, Unicode and unknown fields before returning the legacy parsed object. The exact configured service scope `reflections:execute` owns worker-load, task advance, section begin/authority renew/authority revoke/transcript/finish, event append and report ensure. A task stores canonical owner, current OAuth subject and service. Historical null bindings can be adopted only by explicit start under the same canonical owner; any different nonnull service or subject conflicts. OAuth writes recover by service+subject; background writes require exact `operation+task_id` and recover by the task actor. Read operations have no original receipt surface.
+
+Worker load creates one immutable server-only launch snapshot from selected Session content, statistics and three custom section configs. It commits before Dream prepares the shared filesystem, derives the workspace locator only from `DREAM_REFLECTIONS_WORKSPACE_ROOT` and task ID, and reuses the same locator/snapshot on recovery. Its strict output also returns persisted `last_event_sequence` in the PostgreSQL int4 range 0..2147483647. Snapshot content never enters OAuth output, logs, audit metadata or receipt results; the receipt holds its SHA-256. Filesystem or Runtime startup failure calls `fatal-fail`, which uses task CAS, marks every pending/running section failed, sets the server completion time and revokes all child authorities in the same UOW. Finalize has the same revoke-all property. Terminal state is first-writer-wins.
+
+Section begin creates or recovers one child Thread and one `dream.reflection_task_authorities` record in the same UOW. Its `rta_` bearer is encrypted with the existing Admin token envelope; SQL stores hash, ciphertext, service, OAuth subject, canonical owner, task, section, Thread, exact purpose `reflections-worker`, exact `dream:read`/`dream:write`, request binding, short expiry, hard maximum and revocation. Receipt/audit data stores only digest and binding. A service-authenticated begin replay can decrypt and renew the same bearer after short expiry while the task/section remains RUNNING and the original maximum has not elapsed. Key rotation/decryption failure, explicit revocation, maximum expiry, terminal section/task or any aggregate mismatch fails closed.
+
+The future Dream consumer must introduce an explicit `ReflectionTurnPersistenceOwner` and a keeper accepted only by the Reflections construction path in `ClaudeAgentService` and `ThreadFactory`. The owner presents `rta_` only to Admin HTTP persistence calls; it never puts the bearer, service credential or database credential in Claude CLI/MCP arguments, environment, shared workspace, transcript or logs. The machine allowlist is exactly `chat-user-message.persist`, `chat-message.persist`, `chat-thread.get`, `chat-thread.update-session`, `thread-system-config.get` and `session.list`; every unknown write, Thread create/list/delete, other Session/config mutation and cross-Thread access must fail before storage. Reflections should consume the worker snapshot for full Session text; if `session.list` is used online it must keep `include_text=false`.
+
+The keeper renews before short expiry, stops new writes when closing, drains acknowledged message/session writes, reads the bound transcript, calls section finish, then revokes. Failure uses explicit section revoke and ultimately task `fatal-fail`; finalize and fatal-fail revoke all live authorities. Each background request locks the task row. Event append replays one exactly matching stored event; otherwise its sequence must equal current max+1 in the int4 range 1..2147483647, so a restart resumes from worker-load's high-water mark without gaps. A close/drain timeout or an unknown write leaves the section unfinished and records the business failure rather than silently switching to ordinary Chat authority. Ordinary Chat `idg_` server-persistence behavior and frozen runtime delegation purpose/hash remain unchanged. A self-created named disposable PostgreSQL previously proved the 0061 overlap lock, deterministic legacy event resequence, constraints/capability and owned cleanup; 0061 was not rerun during Registry99 registration. Role ACL, service UOW faults and Dream owner/keeper consumption remain pending. Sync 2026-09-15.
+<!-- [Sync] 2026-09-16: Registry133 closes launch replay lookup and Dream production launch persistence through DTO/Service/typed Drizzle operations. -->
+## Registry148-168：Notion Connector 数据接口
+
+Admin 通过 Registry148-168 提供 connector、selected resource、canonical snapshot 与 Thread binding 的具名业务操作。用户操作从 OAuth 或精确 `server-persistence` grant 派生 canonical actor，输入中没有 `user_id`；调度操作拒绝浏览器 Authorization，要求服务配置中的 `connectors:sync`，并根据 connector ID 查询 owner。canonical user ID 仅以十进制字符串输出，避免 PostgreSQL bigint 在 JavaScript 中被截断。
+
+`notion.resources.replace` 在锁定 owner connector 后完成旧选择删除、新选择插入和 config 更新。`notion.snapshot.save` 与 `notion.sync-snapshot.save` 在一个 Admin transaction 中完成 snapshot upsert、current snapshot/source/cursor 更新、database page 替换与精确 resource sync 状态更新。所有写操作通过 operation receipt 处理未知提交结果；用户写与后台写使用不同 subject，后台 receipt 查询必须同时给出原 operation 和 connector ID。
+
+Dream 继续执行 Notion CLI 登录轮询、远端资源发现、同步策略判断、canonical snapshot 构建、共享文件发布与 Agent thread 投影。Admin 不接收 credential path、workspace path 或任意 SQL，也不执行 Notion 网络请求。现有五张表已由 Admin Drizzle 和 `dream.schema.unified.v1` 管理，本阶段不新增 migration。

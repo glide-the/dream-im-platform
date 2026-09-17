@@ -1,7 +1,7 @@
 // [Input] Validated embedded database config and packaged PostgreSQL native binaries.
 // [Output] A persistent PostgreSQL cluster lifecycle with private-network access.
 // [Pos] Infrastructure runtime owned by @ink-memory/db; it never applies business DDL.
-// [Sync] 2026-08-21: add Paperclip-style embedded PostgreSQL initialization and supervision.
+// [Sync] 2026-09-15: allow server-owned callers to narrow the PostgreSQL listener without changing the production default.
 import { appendFile, mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
@@ -92,8 +92,13 @@ export type RunningEmbeddedPostgres = {
   stop(): Promise<void>;
 };
 
+export type StartEmbeddedPostgresOptions = {
+  listenAddresses?: string;
+};
+
 export async function startEmbeddedPostgres(
   config: EmbeddedPostgresConfig,
+  options: StartEmbeddedPostgresOptions = {},
 ): Promise<RunningEmbeddedPostgres> {
   if (config.mode !== "embedded-postgres") {
     throw new Error("Embedded PostgreSQL startup requires INK_DATABASE_MODE=embedded-postgres.");
@@ -103,6 +108,10 @@ export async function startEmbeddedPostgres(
   }
   await mkdir(config.dataDir, { recursive: true });
   await prepareEmbeddedPostgresNativeRuntime();
+  const listenAddresses = options.listenAddresses ?? "0.0.0.0";
+  if (!listenAddresses.trim() || listenAddresses.includes("\0")) {
+    throw new Error("Embedded PostgreSQL listenAddresses must be a non-empty server-owned value.");
+  }
   const embeddedPostgresModule = await import("embedded-postgres");
   const EmbeddedPostgres = embeddedPostgresModule.default as EmbeddedPostgresConstructor;
   const instance = new EmbeddedPostgres({
@@ -114,7 +123,7 @@ export async function startEmbeddedPostgres(
     persistent: true,
     initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
     postgresFlags: [
-      "-c", "listen_addresses=0.0.0.0",
+      "-c", `listen_addresses=${listenAddresses}`,
       "-c", `shared_buffers=${config.sharedBuffers}`,
       "-c", `max_connections=${config.maxConnections}`,
     ],

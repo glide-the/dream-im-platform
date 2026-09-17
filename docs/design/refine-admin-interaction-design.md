@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-17: remove the retired prefilled short password and require the actual independent Admin credential policy. -->
 # Refine 管理后台交互设计（PostgreSQL 完整版）
 
 ## 目标
@@ -35,7 +36,7 @@
       └─ 不可用   → 明确错误 + 迁移提示 + 重试
 ```
 
-首次设置以覆盖式对话卡片呈现，默认填写 `dmeck@suoxya.com` / `test123456`，并明确标记默认密码仅适合开发环境。真实的 `ADMIN_BOOTSTRAP_TOKEN` 不进入 HTML、不写入客户端配置，必须由操作者从 ignored 环境文件手工粘贴。
+首次设置以覆盖式对话卡片呈现，不预填邮箱或密码；密码必须至少14个字符，并且只写入独立`admin_users`凭据。真实的`ADMIN_BOOTSTRAP_TOKEN`不进入HTML、不写入客户端配置，必须由操作者从ignored环境文件手工粘贴。相同邮箱的Dream user不会被读取、合并或授予Admin角色。
 
 提交仍走 `POST /api/admin/auth/bootstrap`，保留 Origin 校验、32-byte 一次性 Token、数据库排他锁和 409 竞态处理。成功响应设置 HttpOnly Session Cookie 并直接进入控制台；竞态中若其他操作者先完成初始化，则当前页面切换到标准登录。
 

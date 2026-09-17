@@ -4,6 +4,8 @@
 > 更新：2026-09-04
 > 权威仓库：`ink-admin-memory/drizzle/**`
 
+> 2026-09-14 当前所有权变更实施中：Admin 成为唯一 Better Auth 与 Dream 生产数据库访问所有者，Dream 保留产品编排/Runtime/FS/SSE并消费严格领域API；下文保留先前 DDL-only 决策的历史事实。当前合同见[统一认证/数据](admin-dream-auth-data-contract.md)，全域/ACL/legacy关闭状态见[实施映射](admin-dream-domain-implementation-map.md)和[验证](../verification/admin-auth-data-provider-matrix.md)。0054–0056隔离技术证明不等于生产物理schema分离或完整部署完成。
+
 ## 1. 决策与所有权
 
 共享 PostgreSQL 的表、字段、索引、约束、函数和触发器只在 Admin Drizzle 演进。Dream 不再新增 Alembic revision，不在启动时执行 DDL，也不以精确 Drizzle global head 作为启动条件。

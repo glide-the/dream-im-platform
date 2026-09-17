@@ -1,8 +1,9 @@
 # Admin deployment
 
 Admin 仓库负责发布 Admin/Gateway、内嵌 PostgreSQL 与 Artifact 读取边界。
-Dream 仓库只发布 Dream frontend/backend，并通过显式 Docker 网络消费这里发布的
-PostgreSQL 与 Admin/Gateway。MinIO 当前关闭，storage capability 显式 disabled。
+Dream 仓库只发布 Dream frontend/backend，并通过注册的服务身份消费 Admin 数据接口与
+Gateway；Dream 不接收 PostgreSQL 网络入口或 DSN。两边通过受控挂载访问共享 Artifact，
+MinIO 当前关闭，storage capability 显式 disabled。
 
 | 平台 | 入口 | 说明 |
 |------|------|------|
@@ -14,4 +15,4 @@ AutoDL 的 PostgreSQL 默认位于 Admin 服务用户 home 下的 `/var/lib/ink-
 真实 secret 只保存在对应平台 ignored `.env` 和远端 mode-0640 配置；Remote SSH 使用
 [`remote-ssh/prepare-env.sh`](remote-ssh/prepare-env.sh) 从现有 ignored `docker/.env`
 生成，AutoDL 使用 [`autodl-ssh/prepare-env.sh`](autodl-ssh/prepare-env.sh) 从 `.env.local`
-投影。两条路径都不在命令输出中打印值。
+投影。两条路径都要求部署层提供与 Dream public origin/callback 一致的 service-client JSON，固定 Better Auth issuer 为 Admin `/api/auth`，且不在命令输出中打印 secret 值。

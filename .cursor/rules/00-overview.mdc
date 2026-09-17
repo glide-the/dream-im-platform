@@ -10,7 +10,7 @@ alwaysApply: true
 
 ## 核心原则
 
-- `/admin` 是唯一 UI，根路径跳转到 Admin。
+- `/admin` 是管理 UI，根路径跳转到 Admin；`/auth` 仅承载统一登录/OAuth consent/设备授权，管理权限独立验证。
 - `app/api/admin` 与 `app/v1` 只做接入编排，领域能力位于 `app/lib`。
 - 管理 API 服务端强制 Session、RBAC、Zod、事务和审计。
 - 禁止恢复 `app/(app)`、ai4sales PWA、SQLite 或本地数据库回退。

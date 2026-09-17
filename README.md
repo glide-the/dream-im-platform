@@ -1,3 +1,5 @@
+<!-- [Sync] 2026-09-17: separate Dream Better Auth/OAuth authority from the independent Admin operator password/session domain in the repository overview. -->
+<!-- [Sync] 2026-09-17: align first-run instructions with the empty 14-character password form and required Admin Session TTL configuration. -->
 # Ink Memory Admin
 
 基于 Next.js 与 Refine 的 Ink Memory 运营控制台。当前应用版本为 `0.1.1`。一个项目内提供剧本数据运营、平台用户管理、AI Provider 与模型配置、Token 计费、Claude/OpenAI 兼容网关、文件存储、RBAC、系统设置和审计能力，结构化数据统一存储在 PostgreSQL `ink-memory`。
@@ -19,6 +21,8 @@
 
 模型网关提供 Anthropic `POST /v1/messages`、`POST /v1/messages/count_tokens`，以及 OpenAI `POST /v1/chat/completions`、`GET /v1/models` 兼容接口。
 
+Admin 同时提供两个隔离的认证边界：Better Auth 1.7.4 是 Dream 的 Google/credential Session、OAuth、Device Flow 与 JWKS authority；Admin operator 则只通过 `admin_users` 独立密码、`admin_sessions` 和实时 RBAC 进入管理后台。Dream browser/device/service 是 OAuth client，Dream user 是用户委托 token 的主体；相同邮箱不会合并 Dream user 与 Admin operator，也不共享密码、Session 或权限。Dream 通过命名领域 DTO API 访问数据，持久化链固定为 Dream Pydantic DTO → Admin Zod DTO → Domain Service → typed Repository → Drizzle/UOW。当前技术证据与未闭合业务验收见[认证业务域评审](docs/architecture/auth-domain-boundaries-review.md)、[契约](docs/architecture/admin-dream-auth-data-contract.md)、[领域映射](docs/architecture/admin-dream-domain-implementation-map.md)与[回执](docs/verification/admin-auth-data-provider-matrix.md)。本机正常数据库 migration/受限角色激活、旧 Google 主体采用、真实 Google callback、Device Flow 和独立 Admin 登录已经通过；自然 Session 到期与完整 Dream 模型/Workflow 旅程仍分别验收。
+
 Remote Marketplace 同步按 UTF-8 路径组件顺序计算完整插件摘要，与 Dream 的
 canonical `pathlib` 算法一致。包含 `skills.md` 与 `skills/<name>/SKILL.md` 这类
 同名前缀文件和目录的插件，Admin 批准值与 Dream 安装值保持相同。
@@ -39,13 +43,20 @@ canonical `pathlib` 算法一致。包含 `skills.md` 与 `skills/<name>/SKILL.m
 ```bash
 pnpm install
 pnpm env:setup
+${EDITOR:-vi} .env.local
+${EDITOR:-vi} docker/.env
+pnpm env:check
 pnpm db:migrate
 pnpm dev
 ```
 
+`env:setup` 只生成本机 secret 和明确的技术容量配置。Google client、三个不同受限数据库角色 DSN、Gateway client binding、Deck/Plugin/Runtime业务策略必须由部署负责人填写；`env:check` 会在服务启动前逐项拒绝空值、同角色 DSN、错误 origin/redirect、弱 secret 或非法 JSON。Dream 只取得与 Admin 注册项相同的 service ID/secret、issuer、resource 和 callback，不取得任何 PostgreSQL DSN。
+
+本机开发入口显式使用 Next Webpack，与 production build 共用 workspace NodeNext extension alias；`packages/db` 源码中的 `.js` 说明符会解析到对应 TypeScript 源文件。
+
 打开 [http://localhost:3000/admin](http://localhost:3000/admin)。根路径 `/` 会跳转到管理后台。
 
-Next.js 的 `turbopack.root` 从 `next.config.js` 的文件位置确定，不依赖启动进程的工作目录，也不让祖先目录的锁文件改变 Admin 的依赖解析边界。无需删除用户目录或其他项目的锁文件；修改 Next.js 配置后需要重新启动开发服务。
+Next.js 的 `turbopack.root` 从 `next.config.js` 的文件位置确定，不依赖启动进程的工作目录，也不让祖先目录的锁文件改变 Admin 的依赖解析边界。Webpack构建会把workspace NodeNext源码中的`.js`说明符解析到对应TypeScript文件，发布后的数据库包仍使用`dist/*.js`。无需删除用户目录或其他项目的锁文件；修改 Next.js 配置后需要重新启动开发服务。
 
 如果根目录修正后重启仍出现 `Can't resolve 'tailwindcss'`，先正常停止开发服务，确认服务进程与 `.next/dev/lock` 已释放，再把原 `.next` 移到独立备份目录后启动，重新生成编译缓存。旧 Turbopack 缓存可能保留此前的 CSS 解析路径；不要向父目录安装依赖，也不要移动数据库目录、环境文件或重新执行初始化/迁移。本机排查已使用相同 Node 24 验证：全新缓存编译成功，复用旧缓存副本会重现父目录解析错误，备份后通过 VSCode 原调试配置重建即可恢复。
 
@@ -76,21 +87,20 @@ pnpm env:check
 
 第一次打开 `/admin` 时，系统先检查 PostgreSQL 中是否存在管理员。若数据库为空，登录入口会自动弹出“设置首位管理员”页面，不再要求手工调用 Bootstrap API。
 
-页面默认填写：
-
-- 管理员邮箱：`dmeck@suoxya.com`
-- 初始密码：`test123456`
+页面不预填管理员邮箱或密码。管理员输入独立于 Dream 用户域的邮箱和至少 14 个字符的新密码；相同邮箱字符串不会共享密码、Session 或权限。
 
 将 `.env.local` 中由 `pnpm env:setup` 自动生成的 `ADMIN_BOOTSTRAP_TOKEN` 粘贴到“首次启动密钥”，然后点击“创建管理员并进入控制台”。初始化会在同一事务中创建超级管理员、内置角色、权限和审计记录，并立即建立管理 Session。
 
-Bootstrap 只允许成功一次；已有管理员时 `/admin/login` 只显示正常登录。默认密码仅用于本地首次设置，生产环境应在提交前改成独立强密码。
+Bootstrap 只允许成功一次；已有管理员时 `/admin/login` 只显示正常登录。登录使用 `admin_users` 中的独立凭据，不读取 Dream 用户密码或 OAuth Session。
 
 ## Docker 部署
 
-环境初始化会同时生成 `docker/.env`，所以无需手工复制或填写随机密钥：
+环境初始化会同时生成 `docker/.env`，并生成本机可安全生成的随机密钥。Google OAuth、三个受限数据库角色 DSN、Gateway binding 与业务策略仍需由部署负责人显式填写并通过校验：
 
 ```bash
 pnpm env:setup
+${EDITOR:-vi} docker/.env
+pnpm env:check
 pnpm docker:up
 pnpm docker:logs
 ```
@@ -123,7 +133,34 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `INK_DATABASE_MODE` | 明确数据库 topology capability | 本机/容器固定 `embedded-postgres` |
 | `EMBEDDED_POSTGRES_*` | 数据目录、端口、shared buffers 与连接数 | 本机自动配置；容器默认 5432/96MB/50 |
 | `MIGRATION_DATABASE_URL` | 可选外部 migration 目标；未设置时只允许显式 embedded mode | 生产可由平台注入 |
-| `ADMIN_SESSION_SECRET` | 管理员 Session HMAC | 自动生成，至少 32 bytes |
+| `BETTER_AUTH_URL/SECRET` | 唯一认证issuer与Session密钥 | 显式origin + `/api/auth`；secret至少32bytes |
+| `AUTH_DATABASE_URL` | 专用auth角色 | 显式PostgreSQL，无fallback |
+| `ADMIN_CONTROL_DATABASE_URL` | 一次性bootstrap control角色 | 显式PostgreSQL，无fallback |
+| `DREAM_DATA_DATABASE_URL` | Admin Dream领域角色 | 显式PostgreSQL，无Dream DSN注入 |
+| `GOOGLE_CLIENT_ID/SECRET` | 内置Google认证注册 | 显式注册与exactcallback |
+| `AUTH_TRUSTED_ORIGINS/DREAM_API_RESOURCE` | trusted origins与OAuth resource | exact origins/resource |
+| `AUTH_TOKEN_ENCRYPTION_KEY` | BFF/委托恢复密文 | 32bytes AEAD，不能回显 |
+| `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON；Reflections执行服务需显式包含`reflections:execute`，confirmation dispatcher需显式包含`story-confirmation:dispatch`，均独立于用户Bearer |
+| `AUTH_DEVICE_CLIENT_ID` / `DREAM_GATEWAY_CLIENT_BINDINGS` | Device public client 与受限 Gateway client映射 | 显式注册；CLI不携带固定secret，binding不能由请求覆盖 |
+| `DREAM_DATA_MAX_BODY_BYTES` | Admin领域请求体技术容量 | 显式正安全整数 |
+| `DREAM_WORKSPACE_PLUGIN_POLICY_JSON` | Story Workspace server adapter 数据选择 | 严格JSON；package、marketplace与nullable版本由Admin配置，Dream请求不能覆盖 |
+| `DREAM_RUNTIME_ACTIVATION_POLICY_JSON` | Story Workspace Runtime激活placement、creating lease与built-in adapter | 严格JSON；lease为1..300秒，Admin Service读取，Dream请求不能覆盖node、policy或artifact path |
+| `DREAM_DECK_POLICY_JSON` | 默认Deck/Voice与插件事实 | 严格JSON；业务ID和模板来自部署配置，不由应用或请求硬编码 |
+| `DREAM_REFLECTION_REPORT_LIST_MAX_ROWS` | Reflections报告历史单次查询技术容量 | 必填正安全整数；Dream默认仍请求10条 |
+| `DREAM_REFLECTIONS_LAUNCH_SNAPSHOT_MAX_BYTES` | Reflections私有启动快照技术容量 | 必填正安全整数；超限在持久化前拒绝 |
+| `DREAM_REFLECTIONS_WORKSPACE_ROOT` | Reflections task workspace根目录 | 必填绝对路径；实际locator只追加task ID与`memory` |
+| `AUTH_REFLECTIONS_AUTHORITY_TTL_SECONDS/MAX_TTL_SECONDS` | `rta_`短期续期与原最大寿命 | 必填正安全整数，短TTL不得超过最大TTL |
+| `DREAM_FRIENDSHIP_POLICY_JSON` | 明确好友邀请码规则及碰撞执行预算 | `{"code_length":6,"lifetime_seconds":604800,"generation_attempts":64}` 的严格JSON；原6字符/7日，预算仅server capacity |
+| `DREAM_DOMAIN_CANONICAL_TIMEOUT_MS` | 固定canonical业务codec deadline | 显式正安全整数；失败不输出payload |
+| `DREAM_CONFIRMATION_DISPATCH_LEASE_SECONDS` | Story Workspace confirmation delivery租约 | 必填正安全整数；Admin计算deadline；Dream可请求不超过上限的短租约，但不能扩张策略 |
+| `INK_WORKFLOW_TOKEN_SECRET` | Admin独占原Workflow pft签发与Run消费摘要 | 显式UTF-8至少32byte；无JWT_SECRET fallback，Dream不持有 |
+| `DREAM_PREFLIGHT_TOKEN_TTL_SECONDS` | 原Preflight token TTL | 正安全整数，默认300秒；原回执恢复不刷新expiry |
+| `DREAM_PREFLIGHT_MAX_INPUT_BYTES` | canonical Preflight输入技术容量 | 正安全整数，默认65536byte |
+| `INK_DECK_HOST_COMPATIBLE` / `INK_CLAUDE_AGENT_CONTRACT_COMPATIBLE` / `INK_STORY_SCHEMA_COMPATIBLE` / `INK_DECK_RUNTIME_CONFIG_COMPATIBLE` | 明确server compatibility capability facts | 原Python strip+lower的1/true/yes/on；缺失fail closed，不按部署名称解锁 |
+| `DREAM_WORKFLOW_CONTEXT_MAX_ATTEMPTS` | 完整retry链查询技术容量 | 保留原256默认；与权限独立 |
+| `DREAM_CHAT_AUTO_TITLE_MAX_CHARACTERS` | 首条普通user消息自动title容量 | 保留原50默认，Python whitespace/Unicode字符 |
+| `AUTH_RUNTIME_DELEGATION_TTL_SECONDS/MAX_TTL_SECONDS` | 窄授权续期与原最大寿命 | 显式正安全整数，renew不能扩张最大寿命 |
+| `ADMIN_SESSION_SECRET` / `ADMIN_SESSION_TTL_SECONDS` | Admin 管理 Session 的HMAC密钥与有效期 | secret至少32 bytes；TTL为正安全整数，本机默认28800秒；缺失时登录在建Session前失败关闭 |
 | `ADMIN_BOOTSTRAP_TOKEN` | 首次设置页面的一次性初始化授权 | 自动生成，至少 32 bytes；不发送给页面，需手工粘贴 |
 | `ADMIN_ORIGIN_ALLOWLIST` | 管理写操作允许的 Origin，逗号分隔 | 本地默认 `http://localhost:3000` |
 | `GATEWAY_API_KEY_PEPPER` | Gateway Key HMAC | 自动生成，至少 32 bytes |
@@ -171,10 +208,23 @@ Vercel Blob/外部 S3，并同时恢复部署配置与凭据校验。
 ```bash
 pnpm db:generate        # 修改 packages/db/src/schema/** 后生成前向 migration
 pnpm db:migrate:status  # 只读显示已应用连续前缀和待执行 migration
-pnpm db:migrate         # 统一前向迁移入口；需要时编排两个 Provider data gate
+pnpm db:migrate         # 统一前向迁移入口；需要时编排三个 Provider data gate
 pnpm db:migrate:provider-managed-accounts # 同一受控编排的兼容命名入口
 pnpm db:migrate:check   # 要求 journal、hash、数据库 receipt 全部 current
 ```
+
+正常数据库完成 migration/check 后，角色与 ACL 仍须独立预检和批准；该命令不会由应用启动或 migration 自动调用：
+
+```bash
+AUTH_DATA_CUTOVER_CONFIG=/private/0600/activation.json \
+AUTH_DATA_DREAM_RELEASE_DIR=/absolute/clean/dream-worktree \
+  pnpm auth-data-access:activate
+AUTH_DATA_CUTOVER_CONFIG=/private/0600/activation.json \
+AUTH_DATA_DREAM_RELEASE_DIR=/absolute/clean/dream-worktree \
+  pnpm auth-data-access:activate --apply --production-approval
+```
+
+v2 manifest 必须绑定 Admin 与 Dream 的精确 commit、已校验的停机物理备份、目标 database/port/data directory、63 条 migration、八项认证/数据 capability、active canonical Gateway client、三个独立服务凭据与 Dream NOLOGIN role。runner 在读取备份或连接数据库前验证执行中的 Admin checkout 与 `AUTH_DATA_DREAM_RELEASE_DIR` 都处于 manifest 指定 commit，且 tracked files 无修改。默认命令只输出脱敏计划；apply 在同一事务创建/验证角色并应用最小权限，随后使用真实角色凭据与 allow/deny probes 复核。
 
 `packages/db/src/schema/**` 是唯一 TypeScript schema，`drizzle/**` 是不可变 SQL/
 journal/snapshot 历史。Dream 启动只检查 capability，不执行 DDL。runner 优先使用
@@ -188,12 +238,13 @@ migration，再发布依赖它的 Dream 代码；不需要业务数据回填。
 
 若存量数据库从 0046 升级，根命令 `pnpm db:migrate` 会针对同一个显式或内嵌
 migration target 顺序执行 `0047 → managed-account data → 0048 → 0049 →
-provider-owned data → 0050 → check`；`pnpm db:migrate:provider-managed-accounts`
-保留为同流程的命名入口。第二个 data runner 把旧 effective binding 收敛为“一个
-Provider 一个账号”，不复制、不删除、不重加密 token；如果一个 live credential 被多个
-Provider 共享或没有唯一 owner，命令会 fail closed，必须先显式断开/重新授权。运行前必须
-保留旧 credential encryption key，并配置 `AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER`；active
-attempt 或非终态 revoke job 也会阻断 contract migration。
+provider-owned data → 0050 → 0051 → deleted-provider orphan data → 0052 → remaining → check`；
+`pnpm db:migrate:provider-managed-accounts` 保留为同流程的命名入口。direct-ownership runner
+把旧 effective binding 收敛为“一个 Provider 一个账号”，不复制、不删除、不重加密 token；
+orphan runner 只清除已删除 Provider 遗留的本地 live credential material，并明确报告没有执行远端撤销。
+如果一个 live credential 被多个 Provider 共享或没有唯一 owner，命令会 fail closed，必须先显式
+断开/重新授权。运行前必须保留旧 credential encryption key，并配置
+`AI_PROVIDER_ACCOUNT_IDENTITY_PEPPER`；active attempt 或非终态 revoke job 也会阻断 contract migration。
 
 Dream 的 43+5 张 SQLite 表不是静态 SQL seed。`drizzle/data/` 只在 Schema 已具备 `dream.schema.unified.v1` 后运行可审计的数据迁移；快照、staging、转换和业务完整性验证仍由 Dream 领域 importer 负责。全新数据库只需一个 Schema 命令：
 

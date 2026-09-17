@@ -1,15 +1,22 @@
-# ink-dream-memory PostgreSQL 迁移方案
+<!-- [Input] Historical SQLite-to-PostgreSQL migration design and retained data-integrity evidence. -->
+<!-- [Output] Historical plan with a current replacement that forbids Dream production database access. -->
+<!-- [Pos] Migration history; it is not a current Dream runtime or credential configuration guide. -->
+<!-- [Sync] 2026-09-16: supersede Dream psycopg/Alembic/runtime ownership with Admin Drizzle and named data APIs. -->
+
+# ink-dream-memory PostgreSQL 迁移方案（历史）
 
 > **状态：Superseded DDL design / historical data requirements retained（2026-08-12）**
 > 本文的 Alembic DDL 所有权和交错初始化顺序已被 [统一 PostgreSQL Schema 权威](../database-schema-authority.md)替代。43+5 源数据语义、snapshot、冲突阻断、digest、FK/sequence/trigger 验证仍是有效业务要求。
 
-> 文档状态：**Implemented / local cutover complete**（工具链、PG-only runtime 与本地 Admin-owned `ink-memory` 已完成；其他生产环境 cutover 仍 Planned）
+> **数据访问替代（2026-09-16）**：本文关于 Dream `psycopg` pool、Alembic、`DATABASE_URL`、Dream-owned Repository/UOW 和 PG-only runtime 的描述也已被 [Admin/Dream 认证与数据接口契约](../admin-dream-auth-data-contract.md)替代。当前只有 Admin 连接 PostgreSQL，并通过严格 DTO/Service/typed Repository/Drizzle 为 Dream 提供业务接口。以下配置、波次与回执保留为历史迁移证据，不得重新投影到 Dream 生产服务。
+
+> 文档状态：**Historical implementation receipt**（数据完整性证据保留；现行部署不得启用 Dream 数据库连接）
 > 返回：[总索引](README.md)  
 > 前置：[源系统基线](01-current-scope-and-source-baseline.md) · [业务接入边界](02-business-integration-and-admin-boundary.md)  
 > 配套：[发布、验证与回滚](05-release-rollout-and-rollback.md)  
 > 主要读者：Dream 后端、DBA、QA、运维、安全审计
 
-## 1. 迁移目标与硬约束
+## 1. 历史迁移目标与硬约束
 
 目标是让 Dream 运行时只连接 PostgreSQL `ink-memory`，不再把 SQLite、JSON 文件或内存数据库作为业务持久化回退。
 

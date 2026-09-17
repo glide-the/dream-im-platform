@@ -1,7 +1,7 @@
 // [Input] Controlled provider JSON/SSE responses plus mocked billing and payload persistence boundaries.
 // [Output] Protocol, streaming, cancellation, timeout-refresh, settlement, and capture regression proof.
 // [Pos] Core Gateway proxy lifecycle unit tests.
-// [Sync] 2026-08-27: require stream-idle refresh wiring from every upstream network chunk.
+// [Sync] 2026-09-17: prove headerless Codex Responses SSE remains narrow and fully settled.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GatewayError } from "./errors";
@@ -83,6 +83,65 @@ beforeEach(() => {
 });
 
 describe("true gateway streaming proxy", () => {
+  it("accepts a headerless Codex Responses stream and settles its terminal usage", async () => {
+    mocks.send.mockResolvedValue(transport(new Response(sse([
+      'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_codex","model":"gpt-codex"}}\n\n',
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"hello"}\n\n',
+      'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_codex","model":"gpt-codex","status":"completed","usage":{"input_tokens":9,"output_tokens":4}}}\n\n',
+    ]))));
+
+    const response = await proxyStreaming({
+      request: new Request("http://gateway/v1/messages"),
+      externalProtocol: "anthropic",
+      prepared: prepared("openai", "codex"),
+      body: { model: "alias", messages: [{ role: "user", content: "hello" }], max_tokens: 128, stream: true },
+    });
+
+    const body = await response.text();
+    expect(response.status).toBe(200);
+    expect(body).toContain('"type":"text_delta","text":"hello"');
+    expect(body).toContain('"type":"message_stop"');
+    expect(mocks.finalizeKnown).toHaveBeenCalledWith(expect.objectContaining({
+      usage: expect.objectContaining({ inputTokens: 9, outputTokens: 4 }),
+    }));
+  });
+
+  it("rejects a headerless stream from providers without the Codex compatibility contract", async () => {
+    const result = transport(new Response(sse([
+      'data: {"id":"chat_1","model":"gpt","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',
+    ])));
+    mocks.send.mockResolvedValue(result);
+
+    const response = await proxyStreaming({
+      request: new Request("http://gateway/v1/chat/completions"),
+      externalProtocol: "openai",
+      prepared: prepared("openai"),
+      body: { model: "alias", messages: [], stream: true },
+    });
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: { code: "UPSTREAM_STREAM_INVALID" } });
+    expect(result.abort.cleanup).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a Codex stream with an explicit non-SSE content type", async () => {
+    const result = transport(new Response(sse([
+      'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_codex","model":"gpt-codex","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}\n\n',
+    ]), { headers: { "content-type": "application/json" } }));
+    mocks.send.mockResolvedValue(result);
+
+    const response = await proxyStreaming({
+      request: new Request("http://gateway/v1/messages"),
+      externalProtocol: "anthropic",
+      prepared: prepared("openai", "codex"),
+      body: { model: "alias", messages: [], max_tokens: 32, stream: true },
+    });
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ type: "error", error: { code: "UPSTREAM_STREAM_INVALID" } });
+    expect(result.abort.cleanup).toHaveBeenCalledOnce();
+  });
+
   it("converts xAI Responses SSE to the public Anthropic stream", async () => {
     mocks.send.mockImplementation(async ({ body }: { body: Record<string, unknown> }) => {
       expect(body).toMatchObject({ model: "upstream", stream: true, max_output_tokens: 128 });
@@ -312,7 +371,7 @@ describe("gateway non-streaming protocol matrix", () => {
       return transport(new Response(sse([
         'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_codex","model":"gpt-codex"}}\n\n',
         'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_codex","model":"gpt-codex","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"done"}]}],"usage":{"input_tokens":9,"output_tokens":4}}}\n\n',
-      ]), { headers: { "content-type": "text/event-stream" } }));
+      ])));
     });
     const response = await proxyNonStreaming({
       request: new Request("http://gateway/v1/chat/completions"),

@@ -1,0 +1,135 @@
+{
+  "contract_sha256": "7123babb03535e0a0c7a818e902c331cefbe73c660b46395136dcc9a5b19f3da",
+  "version": 1,
+  "tables": {
+    "dream.workflow_preflight_requests": {
+      "name": "workflow_preflight_requests",
+      "schema": "dream",
+      "columns": {
+        "service_client_id": {
+          "name": "service_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_sha256": {
+          "name": "input_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workflow_preflight_id": {
+          "name": "workflow_preflight_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "canonical_user_id": {
+          "name": "canonical_user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "execution_owner": {
+          "name": "execution_owner",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "workflow_preflight_requests_preflight_idx": {
+          "name": "workflow_preflight_requests_preflight_idx",
+          "columns": [
+            {
+              "expression": "workflow_preflight_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "workflow_preflight_requests_workflow_preflight_id_workflow_preflights_workflow_preflight_id_fk": {
+          "name": "workflow_preflight_requests_workflow_preflight_id_workflow_preflights_workflow_preflight_id_fk",
+          "tableFrom": "workflow_preflight_requests",
+          "tableTo": "workflow_preflights",
+          "columnsFrom": [
+            "workflow_preflight_id"
+          ],
+          "columnsTo": [
+            "workflow_preflight_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "workflow_preflight_requests_service_client_id_actor_request_id_pk": {
+          "name": "workflow_preflight_requests_service_client_id_actor_request_id_pk",
+          "columns": [
+            "service_client_id",
+            "actor",
+            "request_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "workflow_preflight_requests_hash_check": {
+          "name": "workflow_preflight_requests_hash_check",
+          "value": "\"dream\".\"workflow_preflight_requests\".\"input_sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "workflow_preflight_requests_owner_check": {
+          "name": "workflow_preflight_requests_owner_check",
+          "value": "\"dream\".\"workflow_preflight_requests\".\"canonical_user_id\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "immutability": {
+    "function": "dream.guard_workflow_preflight_request_immutable()",
+    "function_sha256": "462f1cf8e43cbbb72e7248fe66a678ca854c157165ed3772b9699f0b7b9db793",
+    "trigger": "workflow_preflight_requests_immutable",
+    "events": [
+      "UPDATE",
+      "DELETE",
+      "TRUNCATE"
+    ],
+    "timing": "BEFORE",
+    "level": "STATEMENT",
+    "trigger_sql": "CREATE TRIGGER workflow_preflight_requests_immutable\nBEFORE UPDATE OR DELETE OR TRUNCATE ON dream.workflow_preflight_requests\nFOR EACH STATEMENT EXECUTE FUNCTION dream.guard_workflow_preflight_request_immutable();"
+  }
+}

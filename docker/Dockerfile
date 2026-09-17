@@ -1,7 +1,7 @@
 # [Input] pnpm workspace sources, @ink-memory/db, immutable Drizzle history, and Next.js app.
 # [Output] Single Admin image supervising embedded PostgreSQL and explicit migration tools.
 # [Pos] Shared local/Alibaba Cloud production image; no separate database or MinIO image is required.
-# [Sync] 2026-09-04: ship the compiled Provider managed-account migration orchestrator with the DB runtime.
+# [Sync] 2026-09-14: ship Python stdlib canonical Deck codec and existing explicit DB tooling.
 FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
@@ -39,6 +39,7 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /db-runtime ./packages/db
+COPY --from=builder /app/app/lib/dream/deckContentCanonical.py ./app/lib/dream/deckContentCanonical.py
 COPY scripts/migrate-provider-managed-accounts.mjs ./scripts/migrate-provider-managed-accounts.mjs
 RUN node --input-type=module -e \
   'import("/app/packages/db/dist/embedded-postgres-native.js").then((runtime) => runtime.prepareEmbeddedPostgresNativeRuntime())'
@@ -47,7 +48,7 @@ RUN sed -i \
     -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
     /etc/apt/sources.list.d/debian.sources \
   && apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl gosu tini \
+  && apt-get install -y --no-install-recommends ca-certificates curl gosu tini python3 \
   && install -d /usr/share/postgresql-common/pgdg \
   && curl --fail --silent --show-error \
     -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
