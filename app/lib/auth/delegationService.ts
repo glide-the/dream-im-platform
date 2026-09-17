@@ -1,6 +1,7 @@
 // [Input] Admin OAuth user grant or exact Admin-owned confirmation claim; capability-gated data UOW.
 // [Output] Encrypted-recoverable creation and claim-fenced renewal/revocation/actor projection.
 // [Pos] Admin sole long-turn authority; no external actor IDs or Runtime service secrets.
+// [Sync] 2026-09-17: recover a claim grant without reversing the claim-message/grant lock order.
 // [Sync] 2026-09-16: exchange live Reflections task authority for source-fenced gateway-cli grants.
 // [Sync] 2026-09-16: issue server-persistence grants from exact live Story confirmation claims.
 import { createHash, randomBytes } from "node:crypto";
@@ -243,7 +244,10 @@ export class DelegationService {
         || recovered.maximum_expires_at !== prior.maximumExpiresAt?.toISOString()) {
         throw new AuthBoundaryError("DELEGATION_RECOVERY_INVALID");
       }
-      await this.resolve(recovered.token, null, service.id, binding.threadId, binding.runId, null);
+      // The current claim source, active subject, exact entity ownership, stored
+      // row and encrypted result were revalidated above in this UOW. resolve()
+      // would relock the grant after the claim message, while normal data reads
+      // lock the grant before the message, creating a PostgreSQL lock cycle.
       return recovered;
     }
     const policy = delegationPolicy(); const now = Date.now();

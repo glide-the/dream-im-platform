@@ -1,6 +1,7 @@
 // [Input] Named PostgreSQL, restricted role and Registry120/121 confirmation/delegation services.
 // [Output] Lifecycle, claim-bound grant recovery/fencing and least-privilege ACL evidence.
 // [Pos] Isolated destructive contract test; disabled unless the dedicated harness supplies both URLs.
+// [Sync] 2026-09-17: reproduce and prevent the claim-message/grant lock-order deadlock.
 // [Sync] 2026-09-16: verify claim-turn grant recovery, lease fencing and ACK invalidation.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
@@ -9,7 +10,8 @@ import {
   runStoryWorkspaceConfirmationBackgroundOperation,
   runStoryWorkspaceConfirmationOAuthOperation,
 } from "./storyWorkspaceConfirmationService";
-import { DelegationService } from "../auth/delegationService";
+import { DelegationService, delegationHash } from "../auth/delegationService";
+import { DelegationRepository } from "../auth/delegationRepository";
 
 const adminUrl = process.env.STORY_WORKSPACE_CONFIRMATION_TEST_ADMIN_URL;
 const restrictedUrl = process.env.STORY_WORKSPACE_CONFIRMATION_TEST_DATABASE_URL;
@@ -174,6 +176,42 @@ describe.skipIf(!enabled)("Story Workspace confirmation PostgreSQL contract", ()
     const recovered = await database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
       "story-workspace-confirmation.claim-turn", { message_id: message, claim_id: "claim-pg-1" }, service, tx));
     expect(recovered.authority?.token).toBe(claim.authority?.token);
+
+    let releaseHolder = () => undefined;
+    let holderReady = () => undefined;
+    const holderMayRead = new Promise<void>(resolve => { releaseHolder = resolve; });
+    const holderHasGrantLock = new Promise<void>(resolve => { holderReady = resolve; });
+    const holder = database.transaction(async tx => {
+      const repository = new DelegationRepository(tx);
+      expect(await repository.lock(delegationHash(claim.authority!.token))).not.toBeNull();
+      holderReady();
+      await holderMayRead;
+      return repository.confirmationClaimSource(message, "1", "thread-confirmation-1");
+    });
+    await holderHasGrantLock;
+    let concurrentRecoverySettled = false;
+    const concurrentRecovery = database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
+      "story-workspace-confirmation.claim-turn", { message_id: message, claim_id: "claim-pg-1" }, service, tx))
+      .finally(() => { concurrentRecoverySettled = true; });
+    let observedGrantLockWait = false;
+    for (let attempt = 0; attempt < 100 && !concurrentRecoverySettled; attempt += 1) {
+      const waiting = await admin.query(`SELECT EXISTS (
+        SELECT 1 FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND wait_event_type = 'Lock'
+          AND query ILIKE '%runtime_delegations%'
+          AND query ILIKE '%for update%'
+      ) AS waiting`);
+      if (waiting.rows[0].waiting) { observedGrantLockWait = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    expect(concurrentRecoverySettled || observedGrantLockWait).toBe(true);
+    releaseHolder();
+    const [sourceDuringRecovery, recoveredDuringLock] = await Promise.all([holder, concurrentRecovery]);
+    expect(sourceDuringRecovery?.id).toBe(message);
+    expect(recoveredDuringLock.authority?.token).toBe(claim.authority?.token);
+
     await expect(database.transaction(tx => new DelegationService(tx).resolve(
       claim.authority!.token, "dream:read", service.id, "thread-confirmation-1", runId, null,
     ))).resolves.toMatchObject({ principal: { canonical_user_id: "1" },

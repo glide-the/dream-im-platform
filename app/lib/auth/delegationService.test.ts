@@ -1,6 +1,7 @@
 // [Input] Injected ORM/grant boundaries with controlled OAuth, confirmation claim or Reflections authority ownership.
 // [Output] Long-turn binding, source fencing, encrypted recovery and bounded renewal.
 // [Pos] Provider-free delegation domain tests; no fixtures in production modules.
+// [Sync] 2026-09-17: verify claim recovery does not reacquire the grant after claim/entity validation.
 // [Sync] 2026-09-17: provision the confidential service fixture with a valid background scope ceiling.
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ lock: vi.fn(), creation: vi.fn(), claimCreation: vi.fn(), claimSource: vi.fn(), reflection: vi.fn(), owns: vi.fn(), editor: vi.fn(), audit: vi.fn(), key: vi.fn(), active: vi.fn(), activeCanonical: vi.fn(), principal: vi.fn(), create: vi.fn(), renew: vi.fn(), revoke: vi.fn(), receipt: vi.fn(), context: vi.fn() }));
@@ -194,6 +195,7 @@ describe("entity-limited runtime delegation", () => {
     mocks.lock.mockResolvedValue(stored);
     expect(await new DelegationService(tx).createForConfirmationClaim(claimService, binding)).toEqual(created);
     expect(mocks.create).toHaveBeenCalledOnce();
+    expect(mocks.lock).not.toHaveBeenCalled();
   });
 
   it("fences a claim-bound grant before data access when its lease or claim changes", async () => {

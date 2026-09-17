@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-17: define one-way claim-message/grant locking for confirmation authority recovery. -->
 <!-- [Sync] 2026-09-17: define exact legacy Dream credential adoption through DTO/service/typed Drizzle without Admin-domain merging. -->
 <!-- [Sync] 2026-09-17: register confidential service clients and freeze service-only versus dual-Bearer internal transport. -->
 <!-- [Sync] 2026-09-17: register exact-origin Dream browser form ingress ahead of the unchanged PKCE/OAuth flow. -->
@@ -125,7 +126,7 @@ sequenceDiagram
 
 `story-workspace-confirmation.submit`只接受一份完整confirmation command JSON；current OAuth `dream:write`是唯一用户身份。Admin重新解析严格命令，派生canonical actor、owned Run/Workspace/source Thread、确定性message ID、command fingerprint、Chat parts和metadata。首次提交在一个capability-checked UOW内锁定业务identity，写入普通user消息、更新Thread时间、按`running → output_validating → pending_review → confirmed`推进合法Run并写transition、result和operation receipt。完全相同的业务重放返回原消息且`dispatch:null`；第二份确认或内容变化返回409。只有实际创建持久行的提交返回即时dispatch，避免并发HTTP响应重复启动Runtime。
 
-`fact`要求OAuth `dream:read`，从owned Run派生Thread并只读accepted/dispatched状态，不获取更新锁。`claim/lease/ack`只接受配置了`story-confirmation:dispatch`的Dream服务身份，不接受用户Bearer、actor、数据库、表列、SQL、路径、状态或Runtime选择器。claim锁定指定或最早eligible消息，以exact claim ID取得pending或过期租约；lease只续期当前claim且不能超过Admin配置；ack只在Run为confirmed/completed时将同一claim标为dispatched，并保存不可逆claim摘要。同claim重试可恢复，其他claim不能覆盖；服务中断后由租约过期和reconcile接管。
+`fact`要求OAuth `dream:read`，从owned Run派生Thread并只读accepted/dispatched状态，不获取更新锁。`claim/lease/ack`只接受配置了`story-confirmation:dispatch`的Dream服务身份，不接受用户Bearer、actor、数据库、表列、SQL、路径、状态或Runtime选择器。claim锁定指定或最早eligible消息，以exact claim ID取得pending或过期租约；lease只续期当前claim且不能超过Admin配置；ack只在Run为confirmed/completed时将同一claim标为dispatched，并保存不可逆claim摘要。同claim重试在持有claim消息/Run锁时重新验证当前claim、active subject、Thread/Run/Workspace归属、完整grant行和加密结果，直接恢复原grant，不再递归取得grant更新锁；普通委托读取保持grant→claim消息顺序，因此并发恢复不会形成反向锁环。其他claim不能覆盖；服务中断后由租约过期和reconcile接管。
 
 Dream在submit前后读取并验证共享文件系统投影，接收Admin DTO后继续使用既有same-Thread Runtime、heartbeat、EventBus与SSE。Admin不可用、scope/capability/hash/DTO不匹配、越权、状态冲突或未知提交均失败关闭；OAuth未知写只读取原request receipt，不重发POST，后台claim用同claim ID重试并由后续扫描恢复，绝不回退Dream PostgreSQL。文件路径、文件字节及`.dream`投影不穿越接口，也不进入Admin。
 
