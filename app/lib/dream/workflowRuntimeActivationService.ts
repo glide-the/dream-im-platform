@@ -1,7 +1,7 @@
 // [Input] Strict Registry108 input, verified actor, configured placement and caller-owned Admin UOW.
 // [Output] Idempotent active Runtime binding committed with its receipt in one transaction.
 // [Pos] DTO-Service-typed ORM composition; Dream retains byte verification, Agent Runtime and SSE.
-// [Sync] 2026-09-16: share lock/evidence/hash helpers with Agent-type Runtime preparation.
+// [Sync] 2026-09-17: validate the Runtime lock as an exact subset of the full verified workspace manifest.
 import { createHash, randomUUID } from "node:crypto";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 import { principalDto } from "../auth/dto";
@@ -56,14 +56,19 @@ export function validateRuntimeLock(lock: DeckRuntimePluginLock, policy: dto.Wor
 export function validateObservedRuntimePlugins(lock: DeckRuntimePluginLock, observed: dto.WorkflowRuntimeActivationInput["verified_plugins"]) {
   const byId = new Map<string, (typeof observed)[number]>();
   for (const item of observed) {
-    if (byId.has(item.package_spec)) throw new AuthBoundaryError("DREAM_RUNTIME_INIT_INVALID", 409);
+    if (byId.has(item.package_spec) || item.has_manifest !== true) {
+      throw new AuthBoundaryError("DREAM_RUNTIME_INIT_INVALID", 409);
+    }
     byId.set(item.package_spec, item);
   }
-  if (byId.size !== lock.claude_code_plugins.length) throw new AuthBoundaryError("DREAM_RUNTIME_INIT_INVALID", 409);
+  // The launch manifest is the complete Thread workspace plugin set: it has
+  // Deck refs plus the Deck Plugin's Runtime dependencies. The Runtime lock
+  // covers only the latter, so every locked entry must match exactly while
+  // additional locally verified Deck refs remain outside Runtime receipts.
   for (const locked of lock.claude_code_plugins) {
     const item = byId.get(locked.claude_code_plugin_id);
     if (!item || item.resolved_version !== locked.resolved_version
-      || item.artifact_digest !== locked.artifact_digest || item.has_manifest !== true) {
+      || item.artifact_digest !== locked.artifact_digest) {
       throw new AuthBoundaryError("DREAM_RUNTIME_INIT_INVALID", 409);
     }
   }

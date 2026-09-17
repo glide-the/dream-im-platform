@@ -1,7 +1,7 @@
 // [Input] Registry108 strict DTO, fixed actor/policy and mocked typed Repository/receipt UOW seams.
 // [Output] Atomic activation, replay, authorization, evidence and idempotency-scope assertions.
 // [Pos] Provider-free DTO-Service-ORM domain test; no PostgreSQL, filesystem or Runtime process.
-// [Sync] 2026-09-15: prove Story Workspace Runtime activation is one Admin-owned operation.
+// [Sync] 2026-09-17: cover full launch manifests whose verified Deck refs extend the Runtime lock.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -46,6 +46,8 @@ const policy: WorkflowRuntimeActivationPolicy = {
 const input = { thread_id: threadId, workflow_run_id: workflowRunId, remote_session_ref: "sdk-thread",
   verified_plugins: [{ package_spec: policy.required_plugin_id, resolved_version: policy.required_plugin_version,
     artifact_digest: digest, has_manifest: true }] };
+const deckPlugin = { package_spec: "drama-forge@drama-studio", resolved_version: "1.0.1",
+  artifact_digest: `sha256:${"7".repeat(64)}`, has_manifest: true };
 const actor = { principal: { subject: "subject", canonical_user_id: "42", client_id: "dream",
   scopes: ["dream:read", "dream:write"], status: "active" }, threadScope: threadId, runScope: workflowRunId };
 const baseRun = { workflow_run_id: workflowRunId, workspace_id: "workspace-1", runtime_plugin_lock_id: lockId,
@@ -119,6 +121,22 @@ it("accepts the exact DTO and commits materialization, receipt, Session, Run and
   expect(mocks.activateRun.mock.invocationCallOrder[0]).toBeLessThan(mocks.appendTransition.mock.invocationCallOrder[0]);
 });
 
+it("accepts verified Deck refs outside the Runtime lock without persisting them as Runtime dependencies", async () => {
+  const completeManifest = { ...input, verified_plugins: [deckPlugin, ...input.verified_plugins] };
+  const result = await runWorkflowRuntimeActivationOperation(
+    "workflow-runtime.activate", completeManifest, actor, "dream-service", "request-deck-ref", tx, policy,
+  );
+  expect(result).toMatchObject({ workflow_run_id: workflowRunId, status: "running" });
+  expect(mocks.ownedRun).toHaveBeenCalledExactlyOnceWith("42", completeManifest);
+  expect(mocks.insertMaterialization).toHaveBeenCalledTimes(1);
+  expect(mocks.insertMaterialization).toHaveBeenCalledWith(expect.objectContaining({
+    claude_code_plugin_id: policy.required_plugin_id,
+  }));
+  expect(mocks.insertReceipt).toHaveBeenCalledWith(expect.any(Object), [expect.objectContaining({
+    claude_code_plugin_id: policy.required_plugin_id,
+  })]);
+});
+
 it("revalidates active bindings and replays without installation or durable writes", async () => {
   const active = { ...baseRun, status: "running", runtime_load_receipt_id: `rlr_${"1".repeat(32)}`,
     agent_session_id: `as_${"2".repeat(32)}`, started_at: "2026-09-15T00:00:00+00:00" };
@@ -161,10 +179,12 @@ it("fails closed for missing ownership, altered workspace evidence, installation
 it("rejects duplicate, missing or tampered verified plugin evidence", async () => {
   const variants = [
     { ...input, verified_plugins: [...input.verified_plugins, input.verified_plugins[0]] },
-    { ...input, verified_plugins: [...input.verified_plugins, { ...input.verified_plugins[0], package_spec: "extra@platform-builtin" }] },
+    { ...input, verified_plugins: [deckPlugin, deckPlugin] },
+    { ...input, verified_plugins: [deckPlugin] },
     { ...input, verified_plugins: [] },
     { ...input, verified_plugins: [{ ...input.verified_plugins[0], artifact_digest: `sha256:${"9".repeat(64)}` }] },
     { ...input, verified_plugins: [{ ...input.verified_plugins[0], has_manifest: false }] },
+    { ...input, verified_plugins: [...input.verified_plugins, { ...deckPlugin, has_manifest: false }] },
   ];
   for (const value of variants) await expect(runWorkflowRuntimeActivationOperation("workflow-runtime.activate", value,
     actor, "service", "evidence", tx, policy)).rejects.toMatchObject({ code: "DREAM_RUNTIME_INIT_INVALID", status: 409 });
