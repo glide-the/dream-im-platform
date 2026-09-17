@@ -2,6 +2,7 @@
 // [Output] Drizzle Kit configuration that writes the immutable root drizzle history.
 // [Pos] Schema-generation config owned by the database workspace package.
 // [Sync] 2026-09-04: load built NodeNext modules so Drizzle Kit resolves intentional .js imports without source-loader drift.
+// [Sync] 2026-09-14: include Admin-owned identity protocol and domain receipt expansion.
 import { config } from "dotenv";
 import type { Config } from "drizzle-kit";
 
@@ -12,6 +13,8 @@ export default {
     "./dist/schema/index.js",
     "./dist/schema/dream.js",
     "./dist/schema/capabilities.js",
+    "./dist/schema/auth-generated.js",
+    "./dist/schema/auth.js",
   ],
   out: "../../drizzle",
   dialect: "postgresql",

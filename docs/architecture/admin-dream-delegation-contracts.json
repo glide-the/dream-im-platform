@@ -1,0 +1,603 @@
+[
+  {
+    "contract": {
+      "name": "runtime-delegation.create",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "server-persistence",
+              "gateway-cli",
+              "editor-stdio"
+            ]
+          },
+          "thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "editor_session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scopes": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "dream:read",
+                "dream:write",
+                "messages:create",
+                "messages:count_tokens",
+                "models:list",
+                "editor:read",
+                "editor:write"
+              ]
+            }
+          }
+        },
+        "required": [
+          "purpose",
+          "thread_id",
+          "run_id",
+          "editor_session_id",
+          "scopes"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "pattern": "^idg_[A-Za-z0-9_-]{43}$"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "maximum_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "server-persistence",
+              "gateway-cli",
+              "editor-stdio"
+            ]
+          },
+          "thread_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "editor_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "dream:read",
+                "dream:write",
+                "messages:create",
+                "messages:count_tokens",
+                "models:list",
+                "editor:read",
+                "editor:write"
+              ]
+            }
+          }
+        },
+        "required": [
+          "token",
+          "expires_at",
+          "maximum_expires_at",
+          "purpose",
+          "thread_id",
+          "run_id",
+          "editor_session_id",
+          "scopes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "identity.runtime-delegation.v1",
+        "version": 1,
+        "contractSha256": "1a682e29c2fcfa6d870a64c131773f0fa2ce49866fc56b30f334e07040e79a83"
+      },
+      {
+        "capability": "identity.runtime-purpose.v1",
+        "version": 1,
+        "contractSha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "runtime-delegation.create",
+      "method": "POST",
+      "path": "/api/internal/dream/v1/runtime-delegations",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "61186cc930977683a9739b412de0b0837ac482230ba0cf8c493d57f20d918273"
+    }
+  },
+  {
+    "contract": {
+      "name": "runtime-delegation.renew",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "maximum_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "server-persistence",
+              "gateway-cli",
+              "editor-stdio"
+            ]
+          },
+          "thread_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "editor_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "dream:read",
+                "dream:write",
+                "messages:create",
+                "messages:count_tokens",
+                "models:list",
+                "editor:read",
+                "editor:write"
+              ]
+            }
+          }
+        },
+        "required": [
+          "expires_at",
+          "maximum_expires_at",
+          "purpose",
+          "thread_id",
+          "run_id",
+          "editor_session_id",
+          "scopes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "identity.runtime-delegation.v1",
+        "version": 1,
+        "contractSha256": "1a682e29c2fcfa6d870a64c131773f0fa2ce49866fc56b30f334e07040e79a83"
+      },
+      {
+        "capability": "identity.runtime-purpose.v1",
+        "version": 1,
+        "contractSha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447"
+      }
+    ],
+    "capability": {
+      "name": "runtime-delegation.renew",
+      "method": "POST",
+      "path": "/api/runtime-delegations/renew",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "1d611aeb0c70864d330042e2f3825191a0624f177b81a62ba83fae31587117db"
+    }
+  },
+  {
+    "contract": {
+      "name": "runtime-delegation.revoke",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "revoked": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "revoked"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "identity.runtime-delegation.v1",
+        "version": 1,
+        "contractSha256": "1a682e29c2fcfa6d870a64c131773f0fa2ce49866fc56b30f334e07040e79a83"
+      },
+      {
+        "capability": "identity.runtime-purpose.v1",
+        "version": 1,
+        "contractSha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447"
+      }
+    ],
+    "capability": {
+      "name": "runtime-delegation.revoke",
+      "method": "POST",
+      "path": "/api/runtime-delegations/revoke",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "0c4c315146fb80dff05db14eed0ac7b301db1d85827f6a651cc1e1d7b25152f9"
+    }
+  },
+  {
+    "contract": {
+      "name": "runtime-delegation.receipt",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "runtime-delegation.renew",
+              "runtime-delegation.revoke"
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "operation"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "absent"
+                  },
+                  "operation": {
+                    "type": "string",
+                    "const": "runtime-delegation.renew"
+                  },
+                  "request_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  }
+                },
+                "required": [
+                  "status",
+                  "operation",
+                  "request_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "committed"
+                  },
+                  "operation": {
+                    "type": "string",
+                    "const": "runtime-delegation.renew"
+                  },
+                  "request_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "result": {
+                    "type": "object",
+                    "properties": {
+                      "expires_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                      },
+                      "maximum_expires_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                      },
+                      "purpose": {
+                        "type": "string",
+                        "enum": [
+                          "server-persistence",
+                          "gateway-cli",
+                          "editor-stdio"
+                        ]
+                      },
+                      "thread_id": {
+                        "type": "string"
+                      },
+                      "run_id": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "editor_session_id": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "scopes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "dream:read",
+                            "dream:write",
+                            "messages:create",
+                            "messages:count_tokens",
+                            "models:list",
+                            "editor:read",
+                            "editor:write"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "expires_at",
+                      "maximum_expires_at",
+                      "purpose",
+                      "thread_id",
+                      "run_id",
+                      "editor_session_id",
+                      "scopes"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "status",
+                  "operation",
+                  "request_id",
+                  "result"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "absent"
+                  },
+                  "operation": {
+                    "type": "string",
+                    "const": "runtime-delegation.revoke"
+                  },
+                  "request_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  }
+                },
+                "required": [
+                  "status",
+                  "operation",
+                  "request_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "committed"
+                  },
+                  "operation": {
+                    "type": "string",
+                    "const": "runtime-delegation.revoke"
+                  },
+                  "request_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "result": {
+                    "type": "object",
+                    "properties": {
+                      "revoked": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "revoked"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "status",
+                  "operation",
+                  "request_id",
+                  "result"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "identity.runtime-delegation.v1",
+        "version": 1,
+        "contractSha256": "1a682e29c2fcfa6d870a64c131773f0fa2ce49866fc56b30f334e07040e79a83"
+      },
+      {
+        "capability": "identity.runtime-purpose.v1",
+        "version": 1,
+        "contractSha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447"
+      }
+    ],
+    "capability": {
+      "name": "runtime-delegation.receipt",
+      "method": "GET",
+      "path": "/api/runtime-delegations/receipts/{request_id}",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "19bfb6e3eaa0ee783d688035afc347b3f2ec4b6771161e0ba445ed9b890ffdfc"
+    }
+  }
+]

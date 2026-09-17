@@ -52,17 +52,23 @@
 
 不得出现 `basePriceMicrousd`、`allowanceMicrousd`、overage switch/rule、currency、annual 周期或 `effectiveFrom/effectiveTo`。发布确认 Modal 显示版本快照、Token 发放量、Entitlement 数量和“发布后不可编辑”；发布时间不改变现有用户，只有开通或下一周期 pending change 才使用该版本。
 
+发布前需要避免套餐包含尚未启用的模型或提供商，导致订阅成功但 Dream 无法选择模型。发布事务锁定版本后检查全部启用权益：每个模型必须已启用，每个提供商必须为启用状态；已连接账号不能代替提供商启用。未满足时返回 `SUBSCRIPTION_PUBLISH_DEPENDENCY_DISABLED` 409，发布弹窗列出“模型未启用：…”或“提供商未启用：…”；多个错误一起展示，共用提供商只列一次。失败保留草稿和套餐状态，不产生发布成功审计；先到模型中心或 Provider 设置页处理，再重新发布。停用权益不属于本次发布的可用模型范围，历史已发布版本不改写。验收覆盖全部就绪成功发布、模型停用、Provider 停用、两者同时停用、无启用权益，以及已发布版本的幂等重试。
+
 ### 2.3 Entitlement 宽 Drawer / 独立页
 
 | 数据项 | 控件 | 校验与说明 |
 |---|---|---|
-| version / model | 可搜索关系选择器 | 只选 draft Version 与 active model |
+| version / model | 可搜索关系选择器 | 服务端只接受 draft Version；模型选项只查询已启用的 `ai_models.enabled=true`，搜索与分页保留条件 |
 | Gateway scopes | multiselect | 使用白名单枚举 |
 | RPM limit | integer | 空值表示继承明确的上层策略；`>=1` |
 | Storage limit | integer + 单位选择/只读换算 | 数据库存 bytes，UI 明确 GiB/MiB |
 | 状态/快照 ID | 只读 code/status tag | 发布后无编辑/删除动作 |
 
 Token 周期总额度只在 Version 配置，避免与 Entitlement 的安全限流字段重复成第二套月度额度。Model permission 的用户例外入口仍在 Gateway 限流模块。
+
+添加模型权益用于把已启用的模型纳入套餐草稿，避免发布后默认模型根本不进入 Dream 模型目录。目标仅限制新增权益的模型选择，不自动启用模型或 Provider，也不改写已发布版本。没有已启用模型时，选择器保持空结果，运营先到模型中心启用所需模型。
+
+选择后的模型若在提交前被停用，服务端在同一事务内锁定并复核模型状态，返回 `SUBSCRIPTION_ENTITLEMENT_MODEL_DISABLED` 409；表单保留草稿并提示重新加载选项，不创建权益。直接提交停用或不存在的模型同样拒绝；正常新增仍记录审计。验收覆盖已启用模型可选且可保存、停用模型不出现在搜索/分页结果、提交前停用导致 409；历史权益仍可查看。
 
 ### 2.4 开通 Drawer
 

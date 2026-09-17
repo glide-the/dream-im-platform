@@ -1,6 +1,7 @@
 <!-- [Input] Gateway PRD, billing/entitlement contracts, and Provider authentication lifecycle. -->
 <!-- [Output] Gateway Key, request observability, payload access, rate-limit, and upstream authentication boundaries. -->
 <!-- [Pos] Gateway Admin interaction contract; execution-plane credential rules link to the Provider auth design. -->
+<!-- [Sync] 2026-09-17: align current Gateway trace views with optional Entitlement limits and allowance-only snapshots. -->
 <!-- [Sync] 2026-09-04: resolve managed credentials only through direct Provider ownership. -->
 
 # 模块交互：Gateway Key、Request、Payload 与限流
@@ -13,7 +14,7 @@
 
 | 分层 | 交互边界 |
 |---|---|
-| Current / Implemented | Key/Request/Payload/限流页面与 Dream server-only 链路；canonical user→Subscription→Entitlement→Permission→limit→Token Allowance、402 单位、无 cash fallback 与 settled guard 已落地。 |
+| Current / Implemented | Key/Request/Payload/限流页面与 Dream server-only 链路；canonical user→Subscription→enabled Model/Provider/Pricing→optional Entitlement limits→Permission→limit→Token Allowance、402 单位、`allowance-only`审计、无cash fallback与settled guard已落地。 |
 | Planned enhancement | Request Drawer 的 Subscription/Entitlement/Allowance 富详情；不影响 strict Gateway 资格链。 |
 | Release Gate | orphan/cash-only fail-closed、401/402/403/404/409/429/502/503、流取消/usage 缺失、无浏览器 Key/Secret 与两视口 Payload 权限测试通过。 |
 
@@ -64,6 +65,6 @@ Dream BFF 不把 Gateway `/v1` 的 snake_case 诊断原样透传给产品页；�
 - UI-GTW-03：429 能导航到实际配置并保持 user/model context。
 - UI-GTW-04：390×844 下 Request、JSON、Raw SSE 和回执可完整操作。
 - UI-GTW-05（Implemented / release candidate）：orphan 兼容身份无法创建/使用 Key；402 诊断的字段名、数值和单位一致。
-- UI-GTW-06（Target release gate）：Request Drawer 能追溯 canonical user→Subscription→Version→Entitlement→Permission→current-period Token Allowance→Usage；独立 Pricing/Cost/Ledger 另区显示，且每个快照是请求时版本，不被新配置重算。
+- UI-GTW-06（Target release gate）：Request Drawer 能追溯 canonical user→Subscription→Version→enabled Model/Provider/Pricing→nullable Entitlement limits→Permission→current-period Token Allowance→Usage；缺失Entitlement明确显示`allowance-only`，独立Pricing/Cost/Ledger另区显示，且每个快照是请求时版本，不被新配置重算。
 - UI-GTW-07（Target release gate）：Subscription Token 用尽只显示 Token 402，不继续扣 cash；cash-only canary 关闭后无 Subscription 显示真实 403/开通路径。ASR 在 streaming-audio 合同完成前不出现为可选 Gateway capability。
 - UI-GTW-08（Target release gate）：轮换新 Key 只显示一次，旧 Key 保留 revoked 历史；转动前后 Request 快照均可追溯且无明文回读。

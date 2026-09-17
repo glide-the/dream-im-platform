@@ -3,7 +3,7 @@
 // [Input] Versioned Admin policies, safe Provider auth projections, and generic resource-manager field contracts.
 // [Output] Canonical resource forms, including Provider auth revision CAS and model-scoped Runtime controls.
 // [Pos] Admin resource-view declaration layer; server validation and capability gates stay in app/lib.
-// [Sync] 2026-09-04: distinguish static Provider credentials from OAuth and submit auth revisions numerically.
+// [Sync] 2026-09-17: map the Dream Run URL identity to the allowlisted Repository id filter.
 import { gatewayDefaultLimitsPolicy } from "../../../config/gateway-default-limits.mjs";
 import { CLAUDE_CODE_RUNTIME_INTEGER_MAX } from "../../../config/claude-agent-resource-policy";
 import AdminResourceManager, {
@@ -150,13 +150,41 @@ export function PlatformUsersResourceView() {
 export function UsersResourceView() {
   return <AdminResourceManager
     resource="users"
-    title="平台用户"
-    description="只读查看 Dream 真实 users 与 Workspace、Story 关联；密码与会话字段不会返回到浏览器。"
+    title="Dream 产品用户"
+    description="查看 Dream canonical users 与 Workspace、Story 关联；业务角色只决定 Dream 产品权限，与 Admin 管理员、Admin Session 和 Better Auth 主体分开。密码与会话字段不会返回到浏览器。"
     container="drawer"
     canCreate={false}
     canEdit={false}
     canDelete={false}
     fields={[]}
+    commands={[
+      {
+        action: "set-product-role",
+        label: "授予 Dream 产品管理员",
+        description: "把此 canonical 用户的 Dream 业务角色从 user 改为 admin。该操作不会创建 Admin 管理员、Admin Session 或认证主体关联。",
+        requiresNotes: true,
+        tone: "success",
+        visible: (record) => record.role === "user",
+        buildPayload: (_record, reason) => ({
+          expectedRole: "user",
+          role: "admin",
+          reason,
+        }),
+      },
+      {
+        action: "set-product-role",
+        label: "移除 Dream 产品管理员",
+        description: "把此 canonical 用户的 Dream 业务角色从 admin 改为 user。该操作不会修改 Admin 管理员、Admin Session 或认证主体关联。",
+        requiresNotes: true,
+        tone: "danger",
+        visible: (record) => record.role === "admin",
+        buildPayload: (_record, reason) => ({
+          expectedRole: "admin",
+          role: "user",
+          reason,
+        }),
+      },
+    ]}
     defaultSort="updated_at"
     filters={[
       { field: "email", label: "邮箱或显示名" },
@@ -230,6 +258,7 @@ export function StoryWorkflowRunsResourceView() {
       fields={[]}
       defaultSort="created_at"
       filters={[
+        { field: "runId", apiField: "id", label: "Run ID", operator: "eq" },
         { field: "display_title", label: "工作空间标题" },
         { field: "workspace_id", label: "Workspace ID" },
         { field: "status", label: "运行状态", operator: "eq" },

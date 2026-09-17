@@ -1,11 +1,13 @@
 // [Input] First-admin bootstrap request plus the canonical permission/role policy.
 // [Output] Transactional initial Admin, roles, permissions, and audit receipt.
 // [Pos] One-time Admin bootstrap service; normal requests use existing session/RBAC checks.
-// [Sync] 2026-08-27: include Claude Agent resource-console read/write permissions.
+// [Sync] 2026-09-17: seed only the independent Admin operator/session domain; Dream identities are never created or linked.
 
-import { withPlatformClient, withPlatformTransaction } from "../platform-db";
+import { sql } from "drizzle-orm";
+import { adminUsers, adminPermissions, adminRoles, adminRolePermissions, adminUserRoles, adminAuditLogs } from "@ink-memory/db/schema";
+import { withAdminAuthControlTransaction } from "../auth/database";
+import { signInAdminOnTransaction } from "../auth/adminAuthService";
 import { createPlatformId } from "../platform-ids";
-import { recordAdminAuditOnClient } from "./audit";
 import { AdminError } from "./errors";
 import { hashAdminPassword } from "./password";
 
@@ -57,97 +59,29 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
 };
 
 export async function isAdminBootstrapRequired() {
-  return await withPlatformClient(async (client) => {
-    const result = await client.query<{ required: boolean }>(
-      `SELECT NOT EXISTS (
-         SELECT 1 FROM admin_users LIMIT 1
-       ) AS required`,
-    );
-    return result.rows[0]?.required ?? true;
-  });
+  return withAdminAuthControlTransaction(async tx => !(await tx.select({ id: adminUsers.id }).from(adminUsers).limit(1)).length);
 }
-
-export async function bootstrapFirstAdmin(input: {
-  email: string;
-  displayName?: string;
-  password: string;
-  request: Request;
-  requestId: string;
-}) {
+export async function bootstrapFirstAdmin(input: { email: string; displayName?: string; password: string; request: Request; requestId: string }) {
   const passwordHash = await hashAdminPassword(input.password);
-  return await withPlatformTransaction(async (client) => {
-    await client.query("LOCK TABLE admin_users IN EXCLUSIVE MODE");
-    const count = await client.query<{ count: string }>(
-      "SELECT COUNT(*)::text AS count FROM admin_users",
-    );
-    if (count.rows[0]?.count !== "0") {
-      throw new AdminError(
-        "ADMIN_ALREADY_BOOTSTRAPPED",
-        "The first admin has already been created",
-        409,
-      );
-    }
-
+  return withAdminAuthControlTransaction(async tx => {
+    await tx.execute(sql`LOCK TABLE public.admin_users IN EXCLUSIVE MODE`);
+    if ((await tx.select({ id: adminUsers.id }).from(adminUsers).limit(1)).length) throw new AdminError("ADMIN_ALREADY_BOOTSTRAPPED", "The first admin has already been created", 409);
+    const email = input.email.trim().toLowerCase();
     const permissionIds = new Map<string, string>();
     for (const code of PERMISSIONS) {
-      const id = createPlatformId("perm");
-      const result = await client.query<{ id: string }>(
-        `INSERT INTO admin_permissions (id, code, name)
-         VALUES ($1, $2, $2)
-         ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name
-         RETURNING id`,
-        [id, code],
-      );
-      permissionIds.set(code, result.rows[0].id);
+      const rows = await tx.insert(adminPermissions).values({ id: createPlatformId("perm"), code, name: code }).onConflictDoUpdate({ target: adminPermissions.code, set: { name: code } }).returning({ id: adminPermissions.id });
+      permissionIds.set(code, rows[0].id);
     }
-
     const roleIds = new Map<string, string>();
     for (const [code, permissions] of Object.entries(ROLE_PERMISSIONS)) {
-      const id = createPlatformId("role");
-      const result = await client.query<{ id: string }>(
-        `INSERT INTO admin_roles (id, code, name)
-         VALUES ($1, $2, $2)
-         ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name
-         RETURNING id`,
-        [id, code],
-      );
-      const roleId = result.rows[0].id;
-      roleIds.set(code, roleId);
-      for (const permission of permissions) {
-        await client.query(
-          `INSERT INTO admin_role_permissions (role_id, permission_id)
-           VALUES ($1, $2)
-           ON CONFLICT DO NOTHING`,
-          [roleId, permissionIds.get(permission)],
-        );
-      }
+      const rows = await tx.insert(adminRoles).values({ id: createPlatformId("role"), code, name: code }).onConflictDoUpdate({ target: adminRoles.code, set: { name: code } }).returning({ id: adminRoles.id });
+      roleIds.set(code, rows[0].id);
+      for (const permission of permissions) await tx.insert(adminRolePermissions).values({ role_id: rows[0].id, permission_id: permissionIds.get(permission)! }).onConflictDoNothing();
     }
-
     const adminUserId = createPlatformId("admin");
-    await client.query(
-      `INSERT INTO admin_users (
-         id, email, display_name, password_hash, status
-       ) VALUES ($1, $2, $3, $4, 'active')`,
-      [
-        adminUserId,
-        input.email.trim().toLowerCase(),
-        input.displayName?.trim() || null,
-        passwordHash,
-      ],
-    );
-    await client.query(
-      `INSERT INTO admin_user_roles (admin_user_id, role_id)
-       VALUES ($1, $2)`,
-      [adminUserId, roleIds.get("super_admin")],
-    );
-    await recordAdminAuditOnClient(client, {
-      action: "bootstrap",
-      resourceType: "admin_user",
-      resourceId: adminUserId,
-      requestId: input.requestId,
-      request: input.request,
-      after: { email: input.email.trim().toLowerCase(), role: "super_admin" },
-    });
-    return { adminUserId };
+    await tx.insert(adminUsers).values({ id: adminUserId, email, display_name: input.displayName?.trim() || null, password_hash: passwordHash, status: "active" });
+    await tx.insert(adminUserRoles).values({ admin_user_id: adminUserId, role_id: roleIds.get("super_admin")! });
+    await tx.insert(adminAuditLogs).values({ id: createPlatformId("audit"), actor_type: "system", action: "bootstrap", resource_type: "admin_user", resource_id: adminUserId, request_id: input.requestId, after: { email, role: "super_admin" } });
+    return signInAdminOnTransaction(tx, input.request, input.requestId, { email, password: input.password }, 201);
   });
 }

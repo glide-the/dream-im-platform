@@ -4,6 +4,7 @@
 // [Sync] 2026-08-19: include five ClaudePlugin Remote Marketplace relations.
 // [Sync] 2026-08-25: include four Admin-owned Dream-managed MCP relations.
 // [Sync] 2026-08-27: include the Claude Agent latest-instance resource snapshot relation.
+// [Sync] 2026-09-15: include the 0061 Reflections task-section relation explicitly.
 
 import { getTableName, isTable } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
@@ -16,7 +17,7 @@ import {
 } from "./schema";
 
 describe("complete Dream Drizzle schema", () => {
-  it("declares exactly 59 Dream and canonical baseline tables", () => {
+  it("declares exactly 60 Dream and canonical baseline tables", () => {
     const generatedNames = Object.values(dreamSchema)
       .filter(isTable)
       .map(getTableName);
@@ -30,7 +31,7 @@ describe("complete Dream Drizzle schema", () => {
     );
     const allNames = [...generatedNames, ...canonicalBaselineNames];
 
-    expect(generatedNames).toHaveLength(56);
+    expect(generatedNames).toHaveLength(57);
     expect(managedMcpNames).toEqual([
       "dream_mcp_servers",
       "dream_mcp_credentials",
@@ -43,7 +44,8 @@ describe("complete Dream Drizzle schema", () => {
       "story_workspace_stories",
     ]);
     expect(generatedNames).toContain("claude_agent_resource_snapshots");
-    expect(allNames).toHaveLength(59);
-    expect(new Set(allNames).size).toBe(59);
+    expect(generatedNames).toContain("reflection_task_section");
+    expect(allNames).toHaveLength(60);
+    expect(new Set(allNames).size).toBe(60);
   });
 });

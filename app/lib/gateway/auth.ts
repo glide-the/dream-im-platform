@@ -1,12 +1,20 @@
-import { jwtVerify, type JWTPayload } from "jose";
+// [Input] Active Gateway key plus Admin OAuth grant, or Admin-issued entity-limited runtime bearer.
+// [Output] Canonical billing principal preserving active key scope and account/model restrictions.
+// [Pos] Gateway authentication; Dream cannot sign user tokens or share a service key with runtime.
+// [Sync] 2026-09-14: retire HS256 subject authority and add opaque delegation authentication.
 import type { PoolClient } from "pg";
 import { withPlatformClient } from "../platform-db";
 import { extractGatewayApiKey, hashGatewayApiKey } from "./api-keys";
 import { GatewayError } from "./errors";
+import { verifyAdminAccessToken } from "../auth/accessToken";
+import { withAuthTransaction } from "../auth/database";
+import { SubjectRepository } from "../auth/subjectRepository";
+import { gatewayClientBindings } from "../auth/gatewayBindings";
+import { AuthBoundaryError } from "../auth/config";
+import { withDataTransaction } from "../dream/database";
+import { identitySchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement } from "../dream/schemaRequirements";
+import { DelegationService } from "../auth/delegationService";
 
-const maximumSubjectTokenLifetimeSeconds = 300;
-const subjectTokenClockToleranceSeconds = 5;
-const postgresBigintMaximum = 9_223_372_036_854_775_807n;
 
 export type GatewayPrincipal = {
   apiKeyId: string;
@@ -82,56 +90,6 @@ function optionalSafeNumber(value: string | number | null, name: string) {
   return parsed;
 }
 
-function requiredSubjectEnvironment(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw configurationError();
-  return value;
-}
-
-function bearerSubjectToken(headers: Headers) {
-  const authorization = headers.get("authorization")?.trim();
-  const match = authorization?.match(/^Bearer ([A-Za-z0-9._~-]+)$/);
-  if (!match || match[1].startsWith("gw_")) {
-    throw authenticationError(
-      "GATEWAY_SUBJECT_TOKEN_REQUIRED",
-      "A Gateway subject Bearer token is required for this service key",
-    );
-  }
-  return match[1];
-}
-
-function canonicalSubject(value: unknown) {
-  if (typeof value !== "string" || !/^[1-9]\d{0,18}$/.test(value)) {
-    throw authenticationError();
-  }
-  const parsed = BigInt(value);
-  if (parsed > postgresBigintMaximum) throw authenticationError();
-  return value;
-}
-
-function stringClaim(value: unknown, maximumLength: number) {
-  return typeof value === "string" &&
-    value.length > 0 &&
-    value.length <= maximumLength
-    ? value
-    : null;
-}
-
-function tokenScopes(payload: JWTPayload) {
-  const scopeClaim = payload.scope;
-  if (typeof scopeClaim !== "string" || scopeClaim.length > 1_000) {
-    throw authenticationError();
-  }
-  const scopes = scopeClaim.split(/\s+/).filter(Boolean);
-  if (
-    scopes.length === 0 ||
-    scopes.some((scope) => !/^[a-z][a-z0-9:*._-]{1,79}$/.test(scope))
-  ) {
-    throw authenticationError();
-  }
-  return [...new Set(scopes)];
-}
-
 function assertNoSubjectHeaderOverride(headers: Headers) {
   const forbiddenHeaders = [
     "x-canonical-user-id",
@@ -149,72 +107,21 @@ function assertNoSubjectHeaderOverride(headers: Headers) {
   }
 }
 
-async function verifyGatewaySubjectJwt(
-  headers: Headers,
-  plaintextKey: string,
-  expectedClientId: string,
-  requiredScope: string,
-  keyScopes: string[],
-): Promise<VerifiedGatewaySubject> {
-  const token = bearerSubjectToken(headers);
-  const issuer = requiredSubjectEnvironment("GATEWAY_SUBJECT_JWT_ISSUER");
-  const audience = requiredSubjectEnvironment("GATEWAY_SUBJECT_JWT_AUDIENCE");
-  let payload: JWTPayload;
+async function verifyGatewaySubjectJwt(headers: Headers, expectedClientId: string, requiredScope: string, keyScopes: string[]): Promise<VerifiedGatewaySubject> {
   try {
-    ({ payload } = await jwtVerify(
-      token,
-      new TextEncoder().encode(plaintextKey),
-      {
-        algorithms: ["HS256"],
-        issuer,
-        audience,
-        requiredClaims: ["sub", "iat", "exp", "jti", "scope"],
-        clockTolerance: subjectTokenClockToleranceSeconds,
-        maxTokenAge: `${maximumSubjectTokenLifetimeSeconds}s`,
-      },
-    ));
-  } catch {
-    throw authenticationError();
+    const verified = await verifyAdminAccessToken(headers, requiredScope);
+    const permitted = gatewayClientBindings().some(binding => binding.gateway_client_id === expectedClientId && binding.oauth_client_ids.includes(verified.clientId));
+    if (!permitted) throw authenticationError();
+    const identity = await withAuthTransaction(tx => new SubjectRepository(tx).findActive(verified.subject));
+    if (!identity) throw new GatewayError("GATEWAY_CANONICAL_USER_REQUIRED", "An active canonical user is required", 403, "permission_error");
+    const scopes = verified.scopes.filter(scope => keyScopes.includes(scope));
+    if (!scopes.includes(requiredScope)) throw new GatewayError("GATEWAY_SCOPE_REQUIRED", "The Gateway key does not grant this scope", 403, "permission_error");
+    return { canonicalUserId: identity.canonicalUserId.toString(), clientId: expectedClientId, tokenId: verified.tokenId, scopes };
+  } catch (error) {
+    if (error instanceof GatewayError) throw error;
+    if (error instanceof AuthBoundaryError && error.status < 500) throw new GatewayError(error.status === 403 ? "GATEWAY_SCOPE_REQUIRED" : "GATEWAY_SUBJECT_TOKEN_INVALID", "Gateway authentication could not be completed", error.status, error.status === 403 ? "permission_error" : "authentication_error");
+    throw configurationError();
   }
-  if (
-    typeof payload.iat !== "number" ||
-    typeof payload.exp !== "number" ||
-    !Number.isInteger(payload.iat) ||
-    !Number.isInteger(payload.exp) ||
-    payload.exp <= payload.iat ||
-    payload.exp - payload.iat > maximumSubjectTokenLifetimeSeconds
-  ) {
-    throw authenticationError();
-  }
-  const canonicalUserId = canonicalSubject(payload.sub);
-  const clientIdClaim = stringClaim(payload.client_id, 160);
-  const authorizedParty = stringClaim(payload.azp, 160);
-  if (
-    (clientIdClaim && authorizedParty && clientIdClaim !== authorizedParty) ||
-    (clientIdClaim ?? authorizedParty) !== expectedClientId
-  ) {
-    throw authenticationError();
-  }
-  const tokenId = stringClaim(payload.jti, 200);
-  if (!tokenId) throw authenticationError();
-  const scopes = tokenScopes(payload);
-  if (
-    !scopes.includes(requiredScope) ||
-    scopes.some((scope) => !keyScopes.includes(scope))
-  ) {
-    throw new GatewayError(
-      "GATEWAY_SCOPE_REQUIRED",
-      `The subject token does not grant ${requiredScope}`,
-      403,
-      "permission_error",
-    );
-  }
-  return {
-    canonicalUserId,
-    clientId: expectedClientId,
-    tokenId,
-    scopes,
-  };
 }
 
 async function findCanonicalIdentity(
@@ -228,8 +135,9 @@ async function findCanonicalIdentity(
        FROM users AS canonical_user
        JOIN platform_users AS u
          ON u.source = 'ink-dream'
-        AND u.external_user_id = canonical_user.id::text
+          AND u.external_user_id = canonical_user.id::text
       WHERE canonical_user.id = $1::bigint
+        AND canonical_user.status = 'active'
         AND u.status = 'active'
       LIMIT 1`,
     [canonicalUserId],
@@ -265,6 +173,8 @@ export async function authenticateGatewayRequest(
   requiredScope: string,
 ): Promise<GatewayPrincipal> {
   assertNoSubjectHeaderOverride(headers);
+  const opaque = headers.get("authorization")?.match(/^Bearer (idg_[A-Za-z0-9_-]{43})$/)?.[1] ?? headers.get("x-api-key")?.match(/^(idg_[A-Za-z0-9_-]{43})$/)?.[1];
+  if (opaque) return authenticateRuntimeGateway(opaque, requiredScope);
   const plaintext = extractGatewayApiKey(headers);
   if (!plaintext) {
     throw new GatewayError(
@@ -304,6 +214,7 @@ export async function authenticateGatewayRequest(
          LEFT JOIN users AS canonical_user
            ON u.source = 'ink-dream'
           AND u.external_user_id = canonical_user.id::text
+          AND canonical_user.status = 'active'
         WHERE k.key_hash = $1
           AND k.status = 'active'
           AND k.revoked_at IS NULL
@@ -363,7 +274,6 @@ export async function authenticateGatewayRequest(
       }
       const verified = await verifyGatewaySubjectJwt(
         headers,
-        plaintext,
         row.service_client_id,
         requiredScope,
         row.scopes,
@@ -388,4 +298,23 @@ export async function authenticateGatewayRequest(
     );
     return principalFromIdentity(row.api_key_id, principalScopes, identity);
   });
+}
+
+async function authenticateRuntimeGateway(token: string, requiredScope: string): Promise<GatewayPrincipal> {
+  try {
+    const actor = await withDataTransaction([identitySchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement], tx => new DelegationService(tx).resolve(token, requiredScope));
+    if (!actor.gatewayApiKeyId) throw authenticationError();
+    return withPlatformClient(async client => {
+      const key = await client.query<{ id: string; scopes: string[] }>(`SELECT id, scopes FROM gateway_api_keys WHERE id = $1 AND subject_mode = 'canonical_subject' AND status = 'active' AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())`, [actor.gatewayApiKeyId]);
+      if (!key.rows[0] || !key.rows[0].scopes.includes(requiredScope)) throw authenticationError();
+      const identity = await findCanonicalIdentity(client, actor.principal.canonical_user_id);
+      if (!identity) throw new GatewayError("GATEWAY_CANONICAL_USER_REQUIRED", "An active canonical user is required", 403, "permission_error");
+      await client.query("UPDATE gateway_api_keys SET last_used_at = NOW() WHERE id = $1", [key.rows[0].id]);
+      return principalFromIdentity(key.rows[0].id, actor.principal.scopes.filter(scope => key.rows[0].scopes.includes(scope)), identity);
+    });
+  } catch (error) {
+    if (error instanceof GatewayError) throw error;
+    if (error instanceof AuthBoundaryError && error.status < 500) throw new GatewayError("GATEWAY_DELEGATION_REQUIRED", "An active entity delegation is required", error.status, "authentication_error");
+    throw configurationError();
+  }
 }

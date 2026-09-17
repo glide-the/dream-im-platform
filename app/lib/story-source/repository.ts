@@ -1,6 +1,6 @@
 // [Input] Admin-authenticated Story list/detail requests over shared PostgreSQL.
-// [Output] Allowlisted Story/Run records; Dream Run display titles prefer the
-//          canonical Story title and fall back to the launch-goal prefix.
+// [Output] Allowlisted Story/Run records; Dream Run list identity supports an
+//          exact id predicate, while display titles prefer canonical Story data.
 // [Pos] Admin Story read repository; it never writes Project or Artifact facts.
 
 import type { PoolClient } from "pg";
@@ -325,6 +325,7 @@ const storyResources: Record<StorySourceResource, StoryResourceConfig> = {
     },
     defaultSort: "created_at",
     filterFields: [
+      "id",
       "display_title",
       "project_title",
       "goal_prefix",

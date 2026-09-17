@@ -1,6 +1,11 @@
+<!-- [Input] Historical Dream source/database inventory and the final Admin-only production persistence boundary. -->
+<!-- [Output] Current boundary first, followed by preserved source-baseline tables used during migration. -->
+<!-- [Pos] Audit baseline; dated PostgreSQL runtime entries are historical evidence rather than current deployment instructions. -->
+<!-- [Sync] 2026-09-16: replace the current Dream direct-PG claim with Admin DTO data-service ownership. -->
+
 # Dream 当前范围与源系统基线
 
-> 文档状态：**Current / Release candidate**（审计源基线保留；实现状态已校准）
+> 文档状态：**Current boundary / historical source baseline**（现行边界已校准；旧表与工具清单保留）
 > 返回：[总索引](README.md)  
 > 事实基线：[处理判断](../../verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md)  
 > 主要读者：产品、架构、Dream/Admin 后端、QA、安全
@@ -9,7 +14,7 @@
 
 | 领域 | Current implementation | Target / remaining release step | Release Gate |
 |---|---|---|---|
-| Dream 持久化 | **Implemented / Release candidate**：48/569/81/25 Alembic、baseline adopt、43+5 CLI/validator、main/Notion PG-only runtime 已在隔离 PG 验证 | 生产单一 PostgreSQL `ink-memory` | 真实源 rehearsal、owner/ACL 审批和短暂停写 cutover |
+| Dream 持久化 | **Admin API-only source implemented**：Dream 生产图无数据库凭据、driver、SQL、ORM、UOW、DDL 或 fallback；191 个命名操作使用 DTO → Service → typed Repository → Drizzle | Admin 是唯一数据库访问服务；Dream 保留业务编排、Runtime、SSE 与共享文件系统 | 正常库 `0054–0062`、受限角色/ACL、服务切换与真实业务验收 |
 | canonical 用户 | **Implemented / Release candidate**：`users` 唯一真值、自动 mapping/account、服务端分页/搜索、Gateway canonical 反查与 QA-only 回归已验证 | 生产历史 orphan 安全映射/隔离 | 生产只读盘点与处置回执；无破坏财务历史 |
 | Token Subscription / Token Ledger / 独立 Billing | **Implemented / Release candidate**：Admin `0000–0024`、Token-only 状态机/Allowance/Token Ledger、付费开通/续费、独立现金域与不可变 guard 已通过本机 PG、66 files/313 tests、tsc/lint/build 与订阅 Playwright 4/4 | 保持用户月度 Token/Token Ledger 与独立现金域解耦 | 生产数据审计、角色切换与灰度回执；角色矩阵已在 clone 通过 |
 | Gateway | **Implemented / Release candidate**：Admin strict eligibility/settlement 与 Dream server-only client/canonical subject 已通过 focused/real-PG 合同 | 用户级真实 Provider canary | 生产服务身份/Secret 注入、外部 Provider 终态观测 |
@@ -17,7 +22,17 @@
 | Payment/订阅支付 | **Implemented / Release candidate**：Adapter、Intent/event store、Webhook 幂等、Fake guard、refund/reversal、首次开通/付费月续费与 Dream UI | 真实渠道 **Deferred** | `0022–0024` 已应用；生产 Fake 禁用；真实表无测试数据 |
 | ASR Gateway | endpoint 已 fail-closed 禁用；历史已提交 credential 的外部吊销/轮换未获所有者回执 | Gateway audio capability 仍 **Deferred** | credential owner 轮换/历史处置/scan；不得误报 ASR Gateway 已实现 |
 
-## 2. 当前运行时数据源
+## 2. 当前运行时数据边界
+
+| 数据域 | Dream 当前入口 | PostgreSQL 执行模块 | 失败规则 |
+|---|---|---|---|
+| 43+5 canonical、Notion、MCP、Plugin、Workflow、Story、资源策略等生产持久化 | 统一 Pydantic Admin client 与命名 operation | Admin Zod DTO、Domain Service、typed Repository、Drizzle | Admin 不可用、capability/权限/DTO不匹配时失败关闭；禁止 Dream 数据库回退 |
+| Runtime、SSE、EventBus、turn/resume/cancel | Dream 本地业务编排 | 不属于数据库访问 | 保持原状态机、lease、顺序与流式语义 |
+| 共享文件系统 | Dream 授权后的规范化路径操作 | Admin 只保存相关元数据/关系 | 保持 `.claude-tmp`、`0700`、符号链接及越界限制 |
+
+当前权威合同见 [Admin/Dream 认证与数据接口契约](../admin-dream-auth-data-contract.md)。以下连接入口和工具表是重构前源系统快照，用于证明迁移覆盖，不能用于部署 Dream 数据库连接。
+
+## 2.1 历史源运行时数据源（重构前）
 
 | 数据存储 | Current 代码入口 | 当前连接方式 | 目标所有者 |
 |---|---|---|---|
@@ -25,7 +40,7 @@
 | Notion Connector | `backend/notion/store.py` | PostgreSQL repository/UoW 与生命周期 pool；无文件数据库 fallback | Dream |
 | Admin 控制面 | Admin `DATABASE_URL` | PostgreSQL Pool + Drizzle | Admin / Gateway |
 
-历史两个 SQLite 仅由显式迁移 CLI 以只读 snapshot 输入使用；生产 FastAPI 启动路径不读取 `INK_DATABASE_PATH`/`INK_AGENT_NOTION_DB_PATH`。Dream 已具备 PostgreSQL driver/pool、独立 Alembic head、48 表 Manifest/DDL、staging/import/validator 与 PG-only runtime；真实生产数据搬迁仍需发布审批和最终 rehearsal。
+历史两个 SQLite 仅由显式迁移 CLI 以只读 snapshot 输入使用。表中 `backend/database.py`、Dream PostgreSQL driver/pool、独立 Alembic 与 PG-only runtime 描述只适用于该源快照；现行生产图已移除这些入口，历史实现仅保留在明确测试/迁移证据中。
 
 ## 3. 主库 43 表准确清单
 

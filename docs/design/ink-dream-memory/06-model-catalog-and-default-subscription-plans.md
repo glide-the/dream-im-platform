@@ -1,7 +1,7 @@
 # 06 · Model Catalog & Default Subscription Plans
 
-> 文档状态：**Approved for implementation**  
-> 更新日期：2026-08-09  
+> 文档状态：**Implemented / Release candidate**
+> 更新日期：2026-09-17
 > 操作者：已登录 Dream canonical user；Admin model/plan operator 仅在受保护 Admin 页面操作  
 > 根因证据：[`ink-memory-model-catalog-default-free-root-cause.md`](../../verification/ink-memory-model-catalog-default-free-root-cause.md)
 
@@ -10,7 +10,7 @@
 本设计解决两个彼此相关但不能混成一件事的问题：用户能看到平台提供的哪些模型，以及用户当前能调用其中哪些模型。
 
 - Admin Registry 中 `enabled=true` 的 platform model alias 构成 Dream **可见目录**。
-- canonical user、Subscription、published Plan Version、Entitlement、Model Permission、RPM/Token limit 和当前周期 Token Allowance 构成每个模型的 **调用资格**。
+- canonical user、Subscription状态/周期、Model Permission、Provider/Pricing、RPM/Token limit和当前周期Token Allowance构成每个模型的**调用资格**。Plan Entitlement存在时提供更严格的模型级限额；缺失时使用`allowance-only`审计语义，不作为白名单拒绝。
 - 可见不等于可调用。升级、暂停、额度耗尽、模型维护都不能让模型从目录中消失。
 - Dream 浏览器只访问 Dream BFF；BFF用 server-only service identity + canonical-subject JWT读取Admin公共目录。
 - Admin Registry页面仍要求Admin Session，Admin API仍要求permission；普通用户不会获得Admin页面或CRUD能力。
@@ -62,8 +62,8 @@ type PublicGatewayModel = {
 1. `maintenance`：模型虽enabled，但Provider不可路由、credential不可用或没有有效Pricing；不提供虚假套餐。
 2. `permission_denied`：用户级Model Permission显式禁用。
 3. `subscription_inactive`：存在Subscription但状态/周期不可调用，或默认Free自动修复失败。
-4. `upgrade_required`：当前Plan无Entitlement，但存在一个可公开且可开通的required Plan。
-5. `allowance_exhausted`：模型和权益已包含，但当前周期Token不足。
+4. `upgrade_required`：只有明确产品资格规则要求开通其他Plan时使用；当前Plan缺少Entitlement本身不能触发。
+5. `allowance_exhausted`：当前周期Token不足。
 6. `included`：全部实时资格满足；`callable=true`。
 
 目录请求在1–5均返回200。实际推理仍依次返回403、402、429、502/503等业务状态，不能只信目录缓存。
@@ -117,7 +117,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  A["Saved model loses entitlement or is disabled"] --> B["Settings marks selection invalid"]
+  A["Saved model becomes uncallable or is disabled"] --> B["Settings marks selection invalid"]
   B --> C{"Any callable model?"}
   C -->|"yes"| D["User explicitly selects another model"]
   C -->|"no"| E{"Reason"}

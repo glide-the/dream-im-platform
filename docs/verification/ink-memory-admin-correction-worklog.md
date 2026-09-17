@@ -4635,3 +4635,46 @@ Rollback and Cleanup:
 - Admin Story Artifact/Gateway 定向 Vitest 4 files、22 tests 全部通过；Dream/Admin staged `git diff --check` 均通过。
 - `frontend/test-results` 运行产物和既有删除继续排除；本轮未 push、未 amend、未修改共享 PostgreSQL、未调用真实收费 Provider，也未启动或停止业务服务。
 - Dream 仓库相关范围已提交为 `b5b986c`（`fix(dream): stabilize agent runtime and production workflow`，99 files）；Admin 仓库按独立 repository 边界随后提交。
+
+## 2026-09-17 — Admin Dream Run 日常查询闭环
+
+### Optimized Prompt
+
+你是 Ink Memory Admin 的 Refine、Next.js、DTO/Repository 与真实业务验收负责人。修复 `/admin/story/workflow-runs` 已有只读页面无法发起 `story-workflow-runs` 请求的问题，并使用本机正常 Admin、当前真实 PostgreSQL 和本轮已生成的 Dream Run 验证日常运营可见性。
+
+已有证据：服务端 `app/lib/story-source/repository.ts` 已定义 Workflow Run 的 allowlisted SQL、分页、排序、详情、transition 与 token consumption 查询；动态 Admin Route 已重复验证 Admin Session 和 `story.read`。真实浏览器页面却在客户端显示 `Unknown admin resource: story-workflow-runs`，网络面没有对应 API 请求，说明客户端资源注册与既有服务端 DTO/Repository 契约不一致。现行跨项目设计还要求 `/admin/story/workflow-runs?runId={sourceRunId}` 能按精确 Run 自动筛选。
+
+只做最小充分修复：在 Refine Data Provider 的资源 allowlist、permission 映射和 Refine resource registry 中注册 `story-workflow-runs`；在 Workflow Run 视图增加 URL 字段 `runId` 到 API allowlisted 字段 `id` 的精确查询映射。继续复用 `AdminResourceManager → Data Provider → /api/admin/story-workflow-runs → Story repository`，不新增通用 CRUD、不把 SQL 放入 Route Handler、不写数据库、不扫描 Artifact、不改变 Dream Run 状态。同步组件文件头、相关 `.folder.md` 和本 worklog。
+
+正常流程：管理员进入页面；Refine 读取 `runId`；Data Provider 生成 `filter[id][eq]`；服务端重复校验 Admin Session 与 `story.read`；Repository 执行参数化查询并返回分页 DTO；页面显示唯一 Run。失败流程：未知资源在测试中失败；无权限返回 403；schema/连接不可用返回现有 503；合法精确筛选无结果显示筛选空态。Admin operator 与 Dream canonical user 继续是不同主体，页面只做运营只读查询。
+
+Acceptance Criteria:
+
+- `story-workflow-runs` 同时出现在客户端 allowlist、权限映射与 Refine resource registry，权限为 `story.read`。
+- `/admin/story/workflow-runs?runId=<id>` 生成 `filter[id][eq]=<id>`，不接受任意表名、列名或 SQL。
+- focused unit 覆盖资源注册、权限和筛选映射；TypeScript、ESLint、`git diff --check` 通过。
+- 真实 Admin 浏览器实际发出 `/api/admin/story-workflow-runs` 请求并显示本轮真实 Run；同一 Run 的 Gateway request 与 Token reserve/capture/release 继续可从日常 Admin 页面查询。
+- 不修改 PostgreSQL 数据、不合并 Admin/Dream 用户、不读取完整 Gateway payload、不输出 Secret。
+
+### Optional Enhancers
+
+- 在真实页面打开 Run 详情，核对 actor、workspace、transition 和已存在的 token consumption 投影。
+
+### 本轮规划
+
+- 所属项目：Admin；依赖 Dream 已完成的真实 Run、Gateway 和 Token Ledger 记录。
+- 修改范围：`app/components/admin/providers.ts`、`AdminProviders.tsx`、`AdminResourceViews.tsx`、对应 focused tests、组件目录合同与本 worklog。
+- 保持不变：服务端 SQL/事务、Drizzle schema、Run 状态、Dream Runtime/SSE、共享文件系统与两套用户业务域边界。
+- 风险：客户端漏注册导致零请求；URL 名称与 API 字段漂移；通过 focused unit、真实网络回执和页面精确行三重验证。
+- 本 Prompt Architect 记录已先于本轮实现修改落盘。
+
+### 执行状态
+
+- 根因一是客户端 Data Provider allowlist、`story.read` 映射和 Refine registry 同时漏掉 `story-workflow-runs`；浏览器因此在发起网络请求前返回 `Unknown admin resource`。三处现已使用同一个资源名注册，仍由服务端重复执行 Admin Session 与 `story.read` 检查。
+- 根因二是现行设计使用 `runId` 深链，但页面没有 `runId → id` 映射，Repository 的 Workflow Run 列表 allowlist 也没有 `id`。页面现将 `runId` 映射为 `filter[id][eq]`，Repository 只增加参数化 `r.id = $1` 精确条件；任意字段、表名和 SQL 仍不可传入。
+- focused Vitest：`AdminResourceManager.test.ts` 与 `story-source/repository.test.ts` 共 18 passed；验证资源注册、`story.read`、canonical endpoint、URL 编码和数据/计数查询使用同一 id 参数。
+- TypeScript `corepack pnpm exec tsc --noEmit --incremental false`、目标 ESLint 和 `git diff --check` 均 exit 0。
+- 正常 Admin 浏览器访问 `/admin/story/workflow-runs?runId=run_587c9c41d82f49879ee0a0c4240678d2` 后显示精确 1 条。公开列表 API `200`、`count=1/total=1`；详情 API `200`，Run 为 `pending_review`、5 条 transition、1 条 token consumption，workspace、agent session 与 source thread 投影均可见。
+- 同一真实业务链在日常 Admin 的 Gateway Requests 显示 request `req_142e32d6798b4b60b980485f6a15466f` 为 `settled/succeeded`、HTTP 200、模型 `gpt-5.6-luna`；Token Ledger 对应 reserve 107731、capture 52901、release 54830，满足 capture + release = reserve。未打开完整 Gateway payload，未修改 PostgreSQL 数据。
+- 最终 Admin 全量 `corepack pnpm test:run` 为 284 files / 2140 tests passed、17 files / 36 tests skipped；TypeScript、完整 ESLint、production build 与 `git diff --check` 均 exit 0。Next build route inventory包含 `/admin/story/workflow-runs` 及动态 Admin API。
+- 当前修改的3份 Admin Markdown执行本地链接检查，0 missing；没有新增文档索引路径或无效相对引用。

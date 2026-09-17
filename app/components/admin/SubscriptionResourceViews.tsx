@@ -1,5 +1,10 @@
 "use client";
 
+// [Input] Subscription resource projections and declarative Admin field definitions.
+// [Output] Plan, version and entitlement forms with enabled-only model selection and publish readiness feedback.
+// [Pos] Subscription center views; write validation remains in the subscription service.
+// [Sync] 2026-09-15: only offer enabled models when adding a plan entitlement.
+
 import AdminResourceManager, {
   type AdminFieldDefinition,
 } from "./AdminResourceManager";
@@ -36,7 +41,7 @@ export function SubscriptionVersionsView() {
 export function SubscriptionEntitlementsView() {
   const fields: AdminFieldDefinition[] = [
     { key: "planVersionId", sourceKey: "plan_version_id", label: "套餐版本", control: "relation", section: "relation", required: true, createOnly: true, readOnlyOnEdit: true, relation: { resource: "subscription-plan-versions", labelKey: "plan_code", secondaryKey: "version_number", searchField: "plan_code" } },
-    { key: "modelId", sourceKey: "model_id", label: "模型", control: "relation", section: "relation", required: true, createOnly: true, readOnlyOnEdit: true, relation: { resource: "models", labelKey: "display_name", secondaryKey: "code", searchField: "display_name" } },
+    { key: "modelId", sourceKey: "model_id", label: "模型", control: "relation", section: "relation", required: true, createOnly: true, readOnlyOnEdit: true, relation: { resource: "models", labelKey: "display_name", secondaryKey: "code", searchField: "display_name", filters: [{ field: "enabled", operator: "eq", value: "true" }] } },
     { key: "gatewayScopes", sourceKey: "gateway_scopes", label: "Gateway Scopes", control: "multiselect", section: "access", required: true, options: [{ label: "Anthropic Messages", value: "messages:create" }, { label: "OpenAI Chat", value: "chat:create" }, { label: "Models List", value: "models:list" }] },
     { key: "dailyTokenLimit", sourceKey: "daily_token_limit", label: "日 Token 上限", control: "number", section: "limits", nullable: true, min: 0 },
     { key: "monthlyTokenLimit", sourceKey: "monthly_token_limit", label: "自然月 Token 安全上限（可选）", control: "number", section: "limits", nullable: true, min: 0, help: "独立于订阅周期 Allowance 的自然月安全阈值；留空表示不额外限制，不会发放 Token。" },

@@ -1,0 +1,8 @@
+ALTER TABLE "identity"."runtime_delegations" ADD COLUMN "purpose" text;--> statement-breakpoint
+ALTER TABLE "identity"."runtime_delegations" ADD COLUMN "editor_session_id" text;--> statement-breakpoint
+ALTER TABLE "identity"."runtime_delegations" ADD CONSTRAINT "runtime_delegations_editor_session_id_user_sessions_id_fk" FOREIGN KEY ("editor_session_id") REFERENCES "public"."user_sessions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "identity"."runtime_delegations" ADD CONSTRAINT "runtime_delegations_purpose_check" CHECK (("identity"."runtime_delegations"."purpose" IS NULL AND "identity"."runtime_delegations"."editor_session_id" IS NULL) OR (cardinality("identity"."runtime_delegations"."scopes") > 0 AND (
+    ("identity"."runtime_delegations"."purpose" = 'server-persistence' AND "identity"."runtime_delegations"."editor_session_id" IS NULL AND "identity"."runtime_delegations"."gateway_api_key_id" IS NULL AND "identity"."runtime_delegations"."scopes" <@ ARRAY['dream:read','dream:write']::text[]) OR
+    ("identity"."runtime_delegations"."purpose" = 'gateway-cli' AND "identity"."runtime_delegations"."editor_session_id" IS NULL AND "identity"."runtime_delegations"."gateway_api_key_id" IS NOT NULL AND "identity"."runtime_delegations"."scopes" <@ ARRAY['messages:create','messages:count_tokens','models:list']::text[]) OR
+    ("identity"."runtime_delegations"."purpose" = 'editor-stdio' AND "identity"."runtime_delegations"."editor_session_id" IS NOT NULL AND "identity"."runtime_delegations"."gateway_api_key_id" IS NULL AND "identity"."runtime_delegations"."scopes" <@ ARRAY['editor:read','editor:write']::text[])
+  )));

@@ -14,6 +14,7 @@
 // [Sync] 2026-08-27: add the PostgreSQL-only Claude Agent latest-instance
 // resource snapshot consumed by the Admin observer console.
 // [Sync] 2026-09-06: add revisioned, deny-by-default per-connection MCP App user preferences.
+// [Sync] 2026-09-15: expand task-bound Reflections execution, section, event and report persistence.
 import { pgTable, uniqueIndex, index, check, bigint, text, timestamp, foreignKey, jsonb, unique, integer, boolean, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
@@ -245,14 +246,21 @@ export const analysis_reports = pgTable("analysis_reports", {
 	report_type: text().notNull(),
 	report_data_json: text().notNull(),
 	all_notes_text: text(),
+	reflection_task_id: text(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
 	index("idx_reports_user").using("btree", table.user_id.asc().nullsLast().op("int8_ops"), table.created_at.asc().nullsLast().op("int8_ops")),
+	uniqueIndex("uq_analysis_reports_reflection_task").using("btree", table.reflection_task_id.asc().nullsLast().op("text_ops")).where(sql`${table.reflection_task_id} IS NOT NULL`),
 	foreignKey({
 			columns: [table.user_id],
 			foreignColumns: [users.id],
 			name: "fk_analysis_reports_user_id_users"
 		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.reflection_task_id],
+			foreignColumns: [reflection_task.id],
+			name: "fk_analysis_reports_reflection_task_id_reflection_task"
+		}).onDelete("set null"),
 ]);
 
 export const daily_pictures = pgTable("daily_pictures", {
@@ -354,6 +362,10 @@ export const reflection_task = pgTable("reflection_task", {
 	workspace_path: text(),
 	agent_contract_version: text(),
 	error_summary: text(),
+	service_client_id: text(),
+	auth_user_id: text(),
+	launch_snapshot_json: text(),
+	revision: integer().default(1).notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
 	started_at: timestamp({ withTimezone: true, mode: 'string' }),
 	completed_at: timestamp({ withTimezone: true, mode: 'string' }),
@@ -366,6 +378,40 @@ export const reflection_task = pgTable("reflection_task", {
 			foreignColumns: [users.id],
 			name: "fk_reflection_task_user_id_users"
 		}).onDelete("cascade"),
+	check("ck_reflection_task_status", sql`status = ANY (ARRAY['CREATED'::text, 'ASSEMBLING'::text, 'QUEUED'::text, 'RUNNING'::text, 'COMPLETED'::text, 'PARTIAL_FAILED'::text, 'FAILED'::text])`),
+	check("ck_reflection_task_revision", sql`revision >= 1`),
+]);
+
+export const reflection_task_section = pgTable("reflection_task_section", {
+	task_id: text().notNull(),
+	section: text().notNull(),
+	status: text().default('PENDING').notNull(),
+	thread_id: text(),
+	result_count: integer().default(0).notNull(),
+	error_summary: text(),
+	revision: integer().default(1).notNull(),
+	started_at: timestamp({ withTimezone: true, mode: 'string' }),
+	completed_at: timestamp({ withTimezone: true, mode: 'string' }),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.task_id, table.section], name: "pk_reflection_task_section" }),
+	uniqueIndex("uq_reflection_task_section_thread").using("btree", table.thread_id.asc().nullsLast().op("text_ops")).where(sql`${table.thread_id} IS NOT NULL`),
+	foreignKey({
+			columns: [table.task_id],
+			foreignColumns: [reflection_task.id],
+			name: "fk_reflection_task_section_task_id_reflection_task"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.thread_id],
+			foreignColumns: [chat_thread.id],
+			name: "fk_reflection_task_section_thread_id_chat_thread"
+		}).onDelete("restrict"),
+	check("ck_reflection_task_section_section", sql`section = ANY (ARRAY['echoes'::text, 'traits'::text, 'patterns'::text])`),
+	check("ck_reflection_task_section_status", sql`status = ANY (ARRAY['PENDING'::text, 'RUNNING'::text, 'COMPLETED'::text, 'FAILED'::text])`),
+	check("ck_reflection_task_section_result_count", sql`result_count >= 0`),
+	check("ck_reflection_task_section_revision", sql`revision >= 1`),
+	check("ck_reflection_task_section_lifecycle", sql`(status = 'PENDING' AND started_at IS NULL AND completed_at IS NULL AND result_count = 0) OR (status = 'RUNNING' AND started_at IS NOT NULL AND completed_at IS NULL AND result_count = 0) OR (status = 'COMPLETED' AND started_at IS NOT NULL AND completed_at IS NOT NULL AND error_summary IS NULL) OR (status = 'FAILED' AND completed_at IS NOT NULL AND result_count = 0)`),
 ]);
 
 export const reflection_result = pgTable("reflection_result", {
@@ -400,7 +446,7 @@ export const reflection_result = pgTable("reflection_result", {
 export const reflection_task_event = pgTable("reflection_task_event", {
 	id: text().primaryKey().notNull(),
 	task_id: text().notNull(),
-	sequence: integer(),
+	sequence: integer().notNull(),
 	event_type: text().notNull(),
 	payload: text().default('{}').notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
@@ -411,6 +457,8 @@ export const reflection_task_event = pgTable("reflection_task_event", {
 			foreignColumns: [reflection_task.id],
 			name: "fk_reflection_task_event_task_id_reflection_task"
 		}).onDelete("cascade"),
+	unique("uq_reflection_task_event_task_sequence").on(table.task_id, table.sequence),
+	check("ck_reflection_task_event_sequence", sql`sequence >= 1`),
 ]);
 
 export const events = pgTable("events", {
@@ -523,6 +571,7 @@ export const deck_versions = pgTable("deck_versions", {
 	source_draft_revision: integer().notNull(),
 	description: text(),
 	snapshot_json: jsonb("snapshot_json").notNull(),
+	snapshot_canonical_json: text("snapshot_canonical_json"),
 	content_hash: text().notNull(),
 	created_by: bigint({ mode: "number" }).notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -542,6 +591,7 @@ export const deck_versions = pgTable("deck_versions", {
 	check("ck_deck_versions_version", sql`version >= 1`),
 	check("ck_deck_versions_base_version", sql`base_version IS NULL OR base_version >= 1`),
 	check("ck_deck_versions_source_draft_revision", sql`source_draft_revision >= 1`),
+	check("ck_deck_versions_canonical_projection", sql`"snapshot_canonical_json" IS NULL OR "snapshot_canonical_json"::jsonb = "snapshot_json"`),
 ]);
 
 export const chat_thread = pgTable("chat_thread", {

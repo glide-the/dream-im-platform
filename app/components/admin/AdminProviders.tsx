@@ -1,7 +1,7 @@
 // [Input] Admin auth/data/access providers and the protected Refine resource registry.
 // [Output] Client-side Admin Refine shell including the Claude Agent governance resource.
 // [Pos] Admin provider composition; server Route Handlers remain the authorization authority.
-// [Sync] 2026-08-27: register the Claude Agent resource-governance console.
+// [Sync] 2026-09-17: register the read-only Dream Workflow Run operations page.
 
 "use client";
 
@@ -54,6 +54,11 @@ const resources = [
     name: "story-scenes",
     list: "/admin/story/scenes",
     meta: { label: "场景数据" },
+  },
+  {
+    name: "story-workflow-runs",
+    list: "/admin/story/workflow-runs",
+    meta: { label: "Dream 运行" },
   },
   {
     name: "models",

@@ -1,6 +1,13 @@
+<!-- [Input] Historical PostgreSQL/Gateway rollout stages and the current unified Admin auth/data release gate. -->
+<!-- [Output] Current release ordering plus retained pre-unified rollout and rollback evidence. -->
+<!-- [Pos] Release runbook; normal database/ACL mutations remain separately approved operations. -->
+<!-- [Sync] 2026-09-16: make Admin Drizzle/API deployment precede a database-free Dream rollout. -->
+
 # Dream PostgreSQL、产品 API 与 Gateway 发布回滚
 
 > **Schema 发布更新（2026-08-12）**：Alembic 命令与交错初始化顺序已由 [统一 PostgreSQL Schema 权威](../database-schema-authority.md)替代；本文其他产品/Gateway 灰度要求继续有效。
+
+> **统一认证与数据访问发布更新（2026-09-16）**：当前顺序是正常库备份 → Admin Drizzle `0054–0062` → 受限 AUTH/DATA/CONTROL 与 Dream NOLOGIN ACL → Admin Better Auth/数据服务 → 无数据库凭据的 Dream → Google/Device/Run/Thread/文件/模型真实验收。Dream 不再执行 PostgreSQL cutover、连接检查或 Repository rollback。下方早期 43+5 PG cutover 图保留历史顺序；现行门禁以 [统一接口契约](../admin-dream-auth-data-contract.md) 和本文件第4节真实 owner/ACL 规则为准。
 
 > 文档状态：**Current release plan**（R1–R4 与本地 R5 已完成；其他生产 R0/R5 及 R6–R8 仍开放）
 > 返回：[总索引](README.md)
@@ -17,7 +24,7 @@
 - PG 已产生业务写后默认前向修复；没有演练 delta exporter 时禁止回切 SQLite。
 - PaymentAdapter、Webhook、Fake guard 与付费开通已实现；真实第三方支付渠道与 ASR Gateway 明确 Deferred。生产 Fake 必须 fail closed，UI 不得伪造成功。
 
-## 2. 发布依赖序列
+## 2. 历史 PostgreSQL/Gateway 发布依赖序列
 
 ```mermaid
 flowchart LR
@@ -55,6 +62,7 @@ ASR 不进入 R8；release 前仅允许“禁用 endpoint”或“canonical 鉴�
 - 三表 fresh baseline、完整 Alembic 06/07 旧库均由 0032 精确验证；partial/未知 head/对象漂移 fail-closed。
 - `drizzle/**` 是唯一 Schema journal；Dream 启动只读检查 capability。
 - 真实 owner/ACL/role/constraint 先只读盘点；任何 `ALTER OWNER`、GRANT/REVOKE 有独立批准和回执。
+- 正常库角色/ACL只通过 `AUTH_DATA_CUTOVER_CONFIG=/private/0600/activation.json AUTH_DATA_DREAM_RELEASE_DIR=/absolute/clean/dream-worktree pnpm auth-data-access:activate` 预检；v2 manifest 固定 Admin/Dream commit，runner先验证当前 Admin checkout 与指定 Dream worktree 均为对应精确HEAD且没有tracked修改，再读取备份或连接数据库。实际提交还必须同时提供 `--apply --production-approval`。runner逐字校验停机备份SHA、database/port/data directory、完整migration/capability、active canonical Gateway binding、四role属性与credential，再复用隔离验证过的ACL计划并执行allow/deny probes。它不由migration或应用启动调用。
 
 ### 迁移数据
 
@@ -88,7 +96,7 @@ ASR 不进入 R8；release 前仅允许“禁用 endpoint”或“canonical 鉴�
 
 - Product API 只从 canonical user 上下文返回真实月度 Token 计划、用户周期、Token Allowance/Usage 与 model alias；无 Balance/Ledger/Payment/内部控制面/Secret 列。
 - Dream command 带 idempotency key 与 expected version；409 后重取 preview，不能盲重放。
-- Gateway 固定资格顺序：service/Key → canonical user → Subscription → Plan Version → Entitlement → Model Permission → RPM/daily limit → current-period Token Allowance → reserve → Provider；Token 耗尽不得自动进入现金按量。
+- Gateway固定资格顺序：service/Key → canonical user → Subscription状态/周期 → enabled Model与Provider/Pricing → 可选Entitlement限额 → Model Permission → RPM/daily limit → current-period Token Allowance → reserve → Provider；无Entitlement使用`allowance-only`审计，Token耗尽不得自动进入现金按量。
 - Provider/Model/Pricing 使用请求时版本化成本 snapshot；该 micro-USD 事实不进入 Subscription DTO/Allowance/Ledger charge，Token 与金额单位不混用。
 - success、Provider failure、cancel、stream interruption、usage missing 都进入明确 request/Token Usage 终态；不按零 Token 成功。
 - Gateway Key、Provider/System Secret 不在浏览器、Dream 普通表、响应、console、structured log 或截图中出现；Deferred Payment Secret 不得加入。
@@ -186,7 +194,7 @@ Dream 仍没有 package-level `frontend unit` script；本轮完成 frontend lin
 ## 12. 完成标准
 
 - 43+5 已迁入 PG 且 Dream runtime 无 SQLite/JSON DB/内存 DB fallback。
-- canonical user→Subscription→Plan Version→Entitlement→Model Permission→current-period Token Allowance→Gateway→Token Usage 完整闭环通过隔离验证；独立现金 Billing 不作套餐兜底。
+- canonical user→Subscription→enabled Model/Provider/Pricing→nullable Entitlement限额→Model Permission→current-period Token Allowance→Gateway→Token Usage完整闭环通过隔离验证；独立现金Billing不作套餐兜底。
 - Dream 页面只显示真实月度 Token 产品 API 状态；无套餐金额/余额/支付/全局生效日期；既有 Agent/Workflow 不回归。
 - PaymentAdapter/Webhook/Fake guard 已通过隔离验证；真实支付渠道保持 Deferred；ASR Gateway 未被误报为实现。
 - P0 credential/ASR、Secret、owner/ACL 与共享 DB 安全门禁全部关闭并有证据。

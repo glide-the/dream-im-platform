@@ -1,36 +1,8 @@
-import { adminErrorResponse } from "../../../../lib/admin/errors";
-import {
-  adminRequestId,
-  assertAdminMutationOrigin,
-} from "../../../../lib/admin/guard";
-import {
-  ADMIN_SESSION_COOKIE,
-  clearedAdminSessionCookie,
-  parseCookie,
-  revokeAdminSession,
-} from "../../../../lib/admin/session";
-
+// [Input] Admin-host authentication request.
+// [Output] Independent Admin Session revocation response.
+// [Pos] Thin Admin auth route; validation, ORM and audit remain in app/lib/auth.
+// [Sync] 2026-09-17: revoke only the independent Admin management session.
+import { handleAdminSignOut } from "../../../../lib/auth/adminAuthHandler";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-export async function POST(request: Request) {
-  const requestId = adminRequestId(request);
-  try {
-    assertAdminMutationOrigin(request);
-    await revokeAdminSession(
-      parseCookie(request.headers, ADMIN_SESSION_COOKIE),
-    );
-    return Response.json(
-      { data: { loggedOut: true } },
-      {
-        headers: {
-          "cache-control": "no-store",
-          "set-cookie": clearedAdminSessionCookie(),
-          "x-request-id": requestId,
-        },
-      },
-    );
-  } catch (error) {
-    return adminErrorResponse(error, requestId);
-  }
-}
+export const POST = handleAdminSignOut;

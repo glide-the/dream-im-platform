@@ -1,5 +1,7 @@
-// Subscription service contract: all lifecycle writes are transactional,
-// optimistic, idempotent, permission-checked, and append-only audited.
+// [Input] Authenticated Admin requests and PostgreSQL subscription/model state.
+// [Output] Transactional, optimistic, idempotent subscription writes and append-only audit.
+// [Pos] Subscription domain service; routes only orchestrate public requests.
+// [Sync] 2026-09-15: check enabled models on entitlement creation and lock model/Provider readiness before publishing.
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
@@ -511,6 +513,17 @@ async function createResource(
   if (resource === "subscription-entitlements") {
     const input = entitlementCreateSchema.parse(body);
     await requireDraftPlanVersion(client, input.planVersionId);
+    const model = await client.query<{ enabled: boolean }>(
+      "SELECT enabled FROM ai_models WHERE id = $1 FOR SHARE",
+      [input.modelId],
+    );
+    if (model.rows[0]?.enabled !== true) {
+      throw new AdminError(
+        "SUBSCRIPTION_ENTITLEMENT_MODEL_DISABLED",
+        "请选择已启用的模型；模型状态可能已变化，请重新加载选项。",
+        409,
+      );
+    }
     const id = createPlatformId("ent");
     await client.query(
       `INSERT INTO subscription_plan_entitlements (
@@ -1303,13 +1316,6 @@ export async function handleSubscriptionAction(
     if (resource === "subscription-plan-versions" && action === "publish") {
       await parseBody(request, publishVersionSchema);
       const data = await withPlatformTransaction(async (client) => {
-        const before = await querySubscriptionItem(client, resource, id);
-        if (before.status === "published") return before;
-        const count = await client.query<{ count: string }>(
-          "SELECT COUNT(*)::text AS count FROM subscription_plan_entitlements WHERE plan_version_id = $1 AND enabled",
-          [id],
-        );
-        if (count.rows[0]?.count === "0") throw new AdminError("SUBSCRIPTION_ENTITLEMENT_REQUIRED", "Publish requires at least one enabled model entitlement", 409);
         const version = await client.query<{
           allowance_tokens: string | number;
           billing_period: string;
@@ -1323,6 +1329,43 @@ export async function handleSubscriptionAction(
            FROM subscription_plan_versions WHERE id = $1 FOR UPDATE`,
           [id],
         );
+        const before = await querySubscriptionItem(client, resource, id);
+        if (before.status === "published") return before;
+        const dependencies = await client.query<{
+          model_code: string;
+          model_enabled: boolean;
+          provider_code: string;
+          provider_status: string;
+        }>(
+          `SELECT model.code AS model_code, model.enabled AS model_enabled,
+                  provider.code AS provider_code, provider.status AS provider_status
+           FROM subscription_plan_entitlements AS entitlement
+           JOIN ai_models AS model ON model.id = entitlement.model_id
+           JOIN ai_providers AS provider ON provider.id = model.provider_id
+           WHERE entitlement.plan_version_id = $1 AND entitlement.enabled = TRUE
+           ORDER BY provider.id, model.id
+           FOR SHARE OF model, provider`,
+          [id],
+        );
+        if (dependencies.rows.length === 0) {
+          throw new AdminError("SUBSCRIPTION_ENTITLEMENT_REQUIRED", "Publish requires at least one enabled model entitlement", 409);
+        }
+        const disabledModels = dependencies.rows
+          .filter((row) => !row.model_enabled).map((row) => row.model_code);
+        const disabledProviders = [...new Set(dependencies.rows
+          .filter((row) => row.provider_status !== "active").map((row) => row.provider_code))];
+        if (disabledModels.length > 0 || disabledProviders.length > 0) {
+          const reasons = [
+            disabledModels.length > 0 ? `模型未启用：${disabledModels.join("、")}` : null,
+            disabledProviders.length > 0 ? `提供商未启用：${disabledProviders.join("、")}` : null,
+          ].filter(Boolean);
+          throw new AdminError(
+            "SUBSCRIPTION_PUBLISH_DEPENDENCY_DISABLED",
+            `${reasons.join("；")}。请先启用后再发布。`,
+            409,
+            { disabledModels, disabledProviders },
+          );
+        }
         const draft = version.rows[0];
         if (
           !draft ||

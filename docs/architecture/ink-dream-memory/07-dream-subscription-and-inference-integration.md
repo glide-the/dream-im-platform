@@ -1,8 +1,8 @@
 # Dream 订阅体验与推理 Gateway 集成
 
-## 2026-08-09 模型目录与默认Free架构增量
+## 2026-09-17 模型目录与默认Free架构增量
 
-Round 51证明当前Admin catalog把Subscription资格当作目录过滤，导致27/29 canonical用户目录为空；Round 52将合同修正为“enabled model全员可见、逐模型callability”。Dream BFF严格校验安全DTO，浏览器不接触Gateway Key/Provider route。Admin-owned provisioning在canonical用户插入和幂等backfill时建立默认Free Subscription、Allowance和Event；Dream认证服务不直接写计费表。完整交互、HTTP语义与Reader Testing见`docs/design/ink-dream-memory/06-model-catalog-and-default-subscription-plans.md`。
+Round 51证明旧Admin catalog把Subscription资格当作目录过滤，导致27/29 canonical用户目录为空；Round 52将合同修正为“enabled model全员可见、逐模型callability”，Round 67进一步明确Plan Entitlement只提供可选模型级限额，缺失时以`allowance-only`记录而不拒绝enabled模型。Dream BFF严格校验安全DTO，浏览器不接触Gateway Key/Provider route。Admin-owned provisioning在canonical用户插入和幂等backfill时建立默认Free Subscription、Allowance和Event；Dream认证服务不直接写计费表。完整交互、HTTP语义与Reader Testing见`docs/design/ink-dream-memory/06-model-catalog-and-default-subscription-plans.md`。
 
 > 文档状态：**Implemented / Release candidate**（产品 UX/BFF/Gateway client 已完成；真实外部 Provider canary 待执行）
 > 返回：[总索引](README.md)
@@ -77,7 +77,7 @@ flowchart LR
   DreamAPI --> Resolver["Role + capability → stable alias"]
   Resolver --> Client["Server-only Gateway Client"]
   Client --> Gateway["Admin AI Gateway"]
-  Gateway --> Eligibility["Subscription / Entitlement / Permission / Token Allowance"]
+  Gateway --> Eligibility["Subscription / enabled Model / optional Entitlement limits / Permission / Token Allowance"]
   Eligibility --> Provider["Selected Provider"]
   Provider --> Settlement["Token Usage + allowance settlement"]
   Settlement --> DreamAPI
@@ -114,7 +114,7 @@ Gateway 响应保持协议兼容，同时 Dream 只向浏览器透传安全字�
 
 1. 订阅页继续从 Product model catalog 展示权益；设置页经 Dream `GET /api/gateway/models` 调用 Admin 公共 `GET /v1/models`，取得当前用户实际可调用的 alias、label、capabilities、scope 与可展示限制。
 2. Dream FastAPI 在保存设置时再次调用公共 Gateway 目录校验 alias，只保存 `system_config.model` 平台 alias 并固定 `provider=gateway`；客户端提交的 provider/upstream model 字符串不执行。
-3. 每次 Claude Agent 新 turn 都从服务端 preference 解析 alias、刷新 `/v1/models` 资格并把该 alias 写入 Gateway-backed Claude SDK options；浏览器不再发送 `chatModel`。Gateway 随后按最新 Subscription→Plan Version→Entitlement→user override 解析权限，TOCTOU 时以 Gateway 最新状态为准。
+3. 每次 Claude Agent 新turn都从服务端preference解析alias、刷新`/v1/models`资格并把该alias写入Gateway-backed Claude SDK options；浏览器不再发送`chatModel`。Gateway随后按最新Subscription状态/周期→可选Entitlement限额→user override→Allowance解析权限；无Entitlement时记录`subscription_entitlement_id=NULL`与`entitlementSource=allowance-only`，TOCTOU时以Gateway最新状态为准。
 4. 旧 upstream 型号或已下架 alias 显示“已下架或无权限”，不会暗中改写；仅当尚未保存有效选择且部署配置的 `INK_GATEWAY_TEXT_MODEL_ALIAS` 仍在实时目录中时，作为服务端初始默认。
 5. catalog empty、402、403、429、503 分别表示真实无可用模型、Token 用尽、当前状态拒绝、限流和控制面不可用；无静态 fallback。
 

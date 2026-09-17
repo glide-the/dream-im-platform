@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-17: align current Gateway eligibility with optional Entitlement limits and allowance-only audit snapshots. -->
 # Token-only Subscription、独立 Billing 与 AI Gateway 集成架构
 
 > 文档状态：**Implemented / Release candidate**（Admin/Product API/Gateway/Dream client 已通过隔离验证；外部 Provider canary 待执行）
@@ -17,7 +18,7 @@
 | Token Allowance | **Implemented / Release candidate**：只创建 token_allowance，reserve/capture/release、usage-missing recovery 与终态 guard 已通过隔离 PG | 新请求只消耗当前用户周期 Token；不自动切金额 | 外部 Provider canary 下 usage/取消/断流观测 |
 | Subscription Token Ledger | **Implemented / Release candidate**：`0021` 与 Gateway 同事务追加 reserve/capture/release；provenance、请求内顺序、幂等、守恒和 UPDATE/DELETE guard 已通过真实 PG migration 与隔离 Gateway/Playwright | 继续作为 Token 单位审计域，不进入 Dream Product DTO，不伪装金额/支付 Ledger | 外部 Provider canary 与物理最小权限矩阵 |
 | 独立 Pricing/Billing/Ledger | Provider Pricing、Billing Account、现金 reserve/capture 与 Ledger 已有基线 | 保留为显式 cash pay-as-you-go/历史域；不能成为套餐权益或 Token 耗尽兜底 | 单独入口/授权/审计；Subscription DTO 与页面无金额字段；历史账务仍 append-only |
-| Gateway | **Implemented / Release candidate**：固定 canonical→Subscription→Entitlement→Permission→limit→Allowance 资格链与 settlement 已验证；Dream server-only client 已落地 | 真实外部 Provider/user canary | 生产 Key/Secret 注入与 401/402/403/409/429/502/503 观测 |
+| Gateway | **Implemented / Release candidate**：固定canonical→Subscription状态/周期→enabled Model/Provider/Pricing→可选Entitlement限额→Permission→Allowance资格链与settlement已验证；无Entitlement按`allowance-only`审计，Dream server-only client已落地 | 真实外部 Provider/user canary | 生产 Key/Secret 注入与 401/402/403/409/429/502/503 观测 |
 | Product API | **Implemented / Release candidate**：Product/Payment exact routes、strict JWT/DTO、Origin/幂等/redaction 与 Dream BFF 合同已通过 | 预发布真实 Session/service identity 冒烟 | 真实环境 ETag/分页/错误/超时观测 |
 | Payment/订阅支付 | **Implemented / Release candidate**：`0022–0024`、Adapter、Fake guard、Webhook 幂等、首次开通/付费月续费 Intent 与 Dream UI | 真实渠道 **Deferred** | 生产 Fake 禁用；未接渠道不显示成功；付费到期不免费发 Token |
 
@@ -167,8 +168,8 @@ Token 不足时固定 fail-closed 402；不得继续查 money allowance 或 cash
 1. 验证服务身份/Gateway Key hash、scope、status、expiry。
 2. `users JOIN platform_users` 反向确认 canonical user；有效 Key 关联 orphan 时固定返回 403 `CANONICAL_USER_REQUIRED`，missing/invalid/revoked Key 固定返回 401 `GATEWAY_AUTH_REQUIRED`，两者都 fail-closed。
 3. 加载唯一 callable Subscription，同时检查 `currentPeriodStart <= now < currentPeriodEnd`、trial/grace 与用户周期锚点。
-4. 固定 published Plan Version 与 Entitlement snapshot。
-5. 解析 stable model alias，检查 entitlement model/scopes 与 `user_model_permissions` override。
+4. 固定 published Plan Version，解析 `enabled=true` 的 stable model alias、active Provider/Pricing 与可选 Entitlement snapshot；缺失 Entitlement 时记录 `allowance-only`，不据此拒绝模型。
+5. Entitlement 存在时应用其模型/scope/RPM/Token限额，再检查 `user_model_permissions` override；不存在时仍执行显式 permission、平台安全限额和 Allowance 检查。
 6. 原子检查/增加 RPM、daily safety limit；Subscription 月额度只来自当前 period allowance，不再按 UTC calendar month重复计算。
 7. 锁定当前 Token Allowance，完成 token reserve；不足固定 402，禁止 money/cash fallback。
 8. 建立 `gateway_requests` 与 pricing/subscription snapshot 后才调用 Provider。
@@ -199,7 +200,7 @@ Provider/model/pricing 的版本快照在历史请求上不可覆盖；这是运
 |---:|---|---|
 | 401 | `PRODUCT_AUTH_REQUIRED` / `GATEWAY_AUTH_REQUIRED` | Product Session/service identity 无效；或 Gateway Key missing/invalid/revoked |
 | 402 | `SUBSCRIPTION_TOKEN_ALLOWANCE_EXHAUSTED` | Subscription 当前周期 Token 不足；Gateway `/v1/**` 只返回 `available_tokens/required_tokens/period_end` 与 `metric=tokens/unit=tokens`，Dream BFF 映射为 `availableTokens/requiredTokens/periodEnd`，不返回余额或 micro-USD |
-| 403 | `SUBSCRIPTION_ACTION_FORBIDDEN` / `ENTITLEMENT_REQUIRED` / `CANONICAL_USER_REQUIRED` | 生命周期/Entitlement/model override 拒绝，或有效 Key 只关联 orphan billing identity |
+| 403 | `SUBSCRIPTION_ACTION_FORBIDDEN` / `ENTITLEMENT_REQUIRED` / `CANONICAL_USER_REQUIRED` | 生命周期/可选Entitlement限额/model override拒绝，或有效Key只关联orphan billing identity；兼容`ENTITLEMENT_REQUIRED`表示无可调用Subscription，不把缺少模型Entitlement当白名单拒绝 |
 | 404 | `PLAN_NOT_FOUND` / `SUBSCRIPTION_NOT_FOUND` / `GATEWAY_MODEL_NOT_FOUND` | 对用户可见的 plan/subscription/model alias 不存在 |
 | 409 | `IDEMPOTENCY_CONFLICT` / `VERSION_CONFLICT` / `SUBSCRIPTION_STATE_CONFLICT` | 幂等 digest、expected version 或状态机冲突 |
 | 429 | `PRODUCT_RATE_LIMITED` | RPM/daily safety/产品 API 限制；header 带 `Retry-After`，body meta 带 `retryAfterSeconds` |

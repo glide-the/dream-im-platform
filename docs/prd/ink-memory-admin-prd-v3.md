@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-17: align the current platform Gateway chain with optional Entitlement limits and allowance-only callability. -->
 # Ink Memory Admin PRD v3 — 平台总纲
 
 > 版本：3.5
@@ -25,7 +26,9 @@ Ink Memory Admin 是剧本业务运营控制台、AI 模型控制面、订阅计
 ```mermaid
 flowchart LR
   U["Canonical User (users)"] --> S["Monthly Subscription"]
-  S --> V["Plan Version"] --> E["Entitlement"] --> M["Model Permission"]
+  S --> V["Plan Version"] --> M["Enabled Model + Permission"]
+  V -. "optional model limits" .-> E["Entitlement"]
+  E -.-> M
   M --> A["Current-period Token Allowance"] --> G["Gateway Request"]
   G --> X["Token Usage"]
   G --> R["Independent Provider / Model / Pricing"]
@@ -167,7 +170,7 @@ Story 目标列表字段：标题、Story ID、Workspace、作者、Project iden
 - 每个平台用户自动拥有唯一内部兼容键和唯一计费账户；任何用户选择器不依赖手工开户，并以至少 205 用户验证服务端搜索、跨页选中和稳定 total。Current 前 50/100 条缺口未修前不通过。
 - 所有列表具备真实总数、服务端分页/排序、白名单筛选和明确错误映射。
 - 401/402/403/404/409/429/502/503 均有单一 HTTP/code/unit 映射、幂等恢复和 Dream UI 合同；上游失败、cancel、流中断、usage 缺失不按 0 成功结算。
-- Subscription 主路径按 `User → Subscription → Plan Version → Entitlement → Model Permission → Current-period Token Allowance → Request → Token Usage` 执行并冻结快照；Provider Pricing/现金账户/Ledger 是独立链路。cash-only 默认放行已从代码合同退出，生产 canary 必须继续证明不存在套餐 overage 或隐式长期分支。
+- Subscription 主路径按 `User → Subscription → Plan Version → enabled Model/Provider/Pricing → optional Entitlement limits → Model Permission → Current-period Token Allowance → Request → Token Usage` 执行并冻结快照；缺少 Entitlement 使用 `allowance-only` 审计，不构成模型白名单拒绝。Provider Pricing/现金账户/Ledger 是独立链路。cash-only 默认放行已从代码合同退出，生产 canary 必须继续证明不存在套餐 overage 或隐式长期分支。
 - Provider/System Secret 不出现在详情、API 重读、日志、DOM、遥测或自动化截图；Gateway Key 明文只存在于一次性创建回执。Usage/Ledger/Audit/Subscription Event 无通用更新/删除。
 - 重复订阅命令、Payment Intent、Webhook 重放、月末续期和 Token reserve/capture/release 均有自动测试；本阶段没有真实支付网络请求。
 - Dream 生成 `script.md` 后可按稳定 Workspace + Project identity 幂等创建或更新同一 canonical Story 索引；相同 revision 不重复写，多 Episode 不重复建 Story，文件/索引状态独立且可 reconcile。

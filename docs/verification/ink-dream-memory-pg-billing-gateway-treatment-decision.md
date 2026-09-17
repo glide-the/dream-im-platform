@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-17: align the current Gateway decision with optional Entitlement limits and allowance-only callability. -->
 # Ink Dream Memory PostgreSQL、Token-only 订阅与 Gateway 处理判断
 
 > 状态：**Current evidence / Implemented release-candidate decision**
@@ -286,13 +287,15 @@ flowchart LR
 ```mermaid
 flowchart LR
   U["Canonical User"] --> S["Token Subscription"]
-  S --> V["Plan Version"] --> E["Entitlement"] --> M["Model Permission"]
+  S --> V["Plan Version"] --> M["Enabled Model + Permission"]
+  V -. "optional model limits" .-> E["Entitlement"]
+  E -.-> M
   M --> A["Current-period Token Allowance"] --> G["Gateway Request"]
   G --> T["Immutable Token Usage"]
   U -. "independent cash domain" .-> B["Billing Account"] --> L["Cash Ledger"]
 ```
 
-资格顺序固定为：Key/service identity → canonical 用户存在 → Subscription 状态/个人周期 → published Version → Entitlement scope/model → user override → RPM/token limit → 当前周期 Token Allowance → reserve → Provider。Token 不足直接 402，禁止读取 cash balance。错误合同：401 未认证；402 Token 不足且使用 `tokens` 单位；403 状态/权益/权限；404 产品资源；409 幂等/版本/并发；429 限流；502 Provider 上游；503 配置/数据库/维护。上游失败、cancel、流中断、usage 缺失均必须 release/capture 到确定终态或 `settlement_failed`，不能按 0 成功。
+资格顺序固定为：Key/service identity → canonical 用户存在 → Subscription 状态/个人周期 → published Version → enabled Model/Provider/Pricing → 可选 Entitlement 模型级限额 → user override → RPM/token limit → 当前周期 Token Allowance → reserve → Provider。缺少 Entitlement 使用 `allowance-only` 审计快照，不构成模型白名单拒绝。Token 不足直接 402，禁止读取 cash balance。错误合同：401 未认证；402 Token 不足且使用 `tokens` 单位；403 状态/权益/权限；404 产品资源；409 幂等/版本/并发；429 限流；502 Provider 上游；503 配置/数据库/维护。上游失败、cancel、流中断、usage 缺失均必须 release/capture 到确定终态或 `settlement_failed`，不能按 0 成功。
 
 ## 11. 领域迁移与接入矩阵
 

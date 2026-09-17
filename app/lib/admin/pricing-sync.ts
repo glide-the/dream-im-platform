@@ -1,5 +1,10 @@
+// [Input] Authenticated Admin requests, models.dev catalog and immutable PostgreSQL pricing snapshots.
+// [Output] Catalog matches and audited price versions from unique or explicitly selected snapshot candidates.
+// [Pos] Server boundary for pricing discovery, candidate validation and transactional apply.
+// [Sync] 2026-09-14: retain all candidate prices and validate manual choices against the locked snapshot.
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
+import { z } from "zod";
 
 import { withPlatformClient, withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
@@ -15,7 +20,7 @@ export const MODELS_DEV_API_URL = "https://models.dev/api.json";
 const MAX_CATALOG_BYTES = 16 * 1024 * 1024;
 const MAX_MATCHES = 10_000;
 
-type ModelsDevEntry = {
+export type ModelsDevEntry = {
   key: string;
   providerId: string;
   providerName: string;
@@ -36,6 +41,7 @@ export type PricingSyncMatch = ModelsDevEntry & {
   providerCode: string;
   match: "exact" | "normalized" | "ambiguous" | "unmatched";
   candidates?: string[];
+  candidateDetails?: ModelsDevEntry[];
 };
 
 type LocalModel = {
@@ -180,7 +186,10 @@ export function matchModelsDevPricing(localModels: LocalModel[], entries: Models
       upstreamModel: local.upstream_model,
       providerCode: local.provider_code,
       match: candidates.length > 1 ? "ambiguous" : exact.length > 0 ? "exact" : "normalized",
-      ...(candidates.length > 1 ? { candidates: candidates.slice(0, 20).map((entry) => entry.key) } : {}),
+      ...(candidates.length > 1 ? {
+        candidates: candidates.map((entry) => entry.key),
+        candidateDetails: candidates,
+      } : {}),
     };
   });
 }
@@ -302,16 +311,54 @@ export async function handlePricingSyncSnapshot(request: Request, snapshotId: st
   }
 }
 
+const candidateSelectionSchema = z.object({
+  localModelId: z.string().min(1),
+  key: z.string().min(1),
+}).strict();
+const pricingSyncApplySchema = z.object({
+  modelIds: z.array(z.string().min(1)).min(1).max(MAX_MATCHES),
+  candidateSelections: z.array(candidateSelectionSchema).max(MAX_MATCHES).default([]),
+  effectiveFrom: z.string().datetime({ offset: true }).optional(),
+}).strict();
+
 function applyInput(body: unknown) {
-  if (!body || typeof body !== "object") throw new AdminError("ADMIN_VALIDATION_ERROR", "请求体无效", 400);
-  const value = body as Record<string, unknown>;
-  const modelIds = Array.isArray(value.modelIds)
-    ? [...new Set(value.modelIds.filter((item): item is string => typeof item === "string" && item.length > 0))]
-    : [];
-  if (modelIds.length === 0 || modelIds.length > MAX_MATCHES) throw new AdminError("ADMIN_VALIDATION_ERROR", "请选择要应用价格的模型", 400);
-  const effectiveFrom = typeof value.effectiveFrom === "string" ? new Date(value.effectiveFrom) : new Date();
-  if (Number.isNaN(effectiveFrom.getTime())) throw new AdminError("ADMIN_VALIDATION_ERROR", "effectiveFrom 必须是有效日期时间", 400);
-  return { modelIds, effectiveFrom };
+  const parsed = pricingSyncApplySchema.safeParse(body);
+  if (!parsed.success) throw new AdminError("ADMIN_VALIDATION_ERROR", "请选择模型并提供有效的候选来源和生效时间", 400);
+  return {
+    modelIds: [...new Set(parsed.data.modelIds)],
+    candidateSelections: parsed.data.candidateSelections,
+    effectiveFrom: parsed.data.effectiveFrom ? new Date(parsed.data.effectiveFrom) : new Date(),
+  };
+}
+
+export function resolvePricingSyncSelections(
+  matches: PricingSyncMatch[],
+  modelIds: string[],
+  candidateSelections: z.infer<typeof candidateSelectionSchema>[],
+) {
+  const choices = new Map<string, string>();
+  for (const choice of candidateSelections) {
+    if (!modelIds.includes(choice.localModelId) || choices.has(choice.localModelId)) {
+      throw new AdminError("PRICING_SYNC_SELECTION_INVALID", "候选选择重复或不属于已选模型", 409);
+    }
+    choices.set(choice.localModelId, choice.key);
+  }
+  return modelIds.map((id) => {
+    const match = matches.find((item) => item.localModelId === id);
+    if (!match || match.match === "unmatched") {
+      throw new AdminError("PRICING_SYNC_SELECTION_INVALID", "所选模型没有可用的目录价格", 409);
+    }
+    const key = choices.get(id);
+    if (match.match !== "ambiguous") {
+      if (key !== undefined) throw new AdminError("PRICING_SYNC_SELECTION_INVALID", "唯一匹配的模型不接受候选覆盖", 409);
+      return match;
+    }
+    const candidate = match.candidateDetails?.find((item) => item.key === key);
+    if (!candidate || !match.candidates?.includes(candidate.key)) {
+      throw new AdminError("PRICING_SYNC_SELECTION_INVALID", "请从当前快照中选择候选；旧快照需重新同步", 409);
+    }
+    return { ...match, ...candidate };
+  });
 }
 
 function samePrice(row: Record<string, unknown>, match: PricingSyncMatch) {
@@ -332,10 +379,7 @@ export async function handlePricingSyncApply(request: Request, snapshotId: strin
       if (snapshot.status !== "ready" || snapshot.expires_at <= new Date()) {
         throw new AdminError("PRICING_SYNC_EXPIRED", "价格同步快照已应用或过期，请重新同步", 409);
       }
-      const selected = snapshot.matches.filter((match) => input.modelIds.includes(match.localModelId));
-      if (selected.length !== input.modelIds.length || selected.some((match) => !["exact", "normalized"].includes(match.match))) {
-        throw new AdminError("PRICING_SYNC_SELECTION_INVALID", "只能应用唯一匹配的模型价格", 409);
-      }
+      const selected = resolvePricingSyncSelections(snapshot.matches, input.modelIds, input.candidateSelections);
       const created: string[] = [];
       const unchanged: string[] = [];
       for (const match of selected) {
@@ -350,7 +394,7 @@ export async function handlePricingSyncApply(request: Request, snapshotId: strin
           [match.localModelId],
         );
         const current = rows[0];
-        if (current && samePrice(current, match)) {
+        if (current && samePrice(current, match) && (match.match !== "ambiguous" || current.source_ref === match.key)) {
           unchanged.push(String(current.id));
           continue;
         }
@@ -376,7 +420,7 @@ export async function handlePricingSyncApply(request: Request, snapshotId: strin
             match.cacheReadMicrousd, match.cacheWriteMicrousd,
             Number(current?.markup_bps ?? 0), Number(current?.discount_bps ?? 0),
             match.key, snapshot.catalog_version,
-            JSON.stringify({ snapshotId, providerId: match.providerId, modelId: match.modelId, catalogHash: snapshot.catalog_hash }),
+            JSON.stringify({ snapshotId, providerId: match.providerId, modelId: match.modelId, catalogHash: snapshot.catalog_hash, match: match.match, manualSelection: match.match === "ambiguous" }),
             input.effectiveFrom,
           ],
         );
@@ -385,7 +429,10 @@ export async function handlePricingSyncApply(request: Request, snapshotId: strin
       await client.query("UPDATE ai_pricing_sync_snapshots SET status = 'applied', applied_at = now() WHERE id = $1", [snapshotId]);
       await recordAdminAuditOnClient(client, {
         identity, action: "models_dev_pricing_apply", resourceType: "pricing", resourceId: snapshotId,
-        requestId, request, metadata: { selectedCount: selected.length, created, unchanged, effectiveFrom: input.effectiveFrom.toISOString() },
+        requestId, request, metadata: {
+          selectedCount: selected.length, created, unchanged, effectiveFrom: input.effectiveFrom.toISOString(),
+          candidateSelections: input.candidateSelections,
+        },
       });
       return { snapshotId, selectedCount: selected.length, created, unchanged, effectiveFrom: input.effectiveFrom.toISOString() };
     });

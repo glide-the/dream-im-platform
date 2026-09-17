@@ -62,7 +62,7 @@
     "migrate:check": "tsx src/migrate.ts --check"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.1",
+    "drizzle-orm": "^0.45.2",
     "embedded-postgres": "18.1.0-beta.16",
     "pg": "^8.13.3"
   },

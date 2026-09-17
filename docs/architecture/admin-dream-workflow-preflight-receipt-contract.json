@@ -1,0 +1,442 @@
+{
+  "contract": {
+    "name": "workflow-preflight.execute.original-receipt",
+    "input_schema_version": 1,
+    "output_schema_version": 1,
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "workflow-preflight.execute"
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        }
+      },
+      "required": [
+        "operation",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "absent"
+            },
+            "operation": {
+              "type": "string",
+              "const": "workflow-preflight.execute"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            }
+          },
+          "required": [
+            "status",
+            "operation",
+            "request_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "in_progress"
+            },
+            "operation": {
+              "type": "string",
+              "const": "workflow-preflight.execute"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "request_state": {
+                  "type": "string",
+                  "enum": [
+                    "in_progress",
+                    "committed"
+                  ]
+                },
+                "preflight": {
+                  "type": "object",
+                  "properties": {
+                    "workflow_preflight_id": {
+                      "type": "string",
+                      "pattern": "^pf_[0-9a-f]{32}$"
+                    },
+                    "deck_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "binding_revision": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "deck_plugin_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "deck_plugin_version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "runtime_plugin_lock_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "deck_runtime_profile_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "deck_runtime_snapshot_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "deck_runtime_snapshot_summary_hash": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "input_hash": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "checking",
+                        "passed",
+                        "failed",
+                        "expired"
+                      ]
+                    },
+                    "error_code": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "failed_check": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "identity_workspace_permission",
+                            "binding_release",
+                            "manifest_workflow_schema",
+                            "host_agent_runtime_compatibility",
+                            "capability_source_policy",
+                            "deck_runtime_snapshot",
+                            "runtime_materialization",
+                            "token_issuance"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "preflight_token": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "created_by": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    }
+                  },
+                  "required": [
+                    "workflow_preflight_id",
+                    "deck_id",
+                    "binding_revision",
+                    "deck_plugin_id",
+                    "deck_plugin_version",
+                    "runtime_plugin_lock_id",
+                    "deck_runtime_profile_id",
+                    "deck_runtime_snapshot_id",
+                    "deck_runtime_snapshot_summary_hash",
+                    "input_hash",
+                    "status",
+                    "error_code",
+                    "failed_check",
+                    "expires_at",
+                    "preflight_token",
+                    "created_by",
+                    "created_at"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "request_state",
+                "preflight"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "status",
+            "operation",
+            "request_id",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "committed"
+            },
+            "operation": {
+              "type": "string",
+              "const": "workflow-preflight.execute"
+            },
+            "request_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "request_state": {
+                  "type": "string",
+                  "enum": [
+                    "in_progress",
+                    "committed"
+                  ]
+                },
+                "preflight": {
+                  "type": "object",
+                  "properties": {
+                    "workflow_preflight_id": {
+                      "type": "string",
+                      "pattern": "^pf_[0-9a-f]{32}$"
+                    },
+                    "deck_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "binding_revision": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "deck_plugin_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "deck_plugin_version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "runtime_plugin_lock_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "deck_runtime_profile_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "deck_runtime_snapshot_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "deck_runtime_snapshot_summary_hash": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "input_hash": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "checking",
+                        "passed",
+                        "failed",
+                        "expired"
+                      ]
+                    },
+                    "error_code": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "failed_check": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "identity_workspace_permission",
+                            "binding_release",
+                            "manifest_workflow_schema",
+                            "host_agent_runtime_compatibility",
+                            "capability_source_policy",
+                            "deck_runtime_snapshot",
+                            "runtime_materialization",
+                            "token_issuance"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "preflight_token": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "created_by": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    }
+                  },
+                  "required": [
+                    "workflow_preflight_id",
+                    "deck_id",
+                    "binding_revision",
+                    "deck_plugin_id",
+                    "deck_plugin_version",
+                    "runtime_plugin_lock_id",
+                    "deck_runtime_profile_id",
+                    "deck_runtime_snapshot_id",
+                    "deck_runtime_snapshot_summary_hash",
+                    "input_hash",
+                    "status",
+                    "error_code",
+                    "failed_check",
+                    "expires_at",
+                    "preflight_token",
+                    "created_by",
+                    "created_at"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "request_state",
+                "preflight"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "status",
+            "operation",
+            "request_id",
+            "result"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "requirements": [
+    {
+      "capability": "identity.better-auth.v1",
+      "version": 1,
+      "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+    },
+    {
+      "capability": "dream.schema.unified.v1",
+      "version": 1,
+      "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+    },
+    {
+      "capability": "dream.workflow-preflight-request.v1",
+      "version": 1,
+      "contractSha256": "7123babb03535e0a0c7a818e902c331cefbe73c660b46395136dcc9a5b19f3da"
+    }
+  ],
+  "capability": {
+    "name": "workflow-preflight.execute.original-receipt",
+    "user_scope": "dream:write",
+    "input_schema_version": 1,
+    "output_schema_version": 1,
+    "contract_sha256": "ad144287942f6f3ad2db82dda7c7b0f20cdf3578e68df4bd8e8b86e8dbbec2f2"
+  }
+}

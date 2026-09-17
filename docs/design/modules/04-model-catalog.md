@@ -2,6 +2,7 @@
 <!-- [Output] Current Provider, Model, Pricing, discovery, validation, and responsive interaction rules. -->
 <!-- [Pos] Module interaction contract for `/admin/models/**`; security details link to the cross-domain auth design. -->
 <!-- [Sync] 2026-09-04: add managed post-connect catalog snapshots, retry/apply boundaries, and unsupported-model handling. -->
+<!-- [Sync] 2026-09-14: compare all ambiguous pricing candidates and apply an explicitly chosen snapshot source. -->
 
 # 模块交互：Provider、Model 与 Pricing
 
@@ -41,7 +42,7 @@ Model 列表列 provider、alias、upstream model、capabilities、context/outpu
 
 Pricing 列表列 model/tier、四类价格、markup/discount、source/status/effective window。新版本独立页：Model/Tier relation → 当前版本 → 四类 micro-USD integer → markup/discount → effective time → before/after diff。历史行只读；无直接编辑窗口。
 
-目录同步页显示 catalog version/hash、exact/normalized/ambiguous/unmatched 证据；只有 exact 默认选。
+目录同步页显示 catalog version/hash、exact/normalized/ambiguous/unmatched 证据；只有 exact 默认选。歧义行默认折叠，展开后比较全部来源的四类价格；明确单选来源后自动勾选模型并显示“人工选择”，Apply 使用锁定快照中的候选金额与来源，旧 key-only 快照需重新同步。
 
 ## 3. 模块边界
 
@@ -63,3 +64,4 @@ Pricing 列表列 model/tier、四类价格、markup/discount、source/status/ef
 - UI-MOD-09：managed auth 成功但自动 Discover 失败时，poll 仍返回 connected account 与安全 `catalogSync.failed`；页面不宣称认证失败，手动重试可生成 ready snapshot，响应/DOM 均无 Secret。
 - UI-MOD-10：自动或手动 Discover 成功只进入 review；Apply 后新 Model 为 disabled、已有 Model 只刷新 catalog 元数据、缺失 Model 不变，且没有 Pricing 行被隐式创建或修改。
 - UI-MOD-11：Copilot catalog 中与当前 Gateway dialect 不兼容的 OpenAI/Responses 模型显示为 unsupported 且不可选择；上游隐藏模型不进入可应用候选。
+- UI-MOD-12：歧义定价默认折叠且无预选金额，展开显示完整候选与四类价格；明确单选后自动勾选模型，收起/筛选保留选择，Apply 使用所选 snapshot 来源并写审计；非法候选与客户端价格覆盖被拒绝，旧快照需重新同步。1440×1000 与 390×844 均可操作且无页面水平溢出。

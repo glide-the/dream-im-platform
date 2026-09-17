@@ -3,7 +3,7 @@
 // [Input] Refine resource state, declarative field definitions, and server-safe Admin projections.
 // [Output] Generic list/form serialization and controls without exposing stored credential material.
 // [Pos] Shared Admin resource presentation boundary; domain validation and authorization remain server-owned.
-// [Sync] 2026-09-04: support numeric auth revisions and serializable conditional options for Provider capabilities.
+// [Sync] 2026-09-15: preserve declarative relation filters across search and pagination.
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -86,6 +86,7 @@ export type AdminFieldDefinition = {
     secondaryKey?: string;
     searchField: string;
     valueKey?: string;
+    filters?: CrudFilter[];
   };
 };
 
@@ -471,15 +472,16 @@ function RelationSelect({
     resource: relation.resource,
     pagination: { currentPage: page, pageSize: 50 },
     sorters: [{ field: relation.labelKey, order: "asc" }],
-    filters: search
-      ? [
+    filters: [
+      ...(relation.filters ?? []),
+      ...(search ? [
           {
             field: relation.searchField,
-            operator: "contains",
+            operator: "contains" as const,
             value: search,
           },
-        ]
-      : [],
+        ] : []),
+    ],
   });
   const total = result.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / 50));
@@ -610,9 +612,10 @@ function MultiRelationSelect({
     resource: relation.resource,
     pagination: { currentPage: 1, pageSize: 100 },
     sorters: [{ field: relation.labelKey, order: "asc" }],
-    filters: search
-      ? [{ field: relation.searchField, operator: "contains", value: search }]
-      : [],
+    filters: [
+      ...(relation.filters ?? []),
+      ...(search ? [{ field: relation.searchField, operator: "contains" as const, value: search }] : []),
+    ],
   });
   return (
     <div className="mt-2 space-y-2" role="group" aria-labelledby={labelId}>
