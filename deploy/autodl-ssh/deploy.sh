@@ -3,6 +3,7 @@
 # [Output] Versioned direct-host Admin/embedded-PostgreSQL release managed by screen.
 # [Pos] AutoDL release entry; deliberately uses neither Docker nor nginx.
 # [Sync] 2026-09-04: run the release-owned Provider migration orchestrator before startup.
+# [Sync] 2026-09-17: smoke an immutable candidate before migration and atomic activation.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,8 +26,10 @@ AUTODL_SOURCE_ENV_FILE="${AUTODL_SOURCE_ENV_FILE:-${REPO_ROOT}/.env.local}"
 AUTODL_SERVICE_USER="${AUTODL_SERVICE_USER:-ink-memory}"
 AUTODL_NODE_VERSION="${AUTODL_NODE_VERSION:-22.18.0}"
 AUTODL_ADMIN_PORT="${AUTODL_ADMIN_PORT:-6008}"
+AUTODL_ADMIN_SMOKE_PORT="${AUTODL_ADMIN_SMOKE_PORT:-16008}"
 AUTODL_ADMIN_PUBLIC_ORIGIN="${AUTODL_ADMIN_PUBLIC_ORIGIN:-}"
 AUTODL_SCREEN_NAME="${AUTODL_ADMIN_SCREEN_NAME:-ink-admin}"
+AUTODL_SMOKE_SCREEN_NAME="${AUTODL_ADMIN_SMOKE_SCREEN_NAME:-${AUTODL_SCREEN_NAME}-smoke}"
 AUTODL_BUILD_CPUS="${AUTODL_BUILD_CPUS:-1}"
 AUTODL_BUILD_MAX_OLD_SPACE_MB="${AUTODL_BUILD_MAX_OLD_SPACE_MB:-1024}"
 AUTODL_PACKAGE_MAX_OLD_SPACE_MB="${AUTODL_PACKAGE_MAX_OLD_SPACE_MB:-384}"
@@ -98,6 +101,7 @@ require_config() {
   [[ "${AUTODL_APP_ROOT}" == /root/* && "${AUTODL_DATA_ROOT}" == /root/* ]] || err "AutoDL paths must stay under /root."
   [[ "${AUTODL_ADMIN_HOME}" == /* && "${AUTODL_ADMIN_HOME}" != "${AUTODL_DATA_ROOT}" && "${AUTODL_ADMIN_HOME}" != "${AUTODL_DATA_ROOT}/"* ]] || err "AUTODL_ADMIN_HOME must be absolute and outside AUTODL_DATA_ROOT."
   [[ "${AUTODL_ADMIN_PORT}" == "6008" ]] || err "Admin AutoDL mapping must use local port 6008."
+  [[ "${AUTODL_ADMIN_SMOKE_PORT}" =~ ^[0-9]+$ && "${AUTODL_ADMIN_SMOKE_PORT}" != "${AUTODL_ADMIN_PORT}" ]] || err "Admin smoke port must be numeric and differ from port 6008."
   [[ "${AUTODL_BUILD_CPUS}" =~ ^[1-9][0-9]*$ ]] || err "AUTODL_BUILD_CPUS must be a positive integer."
   [[ "${AUTODL_BUILD_MAX_OLD_SPACE_MB}" =~ ^[1-9][0-9]*$ ]] || err "AUTODL_BUILD_MAX_OLD_SPACE_MB must be a positive integer."
   [[ "${AUTODL_PACKAGE_MAX_OLD_SPACE_MB}" =~ ^[1-9][0-9]*$ ]] || err "AUTODL_PACKAGE_MAX_OLD_SPACE_MB must be a positive integer."
@@ -133,7 +137,7 @@ AutoDL Admin direct-host release:
   build budget:    ${AUTODL_BUILD_CPUS} CPU / ${AUTODL_BUILD_MAX_OLD_SPACE_MB} MiB V8 old-space
   package budget:  ${AUTODL_PACKAGE_MAX_OLD_SPACE_MB} MiB V8 old-space
   runtime:         Node ${AUTODL_NODE_VERSION} + screen + non-root embedded PostgreSQL
-  order:           setup -> sync -> build -> restore(first use only) -> migrate -> start -> verify
+  order:           setup -> sync -> build candidate -> isolated smoke -> migrate -> atomic switch -> verify -> prune old releases
   excluded:        Docker, nginx, runtime DDL, plaintext secret logging
 EOF
 }
@@ -235,8 +239,27 @@ test -f \"\${staging}/packages/db/dist/supervise.js\"
 rm -rf \"\${release}\"
 mv \"\${staging}\" \"\${release}\"
 chown -R $(quote "${AUTODL_SERVICE_USER}"):$(quote "${AUTODL_SERVICE_USER}") \"\${release}\"
-if [ -L $(quote "${AUTODL_APP_ROOT}/current") ]; then ln -sfn \"\$(readlink -f $(quote "${AUTODL_APP_ROOT}/current"))\" $(quote "${AUTODL_APP_ROOT}/previous"); fi
-ln -sfn \"\${release}\" $(quote "${AUTODL_APP_ROOT}/current")"
+ln -sfn \"\${release}\" $(quote "${AUTODL_APP_ROOT}/candidate")"
+}
+
+smoke_candidate() {
+  remote "set -euo pipefail
+candidate=\$(readlink -f $(quote "${AUTODL_APP_ROOT}/candidate")); test -s \"\${candidate}/server.js\"
+uid=\$(id -u $(quote "${AUTODL_SERVICE_USER}")); gid=\$(id -g $(quote "${AUTODL_SERVICE_USER}"))
+screen -S $(quote "${AUTODL_SMOKE_SCREEN_NAME}") -X quit >/dev/null 2>&1 || true
+screen -dmS $(quote "${AUTODL_SMOKE_SCREEN_NAME}") -L -Logfile $(quote "${AUTODL_APP_ROOT}/logs/admin-smoke.log") bash -lc \"set -a; . $(quote "${AUTODL_APP_ROOT}/config/admin.env"); set +a; exec setpriv --reuid=\${uid} --regid=\${gid} --init-groups env HOME=$(quote "${AUTODL_ADMIN_HOME}") HOSTNAME=127.0.0.1 PORT=${AUTODL_ADMIN_SMOKE_PORT} PATH=/root/ink-autodl/runtime/node/bin:\\$PATH node \${candidate}/server.js\"
+passed=0; for _ in \$(seq 1 90); do curl -fsS --max-time 3 http://127.0.0.1:${AUTODL_ADMIN_SMOKE_PORT}/admin/login >/dev/null 2>&1 && { passed=1; break; }; sleep 1; done
+screen -S $(quote "${AUTODL_SMOKE_SCREEN_NAME}") -X quit >/dev/null 2>&1 || true
+test \"\${passed}\" = 1 || { tail -n 120 $(quote "${AUTODL_APP_ROOT}/logs/admin-smoke.log") >&2 || true; exit 1; }"
+  log "Admin candidate passed isolated port ${AUTODL_ADMIN_SMOKE_PORT} smoke."
+}
+
+activate_candidate() {
+  remote "set -euo pipefail; candidate=\$(readlink -f $(quote "${AUTODL_APP_ROOT}/candidate")); test -d \"\${candidate}\"; if [ -L $(quote "${AUTODL_APP_ROOT}/current") ]; then ln -sfn \"\$(readlink -f $(quote "${AUTODL_APP_ROOT}/current"))\" $(quote "${AUTODL_APP_ROOT}/previous"); fi; ln -sfn \"\${candidate}\" $(quote "${AUTODL_APP_ROOT}/current")"
+}
+
+prune_old_releases() {
+  remote "set -euo pipefail; current=\$(readlink -f $(quote "${AUTODL_APP_ROOT}/current")); find $(quote "${AUTODL_APP_ROOT}/releases") -mindepth 1 -maxdepth 1 -type d ! -path \"\${current}\" -exec rm -rf -- {} +; rm -f $(quote "${AUTODL_APP_ROOT}/previous") $(quote "${AUTODL_APP_ROOT}/candidate")"
 }
 
 stop_admin() {
@@ -258,13 +281,15 @@ setpriv --reuid=\"\${uid}\" --regid=\"\${gid}\" --init-groups node packages/db/d
 }
 
 migrate_admin() {
+  local release_link="${1:-current}"
   remote "set -euo pipefail
 set -a; . $(quote "${AUTODL_APP_ROOT}/config/admin.env"); set +a
 export HOME=$(quote "${AUTODL_ADMIN_HOME}")
 export PATH=/root/ink-autodl/runtime/node/bin:/usr/lib/postgresql/18/bin:\$PATH
-export INK_MIGRATIONS_DIR=$(quote "${AUTODL_APP_ROOT}/current/drizzle")
+release=\$(readlink -f $(quote "${AUTODL_APP_ROOT}/${release_link}"))
+export INK_MIGRATIONS_DIR=\"\${release}/drizzle\"
 uid=\$(id -u $(quote "${AUTODL_SERVICE_USER}")); gid=\$(id -g $(quote "${AUTODL_SERVICE_USER}"))
-cd $(quote "${AUTODL_APP_ROOT}/current")
+cd \"\${release}\"
 setpriv --reuid=\"\${uid}\" --regid=\"\${gid}\" --init-groups node scripts/migrate-provider-managed-accounts.mjs"
 }
 
@@ -324,7 +349,13 @@ verify() {
   log "Admin local port, screen supervisor, and public mapping passed."
 }
 
-deploy() { command_check; setup_host; sync_files; build_release; stop_admin; migrate_admin; start_admin; verify; }
+deploy() {
+  command_check; start_admin; setup_host; sync_files; build_release; smoke_candidate; stop_admin
+  if ! migrate_admin candidate; then start_admin || true; err "Candidate migration failed; previous current release was restored to service."; fi
+  activate_candidate
+  if ! start_admin || ! verify; then rollback; err "Candidate activation failed; previous Admin release was restored."; fi
+  prune_old_releases
+}
 
 rollback() {
   remote "test -L $(quote "${AUTODL_APP_ROOT}/previous")"

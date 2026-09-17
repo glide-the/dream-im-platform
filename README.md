@@ -139,6 +139,7 @@ AutoDL 直接部署将 embedded PostgreSQL 固定到 Admin 服务用户拥有的
 `/root/ink-autodl/data/postgres`，共享 Artifact 仍位于 Dream 数据盘
 `/root/autodl-tmp/ink-memory/artifacts`。initializer 会拒绝符号链接和未经确认的旧
 cluster 路径切换，不会自动迁移、删除或用空库替代真实数据。
+常规 AutoDL 发布先在 `16008` 冒烟候选应用，再用候选 release 执行前向 migration 和原子切换；公开验证通过后删除旧应用 release，不保留长期回滚版本，PostgreSQL 与共享 Artifact 不参与清理。
 
 ## 环境变量
 

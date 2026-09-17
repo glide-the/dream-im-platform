@@ -21,7 +21,11 @@ CURRENT_USER="$(id -un)"
 CURRENT_GROUP="$(id -gn)"
 
 grep -Fq 'cp scripts/migrate-provider-managed-accounts.mjs' "${SCRIPT_DIR}/deploy.sh"
-grep -Fq 'deploy() { command_check; setup_host; sync_files; build_release; stop_admin; migrate_admin; start_admin; verify; }' "${SCRIPT_DIR}/deploy.sh"
+grep -Fq 'smoke_candidate' "${SCRIPT_DIR}/deploy.sh"
+grep -Fq 'migrate_admin candidate' "${SCRIPT_DIR}/deploy.sh"
+grep -Fq 'activate_candidate' "${SCRIPT_DIR}/deploy.sh"
+grep -Fq 'prune_old_releases' "${SCRIPT_DIR}/deploy.sh"
+grep -Fq 'AUTODL_ADMIN_SMOKE_PORT' "${SCRIPT_DIR}/deploy.sh"
 if grep -Fq 'maintenance migrate.js' "${SCRIPT_DIR}/deploy.sh"; then
   printf 'AutoDL deployment bypassed the Provider migration orchestrator\n' >&2
   exit 1
