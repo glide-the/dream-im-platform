@@ -19,3 +19,4 @@
 - 第二次恢复证明设备重启清除了 `/root` 的服务用户 ACL；将 `setup_host` 提前到旧 current 启动前，先幂等恢复路径穿越权限。候选仍未构建或切换。
 - 第三次候选通过隔离端口，但 Next standalone 中已有 `drizzle` 占位目录，复制后形成 `drizzle/drizzle/meta/_journal.json`，迁移器按合同拒绝缺失的根级 journal。同一 commit 重试还暴露了 release ID 不唯一会覆盖 current 目录的问题。发布脚本现以 commit 加 UTC 时间生成不可变 candidate ID，复制前移除占位目录，并在候选落盘前断言根级 journal；该次不作为成功发布回执。
 - `7c3719793a26.20260917110115` 完成 64/64 migration 并切换后，未携带凭据的 capability 探针返回 `AUTH_NOT_CONFIGURED`。根因是生成的 `DREAM_DATA_SERVICE_CLIENTS` JSON 未做 shell 编码，启动器 source 后丢失 JSON 引号。生成器与测试现按远端真实 source 语义修复；在 capability 恢复前不推进 Dream 发布。
+- 原先以 `suoxya.com` 验证的公网值已按用户指定撤销。当前实例只使用部署变量注入的 SeetaCloud 6008 映射作为 Admin origin，Dream 6006 映射作为 trusted origin/resource/callback；这些实例值只进入 gitignored 配置和本发布回执，不成为脚本默认值。
