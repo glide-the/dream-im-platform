@@ -9,6 +9,7 @@ import {
   handleSubscriptionAction,
   isSubscriptionResource,
 } from "../../../../../lib/subscriptions/service";
+import { handleDreamUserRoleAction } from "../../../../../lib/admin/dream-user-role-handler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,9 @@ export async function POST(
   const { resource, id, action } = await context.params;
   if (isSubscriptionResource(resource)) {
     return await handleSubscriptionAction(request, resource, id, action);
+  }
+  if (resource === "users" && action === "set-product-role") {
+    return await handleDreamUserRoleAction(request, id);
   }
   if (resource === "providers" && action === "reachability") {
     return await handleProviderReachability(request, id);

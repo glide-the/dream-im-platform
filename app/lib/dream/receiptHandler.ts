@@ -1,3 +1,4 @@
+// [Sync] 2026-09-17: recover Registry174 Deck Plugin apply under its original OAuth subject.
 // [Sync] 2026-09-17: distinguish service-only client_credentials receipts from dual-bearer user receipts.
 // [Sync] 2026-09-16: recover Registry187-188/190-191 Story Workspace Artifact writes.
 // [Sync] 2026-09-16: recover Registry175-184 Claude Plugin writes under their original user/background authority.
@@ -81,6 +82,9 @@ import { storyWorkspaceConfirmationSchemaRequirements } from "./storyWorkspaceCo
 import { deckPluginBindingOperationContracts } from "./deckPluginBindingDto";
 import { isDeckPluginBindingOperation } from "./deckPluginBindingHandler";
 import { deckPluginBindingSchemaRequirements } from "./deckPluginBindingService";
+import { deckPluginControlOperationContracts } from "./deckPluginControlDto";
+import { isDeckPluginControlOperation } from "./deckPluginControlHandler";
+import { deckPluginControlSchemaRequirements } from "./deckPluginControlService";
 import { managedMcpOperationContracts } from "./managedMcpDto";
 import { isManagedMcpOperation } from "./managedMcpHandler";
 import { managedMcpSchemaRequirements } from "./managedMcpService";
@@ -127,6 +131,27 @@ export async function handleReceipt(request: Request, requestId: string) {
         if (row && (!/^[0-9a-f]{64}$/.test(row.inputSha256) || row.threadScope !== null
           || row.editorSessionScope !== null || row.runScope !== null || !operation.output.safeParse(row.result).success)) {
           throw new AuthBoundaryError("CLAUDE_PLUGIN_RECEIPT_INVALID");
+        }
+        return receiptResultDto.parse({ status: row ? "committed" : "absent", operation: name,
+          request_id: parsed.data, ...(row ? { result: row.result } : {}) });
+      });
+    }
+    if (isDeckPluginControlOperation(name)) {
+      const operation = deckPluginControlOperationContracts[name];
+      if (operation.kind !== "write" || query.size !== 1 || query.getAll("operation").length !== 1) {
+        throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+      }
+      const receiptResultDto = z.discriminatedUnion("status", [
+        z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
+        z.strictObject({ status: z.literal("committed"), operation: z.literal(name), request_id: requestIdDto, result: operation.output }),
+      ]);
+      return withDataTransaction([identitySchemaRequirement, ...deckPluginControlSchemaRequirements], async tx => {
+        const principal = await principalForServiceToken(tx,
+          request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", service, operation.userScope);
+        const row = await new ReceiptRepository(tx, service.id, principal.subject).find(name, parsed.data);
+        if (row && (!/^[0-9a-f]{64}$/.test(row.inputSha256) || row.threadScope !== null
+          || row.editorSessionScope !== null || row.runScope !== null || !operation.output.safeParse(row.result).success)) {
+          throw new AuthBoundaryError("DECK_PLUGIN_CONTROL_DATA_INVALID");
         }
         return receiptResultDto.parse({ status: row ? "committed" : "absent", operation: name,
           request_id: parsed.data, ...(row ? { result: row.result } : {}) });

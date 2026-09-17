@@ -1,8 +1,9 @@
 // [Input] Canonical actor, strict Deck Plugin control DTOs and a caller-owned Admin transaction.
 // [Output] Owner-filtered release/lock/installation/materialization reads and revision-checked typed Drizzle writes.
 // [Pos] Registry170-174 persistence boundary; no filesystem, generic CRUD or caller-selected SQL.
+// [Sync] 2026-09-17: hash the aggregate lock tuple before PostgreSQL advisory locking so text parameters never contain NUL separators.
 // [Sync] 2026-09-16: move the active Dream Deck Plugin control tables behind Admin ORM ownership.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { storyWorkspaceWorkspaces as workspaces, users } from "@ink-memory/db/schema";
 import {
@@ -50,6 +51,10 @@ const releaseFields = {
 export type DeckPluginInstallationInsert = typeof installations.$inferInsert;
 export type RuntimeMaterializationInsert = typeof materializations.$inferInsert;
 
+export function deckPluginControlSerializationKey(scopeType: string, scopeId: string, pluginId: string) {
+  return createHash("sha256").update(JSON.stringify(["deck-plugin-control", scopeType, scopeId, pluginId]), "utf8").digest("hex");
+}
+
 export class DeckPluginControlRepository {
   private readonly actor: string;
 
@@ -69,7 +74,8 @@ export class DeckPluginControlRepository {
   }
 
   async serialize(scopeType: string, scopeId: string, pluginId: string) {
-    await this.tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`deck-plugin-control\0${scopeType}\0${scopeId}\0${pluginId}`}, 0))`);
+    const key = deckPluginControlSerializationKey(scopeType, scopeId, pluginId);
+    await this.tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
   }
 
   async release(pluginId: string, version: string) {

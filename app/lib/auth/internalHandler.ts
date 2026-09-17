@@ -1,6 +1,7 @@
 // [Input] Internal request with a confidential-client token and strict domain-specific DTO/schema handler.
 // [Output] Stable data/error/request_id envelope without secret/body/SQL diagnostics.
 // [Pos] Internal auth ingress orchestration shared by thin Route Handlers.
+// [Sync] 2026-09-17: emit allowlisted database diagnostics for unexpected internal failures without logging bodies or secrets.
 // [Sync] 2026-09-17: await OAuth client_credentials service authentication before domain dispatch.
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -42,6 +43,21 @@ export async function handleInternalAuthRequest(request: Request, handler: (serv
   } catch (error) {
     const code = error instanceof AuthBoundaryError ? error.code : "AUTH_SERVICE_UNAVAILABLE";
     const status = error instanceof AuthBoundaryError ? error.status : 503;
+    if (!(error instanceof AuthBoundaryError)) {
+      const record = typeof error === "object" && error !== null ? error as Record<string, unknown> : {};
+      const postgresCode = typeof record.code === "string" && /^[0-9A-Z]{5}$/.test(record.code) ? record.code : null;
+      const constraint = typeof record.constraint === "string" && /^[a-z0-9_]{1,128}$/.test(record.constraint)
+        ? record.constraint : null;
+      const stackFrames = error instanceof Error ? (error.stack ?? "").split("\n").slice(1, 6)
+        .map(frame => frame.trim()).filter(frame => /^at [A-Za-z0-9_.$<>/:()\[\]\\ -]+$/.test(frame)) : [];
+      console.error("Unexpected Admin internal operation failure", {
+        request_id: requestId,
+        error_name: error instanceof Error ? error.name : "UnknownError",
+        postgres_code: postgresCode,
+        constraint,
+        stack_frames: stackFrames,
+      });
+    }
     const details = error instanceof AuthBoundaryError ? projectDomainErrorDetails(code, error.details) : undefined;
     return Response.json({ error: { code, message: status >= 500 ? "Service is unavailable." : "This request could not be completed.", ...(details === undefined ? {} : { details }) }, request_id: requestId }, { status, headers });
   }
