@@ -2,6 +2,7 @@
 <!-- [Output] Admin-side deployment plan and append-only evidence for the 2026-09-17 unified auth/data release. -->
 <!-- [Pos] Admin AutoDL release receipt; secrets and business payloads are excluded. -->
 <!-- [Sync] 2026-09-17: define candidate smoke, candidate-owned migration, atomic activation, pruning, and public acceptance gates. -->
+<!-- [Sync] 2026-09-17: record limited-role activation, OAuth catalog provisioning, and the protected capability gate. -->
 
 # Admin AutoDL 发布回执
 
@@ -10,6 +11,14 @@
 将合并后的 Admin `main` 精确 commit 发布为统一认证中心和 Dream 数据接口服务。复用 direct-host AutoDL 脚本与远端持久 PostgreSQL；构建不可变 candidate，在旧 Admin 仍服务且 PostgreSQL 已启动时于 `16008` 隔离验证登录页面。停止旧应用后，以 candidate 自带 Drizzle 和 Provider migration orchestrator 执行唯一前向 migration，再原子切换 `current`。验证本机 `6008`、公网 `/admin/login`、migration journal、capability 与 Dream DTO API。失败时在本轮内恢复旧应用；全部通过后删除旧 release、`previous` 和 `candidate`，不保留长期回滚点，不回滚数据库。
 
 不得合并 Admin 管理员与 Dream 产品用户；不得打印或提交 secret；不得删除 PostgreSQL、Artifact 或 Dream workspace。Dream 发布必须等待本阶段成功。
+
+## Authentication recovery gate
+
+首次只验证公开登录页是不充分的：恢复后的数据库已有 64 个 migration，但缺少配置中的 `ink_auth`、`ink_admin_control`、`ink_dream_data` 登录角色，OAuth catalog 也缺少 browser/device/service clients。因此 token endpoint 返回 `temporarily_unavailable`，Dream 记录 `ADMIN_SERVICE_AUTH_UNAVAILABLE`。
+
+在修改生产 ACL 前，已创建并校验完整 PostgreSQL custom-format 备份。现有、绑定发布 commit 的 access runner 随后完成 dry-run 与显式 production apply：64 migrations、8 required capabilities、144 policy statements，policy SHA 为 `8dd2128cacb1577f4b5b2a9b9d5e358ee1600c66b29c15be2b382840b82f795e`；三个受限登录角色与 Dream no-login/no-connect 角色均通过 credential/权限探针。现有 OAuth catalog DTO/事务 provisioning 创建 browser、device 和 confidential service clients。使用 Basic client authentication 的 `client_credentials` 兑换与受保护 `/api/internal/dream/v1/capabilities` 均返回 HTTP 200，过程中没有输出 credential 或 token。
+
+AutoDL 发布现在在 migration 后同步 OAuth catalog，并在 `verify` 中执行相同的 service-token/capability 探针；ACL 未激活、catalog 缺失或数据库访问失败都会使发布失败，不能再以登录页 200 宣称认证链可用。
 
 ## 初始证据
 

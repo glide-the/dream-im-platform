@@ -2,6 +2,7 @@
 # [Input] AutoDL SSH settings, generated runtime env, source tree, and optional bootstrap database.
 # [Output] Versioned direct-host Admin/embedded-PostgreSQL release managed by screen.
 # [Pos] AutoDL release entry; deliberately uses neither Docker nor nginx.
+# [Sync] 2026-09-17: reconcile the OAuth catalog and gate releases on real service-token capability access.
 # [Sync] 2026-09-17: give every candidate a unique id and replace the standalone drizzle placeholder before copying migration sources.
 # [Sync] 2026-09-04: run the release-owned Provider migration orchestrator before startup.
 # [Sync] 2026-09-17: smoke an immutable candidate before migration and atomic activation.
@@ -111,7 +112,7 @@ require_config() {
 check_local() {
   local failed=0 mode
   for name in ssh scp rsync git gzip pg_dump; do command -v "${name}" >/dev/null 2>&1 || { warn "Missing local command: ${name}"; failed=1; }; done
-  for file in "${AUTODL_ENV_FILE}" "${SCRIPT_DIR}/runtime/start-admin.sh" "${SCRIPT_DIR}/runtime/init-admin-data.sh"; do
+  for file in "${AUTODL_ENV_FILE}" "${SCRIPT_DIR}/runtime/start-admin.sh" "${SCRIPT_DIR}/runtime/init-admin-data.sh" "${SCRIPT_DIR}/runtime/verify-auth.mjs"; do
     [[ -f "${file}" ]] || { warn "Missing file: ${file}"; failed=1; }
   done
   if [[ -f "${AUTODL_ENV_FILE}" ]]; then
@@ -191,6 +192,7 @@ sync_files() {
   log "Syncing Admin source without runtime secrets."
   if [[ "${DRY_RUN}" == "1" ]]; then printf '[dry-run] rsync'; printf ' %q' "${args[@]}" "${REPO_ROOT}/" "$(ssh_target):${AUTODL_APP_ROOT}/source/"; printf '\n';
   else rsync "${args[@]}" "${REPO_ROOT}/" "$(ssh_target):${AUTODL_APP_ROOT}/source/"; fi
+  remote "setfacl -m u:$(quote "${AUTODL_SERVICE_USER}"):r-x $(quote "${AUTODL_APP_ROOT}/source")"
   remote "INK_AUTODL_ADMIN_HOME=$(quote "${AUTODL_ADMIN_HOME}") INK_AUTODL_DATA_ROOT=$(quote "${AUTODL_DATA_ROOT}") INK_AUTODL_SERVICE_USER=$(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/source/deploy/autodl-ssh/runtime/init-admin-data.sh")"
   scp_file "${AUTODL_ENV_FILE}" "${AUTODL_APP_ROOT}/config/admin.env.next"
   remote "set -e; group=\$(id -gn $(quote "${AUTODL_SERVICE_USER}")); chown root:\"\${group}\" $(quote "${AUTODL_APP_ROOT}/config/admin.env.next"); chmod 0640 $(quote "${AUTODL_APP_ROOT}/config/admin.env.next"); mv -f $(quote "${AUTODL_APP_ROOT}/config/admin.env.next") $(quote "${AUTODL_APP_ROOT}/config/admin.env")"
@@ -235,9 +237,11 @@ fi
 rm -rf \"\${staging}/packages/db\"
 mv \"\${db_runtime}\" \"\${staging}/packages/db\"
 cp deploy/autodl-ssh/runtime/start-admin.sh \"\${staging}/start-admin.sh\"
+cp deploy/autodl-ssh/runtime/verify-auth.mjs \"\${staging}/verify-auth.mjs\"
 cp deploy/autodl-ssh/runtime/assert-bootstrap.mjs \"\${staging}/packages/db/dist/assert-bootstrap.mjs\"
 chmod 0755 \"\${staging}/start-admin.sh\"
 test -f \"\${staging}/server.js\"
+test -f \"\${staging}/verify-auth.mjs\"
 test -f \"\${staging}/packages/db/dist/supervise.js\"
 test -f \"\${staging}/drizzle/meta/_journal.json\"
 rm -rf \"\${release}\"
@@ -297,6 +301,19 @@ cd \"\${release}\"
 setpriv --reuid=\"\${uid}\" --regid=\"\${gid}\" --init-groups node scripts/migrate-provider-managed-accounts.mjs"
 }
 
+
+provision_oauth_catalog() {
+  local release_link="${1:-current}"
+  remote "set -euo pipefail
+set -a; . $(quote "${AUTODL_APP_ROOT}/config/admin.env"); set +a
+export HOME=$(quote "${AUTODL_ADMIN_HOME}")
+export PATH=/root/ink-autodl/runtime/node/bin:/usr/lib/postgresql/18/bin:\$PATH
+release=\$(readlink -f $(quote "${AUTODL_APP_ROOT}/${release_link}"))
+uid=\$(id -u $(quote "${AUTODL_SERVICE_USER}")); gid=\$(id -g $(quote "${AUTODL_SERVICE_USER}"))
+cd $(quote "${AUTODL_APP_ROOT}/source")
+setpriv --reuid="\${uid}" --regid="\${gid}" --init-groups node "\${release}/packages/db/dist/supervise.js" pnpm exec tsx scripts/provision-dream-oauth-catalog.ts --apply"
+}
+
 start_admin() {
   remote "set -euo pipefail
 INK_AUTODL_ADMIN_HOME=$(quote "${AUTODL_ADMIN_HOME}") INK_AUTODL_DATA_ROOT=$(quote "${AUTODL_DATA_ROOT}") INK_AUTODL_SERVICE_USER=$(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/source/deploy/autodl-ssh/runtime/init-admin-data.sh")
@@ -343,13 +360,14 @@ bootstrap() {
   maintenance database-io.js restore-sql-gzip "${remote_dump}"
   maintenance assert-bootstrap.mjs
   migrate_admin
+  provision_oauth_catalog
   start_admin
   verify
   if [[ -n "${dump_file:-}" ]]; then rm -f "${dump_file}"; trap - RETURN; fi
 }
 
 verify() {
-  remote "set -e; curl -fsS --retry 15 --retry-delay 2 --retry-connrefused --max-time 10 http://127.0.0.1:${AUTODL_ADMIN_PORT}/admin/login >/dev/null; screen -ls | grep -q '[.]${AUTODL_SCREEN_NAME}[[:space:]]'; ss -ltn | awk '{print \$4}' | grep -Eq '(^|:)${AUTODL_ADMIN_PORT}$'"
+  remote "set -euo pipefail; curl -fsS --retry 15 --retry-delay 2 --retry-connrefused --max-time 10 http://127.0.0.1:${AUTODL_ADMIN_PORT}/admin/login >/dev/null; screen -ls | grep -q '[.]${AUTODL_SCREEN_NAME}[[:space:]]'; ss -ltn | awk '{print \$4}' | grep -Eq '(^|:)${AUTODL_ADMIN_PORT}$'; set -a; . $(quote "${AUTODL_APP_ROOT}/config/admin.env"); set +a; uid=\$(id -u $(quote "${AUTODL_SERVICE_USER}")); gid=\$(id -g $(quote "${AUTODL_SERVICE_USER}")); cd $(quote "${AUTODL_APP_ROOT}/current"); setpriv --reuid="\${uid}" --regid="\${gid}" --init-groups env HOME=$(quote "${AUTODL_ADMIN_HOME}") PATH=/root/ink-autodl/runtime/node/bin:\$PATH node verify-auth.mjs"
   [[ -n "${AUTODL_ADMIN_PUBLIC_ORIGIN}" ]] || err "AUTODL_ADMIN_PUBLIC_ORIGIN is required for public verification."
   curl -fsS --retry 12 --retry-delay 3 --retry-connrefused --max-time 15 "${AUTODL_ADMIN_PUBLIC_ORIGIN%/}/admin/login" >/dev/null
   log "Admin local port, screen supervisor, and public mapping passed."
@@ -357,7 +375,7 @@ verify() {
 
 deploy() {
   command_check; setup_host; start_admin; sync_files; build_release; smoke_candidate; stop_admin
-  if ! migrate_admin candidate; then start_admin || true; err "Candidate migration failed; previous current release was restored to service."; fi
+  if ! migrate_admin candidate || ! provision_oauth_catalog candidate; then start_admin || true; err "Candidate migration or OAuth catalog reconciliation failed; previous current release was restored to service."; fi
   activate_candidate
   if ! start_admin || ! verify; then rollback; err "Candidate activation failed; previous Admin release was restored."; fi
   prune_old_releases
@@ -388,7 +406,7 @@ case "${COMMAND:-help}" in
   bootstrap) command_check; setup_host; sync_files; build_release; stop_admin; bootstrap ;;
   bootstrap-resume) command_check; [[ -n "${AUTODL_BOOTSTRAP_DUMP}" ]] || err "AUTODL_BOOTSTRAP_DUMP is required."; setup_host; sync_files; remote "cp $(quote "${AUTODL_APP_ROOT}/source/deploy/autodl-ssh/runtime/assert-bootstrap.mjs") $(quote "${AUTODL_APP_ROOT}/current/packages/db/dist/assert-bootstrap.mjs"); chown $(quote "${AUTODL_SERVICE_USER}"):$(quote "${AUTODL_SERVICE_USER}") $(quote "${AUTODL_APP_ROOT}/current/packages/db/dist/assert-bootstrap.mjs")"; stop_admin; bootstrap ;;
   deploy) deploy ;;
-  migrate) command_check; stop_admin; migrate_admin; start_admin; verify ;;
+  migrate) command_check; stop_admin; migrate_admin; provision_oauth_catalog; start_admin; verify ;;
   start) require_config; start_admin; verify ;;
   stop) require_config; stop_admin ;;
   status) require_config; remote "screen -ls 2>/dev/null | grep '[.]${AUTODL_SCREEN_NAME}[[:space:]]' || true; if [ -f $(quote "${AUTODL_APP_ROOT}/run/admin.pid") ]; then pid=\$(cat $(quote "${AUTODL_APP_ROOT}/run/admin.pid")); ps -o pid,ppid,user,stat,etimes,cmd -p \"\${pid}\"; fi; ss -ltnp 2>/dev/null | grep -E ':${AUTODL_ADMIN_PORT}[[:space:]]' || true" ;;
