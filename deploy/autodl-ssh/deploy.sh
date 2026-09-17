@@ -2,6 +2,7 @@
 # [Input] AutoDL SSH settings, generated runtime env, source tree, and optional bootstrap database.
 # [Output] Versioned direct-host Admin/embedded-PostgreSQL release managed by screen.
 # [Pos] AutoDL release entry; deliberately uses neither Docker nor nginx.
+# [Sync] 2026-09-17: give every candidate a unique id and replace the standalone drizzle placeholder before copying migration sources.
 # [Sync] 2026-09-04: run the release-owned Provider migration orchestrator before startup.
 # [Sync] 2026-09-17: smoke an immutable candidate before migration and atomic activation.
 set -euo pipefail
@@ -196,8 +197,9 @@ sync_files() {
 }
 
 build_release() {
-  local release_id
-  release_id="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD)"
+  local release_id release_commit
+  release_commit="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD)"
+  release_id="${release_commit}.$(date -u +%Y%m%d%H%M%S)"
   log "Building Admin release ${release_id} on AutoDL."
   remote "set -euo pipefail
 export PATH=/root/ink-autodl/runtime/node/bin:\$PATH
@@ -219,6 +221,7 @@ rm -rf \"\${db_runtime}\"
 install -d \"\${staging}/.next\" \"\${staging}/packages\" \"\${staging}/scripts\"
 cp -a .next/standalone/. \"\${staging}/\"
 cp -a .next/static \"\${staging}/.next/static\"
+rm -rf \"\${staging}/drizzle\"
 cp -a drizzle \"\${staging}/drizzle\"
 cp scripts/migrate-provider-managed-accounts.mjs \"\${staging}/scripts/migrate-provider-managed-accounts.mjs\"
 cp pnpm-lock.yaml \"\${staging}/pnpm-lock.yaml\"
@@ -236,6 +239,7 @@ cp deploy/autodl-ssh/runtime/assert-bootstrap.mjs \"\${staging}/packages/db/dist
 chmod 0755 \"\${staging}/start-admin.sh\"
 test -f \"\${staging}/server.js\"
 test -f \"\${staging}/packages/db/dist/supervise.js\"
+test -f \"\${staging}/drizzle/meta/_journal.json\"
 rm -rf \"\${release}\"
 mv \"\${staging}\" \"\${release}\"
 chown -R $(quote "${AUTODL_SERVICE_USER}"):$(quote "${AUTODL_SERVICE_USER}") \"\${release}\"

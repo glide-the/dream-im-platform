@@ -17,3 +17,4 @@
 
 - 首次恢复旧 current 失败：远端历史 `start-admin.sh` 缺少执行位；候选未构建、未切换。启动器改为启动前验证普通文件并幂等修复 `0755`。
 - 第二次恢复证明设备重启清除了 `/root` 的服务用户 ACL；将 `setup_host` 提前到旧 current 启动前，先幂等恢复路径穿越权限。候选仍未构建或切换。
+- 第三次候选通过隔离端口，但 Next standalone 中已有 `drizzle` 占位目录，复制后形成 `drizzle/drizzle/meta/_journal.json`，迁移器按合同拒绝缺失的根级 journal。同一 commit 重试还暴露了 release ID 不唯一会覆盖 current 目录的问题。发布脚本现以 commit 加 UTC 时间生成不可变 candidate ID，复制前移除占位目录，并在候选落盘前断言根级 journal；该次不作为成功发布回执。
