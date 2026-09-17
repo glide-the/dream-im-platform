@@ -5,6 +5,7 @@
 # [Sync] 2026-09-17: assert examples keep AutoDL public origins deployment-injected.
 # [Sync] 2026-09-17: assert generated service-client JSON survives the source-based remote launcher.
 # [Sync] 2026-09-17: assert candidates are unique per attempt and contain a non-nested Drizzle journal.
+# [Sync] 2026-09-17: require OAuth catalog reconciliation and authenticated capability release gates.
 # [Sync] 2026-09-16: read owner and mode through explicit Darwin/GNU stat branches.
 # [Sync] 2026-09-16: assert the unified auth issuer/resource/service registration deployment projection.
 # [Sync] 2026-09-04: assert AutoDL releases use the ordered Provider migration orchestrator.
@@ -39,6 +40,10 @@ grep -Fq 'AUTODL_ADMIN_SMOKE_PORT' "${SCRIPT_DIR}/deploy.sh"
 grep -Fq 'release_id="${release_commit}.$(date -u +%Y%m%d%H%M%S)"' "${SCRIPT_DIR}/deploy.sh"
 grep -Fq 'rm -rf \"\${staging}/drizzle\"' "${SCRIPT_DIR}/deploy.sh"
 grep -Fq 'test -f \"\${staging}/drizzle/meta/_journal.json\"' "${SCRIPT_DIR}/deploy.sh"
+grep -Fq 'scripts/provision-dream-oauth-catalog.ts --apply' "${SCRIPT_DIR}/deploy.sh"
+grep -Fq 'node verify-auth.mjs' "${SCRIPT_DIR}/deploy.sh"
+grep -Fq 'cp deploy/autodl-ssh/runtime/verify-auth.mjs' "${SCRIPT_DIR}/deploy.sh"
+node --check "${SCRIPT_DIR}/runtime/verify-auth.mjs"
 if grep -Fq 'maintenance migrate.js' "${SCRIPT_DIR}/deploy.sh"; then
   printf 'AutoDL deployment bypassed the Provider migration orchestrator\n' >&2
   exit 1
