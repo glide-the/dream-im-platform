@@ -2,6 +2,7 @@
 # [Input] Admin AutoDL env projector and persistent-directory initializer.
 # [Output] Topology, idempotency, owner/mode, legacy-data, and symlink checks.
 # [Pos] Provider-free AutoDL Admin deployment contract test.
+# [Sync] 2026-09-17: assert candidates are unique per attempt and contain a non-nested Drizzle journal.
 # [Sync] 2026-09-16: read owner and mode through explicit Darwin/GNU stat branches.
 # [Sync] 2026-09-16: assert the unified auth issuer/resource/service registration deployment projection.
 # [Sync] 2026-09-04: assert AutoDL releases use the ordered Provider migration orchestrator.
@@ -26,6 +27,9 @@ grep -Fq 'migrate_admin candidate' "${SCRIPT_DIR}/deploy.sh"
 grep -Fq 'activate_candidate' "${SCRIPT_DIR}/deploy.sh"
 grep -Fq 'prune_old_releases' "${SCRIPT_DIR}/deploy.sh"
 grep -Fq 'AUTODL_ADMIN_SMOKE_PORT' "${SCRIPT_DIR}/deploy.sh"
+grep -Fq 'release_id="${release_commit}.$(date -u +%Y%m%d%H%M%S)"' "${SCRIPT_DIR}/deploy.sh"
+grep -Fq 'rm -rf \"\${staging}/drizzle\"' "${SCRIPT_DIR}/deploy.sh"
+grep -Fq 'test -f \"\${staging}/drizzle/meta/_journal.json\"' "${SCRIPT_DIR}/deploy.sh"
 if grep -Fq 'maintenance migrate.js' "${SCRIPT_DIR}/deploy.sh"; then
   printf 'AutoDL deployment bypassed the Provider migration orchestrator\n' >&2
   exit 1
