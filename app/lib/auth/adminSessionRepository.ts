@@ -1,6 +1,7 @@
 // [Input] Admin-only normalized credentials/session hashes and one explicit Drizzle authentication UOW.
 // [Output] Active Admin member/session/RBAC projections plus atomic session, revocation and login audit writes.
 // [Pos] Typed Admin management repository; it never reads Dream users, Better Auth subjects or subject links.
+// [Sync] 2026-09-17: add the control-only password recovery transaction with active-member locking, Session revocation and redacted audit.
 // [Sync] 2026-09-17: restore the independent Admin operator domain with DTO/Service/Repository/Drizzle ownership.
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import {
@@ -40,6 +41,57 @@ export class AdminSessionRepository {
       .where(sql`lower(${adminUsers.email}) = ${email}`)
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  async lockActiveByNormalizedEmail(email: string): Promise<AdminLoginRecord | null> {
+    const rows = await this.database
+      .select({
+        id: adminUsers.id,
+        email: adminUsers.email,
+        displayName: adminUsers.display_name,
+        passwordHash: adminUsers.password_hash,
+        status: adminUsers.status,
+      })
+      .from(adminUsers)
+      .where(sql`lower(${adminUsers.email}) = ${email}`)
+      .limit(1)
+      .for("update");
+    return rows[0] ?? null;
+  }
+
+  async replacePasswordAndRevokeSessions(input: {
+    adminUserId: string;
+    passwordHash: string;
+    requestId: string;
+  }): Promise<number> {
+    const updated = await this.database
+      .update(adminUsers)
+      .set({
+        password_hash: input.passwordHash,
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(and(eq(adminUsers.id, input.adminUserId), eq(adminUsers.status, "active")))
+      .returning({ id: adminUsers.id });
+    if (updated.length !== 1) throw new Error("ADMIN_PASSWORD_RECOVERY_TARGET_CHANGED");
+    const revoked = await this.database
+      .update(adminSessions)
+      .set({ revoked_at: sql`CURRENT_TIMESTAMP` })
+      .where(and(
+        eq(adminSessions.admin_user_id, input.adminUserId),
+        isNull(adminSessions.revoked_at),
+      ))
+      .returning({ id: adminSessions.id });
+    await this.database.insert(adminAuditLogs).values({
+      id: `audit_${randomUUID().replaceAll("-", "")}`,
+      actor_type: "system",
+      action: "admin.password.recovery",
+      resource_type: "admin_user",
+      resource_id: input.adminUserId,
+      request_id: input.requestId,
+      after: { password_reset: true, sessions_revoked: revoked.length },
+      metadata: { source: "local-control-cli" },
+    });
+    return revoked.length;
   }
 
   async createSession(input: {

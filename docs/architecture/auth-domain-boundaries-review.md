@@ -1,6 +1,7 @@
 <!-- [Input] Current Admin/Dream auth documents, Better Auth 1.7.4 source, legacy Admin session schema and deployed identity records. -->
 <!-- [Output] Reviewed provider/client/operator/user boundaries and the required compatibility-first implementation sequence. -->
 <!-- [Pos] Authoritative cross-project auth-domain decision; Admin auth.md and Dream consumer documents must conform to it. -->
+<!-- [Sync] 2026-09-17: add control-only Admin password recovery without Dream identity access. -->
 <!-- [Sync] 2026-09-17: record exact legacy Dream credential adoption inside the Dream domain without Admin operator linkage. -->
 <!-- [Sync] 2026-09-17: freeze the RFC OAuth roles before any further business change; a Dream user is the delegated subject/resource owner, never a client registration. -->
 <!-- [Sync] 2026-09-17: record the completed separation of Admin operators, Dream users, OAuth clients and service principals. -->
@@ -172,6 +173,8 @@ sequenceDiagram
 
 Dream 的 Better Auth cookie、OAuth token、Google subject、canonical user 和 email 均不参与这条登录判断。
 
+锁定恢复也保持同一边界。`pnpm auth:reset-admin-password --email <admin-email>`默认只返回脱敏计划；追加`--apply`后从本机隐藏TTY读取并确认新密码，使用`ADMIN_CONTROL_DATABASE_URL`在一个Drizzle事务中锁定active Admin member、更新独立密码摘要、撤销该管理员既有Session并记录`admin.password.recovery`审计。命令不接受argv或环境变量中的密码，不读取Dream credential，也不创建用户域关系。
+
 ### Dream 浏览器用户
 
 ```mermaid
@@ -234,6 +237,7 @@ sequenceDiagram
 | 触发 | 状态/响应 | 数据处理 |
 | --- | --- | --- |
 | Dream 密码提交到 Admin 管理登录 | `401 ADMIN_CREDENTIALS_INVALID` | 不查 Dream user，不创建 Admin Session |
+| Admin 独立密码遗失 | 本机恢复命令默认dry-run；显式apply要求隐藏TTY两次输入14–256字符新密码 | control transaction锁定active `admin_users`、替换scrypt hash、撤销旧Admin Session并写脱敏audit；不修改Dream身份 |
 | Admin 密码提交到 Dream OAuth 登录 | Dream identity credential 不匹配 | 不查 Admin member，不签 Dream token |
 | 相同邮箱存在于两张用户表 | 两条业务记录继续独立 | 不建立跨表关系，不在两个业务域之间复制密码或角色 |
 | Admin Session 有效但权限不足 | `403 ADMIN_PERMISSION_DENIED` | Session 保留，当前操作不执行 |

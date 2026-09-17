@@ -50,6 +50,7 @@
     "chat-history-projection:apply": "node drizzle/data/chat-history-final-projection.mjs --apply",
     "auth-data-access:activate": "node scripts/activate-unified-auth-data-access.mjs",
     "auth:provision-dream-oauth": "tsx scripts/provision-dream-oauth-catalog.ts",
+    "auth:reset-admin-password": "tsx scripts/reset-admin-password.ts",
     "auth:adopt-legacy-google": "tsx scripts/adopt-legacy-google-subject.ts",
     "auth:adopt-legacy-credential": "tsx scripts/adopt-legacy-credential-subject.ts",
     "db:push": "node scripts/db-push.mjs",

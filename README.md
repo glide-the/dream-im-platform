@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-09-17: document hidden-TTY, default-dry-run recovery for an independent Admin password. -->
 <!-- [Sync] 2026-09-17: separate Dream Better Auth/OAuth authority from the independent Admin operator password/session domain in the repository overview. -->
 <!-- [Sync] 2026-09-17: align first-run instructions with the empty 14-character password form and required Admin Session TTL configuration. -->
 # Ink Memory Admin
@@ -92,6 +93,20 @@ pnpm env:check
 将 `.env.local` 中由 `pnpm env:setup` 自动生成的 `ADMIN_BOOTSTRAP_TOKEN` 粘贴到“首次启动密钥”，然后点击“创建管理员并进入控制台”。初始化会在同一事务中创建超级管理员、内置角色、权限和审计记录，并立即建立管理 Session。
 
 Bootstrap 只允许成功一次；已有管理员时 `/admin/login` 只显示正常登录。登录使用 `admin_users` 中的独立凭据，不读取 Dream 用户密码或 OAuth Session。
+
+管理员遗失独立密码时，先执行默认dry-run确认目标是active Admin member：
+
+```bash
+pnpm auth:reset-admin-password --email admin@example.com
+```
+
+确认回执后显式apply；新密码在本机TTY中隐藏输入两次，不进入argv、环境变量、日志或审计：
+
+```bash
+pnpm auth:reset-admin-password --email admin@example.com --apply
+```
+
+新密码必须为14–256个字符。apply使用`ADMIN_CONTROL_DATABASE_URL`和身份capability，在单一Drizzle事务内只更新`admin_users.password_hash`、撤销该管理员全部旧`admin_sessions`并写入脱敏audit；Dream用户、Better Auth credential、OAuth subject与产品数据保持不变。
 
 ## Docker 部署
 
