@@ -2,6 +2,7 @@
 # [Input] Admin AutoDL env projector and persistent-directory initializer.
 # [Output] Topology, idempotency, owner/mode, legacy-data, and symlink checks.
 # [Pos] Provider-free AutoDL Admin deployment contract test.
+# [Sync] 2026-09-17: assert generated service-client JSON survives the source-based remote launcher.
 # [Sync] 2026-09-17: assert candidates are unique per attempt and contain a non-nested Drizzle journal.
 # [Sync] 2026-09-16: read owner and mode through explicit Darwin/GNU stat branches.
 # [Sync] 2026-09-16: assert the unified auth issuer/resource/service registration deployment projection.
@@ -77,7 +78,12 @@ grep -Fx "ARTIFACT_WORKSPACE_ROOT=${PROJECTED_DATA_ROOT}/artifacts" "${OUTPUT_EN
 grep -Fx "BETTER_AUTH_URL=https://admin.example.test/api/auth" "${OUTPUT_ENV}"
 grep -Fx "AUTH_TRUSTED_ORIGINS=https://admin.example.test,https://dream.example.test" "${OUTPUT_ENV}"
 grep -Fx "DREAM_API_RESOURCE=https://dream.example.test/api" "${OUTPUT_ENV}"
-grep -Fx "DREAM_DATA_SERVICE_CLIENTS=${SERVICE_CLIENTS}" "${OUTPUT_ENV}"
+# The direct-host launcher sources this file; validate the resulting value rather than its shell encoding.
+set -a
+# shellcheck disable=SC1090 -- generated fixture is the contract under test.
+source "${OUTPUT_ENV}"
+set +a
+[[ "${DREAM_DATA_SERVICE_CLIENTS}" == "${SERVICE_CLIENTS}" ]]
 grep -Fx "DREAM_REFLECTIONS_WORKSPACE_ROOT=${PROJECTED_DATA_ROOT}/artifacts/reflections" "${OUTPUT_ENV}"
 if grep -Fq "EMBEDDED_POSTGRES_DATA_DIR=${PROJECTED_DATA_ROOT}" "${OUTPUT_ENV}"; then
   printf 'PostgreSQL was projected into the Dream data root\n' >&2
