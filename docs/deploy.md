@@ -28,6 +28,8 @@ export AUTODL_ADMIN_PUBLIC_ORIGIN=https://admin-tunnel.example.com:8443
 
 Admin 固定监听 `127.0.0.1:6008`，SeetaCloud 负责 HTTPS 端口映射。应用与嵌入式 PostgreSQL 以专用非 root 用户运行；代码、配置与版本化 release 在 `/root/ink-autodl/admin`，PostgreSQL 默认在服务用户 home 的 `/var/lib/ink-memory/data/postgres`，共享 Artifact 在 `/root/autodl-tmp/ink-memory/artifacts`。`bootstrap` 对非空目标 fail closed。日常发布以 commit 与 UTC 时间组成唯一 candidate ID，禁止同一 commit 重试时覆盖当前目录；候选根目录必须包含 `drizzle/meta/_journal.json`。脚本在 `16008` 对候选 Next 应用做隔离冒烟；随后停止旧 Admin，以候选 release 的 Drizzle 和 Provider migration orchestrator 执行前向 migration，再原子切换 `current`。切换失败时只在本轮内恢复仍存在的旧应用；公网、本机端口与 migration 验证全部通过后立即删除旧 release、`previous` 和 `candidate`，不保留长期应用回滚点，也不逆转数据库 migration。若检测到旧 `/root/autodl-tmp/ink-memory/postgres/PG_VERSION` 且新目录尚无 cluster，initializer 会停止，要求运维先按停机、备份、校验流程处理真实数据；发布脚本不会自行移动或删除它。
 
+运行配置由 bash 启动器 `source`。部署生成器必须用 shell 安全形式写入 `DREAM_DATA_SERVICE_CLIENTS`，并以 source 后的原始 JSON 值执行合同测试；否则 JSON 标点会被 shell 当作语法字符，Admin 将以 `AUTH_NOT_CONFIGURED` 关闭 Dream 内部接口。
+
 ## 阿里云 ECS
 
 生产入口是 [`../deploy/remote-ssh/deploy.sh`](../deploy/remote-ssh/deploy.sh)：

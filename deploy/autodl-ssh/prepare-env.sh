@@ -2,6 +2,7 @@
 # [Input] Existing mode-0600 Admin env plus explicit AutoDL bind/public origins.
 # [Output] Mode-0600 local AutoDL runtime env without printing secret values.
 # [Pos] AutoDL Admin runtime configuration projector in deploy/autodl-ssh/.
+# [Sync] 2026-09-17: shell-escape the generated service-client JSON consumed by source-based launchers.
 # [Sync] 2026-09-16: project the complete unified auth/data contract with deployment-owned service registration.
 # [Sync] 2026-08-26: project PostgreSQL into /root/ink-autodl/data/postgres.
 set -euo pipefail
@@ -77,7 +78,7 @@ awk -F= '
   printf 'BETTER_AUTH_URL=%s/api/auth\n' "${AUTODL_ADMIN_PUBLIC_ORIGIN}"
   printf 'AUTH_TRUSTED_ORIGINS=%s,%s\n' "${AUTODL_ADMIN_PUBLIC_ORIGIN}" "${AUTODL_DREAM_PUBLIC_ORIGIN}"
   printf 'DREAM_API_RESOURCE=%s/api\n' "${AUTODL_DREAM_PUBLIC_ORIGIN}"
-  printf 'DREAM_DATA_SERVICE_CLIENTS=%s\n' "${AUTODL_DREAM_DATA_SERVICE_CLIENTS}"
+  printf 'DREAM_DATA_SERVICE_CLIENTS=%q\n' "${AUTODL_DREAM_DATA_SERVICE_CLIENTS}"
   printf 'DREAM_REFLECTIONS_WORKSPACE_ROOT=%s/artifacts/reflections\n' "${AUTODL_DATA_ROOT}"
   printf 'RUN_DB_MIGRATIONS=false\n'
   printf 'INK_DATABASE_MODE=embedded-postgres\n'
