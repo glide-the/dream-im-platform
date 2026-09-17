@@ -352,7 +352,7 @@ verify() {
 }
 
 deploy() {
-  command_check; start_admin; setup_host; sync_files; build_release; smoke_candidate; stop_admin
+  command_check; setup_host; start_admin; sync_files; build_release; smoke_candidate; stop_admin
   if ! migrate_admin candidate; then start_admin || true; err "Candidate migration failed; previous current release was restored to service."; fi
   activate_candidate
   if ! start_admin || ! verify; then rollback; err "Candidate activation failed; previous Admin release was restored."; fi
