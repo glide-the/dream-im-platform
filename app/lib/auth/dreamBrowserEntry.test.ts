@@ -1,7 +1,7 @@
 // [Input] Dream browser form requests and an injected Better Auth protocol boundary.
 // [Output] Origin, DTO, redirect and credential-containment contract evidence.
 // [Pos] Provider-free tests for the Admin-owned Dream browser login ingress.
-// [Sync] 2026-09-17: cover the restored Dream login/register/Google product entry.
+// [Sync] 2026-09-18: cover unrestricted browser-origin entry with one configured Dream callback authority.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleDreamGoogleEntry,
@@ -59,11 +59,16 @@ describe("Dream browser entry", () => {
     expect(auth.password).toHaveBeenCalledWith(expect.objectContaining({ mode: "login", email: "member@example.com" }), expect.any(Request), `${dreamOrigin}/auth/start?return_to=%2Fstory-workspace%2Fchat%3Fdeck%3D1`);
   });
 
-  it("rejects unknown origins, duplicate fields and non-relative returns before authentication", async () => {
+  it("accepts any browser origin but rejects duplicate fields and non-relative returns before authentication", async () => {
     const auth = protocol();
-    await expect(handleDreamPasswordEntry(form("/auth/dream/password", {
+    const otherOriginRequest = form("/auth/dream/password", {
       mode: "login", email: "member@example.com", password: "private-value", return_to: "/",
-    }, "https://other.example"), auth)).rejects.toMatchObject({ code: "AUTH_ORIGIN_DENIED", status: 403 });
+    }, "https://other.example");
+    otherOriginRequest.headers.set("accept", "application/json");
+    const otherOriginResponse = await handleDreamPasswordEntry(otherOriginRequest, auth);
+    expect(otherOriginResponse.status).toBe(200);
+    expect(otherOriginResponse.headers.get("access-control-allow-origin")).toBe("https://other.example");
+    expect(await otherOriginResponse.json()).toEqual({ next_url: `${dreamOrigin}/auth/start?return_to=%2F` });
 
     const duplicate = new URLSearchParams({ mode: "login", email: "member@example.com", password: "private-value", return_to: "/" });
     duplicate.append("email", "second@example.com");
@@ -73,7 +78,7 @@ describe("Dream browser entry", () => {
 
     expect(() => relativeDreamReturnLocation("https://other.example/")).toThrow("AUTH_RETURN_LOCATION_INVALID");
     expect(() => relativeDreamReturnLocation("/%2fother.example/")).toThrow("AUTH_RETURN_LOCATION_INVALID");
-    expect(auth.password).not.toHaveBeenCalled();
+    expect(auth.password).toHaveBeenCalledTimes(1);
   });
 
   it("returns only a safe product error when credentials are rejected", async () => {
