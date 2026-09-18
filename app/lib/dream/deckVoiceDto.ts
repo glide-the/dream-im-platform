@@ -1,6 +1,7 @@
 // [Input] Closed Deck/Voice and content-version business operations, separate from physical ORM entities.
 // [Output] Strict candidate wire schemas, exact decimal identity, nullable legacy fields and revision/CAS state.
 // [Pos] Primary-owned domain DTO; operations are advertised only after Repository/Service/public contracts exist.
+// [Sync] 2026-09-19: allow deployment policy to declare additional code-initialized system Deck templates and exact ready plugins.
 // [Sync] 2026-09-14: migrate the actual voices.py/content_versioning.py aggregate without user-id/table selectors.
 import { z } from "zod";
 import { decimalIdDto, isoTimeDto } from "../auth/dto";
@@ -59,7 +60,25 @@ export type VoiceUpdateInputDto = z.infer<typeof voiceUpdateInputDto>;
 
 // Closed raw JSON preserves numeric lexemes until Python decodes the legacy v1 contract.
 // Dream alone projects the response JSON string back to its existing public dict field.
-export const deckVoicePolicyDto = z.strictObject({ default_system_deck_id: id, retired_system_deck_ids: z.array(id), default_plugin_package_name: id, default_plugin_version: id, default_memory_workspace_config_json: memoryJsonInput, template: z.strictObject({ ...localizedFields, voices: z.array(z.strictObject({ name: z.string(), name_zh: text, name_en: text, system_prompt: z.string(), icon: text, color: text })) }) });
+const deckTemplateVoiceDto = z.strictObject({ id: id.optional(), name: z.string(), name_zh: text, name_en: text, system_prompt: z.string(), icon: text, color: text });
+const deckTemplatePluginDto = z.strictObject({ package_name: id, marketplace: id, resolved_version: id });
+const additionalSystemDeckDto = z.strictObject({ id, ...localizedFields, voices: z.array(deckTemplateVoiceDto).min(1), plugins: z.array(deckTemplatePluginDto).min(1) });
+export const deckVoicePolicyDto = z.strictObject({
+ default_system_deck_id: id,
+ retired_system_deck_ids: z.array(id),
+ default_plugin_package_name: id,
+ default_plugin_version: id,
+ default_memory_workspace_config_json: memoryJsonInput,
+ template: z.strictObject({ ...localizedFields, voices: z.array(deckTemplateVoiceDto.omit({ id: true })) }),
+ additional_system_decks: z.array(additionalSystemDeckDto).default([]),
+}).superRefine((policy,context)=>{
+ const ids=[policy.default_system_deck_id,...policy.additional_system_decks.map(deck=>deck.id)];
+ if(new Set(ids).size!==ids.length)context.addIssue({code:"custom",path:["additional_system_decks"],message:"System Deck IDs must be unique"});
+ for(const [deckIndex,deck] of policy.additional_system_decks.entries()){
+  const voiceIds=deck.voices.flatMap(voice=>voice.id?[voice.id]:[]);
+  if(new Set(voiceIds).size!==voiceIds.length)context.addIssue({code:"custom",path:["additional_system_decks",deckIndex,"voices"],message:"System Voice IDs must be unique within a Deck"});
+ }
+});
 export type DeckVoicePolicyDto = z.infer<typeof deckVoicePolicyDto>;
 const changed = z.strictObject({ changed: z.boolean() });
 const deckCreated = z.strictObject({ deck_id: id });

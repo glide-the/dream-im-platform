@@ -1,6 +1,7 @@
 // [Input] Registry104 strict DTO, OAuth actor, configured Deck policy and typed Drizzle read seam.
 // [Output] Closed request, nullable/raw projection, scope/entity/policy gates and one-row repository behavior.
 // [Pos] Provider-free default-plugin domain gate; stable real PostgreSQL selection remains isolated evidence.
+// [Sync] 2026-09-19: include the empty additional system Deck registry in the typed policy fixture.
 // [Sync] 2026-09-15: prove the read derives package/version from policy and returns only six fields.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { claude_plugin_installations } from "@ink-memory/db/schema/dream";
@@ -23,6 +24,7 @@ const policy: DeckVoicePolicyDto = {
     name: "Default", name_zh: null, name_en: null, description: null,
     description_zh: null, description_en: null, icon: null, color: null, voices: [],
   },
+  additional_system_decks: [],
 };
 const actor = {
   principal: {

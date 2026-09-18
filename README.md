@@ -170,7 +170,7 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `DREAM_DATA_MAX_BODY_BYTES` | Admin领域请求体技术容量 | 显式正安全整数 |
 | `DREAM_WORKSPACE_PLUGIN_POLICY_JSON` | Story Workspace server adapter 数据选择 | 严格JSON；package、marketplace与nullable版本由Admin配置，Dream请求不能覆盖 |
 | `DREAM_RUNTIME_ACTIVATION_POLICY_JSON` | Story Workspace Runtime激活placement、creating lease与built-in adapter | 严格JSON；lease为1..300秒，Admin Service读取，Dream请求不能覆盖node、policy或artifact path |
-| `DREAM_DECK_POLICY_JSON` | 默认Deck/Voice与插件事实 | 严格JSON；业务ID和模板来自部署配置，不由应用或请求硬编码 |
+| `DREAM_DECK_POLICY_JSON` | 默认Deck/Voice与插件事实 | 严格JSON；主模板来自部署配置，`systemDeckTemplates.ts` 注册必须面向所有用户的代码内置系统模板，请求不能覆盖 |
 | `DREAM_REFLECTION_REPORT_LIST_MAX_ROWS` | Reflections报告历史单次查询技术容量 | 必填正安全整数；Dream默认仍请求10条 |
 | `DREAM_REFLECTIONS_LAUNCH_SNAPSHOT_MAX_BYTES` | Reflections私有启动快照技术容量 | 必填正安全整数；超限在持久化前拒绝 |
 | `DREAM_REFLECTIONS_WORKSPACE_ROOT` | Reflections task workspace根目录 | 必填绝对路径；实际locator只追加task ID与`memory` |
