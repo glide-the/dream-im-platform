@@ -2,12 +2,15 @@
 <!-- [Output] Current release ordering plus retained pre-unified rollout and rollback evidence. -->
 <!-- [Pos] Release runbook; normal database/ACL mutations remain separately approved operations. -->
 <!-- [Sync] 2026-09-16: make Admin Drizzle/API deployment precede a database-free Dream rollout. -->
+<!-- [Sync] 2026-09-18: define the current AutoDL candidate, dynamic-origin, atomic-switch and prune contract. -->
 
 # Dream PostgreSQL、产品 API 与 Gateway 发布回滚
 
 > **Schema 发布更新（2026-08-12）**：Alembic 命令与交错初始化顺序已由 [统一 PostgreSQL Schema 权威](../database-schema-authority.md)替代；本文其他产品/Gateway 灰度要求继续有效。
 
 > **统一认证与数据访问发布更新（2026-09-16）**：当前顺序是正常库备份 → Admin Drizzle `0054–0062` → 受限 AUTH/DATA/CONTROL 与 Dream NOLOGIN ACL → Admin Better Auth/数据服务 → 无数据库凭据的 Dream → Google/Device/Run/Thread/文件/模型真实验收。Dream 不再执行 PostgreSQL cutover、连接检查或 Repository rollback。下方早期 43+5 PG cutover 图保留历史顺序；现行门禁以 [统一接口契约](../admin-dream-auth-data-contract.md) 和本文件第4节真实 owner/ACL 规则为准。
+
+> **AutoDL 发布更新（2026-09-18）**：公网 origin 只从当前实例注入的 6006/6008 WebUI URL 投影；先构建并在 16008 验证 Admin candidate，再执行唯一 Drizzle 前向 migration、OAuth catalog 协调、原子切换和真实 service-token/capability 验证。Dream 只有在该门禁通过后才能发布。成功后删除旧应用 release 与临时 link，不保留长期应用 rollback 版本；PostgreSQL、workspace、artifact 与共享文件不参与 release 清理。设备重启只恢复 `current`，不重新 migration。
 
 > 文档状态：**Current release plan**（R1–R4 与本地 R5 已完成；其他生产 R0/R5 及 R6–R8 仍开放）
 > 返回：[总索引](README.md)
@@ -23,6 +26,7 @@
 - Dream/Admin/Gateway 使用独立 Repository、业务权限和 rollback switch，但共享 Schema 只有 Admin Drizzle 一个迁移日志；一个组件回滚不自动回滚数据库。
 - PG 已产生业务写后默认前向修复；没有演练 delta exporter 时禁止回切 SQLite。
 - PaymentAdapter、Webhook、Fake guard 与付费开通已实现；真实第三方支付渠道与 ASR Gateway 明确 Deferred。生产 Fake 必须 fail closed，UI 不得伪造成功。
+- AutoDL projector 的 provider-free fixture 必须显式隔离 operator `platform.env`；正常发布仍读取 gitignored 实例配置。不能用 fixture origin 替代当前实例 origin，也不能把实例 hostname 设为代码默认值。
 
 ## 2. 历史 PostgreSQL/Gateway 发布依赖序列
 
