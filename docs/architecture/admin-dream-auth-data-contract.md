@@ -292,7 +292,7 @@ Admin 是唯一认证中心和数据库服务。没有任意 SQL endpoint、表�
 
 ### 认证拓扑（双方已同意）
 
-Dream浏览器全部REST/SSE/Voice WebSocket经Dream同源BFF；Google登录发生在Admin origin。用于Dream OAuth授权页的Better Auth Session为host-only、HttpOnly、SameSite=Lax，Secure按明确URL HTTPS能力配置；Admin管理后台另用独立Admin Session cookie，两者不互相授权。跨站不共享cookie、不使用通配CORS。Dream cookie只含随机opaque browser handle，tokens保存在Admin加密browser-session领域，绑定服务client/origin/有效期。浏览器不保存access/refresh token。
+Dream浏览器全部REST/SSE/Voice WebSocket经Dream同源BFF；Google登录发生在Admin origin。Dream密码/注册/Google表单入口不限制浏览器Origin；Admin为credentialed fetch回显请求Origin，成功后统一导航到`DREAM_DATA_SERVICE_CLIENTS`配置的唯一Dream origin和callback完成PKCE。该入口策略不创建第二套OAuth client、Session authority或Dream用户。用于Dream OAuth授权页的Better Auth Session为host-only、HttpOnly、SameSite=Lax，Secure按明确URL HTTPS能力配置；Admin管理后台另用独立Admin Session cookie，两者不互相授权。Dream cookie只含随机opaque browser handle，tokens保存在Admin加密browser-session领域，绑定服务client/origin/有效期。浏览器不保存access/refresh token。
 
 Dream BFF start创建state/nonce/S256 PKCE verifier并放签名HttpOnly短期cookie；return_to只允许同源相对路径，阻止scheme、协议相对、反斜线、编码绕过。转Admin authorization code flow；callback核验state、issuer、callback exact URI、PKCE、单次cookie后由server兑换handle。所有写入验证exact Origin + BFF CSRF token；BFF代理只用配置的Admin/Dream backend，不接任意URL/用户头，WebSocket握手同样验证Origin/handle并服务端委托；连接不能把refresh/token放URL。Admin token端点按OAuth client认证而非依赖浏览器cookie。
 
@@ -331,8 +331,8 @@ Better Auth与`@better-auth/oauth-provider`配对锁定`1.7.4`，peer `better-ca
 
 | 入口 | 合同 |
 | --- | --- |
-| `/auth/dream/password` | Dream-rendered browser form only；exact configured Origin + strict login/register DTO + relative return；Admin transaction invokes Better Auth email APIs and redirects to Dream `/auth/start`；Dream server never receives credentials |
-| `/auth/dream/google` | Dream-rendered Google entry only；exact Origin + relative return；Admin invokes built-in `socialProviders.google` with account selection and provider-signed state；success/error returns to the same Dream product context |
+| `/auth/dream/password` | Dream-rendered browser form；any browser Origin + strict login/register DTO + relative return；Admin transaction invokes Better Auth email APIs and redirects to configured Dream `/auth/start`；Dream server never receives credentials |
+| `/auth/dream/google` | Dream-rendered Google entry；any browser Origin + relative return；Admin invokes built-in `socialProviders.google` with account selection and provider-signed state；success/error enters the configured Dream callback flow |
 | `/api/auth/sign-in/email`、`sign-up/email` | 原密码/注册保留，原Dream六字符minimum、bcrypt/Admin scrypt兼容；不新增Google emailVerified门槛 |
 | `/api/auth/sign-in/social` | Google内置provider，允许的callback由严格origin/redirect配置 |
 | `/api/auth/callback/google` | Better Auth OAuth state/provider签名验证 |
