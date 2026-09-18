@@ -6,6 +6,8 @@
 # [Sync] 2026-09-17: give every candidate a unique id and replace the standalone drizzle placeholder before copying migration sources.
 # [Sync] 2026-09-04: run the release-owned Provider migration orchestrator before startup.
 # [Sync] 2026-09-17: smoke an immutable candidate before migration and atomic activation.
+# [Sync] 2026-09-19: optionally stop and recover Admin around builds on memory-constrained hosts.
+# [Sync] 2026-09-19: accept a checksum-verified Linux x64 Next.js artifact built from the same source.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,6 +37,9 @@ AUTODL_SMOKE_SCREEN_NAME="${AUTODL_ADMIN_SMOKE_SCREEN_NAME:-${AUTODL_SCREEN_NAME
 AUTODL_BUILD_CPUS="${AUTODL_BUILD_CPUS:-1}"
 AUTODL_BUILD_MAX_OLD_SPACE_MB="${AUTODL_BUILD_MAX_OLD_SPACE_MB:-1024}"
 AUTODL_PACKAGE_MAX_OLD_SPACE_MB="${AUTODL_PACKAGE_MAX_OLD_SPACE_MB:-384}"
+AUTODL_STOP_ADMIN_DURING_BUILD="${AUTODL_STOP_ADMIN_DURING_BUILD:-false}"
+AUTODL_WEBPACK_MEMORY_OPTIMIZATIONS="${AUTODL_WEBPACK_MEMORY_OPTIMIZATIONS:-false}"
+AUTODL_PREBUILT_NEXT_ARCHIVE="${AUTODL_PREBUILT_NEXT_ARCHIVE:-}"
 AUTODL_BOOTSTRAP_DUMP="${AUTODL_BOOTSTRAP_DUMP:-}"
 DRY_RUN=0
 COMMAND=""
@@ -107,17 +112,23 @@ require_config() {
   [[ "${AUTODL_BUILD_CPUS}" =~ ^[1-9][0-9]*$ ]] || err "AUTODL_BUILD_CPUS must be a positive integer."
   [[ "${AUTODL_BUILD_MAX_OLD_SPACE_MB}" =~ ^[1-9][0-9]*$ ]] || err "AUTODL_BUILD_MAX_OLD_SPACE_MB must be a positive integer."
   [[ "${AUTODL_PACKAGE_MAX_OLD_SPACE_MB}" =~ ^[1-9][0-9]*$ ]] || err "AUTODL_PACKAGE_MAX_OLD_SPACE_MB must be a positive integer."
+  [[ "${AUTODL_STOP_ADMIN_DURING_BUILD}" == "true" || "${AUTODL_STOP_ADMIN_DURING_BUILD}" == "false" ]] || err "AUTODL_STOP_ADMIN_DURING_BUILD must be true or false."
+  [[ "${AUTODL_WEBPACK_MEMORY_OPTIMIZATIONS}" == "true" || "${AUTODL_WEBPACK_MEMORY_OPTIMIZATIONS}" == "false" ]] || err "AUTODL_WEBPACK_MEMORY_OPTIMIZATIONS must be true or false."
 }
 
 check_local() {
   local failed=0 mode
-  for name in ssh scp rsync git gzip pg_dump; do command -v "${name}" >/dev/null 2>&1 || { warn "Missing local command: ${name}"; failed=1; }; done
+  for name in ssh scp rsync git gzip pg_dump shasum; do command -v "${name}" >/dev/null 2>&1 || { warn "Missing local command: ${name}"; failed=1; }; done
   for file in "${AUTODL_ENV_FILE}" "${SCRIPT_DIR}/runtime/start-admin.sh" "${SCRIPT_DIR}/runtime/init-admin-data.sh" "${SCRIPT_DIR}/runtime/verify-auth.mjs"; do
     [[ -f "${file}" ]] || { warn "Missing file: ${file}"; failed=1; }
   done
   if [[ -f "${AUTODL_ENV_FILE}" ]]; then
     mode="$(stat -f '%Lp' "${AUTODL_ENV_FILE}" 2>/dev/null || stat -c '%a' "${AUTODL_ENV_FILE}")"
     [[ "${mode}" == "640" || "${mode}" == "600" ]] || { warn "${AUTODL_ENV_FILE} must be mode 600 or 640, got ${mode}."; failed=1; }
+  fi
+  if [[ -n "${AUTODL_PREBUILT_NEXT_ARCHIVE}" && ! -f "${AUTODL_PREBUILT_NEXT_ARCHIVE}" ]]; then
+    warn "Prebuilt Next.js archive does not exist: ${AUTODL_PREBUILT_NEXT_ARCHIVE}"
+    failed=1
   fi
   [[ "${failed}" == "0" ]]
 }
@@ -138,6 +149,9 @@ AutoDL Admin direct-host release:
   shared Artifact: ${AUTODL_DATA_ROOT}/artifacts
   build budget:    ${AUTODL_BUILD_CPUS} CPU / ${AUTODL_BUILD_MAX_OLD_SPACE_MB} MiB V8 old-space
   package budget:  ${AUTODL_PACKAGE_MAX_OLD_SPACE_MB} MiB V8 old-space
+  stop for build:  ${AUTODL_STOP_ADMIN_DURING_BUILD}
+  memory optimize: ${AUTODL_WEBPACK_MEMORY_OPTIMIZATIONS}
+  prebuilt Next:   ${AUTODL_PREBUILT_NEXT_ARCHIVE:-<build on target>}
   runtime:         Node ${AUTODL_NODE_VERSION} + screen + non-root embedded PostgreSQL
   order:           setup -> sync -> build candidate -> isolated smoke -> migrate -> atomic switch -> verify -> prune old releases
   excluded:        Docker, nginx, runtime DDL, plaintext secret logging
@@ -199,15 +213,32 @@ sync_files() {
 }
 
 build_release() {
-  local release_id release_commit
+  local release_id release_commit prebuilt_remote prebuilt_sha256
   release_commit="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD)"
   release_id="${release_commit}.$(date -u +%Y%m%d%H%M%S)"
+  prebuilt_remote=""
+  if [[ -n "${AUTODL_PREBUILT_NEXT_ARCHIVE}" ]]; then
+    prebuilt_remote="${AUTODL_APP_ROOT}/source/.prebuilt-next-linux-x64.tar.gz"
+    prebuilt_sha256="$(shasum -a 256 "${AUTODL_PREBUILT_NEXT_ARCHIVE}" | awk '{print $1}')"
+    log "Uploading checksum-bound Linux x64 Next.js build artifacts."
+    scp_file "${AUTODL_PREBUILT_NEXT_ARCHIVE}" "${prebuilt_remote}"
+    remote "printf '%s  %s\\n' $(quote "${prebuilt_sha256}") $(quote "${prebuilt_remote}") | sha256sum -c - >/dev/null"
+  fi
   log "Building Admin release ${release_id} on AutoDL."
   remote "set -euo pipefail
 export PATH=/root/ink-autodl/runtime/node/bin:\$PATH
 cd $(quote "${AUTODL_APP_ROOT}/source")
-pnpm install --frozen-lockfile
-NEXT_STANDALONE_OUTPUT=true NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_CPUS=${AUTODL_BUILD_CPUS} NODE_OPTIONS=--max-old-space-size=${AUTODL_BUILD_MAX_OLD_SPACE_MB} pnpm build
+prebuilt=$(quote "${prebuilt_remote}")
+if [ -n \"\${prebuilt}\" ]; then
+  rm -rf .next packages/db/dist
+  tar -xzf \"\${prebuilt}\" --no-same-owner
+  rm -f \"\${prebuilt}\"
+  test -s .next/standalone/server.js
+  test -s packages/db/dist/supervise.js
+else
+  pnpm install --frozen-lockfile
+  NEXT_STANDALONE_OUTPUT=true NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_CPUS=${AUTODL_BUILD_CPUS} NEXT_WEBPACK_MEMORY_OPTIMIZATIONS=${AUTODL_WEBPACK_MEMORY_OPTIMIZATIONS} NODE_OPTIONS=--max-old-space-size=${AUTODL_BUILD_MAX_OLD_SPACE_MB} pnpm build
+fi
 staging=$(quote "${AUTODL_APP_ROOT}/releases/${release_id}.staging")
 release=$(quote "${AUTODL_APP_ROOT}/releases/${release_id}")
 db_runtime=$(quote "${AUTODL_APP_ROOT}/releases/${release_id}.db-runtime")
@@ -374,7 +405,22 @@ verify() {
 }
 
 deploy() {
-  command_check; setup_host; start_admin; sync_files; build_release; smoke_candidate; stop_admin
+  local stopped_for_build=0
+  command_check; setup_host; start_admin; sync_files
+  if [[ "${AUTODL_STOP_ADMIN_DURING_BUILD}" == "true" ]]; then
+    log "Stopping Admin during the candidate build to honor the host memory budget."
+    stop_admin
+    stopped_for_build=1
+  fi
+  if ! build_release; then
+    if [[ "${stopped_for_build}" == "1" ]]; then start_admin || true; fi
+    err "Candidate build failed; the previous Admin release was restored to service."
+  fi
+  if ! smoke_candidate; then
+    if [[ "${stopped_for_build}" == "1" ]]; then start_admin || true; fi
+    err "Candidate smoke failed; the previous Admin release was restored to service."
+  fi
+  stop_admin
   if ! migrate_admin candidate || ! provision_oauth_catalog candidate; then start_admin || true; err "Candidate migration or OAuth catalog reconciliation failed; previous current release was restored to service."; fi
   activate_candidate
   if ! start_admin || ! verify; then rollback; err "Candidate activation failed; previous Admin release was restored."; fi

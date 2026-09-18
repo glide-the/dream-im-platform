@@ -1,7 +1,7 @@
 // [Input] Deployment Deck policy environment and the code-owned system Deck registry.
 // [Output] Prove music is always present once and conflicting overrides fail closed.
 // [Pos] Provider-free policy composition regression tests.
-// [Sync] 2026-09-19: cover code-owned music system Deck composition.
+// [Sync] 2026-09-19: cover the code-owned music team and its three exact plugins.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { configuredDeckVoicePolicy } from "./deckVoiceService";
@@ -40,6 +40,16 @@ describe("configuredDeckVoicePolicy", () => {
             package_name: "yue2",
             marketplace: "yue2-skills",
             resolved_version: "0.4.0",
+          },
+          {
+            package_name: "music-composition",
+            marketplace: "music-composition-skills",
+            resolved_version: "1.0.0",
+          },
+          {
+            package_name: "lyric-writing",
+            marketplace: "lyric-writing-skills",
+            resolved_version: "1.0.0",
           },
         ],
       }),

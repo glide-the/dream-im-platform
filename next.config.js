@@ -3,6 +3,7 @@
 // [Pos] Shared Next.js configuration; remote build resources are supplied by deploy config.
 // [Sync] 2026-09-16: keep local dev on Webpack so NodeNext .js source specifiers use the same extension aliases as builds.
 // [Sync] 2026-09-15: resolve @ink-memory/db NodeNext .js specifiers to workspace TypeScript during Webpack builds.
+// [Sync] 2026-09-19: allow deployment-owned Webpack memory optimizations on constrained build hosts.
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +17,15 @@ const buildCpus = buildCpusRaw ? Number(buildCpusRaw) : undefined;
 if (buildCpus !== undefined && (!Number.isInteger(buildCpus) || buildCpus < 1 || buildCpus > 64)) {
   throw new Error('NEXT_BUILD_CPUS must be an integer between 1 and 64');
 }
+const webpackMemoryOptimizationsRaw = process.env.NEXT_WEBPACK_MEMORY_OPTIMIZATIONS?.trim();
+if (webpackMemoryOptimizationsRaw && !['true', 'false'].includes(webpackMemoryOptimizationsRaw)) {
+  throw new Error('NEXT_WEBPACK_MEMORY_OPTIMIZATIONS must be true or false');
+}
+const webpackMemoryOptimizations = webpackMemoryOptimizationsRaw === 'true';
+const experimental = {
+  ...(buildCpus && { cpus: buildCpus }),
+  ...(webpackMemoryOptimizations && { webpackMemoryOptimizations: true }),
+};
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -34,7 +44,7 @@ const nextConfig = {
     return config;
   },
   ...(e2eDistDir && { distDir: e2eDistDir }),
-  ...(buildCpus && { experimental: { cpus: buildCpus } }),
+  ...(Object.keys(experimental).length > 0 && { experimental }),
   // Enable standalone output for Docker deployments
   // Set NEXT_STANDALONE_OUTPUT=true when building in Docker
   ...(process.env.NEXT_STANDALONE_OUTPUT === 'true' && { output: 'standalone' }),
