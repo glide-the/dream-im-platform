@@ -9,6 +9,7 @@
 # [Sync] 2026-09-16: read owner and mode through explicit Darwin/GNU stat branches.
 # [Sync] 2026-09-16: assert the unified auth issuer/resource/service registration deployment projection.
 # [Sync] 2026-09-04: assert AutoDL releases use the ordered Provider migration orchestrator.
+# [Sync] 2026-09-18: isolate projector fixtures from the operator-selected platform.env.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -79,6 +80,7 @@ SERVICE_CLIENTS='[{"id":"ink-dream-service","secret":"dream-service-secret-at-le
 
 AUTODL_SOURCE_ENV_FILE="${SOURCE_ENV}" \
 AUTODL_ENV_FILE="${OUTPUT_ENV}" \
+AUTODL_PLATFORM_ENV_FILE=/dev/null \
 AUTODL_DATA_ROOT="${PROJECTED_DATA_ROOT}" \
 AUTODL_ADMIN_HOME="${ADMIN_HOME}" \
 AUTODL_ADMIN_PUBLIC_ORIGIN=https://admin.example.test \
