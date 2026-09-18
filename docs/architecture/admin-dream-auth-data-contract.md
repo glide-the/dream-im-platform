@@ -292,9 +292,9 @@ Admin 是唯一认证中心和数据库服务。没有任意 SQL endpoint、表�
 
 ### 认证拓扑（双方已同意）
 
-Dream浏览器全部REST/SSE/Voice WebSocket经Dream同源BFF；Google登录发生在Admin origin。Dream密码/注册/Google表单入口不限制浏览器Origin；Admin为credentialed fetch回显请求Origin，成功后统一导航到`DREAM_DATA_SERVICE_CLIENTS`配置的唯一Dream origin和callback完成PKCE。该入口策略不创建第二套OAuth client、Session authority或Dream用户。用于Dream OAuth授权页的Better Auth Session为host-only、HttpOnly、SameSite=Lax，Secure按明确URL HTTPS能力配置；Admin管理后台另用独立Admin Session cookie，两者不互相授权。Dream cookie只含随机opaque browser handle，tokens保存在Admin加密browser-session领域，绑定服务client/origin/有效期。浏览器不保存access/refresh token。
+Dream浏览器全部REST/SSE/Voice WebSocket经Dream同源BFF；Google登录发生在Admin origin。Dream密码/注册/Google表单入口不限制浏览器Origin；浏览器以顶层POST进入Admin，Admin成功后导航回该请求Origin，不能用跨域fetch建立Better Auth state或Session Cookie。公网与localhost部署分别在`DREAM_DATA_SERVICE_CLIENTS`注册OAuth/service client及精确callback完成PKCE；它们共享同一canonical Dream用户域，不创建第二套Session authority或Dream用户。用于Dream OAuth授权页的Better Auth Session为host-only、HttpOnly、SameSite=Lax，Secure按明确URL HTTPS能力配置；Admin管理后台另用独立Admin Session cookie，两者不互相授权。Dream cookie只含随机opaque browser handle，tokens保存在Admin加密browser-session领域，绑定部署service client/origin/有效期。浏览器不保存access/refresh token。
 
-Dream BFF start创建state/nonce/S256 PKCE verifier并放签名HttpOnly短期cookie；return_to只允许同源相对路径，阻止scheme、协议相对、反斜线、编码绕过。转Admin authorization code flow；callback核验state、issuer、callback exact URI、PKCE、单次cookie后由server兑换handle。所有写入验证exact Origin + BFF CSRF token；BFF代理只用配置的Admin/Dream backend，不接任意URL/用户头，WebSocket握手同样验证Origin/handle并服务端委托；连接不能把refresh/token放URL。Admin token端点按OAuth client认证而非依赖浏览器cookie。
+Dream BFF start创建state/nonce/S256 PKCE verifier并放签名HttpOnly短期cookie；return_to只允许同源相对路径，阻止scheme、协议相对、反斜线、编码绕过。转Admin authorization code flow；callback核验state、issuer、callback exact URI、PKCE、单次cookie后由server兑换handle。公网callback的边缘location将查询串移入不落访问日志的内部请求头，并禁止upstream retry；transport alias在内存恢复标准URL、删除内部头并规范重定向HTTP framing。未知上游结果不能把同一Google授权码再次发送到另一个解析地址。所有写入验证exact Origin + BFF CSRF token；BFF代理只用配置的Admin/Dream backend，不接任意URL/用户头，WebSocket握手同样验证Origin/handle并服务端委托；连接不能把refresh/token放URL。Admin token端点按OAuth client认证而非依赖浏览器cookie。
 
 ```mermaid
 sequenceDiagram

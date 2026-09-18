@@ -1,7 +1,7 @@
 // [Input] Dream browser form requests and an injected Better Auth protocol boundary.
 // [Output] Origin, DTO, redirect and credential-containment contract evidence.
 // [Pos] Provider-free tests for the Admin-owned Dream browser login ingress.
-// [Sync] 2026-09-18: cover unrestricted browser-origin entry with one configured Dream callback authority.
+// [Sync] 2026-09-18: cover initiating-origin redirects for local and public Dream browser entry.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleDreamGoogleEntry,
@@ -68,7 +68,7 @@ describe("Dream browser entry", () => {
     const otherOriginResponse = await handleDreamPasswordEntry(otherOriginRequest, auth);
     expect(otherOriginResponse.status).toBe(200);
     expect(otherOriginResponse.headers.get("access-control-allow-origin")).toBe("https://other.example");
-    expect(await otherOriginResponse.json()).toEqual({ next_url: `${dreamOrigin}/auth/start?return_to=%2F` });
+    expect(await otherOriginResponse.json()).toEqual({ next_url: "https://other.example/auth/start?return_to=%2F" });
 
     const duplicate = new URLSearchParams({ mode: "login", email: "member@example.com", password: "private-value", return_to: "/" });
     duplicate.append("email", "second@example.com");
@@ -79,6 +79,28 @@ describe("Dream browser entry", () => {
     expect(() => relativeDreamReturnLocation("https://other.example/")).toThrow("AUTH_RETURN_LOCATION_INVALID");
     expect(() => relativeDreamReturnLocation("/%2fother.example/")).toThrow("AUTH_RETURN_LOCATION_INVALID");
     expect(auth.password).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a localhost Dream login to the same localhost origin", async () => {
+    const localhostOrigin = "http://localhost:5173";
+    vi.stubEnv("DREAM_DATA_SERVICE_CLIENTS", JSON.stringify([
+      service,
+      { ...service, id: "dream-local", origin: localhostOrigin, oauthClientId: "dream-browser-local", redirectUri: `${localhostOrigin}/auth/callback` },
+    ]));
+    const request = form("/auth/dream/google", { return_to: "/story-workspace/chat?deck=local" }, localhostOrigin);
+    request.headers.set("accept", "application/json");
+    const auth = protocol();
+
+    const response = await handleDreamGoogleEntry(request, auth);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe(localhostOrigin);
+    expect(auth.google).toHaveBeenCalledWith(
+      expect.objectContaining({ return_to: "/story-workspace/chat?deck=local" }),
+      expect.any(Request),
+      "http://localhost:5173/auth/start?return_to=%2Fstory-workspace%2Fchat%3Fdeck%3Dlocal",
+      "http://localhost:5173/story-workspace/chat?deck=local&auth_error=google",
+    );
   });
 
   it("returns only a safe product error when credentials are rejected", async () => {
