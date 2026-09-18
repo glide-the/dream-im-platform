@@ -1,10 +1,10 @@
 // [Input] Dream browser form requests and bounded browser form fields.
 // [Output] Better Auth email/register/Google navigation with request-origin CORS and safe redirects.
 // [Pos] Admin-owned Dream login interaction; Dream renders the form but never receives credentials.
-// [Sync] 2026-09-18: accept Dream login forms from any browser origin while retaining one configured callback authority.
+// [Sync] 2026-09-18: return each Dream browser login to its initiating origin across configured local/public deployment clients.
 import { APIError } from "better-auth/api";
 import { z } from "zod";
-import { AuthBoundaryError, dreamServiceClients, type DreamServiceClient } from "./config";
+import { AuthBoundaryError, dreamServiceClients } from "./config";
 import { createAdminAuth } from "./server";
 import { withAuthTransaction } from "./database";
 import { productPasswordMinimumLength } from "./password";
@@ -52,12 +52,12 @@ export function relativeDreamReturnLocation(raw: string): string {
   }
 }
 
-function requestContext(request: Request): { service: DreamServiceClient; browserOrigin: string } {
+function requestContext(request: Request): { browserOrigin: string } {
   const services = dreamServiceClients();
-  if (services.length !== 1) throw new AuthBoundaryError("AUTH_NOT_CONFIGURED");
+  if (services.length < 1) throw new AuthBoundaryError("AUTH_NOT_CONFIGURED");
   const browserOrigin = request.headers.get("origin")?.trim();
   if (!browserOrigin) throw new AuthBoundaryError("INPUT_INVALID", 400);
-  return { service: services[0], browserOrigin };
+  return { browserOrigin };
 }
 
 async function readForm<T extends z.ZodType>(request: Request, schema: T, allowed: ReadonlySet<string>): Promise<z.output<T>> {
@@ -87,14 +87,14 @@ async function readForm<T extends z.ZodType>(request: Request, schema: T, allowe
   } finally { reader.releaseLock(); }
 }
 
-function startURL(service: DreamServiceClient, returnTo: string) {
-  const target = new URL("/auth/start", service.origin);
+function startURL(browserOrigin: string, returnTo: string) {
+  const target = new URL("/auth/start", browserOrigin);
   target.searchParams.set("return_to", returnTo);
   return target.href;
 }
 
-function failureURL(service: DreamServiceClient, returnTo: string, code: "credentials" | "registration" | "google") {
-  const target = new URL(returnTo, service.origin);
+function failureURL(browserOrigin: string, returnTo: string, code: "credentials" | "registration" | "google") {
+  const target = new URL(returnTo, browserOrigin);
   target.searchParams.set("auth_error", code);
   return target.href;
 }
@@ -144,29 +144,29 @@ function defaultProtocol(): DreamBrowserEntryProtocol {
 }
 
 export async function handleDreamPasswordEntry(request: Request, protocol: DreamBrowserEntryProtocol = defaultProtocol()) {
-  const { service, browserOrigin } = requestContext(request);
+  const { browserOrigin } = requestContext(request);
   let input: PasswordEntry;
   try { input = await readForm(request, passwordEntryDto, new Set(["mode", "email", "password", "name", "return_to"])); }
   catch (error) {
     if (error instanceof AuthBoundaryError) throw error;
     throw new AuthBoundaryError("INPUT_INVALID", 400);
   }
-  const callbackURL = startURL(service, input.return_to);
+  const callbackURL = startURL(browserOrigin, input.return_to);
   try {
     const response = await protocol.password(input, request, callbackURL);
-    if (!response.ok) return navigationResponse(request, browserOrigin, failureURL(service, input.return_to, input.mode === "register" ? "registration" : "credentials"), undefined, 401);
+    if (!response.ok) return navigationResponse(request, browserOrigin, failureURL(browserOrigin, input.return_to, input.mode === "register" ? "registration" : "credentials"), undefined, 401);
     return navigationResponse(request, browserOrigin, callbackURL, response);
   } catch (error) {
-    if (error instanceof APIError) return navigationResponse(request, browserOrigin, failureURL(service, input.return_to, input.mode === "register" ? "registration" : "credentials"), undefined, 401);
+    if (error instanceof APIError) return navigationResponse(request, browserOrigin, failureURL(browserOrigin, input.return_to, input.mode === "register" ? "registration" : "credentials"), undefined, 401);
     throw error;
   }
 }
 
 export async function handleDreamGoogleEntry(request: Request, protocol: DreamBrowserEntryProtocol = defaultProtocol()) {
-  const { service, browserOrigin } = requestContext(request);
+  const { browserOrigin } = requestContext(request);
   const input = await readForm(request, googleEntryDto, new Set(["return_to"]));
-  const callbackURL = startURL(service, input.return_to);
-  const errorCallbackURL = failureURL(service, input.return_to, "google");
+  const callbackURL = startURL(browserOrigin, input.return_to);
+  const errorCallbackURL = failureURL(browserOrigin, input.return_to, "google");
   try {
     const response = await protocol.google(input, request, callbackURL, errorCallbackURL);
     const destination = response.headers.get("location");
