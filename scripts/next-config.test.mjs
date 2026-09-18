@@ -1,15 +1,18 @@
-// [Input] Repository Next.js config, launch working directory and existing build options.
-// [Output] Provider-free Node tests for stable project-root resolution and config validation.
+// [Input] Repository Next.js config, package launch scripts, working directory and existing build options.
+// [Output] Provider-free Node tests for stable project-root resolution, integration launch and config validation.
 // [Pos] Startup configuration regression tests; no server or database lifecycle.
+// [Sync] 2026-09-18: pin the prebuilt embedded launch used by Dream integration.
 // [Sync] 2026-09-15: pin NodeNext workspace extension aliases and all four fixed Dream codec traces.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const configUrl = new URL('../next.config.js', import.meta.url);
 const projectRoot = dirname(fileURLToPath(configUrl));
+const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 function readConfig(cwd = projectRoot, overrides = {}) {
   const env = { ...process.env };
@@ -90,4 +93,10 @@ test('Webpack resolves NodeNext JavaScript specifiers to workspace TypeScript so
     '.mjs': ['.mts', '.mjs'],
     '.cjs': ['.cts', '.cjs'],
   });
+});
+
+test('stable local integration builds once and starts under the embedded PostgreSQL supervisor', () => {
+  assert.equal(packageJson.scripts['start:embedded'], 'tsx packages/db/src/supervise.ts pnpm start');
+  assert.equal(packageJson.scripts['local:stable'], 'pnpm build && pnpm run start:embedded');
+  assert.equal(packageJson.scripts['dev:app'], 'next dev --webpack -H 0.0.0.0');
 });

@@ -1,6 +1,7 @@
 <!-- [Sync] 2026-09-17: document hidden-TTY, default-dry-run recovery for an independent Admin password. -->
 <!-- [Sync] 2026-09-17: separate Dream Better Auth/OAuth authority from the independent Admin operator password/session domain in the repository overview. -->
 <!-- [Sync] 2026-09-17: align first-run instructions with the empty 14-character password form and required Admin Session TTL configuration. -->
+<!-- [Sync] 2026-09-18: document the prebuilt local integration server for Dream background DTO traffic. -->
 # Ink Memory Admin
 
 基于 Next.js 与 Refine 的 Ink Memory 运营控制台。当前应用版本为 `0.1.1`。一个项目内提供剧本数据运营、平台用户管理、AI Provider 与模型配置、Token 计费、Claude/OpenAI 兼容网关、文件存储、RBAC、系统设置和审计能力，结构化数据统一存储在 PostgreSQL `ink-memory`。
@@ -54,6 +55,14 @@ pnpm dev
 `env:setup` 只生成本机 secret 和明确的技术容量配置。Google client、三个不同受限数据库角色 DSN、Gateway client binding、Deck/Plugin/Runtime业务策略必须由部署负责人填写；`env:check` 会在服务启动前逐项拒绝空值、同角色 DSN、错误 origin/redirect、弱 secret 或非法 JSON。Dream 只取得与 Admin 注册项相同的 service ID/secret、issuer、resource 和 callback，不取得任何 PostgreSQL DSN。
 
 本机开发入口显式使用 Next Webpack，与 production build 共用 workspace NodeNext extension alias；`packages/db` 源码中的 `.js` 说明符会解析到对应 TypeScript 源文件。
+
+`pnpm dev` 会在首次访问每个 Route Handler 时执行开发态编译，适合修改 Admin UI。Dream 的资源心跳、confirmation reconciliation 等持续后台 DTO 联调应使用预构建入口，避免冷编译占用 Dream 的 HTTP deadline：
+
+```bash
+pnpm local:stable
+```
+
+该命令先执行一次 `pnpm build`，再由既有 embedded PostgreSQL supervisor 运行 `next start`。它不执行 migration、不改变认证、DTO、事务或数据库路径；修改 Admin 源码后需要重新运行命令以生成新构建。
 
 打开 [http://localhost:3000/admin](http://localhost:3000/admin)。根路径 `/` 会跳转到管理后台。
 
