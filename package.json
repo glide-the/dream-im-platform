@@ -23,6 +23,8 @@
     "dev": "pnpm run dev:embedded",
     "dev:app": "next dev --webpack -H 0.0.0.0",
     "dev:embedded": "tsx packages/db/src/supervise.ts pnpm run dev:app",
+    "start:embedded": "tsx packages/db/src/supervise.ts pnpm start",
+    "local:stable": "pnpm build && pnpm run start:embedded",
     "build": "pnpm --filter @ink-memory/db build && next build --webpack",
     "start": "next start",
     "lint": "eslint .",
