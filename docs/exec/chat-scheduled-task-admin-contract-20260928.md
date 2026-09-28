@@ -2,6 +2,7 @@
 <!-- [Output] Admin producer contract, four exact capabilities, operation DTOs, release gate and isolated verification plan. -->
 <!-- [Pos] Admin implementation handoff for the Dream scheduled-task consumer; this is not a normal-business acceptance receipt. -->
 <!-- [Sync] 2026-09-28: record 0069-0072 isolated replay, Admin service integration, and static validation receipts. -->
+<!-- [Sync] 2026-09-29: record main fast-forward integration, current static/build/cross-service receipts, and the UTC calendar-fixture correction. -->
 
 # 定时 Chat 任务 Admin 合同
 
@@ -53,3 +54,20 @@ Admin 负责一次和每日计划、触发事实、原子领取、短期授权�
 2026-09-28 独立 Admin 服务技术回执：`node /private/tmp/ink-scheduled-admin-service-proof.mjs` 退出 0。脚本新建并核对 `ink_scheduled_chat_test_20260928a`，`pnpm db:migrate` 完成 73/73 且退出 0，`pnpm exec vitest run app/lib/dream/chatScheduledTaskPostgres.integration.test.ts` 为 4/4 通过、退出 0，最后只清理本轮测试库。覆盖创建幂等及版本冲突、暂停后未领取手动触发、双 worker 领取、准备后未启动的安全重领、旧授权失效、TaskSession 启动/失败、final 轮次绑定、目标 Thread 删除、日历保留暂停/删除定义及手动触发、来源 Thread 限定创建、定时来源委托续期与租约/claim 失效。该测试直接调用 Admin 生产领域服务，尚不能替代跨 Admin/Dream 的实际调度、模型和页面全旅程 E2E。
 
 2026-09-28 独立静态回执：当前 Admin 代码的 `pnpm --filter @ink-memory/db typecheck` 退出 0，五个目标单元测试文件共 10/10 通过，目标 ESLint 退出 0；修复联合类型缩窄后，提交 `36c9510` 的 `pnpm exec tsc --noEmit --incremental false` 退出 0。上述服务集成脚本随后在同一提交复跑，仍为 4/4 通过且已清理隔离库。
+
+## 2026-09-29 主分支归位与当前验证
+
+定时任务提交 `9ed8fc0820857f2a7c03e449b2829f434ff5534f` 已从主目录原 `bef4c271` 以 `git merge --ff-only` 归入 `/Users/dmeck/project/ink-admin-memory` 的 `main`，没有建立第二条实现分支，也没有改写 0069–0072 migration 历史。
+
+| 验证 | 退出码 | 结果 |
+| --- | ---: | --- |
+| `pnpm exec tsc --noEmit --incremental false && pnpm --filter @ink-memory/db typecheck` | 0 | Admin 应用与共享数据库包类型检查通过。 |
+| `pnpm exec vitest run app/lib/dream/chatScheduledTaskAuthority.test.ts app/lib/dream/chatScheduledTaskRegistration.test.ts app/lib/dream/chatScheduledTaskTime.test.ts app/lib/story-workspace/storyWorkspaceChatScheduledTaskRegistration.test.ts app/lib/task-session/taskSessionChatScheduledResultRegistration.test.ts` | 0 | `5 files passed, 10 tests passed`。 |
+| 定时任务 authority/registration/time/schema 目标 ESLint | 0 | 0 error。 |
+| `pnpm build` | 0 | 数据库包和 Next.js 生产构建通过。 |
+| 命名隔离库 migration + `pnpm exec vitest run app/lib/dream/chatScheduledTaskPostgres.integration.test.ts` | 0 | `73/73` migration，`4 tests passed`，数据库 `ink_scheduled_chat_test_20260929_goal` 已清理。 |
+| Dream `scripts/run-scheduled-chat-isolated-e2e.mjs` 指向当前 Admin main | 0 | 四项 capability、公开 Calendar route、手动请求去重、到期单次触发、重启不重复调用均通过，`model_calls=2`；随机隔离库已清理。 |
+
+第一次主分支集成复跑在北京时间凌晨发现一个测试夹具错误：`manual.created_at` 是包含数据库会话 `+08:00` 偏移的 ISO 时间，直接 `slice(0, 10)` 后再用 UTC 查询会在本地 00:00–08:00 取错日期。测试现先执行 `new Date(manual.created_at).toISOString()`，再截取 UTC 日期。修正后原有 4 项集成断言全部通过；生产日期查询、状态机和断言强度均未改变。
+
+这些回执使用明确命名且已清理的隔离 PostgreSQL、公开生产服务入口和可控模型替身。本轮没有运行正常业务数据库 migration，没有读取或修改真实账户，也没有调用真实模型或部署远程环境。

@@ -1,7 +1,7 @@
 // [Input] Explicitly owned, migrated isolated PostgreSQL and the production scheduled Chat domain services.
 // [Output] Claim, pre-model recovery, exact turn completion, inactive manual skip and nullable history evidence.
 // [Pos] Provider-free service integration contract; a runner owns database creation, migration and cleanup.
-// [Sync] 2026-09-28: keep failure diagnostics on the entire prepared result while preserving its discriminated DTO check.
+// [Sync] 2026-09-29: derive the UTC calendar key from the trigger instant instead of its database-session offset text.
 import { randomBytes, randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -180,7 +180,7 @@ describe.skipIf(!enabled)("scheduled Chat isolated PostgreSQL contract", () => {
     })).trigger;
     expect(completed).toMatchObject({ status: "succeeded", final_message_id: "scheduled-good-final" });
     const manualDay = scheduledTaskDayResultDto.parse(await user("scheduled-task.day", {
-      local_date: manual.created_at.slice(0, 10), display_time_zone: "UTC",
+      local_date: new Date(manual.created_at).toISOString().slice(0, 10), display_time_zone: "UTC",
     }));
     expect(manualDay.triggers.find(item => item.id === manual.id)).toMatchObject({
       kind: "manual", status: "succeeded", target_thread_id: previousTarget,
