@@ -1,7 +1,7 @@
 // [Input] Strict scheduled-task DTO, verified OAuth/Thread actor or scoped service and one capability-gated transaction.
 // [Output] Owner-filtered effective definitions, date/history projections, fenced claims and TaskSession preparation.
 // [Pos] Admin scheduled Chat domain service and repository boundary; Dream owns the shared Chat runtime and model admission.
-// [Sync] 2026-09-28: reclaim pre-model expiries, suppress inactive manual runs and fence claims to their service.
+// [Sync] 2026-09-28: reclaim pre-model expiries, suppress inactive manual runs and compare canonical identity across bigint projections.
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -291,7 +291,7 @@ async function prepareOne(tx: DataTransaction, service: ScheduledTaskService, in
   const now = await databaseNow(tx);
   if (!current.lease_expires_at || new Date(current.lease_expires_at) <= now) throw new AuthBoundaryError("SCHEDULE_CLAIM_EXPIRED", 409);
   const identity = await new SubjectRepository(tx).findActive(definition.auth_user_id);
-  if (!identity || identity.canonicalUserId !== definition.user_id) {
+  if (!identity || String(identity.canonicalUserId) !== String(definition.user_id)) {
     const failed = (await tx.update(trigger).set({ status: "failed", error_code: "ACTIVE_SUBJECT_REQUIRED", lease_expires_at: null, updated_at: sql`CURRENT_TIMESTAMP` }).where(eq(trigger.id, current.id)).returning())[0]!;
     return dto.prepareScheduledTriggerResultDto.parse({ prepared: false, trigger: projectTrigger(failed), error_code: "ACTIVE_SUBJECT_REQUIRED" });
   }
