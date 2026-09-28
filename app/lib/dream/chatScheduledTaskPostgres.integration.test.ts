@@ -1,7 +1,7 @@
 // [Input] Explicitly owned, migrated isolated PostgreSQL and the production scheduled Chat domain services.
 // [Output] Claim, pre-model recovery, exact turn completion, inactive manual skip and nullable history evidence.
 // [Pos] Provider-free service integration contract; a runner owns database creation, migration and cleanup.
-// [Sync] 2026-09-28: prove prepared TaskSession reuse after lease expiry and ordinary target Thread deletion.
+// [Sync] 2026-09-28: prove prepared TaskSession reuse and accept the existing users-to-platform fixture trigger.
 import { randomBytes } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -46,12 +46,16 @@ describe.skipIf(!enabled)("scheduled Chat isolated PostgreSQL contract", () => {
       INSERT INTO users (id, email, password_hash)
         VALUES (1, 'scheduled-one@example.invalid', 'fixture');
       INSERT INTO platform_users (id, source, external_user_id, email, status)
-        VALUES ('platform-scheduled-1', 'ink-dream', '1', 'scheduled-one@example.invalid', 'active');
+        VALUES ('platform-scheduled-1', 'ink-dream', '1', 'scheduled-one@example.invalid', 'active')
+        ON CONFLICT (source, external_user_id) DO NOTHING;
       INSERT INTO identity."user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
         VALUES ('scheduled-subject-1', 'Scheduled Fixture', 'scheduled-auth@example.invalid', true, now(), now());
       INSERT INTO identity.subject_links (auth_user_id, canonical_user_id, evidence)
         VALUES ('scheduled-subject-1', 1, 'fixture');
     `);
+    const platform = await pool.query(`SELECT status FROM platform_users
+      WHERE source='ink-dream' AND external_user_id='1'`);
+    expect(platform.rows).toEqual([{ status: "active" }]);
   });
   afterAll(async () => { await pool.end(); });
 
