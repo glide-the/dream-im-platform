@@ -1,7 +1,7 @@
 // [Input] Registered scheduled Chat operation, configured service and OAuth, exact Thread delegation or background credential.
 // [Output] Strict capability-gated DTO from one Admin transaction with owner receipts or service audit.
 // [Pos] Thin scheduled Chat ingress; business time, status and SQL remain in the domain service.
-// [Sync] 2026-09-28: distinguish user and worker audiences and keep bearer-bearing prepare/renew outputs out of receipts.
+// [Sync] 2026-09-28: accept source-Thread-scoped Workflow grants for create while keeping prepare/renew bearers out of receipts.
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { adminAuditLogs } from "@ink-memory/db/schema";
@@ -66,7 +66,8 @@ export async function handleChatScheduledTaskOperation(request: Request, name: s
         if (name !== "scheduled-task.create") throw new AuthBoundaryError("SCHEDULE_DELEGATION_SCOPE_DENIED", 403);
         const sourceThreadId = (envelope.input as { source_thread_id: string }).source_thread_id;
         const resolved = await new DelegationService(tx).resolve(bearer, contract.userScope, service.id, sourceThreadId);
-        if (resolved.purpose !== "server-persistence" || resolved.editorSessionId !== null || resolved.runId !== null) throw new AuthBoundaryError("SCHEDULE_DELEGATION_SCOPE_DENIED", 403);
+        if (resolved.purpose !== "server-persistence" || resolved.editorSessionId !== null
+          || resolved.threadId !== sourceThreadId) throw new AuthBoundaryError("SCHEDULE_DELEGATION_SCOPE_DENIED", 403);
         actor = { principal: resolved.principal, threadScope: resolved.threadId };
       } else {
         actor = { principal: await principalForServiceToken(tx, bearer, service, contract.userScope), threadScope: null };

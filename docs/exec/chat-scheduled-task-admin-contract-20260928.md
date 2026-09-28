@@ -30,7 +30,7 @@ Admin 负责一次和每日计划、触发事实、原子领取、短期授权�
 
 ### 命名操作
 
-用户受权操作：`scheduled-task.create/get/day/history/edit/pause/resume/delete/restore/run`。`create` 从当前受权主体取得用户与服务，输入只含来源 Thread、幂等键、标题、提示词及明确时间规则；`run` 用手动请求键作为持久回执幂等键。写操作在同一 Admin 事务内产生原回执与审计。`day` 按展示时区的 UTC 日期区间查询触发：计划触发按 `scheduled_at`、手动触发按 `created_at` 归日；单次任务按保存的当地日期/时区、每日任务按固定 IANA 钟点投影。只要定义已在该展示日期创建，暂停和软删除的卡片也保留状态、`revision` 与恢复入口，不以 `next_run_at` 是否为空决定可见性；`status` 决定是否实际触发。
+用户受权操作：`scheduled-task.create/get/day/history/edit/pause/resume/delete/restore/run`。`create` 从当前受权主体取得用户与服务，输入只含来源 Thread、幂等键、标题、提示词及明确时间规则；既有 Workflow Thread 的 `server-persistence idg_` 即使带 `run_id`，只要精确绑定来源 Thread、无编辑器会话且主体仍拥有该 Thread，也可创建。`run` 用手动请求键作为持久回执幂等键。写操作在同一 Admin 事务内产生原回执与审计。`day` 按展示时区的 UTC 日期区间查询触发：计划触发按 `scheduled_at`、手动触发按 `created_at` 归日；单次任务按保存的当地日期/时区、每日任务按固定 IANA 钟点投影。只要定义已在该展示日期创建，暂停和软删除的卡片也保留状态、`revision` 与恢复入口，不以 `next_run_at` 是否为空决定可见性；`status` 决定是否实际触发。
 
 服务专用操作：`scheduled-trigger.claim/prepare/renew/start/finish/reconcile/authority.resolve`，只接受配置中有 `schedule:execute` 的 confidential client，拒绝浏览器 Cookie；除 `authority.resolve` 必须同时提交服务凭据与 `sta_` bearer 外，其余操作拒绝用户 bearer。`claim` 使用数据库时间、行锁及唯一约束；`prepare` 再查活动主体、来源 Thread、Deck/Voice，并用触发 ID 作为既有 TaskSession 请求键，原子建立目标 Thread/首条消息。准备失败记录安全错误码。`start` 在同一事务中把 TaskSession `launch_status` 从 `pending` 改为 `starting`，并在模型调用前绑定 `target_turn_id`；重复提交只接受相同值。明确启动失败时沿用 TaskSession 的 `fail` 转换。`finish` 成功必须验证已提交的 assistant final 所属 Thread、最终投影、完成状态及完全相同的 `turnId`。准备后、`start` 前的过期租约会清除旧领取，让新领取复用同一 TaskSession 和首条消息；旧领取的 `sta_`/`idg_` 因 claim ID 改变失效。已经绑定轮次的过期租约先按这些事实对账；不能证明的轮次保留 `state_unknown`，不重发模型调用。
 
