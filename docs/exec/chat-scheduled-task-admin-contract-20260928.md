@@ -1,7 +1,7 @@
 <!-- [Input] 2026-09-28 scheduled-task design review, Admin Chat/TaskSession authority and forward Drizzle history. -->
 <!-- [Output] Admin producer contract, four exact capabilities, operation DTOs, release gate and isolated verification plan. -->
 <!-- [Pos] Admin implementation handoff for the Dream scheduled-task consumer; this is not a normal-business acceptance receipt. -->
-<!-- [Sync] 2026-09-28: record 0069-0072 isolated replay evidence, including the existing Provider data-gate orchestration. -->
+<!-- [Sync] 2026-09-28: record 0069-0072 isolated replay, Admin service integration, and static validation receipts. -->
 
 # 定时 Chat 任务 Admin 合同
 
@@ -51,3 +51,5 @@ Admin 负责一次和每日计划、触发事实、原子领取、短期授权�
 2026-09-28 独立迁移技术回执：`/private/tmp/ink-scheduled-migration-proof.mjs` 退出 0。脚本分别创建并核对四个明确命名的隔离库：空库通过 Provider orchestrator 走 0000–0072，随后 `--check` 和重跑均成功；从 0068 前缀升级的库先完成 0047/0049/0051 data gate 再应用 0069–0072；故意制造部分 `chat_scheduled_task` 漂移的库拒绝应用且 ledger 停在 0068；两个 migrator 并发时 0069–0072 只提交一次。四库均由同一脚本清理。此回执只证明迁移及 capability 发布，不等于定时 Chat 业务链路验收。
 
 2026-09-28 独立 Admin 服务技术回执：`node /private/tmp/ink-scheduled-admin-service-proof.mjs` 退出 0。脚本新建并核对 `ink_scheduled_chat_test_20260928a`，`pnpm db:migrate` 完成 73/73 且退出 0，`pnpm exec vitest run app/lib/dream/chatScheduledTaskPostgres.integration.test.ts` 为 4/4 通过、退出 0，最后只清理本轮测试库。覆盖创建幂等及版本冲突、暂停后未领取手动触发、双 worker 领取、准备后未启动的安全重领、旧授权失效、TaskSession 启动/失败、final 轮次绑定、目标 Thread 删除、日历保留暂停/删除定义及手动触发、来源 Thread 限定创建、定时来源委托续期与租约/claim 失效。该测试直接调用 Admin 生产领域服务，尚不能替代跨 Admin/Dream 的实际调度、模型和页面全旅程 E2E。
+
+2026-09-28 独立静态回执：当前 Admin 代码的 `pnpm --filter @ink-memory/db typecheck` 退出 0，五个目标单元测试文件共 10/10 通过，目标 ESLint 退出 0；修复联合类型缩窄后，提交 `36c9510` 的 `pnpm exec tsc --noEmit --incremental false` 退出 0。上述服务集成脚本随后在同一提交复跑，仍为 4/4 通过且已清理隔离库。
