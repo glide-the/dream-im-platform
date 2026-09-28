@@ -1,7 +1,7 @@
 // [Input] Explicitly owned, migrated isolated PostgreSQL and the production scheduled Chat domain services.
 // [Output] Claim, pre-model recovery, exact turn completion, inactive manual skip and nullable history evidence.
 // [Pos] Provider-free service integration contract; a runner owns database creation, migration and cleanup.
-// [Sync] 2026-09-28: cover fixed-maximum grants, TaskSession launch, inactive/manual calendar and source-Thread delegated creation.
+// [Sync] 2026-09-28: keep failure diagnostics on the entire prepared result while preserving its discriminated DTO check.
 import { randomBytes, randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -118,7 +118,7 @@ describe.skipIf(!enabled)("scheduled Chat isolated PostgreSQL contract", () => {
     const prepared = prepareScheduledTriggerResultDto.parse(await worker("scheduled-trigger.prepare", {
       trigger_id: manual.id, claim_id: claimId,
     }));
-    if (!prepared.prepared) throw new Error(`SCHEDULE_PREPARE_FAILED:${prepared.error_code}`);
+    if (!prepared.prepared) throw new Error(`SCHEDULE_PREPARE_FAILED:${JSON.stringify(prepared)}`);
     expect(prepared.trigger.target_turn_id).toBeNull();
     const previousTarget = prepared.trigger.target_thread_id;
     const previousInput = prepared.trigger.input_message_id;
@@ -149,7 +149,7 @@ describe.skipIf(!enabled)("scheduled Chat isolated PostgreSQL contract", () => {
     const preparedAgain = prepareScheduledTriggerResultDto.parse(await worker("scheduled-trigger.prepare", {
       trigger_id: manual.id, claim_id: reclaimed.claim_id,
     }));
-    if (!preparedAgain.prepared) throw new Error(`SCHEDULE_REPREPARE_FAILED:${preparedAgain.error_code}`);
+    if (!preparedAgain.prepared) throw new Error(`SCHEDULE_REPREPARE_FAILED:${JSON.stringify(preparedAgain)}`);
     expect(preparedAgain.trigger.target_thread_id).toBe(previousTarget);
     expect(preparedAgain.trigger.input_message_id).toBe(previousInput);
     const started = startScheduledTriggerResultDto.parse(await worker("scheduled-trigger.start", {
@@ -204,7 +204,7 @@ describe.skipIf(!enabled)("scheduled Chat isolated PostgreSQL contract", () => {
     const failurePrepared = prepareScheduledTriggerResultDto.parse(await worker("scheduled-trigger.prepare", {
       trigger_id: failedManual.id, claim_id: failureClaim.claim_id,
     }));
-    if (!failurePrepared.prepared) throw new Error(`SCHEDULE_FAILURE_PREPARE_DENIED:${failurePrepared.error_code}`);
+    if (!failurePrepared.prepared) throw new Error(`SCHEDULE_FAILURE_PREPARE_DENIED:${JSON.stringify(failurePrepared)}`);
     const failure = finishScheduledTriggerResultDto.parse(await worker("scheduled-trigger.finish", {
       trigger_id: failedManual.id, claim_id: failureClaim.claim_id, status: "failed",
       final_message_id: null, error_code: "SCHEDULE_MODEL_UNAVAILABLE",

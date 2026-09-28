@@ -1,7 +1,7 @@
 // [Input] Strict scheduled-task DTO, verified OAuth/Thread actor or scoped service and one capability-gated transaction.
 // [Output] Owner-filtered effective definitions, date/history projections, fenced claims and TaskSession preparation.
 // [Pos] Admin scheduled Chat domain service and repository boundary; Dream owns the shared Chat runtime and model admission.
-// [Sync] 2026-09-28: project paused/deleted definitions in date reads so users retain their revisioned restore entry.
+// [Sync] 2026-09-28: narrow expected_revision from the validated operation shape before projecting shared task fields.
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -199,8 +199,9 @@ export async function runChatScheduledUserOperation(name: dto.ChatScheduledUserO
       time_zone_snapshot: row.time_zone, status: "claimed" }).returning())[0]!;
     return dto.scheduledTriggerResultDto.parse({ trigger: projectTrigger(created) });
   }
+  if (!("expected_revision" in parsed.data)) throw new AuthBoundaryError("INPUT_INVALID", 400);
   const change = dto.scheduledTaskRevisionInputDto.parse({ task_id: input.task_id,
-    expected_revision: (parsed.data as { expected_revision: number }).expected_revision });
+    expected_revision: parsed.data.expected_revision });
   requireRevision(row, change.expected_revision);
   if (name === "scheduled-task.edit") {
     if (row.status === "deleted" || row.status === "exhausted") throw new AuthBoundaryError("SCHEDULE_TASK_INACTIVE", 409);
