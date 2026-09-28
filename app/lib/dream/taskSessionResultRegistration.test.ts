@@ -1,6 +1,7 @@
 // [Input] Registry198 prefix, new task-result DTOs and exact physical capability.
 // [Output] Append-only operation identities and rejected actor/session/settlement overrides.
 // [Pos] Provider-free contract gate for Dream task-result integration.
+// [Sync] 2026-09-28: preserve the task-result registry slice after scheduled Chat operations append.
 // [Sync] 2026-09-27: register returning create, four result operations and service-only recovery claim.
 import { expect, it } from "vitest";
 import generated from "../../../docs/architecture/admin-dream-operation-contracts.json";
@@ -10,8 +11,8 @@ import { resultClaimInputDto, resultCommitInputDto, resultSettleInputDto } from 
 
 it("appends exactly the task-result operations after Registry198", () => {
   expect(generated).toEqual(dreamOperations);
-  expect(dreamOperations).toHaveLength(204);
-  const added = dreamOperations.slice(198);
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(204);
+  const added = dreamOperations.slice(198, 204);
   expect(added.map(item => item.contract.name)).toEqual([
     "task-session.create-returning", "task-session.result-commit", "task-session.result-list",
     "task-session.result-claim", "task-session.result-settle", "task-session.result-claim-next",

@@ -1,3 +1,4 @@
+// [Sync] 2026-09-28: declare effective scheduled Chat definitions and fenced trigger history for 0069.
 // [Sync] 2026-09-27: declare one revisioned completion notice per task and target turn, with source-resume fencing.
 // [Sync] 2026-09-27: declare Admin-owned chat_task_session binding and launch status.
 // [Sync] 2026-09-26: declare Admin-owned durable chat_input_queue and status checks.
@@ -700,6 +701,87 @@ export const chat_task_session = pgTable("chat_task_session", {
 	foreignKey({ columns: [table.thread_id], foreignColumns: [chat_thread.id], name: "fk_chat_task_session_target" }).onDelete("cascade"),
 	foreignKey({ columns: [table.initial_message_id], foreignColumns: [chat_message.id], name: "fk_chat_task_session_initial_message" }).onDelete("cascade"),
 	check("ck_chat_task_session_launch_status", sql`launch_status IN ('pending','starting','failed')`),
+]);
+
+// [Sync] 2026-09-28: persist one effective scheduled definition and fenced trigger history; execution reuses chat_task_session.
+export const chat_scheduled_task = pgTable("chat_scheduled_task", {
+	id: text().primaryKey().notNull(),
+	user_id: bigint({ mode: "number" }).notNull(),
+	auth_user_id: text().notNull(),
+	service_client_id: text().notNull(),
+	source_thread_id: text().notNull(),
+	create_request_key: text().notNull(),
+	title: text().notNull(),
+	prompt: text().notNull(),
+	schedule_kind: text().notNull(),
+	time_zone: text().notNull(),
+	local_date: text(),
+	local_time: text().notNull(),
+	single_offset_minutes: integer(),
+	next_run_at: timestamp({ withTimezone: true, mode: "string" }),
+	status: text().default("active").notNull(),
+	status_before_delete: text(),
+	revision: integer().default(1).notNull(),
+	created_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
+	updated_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, table => [
+	unique("uq_chat_scheduled_task_create").on(table.service_client_id, table.auth_user_id, table.create_request_key),
+	index("idx_chat_scheduled_task_due").on(table.next_run_at).where(sql`status = 'active'`),
+	index("idx_chat_scheduled_task_owner").on(table.user_id, table.source_thread_id),
+	foreignKey({ columns: [table.user_id], foreignColumns: [users.id], name: "fk_chat_scheduled_task_user" }).onDelete("cascade"),
+	foreignKey({ columns: [table.source_thread_id], foreignColumns: [chat_thread.id], name: "fk_chat_scheduled_task_source" }).onDelete("cascade"),
+	check("ck_chat_scheduled_task_kind", sql`schedule_kind IN ('once','daily')`),
+	check("ck_chat_scheduled_task_status", sql`status IN ('active','paused','exhausted','deleted')`),
+	check("ck_chat_scheduled_task_revision", sql`revision >= 1`),
+	check("ck_chat_scheduled_task_rule", sql`(schedule_kind = 'once' AND local_date IS NOT NULL AND single_offset_minutes IS NOT NULL) OR (schedule_kind = 'daily' AND local_date IS NULL AND single_offset_minutes IS NULL)`),
+]);
+
+export const chat_scheduled_trigger = pgTable("chat_scheduled_trigger", {
+	id: text().primaryKey().notNull(),
+	task_id: text().notNull(),
+	user_id: bigint({ mode: "number" }).notNull(),
+	kind: text().notNull(),
+	scheduled_at: timestamp({ withTimezone: true, mode: "string" }),
+	manual_request_key: text(),
+	definition_revision: integer().notNull(),
+	title_snapshot: text().notNull(),
+	prompt_snapshot: text().notNull(),
+	source_thread_id: text().notNull(),
+	time_zone_snapshot: text().notNull(),
+	status: text().notNull(),
+	claim_id: text(),
+	lease_expires_at: timestamp({ withTimezone: true, mode: "string" }),
+	task_session_id: text(),
+	target_thread_id: text(),
+	input_message_id: text(),
+	target_turn_id: text(),
+	final_message_id: text(),
+	error_code: text(),
+	skipped_from_at: timestamp({ withTimezone: true, mode: "string" }),
+	skipped_through_at: timestamp({ withTimezone: true, mode: "string" }),
+	created_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
+	updated_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, table => [
+	uniqueIndex("uq_chat_scheduled_trigger_plan").on(table.task_id, table.scheduled_at).where(sql`kind = 'scheduled'`),
+	uniqueIndex("uq_chat_scheduled_trigger_manual").on(table.task_id, table.manual_request_key).where(sql`kind = 'manual'`),
+	unique("uq_chat_scheduled_trigger_task_session").on(table.task_session_id),
+	unique("uq_chat_scheduled_trigger_target_thread").on(table.target_thread_id),
+	unique("uq_chat_scheduled_trigger_input").on(table.input_message_id),
+	unique("uq_chat_scheduled_trigger_turn").on(table.target_turn_id),
+	index("idx_chat_scheduled_trigger_owner_time").on(table.user_id, table.scheduled_at),
+	index("idx_chat_scheduled_trigger_reconcile").on(table.lease_expires_at).where(sql`status IN ('claimed','queued','running')`),
+	uniqueIndex("uq_chat_scheduled_trigger_open").on(table.task_id).where(sql`status IN ('claimed','queued','running','state_unknown')`),
+	foreignKey({ columns: [table.task_id], foreignColumns: [chat_scheduled_task.id], name: "fk_chat_scheduled_trigger_task" }).onDelete("cascade"),
+	foreignKey({ columns: [table.user_id], foreignColumns: [users.id], name: "fk_chat_scheduled_trigger_user" }).onDelete("cascade"),
+	foreignKey({ columns: [table.source_thread_id], foreignColumns: [chat_thread.id], name: "fk_chat_scheduled_trigger_source" }).onDelete("cascade"),
+	foreignKey({ columns: [table.task_session_id], foreignColumns: [chat_task_session.id], name: "fk_chat_scheduled_trigger_session" }).onDelete("set null"),
+	foreignKey({ columns: [table.target_thread_id], foreignColumns: [chat_thread.id], name: "fk_chat_scheduled_trigger_target" }).onDelete("set null"),
+	foreignKey({ columns: [table.input_message_id], foreignColumns: [chat_message.id], name: "fk_chat_scheduled_trigger_input" }).onDelete("set null"),
+	foreignKey({ columns: [table.final_message_id], foreignColumns: [chat_message.id], name: "fk_chat_scheduled_trigger_final" }).onDelete("set null"),
+	check("ck_chat_scheduled_trigger_kind", sql`(kind = 'scheduled' AND scheduled_at IS NOT NULL AND manual_request_key IS NULL) OR (kind = 'manual' AND scheduled_at IS NULL AND manual_request_key IS NOT NULL)`),
+	check("ck_chat_scheduled_trigger_status", sql`status IN ('claimed','queued','running','succeeded','failed','state_unknown','skipped')`),
+	check("ck_chat_scheduled_trigger_revision", sql`definition_revision >= 1`),
+	check("ck_chat_scheduled_trigger_turn", sql`status <> 'running' OR target_turn_id IS NOT NULL`),
 ]);
 
 export const chat_task_result = pgTable("chat_task_result", {

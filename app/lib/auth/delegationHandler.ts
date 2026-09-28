@@ -1,4 +1,5 @@
 // [Input] Strict internal creation request or public opaque bearer renewal/revocation request.
+// [Sync] 2026-09-28: require both scheduled storage and runtime-source capabilities before exchanging sta_ authority.
 // [Output] Entity-limited DTO; runtime needs only its delegation and Admin endpoint.
 // [Pos] Delegation ingress; all identity/entity/receipt persistence stays in Admin domain UOW.
 // [Sync] 2026-09-16: exchange server-only Reflections authority only through the source-fenced DTO path.
@@ -8,7 +9,8 @@ import { AuthBoundaryError } from "./config";
 import { delegationCreateRequestDto, delegationActionRequestDto, delegationTokenDto, delegationRenewOutputDto, delegationRevokeOutputDto, delegationReceiptInputDto } from "./delegationDto";
 import { handleInternalAuthRequest, parseAuthDto } from "./internalHandler";
 import { withDataTransaction } from "../dream/database";
-import { identitySchemaRequirement, reflectionTaskSchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement, runtimeReflectionAuthoritySchemaRequirement } from "../dream/schemaRequirements";
+import { identitySchemaRequirement, reflectionTaskSchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement, runtimeReflectionAuthoritySchemaRequirement, scheduledChatRuntimeSchemaRequirement } from "../dream/schemaRequirements";
+import { chatScheduledTaskSchemaRequirement, chatScheduledTurnBindingSchemaRequirement, chatScheduledLinkLifecycleSchemaRequirement } from "../dream/chatScheduledTaskService";
 import { DelegationService } from "./delegationService";
 import { dreamUnifiedSchemaRequirement } from "../dream/chatThreadService";
 const requirements = [identitySchemaRequirement, runtimeDelegationSchemaRequirement,
@@ -18,10 +20,14 @@ export async function handleDelegationCreate(request: Request) {
     const input = await parseAuthDto(request, delegationCreateRequestDto); setRequestId(input.request_id);
     const bearer = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
     const reflectionAuthority = bearer.startsWith("rta_");
+    const scheduledAuthority = bearer.startsWith("sta_");
     return withDataTransaction([
       ...requirements, dreamUnifiedSchemaRequirement,
       ...(reflectionAuthority ? [reflectionTaskSchemaRequirement] : []),
-    ], tx => reflectionAuthority
+      ...(scheduledAuthority ? [chatScheduledTaskSchemaRequirement, chatScheduledTurnBindingSchemaRequirement, chatScheduledLinkLifecycleSchemaRequirement, scheduledChatRuntimeSchemaRequirement] : []),
+    ], tx => scheduledAuthority
+      ? new DelegationService(tx).createForScheduledChatAuthority(service, bearer, input.request_id, input.input)
+      : reflectionAuthority
       ? new DelegationService(tx).createForReflectionAuthority(
         service, bearer, input.request_id, input.input,
       )

@@ -1,4 +1,5 @@
 // [Input] Verified service plus OAuth bearer or an operation-bound Admin opaque authority.
+// [Sync] 2026-09-28: resolve sta_ only for the scheduled target Thread and fixed persistence allowlist.
 // [Output] Server-derived active principal constrained to the exact operation and entity scope.
 // [Pos] Shared data authorization boundary; no caller user_id overrides.
 // [Sync] 2026-09-15: resolve Reflections worker authority only when the caller supplies an exact allowlisted operation.
@@ -8,6 +9,7 @@ import { DelegationService } from "../auth/delegationService";
 import { AuthBoundaryError } from "../auth/config";
 import type { DataTransaction } from "./database";
 import { resolveReflectionTaskAuthority } from "./reflectionTaskAuthorityService";
+import { resolveScheduledChatAuthority } from "./chatScheduledTaskAuthority";
 export async function requireDataActor(tx: DataTransaction, headers: Headers, service: DreamServiceClient, requiredScope: string, threadId?: string, runId?: string | null, operationName?: string) {
   const authorization = headers.get("authorization") ?? "", token = authorization.replace(/^Bearer /, "");
   if (token.startsWith("idg_")) {
@@ -20,6 +22,12 @@ export async function requireDataActor(tx: DataTransaction, headers: Headers, se
     const authority = await resolveReflectionTaskAuthority(tx, token, operationName, service.id);
     if (authority.principal.scopes.includes(requiredScope) === false || (threadId !== undefined && authority.threadScope !== threadId) || (runId != null && authority.runScope !== runId)) throw new AuthBoundaryError("REFLECTION_AUTHORITY_ENTITY_DENIED", 403);
     return { principal: authority.principal, threadScope: authority.threadScope, runScope: authority.runScope };
+  }
+  if (token.startsWith("sta_")) {
+    if (!authorization.startsWith("Bearer sta_") || !operationName) throw new AuthBoundaryError("SCHEDULE_AUTHORITY_REQUIRED", 401);
+    const authority = await resolveScheduledChatAuthority(tx, token, operationName, service.id);
+    if (authority.principal.scopes.includes(requiredScope) === false || (threadId !== undefined && authority.threadScope !== threadId) || runId != null) throw new AuthBoundaryError("SCHEDULE_AUTHORITY_ENTITY_DENIED", 403);
+    return authority;
   }
   return { principal: await principalForServiceToken(tx, token, service, requiredScope), threadScope: null, runScope: null };
 }

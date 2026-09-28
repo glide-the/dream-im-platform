@@ -1,4 +1,5 @@
-// [Input] Admin OAuth user grant or exact Admin-owned confirmation/task-result claim; capability-gated data UOW.
+// [Input] Admin OAuth user grant or exact Admin-owned confirmation/task-result/scheduled claim; capability-gated data UOW.
+// [Sync] 2026-09-28: exchange only live scheduled target claims for source-fenced persistence or Gateway grants.
 // [Sync] 2026-09-27: issue only source-Thread persistence grants from a live task-result claim.
 // [Output] Encrypted-recoverable creation and claim-fenced renewal/revocation/actor projection.
 // [Pos] Admin sole long-turn authority; no external actor IDs or Runtime service secrets.
@@ -20,6 +21,9 @@ import type { DataTransaction } from "../dream/database";
 import { requestIdDto, type PrincipalDto } from "./dto";
 import { gatewayClientForService } from "./gatewayBindings";
 import { authoritativeWorkflowContext } from "../dream/workflowContextService";
+import { hasSchemaCapability } from "../dream/database";
+import { scheduledChatRuntimeSchemaRequirement } from "../dream/schemaRequirements";
+import { chatScheduledTurnBindingSchemaRequirement, chatScheduledLinkLifecycleSchemaRequirement } from "../dream/chatScheduledTaskService";
 import { storyWorkspaceConfirmationClaimIdDto, storyWorkspaceConfirmationMessageIdDto,
   storyWorkspaceConfirmationMetadataDto } from "../dream/storyWorkspaceConfirmationDto";
 import { workflowRunIdDto } from "../dream/workflowRunDto";
@@ -178,6 +182,69 @@ export class DelegationService {
     await this.repository.auditCreation(
       service.id, requestId, inputSha256, delegationHash(tokenValue),
     );
+    return result;
+  }
+
+  async createForScheduledChatAuthority(service: DreamServiceClient, token: string, requestId: string,
+    input: z.infer<typeof delegationCreateInputDto>) {
+    delegationCreateInputDto.parse(input);
+    if (!["server-persistence", "gateway-cli"].includes(input.purpose) || input.run_id !== null
+      || input.editor_session_id !== null || !validDelegationPurpose({ purpose: input.purpose,
+        scopes: input.scopes, editorSessionId: input.editor_session_id })) throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
+    if (!await hasSchemaCapability(this.tx, scheduledChatRuntimeSchemaRequirement)
+      || !await hasSchemaCapability(this.tx, chatScheduledTurnBindingSchemaRequirement)
+      || !await hasSchemaCapability(this.tx, chatScheduledLinkLifecycleSchemaRequirement)) throw new AuthBoundaryError("DREAM_DATA_SCHEMA_NOT_READY");
+    const { resolveScheduledChatAuthority } = await import("../dream/chatScheduledTaskAuthority");
+    const source = await resolveScheduledChatAuthority(this.tx, token, "runtime-delegation.create", service.id);
+    if (input.thread_id !== source.threadScope || !await this.repository.ownsEntities(
+      source.principal.canonical_user_id, input.thread_id, null)) throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
+    let gatewayApiKeyId: string | null = null;
+    if (input.purpose === "gateway-cli") {
+      const binding = gatewayClientForService(service.id);
+      if (!binding.oauth_client_ids.includes(service.oauthClientId)) throw new AuthBoundaryError("DELEGATION_CLIENT_DENIED", 403);
+      const key = await this.repository.gatewayKeyForClient(binding.gateway_client_id);
+      if (!key || input.scopes.some(scope => !key.scopes.includes(scope))) throw new AuthBoundaryError("GATEWAY_SCOPE_REQUIRED", 403);
+      gatewayApiKeyId = key.id;
+    } else if (input.scopes.some(scope => !source.principal.scopes.includes(scope))) throw new AuthBoundaryError("ACCESS_SCOPE_REQUIRED", 403);
+    const inputSha256 = delegationHash(canonicalContractJson({ authority_source: "scheduled-chat-authority",
+      trigger_id: source.triggerId, claim_id: source.claimId, input }));
+    const key = delegationHash(canonicalContractJson([service.id, source.principal.subject, requestId]));
+    await this.tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+    const prior = await this.repository.findCreation(service.id, source.principal.subject, requestId);
+    if (prior) {
+      const bound = await this.repository.scheduledGrantSource(prior.tokenHash);
+      if (prior.inputSha256 !== inputSha256 || prior.authoritySource !== "scheduled-chat-authority"
+        || bound?.triggerId !== source.triggerId || bound.claimId !== source.claimId
+        || prior.authUserId !== source.principal.subject || prior.canonicalUserId.toString() !== source.principal.canonical_user_id
+        || prior.oauthClientId !== service.oauthClientId || prior.threadId !== input.thread_id
+        || prior.runId !== null || prior.purpose !== input.purpose || prior.editorSessionId !== null
+        || prior.gatewayApiKeyId !== gatewayApiKeyId || canonicalContractJson(prior.scopes) !== canonicalContractJson(input.scopes)
+        || prior.revokedAt || prior.expiresAt <= new Date() || !prior.tokenCiphertext || !prior.maximumExpiresAt)
+        throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+      const recovered = delegationOutputDto.parse(decryptAuthBundle(prior.tokenCiphertext));
+      if (delegationHash(recovered.token) !== prior.tokenHash) throw new AuthBoundaryError("DELEGATION_RECOVERY_INVALID");
+      await this.resolve(recovered.token, null, service.id, input.thread_id, null, null);
+      return recovered;
+    }
+    const policy = delegationPolicy(), now = Date.now();
+    const maximumMillis = Math.min(now + policy.maximumTtl * 1000, source.maximumExpiresAt.getTime());
+    const expiresMillis = Math.min(now + policy.ttl * 1000, maximumMillis);
+    if (expiresMillis <= now) throw new AuthBoundaryError("SCHEDULE_AUTHORITY_REQUIRED", 401);
+    const tokenValue = `idg_${randomBytes(32).toString("base64url")}`;
+    const expiresAt = new Date(expiresMillis), maximumExpiresAt = new Date(maximumMillis);
+    const result = delegationOutputDto.parse({ token: tokenValue, expires_at: expiresAt.toISOString(),
+      maximum_expires_at: maximumExpiresAt.toISOString(), purpose: input.purpose,
+      thread_id: input.thread_id, run_id: null, editor_session_id: null, scopes: input.scopes });
+    const tokenHash = delegationHash(tokenValue);
+    await this.repository.create({ tokenHash, serviceClientId: service.id, authUserId: source.principal.subject,
+      oauthClientId: service.oauthClientId, canonicalUserId: BigInt(source.principal.canonical_user_id),
+      threadId: input.thread_id, runId: null, purpose: input.purpose, editorSessionId: null,
+      scopes: input.scopes, gatewayApiKeyId, requestId, inputSha256,
+      tokenCiphertext: encryptAuthBundle(result), authoritySource: "scheduled-chat-authority",
+      sourceMessageId: null, sourceClaimId: null, sourceReflectionAuthorityHash: null,
+      sourceTaskResultId: null, sourceTaskResultClaimId: null, expiresAt, maximumExpiresAt });
+    await this.repository.bindScheduledGrant(tokenHash, source.triggerId, source.claimId);
+    await this.repository.auditCreation(service.id, requestId, inputSha256, tokenHash);
     return result;
   }
 
@@ -409,6 +476,23 @@ export class DelegationService {
       const source = await this.repository.taskResultClaimSource(row.sourceTaskResultId,
         row.sourceTaskResultClaimId, row.canonicalUserId.toString(), row.threadId);
       if (!source) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+      return;
+    }
+    if (row.authoritySource === "scheduled-chat-authority") {
+      if (!await hasSchemaCapability(this.tx, scheduledChatRuntimeSchemaRequirement)
+        || !await hasSchemaCapability(this.tx, chatScheduledTurnBindingSchemaRequirement)
+        || !await hasSchemaCapability(this.tx, chatScheduledLinkLifecycleSchemaRequirement)
+        || row.sourceMessageId != null || row.sourceClaimId != null
+        || row.sourceReflectionAuthorityHash != null || row.sourceTaskResultId != null
+        || row.sourceTaskResultClaimId != null || row.runId !== null || row.editorSessionId !== null
+        || !["server-persistence", "gateway-cli"].includes(row.purpose ?? "")) throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
+      const bound = await this.repository.scheduledGrantSource(row.tokenHash);
+      if (!bound || !row.maximumExpiresAt) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+      const { resolveScheduledChatClaim } = await import("../dream/chatScheduledTaskAuthority");
+      await resolveScheduledChatClaim(this.tx, { triggerId: bound.triggerId, claimId: bound.claimId,
+        serviceId: row.serviceClientId, authUserId: row.authUserId,
+        userId: row.canonicalUserId.toString(), targetThreadId: row.threadId,
+        maximumExpiresAt: row.maximumExpiresAt });
       return;
     }
     throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);

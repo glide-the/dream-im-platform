@@ -1,0 +1,15 @@
+{
+  "capability": "identity.scheduled-chat-runtime.v1",
+  "table": "identity.scheduled_chat_grant_sources",
+  "grant_table": "identity.runtime_delegations",
+  "authority_source": "scheduled-chat-authority",
+  "source": "public.chat_scheduled_trigger.id+claim_id",
+  "purposes": [
+    "server-persistence",
+    "gateway-cli"
+  ],
+  "binding": "service+active subject+current target Thread+claim lease+current Deck",
+  "maximum_expiry": "bounded by the issuing trigger claim",
+  "uniqueness": "one token hash to one trigger claim",
+  "contract_sha256": "f84bcd8588c399121a9fd71f6ea4e14bf718a9d6443c5d82f28769300cf2494b"
+}

@@ -1,0 +1,10 @@
+{
+  "capability": "dream.chat-scheduled-turn-binding.v1",
+  "table": "public.chat_scheduled_trigger",
+  "column": "target_turn_id",
+  "uniqueness": "one target turn per trigger",
+  "start": "worker binds target turn before model call",
+  "final": "assistant final metadata.turnId must equal bound target_turn_id",
+  "recovery": "unknown or expired trigger may become succeeded only from matching committed final",
+  "contract_sha256": "67c8f545d4c4ba4eaaf32f7f5eb281c26b1a27da1a0c26fa517c1c93cdbb7482"
+}

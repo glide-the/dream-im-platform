@@ -166,7 +166,7 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `GOOGLE_CLIENT_ID/SECRET` | 内置Google认证注册 | 显式注册与exactcallback |
 | `AUTH_TRUSTED_ORIGINS/DREAM_API_RESOURCE` | trusted origins与OAuth resource | exact origins/resource |
 | `AUTH_TOKEN_ENCRYPTION_KEY` | BFF/委托恢复密文 | 32bytes AEAD，不能回显 |
-| `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON；Reflections执行服务需显式包含`reflections:execute`，confirmation dispatcher需显式包含`story-confirmation:dispatch`，task result dispatcher需显式包含`task-return:dispatch`，均独立于用户Bearer |
+| `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON；Reflections执行服务需显式包含`reflections:execute`，confirmation dispatcher需显式包含`story-confirmation:dispatch`，task result dispatcher需显式包含`task-return:dispatch`，定时Chat worker需显式包含`schedule:execute`，均独立于用户Bearer |
 | `AUTH_DEVICE_CLIENT_ID` / `DREAM_GATEWAY_CLIENT_BINDINGS` | Device public client 与受限 Gateway client映射 | 显式注册；CLI不携带固定secret，binding不能由请求覆盖 |
 | `DREAM_DATA_MAX_BODY_BYTES` | Admin领域请求体技术容量 | 显式正安全整数 |
 | `DREAM_WORKSPACE_PLUGIN_POLICY_JSON` | Story Workspace server adapter 数据选择 | 严格JSON；package、marketplace与nullable版本由Admin配置，Dream请求不能覆盖 |
@@ -186,6 +186,7 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `DREAM_WORKFLOW_CONTEXT_MAX_ATTEMPTS` | 完整retry链查询技术容量 | 保留原256默认；与权限独立 |
 | `DREAM_CHAT_AUTO_TITLE_MAX_CHARACTERS` | 首条普通user消息自动title容量 | 保留原50默认，Python whitespace/Unicode字符 |
 | `AUTH_RUNTIME_DELEGATION_TTL_SECONDS/MAX_TTL_SECONDS` | 窄授权续期与原最大寿命 | 显式正安全整数，renew不能扩张最大寿命 |
+| `AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET` | Admin签发触发/领取/目标Thread限定的短期`sta_`凭据 | 服务端注入的UTF-8密钥，至少32字节；缺失时准备阶段失败关闭，不写日志、回执或数据库。仅在三项精确capability和Dream共享Chat应用服务验收后，为目标confidential client单独启用`schedule:execute`。 |
 | `ADMIN_SESSION_SECRET` / `ADMIN_SESSION_TTL_SECONDS` | Admin 管理 Session 的HMAC密钥与有效期 | secret至少32 bytes；TTL为正安全整数，本机默认28800秒；缺失时登录在建Session前失败关闭 |
 | `ADMIN_BOOTSTRAP_TOKEN` | 首次设置页面的一次性初始化授权 | 自动生成，至少 32 bytes；不发送给页面，需手工粘贴 |
 | `ADMIN_ORIGIN_ALLOWLIST` | 管理写操作允许的 Origin，逗号分隔 | 本地默认 `http://localhost:3000` |

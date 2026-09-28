@@ -1,0 +1,13 @@
+{
+  "capability": "dream.chat-scheduled-link-lifecycle.v1",
+  "table": "public.chat_scheduled_trigger",
+  "nullable_links": [
+    "task_session_id",
+    "target_thread_id",
+    "input_message_id",
+    "final_message_id"
+  ],
+  "deletion": "on delete set null retains trigger history and does not block ordinary Thread/TaskSession deletion",
+  "identity": "trigger and definition ownership remain server derived",
+  "contract_sha256": "f2c197e58ef80cc2ef69f4af9a623389f6c2461e1ac3130ef3ad7976874a16cd"
+}

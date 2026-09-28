@@ -1,3 +1,4 @@
+// [Sync] 2026-09-28: append once/daily scheduled Chat operations with separate storage and Runtime-source requirements.
 // [Sync] 2026-09-27: append Registry199-204 returning-task and result handoff operations.
 // [Sync] 2026-09-27: append the task-session links descriptor under the existing v2 capability.
 // [Sync] 2026-09-27: append task-session create/get/launch descriptors with exact schema capability.
@@ -23,7 +24,7 @@ export { canonicalContractJson } from "./canonicalContractJson";
 import { claudeAgentResourcePolicy as policy } from "../../../config/claude-agent-resource-policy";
 import { resourcePolicyReadInputDto, resourcePolicyReadOutputDto, resourceObserverPublishInputDto, resourceObserverPublishOutputDto } from "./resourceDto";
 import type { SchemaRequirement } from "./database";
-import { identitySchemaRequirement, reflectionTaskSchemaRequirements, workflowPreflightExecutionSchemaRequirements } from "./schemaRequirements";
+import { identitySchemaRequirement, reflectionTaskSchemaRequirements, workflowPreflightExecutionSchemaRequirements, scheduledChatRuntimeSchemaRequirement } from "./schemaRequirements";
 import { chatThreadOperationContracts } from "./chatThreadDto";
 import { chatThreadSchemaRequirements, chatInputQueueSchemaRequirement, chatTaskSessionSchemaRequirement, chatTaskResultSchemaRequirement } from "./chatThreadService";
 import { taskSessionResultContracts } from "./taskSessionResultDto";
@@ -96,6 +97,8 @@ import { claudePluginOperationContracts } from "./claudePluginDataDto";
 import { claudePluginDataSchemaRequirements } from "./claudePluginDataService";
 import { storyWorkspaceArtifactOperationContracts } from "./storyWorkspaceArtifactDto";
 import { storyWorkspaceArtifactSchemaRequirements } from "./storyWorkspaceArtifactService";
+import { chatScheduledTaskOperationContracts } from "./chatScheduledTaskDto";
+import { chatScheduledTaskSchemaRequirements } from "./chatScheduledTaskService";
 function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
@@ -233,5 +236,11 @@ export const dreamOperations = [
     [identitySchemaRequirement, ...chatThreadSchemaRequirements, chatTaskSessionSchemaRequirement,
       chatTaskResultSchemaRequirement, ...(operation.audience === "background" ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : [])],
     operation.userScope,
+  )),
+  ...Object.entries(chatScheduledTaskOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
+    operation.input, operation.output, [identitySchemaRequirement, ...chatScheduledTaskSchemaRequirements,
+      ...(operation.audience === "background" ? [scheduledChatRuntimeSchemaRequirement] : [])],
+    operation.audience === "user" ? operation.userScope : null,
   )),
 ] as const;

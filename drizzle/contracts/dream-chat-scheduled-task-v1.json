@@ -1,0 +1,36 @@
+{
+  "capability": "dream.chat-scheduled-task.v1",
+  "definition_table": "public.chat_scheduled_task",
+  "trigger_table": "public.chat_scheduled_trigger",
+  "execution_target": "public.chat_task_session",
+  "definition_states": [
+    "active",
+    "paused",
+    "exhausted",
+    "deleted"
+  ],
+  "trigger_states": [
+    "claimed",
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "state_unknown",
+    "skipped"
+  ],
+  "schedule_rules": [
+    "once",
+    "daily"
+  ],
+  "time_zone": "fixed IANA; once requires explicit offset when ambiguous; daily skips missing and chooses earlier repeated instant",
+  "revision": "one effective definition, expected-revision compare-and-swap",
+  "uniqueness": [
+    "service_client_id+auth_user_id+create_request_key",
+    "task_id+scheduled_at",
+    "task_id+manual_request_key",
+    "one open trigger per task"
+  ],
+  "dispatch": "service-scoped claim and lease; server-issued trigger-bound authority; idempotent chat_task_session; no model replay on unknown state",
+  "date_projection": "owner-scoped UTC interval plus daily future rule projection",
+  "contract_sha256": "bc9773921f07f894508be4baa19e5b625dba1091559f6ec3c5267d5d12080fb0"
+}

@@ -1,11 +1,12 @@
 // [Input] Data ORM transaction and server-derived identity/client/entity bindings.
+// [Sync] 2026-09-28: bind scheduled Chat grants in a separate source table while preserving pre-0070 grant reads.
 // [Sync] 2026-09-27: resolve task-result claim grants without querying new columns on databases lacking the new capability.
 // [Output] Locked delegation/creation lookup, exact owned entity, confirmation claim and active Gateway checks.
 // [Pos] Admin persistence repository; legacy unbound rows fail closed at the service boundary.
 // [Sync] 2026-09-16: persist and validate exact Story confirmation claim sources for Runtime grants.
 import { randomUUID } from "node:crypto";
 import { and, eq, getTableColumns, gt, isNull, or, sql } from "drizzle-orm";
-import { runtimeDelegations } from "@ink-memory/db/schema/auth";
+import { runtimeDelegations, scheduledChatGrantSources } from "@ink-memory/db/schema/auth";
 import { adminAuditLogs, gatewayApiKeys, storyWorkspaceWorkspaces } from "@ink-memory/db/schema";
 import { chat_message, chat_task_result, chat_task_session, chat_thread, user_sessions, workflow_runs } from "@ink-memory/db/schema/dream";
 import type { DataTransaction } from "../dream/database";
@@ -43,6 +44,13 @@ export class DelegationRepository {
       eq(runtimeDelegations.sourceTaskResultId, notificationId), eq(runtimeDelegations.sourceTaskResultClaimId, claimId),
       eq(runtimeDelegations.purpose, purpose),
     )).limit(1))[0] ?? null;
+  }
+  async scheduledGrantSource(tokenHash: string) {
+    return (await this.tx.select({ triggerId: scheduledChatGrantSources.triggerId, claimId: scheduledChatGrantSources.claimId })
+      .from(scheduledChatGrantSources).where(eq(scheduledChatGrantSources.tokenHash, tokenHash)).limit(1))[0] ?? null;
+  }
+  async bindScheduledGrant(tokenHash: string, triggerId: string, claimId: string) {
+    await this.tx.insert(scheduledChatGrantSources).values({ tokenHash, triggerId, claimId });
   }
   async taskResultClaimSource(notificationId: string, claimId: string, actorId: string, threadId: string) {
     return (await this.tx.select({ notificationId: chat_task_result.id, claimId: chat_task_result.claim_id,

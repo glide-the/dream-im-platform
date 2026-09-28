@@ -1,4 +1,5 @@
 // [Input] Explicit Admin auth origin, Google secrets, token key and configured service clients.
+// [Sync] 2026-09-28: reserve schedule:execute for the configured confidential service only.
 // [Output] Strict single-topology authentication configuration; missing capability fails closed.
 // [Pos] Server-only configuration boundary shared by auth/domain services.
 // [Sync] 2026-09-27: reserve a service-only task-return dispatch scope.
@@ -31,7 +32,7 @@ export function exactAuthUrl(value: string, originOnly = false): string {
 }
 
 export const authScopes = ["openid", "profile", "email", "offline_access", "dream:read", "dream:write", "editor:read", "editor:write", "product:read", "product:write", "messages:create", "messages:count_tokens", "models:list"] as const;
-export const backgroundAuthScopes = ["capabilities:read", "resource-policy:read", "resource-observer:write", "connectors:sync", "plugins:catalog", "reflections:execute", "story-confirmation:dispatch", "task-return:dispatch"] as const;
+export const backgroundAuthScopes = ["capabilities:read", "resource-policy:read", "resource-observer:write", "connectors:sync", "plugins:catalog", "reflections:execute", "story-confirmation:dispatch", "task-return:dispatch", "schedule:execute"] as const;
 export const oauthProviderScopes = [...authScopes, ...backgroundAuthScopes] as const;
 export const accessTokenLifetimeSeconds = 300;
 
