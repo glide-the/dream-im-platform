@@ -1,0 +1,18 @@
+{
+  "capability": "dream.chat-input-queue.v1",
+  "claim": "thread-row-lock-and-revision-cas",
+  "columns": [
+    "message_id",
+    "thread_id",
+    "queue_sequence",
+    "status",
+    "revision",
+    "dispatch_turn_id",
+    "created_at",
+    "updated_at"
+  ],
+  "message": "public.chat_message",
+  "order": "queue_sequence",
+  "table": "public.chat_input_queue",
+  "contract_sha256": "2bb2490d6c8220e9f14a5dd41732d0c60c10d08db5de2bc997aeceeca544a2e1"
+}

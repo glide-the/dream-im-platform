@@ -1,6 +1,7 @@
 // [Input] Admin environment generator executed against disposable directories.
 // [Output] Provider-free tests for mode, preservation, complete validation and fail-closed role/origin checks.
 // [Pos] Deterministic configuration contract for unified auth and Admin-owned Dream DTO/ORM data access.
+// [Sync] 2026-09-28: generated confidential clients may request task-return dispatch.
 // [Sync] 2026-09-16: pin the local Better Auth issuer to localhost for the registered Google callback.
 // [Sync] 2026-09-16: require generated structured values to survive the same dotenv parser used by Next.js.
 // [Sync] 2026-09-16: cover generated secrets and explicit external configuration without touching a real env file.
@@ -87,6 +88,7 @@ test('generated files are private and incomplete external configuration fails cl
     assert.equal(clients[0].id, 'ink-dream-service');
     assert.equal(clients[0].origin, 'http://localhost:5173');
     assert.equal(clients[0].redirectUri, 'http://localhost:5173/auth/callback');
+    assert.ok(clients[0].backgroundScopes.includes('task-return:dispatch'));
     assert.equal(runtimeValues.BETTER_AUTH_URL, 'http://localhost:3000/api/auth');
     assert.equal(runtimeValues.AUTH_TRUSTED_ORIGINS, 'http://localhost:3000,http://localhost:5173');
     assert.equal(runtimeValues.DREAM_API_RESOURCE, 'http://localhost:5173/api');

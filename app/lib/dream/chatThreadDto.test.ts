@@ -1,9 +1,11 @@
+// [Sync] 2026-09-27: task-session navigation DTO rejects identity leakage and invalid link states.
+// [Sync] 2026-09-26: queue DTO rejects invalid statuses, revisions and claim payloads.
 // [Input] Legacy immutable envelope/projection and exact timestamp/identity requirements.
 // [Output] Provider-free strict DTO, malformed-data and precision regression evidence.
 // [Pos] Primary-owned deterministic Thread/message contract tests.
 // [Sync] 2026-09-14: protect original CAS JSON identity, final projection and microsecond/null semantics.
 import { describe, expect, it } from "vitest";
-import { canonicalMessageJson, chatThreadDto, decodeChatMessage, messagePersistInputDto, messagePageInputDto, pgTimestampToIso, threadCreateInputDto } from "./chatThreadDto";
+import { canonicalMessageJson, chatThreadDto, decodeChatMessage, messagePersistInputDto, messagePageInputDto, pgTimestampToIso, queueEntryDto, queueTransitionInputDto, taskSessionLinksResultDto, threadCreateInputDto } from "./chatThreadDto";
 import { validateChatThreadActor } from "./chatThreadService";
 import { principalDto } from "../auth/dto";
 const projection = {
@@ -14,6 +16,14 @@ const projection = {
 };
 const principal = principalDto.parse({ subject: "subject-a", canonical_user_id: "9007199254740993", client_id: "browser-a", scopes: ["dream:read", "dream:write"], status: "active" });
 describe("Thread/message DTO compatibility", () => {
+  it("requires a revisioned queue state and an explicit claim turn", () => {
+    const entry = { message_id: "message-a", thread_id: "thread-a", queue_sequence: "1", status: "queued", revision: 1, dispatch_turn_id: null, created_at: "2026-09-26T00:00:00Z", text: "hello" };
+    expect(queueEntryDto.safeParse(entry).success).toBe(true);
+    expect(queueEntryDto.safeParse({ ...entry, status: "running" }).success).toBe(false);
+    expect(queueEntryDto.safeParse({ ...entry, revision: 0 }).success).toBe(false);
+    expect(queueTransitionInputDto.safeParse({ thread_id: "thread-a", message_id: "message-a", expected_revision: 1, action: "claim", dispatch_turn_id: "turn-a" }).success).toBe(true);
+    expect(queueTransitionInputDto.safeParse({ thread_id: "thread-a", message_id: "message-a", expected_revision: 0, action: "claim", dispatch_turn_id: "turn-a" }).success).toBe(false);
+  });
   it("canonicalizes semantic JSON replay independently of key order/whitespace", () => {
     expect(canonicalMessageJson(JSON.parse('{"b":2,"nested":{"z":1,"a":"你好"}}'))).toBe(canonicalMessageJson({ nested: { a: "你好", z: 1 }, b: 2 }));
     expect(canonicalMessageJson({ parts: ["one", "two"] })).not.toBe(canonicalMessageJson({ parts: ["two", "one"] }));
@@ -77,5 +87,13 @@ describe("Thread/message DTO compatibility", () => {
     expect(() => validateChatThreadActor({ principal, threadScope: "thread-b" }, "chat-message.persist", projection)).toThrow("DREAM_DELEGATION_ENTITY_DENIED");
     expect(() => validateChatThreadActor({ principal, threadScope: "thread-a" }, "chat-thread.list", {})).toThrow("DREAM_DELEGATION_ENTITY_DENIED");
     expect(() => validateChatThreadActor({ principal, threadScope: "thread-a" }, "chat-thread.delete", { thread_id: "thread-a" })).toThrow("DREAM_DELEGATION_SCOPE_REQUIRED");
+  });
+  it("projects only owner-safe task-session navigation fields", () => {
+    const link = { task_id: "task-a", source_thread_id: "thread-a", thread_id: "thread-b", title: "Child task", launch_status: "starting", launch_error_code: null, created_at: "2026-09-27T00:00:00Z" };
+    expect(taskSessionLinksResultDto.parse({ source: { ...link, source_title: "Source" }, created: [link] })).toEqual({ source: { ...link, source_title: "Source" }, created: [link] });
+    expect(taskSessionLinksResultDto.safeParse({ source: null, created: [{ ...link, user_id: "42" }] }).success).toBe(false);
+    expect(taskSessionLinksResultDto.safeParse({ source: null, created: [{ ...link, launch_status: "running" }] }).success).toBe(false);
+    expect(validateChatThreadActor({ principal: { ...principal, scopes: ["dream:read"] }, threadScope: "thread-a" }, "task-session.links", { thread_id: "thread-a" }).canonical_user_id).toBe(principal.canonical_user_id);
+    expect(() => validateChatThreadActor({ principal, threadScope: "thread-a" }, "task-session.links", { thread_id: "thread-b" })).toThrow("DREAM_DELEGATION_ENTITY_DENIED");
   });
 });

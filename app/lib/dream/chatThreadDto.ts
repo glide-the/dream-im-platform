@@ -1,3 +1,7 @@
+// [Sync] 2026-09-27: expose a distinct task creation operation that requests result return.
+// [Sync] 2026-09-27: add an owner-filtered task-session source/created navigation projection.
+// [Sync] 2026-09-27: define strict task-session create/get/launch DTOs and launch states.
+// [Sync] 2026-09-26: define strict queue enqueue/list/transition DTOs and statuses.
 // [Input] Closed Thread/message business operations, separate from ORM entities.
 // [Output] Strict DTOs, exact timestamp/decimal identity projection and semantic message validation.
 // [Pos] Primary-owned Admin Thread/message data contract; Dream keeps its public UI projection.
@@ -52,6 +56,49 @@ export const messageListResultDto = z.strictObject({ messages: z.array(chatMessa
 export const messagePageResultDto = z.strictObject({ messages: z.array(chatMessageDto), has_more: z.boolean(), latest_message_id: entityId.nullable() });
 export const messageDetailResultDto = z.strictObject({ message: chatMessageDto.nullable() });
 export const latestMessageResultDto = z.strictObject({ message_id: entityId.nullable() });
+export const queueStatusDto = z.enum(["queued", "selected", "dispatching", "consumed", "cancelled", "failed", "state_unknown"]);
+export const queueEntryDto = z.strictObject({
+  message_id: entityId, thread_id: entityId, queue_sequence: decimalIdDto,
+  status: queueStatusDto, revision: z.number().int().positive().safe(),
+  dispatch_turn_id: nullableText, created_at: isoTimeDto, text: z.string(),
+});
+export const queueEnqueueInputDto = z.strictObject({
+  thread_id: entityId, message_id: entityId,
+  parts_json: z.string().min(1), metadata_json: z.string().nullable(), title_candidate: z.string(),
+});
+export const queueTransitionInputDto = z.strictObject({
+  thread_id: entityId, message_id: entityId, expected_revision: z.number().int().positive().safe(),
+  action: z.enum(["select", "claim", "consume", "cancel", "fail", "mark_unknown"]),
+  dispatch_turn_id: nullableText,
+});
+export const queueEntryResultDto = z.strictObject({ entry: queueEntryDto });
+export const queueListResultDto = z.strictObject({ entries: z.array(queueEntryDto) });
+export const taskSessionDto = z.strictObject({
+  task_id: entityId, source_thread_id: entityId, thread_id: entityId,
+  title: z.string(), initial_message_id: entityId, initial_message: z.string(),
+  launch_status: z.enum(["pending", "starting", "failed"]), launch_error_code: nullableText,
+  created_at: isoTimeDto,
+});
+export const taskSessionCreateInputDto = z.strictObject({
+  source_thread_id: entityId, request_key: entityId,
+  title: z.string().trim().min(1), initial_message: z.string().trim().min(1),
+  source_message_id: entityId.nullable(), expected_revision: z.number().int().positive().safe().nullable(),
+}).refine(v => (v.source_message_id === null) === (v.expected_revision === null));
+export const taskSessionGetInputDto = z.strictObject({ source_thread_id: entityId, task_id: entityId });
+export const taskSessionLaunchInputDto = taskSessionGetInputDto.extend({
+  action: z.enum(["claim", "fail"]), error_code: nullableText,
+}).refine(v => v.action === "claim" ? v.error_code === null : v.error_code !== null);
+export const taskSessionResultDto = z.strictObject({ task: taskSessionDto.nullable() });
+export const taskSessionLaunchResultDto = z.strictObject({ task: taskSessionDto, changed: z.boolean() });
+export const taskSessionLinkDto = z.strictObject({
+  task_id: entityId, source_thread_id: entityId, thread_id: entityId,
+  title: z.string(), launch_status: z.enum(["pending", "starting", "failed"]),
+  launch_error_code: nullableText, created_at: isoTimeDto,
+});
+export const taskSessionSourceLinkDto = taskSessionLinkDto.extend({ source_title: nullableText });
+export const taskSessionLinksResultDto = z.strictObject({
+  source: taskSessionSourceLinkDto.nullable(), created: z.array(taskSessionLinkDto),
+});
 export const chatThreadOperationContracts = {
   "chat-thread.create": { kind: "write", input: threadCreateInputDto, output: threadCreateResultDto },
   "chat-thread.get": { kind: "read", input: threadIdInputDto, output: threadResultDto },
@@ -67,6 +114,14 @@ export const chatThreadOperationContracts = {
   "chat-message.page": { kind: "read", input: messagePageInputDto, output: messagePageResultDto },
   "chat-message.process-detail": { kind: "read", input: messageDetailInputDto, output: messageDetailResultDto },
   "chat-message.latest": { kind: "read", input: threadIdInputDto, output: latestMessageResultDto },
+  "chat-input.enqueue": { kind: "write", input: queueEnqueueInputDto, output: queueEntryResultDto },
+  "chat-input.list": { kind: "read", input: threadIdInputDto, output: queueListResultDto },
+  "chat-input.transition": { kind: "write", input: queueTransitionInputDto, output: queueEntryResultDto },
+  "task-session.create": { kind: "write", input: taskSessionCreateInputDto, output: taskSessionResultDto },
+  "task-session.get": { kind: "read", input: taskSessionGetInputDto, output: taskSessionResultDto },
+  "task-session.links": { kind: "read", input: threadIdInputDto, output: taskSessionLinksResultDto },
+  "task-session.launch": { kind: "write", input: taskSessionLaunchInputDto, output: taskSessionLaunchResultDto },
+  "task-session.create-returning": { kind: "write", input: taskSessionCreateInputDto, output: taskSessionResultDto },
 } as const;
 export type ChatThreadOperation = keyof typeof chatThreadOperationContracts;
 

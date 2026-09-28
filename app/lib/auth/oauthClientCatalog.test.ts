@@ -1,7 +1,7 @@
 // [Input] Provider-free auth configuration and catalog snapshots.
 // [Output] Deterministic DTO, drift plan and collision validation evidence.
 // [Pos] Unit contract for release-time Dream OAuth client catalog provisioning.
-// [Sync] 2026-09-17: cover public clients plus confidential client_credentials registration.
+// [Sync] 2026-09-28: register task-return dispatch for normal confidential client credentials.
 import { describe, expect, it } from "vitest";
 import { dreamOAuthCatalogDto, planDreamOAuthCatalog } from "./oauthClientCatalog";
 
@@ -11,7 +11,7 @@ const service = {
   origin: "https://dream.example.test",
   oauthClientId: "dream-browser",
   redirectUri: "https://dream.example.test/auth/callback",
-  backgroundScopes: ["capabilities:read"],
+  backgroundScopes: ["capabilities:read", "task-return:dispatch"],
 };
 const environment = {
   BETTER_AUTH_URL: "https://admin.example.test/api/auth",
@@ -31,7 +31,7 @@ describe("Dream OAuth client catalog", () => {
     expect(target.clients).toEqual(expect.arrayContaining([
       expect.objectContaining({ clientId: "dream-browser", redirectUris: [service.redirectUri], tokenEndpointAuthMethod: "none", requirePKCE: true, grantTypes: ["authorization_code", "refresh_token"] }),
       expect.objectContaining({ clientId: "dream-device", redirectUris: [], tokenEndpointAuthMethod: "none", applicationType: "native", requirePKCE: false, grantTypes: ["refresh_token", "urn:ietf:params:oauth:grant-type:device_code"] }),
-      expect.objectContaining({ clientId: "dream-service", redirectUris: [], tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], clientCredentialsScopes: ["capabilities:read"] }),
+      expect.objectContaining({ clientId: "dream-service", redirectUris: [], tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], clientCredentialsScopes: ["capabilities:read", "task-return:dispatch"] }),
     ]));
     expect(JSON.stringify(target)).not.toContain(service.secret);
     expect(target.clients.find(client => client.clientId === service.id)?.clientSecretHash).toMatch(/^[A-Za-z0-9_-]{43}$/);

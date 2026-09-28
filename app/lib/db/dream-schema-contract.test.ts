@@ -1,3 +1,5 @@
+// [Sync] 2026-09-27: include the additive task-result relation.
+// [Sync] 2026-09-26: include the additive durable Chat input queue relation.
 // [Input] Complete Admin-owned Dream Drizzle schema export.
 // [Output] Exact count and classification evidence that canonical and Dream tables remain fully declared.
 // [Pos] Shared PostgreSQL schema inventory contract test.
@@ -17,7 +19,7 @@ import {
 } from "./schema";
 
 describe("complete Dream Drizzle schema", () => {
-  it("declares exactly 60 Dream and canonical baseline tables", () => {
+  it("declares exactly 63 Dream and canonical baseline tables", () => {
     const generatedNames = Object.values(dreamSchema)
       .filter(isTable)
       .map(getTableName);
@@ -31,7 +33,7 @@ describe("complete Dream Drizzle schema", () => {
     );
     const allNames = [...generatedNames, ...canonicalBaselineNames];
 
-    expect(generatedNames).toHaveLength(57);
+    expect(generatedNames).toHaveLength(60);
     expect(managedMcpNames).toEqual([
       "dream_mcp_servers",
       "dream_mcp_credentials",
@@ -45,7 +47,10 @@ describe("complete Dream Drizzle schema", () => {
     ]);
     expect(generatedNames).toContain("claude_agent_resource_snapshots");
     expect(generatedNames).toContain("reflection_task_section");
-    expect(allNames).toHaveLength(60);
-    expect(new Set(allNames).size).toBe(60);
+    expect(generatedNames).toContain("chat_input_queue");
+    expect(generatedNames).toContain("chat_task_session");
+    expect(generatedNames).toContain("chat_task_result");
+    expect(allNames).toHaveLength(63);
+    expect(new Set(allNames).size).toBe(63);
   });
 });

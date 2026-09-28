@@ -2,6 +2,7 @@
 // [Input] Existing ignored Admin env files and secure random material.
 // [Output] Mode-0600 local/Compose config preserving unified auth/data policy and Provider overrides.
 // [Pos] Base configuration generator for the Admin workspace.
+// [Sync] 2026-09-28: include the task-result service scope in generated and validated clients.
 // [Sync] 2026-09-16: use localhost as the single local Admin OAuth origin so the Google callback matches the registered web client.
 // [Sync] 2026-09-17: preserve and validate the independent Admin management-session TTL.
 // [Sync] 2026-09-16: emit dotenv-compatible lossless quoting for structured Better Auth/Dream DTO configuration.
@@ -343,6 +344,7 @@ function unifiedAuthDataConfiguration(existing, options) {
       "plugins:catalog",
       "reflections:execute",
       "story-confirmation:dispatch",
+      "task-return:dispatch",
     ],
   }]);
   return [
@@ -1015,7 +1017,7 @@ function validateUnifiedAuthData(values, file, errors) {
   let oauthClientIds = new Set();
   try {
     const clients = JSON.parse(values.get("DREAM_DATA_SERVICE_CLIENTS") ?? "");
-    const allowedScopes = new Set(["capabilities:read", "resource-policy:read", "resource-observer:write", "connectors:sync", "plugins:catalog", "reflections:execute", "story-confirmation:dispatch"]);
+    const allowedScopes = new Set(["capabilities:read", "resource-policy:read", "resource-observer:write", "connectors:sync", "plugins:catalog", "reflections:execute", "story-confirmation:dispatch", "task-return:dispatch"]);
     const resourceOrigin = isExactServiceUrl(resource) ? new URL(resource).origin : "";
     const valid = Array.isArray(clients) && clients.length > 0
       && new Set(clients.map(client => client?.id)).size === clients.length

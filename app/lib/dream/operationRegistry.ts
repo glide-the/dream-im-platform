@@ -1,3 +1,7 @@
+// [Sync] 2026-09-27: append Registry199-204 returning-task and result handoff operations.
+// [Sync] 2026-09-27: append the task-session links descriptor under the existing v2 capability.
+// [Sync] 2026-09-27: append task-session create/get/launch descriptors with exact schema capability.
+// [Sync] 2026-09-26: append queue operation descriptors with exact schema capability.
 // [Sync] 2026-09-16: append Story Workspace Artifact database ownership as Registry185-191.
 // [Sync] 2026-09-16: append service-only builtin reconciliation as Registry183-184.
 // [Sync] 2026-09-16: append Deck Plugin control plane as Registry170-174.
@@ -21,10 +25,11 @@ import { resourcePolicyReadInputDto, resourcePolicyReadOutputDto, resourceObserv
 import type { SchemaRequirement } from "./database";
 import { identitySchemaRequirement, reflectionTaskSchemaRequirements, workflowPreflightExecutionSchemaRequirements } from "./schemaRequirements";
 import { chatThreadOperationContracts } from "./chatThreadDto";
-import { chatThreadSchemaRequirements } from "./chatThreadService";
+import { chatThreadSchemaRequirements, chatInputQueueSchemaRequirement, chatTaskSessionSchemaRequirement, chatTaskResultSchemaRequirement } from "./chatThreadService";
+import { taskSessionResultContracts } from "./taskSessionResultDto";
+import { runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement } from "./schemaRequirements";
 import { userProfileInputDto, userProfileOutputDto } from "./userProfileDto";
 import { editorSessionOperationContracts } from "./editorSessionDto";
-import { runtimePurposeSchemaRequirement } from "./schemaRequirements";
 import { workflowContextOperationContracts } from "./workflowContextDto";
 import { dreamUnifiedSchemaRequirement } from "./chatThreadService";
 import { deckVoiceOperationContracts } from "./deckVoiceDto";
@@ -98,7 +103,7 @@ function descriptor(name: string, kind: "read" | "write", backgroundScope: strin
 export const dreamOperations = [
   descriptor("resource-policy.read", "read", "resource-policy:read", resourcePolicyReadInputDto, resourcePolicyReadOutputDto, [policy.observer, policy.claudeCodeRuntime]),
   descriptor("resource-observer.publish", "write", "resource-observer:write", resourceObserverPublishInputDto, resourceObserverPublishOutputDto, [policy.observer, identitySchemaRequirement]),
-  ...Object.entries(chatThreadOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...chatThreadSchemaRequirements], operation.kind === "read" ? "dream:read" : "dream:write")),
+  ...Object.entries(chatThreadOperationContracts).filter(([name]) => !name.startsWith("chat-input.") && !name.startsWith("task-session.")).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...chatThreadSchemaRequirements], operation.kind === "read" ? "dream:read" : "dream:write")),
   descriptor("user-profile.current", "read", null, userProfileInputDto, userProfileOutputDto, [identitySchemaRequirement], "dream:read"),
   ...Object.entries(editorSessionOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, runtimePurposeSchemaRequirement], operation.userScope)),
   ...Object.entries(workflowContextOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
@@ -217,5 +222,16 @@ export const dreamOperations = [
   ...Object.entries(storyWorkspaceArtifactOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...storyWorkspaceArtifactSchemaRequirements], operation.userScope,
+  )),
+  ...Object.entries(chatThreadOperationContracts).filter(([name]) => name.startsWith("chat-input.") || name.startsWith("task-session.")).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...chatThreadSchemaRequirements, ...(name.startsWith("chat-input.") ? [chatInputQueueSchemaRequirement] : [chatTaskSessionSchemaRequirement, chatInputQueueSchemaRequirement]), ...(name === "task-session.create-returning" ? [chatTaskResultSchemaRequirement] : [])],
+    operation.kind === "read" ? "dream:read" : "dream:write",
+  )),
+  ...Object.entries(taskSessionResultContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, operation.backgroundScope, operation.input, operation.output,
+    [identitySchemaRequirement, ...chatThreadSchemaRequirements, chatTaskSessionSchemaRequirement,
+      chatTaskResultSchemaRequirement, ...(operation.audience === "background" ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : [])],
+    operation.userScope,
   )),
 ] as const;

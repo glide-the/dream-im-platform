@@ -1,4 +1,5 @@
-// [Input] Admin OAuth user grant or exact Admin-owned confirmation claim; capability-gated data UOW.
+// [Input] Admin OAuth user grant or exact Admin-owned confirmation/task-result claim; capability-gated data UOW.
+// [Sync] 2026-09-27: issue only source-Thread persistence grants from a live task-result claim.
 // [Output] Encrypted-recoverable creation and claim-fenced renewal/revocation/actor projection.
 // [Pos] Admin sole long-turn authority; no external actor IDs or Runtime service secrets.
 // [Sync] 2026-09-17: recover a claim grant without reversing the claim-message/grant lock order.
@@ -273,6 +274,70 @@ export class DelegationService {
     return result;
   }
 
+  async createForTaskResultClaim(
+    service: { id: string; oauthClientId: string; backgroundScopes: readonly string[] },
+    binding: { notificationId: string; claimId: string; actorId: string; threadId: string },
+    purpose: "server-persistence" | "gateway-cli",
+  ) {
+    if (!service.backgroundScopes.includes("task-return:dispatch")) throw new AuthBoundaryError("DREAM_SERVICE_SCOPE_REQUIRED", 403);
+    const source = await this.repository.taskResultClaimSource(binding.notificationId, binding.claimId, binding.actorId, binding.threadId);
+    if (!source || source.actorId !== binding.actorId || source.sourceThreadId !== binding.threadId)
+      throw new AuthBoundaryError("TASK_SESSION_RETURN_UNAVAILABLE", 409);
+    const identity = await new SubjectRepository(this.tx).findActiveByCanonicalUserId(binding.actorId);
+    if (!identity || !await this.repository.ownsEntities(binding.actorId, binding.threadId, null))
+      throw new AuthBoundaryError("ACTIVE_SUBJECT_REQUIRED", 403);
+    const scopes = purpose === "gateway-cli"
+      ? ["messages:create", "messages:count_tokens", "models:list"] as const
+      : ["dream:read", "dream:write"] as const;
+    let gatewayApiKeyId: string | null = null;
+    if (purpose === "gateway-cli") {
+      const gatewayBinding = gatewayClientForService(service.id);
+      if (!gatewayBinding.oauth_client_ids.includes(service.oauthClientId)) throw new AuthBoundaryError("DELEGATION_CLIENT_DENIED", 403);
+      const key = await this.repository.gatewayKeyForClient(gatewayBinding.gateway_client_id);
+      if (!key || scopes.some(scope => !key.scopes.includes(scope))) throw new AuthBoundaryError("GATEWAY_SCOPE_REQUIRED", 403);
+      gatewayApiKeyId = key.id;
+    }
+    const requestId = `task-result_${delegationHash(canonicalContractJson([service.id, binding.notificationId, binding.claimId, purpose]))}`;
+    const inputSha256 = delegationHash(canonicalContractJson({ authority_source: "task-result-claim",
+      service_client_id: service.id, auth_user_id: identity.authUserId,
+      canonical_user_id: binding.actorId, thread_id: binding.threadId,
+      notification_id: binding.notificationId, claim_id: binding.claimId,
+      purpose, scopes, gateway_api_key_id: gatewayApiKeyId }));
+    const prior = await this.repository.findTaskResultClaimCreation(service.id, binding.notificationId, binding.claimId, purpose);
+    if (prior) {
+      if (prior.authUserId !== identity.authUserId || prior.canonicalUserId.toString() !== binding.actorId
+        || prior.threadId !== binding.threadId || prior.requestId !== requestId || prior.inputSha256 !== inputSha256
+        || prior.authoritySource !== "task-result-claim" || prior.purpose !== purpose
+        || prior.gatewayApiKeyId !== gatewayApiKeyId
+        || prior.revokedAt || prior.expiresAt <= new Date() || !prior.tokenCiphertext || !prior.maximumExpiresAt)
+        throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+      const recovered = delegationOutputDto.parse(decryptAuthBundle(prior.tokenCiphertext));
+      if (delegationHash(recovered.token) !== prior.tokenHash || recovered.thread_id !== binding.threadId
+        || recovered.run_id !== null || recovered.purpose !== purpose
+        || canonicalContractJson(recovered.scopes) !== canonicalContractJson(scopes))
+        throw new AuthBoundaryError("DELEGATION_RECOVERY_INVALID");
+      return recovered;
+    }
+    const policy = delegationPolicy(); const now = Date.now();
+    const token = `idg_${randomBytes(32).toString("base64url")}`;
+    const expiresAt = new Date(now + policy.ttl * 1_000);
+    const maximumExpiresAt = new Date(now + policy.maximumTtl * 1_000);
+    const granted = delegationOutputDto.parse({ token, expires_at: expiresAt.toISOString(),
+      maximum_expires_at: maximumExpiresAt.toISOString(), purpose,
+      thread_id: binding.threadId, run_id: null, editor_session_id: null,
+      scopes });
+    await this.repository.create({ tokenHash: delegationHash(token), serviceClientId: service.id,
+      authUserId: identity.authUserId, oauthClientId: service.oauthClientId,
+      canonicalUserId: BigInt(binding.actorId), threadId: binding.threadId, runId: null,
+      purpose, editorSessionId: null, scopes: [...scopes],
+      gatewayApiKeyId, requestId, inputSha256, tokenCiphertext: encryptAuthBundle(granted),
+      authoritySource: "task-result-claim", sourceMessageId: null, sourceClaimId: null,
+      sourceReflectionAuthorityHash: null, sourceTaskResultId: binding.notificationId,
+      sourceTaskResultClaimId: binding.claimId, expiresAt, maximumExpiresAt });
+    await this.repository.auditCreation(service.id, requestId, inputSha256, delegationHash(token));
+    return granted;
+  }
+
   private validConfirmationSource(
     source: Awaited<ReturnType<DelegationRepository["confirmationClaimSource"]>>,
     binding: ConfirmationGrantBinding,
@@ -295,10 +360,12 @@ export class DelegationService {
   private async requireActiveAuthoritySource(row: NonNullable<Awaited<ReturnType<DelegationRepository["lock"]>>>) {
     const emptySource = row.authoritySource == null
       && row.sourceMessageId == null && row.sourceClaimId == null
-      && row.sourceReflectionAuthorityHash == null;
+      && row.sourceReflectionAuthorityHash == null
+      && row.sourceTaskResultId == null && row.sourceTaskResultClaimId == null;
     if (emptySource) return;
     if (row.authoritySource === "story-confirmation-claim") {
-      if (!row.sourceMessageId || !row.sourceClaimId || row.sourceReflectionAuthorityHash !== null
+      if (!row.sourceMessageId || !row.sourceClaimId || row.sourceReflectionAuthorityHash != null
+        || row.sourceTaskResultId != null || row.sourceTaskResultClaimId != null
         || !row.runId || row.purpose !== "server-persistence" || row.editorSessionId !== null
         || row.gatewayApiKeyId !== null) throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
       const source = await this.repository.confirmationClaimSource(
@@ -311,7 +378,8 @@ export class DelegationService {
       return;
     }
     if (row.authoritySource === "reflection-task-authority") {
-      if (row.sourceMessageId !== null || row.sourceClaimId !== null
+      if (row.sourceMessageId != null || row.sourceClaimId != null
+        || row.sourceTaskResultId != null || row.sourceTaskResultClaimId != null
         || !row.sourceReflectionAuthorityHash || row.runId !== null
         || row.purpose !== "gateway-cli" || row.editorSessionId !== null
         || row.gatewayApiKeyId === null) throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
@@ -329,6 +397,18 @@ export class DelegationService {
         || row.maximumExpiresAt > new Date(source.authority.maximum_expires_at)) {
         throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
       }
+      return;
+    }
+    if (row.authoritySource === "task-result-claim") {
+      if (row.sourceMessageId != null || row.sourceClaimId != null || row.sourceReflectionAuthorityHash != null
+        || !row.sourceTaskResultId || !row.sourceTaskResultClaimId
+        || !["server-persistence", "gateway-cli"].includes(row.purpose ?? "")
+        || row.runId !== null || row.editorSessionId !== null
+        || (row.purpose === "server-persistence") !== (row.gatewayApiKeyId === null))
+        throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
+      const source = await this.repository.taskResultClaimSource(row.sourceTaskResultId,
+        row.sourceTaskResultClaimId, row.canonicalUserId.toString(), row.threadId);
+      if (!source) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
       return;
     }
     throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);

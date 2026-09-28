@@ -1,3 +1,5 @@
+<!-- [Sync] 2026-09-28: retain task-return dispatch as a compatibility scope; current Dream wait_threads does not request it. -->
+<!-- [Sync] 2026-09-27: document candidate Registry199-204 task-result handoff without claiming normal database activation. -->
 <!-- [Sync] 2026-09-17: define one-way claim-message/grant locking for confirmation authority recovery. -->
 <!-- [Sync] 2026-09-17: define exact legacy Dream credential adoption through DTO/service/typed Drizzle without Admin-domain merging. -->
 <!-- [Sync] 2026-09-17: register confidential service clients and freeze service-only versus dual-Bearer internal transport. -->
@@ -6,7 +8,7 @@
 <!-- [Sync] 2026-09-16: publish normal database migration 0063 and document strict DTO/domain/Drizzle Gateway service-key rotation. -->
 <!-- [Sync] 2026-09-16: bind Reflections Runtime Gateway access to an Admin-issued source-fenced delegation. -->
 <!-- [Sync] 2026-09-16: fix the local auth topology at localhost for the Admin issuer, Google callback and Dream callback/resource registrations. -->
-<!-- [Sync] 2026-09-16: record Registry191 source closure; normal database activation is complete and real business acceptance remains partial. -->
+<!-- [Sync] 2026-09-27: record append-only Registry192-198 Chat queue/task-session contracts, including owner-scoped task navigation links. -->
 <!-- [Sync] 2026-09-16: register automatic-repair message settlement as Registry169. -->
 <!-- [Sync] 2026-09-16: register Notion connector persistence as Registry148-168. -->
 <!-- [Sync] 2026-09-16: register Dream launch Runtime scope/current/replay as Registry130-132. -->
@@ -23,7 +25,17 @@
 
 # Admin / Dream 认证与领域数据契约
 
-版本`0.1`。状态：源码实现、正常数据库54→64 migration、三服务角色/ACL/9项发布门槛capability 激活与 Admin/Dream 服务切换已经完成；精确旧 Google 主体采用、精确旧 Dream credential 采用、真实 Google/credential 返回 Dream 和 Device approve/deny/refresh/revoke 已通过。0063 已在正常库发布，Dream 模型入口经 Gateway key exact-scope rotation 后返回200，启用的外部MCP OAuth replacement仍待完成后复测可见模型输出。[实际191操作契约](admin-dream-operation-contracts.json)由真实Zod输入/输出与注册表生成。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin和Registry185-191 Story Workspace artifact在既有Registry169前缀后追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；该证据与真实 Google/Device/模型业务回执分别记录，不能相互替代。本稿不是完整生产部署声明。
+版本`0.1`。状态：既有认证与管理服务已按下述协议运行；本次 Registry199-204 和迁移 0068 仅在工作树与隔离 PostgreSQL 验证，正常数据库尚未激活。精确旧 Google 主体采用、精确旧 Dream credential 采用、真实 Google/credential 返回 Dream 和 Device approve/deny/refresh/revoke 已通过。Dream 模型入口经 Gateway key exact-scope rotation 后返回200，启用的外部MCP OAuth replacement仍待完成后复测可见模型输出。[204 操作源码契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成，是否可用仍由各操作的物理 capability 判定。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin、Registry185-191 Story Workspace artifact、Registry192-198 Chat queue/task-session和 Registry199-204 task-result 操作按append-only顺序追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；该证据与真实 Google/Device/模型业务回执分别记录，不能相互替代。本稿不是完整生产部署声明。
+
+## Registry199–204：独立任务结果交接兼容候选
+
+Registry199 的 `task-session.create-returning` 保存明确回传意图；Registry200–204 的完成提交、来源读取、指定领取、终态结算和服务端恢复领取按 [任务结果交接合同](admin-dream-task-result-handoff.md)执行。当前 Dream 通过父轮次内的 `wait_threads` 等待目标任务，不调用这些操作，也不需要 `task-return:dispatch`。0068 的 `dream.chat-task-result.v1` 只有在后续明确启用兼容消费者时才可发布并宣告可用。本工作树只在具名隔离 PostgreSQL 验证 migration、权限与 Admin 授权链，未迁移正常 `ink-memory` 数据库。
+
+## Registry192–198：Chat 输入队列与任务会话关系
+
+Registry192–198 在字节稳定的 Registry191 后依次追加 `chat-input.enqueue/list/transition` 与 `task-session.create/get/links/launch`。OAuth 或精确 Thread grant 派生 canonical actor；所有查询和变更再次绑定 actor-owned Thread。`task-session.links` 是只读关系投影，输入仅含当前 `thread_id`，返回可空来源关系和按 `created_at,id` 排序的创建清单；输出只含业务 task/Thread ID、标题、launch 状态、错误码和时间，不返回 Claude session、进程、转录路径、取消句柄或数据库字段。
+
+`task-session.links` operation SHA 为 `f9c1bcfec4308aa6fc8f0bc977a48f34b95cb719b143b0544f6b1178edb7f1b3`。Registry191 前缀 SHA 保持 `508731c75d4db117d587566f16cab423bd9dc41528a2b60599106623d61e2d58`，完整 Registry198 SHA 为 `a30720d1a30313175347cb2354fea23eb4372bdf5ec47836d122836aa2252678`。任务导航复用已经发布的 `chat_task_session` 与 `dream.chat-task-session.v2`，没有新增 schema 或 migration。
 
 本机浏览器验收使用单一显式拓扑：Admin issuer 为 `http://localhost:3000/api/auth`，Google 回调为 `http://localhost:3000/api/auth/callback/google`，Dream origin/callback/resource 分别为 `http://localhost:5173`、`http://localhost:5173/auth/callback` 和 `http://localhost:5173/api`。`127.0.0.1` 只可作为进程内部连接地址，不能混入 OAuth issuer、redirect URI、Cookie origin 或浏览器 CSRF 判断。AutoDL 发布从当前实例环境读取 `AUTODL_ADMIN_PUBLIC_ORIGIN` 与 `AUTODL_DREAM_PUBLIC_ORIGIN`，再派生 issuer、Google callback、Dream callback、resource、trusted origins 和服务客户端绑定；仓库不保存固定公网域名，实例映射变化后必须重新投影两端运行配置。
 
@@ -392,7 +404,7 @@ sequenceDiagram
 
 ### 服务身份、领域请求与恢复
 
-前缀`/api/internal/dream/v1`。Dream 服务端先用 `INK_ADMIN_DREAM_SERVICE_CLIENT_ID` 和仅服务端持有的 `INK_ADMIN_DREAM_SERVICE_SECRET` 调用 Admin `/oauth2/token` 的 `client_credentials` grant，取得最长300秒、`sub == client_id`且只含配置 background scope 的 service access token。后台operation把该token放在`Authorization: Bearer`；用户operation把用户delegated access token放在`Authorization`，再以`X-Ink-Dream-Service-Authorization: Bearer <service access token>`证明同一confidential client。Browser代理剥离该私有头的输入和输出；旧`X-Ink-Dream-Service`/`X-Ink-Dream-Credential`静态头直接拒绝。Admin分别验证两个token的签名、issuer、resource、client、scope和主体，再从用户token `sub`映射canonical Dream user；任一缺失或错配都失败关闭，不能从client ID、邮箱或请求体user ID推导用户。`DREAM_DATA_SERVICE_CLIENTS`是严格服务端配置：每项`{id,secret,origin,oauthClientId,redirectUri,backgroundScopes}`，其中secret只用于配置/目录校验与client注册，数据请求不传明文secret；backgroundScopes只取`capabilities:read/resource-policy:read/resource-observer:write/connectors:sync/plugins:catalog/reflections:execute/story-confirmation:dispatch`明确子集。handle绑定service client/origin/OAuth client，不能跨client resolve。后台policy/observer/startup/scheduled connector及Reflections worker只走服务scope，不能借它查询任意user数据或取得Admin RBAC。
+前缀`/api/internal/dream/v1`。Dream 服务端先用 `INK_ADMIN_DREAM_SERVICE_CLIENT_ID` 和仅服务端持有的 `INK_ADMIN_DREAM_SERVICE_SECRET` 调用 Admin `/oauth2/token` 的 `client_credentials` grant，取得最长300秒、`sub == client_id`且只含配置 background scope 的 service access token。后台operation把该token放在`Authorization: Bearer`；用户operation把用户delegated access token放在`Authorization`，再以`X-Ink-Dream-Service-Authorization: Bearer <service access token>`证明同一confidential client。Browser代理剥离该私有头的输入和输出；旧`X-Ink-Dream-Service`/`X-Ink-Dream-Credential`静态头直接拒绝。Admin分别验证两个token的签名、issuer、resource、client、scope和主体，再从用户token `sub`映射canonical Dream user；任一缺失或错配都失败关闭，不能从client ID、邮箱或请求体user ID推导用户。`DREAM_DATA_SERVICE_CLIENTS`是严格服务端配置：每项`{id,secret,origin,oauthClientId,redirectUri,backgroundScopes}`，其中secret只用于配置/目录校验与client注册，数据请求不传明文secret；backgroundScopes只取`capabilities:read/resource-policy:read/resource-observer:write/connectors:sync/plugins:catalog/reflections:execute/story-confirmation:dispatch/task-return:dispatch`明确子集。handle绑定service client/origin/OAuth client，不能跨client resolve。后台policy/observer/startup/scheduled connector、Reflections与task result worker只走服务scope，不能借它查询任意user数据或取得Admin RBAC。
 
 OAuth客户端目录不由Dream或浏览器动态注册。发布阶段运行`pnpm auth:provision-dream-oauth`只读取并输出脱敏计划；显式追加`--apply`后，Admin把同一份已校验配置转换为资源、浏览器public client、设备public client和client-resource关联DTO，在一个认证数据库UOW中通过Drizzle ORM幂等写入并回读校验。浏览器client固定使用Authorization Code、PKCE和无client secret；设备client固定使用RFC 8628 grant且无client secret；二者都不能绕过consent。地址、client id、resource和scope来自服务端配置。动态客户端注册继续关闭，运行时启动不执行DDL或客户端写入。
 
@@ -480,7 +492,7 @@ sequenceDiagram
 
 ### 领域职责与验收覆盖表（源码和本机正常切换完成；真实验收部分待执行）
 
-下表保留原领域拆分与事务/权限要求。对应191个命名operation已实现并由生成契约、隔离PostgreSQL/ACL与Dream源码关闭门禁覆盖；正常数据库migration/role activation、服务重启及真实账户业务旅程仍按发布计划单独验收。
+下表保留原领域拆分与事务/权限要求。对应198个命名operation已实现并由生成契约、隔离PostgreSQL/ACL与Dream源码关闭门禁覆盖；正常数据库migration/role activation、服务重启及真实账户业务旅程仍按发布计划单独验收。
 
 | 域/原模块 | Admin领域operation职责 | 必须保留的事务/权限 |
 | --- | --- | --- |
