@@ -1,7 +1,7 @@
 // [Input] Strict scheduled-task DTO, verified OAuth/Thread actor or scoped service and one capability-gated transaction.
 // [Output] Owner-filtered effective definitions, date/history projections, fenced claims and TaskSession preparation.
 // [Pos] Admin scheduled Chat domain service and repository boundary; Dream owns the shared Chat runtime and model admission.
-// [Sync] 2026-09-28: implement once/daily CAS, fenced claim renewal, idempotent target creation and safe reconciliation.
+// [Sync] 2026-09-28: implement once/daily CAS, fenced renewal and malformed-metadata-safe final reconciliation.
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -53,6 +53,14 @@ function projectTrigger(row: TriggerRow) {
     target_thread_id: row.target_thread_id, input_message_id: row.input_message_id, target_turn_id: row.target_turn_id, final_message_id: row.final_message_id,
     error_code: row.error_code, skipped_from_at: instant(row.skipped_from_at), skipped_through_at: instant(row.skipped_through_at),
     created_at: instant(row.created_at), updated_at: instant(row.updated_at) });
+}
+function isCompletedTurn(metadataText: string | null, targetTurnId: string) {
+  try {
+    const metadata: unknown = JSON.parse(metadataText ?? "null");
+    return !!metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      && "turnStatus" in metadata && metadata.turnStatus === "completed"
+      && "turnId" in metadata && metadata.turnId === targetTurnId;
+  } catch { return false; }
 }
 async function databaseNow(tx: DataTransaction) {
   const result = await tx.execute(sql<{ now: string }>`SELECT CURRENT_TIMESTAMP::text AS now`);
@@ -347,14 +355,8 @@ async function finishOne(tx: DataTransaction, service: ScheduledTaskService, inp
     if (!["running", "state_unknown"].includes(row.status) || !row.target_thread_id || !row.target_turn_id || !input.final_message_id || input.error_code !== null) throw new AuthBoundaryError("SCHEDULE_FINAL_INVALID", 400);
     const final = (await tx.select({ id: message.id, role: message.role, projection: message.history_projection_version,
       metadata: message.metadata }).from(message).where(and(eq(message.id, input.final_message_id), eq(message.thread_id, row.target_thread_id))).limit(1))[0];
-    let completed = false;
-    try {
-      const metadata: unknown = JSON.parse(final?.metadata ?? "null");
-      completed = !!metadata && typeof metadata === "object" && !Array.isArray(metadata)
-        && "turnStatus" in metadata && metadata.turnStatus === "completed"
-        && "turnId" in metadata && metadata.turnId === row.target_turn_id;
-    } catch { /* Malformed metadata cannot prove a completed turn. */ }
-    if (!final || final.role !== "assistant" || final.projection !== 1 || !completed) throw new AuthBoundaryError("SCHEDULE_FINAL_INVALID", 409);
+    if (!final || final.role !== "assistant" || final.projection !== 1
+      || !isCompletedTurn(final.metadata, row.target_turn_id)) throw new AuthBoundaryError("SCHEDULE_FINAL_INVALID", 409);
   } else if (input.final_message_id !== null) throw new AuthBoundaryError("SCHEDULE_FINAL_INVALID", 400);
   if (input.status === "failed" && input.error_code === null || !["failed", "state_unknown"].includes(input.status) && input.error_code !== null) throw new AuthBoundaryError("SCHEDULE_ERROR_INVALID", 400);
   const updated = (await tx.update(trigger).set({ status: input.status, final_message_id: input.final_message_id,
@@ -369,12 +371,11 @@ async function reconcileOne(tx: DataTransaction, service: ScheduledTaskService, 
   const now = await databaseNow(tx);
   if (row.status !== "state_unknown" && (!row.lease_expires_at || new Date(row.lease_expires_at) > now)) return dto.reconcileScheduledTriggerResultDto.parse({ trigger: projectTrigger(row) });
   if (row.target_thread_id && row.target_turn_id) {
-      const final = (await tx.select({ id: message.id }).from(message).where(and(
+      const candidates = await tx.select({ id: message.id, metadata: message.metadata }).from(message).where(and(
         eq(message.thread_id, row.target_thread_id), eq(message.role, "assistant"),
         eq(message.history_projection_version, 1),
-        sql`${message.metadata}::jsonb ->> 'turnStatus' = 'completed'`,
-        sql`${message.metadata}::jsonb ->> 'turnId' = ${row.target_turn_id}`,
-      )).limit(1))[0];
+      ));
+      const final = candidates.find(candidate => isCompletedTurn(candidate.metadata, row.target_turn_id));
       if (final) {
         const succeeded = (await tx.update(trigger).set({ status: "succeeded", final_message_id: final.id,
           lease_expires_at: null, error_code: null, updated_at: sql`CURRENT_TIMESTAMP` })
