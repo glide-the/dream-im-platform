@@ -1,7 +1,7 @@
 // [Input] Installed Better Auth schema, Drizzle declarations and frozen expand migration/snapshot.
 // [Output] Source descriptor, SQL capability ordering and immutable-candidate integrity evidence.
 // [Pos] Provider-free auth schema contract checks; never executes migrations.
-// [Sync] 2026-09-16: verify additive Reflections-authority binding against current Drizzle ORM.
+// [Sync] 2026-09-27: verify frozen Reflections columns after additive task-result bindings.
 // [Sync] 2026-09-16: verify additive confirmation-claim binding against current Drizzle ORM.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -137,12 +137,13 @@ describe("Reflections authority delegation binding migration", () => {
   it("matches the current ORM, snapshot, capability hash and source-fencing SQL", () => {
     const config = getTableConfig(runtimeDelegations);
     const table = reflectionAuthorityContract.tables["identity.runtime_delegations"];
-    expect(config.columns).toHaveLength(22);
-    expect(config.columns.map(column => column.name).sort()).toEqual(Object.keys(table.columns).sort());
+    const originalColumns = config.columns.filter(column => column.name in table.columns);
+    expect(originalColumns).toHaveLength(22);
+    expect(originalColumns.map(column => column.name).sort()).toEqual(Object.keys(table.columns).sort());
     for (const [key, value] of Object.entries(reflectionAuthorityContract.tables)) {
       expect(value).toEqual(reflectionAuthoritySnapshot.tables[key as keyof typeof reflectionAuthoritySnapshot.tables]);
     }
-    for (const column of config.columns) {
+    for (const column of originalColumns) {
       const expected = table.columns[column.name as keyof typeof table.columns];
       expect(column.getSQLType()).toBe(expected.type); expect(column.notNull).toBe(expected.notNull);
     }

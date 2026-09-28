@@ -1,3 +1,7 @@
+// [Sync] 2026-09-27: require the task-result capability for returning task creation.
+// [Sync] 2026-09-27: expose task-session navigation links under the existing v2 capability.
+// [Sync] 2026-09-27: gate task-session operations on Admin Drizzle v2 capability.
+// [Sync] 2026-09-26: gate queue operations on the Admin Drizzle capability.
 // [Input] Strict named business DTO, Admin-verified principal/thread delegation and caller-owned UOW.
 // [Output] Validated Thread/message DTO result; mutation and generic receipt commit in the same transaction.
 // [Pos] Primary-owned Admin domain service, consumed by the provider operation handler.
@@ -7,6 +11,9 @@ import { principalDto, type PrincipalDto } from "../auth/dto";
 import type { DataTransaction, SchemaRequirement } from "./database";
 import { ChatThreadRepository } from "./chatThreadRepository";
 import * as dto from "./chatThreadDto";
+import chatInputQueueContract from "../../../drizzle/contracts/dream-chat-input-queue-v1.json";
+import chatTaskSessionContract from "../../../drizzle/contracts/dream-chat-task-session-v2.json";
+import chatTaskResultContract from "../../../drizzle/contracts/dream-chat-task-result-v1.json";
 
 // Published physical capabilities from immutable Admin 0033/0042/0043.
 // 0033 supersedes the 0032 unified v1 digest without changing its version. API
@@ -17,13 +24,27 @@ export const chatThreadSchemaRequirements: readonly SchemaRequirement[] = [
   { capability: "dream.chat-history-keyset-pagination.v1", version: 1, contractSha256: "a0dfe5f8d4b4330a9e17db07a8716d5d2bc25e291f3624f09005e79c01fc8ab0" },
   { capability: "dream.chat-history-final-projection.v1", version: 1, contractSha256: "50c27f86113c170064b0913bf052f9bd12884d3345c920d7b11468a768e0a432" },
 ];
+export const chatInputQueueSchemaRequirement: SchemaRequirement = {
+  capability: "dream.chat-input-queue.v1", version: 1,
+  contractSha256: chatInputQueueContract.contract_sha256,
+};
+export const chatTaskSessionSchemaRequirement: SchemaRequirement = {
+  capability: "dream.chat-task-session.v2", version: 2,
+  contractSha256: chatTaskSessionContract.contract_sha256,
+};
+export const chatTaskResultSchemaRequirement: SchemaRequirement = {
+  capability: "dream.chat-task-result.v1", version: 1,
+  contractSha256: chatTaskResultContract.contract_sha256,
+};
 export type ChatThreadActor = { principal: PrincipalDto; threadScope: string | null };
 export function validateChatThreadActor(actor: ChatThreadActor, operation: dto.ChatThreadOperation, input: unknown) {
   const principal = principalDto.parse(actor.principal);
   const kind = dto.chatThreadOperationContracts[operation].kind;
   if (!principal.scopes.includes(kind === "read" ? "dream:read" : "dream:write")) throw new AuthBoundaryError("DREAM_SCOPE_REQUIRED", 403);
   if (actor.threadScope !== null) {
-    if (!input || typeof input !== "object" || !("thread_id" in input) || input.thread_id !== actor.threadScope) throw new AuthBoundaryError("DREAM_DELEGATION_ENTITY_DENIED", 403);
+    const scopedThreadId = input && typeof input === "object"
+      ? ("source_thread_id" in input ? input.source_thread_id : "thread_id" in input ? input.thread_id : null) : null;
+    if (scopedThreadId !== actor.threadScope) throw new AuthBoundaryError("DREAM_DELEGATION_ENTITY_DENIED", 403);
     if (["chat-thread.delete", "chat-thread.bind-deck", "chat-thread.select-voice"].includes(operation)) throw new AuthBoundaryError("DREAM_DELEGATION_SCOPE_REQUIRED", 403);
   }
   return principal;
@@ -51,6 +72,14 @@ export async function runChatThreadOperation(operation: dto.ChatThreadOperation,
     case "chat-message.page": output = await store.page(dto.messagePageInputDto.parse(validated.data)); break;
     case "chat-message.process-detail": { const v = dto.messageDetailInputDto.parse(validated.data); output = { message: await store.processDetail(v.thread_id, v.message_id) }; break; }
     case "chat-message.latest": output = { message_id: await store.latest(dto.threadIdInputDto.parse(validated.data).thread_id) }; break;
+    case "chat-input.enqueue": output = { entry: await store.enqueueInput(dto.queueEnqueueInputDto.parse(validated.data)) }; break;
+    case "chat-input.list": output = { entries: await store.listInputs(dto.threadIdInputDto.parse(validated.data).thread_id) }; break;
+    case "chat-input.transition": output = { entry: await store.transitionInput(dto.queueTransitionInputDto.parse(validated.data)) }; break;
+    case "task-session.create": output = { task: await store.createTaskSession(dto.taskSessionCreateInputDto.parse(validated.data)) }; break;
+    case "task-session.create-returning": output = { task: await store.createTaskSession(dto.taskSessionCreateInputDto.parse(validated.data), true) }; break;
+    case "task-session.get": { const v = dto.taskSessionGetInputDto.parse(validated.data); output = { task: await store.getTaskSession(v.source_thread_id, v.task_id) }; break; }
+    case "task-session.links": output = await store.listTaskSessionLinks(dto.threadIdInputDto.parse(validated.data).thread_id); break;
+    case "task-session.launch": output = await store.transitionTaskLaunch(dto.taskSessionLaunchInputDto.parse(validated.data)); break;
   }
   return contract.output.parse(output);
 }

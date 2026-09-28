@@ -2,6 +2,7 @@
 // [Output] Closed storage shapes, owner errors, status projection, ordering and one-UOW validation.
 // [Pos] Provider-free Deck chat-context data gate; enabled/ready policy, prompt/Runtime/filesystem stay in Dream.
 // [Sync] 2026-09-15: prove Admin returns status facts without executing Dream domain decisions.
+// [Sync] 2026-09-28: route Thread-scoped reads through repository binding checks.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DataTransaction } from "./database";
 import {
@@ -75,11 +76,19 @@ describe("Deck chat-context service", () => {
     expect(resolve).toHaveBeenCalledExactlyOnceWith(input);
   });
 
-  it("rejects invalid input, missing scope and entity delegation before repository I/O", async () => {
+  it("rejects invalid input and missing scope before repository I/O", async () => {
     const resolve = vi.spyOn(DeckChatContextRepository.prototype, "resolve");
     await expect(runDeckChatContextOperation("deck-chat-context.resolve", { ...input, user_id: "42" }, actor, {} as DataTransaction)).rejects.toMatchObject({ code: "INPUT_INVALID", status: 400 });
     await expect(runDeckChatContextOperation("deck-chat-context.resolve", input, { ...actor, principal: { ...actor.principal, scopes: ["dream:write"] } }, {} as DataTransaction)).rejects.toMatchObject({ code: "DREAM_SCOPE_REQUIRED", status: 403 });
-    await expect(runDeckChatContextOperation("deck-chat-context.resolve", input, { ...actor, threadScope: "thread-1" }, {} as DataTransaction)).rejects.toMatchObject({ code: "DREAM_DELEGATION_ENTITY_DENIED", status: 403 });
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it("routes exact Thread grants through the binding check", async () => {
+    const resolve = vi.spyOn(DeckChatContextRepository.prototype, "resolve");
+    const scoped = vi.spyOn(DeckChatContextRepository.prototype, "resolveForThread").mockResolvedValue(output);
+    expect(await runDeckChatContextOperation("deck-chat-context.resolve", input,
+      { ...actor, threadScope: "source-thread" }, {} as DataTransaction)).toEqual(output);
+    expect(scoped).toHaveBeenCalledExactlyOnceWith("source-thread", input);
     expect(resolve).not.toHaveBeenCalled();
   });
 

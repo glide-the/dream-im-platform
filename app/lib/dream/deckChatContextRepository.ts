@@ -2,11 +2,13 @@
 // [Output] Owned Deck, selected/all Voice and plugin-ref storage facts with deterministic ordering.
 // [Pos] Registry105 typed Drizzle read; Dream owns enabled/ready policy, prompt, Runtime and workspace packing.
 // [Sync] 2026-09-15: retain permission filtering while returning status fields for Dream decisions.
+// [Sync] 2026-09-28: verify exact owner Thread Deck/Voice binding before delegated context projection.
 import { and, asc, eq, sql } from "drizzle-orm";
 import {
   claude_plugin_installations as installations,
   deck_claude_plugin_refs as refs,
   decks,
+  chat_thread,
   voices,
 } from "@ink-memory/db/schema/dream";
 import { AuthBoundaryError } from "../auth/config";
@@ -47,6 +49,17 @@ export class DeckChatContextRepository {
 
   constructor(private readonly tx: DataTransaction, canonicalUserId: string) {
     this.canonicalUserId = decimalIdDto.parse(canonicalUserId);
+  }
+
+  async resolveForThread(threadId: string, input: DeckChatContextInput) {
+    const bound = (await this.tx.select({ deck_id: chat_thread.deck_id, voice_id: chat_thread.voice_id })
+      .from(chat_thread).where(and(
+        eq(chat_thread.id, threadId),
+        eq(chat_thread.user_id, sql`${this.canonicalUserId}::bigint`),
+      )).limit(1).for("share"))[0];
+    if (!bound || bound.deck_id !== input.deck_id || bound.voice_id !== input.voice_id)
+      throw new AuthBoundaryError("DREAM_DELEGATION_ENTITY_DENIED", 403);
+    return this.resolve(input);
   }
 
   async resolve(input: DeckChatContextInput) {

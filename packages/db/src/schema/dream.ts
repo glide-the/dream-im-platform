@@ -1,3 +1,6 @@
+// [Sync] 2026-09-27: declare one revisioned completion notice per task and target turn, with source-resume fencing.
+// [Sync] 2026-09-27: declare Admin-owned chat_task_session binding and launch status.
+// [Sync] 2026-09-26: declare Admin-owned durable chat_input_queue and status checks.
 // [Input] Admin Drizzle PostgreSQL schema history and published Dream capabilities.
 // [Output] Typed Drizzle declarations for the shared Dream physical catalog.
 // [Pos] @ink-memory/db schema source consumed by migrations, control-plane services, and contract tests.
@@ -653,6 +656,85 @@ export const chat_message = pgTable("chat_message", {
 			AND history_final_text IS NOT NULL
 			AND btrim(history_final_text) <> '')
 	)`),
+]);
+
+// [Sync] 2026-09-26: Admin owns one durable input claim per canonical Chat user
+// message; sequence is the queue order and status changes require a revision CAS.
+export const chat_input_queue = pgTable("chat_input_queue", {
+	message_id: text().primaryKey().notNull(),
+	thread_id: text().notNull(),
+	queue_sequence: bigint({ mode: "bigint" }).generatedAlwaysAsIdentity().notNull(),
+	status: text().default("queued").notNull(),
+	revision: integer().default(1).notNull(),
+	dispatch_turn_id: text(),
+	created_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
+	updated_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+	unique("uq_chat_input_queue_sequence").on(table.queue_sequence),
+	index("idx_chat_input_queue_thread_order").on(table.thread_id, table.queue_sequence),
+	foreignKey({ columns: [table.message_id], foreignColumns: [chat_message.id], name: "fk_chat_input_queue_message" }).onDelete("cascade"),
+	foreignKey({ columns: [table.thread_id], foreignColumns: [chat_thread.id], name: "fk_chat_input_queue_thread" }).onDelete("cascade"),
+	check("ck_chat_input_queue_status", sql`status IN ('queued','selected','dispatching','consumed','cancelled','failed','state_unknown')`),
+	check("ck_chat_input_queue_revision", sql`revision >= 1`),
+]);
+
+// [Sync] 2026-09-27: persist one independent business task per owned target Chat Thread.
+export const chat_task_session = pgTable("chat_task_session", {
+	id: text().primaryKey().notNull(),
+	user_id: bigint({ mode: "number" }).notNull(),
+	source_thread_id: text().notNull(),
+	thread_id: text().notNull(),
+	request_key: text().notNull(),
+	initial_message_id: text().notNull(),
+	title: text().notNull(),
+	launch_status: text().default("pending").notNull(),
+	launch_error_code: text(),
+	return_result: boolean().default(false).notNull(),
+	created_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+	unique("uq_chat_task_session_target_thread").on(table.thread_id),
+	unique("uq_chat_task_session_source_request").on(table.source_thread_id, table.request_key),
+	index("idx_chat_task_session_user_source").on(table.user_id, table.source_thread_id),
+	foreignKey({ columns: [table.user_id], foreignColumns: [users.id], name: "fk_chat_task_session_user" }).onDelete("cascade"),
+	foreignKey({ columns: [table.source_thread_id], foreignColumns: [chat_thread.id], name: "fk_chat_task_session_source" }).onDelete("cascade"),
+	foreignKey({ columns: [table.thread_id], foreignColumns: [chat_thread.id], name: "fk_chat_task_session_target" }).onDelete("cascade"),
+	foreignKey({ columns: [table.initial_message_id], foreignColumns: [chat_message.id], name: "fk_chat_task_session_initial_message" }).onDelete("cascade"),
+	check("ck_chat_task_session_launch_status", sql`launch_status IN ('pending','starting','failed')`),
+]);
+
+export const chat_task_result = pgTable("chat_task_result", {
+	id: text().primaryKey().notNull(),
+	task_id: text().notNull(),
+	target_turn_id: text().notNull(),
+	target_final_message_id: text().notNull(),
+	source_thread_id: text().notNull(),
+	status: text().default("pending").notNull(),
+	revision: integer().default(1).notNull(),
+	claim_id: text(),
+	claim_request_key: text(),
+	source_turn_id: text(),
+	source_input_message_id: text(),
+	source_final_message_id: text(),
+	error_code: text(),
+	created_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
+	updated_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+	unique("uq_chat_task_result_task_turn").on(table.task_id, table.target_turn_id),
+	unique("uq_chat_task_result_source_turn").on(table.source_thread_id, table.source_turn_id),
+	unique("uq_chat_task_result_source_input").on(table.source_input_message_id),
+	unique("uq_chat_task_result_claim_request").on(table.claim_request_key),
+	uniqueIndex("uq_chat_task_result_source_dispatching").on(table.source_thread_id).where(sql`status = 'dispatching'`),
+	index("idx_chat_task_result_source_status").on(table.source_thread_id, table.status, table.created_at),
+	foreignKey({ columns: [table.task_id], foreignColumns: [chat_task_session.id], name: "fk_chat_task_result_task" }).onDelete("cascade"),
+	foreignKey({ columns: [table.target_final_message_id], foreignColumns: [chat_message.id], name: "fk_chat_task_result_target_message" }).onDelete("restrict"),
+	foreignKey({ columns: [table.source_thread_id], foreignColumns: [chat_thread.id], name: "fk_chat_task_result_source_thread" }).onDelete("cascade"),
+	foreignKey({ columns: [table.source_input_message_id], foreignColumns: [chat_message.id], name: "fk_chat_task_result_source_input" }).onDelete("restrict"),
+	foreignKey({ columns: [table.source_final_message_id], foreignColumns: [chat_message.id], name: "fk_chat_task_result_source_message" }).onDelete("restrict"),
+	check("ck_chat_task_result_status", sql`status IN ('pending','dispatching','delivered','failed','state_unknown')`),
+	check("ck_chat_task_result_revision", sql`revision >= 1`),
+	check("ck_chat_task_result_claim_request", sql`claim_request_key IS NULL OR claim_request_key ~ '^[0-9a-f]{64}$'`),
+	check("ck_chat_task_result_claim", sql`(status = 'pending' AND claim_id IS NULL AND claim_request_key IS NULL AND source_turn_id IS NULL AND source_input_message_id IS NULL AND source_final_message_id IS NULL AND error_code IS NULL) OR (status <> 'pending' AND claim_id IS NOT NULL AND source_turn_id IS NOT NULL AND source_input_message_id IS NOT NULL)`),
+	check("ck_chat_task_result_delivery", sql`(status = 'delivered' AND source_final_message_id IS NOT NULL AND error_code IS NULL) OR (status <> 'delivered' AND source_final_message_id IS NULL)`),
 ]);
 
 export const deck_plugin_releases = pgTable("deck_plugin_releases", {

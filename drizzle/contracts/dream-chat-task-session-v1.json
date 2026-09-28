@@ -1,0 +1,22 @@
+{
+  "capability": "dream.chat-task-session.v1",
+  "columns": [
+    "id",
+    "user_id",
+    "source_thread_id",
+    "thread_id",
+    "request_key",
+    "initial_message_id",
+    "title",
+    "created_at"
+  ],
+  "initial_message": "public.chat_message",
+  "source": "public.chat_thread",
+  "table": "public.chat_task_session",
+  "target": "public.chat_thread",
+  "uniqueness": [
+    "thread_id",
+    "source_thread_id+request_key"
+  ],
+  "contract_sha256": "b3c9cde0bfbc6cfc54e22329f73dccdb2061622a8e5df6f0058fe93aca0ab07f"
+}

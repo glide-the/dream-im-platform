@@ -1,12 +1,14 @@
-// [Input] Registry105 Handler with captured service, OAuth, UOW and domain seams.
+// [Input] Registry105 Handler with captured service, OAuth/Thread grant, UOW and domain seams.
 // [Output] Exact body limit, capability list, no-receipt read and fail-closed ingress evidence.
 // [Pos] Provider-free Deck chat-context HTTP boundary test; Dream owns enabled/ready policy.
 // [Sync] 2026-09-15: prove OAuth dream:read and return only typed storage status facts.
+// [Sync] 2026-09-28: verify claim-bound server-persistence reads and reject other purposes.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), transaction: vi.fn(), run: vi.fn() }));
+const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), delegation: vi.fn(), transaction: vi.fn(), run: vi.fn() }));
 vi.mock("../auth/serviceIdentity", async original => ({ ...await original<typeof import("../auth/serviceIdentity")>(), requireDreamService: mocks.service }));
 vi.mock("../auth/serviceAccessToken", () => ({ principalForServiceToken: mocks.principal }));
+vi.mock("../auth/delegationService", () => ({ DelegationService: class { resolve = mocks.delegation; } }));
 vi.mock("./database", () => ({ withDataTransaction: mocks.transaction }));
 vi.mock("./deckChatContextService", async original => ({
   ...await original<typeof import("./deckChatContextService")>(),
@@ -16,7 +18,7 @@ vi.mock("./deckChatContextService", async original => ({
 import { AuthBoundaryError } from "../auth/config";
 import { handleDeckChatContext } from "./deckChatContextHandler";
 import { deckChatContextSchemaRequirements } from "./deckChatContextService";
-import { identitySchemaRequirement } from "./schemaRequirements";
+import { identitySchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement } from "./schemaRequirements";
 
 const service = { id: "service" }, tx = { marker: "tx" };
 const principal = { subject: "subject", canonical_user_id: "9007199254740993", client_id: "browser", scopes: ["dream:read"], status: "active" as const };
@@ -33,8 +35,27 @@ function request(rawInput: unknown, name = "deck-chat-context.resolve", token = 
 beforeEach(() => {
   vi.resetAllMocks(); vi.stubEnv("DREAM_DATA_MAX_BODY_BYTES", "65536");
   mocks.service.mockReturnValue(service); mocks.principal.mockResolvedValue(principal);
+  mocks.delegation.mockResolvedValue({ principal, threadId: "source-thread", purpose: "server-persistence" });
   mocks.transaction.mockImplementation(async (_requirements, action) => action(tx));
   mocks.run.mockResolvedValue(output);
+});
+
+it("limits a delegated read to a live source Thread persistence grant", async () => {
+  const response = await handleDeckChatContext(request(input, "deck-chat-context.resolve", "idg_source"), "deck-chat-context.resolve");
+  expect(response.status).toBe(200);
+  expect(mocks.transaction.mock.calls[0][0]).toEqual([identitySchemaRequirement,
+    ...deckChatContextSchemaRequirements, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement]);
+  expect(mocks.delegation).toHaveBeenCalledExactlyOnceWith("idg_source", "dream:read", service.id, undefined, null, null);
+  expect(mocks.run).toHaveBeenCalledExactlyOnceWith("deck-chat-context.resolve", input,
+    { principal, threadScope: "source-thread" }, tx);
+  expect(mocks.principal).not.toHaveBeenCalled();
+});
+
+it("rejects a non-persistence Thread grant before reading the Deck", async () => {
+  mocks.delegation.mockResolvedValueOnce({ principal, threadId: "source-thread", purpose: "gateway-cli" });
+  const response = await handleDeckChatContext(request(input, "deck-chat-context.resolve", "idg_gateway"), "deck-chat-context.resolve");
+  expect(response.status).toBe(403);
+  expect(mocks.run).not.toHaveBeenCalled();
 });
 afterEach(() => vi.unstubAllEnvs());
 

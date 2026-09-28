@@ -1,6 +1,8 @@
 // [Input] Frozen Registry184 prefix, Registry185-191 DTOs, generated inventory and production route.
 // [Output] Append-only hashes, exact scopes/schema requirements and dedicated dispatch evidence.
 // [Pos] Registration gate for the final Story Workspace database cutover aggregate.
+// [Sync] 2026-09-27: preserve Registry198 prefix while task-result operations append.
+// [Sync] 2026-09-27: keep the artifact slice bounded when task-session navigation appends later.
 // [Sync] 2026-09-16: register seven DTO-Service-Drizzle Artifact operations.
 import { createHash } from "node:crypto";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -29,20 +31,23 @@ const hashes = ["4a6d51e9768000a843c8a2fce68f4c98556368c05f504f5160786bfd3cff22d
 
 beforeEach(() => vi.resetAllMocks());
 
-it("preserves Registry184 and appends exactly Registry185-191", () => {
-  expect(dreamOperations).toHaveLength(191);
+it("preserves Registry184, Registry185-191 artifacts and the append-only tail", () => {
+  expect(dreamOperations).toHaveLength(204);
   expect(generated191).toEqual(dreamOperations);
   expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 184))).digest("hex"))
     .toBe("f71ac328ad7670298d518e388b2fde89033387f97ac35b91a0ea66da487b40cd");
-  expect(createHash("sha256").update(canonicalContractJson(dreamOperations)).digest("hex"))
+  expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 191))).digest("hex"))
     .toBe("508731c75d4db117d587566f16cab423bd9dc41528a2b60599106623d61e2d58");
-  expect(dreamOperations.slice(184).map(item => item.contract.name)).toEqual(names);
-  expect(dreamOperations.slice(184).map(item => item.capability.contract_sha256)).toEqual(hashes);
-  expect(dreamOperations.slice(184).map(item => item.capability.kind))
+  expect(createHash("sha256").update(canonicalContractJson(dreamOperations.slice(0, 198))).digest("hex"))
+    .toBe("a30720d1a30313175347cb2354fea23eb4372bdf5ec47836d122836aa2252678");
+  const registered = dreamOperations.slice(184, 184 + names.length);
+  expect(registered.map(item => item.contract.name)).toEqual(names);
+  expect(registered.map(item => item.capability.contract_sha256)).toEqual(hashes);
+  expect(registered.map(item => item.capability.kind))
     .toEqual(["read", "read", "write", "write", "read", "write", "write"]);
-  expect(dreamOperations.slice(184).map(item => item.capability.user_scope))
+  expect(registered.map(item => item.capability.user_scope))
     .toEqual(["dream:read", "dream:read", "dream:write", "dream:write", "dream:read", "dream:write", "dream:write"]);
-  for (const operation of dreamOperations.slice(184)) {
+  for (const operation of registered) {
     expect(operation.requirements).toEqual([identitySchemaRequirement, ...storyWorkspaceArtifactSchemaRequirements]);
   }
 });

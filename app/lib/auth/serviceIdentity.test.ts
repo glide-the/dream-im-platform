@@ -1,7 +1,7 @@
 // [Input] OAuth service bearer, registered clients and background scopes.
 // [Output] client_credentials binding, scope enforcement and user-override rejection evidence.
 // [Pos] Provider-free confidential service identity boundary tests.
-// [Sync] 2026-09-17: reject legacy custom headers and require an M2M subject/client match.
+// [Sync] 2026-09-28: accept task-return scope only from a matching registered service token.
 import { describe, expect, it } from "vitest";
 import { requireBackgroundScope, requireDreamService } from "./serviceIdentity";
 import type { DreamServiceClient } from "./config";
@@ -12,7 +12,7 @@ const clients: DreamServiceClient[] = [{
   origin: "https://dream.example.test",
   oauthClientId: "browser-a",
   redirectUri: "https://dream.example.test/auth/callback",
-  backgroundScopes: ["capabilities:read"],
+  backgroundScopes: ["capabilities:read", "task-return:dispatch"],
 }];
 function request(extra: Record<string, string> = {}) {
   return new Request("https://admin.example.test/api/internal/dream/v1/principal", {
@@ -29,6 +29,10 @@ describe("OAuth service identity", () => {
     expect(service.oauthClientId).toBe("browser-a");
     expect(() => requireBackgroundScope(service, "capabilities:read")).not.toThrow();
     expect(() => requireBackgroundScope(service, "resource-observer:write")).toThrow("DREAM_SERVICE_SCOPE_REQUIRED");
+    expect(() => requireBackgroundScope(service, "task-return:dispatch")).toThrow("DREAM_SERVICE_SCOPE_REQUIRED");
+    const returnService = await requireDreamService(request(), clients,
+      verified({ scopes: ["task-return:dispatch"] }));
+    expect(() => requireBackgroundScope(returnService, "task-return:dispatch")).not.toThrow();
   });
 
   it("denies a delegated subject, unknown client, wrong Origin or actor override", async () => {

@@ -1,6 +1,8 @@
 // [Input] A verified PostgreSQL connection, database name and four distinct limited role names.
 // [Output] One deterministic least-privilege statement plan and redacted policy digest.
 // [Pos] Shared ACL planner used by isolated validation and explicit normal-database activation.
+// [Sync] 2026-09-27: include task-result table in fresh limited Dream data role activation.
+// [Sync] 2026-09-27: include Chat queue/task tables and queue sequence in fresh limited-role activation.
 // [Sync] 2026-09-17: define and probe the exact independent Admin login/session/RBAC privileges while denying legacy subject links.
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -169,9 +171,10 @@ export async function buildAuthAccessPolicy(client, database, roles) {
     "public.users", "public.user_model_permissions", "public.auth_sessions",
     "public.oauth_accounts", "public.refresh_tokens", "public.device_authorizations",
   ]);
-  const domainTables = Object.keys(snapshot.tables)
+  const domainTables = [...Object.keys(snapshot.tables)
     .filter((key) => key.startsWith("public.") && !excluded.has(key))
-    .filter((key) => !/^public\.(admin_|ai_|billing_|gateway_|payment_|platform_|subscription_|system_|claude_agent_resource_)/.test(key));
+    .filter((key) => !/^public\.(admin_|ai_|billing_|gateway_|payment_|platform_|subscription_|system_|claude_agent_resource_)/.test(key)),
+    "public.chat_input_queue", "public.chat_task_session", "public.chat_task_result"];
   for (const key of domainTables) {
     grant(roles.data, "SELECT, INSERT, UPDATE, DELETE", `TABLE public.${quoteIdentifier(key.slice(7))}`);
   }

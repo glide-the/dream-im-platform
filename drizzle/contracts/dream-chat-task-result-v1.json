@@ -1,0 +1,29 @@
+{
+  "capability": "dream.chat-task-result.v1",
+  "task_table": "public.chat_task_session",
+  "return_intent": "return_result",
+  "table": "public.chat_task_result",
+  "uniqueness": [
+    "task_id+target_turn_id",
+    "source_thread_id+source_turn_id"
+  ],
+  "target_message": "public.chat_message",
+  "source_thread": "public.chat_thread",
+  "states": [
+    "pending",
+    "dispatching",
+    "delivered",
+    "failed",
+    "state_unknown"
+  ],
+  "revision": "compare-and-swap",
+  "source_authority": "identity.runtime_delegations.task-result-claim",
+  "source_authorizations": [
+    "server-persistence",
+    "gateway-cli"
+  ],
+  "source_input": "server-persisted-chat-message-kind-task-session-result",
+  "source_dispatch": "one-dispatching-notification-per-source-thread",
+  "claim_recovery": "service-request-key-to-result-or-empty-receipt",
+  "contract_sha256": "9534e484926e69f2f284a4d785b770a5f347d044063a71ab29d08d59d8fa320c"
+}
