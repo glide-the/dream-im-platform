@@ -1,5 +1,5 @@
 // [Input] Admin OAuth user grant or exact Admin-owned confirmation/task-result/scheduled claim; capability-gated data UOW.
-// [Sync] 2026-09-28: exchange only live scheduled target claims for source-fenced persistence or Gateway grants.
+// [Sync] 2026-09-28: keep scheduled grant maximum immutable while renewed expiry follows the live claim lease.
 // [Sync] 2026-09-27: issue only source-Thread persistence grants from a live task-result claim.
 // [Output] Encrypted-recoverable creation and claim-fenced renewal/revocation/actor projection.
 // [Pos] Admin sole long-turn authority; no external actor IDs or Runtime service secrets.
@@ -222,13 +222,16 @@ export class DelegationService {
         || prior.revokedAt || prior.expiresAt <= new Date() || !prior.tokenCiphertext || !prior.maximumExpiresAt)
         throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
       const recovered = delegationOutputDto.parse(decryptAuthBundle(prior.tokenCiphertext));
-      if (delegationHash(recovered.token) !== prior.tokenHash) throw new AuthBoundaryError("DELEGATION_RECOVERY_INVALID");
+      if (delegationHash(recovered.token) !== prior.tokenHash
+        || recovered.maximum_expires_at !== prior.maximumExpiresAt.toISOString())
+        throw new AuthBoundaryError("DELEGATION_RECOVERY_INVALID");
       await this.resolve(recovered.token, null, service.id, input.thread_id, null, null);
       return recovered;
     }
     const policy = delegationPolicy(), now = Date.now();
-    const maximumMillis = Math.min(now + policy.maximumTtl * 1000, source.maximumExpiresAt.getTime());
-    const expiresMillis = Math.min(now + policy.ttl * 1000, maximumMillis);
+    const maximumMillis = now + policy.maximumTtl * 1000;
+    const expiresMillis = Math.min(now + policy.ttl * 1000, maximumMillis,
+      source.claimLeaseExpiresAt.getTime(), source.maximumExpiresAt.getTime());
     if (expiresMillis <= now) throw new AuthBoundaryError("SCHEDULE_AUTHORITY_REQUIRED", 401);
     const tokenValue = `idg_${randomBytes(32).toString("base64url")}`;
     const expiresAt = new Date(expiresMillis), maximumExpiresAt = new Date(maximumMillis);
@@ -491,8 +494,7 @@ export class DelegationService {
       const { resolveScheduledChatClaim } = await import("../dream/chatScheduledTaskAuthority");
       await resolveScheduledChatClaim(this.tx, { triggerId: bound.triggerId, claimId: bound.claimId,
         serviceId: row.serviceClientId, authUserId: row.authUserId,
-        userId: row.canonicalUserId.toString(), targetThreadId: row.threadId,
-        maximumExpiresAt: row.maximumExpiresAt });
+        userId: row.canonicalUserId.toString(), targetThreadId: row.threadId });
       return;
     }
     throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
@@ -518,13 +520,31 @@ export class DelegationService {
   }
   async renew(token: string, requestId: string) {
     const original = await this.receipt(token, "runtime-delegation.renew", requestId);
-    if (original.status === "committed") return delegationRenewOutputDto.parse(original.result);
+    if (original.status === "committed") {
+      const current = await this.repository.lock(delegationHash(token));
+      if (current?.authoritySource === "scheduled-chat-authority") await this.resolve(token, null);
+      return delegationRenewOutputDto.parse(original.result);
+    }
     const actor = await this.resolve(token, null);
     const row = await this.repository.lock(actor.tokenHash);
     if (!row?.maximumExpiresAt) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
     const policy = delegationPolicy();
     return new ReceiptRepository(this.tx, row.serviceClientId, actor.principal.subject).execute("runtime-delegation.renew", requestId, { token_sha256: actor.tokenHash }, delegationRenewOutputDto, async () => {
-      const expiresAt = new Date(Math.min(row.maximumExpiresAt!.getTime(), Date.now() + policy.ttl * 1_000));
+      const now = Date.now();
+      let claimLeaseExpiresAt: Date | null = null;
+      if (row.authoritySource === "scheduled-chat-authority") {
+        const bound = await this.repository.scheduledGrantSource(row.tokenHash);
+        if (!bound) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
+        const { resolveScheduledChatClaim } = await import("../dream/chatScheduledTaskAuthority");
+        const source = await resolveScheduledChatClaim(this.tx, {
+          triggerId: bound.triggerId, claimId: bound.claimId, serviceId: row.serviceClientId,
+          authUserId: row.authUserId, userId: row.canonicalUserId.toString(),
+          targetThreadId: row.threadId,
+        });
+        claimLeaseExpiresAt = source.claimLeaseExpiresAt;
+      }
+      const expiresAt = new Date(Math.min(row.maximumExpiresAt!.getTime(), now + policy.ttl * 1_000,
+        claimLeaseExpiresAt?.getTime() ?? Number.POSITIVE_INFINITY));
       if (expiresAt <= new Date()) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
       await this.repository.renew(actor.tokenHash, expiresAt);
       return delegationRenewOutputDto.parse({ expires_at: expiresAt.toISOString(), maximum_expires_at: row.maximumExpiresAt!.toISOString(), purpose: actor.purpose, thread_id: row.threadId, run_id: row.runId, editor_session_id: row.editorSessionId, scopes: row.scopes });

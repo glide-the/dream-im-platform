@@ -1,7 +1,7 @@
 // [Input] Admin-prepared trigger, configured service identity and short-lived signed bearer.
 // [Output] Exact trigger/claim/owner/target-bound Chat persistence actor after live database checks.
 // [Pos] Scheduled worker authority boundary; this token is not OAuth or a general runtime delegation.
-// [Sync] 2026-09-28: sign only one target Thread and recheck current identity, source, Deck and trigger state on every use.
+// [Sync] 2026-09-28: expose the verified live claim lease for bounded scheduled delegation renewal.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -33,7 +33,7 @@ export function issueScheduledChatAuthority(input: Omit<Payload, "version" | "pu
 }
 export async function resolveScheduledChatClaim(tx: DataTransaction, binding: {
   triggerId: string; claimId: string; serviceId: string; authUserId: string;
-  userId: string; targetThreadId: string; maximumExpiresAt: Date;
+  userId: string; targetThreadId: string; maximumExpiresAt?: Date;
 }) {
   const row = (await tx.select({ trigger, task }).from(trigger).innerJoin(task, eq(trigger.task_id, task.id))
     .where(and(eq(trigger.id, binding.triggerId), eq(trigger.claim_id, binding.claimId),
@@ -41,7 +41,7 @@ export async function resolveScheduledChatClaim(tx: DataTransaction, binding: {
   if (!row || !["queued", "running"].includes(row.trigger.status) || row.trigger.target_thread_id !== binding.targetThreadId
     || String(row.trigger.user_id) !== binding.userId || String(row.task.user_id) !== binding.userId
     || row.task.auth_user_id !== binding.authUserId || row.trigger.source_thread_id !== row.task.source_thread_id
-    || !row.trigger.lease_expires_at || new Date(row.trigger.lease_expires_at) < binding.maximumExpiresAt
+    || !row.trigger.lease_expires_at || (binding.maximumExpiresAt && new Date(row.trigger.lease_expires_at) < binding.maximumExpiresAt)
     || new Date(row.trigger.lease_expires_at).getTime() <= Date.now()) throw new AuthBoundaryError("SCHEDULE_AUTHORITY_ENTITY_DENIED", 403);
   const identity = await new SubjectRepository(tx).findActive(binding.authUserId);
   if (!identity || String(identity.canonicalUserId) !== binding.userId) throw new AuthBoundaryError("ACTIVE_SUBJECT_REQUIRED", 403);
@@ -61,7 +61,8 @@ export async function resolveScheduledChatClaim(tx: DataTransaction, binding: {
   return { principal: { subject: binding.authUserId, canonical_user_id: binding.userId,
     client_id: `scheduled-chat:${binding.serviceId}`, scopes: ["dream:read", "dream:write"], status: "active" as const },
     threadScope: binding.targetThreadId, sourceThreadScope: row.trigger.source_thread_id, runScope: null,
-    triggerId: binding.triggerId, claimId: binding.claimId, maximumExpiresAt: binding.maximumExpiresAt };
+    triggerId: binding.triggerId, claimId: binding.claimId,
+    claimLeaseExpiresAt: new Date(row.trigger.lease_expires_at) };
 }
 export async function resolveScheduledChatAuthority(tx: DataTransaction, token: string, operation: string, serviceId: string) {
   if (!allowedOperations.has(operation)) throw new AuthBoundaryError("SCHEDULE_AUTHORITY_OPERATION_DENIED", 403);
@@ -81,5 +82,5 @@ export async function resolveScheduledChatAuthority(tx: DataTransaction, token: 
     targetThreadId: binding.target_thread_id, maximumExpiresAt: new Date(binding.expires_at) });
   if (binding.source_thread_id !== (await tx.select({ source: trigger.source_thread_id }).from(trigger)
     .where(eq(trigger.id, binding.trigger_id)).limit(1))[0]?.source) throw new AuthBoundaryError("SCHEDULE_AUTHORITY_ENTITY_DENIED", 403);
-  return { ...source, issuedAt: new Date(binding.issued_at) };
+  return { ...source, issuedAt: new Date(binding.issued_at), maximumExpiresAt: new Date(binding.expires_at) };
 }

@@ -1,9 +1,9 @@
 // [Input] Strict scheduled-task DTO, verified OAuth/Thread actor or scoped service and one capability-gated transaction.
 // [Output] Owner-filtered effective definitions, date/history projections, fenced claims and TaskSession preparation.
 // [Pos] Admin scheduled Chat domain service and repository boundary; Dream owns the shared Chat runtime and model admission.
-// [Sync] 2026-09-28: reclaim pre-model expiries, suppress inactive manual runs and compare canonical identity across bigint projections.
+// [Sync] 2026-09-28: project paused/deleted definitions in date reads so users retain their revisioned restore entry.
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { chat_scheduled_task as task, chat_scheduled_trigger as trigger, chat_message as message } from "@ink-memory/db/schema/dream";
 import { chatScheduledTaskPolicy } from "../../../config/chat-scheduled-task-policy";
@@ -154,7 +154,7 @@ export async function runChatScheduledUserOperation(name: dto.ChatScheduledUserO
     const bounds = localDayBounds(input.local_date, input.display_time_zone);
     const rows = await tx.select().from(task).where(eq(task.user_id, sql`${principal.canonical_user_id}::bigint`));
     const matching = rows.filter(row => {
-      if (row.status !== "active" || !row.next_run_at) return false;
+      if (new Date(row.created_at) >= bounds.until) return false;
       if (row.schedule_kind === "once") {
         const candidate = onceInstant(row.local_date!, row.local_time, row.time_zone, row.single_offset_minutes).instant;
         return candidate >= bounds.from && candidate < bounds.until;
@@ -162,14 +162,17 @@ export async function runChatScheduledUserOperation(name: dto.ChatScheduledUserO
       for (let day = -1; day <= 1; day++) {
         const sourceDate = addLocalDays(input.local_date, day);
         const candidate = utcCandidates(sourceDate, row.local_time, row.time_zone)[0]?.instant;
-        if (candidate && candidate >= bounds.from && candidate < bounds.until && candidate >= new Date(row.next_run_at)) return true;
+        if (candidate && candidate >= bounds.from && candidate < bounds.until) return true;
       }
       return false;
     });
-    const triggers = await tx.select().from(trigger).where(and(eq(trigger.user_id, sql`${principal.canonical_user_id}::bigint`), gte(trigger.scheduled_at, bounds.from.toISOString()), lt(trigger.scheduled_at, bounds.until.toISOString()))).orderBy(asc(trigger.scheduled_at));
+    const triggers = await tx.select().from(trigger).where(and(eq(trigger.user_id, sql`${principal.canonical_user_id}::bigint`), or(
+      and(eq(trigger.kind, "scheduled"), gte(trigger.scheduled_at, bounds.from.toISOString()), lt(trigger.scheduled_at, bounds.until.toISOString())),
+      and(eq(trigger.kind, "manual"), gte(trigger.created_at, bounds.from.toISOString()), lt(trigger.created_at, bounds.until.toISOString())),
+    ))).orderBy(asc(sql`COALESCE(${trigger.scheduled_at}, ${trigger.created_at})`), asc(trigger.id));
     return dto.scheduledTaskDayResultDto.parse({ tasks: matching.map(projectTask), triggers: triggers.map(projectTrigger) });
   }
-  const input = dto.scheduledTaskIdInputDto.parse(parsed.data);
+  const input = dto.scheduledTaskIdInputDto.parse({ task_id: (parsed.data as { task_id: string }).task_id });
   const row = await store.owned(input.task_id, contract.kind === "write");
   if (!row) {
     if (name === "scheduled-task.get") return dto.scheduledTaskNullableResultDto.parse({ task: null });
@@ -196,7 +199,8 @@ export async function runChatScheduledUserOperation(name: dto.ChatScheduledUserO
       time_zone_snapshot: row.time_zone, status: "claimed" }).returning())[0]!;
     return dto.scheduledTriggerResultDto.parse({ trigger: projectTrigger(created) });
   }
-  const change = dto.scheduledTaskRevisionInputDto.parse(parsed.data);
+  const change = dto.scheduledTaskRevisionInputDto.parse({ task_id: input.task_id,
+    expected_revision: (parsed.data as { expected_revision: number }).expected_revision });
   requireRevision(row, change.expected_revision);
   if (name === "scheduled-task.edit") {
     if (row.status === "deleted" || row.status === "exhausted") throw new AuthBoundaryError("SCHEDULE_TASK_INACTIVE", 409);
@@ -348,6 +352,11 @@ async function startOne(tx: DataTransaction, service: ScheduledTaskService, inpu
     targetThreadId: row.target_thread_id, maximumExpiresAt: new Date(row.lease_expires_at) });
   if (row.target_turn_id !== null && row.target_turn_id !== input.target_turn_id) throw new AuthBoundaryError("SCHEDULE_TURN_CONFLICT", 409);
   if (row.status === "running") return dto.startScheduledTriggerResultDto.parse({ trigger: projectTrigger(row) });
+  const launch = await new ChatThreadRepository(tx, String(row.user_id)).transitionTaskLaunch({
+    source_thread_id: row.source_thread_id, task_id: row.task_session_id,
+    action: "claim", error_code: null,
+  });
+  if (!launch.changed || launch.task.launch_status !== "starting") throw new AuthBoundaryError("SCHEDULE_TASK_SESSION_LAUNCH_CONFLICT", 409);
   const started = (await tx.update(trigger).set({ status: "running", target_turn_id: input.target_turn_id,
     updated_at: sql`CURRENT_TIMESTAMP` }).where(eq(trigger.id, row.id)).returning())[0]!;
   return dto.startScheduledTriggerResultDto.parse({ trigger: projectTrigger(started) });
@@ -366,6 +375,16 @@ async function finishOne(tx: DataTransaction, service: ScheduledTaskService, inp
       || !isCompletedTurn(final.metadata, row.target_turn_id)) throw new AuthBoundaryError("SCHEDULE_FINAL_INVALID", 409);
   } else if (input.final_message_id !== null) throw new AuthBoundaryError("SCHEDULE_FINAL_INVALID", 400);
   if (input.status === "failed" && input.error_code === null || !["failed", "state_unknown"].includes(input.status) && input.error_code !== null) throw new AuthBoundaryError("SCHEDULE_ERROR_INVALID", 400);
+  if (input.status === "failed" && row.task_session_id !== null) {
+    const threads = new ChatThreadRepository(tx, String(row.user_id));
+    const launchInput = { source_thread_id: row.source_thread_id, task_id: row.task_session_id };
+    if (row.status === "queued") {
+      const claimed = await threads.transitionTaskLaunch({ ...launchInput, action: "claim", error_code: null });
+      if (!claimed.changed || claimed.task.launch_status !== "starting") throw new AuthBoundaryError("SCHEDULE_TASK_SESSION_LAUNCH_CONFLICT", 409);
+    }
+    const failed = await threads.transitionTaskLaunch({ ...launchInput, action: "fail", error_code: input.error_code });
+    if (!failed.changed && failed.task.launch_status !== "failed") throw new AuthBoundaryError("SCHEDULE_TASK_SESSION_LAUNCH_CONFLICT", 409);
+  }
   const updated = (await tx.update(trigger).set({ status: input.status, final_message_id: input.final_message_id,
     error_code: input.error_code, lease_expires_at: null,
     updated_at: sql`CURRENT_TIMESTAMP` }).where(eq(trigger.id, row.id)).returning())[0]!;
