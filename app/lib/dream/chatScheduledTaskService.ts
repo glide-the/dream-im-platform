@@ -1,7 +1,7 @@
 // [Input] Strict scheduled-task DTO, verified OAuth/Thread actor or scoped service and one capability-gated transaction.
 // [Output] Owner-filtered effective definitions, date/history projections, fenced claims and TaskSession preparation.
 // [Pos] Admin scheduled Chat domain service and repository boundary; Dream owns the shared Chat runtime and model admission.
-// [Sync] 2026-09-28: implement once/daily CAS, fenced renewal and malformed-metadata-safe final reconciliation.
+// [Sync] 2026-09-28: reclaim pre-model expiries, suppress inactive manual runs and fence claims to their service.
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -249,9 +249,15 @@ async function claimOne(tx: DataTransaction, serviceId: string) {
     eq(task.service_client_id, serviceId), eq(trigger.status, "claimed"), isNull(trigger.claim_id)
   )).orderBy(asc(trigger.created_at)).limit(1).for("update", { skipLocked: true, of: trigger }))[0];
   if (unclaimed) {
-    const claimId = randomUUID();
-    const claimed = (await tx.update(trigger).set({ claim_id: claimId, lease_expires_at: new Date(now.getTime() + chatScheduledTaskPolicy.claimLeaseSeconds * 1000).toISOString(), updated_at: sql`CURRENT_TIMESTAMP` }).where(and(eq(trigger.id, unclaimed.chat_scheduled_trigger.id), isNull(trigger.claim_id))).returning())[0]!;
-    return { trigger: projectTrigger(claimed), claim_id: claimId };
+    if (["paused", "deleted"].includes(unclaimed.chat_scheduled_task.status)) {
+      await tx.update(trigger).set({ status: "skipped", error_code: "SCHEDULE_INACTIVE_BEFORE_CLAIM",
+        lease_expires_at: null, updated_at: sql`CURRENT_TIMESTAMP` })
+        .where(eq(trigger.id, unclaimed.chat_scheduled_trigger.id));
+    } else {
+      const claimId = randomUUID();
+      const claimed = (await tx.update(trigger).set({ claim_id: claimId, lease_expires_at: new Date(now.getTime() + chatScheduledTaskPolicy.claimLeaseSeconds * 1000).toISOString(), updated_at: sql`CURRENT_TIMESTAMP` }).where(and(eq(trigger.id, unclaimed.chat_scheduled_trigger.id), isNull(trigger.claim_id))).returning())[0]!;
+      return { trigger: projectTrigger(claimed), claim_id: claimId };
+    }
   }
   const due = (await tx.select().from(task).where(and(eq(task.service_client_id, serviceId), eq(task.status, "active"), lte(task.next_run_at, sql`CURRENT_TIMESTAMP`))).orderBy(asc(task.next_run_at)).limit(1).for("update", { skipLocked: true }))[0];
   if (!due || !due.next_run_at) return { trigger: null, claim_id: null };
@@ -351,6 +357,7 @@ async function finishOne(tx: DataTransaction, service: ScheduledTaskService, inp
   if (!row || row.claim_id !== input.claim_id || !await store.serviceTask(row.task_id, service.id)) throw new AuthBoundaryError("SCHEDULE_CLAIM_INVALID", 409);
   if (!["claimed", "queued", "running", "state_unknown"].includes(row.status)) throw new AuthBoundaryError("SCHEDULE_TRANSITION_INVALID", 409);
   if (row.status === "claimed" && input.status !== "failed") throw new AuthBoundaryError("SCHEDULE_TRANSITION_INVALID", 409);
+  if (input.status === "state_unknown" && row.target_turn_id === null) throw new AuthBoundaryError("SCHEDULE_TRANSITION_INVALID", 409);
   if (input.status === "succeeded") {
     if (!["running", "state_unknown"].includes(row.status) || !row.target_thread_id || !row.target_turn_id || !input.final_message_id || input.error_code !== null) throw new AuthBoundaryError("SCHEDULE_FINAL_INVALID", 400);
     const final = (await tx.select({ id: message.id, role: message.role, projection: message.history_projection_version,
@@ -383,12 +390,19 @@ async function reconcileOne(tx: DataTransaction, service: ScheduledTaskService, 
         return dto.reconcileScheduledTriggerResultDto.parse({ trigger: projectTrigger(succeeded) });
       }
   }
-  // An expired claim may have reached the model despite lost transport. Preserve the target and never replay it.
+  // A bound turn is the first point at which the model may have run. Before start,
+  // the same TaskSession and input can be prepared again under a new claim.
+  if (row.target_turn_id === null) {
+    const retryable = (await tx.update(trigger).set({ status: "claimed", claim_id: null,
+      lease_expires_at: null, error_code: null, updated_at: sql`CURRENT_TIMESTAMP` })
+      .where(eq(trigger.id, row.id)).returning())[0]!;
+    return dto.reconcileScheduledTriggerResultDto.parse({ trigger: projectTrigger(retryable) });
+  }
+  // An expired bound turn may have reached the model despite lost transport.
   if (row.status === "state_unknown") return dto.reconcileScheduledTriggerResultDto.parse({ trigger: projectTrigger(row) });
-  const uncertain = row.target_thread_id !== null || row.status !== "claimed";
-  const updated = (await tx.update(trigger).set({ status: uncertain ? "state_unknown" : "claimed",
-    claim_id: uncertain ? row.claim_id : null, lease_expires_at: null,
-    error_code: uncertain ? "SCHEDULE_RESULT_UNKNOWN" : null, updated_at: sql`CURRENT_TIMESTAMP` }).where(eq(trigger.id, row.id)).returning())[0]!;
+  const updated = (await tx.update(trigger).set({ status: "state_unknown",
+    lease_expires_at: null, error_code: "SCHEDULE_RESULT_UNKNOWN",
+    updated_at: sql`CURRENT_TIMESTAMP` }).where(eq(trigger.id, row.id)).returning())[0]!;
   return dto.reconcileScheduledTriggerResultDto.parse({ trigger: projectTrigger(updated) });
 }
 export async function runChatScheduledBackgroundOperation(name: dto.ChatScheduledBackgroundOperation, raw: unknown, service: ScheduledTaskService, tx: DataTransaction) {

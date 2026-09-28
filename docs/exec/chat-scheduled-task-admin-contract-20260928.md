@@ -1,7 +1,7 @@
 <!-- [Input] 2026-09-28 scheduled-task design review, Admin Chat/TaskSession authority and forward Drizzle history. -->
 <!-- [Output] Admin producer contract, four exact capabilities, operation DTOs, release gate and isolated verification plan. -->
 <!-- [Pos] Admin implementation handoff for the Dream scheduled-task consumer; this is not a normal-business acceptance receipt. -->
-<!-- [Sync] 2026-09-28: specify 0069-0072, pre-model turn binding and nullable link lifecycle required for safe recovery. -->
+<!-- [Sync] 2026-09-28: record 0069-0072 isolated replay evidence, including the existing Provider data-gate orchestration. -->
 
 # 定时 Chat 任务 Admin 合同
 
@@ -15,7 +15,7 @@ Admin 负责一次和每日计划、触发事实、原子领取、短期授权�
 
 ## 概念与规则
 
-`default` 是界面尚未保存的建议，`desired` 是提交中的用户输入。Admin 只持久化一份 `effective` 定义，成功编辑、暂停、恢复、软删除或撤销时按预期 `revision` 比较并递增。立即运行不修改 `revision` 或下一次计划时刻。单次选择不存在的当地时间会拒绝，重复当地时间须显式选偏移；每日固定 IANA 时区，缺失时刻跳过，重复时刻取较早一次。每日停机后只取最近一次到期时刻，更早的范围留在触发记录；同一计划有未结束触发时不并发启动另一个。
+`default` 是界面尚未保存的建议，`desired` 是提交中的用户输入。Admin 只持久化一份 `effective` 定义，成功编辑、暂停、恢复、软删除或撤销时按预期 `revision` 比较并递增。立即运行不修改 `revision` 或下一次计划时刻；手动触发在 worker 领取前遇到暂停或删除会记为 `skipped`，不会派发。单次选择不存在的当地时间会拒绝，重复当地时间须显式选偏移；每日固定 IANA 时区，缺失时刻跳过，重复时刻取较早一次。每日停机后只取最近一次到期时刻，更早的范围留在触发记录；同一计划有未结束触发时不并发启动另一个。
 
 | 前向迁移 | 精确 capability | 用途 |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ Admin 负责一次和每日计划、触发事实、原子领取、短期授权�
 
 用户受权操作：`scheduled-task.create/get/day/history/edit/pause/resume/delete/restore/run`。`create` 从当前受权主体取得用户与服务，输入只含来源 Thread、幂等键、标题、提示词及明确时间规则；`run` 用手动请求键作为持久回执幂等键。写操作在同一 Admin 事务内产生原回执与审计。`day` 按展示时区的 UTC 日期区间查询历史触发，并从每日规则只读投影未来日期。
 
-服务专用操作：`scheduled-trigger.claim/prepare/renew/start/finish/reconcile/authority.resolve`，只接受配置中有 `schedule:execute` 的 confidential client，拒绝浏览器 Cookie；除 `authority.resolve` 必须同时提交服务凭据与 `sta_` bearer 外，其余操作拒绝用户 bearer。`claim` 使用数据库时间、行锁及唯一约束；`prepare` 再查活动主体、来源 Thread、Deck/Voice，并用触发 ID 作为既有 TaskSession 请求键，原子建立目标 Thread/首条消息。准备失败记录安全错误码。`start` 必须在模型调用前把共享 Chat 应用服务为此次轮次分配的 `target_turn_id` 写入 Admin；重复提交只接受相同值。`finish` 成功必须验证已提交的 assistant final 所属 Thread、最终投影、完成状态及完全相同的 `turnId`。过期租约先按这些事实对账；不能证明的轮次保留 `state_unknown`，不重发模型调用。
+服务专用操作：`scheduled-trigger.claim/prepare/renew/start/finish/reconcile/authority.resolve`，只接受配置中有 `schedule:execute` 的 confidential client，拒绝浏览器 Cookie；除 `authority.resolve` 必须同时提交服务凭据与 `sta_` bearer 外，其余操作拒绝用户 bearer。`claim` 使用数据库时间、行锁及唯一约束；`prepare` 再查活动主体、来源 Thread、Deck/Voice，并用触发 ID 作为既有 TaskSession 请求键，原子建立目标 Thread/首条消息。准备失败记录安全错误码。`start` 必须在模型调用前把共享 Chat 应用服务为此次轮次分配的 `target_turn_id` 写入 Admin；重复提交只接受相同值。`finish` 成功必须验证已提交的 assistant final 所属 Thread、最终投影、完成状态及完全相同的 `turnId`。准备后、`start` 前的过期租约会清除旧领取，让新领取复用同一 TaskSession 和首条消息；旧领取的 `sta_`/`idg_` 因 claim ID 改变失效。已经绑定轮次的过期租约先按这些事实对账；不能证明的轮次保留 `state_unknown`，不重发模型调用。
 
 `prepare` 发放只含服务、触发、领取、用户、来源/目标 Thread、用途及期限的 `sta_` 签名令牌；服务端以 `AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET` 签发，每次使用再查领取、账户和 Deck/Voice。令牌不写回执、审计、日志或数据库。Dream 用它通过现有 `/api/internal/dream/v1/runtime-delegations` 换取同一触发限定的 `idg_`：`server-persistence` 供既有 Chat/配置/Workflow context 持久化，`gateway-cli` 供既有 Gateway 模型调用。Admin 将派生凭据的哈希存入 `identity.scheduled_chat_grant_sources`，每次 `idg_` resolve/renew 都重查真实触发与租约；过期、撤销、换领取、主体停用或 Deck/Voice 失效均拒绝。旧 OAuth token 不被保存。
 
@@ -46,4 +46,6 @@ Admin 负责一次和每日计划、触发事实、原子领取、短期授权�
 
 ## 验证与发布门槛
 
-代码完成后的独立验证由主任务执行：静态类型检查、lint、确定性单元测试、聚焦 Playwright，以及四条迁移在明确命名且可删除的隔离 PostgreSQL 上依次回放。首先比较 URL 中的数据库名和 `SELECT current_database()`，明确确认它是本轮创建的隔离库，再执行 `pnpm --filter @ink-memory/db migrate`；根命令 `pnpm db:migrate` 是 Provider orchestrator，不用于本次直接回放。不得对 `.env.local` 的正常数据库运行。重点证明 DST 缺失/重复、用户幂等、revision 冲突、双 worker 唯一领取、停机跳过、手动请求键、准备前后崩溃、预绑定的首轮 final、未知状态后确证 final、失效授权、普通 Chat 删除引用、部分迁移漂移、既有行锁的领取接管与现有普通 Chat/Gateway 回归。若后续有真实业务测试，按仓库 AGENTS.md 使用用户指定正常账户和公开生产入口另行验收。
+代码完成后的独立验证由主任务执行：静态类型检查、lint、确定性单元测试、聚焦 Playwright，以及四条迁移在明确命名且可删除的隔离 PostgreSQL 上依次回放。首先比较 URL 中的数据库名和 `SELECT current_database()`，明确确认它是本轮创建的隔离库。空库全量回放使用根 `pnpm db:migrate` 的既有 Provider orchestrator；仅已完成 0047/0049/0051 Provider data gate 的隔离库，才用 `pnpm --filter @ink-memory/db migrate` 直接推进 0068 到 0072。不得对 `.env.local` 的正常数据库运行。重点证明 DST 缺失/重复、用户幂等、revision 冲突、双 worker 唯一领取、停机跳过、手动请求键、准备前后崩溃、预绑定的首轮 final、未知状态后确证 final、失效授权、普通 Chat 删除引用、部分迁移漂移、既有行锁的领取接管与现有普通 Chat/Gateway 回归。若后续有真实业务测试，按仓库 AGENTS.md 使用用户指定正常账户和公开生产入口另行验收。
+
+2026-09-28 独立迁移技术回执：`/private/tmp/ink-scheduled-migration-proof.mjs` 退出 0。脚本分别创建并核对四个明确命名的隔离库：空库通过 Provider orchestrator 走 0000–0072，随后 `--check` 和重跑均成功；从 0068 前缀升级的库先完成 0047/0049/0051 data gate 再应用 0069–0072；故意制造部分 `chat_scheduled_task` 漂移的库拒绝应用且 ledger 停在 0068；两个 migrator 并发时 0069–0072 只提交一次。四库均由同一脚本清理。此回执只证明迁移及 capability 发布，不等于定时 Chat 业务链路验收。
