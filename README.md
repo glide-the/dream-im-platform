@@ -166,7 +166,7 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `GOOGLE_CLIENT_ID/SECRET` | 内置Google认证注册 | 显式注册与exactcallback |
 | `AUTH_TRUSTED_ORIGINS/DREAM_API_RESOURCE` | trusted origins与OAuth resource | exact origins/resource |
 | `AUTH_TOKEN_ENCRYPTION_KEY` | BFF/委托恢复密文 | 32bytes AEAD，不能回显 |
-| `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON；Reflections执行服务需显式包含`reflections:execute`，confirmation dispatcher需显式包含`story-confirmation:dispatch`，task result dispatcher需显式包含`task-return:dispatch`，定时Chat worker需显式包含`schedule:execute`，均独立于用户Bearer |
+| `DREAM_DATA_SERVICE_CLIENTS` | 限定服务身份/redirect/background scopes | 严格JSON；`pnpm env:setup` 为新生成的标准 Dream confidential client写入`reflections:execute`、`story-confirmation:dispatch`、`task-return:dispatch`与`schedule:execute`；已有注册保持显式配置，定时Chat worker缺少`schedule:execute`时失败关闭；所有后台scope均独立于用户Bearer |
 | `AUTH_DEVICE_CLIENT_ID` / `DREAM_GATEWAY_CLIENT_BINDINGS` | Device public client 与受限 Gateway client映射 | 显式注册；CLI不携带固定secret，binding不能由请求覆盖 |
 | `DREAM_DATA_MAX_BODY_BYTES` | Admin领域请求体技术容量 | 显式正安全整数 |
 | `DREAM_WORKSPACE_PLUGIN_POLICY_JSON` | Story Workspace server adapter 数据选择 | 严格JSON；package、marketplace与nullable版本由Admin配置，Dream请求不能覆盖 |

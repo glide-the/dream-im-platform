@@ -2,6 +2,7 @@
 // [Input] Existing ignored Admin env files and secure random material.
 // [Output] Mode-0600 local/Compose config preserving unified auth/data policy and Provider overrides.
 // [Pos] Base configuration generator for the Admin workspace.
+// [Sync] 2026-09-29: include the scheduled Chat execution scope in generated and validated confidential clients.
 // [Sync] 2026-09-28: include the task-result service scope in generated and validated clients.
 // [Sync] 2026-09-16: use localhost as the single local Admin OAuth origin so the Google callback matches the registered web client.
 // [Sync] 2026-09-17: preserve and validate the independent Admin management-session TTL.
@@ -62,6 +63,7 @@ const UNIFIED_AUTH_DATA_KEYS = [
   "AUTH_RUNTIME_DELEGATION_MAX_TTL_SECONDS",
   "AUTH_REFLECTIONS_AUTHORITY_TTL_SECONDS",
   "AUTH_REFLECTIONS_AUTHORITY_MAX_TTL_SECONDS",
+  "AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET",
   "AUTH_BCRYPT_COST",
   "AUTH_MAX_BODY_BYTES",
   "AUTH_PGPOOL_MAX",
@@ -345,6 +347,7 @@ function unifiedAuthDataConfiguration(existing, options) {
       "reflections:execute",
       "story-confirmation:dispatch",
       "task-return:dispatch",
+      "schedule:execute",
     ],
   }]);
   return [
@@ -367,6 +370,7 @@ function unifiedAuthDataConfiguration(existing, options) {
     ["AUTH_RUNTIME_DELEGATION_MAX_TTL_SECONDS", integerValue("AUTH_RUNTIME_DELEGATION_MAX_TTL_SECONDS", "3600")],
     ["AUTH_REFLECTIONS_AUTHORITY_TTL_SECONDS", integerValue("AUTH_REFLECTIONS_AUTHORITY_TTL_SECONDS", "300")],
     ["AUTH_REFLECTIONS_AUTHORITY_MAX_TTL_SECONDS", integerValue("AUTH_REFLECTIONS_AUTHORITY_MAX_TTL_SECONDS", "3600")],
+    ["AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET", options.scheduleAuthoritySecret],
     ["AUTH_BCRYPT_COST", integerValue("AUTH_BCRYPT_COST", "12", 10, 16)],
     ["AUTH_MAX_BODY_BYTES", integerValue("AUTH_MAX_BODY_BYTES", "16384")],
     ["AUTH_PGPOOL_MAX", integerValue("AUTH_PGPOOL_MAX", "10", 1, 100)],
@@ -467,6 +471,13 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
     "INK_WORKFLOW_TOKEN_SECRET",
     hasMinimumBytes,
     () => randomSecret("workflow_"),
+  );
+  const scheduleAuthoritySecret = pairedSecret(
+    rootExisting,
+    dockerExisting,
+    "AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET",
+    hasMinimumBytes,
+    () => randomSecret("schedule_authority_"),
   );
   const sharedDreamServiceSecret = configuredDreamServiceSecret(rootExisting)
     ?? configuredDreamServiceSecret(dockerExisting)
@@ -658,6 +669,7 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
       betterAuthSecret: betterAuthSecret.root,
       authTokenEncryptionKey: authTokenEncryptionKey.root,
       workflowTokenSecret: workflowTokenSecret.root,
+      scheduleAuthoritySecret: scheduleAuthoritySecret.root,
       serviceSecret: dreamServiceSecret.root,
       adminOrigin: "http://localhost:3000",
       dreamOrigin: "http://localhost:5173",
@@ -803,6 +815,7 @@ function buildConfiguration(rootExisting, dockerExisting, projectRoot) {
       betterAuthSecret: betterAuthSecret.docker,
       authTokenEncryptionKey: authTokenEncryptionKey.docker,
       workflowTokenSecret: workflowTokenSecret.docker,
+      scheduleAuthoritySecret: scheduleAuthoritySecret.docker,
       serviceSecret: dreamServiceSecret.docker,
       adminOrigin: "http://localhost:3000",
       dreamOrigin: "http://localhost:5173",
@@ -1013,11 +1026,14 @@ function validateUnifiedAuthData(values, file, errors) {
   if (!hasMinimumBytes(values.get("INK_WORKFLOW_TOKEN_SECRET") ?? "")) {
     errors.push(`${file}: INK_WORKFLOW_TOKEN_SECRET must contain at least 32 bytes`);
   }
+  if (!hasMinimumBytes(values.get("AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET") ?? "")) {
+    errors.push(`${file}: AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET must contain at least 32 bytes`);
+  }
   let serviceClientIds = new Set();
   let oauthClientIds = new Set();
   try {
     const clients = JSON.parse(values.get("DREAM_DATA_SERVICE_CLIENTS") ?? "");
-    const allowedScopes = new Set(["capabilities:read", "resource-policy:read", "resource-observer:write", "connectors:sync", "plugins:catalog", "reflections:execute", "story-confirmation:dispatch", "task-return:dispatch"]);
+    const allowedScopes = new Set(["capabilities:read", "resource-policy:read", "resource-observer:write", "connectors:sync", "plugins:catalog", "reflections:execute", "story-confirmation:dispatch", "task-return:dispatch", "schedule:execute"]);
     const resourceOrigin = isExactServiceUrl(resource) ? new URL(resource).origin : "";
     const valid = Array.isArray(clients) && clients.length > 0
       && new Set(clients.map(client => client?.id)).size === clients.length

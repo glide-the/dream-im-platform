@@ -1,6 +1,7 @@
 // [Input] Admin environment generator executed against disposable directories.
 // [Output] Provider-free tests for mode, preservation, complete validation and fail-closed role/origin checks.
 // [Pos] Deterministic configuration contract for unified auth and Admin-owned Dream DTO/ORM data access.
+// [Sync] 2026-09-29: generated confidential clients include scheduled Chat execution alongside existing background scopes.
 // [Sync] 2026-09-28: generated confidential clients may request task-return dispatch.
 // [Sync] 2026-09-16: pin the local Better Auth issuer to localhost for the registered Google callback.
 // [Sync] 2026-09-16: require generated structured values to survive the same dotenv parser used by Next.js.
@@ -89,6 +90,8 @@ test('generated files are private and incomplete external configuration fails cl
     assert.equal(clients[0].origin, 'http://localhost:5173');
     assert.equal(clients[0].redirectUri, 'http://localhost:5173/auth/callback');
     assert.ok(clients[0].backgroundScopes.includes('task-return:dispatch'));
+    assert.ok(clients[0].backgroundScopes.includes('schedule:execute'));
+    assert.ok(Buffer.byteLength(runtimeValues.AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET, 'utf8') >= 32);
     assert.equal(runtimeValues.BETTER_AUTH_URL, 'http://localhost:3000/api/auth');
     assert.equal(runtimeValues.AUTH_TRUSTED_ORIGINS, 'http://localhost:3000,http://localhost:5173');
     assert.equal(runtimeValues.DREAM_API_RESOURCE, 'http://localhost:5173/api');
@@ -124,9 +127,12 @@ test('a complete role, OAuth, Gateway and policy configuration validates and pre
   await patchEnv(paths[1], { EMBEDDED_POSTGRES_MAX_CONNECTIONS: '50' });
   assert.match(run('--check'), /Environment configuration is valid/);
   const beforeSecret = JSON.parse((await readEnv(paths[0])).get('DREAM_DATA_SERVICE_CLIENTS'))[0].secret;
+  const beforeScheduleSecret = (await readEnv(paths[0])).get('AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET');
   run();
   const afterSecret = JSON.parse((await readEnv(paths[0])).get('DREAM_DATA_SERVICE_CLIENTS'))[0].secret;
+  const afterScheduleSecret = (await readEnv(paths[0])).get('AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET');
   assert.equal(afterSecret, beforeSecret);
+  assert.equal(afterScheduleSecret, beforeScheduleSecret);
   for (const path of paths) {
     const runtimeValues = dotenv.parse(await readFile(path, 'utf8'));
     assert.deepEqual(JSON.parse(runtimeValues.DREAM_DECK_POLICY_JSON), JSON.parse(deckPolicy));
