@@ -1,6 +1,7 @@
 // [Sync] 2026-09-27: atomically publish target completion and freeze return intent without changing legacy create semantics.
 // [Sync] 2026-09-28: keep ordinary task creation compatible with pre-0068 schema and require exact capability for returning tasks.
 // [Sync] 2026-09-27: project owner-filtered source and created task-session navigation links.
+// [Sync] 2026-09-29: keep scheduled-trigger task sessions out of generic conversation task links.
 // [Sync] 2026-09-27: atomically bind a task to a new Thread and claim its first SDK launch once.
 // [Sync] 2026-09-26: atomically persist queued user messages and revisioned per-Thread claims.
 // [Input] Admin-authenticated canonical identity, typed DTOs and an existing Drizzle transaction.
@@ -8,9 +9,9 @@
 // [Pos] Primary-owned Admin Repository; no HTTP orchestration or independent transaction.
 // [Sync] 2026-09-15: raw user-message/title aggregate and stored confirmation guard preserve current leases.
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, lt, notExists, sql } from "drizzle-orm";
 import { bigint, pgTable, text, timestamp } from "drizzle-orm/pg-core";
-import { chat_thread as thread, chat_message as message, chat_input_queue as inputQueue, chat_task_session as taskSession, decks, voices } from "@ink-memory/db/schema/dream";
+import { chat_thread as thread, chat_message as message, chat_input_queue as inputQueue, chat_task_session as taskSession, chat_scheduled_trigger as scheduledTrigger, decks, voices } from "@ink-memory/db/schema/dream";
 import { AuthBoundaryError } from "../auth/config";
 import { decimalIdDto } from "../auth/dto";
 import type { DataTransaction } from "./database";
@@ -21,10 +22,13 @@ import {guardPersistedDreamConfirmation,type ConfirmationGuardInput} from "./con
 import { messagePageInputDto, threadCreateInputDto, threadListInputDto, threadSelectVoiceInputDto, queueEnqueueInputDto, queueTransitionInputDto, taskSessionCreateInputDto, taskSessionLaunchInputDto } from "./chatThreadDto";
 import { hasSchemaCapability } from "./database";
 import chatTaskResultContract from "../../../drizzle/contracts/dream-chat-task-result-v1.json";
+import scheduledLinkLifecycleContract from "../../../drizzle/contracts/dream-chat-scheduled-link-lifecycle-v1.json";
 import { TaskSessionResultRepository } from "./taskSessionResultRepository";
 
 const taskResultCapability = { capability: "dream.chat-task-result.v1", version: 1,
   contractSha256: chatTaskResultContract.contract_sha256 } as const;
+const scheduledLinkLifecycleCapability = { capability: "dream.chat-scheduled-link-lifecycle.v1", version: 1,
+  contractSha256: scheduledLinkLifecycleContract.contract_sha256 } as const;
 // Drizzle's insert builder emits DEFAULT for every mapped column. Keep the
 // pre-0068 shape until the exact result capability is published.
 const preResultTaskSession = pgTable("chat_task_session", {
@@ -349,6 +353,11 @@ export class ChatThreadRepository {
 
   async listTaskSessionLinks(threadId: string) {
     await this.requireOwned(threadId);
+    const scheduledLinksAvailable = await hasSchemaCapability(this.transaction, scheduledLinkLifecycleCapability);
+    const ordinaryTaskSession = scheduledLinksAvailable
+      ? notExists(this.transaction.select({ id: scheduledTrigger.id }).from(scheduledTrigger)
+        .where(eq(scheduledTrigger.task_session_id, taskSession.id)))
+      : undefined;
     const linkFields = {
       task_id: taskSession.id, source_thread_id: taskSession.source_thread_id,
       thread_id: taskSession.thread_id, title: taskSession.title,
@@ -357,10 +366,10 @@ export class ChatThreadRepository {
     };
     const [sourceRow, createdRows] = await Promise.all([
       this.transaction.select(linkFields).from(taskSession)
-        .where(and(eq(taskSession.thread_id, threadId), eq(taskSession.user_id, sql`${this.canonicalUserId}::bigint`)))
+        .where(and(eq(taskSession.thread_id, threadId), eq(taskSession.user_id, sql`${this.canonicalUserId}::bigint`), ordinaryTaskSession))
         .orderBy(asc(taskSession.created_at)).limit(1),
       this.transaction.select(linkFields).from(taskSession)
-        .where(and(eq(taskSession.source_thread_id, threadId), eq(taskSession.user_id, sql`${this.canonicalUserId}::bigint`)))
+        .where(and(eq(taskSession.source_thread_id, threadId), eq(taskSession.user_id, sql`${this.canonicalUserId}::bigint`), ordinaryTaskSession))
         .orderBy(asc(taskSession.created_at), asc(taskSession.id)),
     ]);
     let source = null;

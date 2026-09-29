@@ -1,5 +1,5 @@
 // [Input] Explicitly owned, migrated isolated PostgreSQL and the production scheduled Chat domain services.
-// [Output] Claim, pre-model recovery, exact turn completion, inactive manual skip and nullable history evidence.
+// [Output] Claim, pre-model recovery, exact turn completion, task-link separation, inactive manual skip and nullable history evidence.
 // [Pos] Provider-free service integration contract; a runner owns database creation, migration and cleanup.
 // [Sync] 2026-09-29: derive the UTC calendar key from the trigger instant instead of its database-session offset text.
 import { randomBytes, randomUUID } from "node:crypto";
@@ -71,6 +71,12 @@ describe.skipIf(!enabled)("scheduled Chat isolated PostgreSQL contract", () => {
 
   it("fences claims, reuses prepared input before start and keeps history after target deletion", async () => {
     const source = (await chat("chat-thread.create", { deck_id: null, voice_id: null, title: "Scheduled source" })) as { thread_id: string };
+    const ordinary = (await chat("task-session.create", {
+      source_thread_id: source.thread_id, request_key: "ordinary-task-link",
+      title: "Ordinary child task", initial_message: "Run ordinary work",
+      source_message_id: null, expected_revision: null,
+    })) as { task: { task_id: string; thread_id: string } | null };
+    if (!ordinary.task) throw new Error("ORDINARY_TASK_SESSION_MISSING");
     const futureDate = new Date(Date.now() + 4 * 86_400_000).toISOString().slice(0, 10);
     const create = { source_thread_id: source.thread_id, create_request_key: "scheduled-create-1",
       title: "Scheduled task", prompt: "Write one response",
@@ -123,6 +129,18 @@ describe.skipIf(!enabled)("scheduled Chat isolated PostgreSQL contract", () => {
     const previousTarget = prepared.trigger.target_thread_id;
     const previousInput = prepared.trigger.input_message_id;
     if (!previousTarget || !previousInput) throw new Error("SCHEDULE_PREPARE_LINKS_MISSING");
+    const sourceLinks = (await chat("task-session.links", { thread_id: source.thread_id })) as {
+      created: Array<{ task_id: string }>;
+    };
+    expect(sourceLinks.created.map(link => link.task_id)).toEqual([ordinary.task.task_id]);
+    const ordinaryTargetLinks = (await chat("task-session.links", { thread_id: ordinary.task.thread_id })) as {
+      source: { task_id: string } | null;
+    };
+    expect(ordinaryTargetLinks.source?.task_id).toBe(ordinary.task.task_id);
+    const scheduledTargetLinks = (await chat("task-session.links", { thread_id: previousTarget })) as {
+      source: { task_id: string } | null;
+    };
+    expect(scheduledTargetLinks.source).toBeNull();
     await expect(database.transaction(tx => resolveScheduledChatAuthority(tx,
       prepared.authority_token, "chat-message.persist", "another-service")))
       .rejects.toMatchObject({ code: "SCHEDULE_AUTHORITY_REQUIRED" });
