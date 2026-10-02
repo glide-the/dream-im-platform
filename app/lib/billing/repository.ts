@@ -1,3 +1,8 @@
+// [Input] PostgreSQL transaction client, Gateway request identity, reliable usage and stored pricing snapshots.
+// [Output] Atomic, idempotent settlement of rate counters, subscription allowance and append-only financial effects.
+// [Pos] Billing persistence boundary; shared write order is rate windows before allowance, with model execution outside the transaction.
+// [Sync] 2026-10-02: acquire UTC day/month rate writes before allowance settlement to match Gateway preauthorization.
+
 import type { PoolClient } from "pg";
 import {
   creditAccount,
@@ -387,6 +392,31 @@ export async function settleGatewayRequestOnClient(
       "reserved_microusd",
     );
     const actualTokens = totalProcessedTokens(input.usage);
+    const estimatedTokens = safeDbNumber(
+      request.estimated_tokens,
+      "estimated_tokens",
+    );
+    const tokenDelta = actualTokens - estimatedTokens;
+
+    // Match preauthorization: day, month, then allowance. All effects roll back together.
+    for (const windowType of ["day", "month"] as const) {
+      await client.query(
+        `UPDATE gateway_rate_limits
+         SET token_count = GREATEST(0, token_count + $5::bigint),
+             updated_at = NOW()
+         WHERE platform_user_id = $1 AND model_id = $2
+           AND window_type = $3
+           AND window_start = date_trunc($3, $4::timestamptz, 'UTC')`,
+        [
+          request.platform_user_id,
+          request.model_id,
+          windowType,
+          request.created_at,
+          tokenDelta,
+        ],
+      );
+    }
+
     const allowance = await settleSubscriptionAllowanceOnClient(client, {
       allowanceId: request.subscription_allowance_id,
       coverageMode: request.subscription_coverage_mode,
@@ -419,11 +449,6 @@ export async function settleGatewayRequestOnClient(
           allowance.cashChargeMicrousd,
         )
       : null;
-    const estimatedTokens = safeDbNumber(
-      request.estimated_tokens,
-      "estimated_tokens",
-    );
-    const tokenDelta = actualTokens - estimatedTokens;
 
     if (allowance.allowanceChargeMicrousd > 0) {
       if (!account) throw new Error("BILLING_ACCOUNT_NOT_FOUND");
@@ -444,24 +469,6 @@ export async function settleGatewayRequestOnClient(
         actorId: input.actorId ?? request.id,
         metadata: { allowanceChargedTokens: allowance.allowanceChargedTokens },
       });
-    }
-
-    for (const windowType of ["day", "month"] as const) {
-      await client.query(
-        `UPDATE gateway_rate_limits
-         SET token_count = GREATEST(0, token_count + $5::bigint),
-             updated_at = NOW()
-         WHERE platform_user_id = $1 AND model_id = $2
-           AND window_type = $3
-           AND window_start = date_trunc($3, $4::timestamptz)`,
-        [
-          request.platform_user_id,
-          request.model_id,
-          windowType,
-          request.created_at,
-          tokenDelta,
-        ],
-      );
     }
 
     if (account && transitions?.capture) {

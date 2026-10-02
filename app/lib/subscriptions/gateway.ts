@@ -1,3 +1,8 @@
+// [Input] Canonical Gateway subscription context and the caller-owned PostgreSQL transaction.
+// [Output] Eligibility, Token reservation and request settlement with append-only allowance ledger effects.
+// [Pos] Subscription Gateway boundary; non-key allowance writes remain exclusive but compatible with foreign-key KEY SHARE locks.
+// [Sync] 2026-10-02: use FOR NO KEY UPDATE for reservation and settlement to avoid foreign-key lock-upgrade deadlocks.
+
 import type { PoolClient } from "pg";
 
 import {
@@ -223,7 +228,7 @@ export async function reserveSubscriptionAllowanceOnClient(
             reserved_tokens, consumed_tokens
      FROM subscription_usage_allowances
      WHERE id = $1
-     FOR UPDATE`,
+     FOR NO KEY UPDATE`,
     [input.allowanceId],
   );
   const row = locked.rows[0];
@@ -374,7 +379,7 @@ export async function settleSubscriptionAllowanceOnClient(
             granted_tokens + bonus_granted_tokens AS granted_tokens,
             reserved_tokens, consumed_tokens,
             granted_microusd, reserved_microusd, consumed_microusd
-     FROM subscription_usage_allowances WHERE id = $1 FOR UPDATE`,
+     FROM subscription_usage_allowances WHERE id = $1 FOR NO KEY UPDATE`,
     [input.allowanceId],
   );
   const row = result.rows[0];
