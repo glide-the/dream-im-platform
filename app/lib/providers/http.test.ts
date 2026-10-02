@@ -1,16 +1,24 @@
 // [Input] Provider HTTP responses with control-plane and model-catalog byte budgets.
-// [Output] Regression proof that both parsing lanes remain bounded without exposing upstream bodies.
+// [Output] Regression proof for bounded JSON/text reads and status-only parser failures.
 // [Pos] Unit security contract for shared Provider control-plane response parsing.
 // [Sync] 2026-09-04: cover actual streamed-byte limits independently of Content-Length.
+// [Sync] 2026-10-02: prove shared text diagnostics retain their bytes and release the response reader.
 
 import { describe, expect, it } from "vitest";
 
 import {
   MAX_MODEL_CATALOG_RESPONSE_BYTES,
   readJsonRecord,
+  readResponseText,
 } from "./http";
 
 describe("Provider HTTP response parsing", () => {
+  it("preserves bounded plain-text diagnostics and releases the reader", async () => {
+    const response = new Response("upstream rejection\n", { status: 400 });
+    await expect(readResponseText(response)).resolves.toBe("upstream rejection\n");
+    expect(response.body?.locked).toBe(false);
+  });
+
   it("parses a bounded JSON object", async () => {
     await expect(readJsonRecord(new Response('{"ok":true}'))).resolves.toEqual({ ok: true });
   });

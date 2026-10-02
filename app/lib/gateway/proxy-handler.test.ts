@@ -2,6 +2,7 @@
 // [Output] Protocol, streaming, cancellation, timeout-refresh, settlement, and capture regression proof.
 // [Pos] Core Gateway proxy lifecycle unit tests.
 // [Sync] 2026-09-17: prove headerless Codex Responses SSE remains narrow and fully settled.
+// [Sync] 2026-10-02: prove both public protocols capture managed JSON/text rejections without exposing them downstream.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GatewayError } from "./errors";
@@ -83,6 +84,33 @@ beforeEach(() => {
 });
 
 describe("true gateway streaming proxy", () => {
+  it.each([
+    { protocol: "openai" as const, stream: false, errorBody: { detail: "This model is unsupported with this account." } },
+    { protocol: "openai" as const, stream: true, errorBody: "This model is unsupported with this account.\n" },
+    { protocol: "anthropic" as const, stream: false, errorBody: "This model is unsupported with this account.\n" },
+    { protocol: "anthropic" as const, stream: true, errorBody: { detail: "This model is unsupported with this account." } },
+  ])("captures a managed $protocol rejection with stream=$stream in the protected error body", async ({ protocol, stream, errorBody }) => {
+    mocks.send.mockRejectedValue(new ProviderHttpError(400, errorBody, "upstream-rejected"));
+    mocks.finalizeFailure.mockResolvedValue(new GatewayError("UPSTREAM_REQUEST_REJECTED", "The upstream model provider rejected the request", 400, "invalid_request_error"));
+    const proxy = stream ? proxyStreaming : proxyNonStreaming;
+    const response = await proxy({
+      request: new Request(`http://gateway/v1/${protocol === "anthropic" ? "messages" : "chat/completions"}`),
+      externalProtocol: protocol,
+      prepared: prepared("openai", "codex"),
+      body: { model: "alias", messages: [{ role: "user", content: "hello" }], max_tokens: 32, stream },
+    });
+    const publicBody = await response.json();
+    expect(response.status).toBe(400);
+    expect(publicBody).toMatchObject({ error: { code: "UPSTREAM_REQUEST_REJECTED" } });
+    expect(JSON.stringify(publicBody)).not.toContain("This model is unsupported");
+    expect(mocks.jsonPayload).toHaveBeenCalledWith(expect.objectContaining({
+      status: 400,
+      body: publicBody,
+      providerRequestId: "upstream-rejected",
+      errorBody,
+    }));
+  });
+
   it("accepts a headerless Codex Responses stream and settles its terminal usage", async () => {
     mocks.send.mockResolvedValue(transport(new Response(sse([
       'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_codex","model":"gpt-codex"}}\n\n',

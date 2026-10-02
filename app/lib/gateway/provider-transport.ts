@@ -1,16 +1,19 @@
 // [Input] Resolved generic/product Provider, request body, cancellation signal, credential revision, and timeout policy.
-// [Output] Authenticated response plus lifecycle-safe abort control and a bounded managed-auth 401 recovery path.
+// [Output] Authenticated response, credential-redacted upstream error bodies, lifecycle-safe abort control, and bounded 401 recovery.
 // [Pos] Low-level Gateway HTTP transport joining static credentials or the managed product credential broker.
 // [Sync] 2026-09-04: managed transport follows one Provider-owned credential and keeps bounded renewal retry fences.
+// [Sync] 2026-10-02: retain managed inference errors for protected payload capture while removing echoed credentials.
+// [Sync] 2026-10-02: preserve model-scoped Codex client metadata during initial and renewed credential merges.
 
 import { decryptCredential } from "../security/credential-encryption";
 import type { ResolvedBillableModel } from "../models/resolver";
 import { GatewayError } from "./errors";
 import { resolveProviderAuthMode } from "./provider-auth";
 import { resolveProviderBaseUrl } from "./provider-endpoint";
-import { applyModelRequestHeaders } from "../models/request-headers";
+import { applyManagedProviderRequestHeaders, applyModelRequestHeaders } from "../models/request-headers";
 import { resolveManagedProviderAccess } from "./managed-provider-credentials";
 import { recordGatewayProviderCredentialUse } from "./repository";
+import { redactProviderErrorBody } from "./payloads";
 
 export class ProviderHttpError extends Error {
   constructor(
@@ -147,7 +150,7 @@ export async function sendProviderRequest(input: {
     requestEndpoint = access.url;
     renewalAttempted = access.renewed;
     managedCredentialRevision = access.credentialRevision;
-    for (const [name, value] of access.headers) headers.set(name, value);
+    applyManagedProviderRequestHeaders(headers, access.headers, input.resolved.model.requestHeaders ?? {}, adapterKind);
     if (input.gatewayRequestId) {
       await recordGatewayProviderCredentialUse({
         requestId: input.gatewayRequestId,
@@ -177,6 +180,7 @@ export async function sendProviderRequest(input: {
     else headers.set("x-api-key", secret);
   }
   const abort = linkedAbort({ requestSignal: input.requestSignal, timeoutMs: input.resolved.provider.timeoutMs });
+  const credentialHeaders = [new Headers(headers)];
   try {
     let response = await fetch(requestEndpoint, {
       method: "POST",
@@ -200,7 +204,8 @@ export async function sendProviderRequest(input: {
         credentialRevision: managedCredentialRevision,
         forceRenew: true,
       });
-      for (const [name, value] of renewed.headers) headers.set(name, value);
+      applyManagedProviderRequestHeaders(headers, renewed.headers, input.resolved.model.requestHeaders ?? {}, adapterKind);
+      credentialHeaders.push(new Headers(headers));
       renewalAttempted = true;
       if (input.gatewayRequestId) {
         await recordGatewayProviderCredentialUse({
@@ -220,17 +225,12 @@ export async function sendProviderRequest(input: {
       });
     }
     if (!response.ok) {
-      let body: unknown;
-      if (adapterKind === "generic") {
-        const raw = await response.text();
-        body = raw;
-        try { body = JSON.parse(raw); } catch { /* preserve exact text */ }
-      } else {
-        await response.body?.cancel().catch(() => undefined);
-      }
+      const raw = await response.text();
+      let body: unknown = raw;
+      try { body = JSON.parse(raw); } catch { /* preserve non-JSON error text */ }
       throw new ProviderHttpError(
         response.status,
-        body,
+        redactProviderErrorBody(body, credentialHeaders),
         response.headers.get("request-id") ?? response.headers.get("x-request-id") ?? undefined,
       );
     }

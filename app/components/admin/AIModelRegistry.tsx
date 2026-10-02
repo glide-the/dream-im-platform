@@ -1,7 +1,8 @@
 // [Input] Refine model catalog rows, filters, validation state, and operator navigation.
-// [Output] Model cards with safe Gateway capabilities and optional Claude Code Runtime values.
+// [Output] Model cards with safe capabilities, Runtime values, and credential-redacted upstream validation reasons.
 // [Pos] Admin model-registry list; edits remain in the shared resource form/API boundary.
 // [Sync] 2026-08-28: display configured compact/context Runtime values without exposing env implementation names.
+// [Sync] 2026-10-02: show concrete upstream rejection diagnostics below the validation status.
 
 "use client";
 
@@ -18,6 +19,8 @@ type ValidationState = {
   responseTimeMs?: number | null;
   httpStatus?: number | null;
   message?: string;
+  upstreamMessage?: string;
+  upstreamRequestId?: string;
 };
 
 function capabilityLabels(value: unknown) {
@@ -119,8 +122,9 @@ export default function AIModelRegistry() {
                   : `公共目录可见 · 运行配置待修复${model.provider_ready !== true ? " · Provider未就绪" : ""}${model.pricing_ready !== true ? " · 缺有效定价" : ""}`}
               </p> : <p className="mt-3 text-xs text-text-tertiary">公共目录不可见 · 模型已停用。</p>}
               {validationResult?.message ? <p className={`mt-3 text-xs ${validationResult.status === "failed" ? "text-danger" : validationResult.status === "degraded" ? "text-accent-orange" : "text-success"}`} role="status">{validationResult.message}{validationResult.responseTimeMs !== undefined && validationResult.responseTimeMs !== null ? ` · ${validationResult.responseTimeMs} ms` : ""}{validationResult.httpStatus ? ` · HTTP ${validationResult.httpStatus}` : ""}</p> : null}
+              {validationResult?.upstreamMessage ? <div className="mt-2 rounded-xl border border-danger/25 bg-danger-light p-3 text-xs" role="alert"><p className="font-semibold text-danger">上游具体原因</p><pre className="mt-1 whitespace-pre-wrap break-words font-mono text-text-secondary">{validationResult.upstreamMessage}</pre>{validationResult.upstreamRequestId ? <p className="mt-2 break-all text-text-tertiary">上游请求 ID：{validationResult.upstreamRequestId}</p> : null}</div> : null}
               <div className="mt-5 flex flex-wrap justify-end gap-2">
-                {access.data?.can ? <button type="button" disabled={validationResult?.pending} onClick={() => validateModel(modelId)} className="min-h-10 rounded-xl border border-border px-3 text-xs font-semibold disabled:cursor-wait disabled:opacity-60" title="发送一次非流式、最多 1 Token 的上游验证请求；不保存提示词或响应内容">{validationResult?.pending ? "验证中…" : "验证配置"}</button> : null}
+                {access.data?.can ? <button type="button" disabled={validationResult?.pending} onClick={() => validateModel(modelId)} className="min-h-10 rounded-xl border border-border px-3 text-xs font-semibold disabled:cursor-wait disabled:opacity-60" title="发送一次最小上游验证请求；失败时显示脱敏原因，不保存响应内容">{validationResult?.pending ? "验证中…" : "验证配置"}</button> : null}
                 <Link href={`/admin/models/pricing/new?modelId=${encodeURIComponent(String(model.id))}`} className="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-xs font-semibold">添加定价</Link>
                 <Link href={`/admin/billing/usage?modelId=${encodeURIComponent(String(model.id))}`} className="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-xs font-semibold">查看用量</Link>
                 <Link href={`/admin/models/models/${encodeURIComponent(String(model.id))}/edit`} className="inline-flex min-h-10 items-center rounded-xl bg-text-primary px-4 text-xs font-semibold text-bg-surface">模型设置</Link>

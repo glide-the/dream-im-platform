@@ -1,7 +1,9 @@
 // [Input] Mock provider fetch, resolved credentials/config, client cancellation, and fake timeout clock.
-// [Output] Regression proof for safe headers plus connection and rolling stream-idle timeout behavior.
+// [Output] Regression proof for safe headers, captured upstream errors, credential redaction, and timeout behavior.
 // [Pos] Focused provider transport contract tests for the Gateway domain.
 // [Sync] 2026-09-04: prove managed transport carries only Provider-owned account fences and no pool default revision.
+// [Sync] 2026-10-02: cover JSON/text errors for all managed adapters and renewed-credential rejection capture.
+// [Sync] 2026-10-02: preserve Codex model client metadata across renewal while keeping Provider identity owned.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProviderTimeoutError, sendProviderRequest } from "./provider-transport";
@@ -47,7 +49,108 @@ function resolved(timeoutMs = 1_000) {
   };
 }
 
+function managedResolved(adapterKind: "codex" | "xai" | "github_copilot") {
+  return {
+    ...resolved(),
+    provider: {
+      ...resolved().provider,
+      protocol: "openai" as const,
+      baseUrl: null,
+      encryptedCredential: undefined,
+      adapterKind,
+      activeCredentialKind: "managed_oauth" as const,
+      authEpoch: 2,
+      managedAccountId: "account-managed",
+      managedAccountAuthEpoch: 1,
+      credentialRevision: 2,
+    },
+  };
+}
+
+function managedAccess(token = "managed-token", credentialRevision = 2) {
+  return {
+    url: "https://chatgpt.com/backend-api/codex/responses",
+    headers: new Headers({ authorization: `Bearer ${token}` }),
+    credentialRevision,
+    accountId: "account-managed",
+    accountAuthEpoch: 1,
+    renewed: credentialRevision > 2,
+  };
+}
+
 describe("provider transport Claude Code compatibility", () => {
+  it.each(["codex", "xai", "github_copilot"] as const)("captures %s JSON rejection details and the upstream request id", async (adapterKind) => {
+    managedMocks.resolve.mockResolvedValue(managedAccess());
+    const body = { detail: "This model is not supported with this account.", error: { code: "model_not_supported", param: "model" } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(body), {
+      status: 400,
+      headers: { "x-request-id": "upstream-rejected" },
+    })));
+    await expect(sendProviderRequest({
+      resolved: managedResolved(adapterKind),
+      body: { model: "alias", stream: true },
+      requestSignal: new AbortController().signal,
+    })).rejects.toMatchObject({ status: 400, responseBody: body, requestId: "upstream-rejected" });
+  });
+
+  it.each(["codex", "xai", "github_copilot"] as const)("preserves %s non-JSON rejection text while redacting the used credential", async (adapterKind) => {
+    managedMocks.resolve.mockResolvedValue(managedAccess());
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("Upstream rejected Bearer managed-token for this model.\n", { status: 422 })));
+    await expect(sendProviderRequest({
+      resolved: managedResolved(adapterKind),
+      body: { model: "alias" },
+      requestSignal: new AbortController().signal,
+    })).rejects.toMatchObject({ status: 422, responseBody: "Upstream rejected [REDACTED] for this model.\n" });
+  });
+
+  it("captures the final rejection after one renewal and removes both credential generations", async () => {
+    managedMocks.resolve.mockResolvedValueOnce(managedAccess("old-token"))
+      .mockResolvedValueOnce(managedAccess("new-token", 3));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("first rejection", { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        detail: "Rejected old-token and new-token",
+        access_token: "another-credential",
+      }), { status: 401, headers: { "request-id": "last-rejection" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(sendProviderRequest({
+      resolved: managedResolved("codex"),
+      body: { model: "alias", stream: false },
+      requestSignal: new AbortController().signal,
+      allowManagedCredentialRetry: true,
+    })).rejects.toMatchObject({
+      status: 401,
+      responseBody: { detail: "Rejected [REDACTED] and [REDACTED]", access_token: "[REDACTED]" },
+      requestId: "last-rejection",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(managedMocks.resolve).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves an empty managed rejection body and cleans up the timeout", async () => {
+    vi.useFakeTimers();
+    managedMocks.resolve.mockResolvedValue(managedAccess());
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })));
+    await expect(sendProviderRequest({
+      resolved: managedResolved("codex"),
+      body: { model: "alias" },
+      requestSignal: new AbortController().signal,
+    })).rejects.toMatchObject({ status: 403, responseBody: "" });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps generic upstream error capture with credential redaction", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "Rejected provider-secret", type: "invalid_request_error" } }), { status: 400 })));
+    await expect(sendProviderRequest({
+      resolved: resolved(),
+      body: { model: "alias" },
+      requestSignal: new AbortController().signal,
+    })).rejects.toMatchObject({
+      status: 400,
+      responseBody: { error: { message: "Rejected [REDACTED]", type: "invalid_request_error" } },
+    });
+  });
+
   it("pins managed product tokens to the registry endpoint and headers", async () => {
     managedMocks.resolve.mockResolvedValue({
       adapterKind: "xai",
@@ -103,6 +206,48 @@ describe("provider transport Claude Code compatibility", () => {
       managedAccountAuthEpoch: 2,
       renewalAttempted: false,
     });
+    result.abort.cleanup();
+  });
+
+  it("preserves Codex model client metadata through a credential renewal", async () => {
+    const access = (token: string, revision: number) => ({
+      ...managedAccess(token, revision),
+      headers: new Headers({
+        authorization: `Bearer ${token}`,
+        "chatgpt-account-id": "owned-account",
+        originator: "owned-client",
+        "user-agent": "default-client/1",
+        version: "1",
+      }),
+    });
+    managedMocks.resolve.mockResolvedValueOnce(access("old-fixture", 2))
+      .mockResolvedValueOnce(access("new-fixture", 3));
+    const sentHeaders: Headers[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+      sentHeaders.push(new Headers(init.headers));
+      return new Response("{}", { status: sentHeaders.length === 1 ? 401 : 200 });
+    }));
+    const model = managedResolved("codex");
+    const result = await sendProviderRequest({
+      resolved: {
+        ...model,
+        model: { ...model.model, requestHeaders: {
+          "user-agent": "compatible-client/2", version: "2",
+          "chatgpt-account-id": "other-account", originator: "other-client",
+        } },
+      },
+      body: { model: "alias", stream: false },
+      requestSignal: new AbortController().signal,
+      allowManagedCredentialRetry: true,
+    });
+    expect(sentHeaders).toHaveLength(2);
+    expect(sentHeaders.map((headers) => headers.get("authorization"))).toEqual(["Bearer old-fixture", "Bearer new-fixture"]);
+    for (const headers of sentHeaders) {
+      expect(headers.get("user-agent")).toBe("compatible-client/2");
+      expect(headers.get("version")).toBe("2");
+      expect(headers.get("chatgpt-account-id")).toBe("owned-account");
+      expect(headers.get("originator")).toBe("owned-client");
+    }
     result.abort.cleanup();
   });
 
@@ -202,7 +347,7 @@ describe("provider transport Claude Code compatibility", () => {
       body: { model: "gpt", stream: true, input: [] },
       requestSignal: new AbortController().signal,
       gatewayRequestId: "req-3",
-    })).rejects.toMatchObject({ status: 401, responseBody: undefined });
+    })).rejects.toMatchObject({ status: 401, responseBody: "unauthorized" });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(managedMocks.resolve).toHaveBeenCalledOnce();
   });

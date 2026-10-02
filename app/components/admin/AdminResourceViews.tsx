@@ -4,6 +4,7 @@
 // [Output] Canonical resource forms, including Provider auth revision CAS and model-scoped Runtime controls.
 // [Pos] Admin resource-view declaration layer; server validation and capability gates stay in app/lib.
 // [Sync] 2026-09-17: map the Dream Run URL identity to the allowlisted Repository id filter.
+// [Sync] 2026-10-02: clarify Codex model client metadata overrides while keeping authentication Provider-owned.
 import { gatewayDefaultLimitsPolicy } from "../../../config/gateway-default-limits.mjs";
 import { CLAUDE_CODE_RUNTIME_INTEGER_MAX } from "../../../config/claude-agent-resource-policy";
 import AdminResourceManager, {
@@ -85,7 +86,7 @@ export const modelFields: AdminFieldDefinition[] = [
   { key: "code", label: "模型别名 Code", control: "text", section: "identity", required: true, createOnly: true, readOnlyOnEdit: true, placeholder: "claude-sonnet" },
   { key: "upstreamModel", sourceKey: "upstream_model", label: "上游型号（Model Dropdown）", control: "model-picker", section: "identity", required: true, placeholder: "选择常用型号或输入自定义型号", options: upstreamModelOptions },
   { key: "displayName", sourceKey: "display_name", label: "显示名称", control: "text", section: "identity", required: true },
-  { key: "requestHeaders", sourceKey: "request_headers", label: "上游差异请求头（JSON）", control: "json", jsonShape: "object", section: "identity", required: true, help: "仅用于当前模型，例如 {\"User-Agent\":\"OpenAI/JS 6.39.1\"}。不得填写 Authorization、x-api-key、Cookie、Host、Content-Type 或转发类请求头。" },
+  { key: "requestHeaders", sourceKey: "request_headers", label: "上游差异请求头（JSON）", control: "json", jsonShape: "object", section: "identity", required: true, help: "仅用于当前模型。Codex 的 User-Agent 与 version 可覆盖默认客户端标识；账号与认证由 Provider 管理。不得填写 Authorization、x-api-key、Cookie、Host、Content-Type 或转发类请求头。" },
   { key: "contextWindow", sourceKey: "context_window", label: "Context Window", control: "number", section: "limits", nullable: true, min: 1, step: 1 },
   { key: "maxOutputTokens", sourceKey: "max_output_tokens", label: "最大输出 Token", control: "number", section: "limits", nullable: true, min: 1, step: 1 },
   { key: "claudeCodeAutoCompactWindow", sourceKey: "claude_code_auto_compact_window", label: "自动压缩窗口", control: "number", section: "claude-runtime", nullable: true, min: 1, max: CLAUDE_CODE_RUNTIME_INTEGER_MAX, step: 1 },

@@ -1,7 +1,8 @@
 // [Input] Injected fetch implementation and bounded provider HTTP responses.
-// [Output] Bounded JSON containers and status-only errors that never include response bodies or credentials.
+// [Output] Bounded response text/JSON and status-only errors; callers own credential redaction before disclosure.
 // [Pos] Shared transport parsing and HTTP error classification for provider adapters.
 // [Sync] 2026-09-04: isolate the larger model-catalog byte budget from sensitive OAuth responses.
+// [Sync] 2026-10-02: share bounded text reading with Admin model-validation diagnostics.
 
 import { ProviderProtocolError } from "./errors";
 
@@ -29,13 +30,14 @@ function responseByteLimit(options?: ReadJsonOptions) {
   return maxBytes;
 }
 
-export async function readJsonValue(
-  response: Response,
+export async function readResponseText(
+  response: Pick<Response, "status" | "headers" | "body">,
   options?: ReadJsonOptions,
-): Promise<JsonContainer> {
+): Promise<string> {
   const maxBytes = responseByteLimit(options);
   const declaredLength = Number(response.headers.get("content-length") ?? 0);
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    await response.body?.cancel().catch(() => undefined);
     throw new ProviderProtocolError({
       code: "PROVIDER_RESPONSE_TOO_LARGE",
       category: "protocol",
@@ -47,20 +49,24 @@ export async function readJsonValue(
   const chunks: Uint8Array[] = [];
   let byteLength = 0;
   if (reader) {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      byteLength += value.byteLength;
-      if (byteLength > maxBytes) {
-        await reader.cancel().catch(() => undefined);
-        throw new ProviderProtocolError({
-          code: "PROVIDER_RESPONSE_TOO_LARGE",
-          category: "protocol",
-          message: "The provider response exceeded the allowed size",
-          httpStatus: response.status,
-        });
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        byteLength += value.byteLength;
+        if (byteLength > maxBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw new ProviderProtocolError({
+            code: "PROVIDER_RESPONSE_TOO_LARGE",
+            category: "protocol",
+            message: "The provider response exceeded the allowed size",
+            httpStatus: response.status,
+          });
+        }
+        chunks.push(value);
       }
-      chunks.push(value);
+    } finally {
+      reader.releaseLock();
     }
   }
   const bytes = new Uint8Array(byteLength);
@@ -69,7 +75,14 @@ export async function readJsonValue(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  const text = new TextDecoder().decode(bytes);
+  return new TextDecoder().decode(bytes);
+}
+
+export async function readJsonValue(
+  response: Response,
+  options?: ReadJsonOptions,
+): Promise<JsonContainer> {
+  const text = await readResponseText(response, options);
   try {
     const value: unknown = text === "" ? {} : JSON.parse(text);
     if (!value || typeof value !== "object") throw new Error();

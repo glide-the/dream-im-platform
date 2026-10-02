@@ -3,6 +3,7 @@
 <!-- [Pos] cc-switch adaptation guide; authentication capability decisions defer to the dedicated lifecycle contract. -->
 <!-- [Sync] 2026-09-04: distinguish cc-switch manual model fetch from managed post-connect discovery, including generation fencing and unsupported Copilot models. -->
 <!-- [Sync] 2026-09-14: allow explicit candidate choice from immutable pricing snapshots through collapsible comparison. -->
+<!-- [Sync] 2026-10-02: align Codex model client metadata across validation and Gateway without rebinding Device OAuth. -->
 
 # cc-switch 模型设置与计费设计接入规范
 
@@ -13,6 +14,8 @@
 模型设置与模型计费直接采用 cc-switch 的信息组织和交互骨架，再使用 Ink & Memory UI Design v2 与 `docs/prd/color_system` 完成品牌化。主要证据如下：
 
 产品语义也采用 cc-switch 的“注册供应商后由代理统一出站”，但落为 PostgreSQL 多用户服务：`Provider → Model alias → Pricing → Gateway Key`。主要调用方是 `ink-dream-memory`；它只调用 Ink Memory 的 Anthropic/OpenAI 兼容入口，不保存上游 Provider Secret、Endpoint 或真实型号。
+
+Codex 的模型差异请求头允许显式覆盖 `user-agent` 与 `version`，未设置时沿用产品默认客户端标识。模型验证、Gateway 推理与 401 续期重放复用同一合并规则；账号、认证与 originator 由 Provider 托管，客户端兼容性配置不要求重新 Device OAuth 认证。
 
 | cc-switch 证据 | 可复用模式 | Ink Memory 落点 |
 |---|---|---|
@@ -141,7 +144,7 @@ Provider 卡片的 Endpoint Speed Test 被适配为纯 reachability；Model 卡�
 | `enabled` | 状态徽标 | 开关 | 启用前要求 Provider active；失败 409 提供 Provider 跳转 |
 | 时间字段 | 日期时间 | 只读 | 服务端 |
 
-Model 卡片的“验证配置”不是表单字段：按钮需 `models.write`，调用 `POST /api/admin/models/:id/validate`。服务端使用已加密 Credential 发送一次非流式、最多 1 Token 的上游请求，不读取或记录响应正文；结果只显示 operational/degraded/failed、HTTP 状态和耗时。该动作验证 Credential、协议和 `upstream_model`，与 Provider 的纯网络 reachability、外部 Gateway 的真实计费调用是三个不同验收层级。
+Model 卡片的“验证配置”不是表单字段：按钮需 `models.write`，调用 `POST /api/admin/models/:id/validate`。服务端使用已加密 Credential 发送一次最小请求；generic 使用非流式、最多 1 Token，managed 复用 Gateway 的产品协议适配，Codex 可能强制 SSE。成功响应取消正文读取；失败响应按既有 64 KiB 技术预算读取，仅返回凭据脱敏后的 `detail/error.message/message` 或文本原因以及上游 request ID，不保存正文或诊断内容。结果显示 operational/degraded/failed、HTTP 状态、耗时与具体上游原因；重新验证清除旧诊断。该动作验证 Credential、协议和 `upstream_model` 的本次上游接受状态，与 Provider 的纯网络 reachability、外部 Gateway 的真实计费调用是三个不同验收层级；目录存在或 HTTP 接受不授予账号模型权限。
 
 ## 6. Pricing 字段与控件
 

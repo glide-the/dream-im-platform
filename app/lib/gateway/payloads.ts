@@ -1,3 +1,8 @@
+// [Input] Gateway application payloads, Provider error bodies, and sensitive request/response headers.
+// [Output] PostgreSQL payload capture with credential redaction and separately protected upstream error evidence.
+// [Pos] Gateway payload persistence and redaction boundary; Admin full-payload reads enforce permission and audit.
+// [Sync] 2026-10-02: redact echoed inference credentials while preserving upstream JSON and text error details.
+
 import { createHash } from "node:crypto";
 import { withPlatformClient } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
@@ -62,6 +67,37 @@ export function redactRequestHeaders(headers: Headers) {
 
 export function redactResponseHeaders(headers: Headers) {
   return persistedHeaders(headers, RESPONSE_HEADER_ALLOWLIST);
+}
+
+export function redactProviderErrorBody(body: unknown, credentialHeaders: readonly Headers[]): unknown {
+  const secrets = new Set<string>();
+  for (const headers of credentialHeaders) {
+    for (const name of SENSITIVE_HEADER_NAMES) {
+      const value = headers.get(name);
+      if (!value) continue;
+      secrets.add(value);
+      if (/^Bearer\s+/i.test(value)) secrets.add(value.replace(/^Bearer\s+/i, ""));
+    }
+  }
+  const sensitiveKeys = new Set([
+    ...SENSITIVE_HEADER_NAMES,
+    "api-key", "access-token", "refresh-token", "id-token", "client-secret",
+    "password", "secret", "credential", "token",
+  ].map((name) => name.replace(/[^a-z0-9]/g, "")));
+  const redactText = (value: string) => {
+    for (const secret of secrets) value = value.replaceAll(secret, REDACTED);
+    return value;
+  };
+  const redact = (value: unknown): unknown => {
+    if (typeof value === "string") return redactText(value);
+    if (Array.isArray(value)) return value.map(redact);
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
+      redactText(key),
+      sensitiveKeys.has(key.toLowerCase().replace(/[^a-z0-9]/g, "")) ? REDACTED : redact(entry),
+    ]));
+  };
+  return redact(body);
 }
 
 export function queryRecord(url: URL) {

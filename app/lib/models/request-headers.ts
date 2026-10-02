@@ -1,4 +1,11 @@
+// [Input] Validated model header configuration and Provider-owned authentication headers.
+// [Output] Normalized safe headers; Codex client metadata overrides survive managed credential merging.
+// [Pos] Shared model header policy used by Admin validation and Gateway transport, including renewal.
+// [Sync] 2026-10-02: allow explicit Codex version/User-Agent compatibility without changing credential ownership.
+
 import { z } from "zod";
+
+import type { ProviderProductKind } from "../providers";
 
 const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const MAX_HEADER_COUNT = 32;
@@ -101,5 +108,21 @@ export function applyModelRequestHeaders(
 ) {
   for (const [name, value] of Object.entries(configured)) {
     target.set(name, value);
+  }
+}
+
+export function applyManagedProviderRequestHeaders(
+  target: Headers,
+  owned: Headers,
+  configured: ModelRequestHeaders,
+  product: ProviderProductKind,
+) {
+  for (const [name, value] of owned) target.set(name, value);
+  if (product === "codex") {
+    const overrides = new Headers(configured);
+    for (const name of ["user-agent", "version"]) {
+      const value = overrides.get(name);
+      if (value !== null) target.set(name, value);
+    }
   }
 }

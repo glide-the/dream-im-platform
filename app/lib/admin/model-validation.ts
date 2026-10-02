@@ -1,8 +1,10 @@
 // [Input] Authenticated model-validation requests plus generic static or product-managed Provider state.
-// [Output] A minimal upstream validation result without reading or exposing response or credential content.
+// [Output] Minimal validation status plus bounded, credential-redacted upstream failure diagnostics for models.write.
 // [Pos] Shared Admin model validation primitive using the same auth and product dialects as Gateway.
 // [Sync] 2026-09-04: validate managed products through fixed resources while preserving static API keys.
 // [Sync] 2026-09-04: resolve managed validation only through the Provider-owned account.
+// [Sync] 2026-10-02: preserve concrete rejection reasons without persisting response bodies or reading successful output.
+// [Sync] 2026-10-02: share Gateway's model-scoped Codex client metadata precedence.
 
 import type { PoolClient } from "pg";
 
@@ -11,9 +13,12 @@ import { resolveManagedProviderAccess } from "../gateway/managed-provider-creden
 import { adaptProviderRequest } from "../gateway/protocol-adapters";
 import { resolveProviderAuthMode } from "../gateway/provider-auth";
 import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
+import { redactProviderErrorBody } from "../gateway/payloads";
+import { readResponseText } from "../providers/http";
 import { withPlatformClient, withPlatformTransaction } from "../platform-db";
 import { decryptCredential } from "../security/credential-encryption";
 import {
+  applyManagedProviderRequestHeaders,
   applyModelRequestHeaders,
   modelRequestHeadersSchema,
   type ModelRequestHeaders,
@@ -60,12 +65,55 @@ export type ModelValidationResult = {
   httpStatus: number | null;
   testedAt: string;
   message: string;
+  upstreamMessage?: string;
+  upstreamRequestId?: string;
 };
+
+type ValidationResponse = Pick<Response, "status"> & Partial<Pick<Response, "headers" | "body">>;
 
 type ValidationFetch = (
   input: string,
   init: RequestInit,
-) => Promise<Pick<Response, "status">>;
+) => Promise<ValidationResponse>;
+
+async function validationDiagnostics(
+  response: ValidationResponse,
+  credentialHeaders: Headers,
+): Promise<Pick<ModelValidationResult, "upstreamMessage" | "upstreamRequestId">> {
+  if (response.status >= 200 && response.status < 300) {
+    await response.body?.cancel().catch(() => undefined);
+    return {};
+  }
+  const upstreamRequestId = response.headers?.get("request-id")
+    ?? response.headers?.get("x-request-id");
+  const result: Pick<ModelValidationResult, "upstreamMessage" | "upstreamRequestId"> = {};
+  if (upstreamRequestId) {
+    result.upstreamRequestId = String(redactProviderErrorBody(upstreamRequestId, [credentialHeaders]));
+  }
+  if (!response.body) return result;
+  try {
+    const raw = await readResponseText({
+      status: response.status,
+      headers: response.headers ?? new Headers(),
+      body: response.body,
+    });
+    let body: unknown = raw;
+    try { body = JSON.parse(raw); } catch { /* preserve plain-text rejection messages */ }
+    const safe = redactProviderErrorBody(body, [credentialHeaders]);
+    const record = safe && typeof safe === "object" && !Array.isArray(safe)
+      ? safe as Record<string, unknown>
+      : undefined;
+    const error = record?.error && typeof record.error === "object"
+      ? record.error as Record<string, unknown>
+      : undefined;
+    const message = [record?.detail, error?.message, record?.message, typeof safe === "string" ? safe : undefined]
+      .find((value): value is string => typeof value === "string" && value.trim() !== "");
+    if (message) result.upstreamMessage = message;
+  } catch {
+    // Diagnostic reads must preserve the already received HTTP failure classification.
+  }
+  return result;
+}
 
 function endpoint(baseUrl: string, protocol: AiProviderProtocol) {
   const url = new URL(baseUrl);
@@ -157,8 +205,10 @@ export async function validateUpstreamModel(
       signal: AbortSignal.timeout(Math.min(Math.max(input.timeoutMs ?? 8_000, 1_000), 15_000)),
     });
     const classified = validationMessage(response.status);
+    const diagnostics = await validationDiagnostics(response, requestHeaders);
     return {
       ...classified,
+      ...diagnostics,
       responseTimeMs: Math.max(0, now() - startedAt),
       httpStatus: response.status,
       testedAt: testedAt().toISOString(),
@@ -229,7 +279,7 @@ export async function validateManagedUpstreamModel(
       "content-type": "application/json",
     });
     applyModelRequestHeaders(headers, input.requestHeaders ?? {});
-    for (const [name, value] of access.headers) headers.set(name, value);
+    applyManagedProviderRequestHeaders(headers, access.headers, input.requestHeaders ?? {}, input.adapterKind);
     const response = await fetcher(access.url, {
       method: "POST",
       headers,
@@ -239,8 +289,10 @@ export async function validateManagedUpstreamModel(
       signal: AbortSignal.timeout(15_000),
     });
     const classified = validationMessage(response.status);
+    const diagnostics = await validationDiagnostics(response, headers);
     return {
       ...classified,
+      ...diagnostics,
       responseTimeMs: Math.max(0, now() - startedAt),
       httpStatus: response.status,
       testedAt: testedAt().toISOString(),
