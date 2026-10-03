@@ -1,3 +1,8 @@
+// [Input] Controlled usage-unknown request, allowance and PostgreSQL client responses.
+// [Output] Account-before-request/allowance ordering and conservative Token capture evidence.
+// [Pos] Provider-free unit contract for unknown-usage reconciliation.
+// [Sync] 2026-10-03: assert reconciliation enters the shared account transaction gate first.
+
 import { describe, expect, it, vi } from "vitest";
 
 import { resolveUnknownGatewayUsageOnClient } from "./settlement-worker";
@@ -69,5 +74,18 @@ describe("usage-unknown reconciliation", () => {
     expect(statements.join("\n")).toContain(
       "subscription_token_ledger_entries",
     );
+    const accountLockIndex = statements.findIndex(statement =>
+      statement.includes("pg_advisory_xact_lock")
+    );
+    const requestLockIndex = statements.findIndex(statement =>
+      statement.includes("FROM gateway_requests") &&
+      statement.includes("FOR UPDATE")
+    );
+    const allowanceLockIndex = statements.findIndex(statement =>
+      statement.includes("FROM subscription_usage_allowances")
+    );
+    expect(accountLockIndex).toBeGreaterThanOrEqual(0);
+    expect(requestLockIndex).toBeGreaterThan(accountLockIndex);
+    expect(allowanceLockIndex).toBeGreaterThan(requestLockIndex);
   });
 });

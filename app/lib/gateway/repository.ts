@@ -1,13 +1,14 @@
 // [Input] Resolved model/auth snapshots, Gateway principal, request reservation, and settlement measurements.
 // [Output] Transactional request ledger rows with billing plus Provider auth epoch/revision evidence.
 // [Pos] PostgreSQL persistence boundary for the Gateway request lifecycle and append-only billing effects.
-// [Sync] 2026-09-04: persist Provider-owned managed credential fences; legacy default revision stays null.
+// [Sync] 2026-10-03: acquire the account transaction gate before idempotency, rate and allowance locks.
 
 import type { InputTokenSemantics } from "../billing/types";
 import type { ResolvedBillableModel } from "../models/resolver";
 import { withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
 import type { GatewayPrincipal } from "./auth";
+import { lockGatewayAccountOnClient } from "./account-lock";
 import {
   reserveSubscriptionAllowanceOnClient,
   resolveGatewaySubscriptionOnClient,
@@ -209,6 +210,10 @@ export async function beginGatewayRequest(input: {
   };
 }): Promise<BeginGatewayRequestResult> {
   return await withPlatformTransaction(async (client) => {
+    await lockGatewayAccountOnClient(
+      client,
+      input.principal.platformUserId,
+    );
     if (input.idempotencyKey) {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
         `${input.principal.platformUserId}:${input.idempotencyKey}`,

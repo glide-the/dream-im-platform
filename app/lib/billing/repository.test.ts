@@ -1,5 +1,10 @@
+// [Input] Gateway settlement fixtures and a controlled PostgreSQL client boundary.
+// [Output] Account-before-request/rate/allowance order, short-circuit idempotency and error propagation evidence.
+// [Pos] Provider-free settlement unit contract; actual row-lock and rollback behavior has separate PostgreSQL coverage.
+// [Sync] 2026-10-03: assert the account gate precedes request and shared accounting row locks.
+
 import type { PoolClient } from "pg";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   settleAllowance: vi.fn(),
@@ -12,6 +17,7 @@ vi.mock("../subscriptions/gateway", () => ({
 import { settleGatewayRequestOnClient } from "./repository";
 
 describe("Token-only Gateway settlement", () => {
+  beforeEach(() => mocks.settleAllowance.mockReset());
   it("captures subscription Tokens without locking or mutating a cash account", async () => {
     mocks.settleAllowance.mockResolvedValue({
       cashChargeMicrousd: 0,
@@ -70,6 +76,25 @@ describe("Token-only Gateway settlement", () => {
     const executedSql = query.mock.calls
       .map(([sql]) => String(sql))
       .join("\n");
+    const rateCalls = query.mock.calls
+      .map(([sql], index) => ({ sql, index }))
+      .filter(({ sql }) => sql.includes("UPDATE gateway_rate_limits"));
+    const accountLockIndex = query.mock.calls.findIndex(([sql]) =>
+      String(sql).includes("pg_advisory_xact_lock")
+    );
+    const requestLockIndex = query.mock.calls.findIndex(([sql]) =>
+      String(sql).includes("FROM gateway_requests") &&
+      String(sql).includes("FOR UPDATE")
+    );
+    expect(accountLockIndex).toBeGreaterThanOrEqual(0);
+    expect(requestLockIndex).toBeGreaterThan(accountLockIndex);
+    expect(rateCalls).toHaveLength(2);
+    expect(rateCalls.every(({ sql }) => sql.includes("date_trunc($3, $4::timestamptz, 'UTC')"))).toBe(true);
+    for (const { index } of rateCalls) {
+      expect(query.mock.invocationCallOrder[index]).toBeLessThan(
+        mocks.settleAllowance.mock.invocationCallOrder[0],
+      );
+    }
     expect(executedSql).not.toContain("billing_accounts");
     expect(executedSql).not.toContain("billing_ledger_entries");
     expect(result).toMatchObject({
@@ -87,5 +112,46 @@ describe("Token-only Gateway settlement", () => {
         planVersionId: "planv_1",
       }),
     );
+  });
+
+  it("returns an existing settlement without acquiring shared write resources", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{
+      id: "req_settled",
+      settled_at: new Date("2026-10-02T00:00:00Z"),
+    }] });
+    const result = await settleGatewayRequestOnClient({ query } as unknown as PoolClient, {
+      gatewayRequestId: "req_settled",
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, inputTokenSemantics: "fresh" },
+      outcome: "failed",
+    });
+    expect(result).toEqual({ idempotent: true, requestId: "req_settled" });
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(mocks.settleAllowance).not.toHaveBeenCalled();
+  });
+
+  it("fails before allowance effects if a rate write fails", async () => {
+    const failure = new Error("CONTROLLED_RATE_WRITE_FAILURE");
+    const request = {
+      id: "req_rate_failure", platform_user_id: "usr_1", model_id: "model_1",
+      settled_at: null, reserved_microusd: 0, estimated_tokens: 100,
+      created_at: new Date("2026-10-03T00:00:00Z"),
+      input_price_snapshot: 0, output_price_snapshot: 0,
+      cache_read_price_snapshot: 0, cache_write_price_snapshot: 0,
+      markup_bps_snapshot: 0, discount_bps_snapshot: 0,
+    };
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("FROM gateway_requests")) {
+        return { rows: [request], rowCount: 1 };
+      }
+      if (sql.includes("UPDATE gateway_rate_limits")) throw failure;
+      return { rows: [], rowCount: 1 };
+    });
+    await expect(settleGatewayRequestOnClient({ query } as unknown as PoolClient, {
+      gatewayRequestId: "req_rate_failure",
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, inputTokenSemantics: "fresh" },
+      outcome: "succeeded",
+    })).rejects.toBe(failure);
+    expect(mocks.settleAllowance).not.toHaveBeenCalled();
+    expect(query.mock.calls.some(([sql]) => String(sql).includes("pg_advisory_xact_lock"))).toBe(true);
   });
 });

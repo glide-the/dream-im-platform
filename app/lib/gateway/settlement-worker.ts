@@ -1,7 +1,13 @@
+// [Input] Usage-unknown Gateway requests and reconciliation policy.
+// [Output] Idempotent conservative Token capture through the shared account transaction gate.
+// [Pos] Gateway settlement worker; candidate discovery is lock-free and finalization rechecks under account then request locks.
+// [Sync] 2026-10-03: acquire the account gate before the request and allowance rows.
+
 import type { PoolClient } from "pg";
 
 import { withPlatformTransaction } from "../platform-db";
 import { settleSubscriptionAllowanceOnClient } from "../subscriptions/gateway";
+import { lockGatewayAccountOnClient } from "./account-lock";
 
 type UnknownUsageRequest = {
   id: string;
@@ -44,6 +50,20 @@ export async function resolveUnknownGatewayUsageOnClient(
   client: PoolClient,
   input: { requestId: string; resolvedAt: Date },
 ): Promise<UnknownUsageResolution> {
+  const identityResult = await client.query<{
+    id: string;
+    platform_user_id: string;
+  }>(
+    `SELECT id, platform_user_id
+     FROM gateway_requests
+     WHERE id = $1`,
+    [input.requestId],
+  );
+  const identity = identityResult.rows[0];
+  if (!identity) throw new Error("GATEWAY_UNKNOWN_USAGE_REQUEST_NOT_FOUND");
+
+  await lockGatewayAccountOnClient(client, identity.platform_user_id);
+
   const result = await client.query<UnknownUsageRequest>(
     `SELECT id, status, settled_at, completed_at, platform_user_id,
             subscription_id, subscription_plan_version_id,
@@ -168,8 +188,7 @@ export async function reconcileUnknownGatewayUsage(input?: {
            AND subscription_coverage_mode = 'token_allowance'
            AND completed_at <= $1
          ORDER BY completed_at ASC, id ASC
-         LIMIT 1
-         FOR UPDATE SKIP LOCKED`,
+         LIMIT 1`,
         [cutoff],
       );
       const row = due.rows[0];
