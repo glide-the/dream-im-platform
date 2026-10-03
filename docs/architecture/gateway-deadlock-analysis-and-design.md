@@ -31,7 +31,7 @@
 | 模型快照事务 | [resolver:144](/Users/dmeck/project/ink-admin-memory/app/lib/models/resolver.ts:144) 使用独立事务，共享锁读取用户、Model、Provider、价格；返回模型和定价快照后该事务结束。 |
 | 预授权事务 | [repository:211](/Users/dmeck/project/ink-admin-memory/app/lib/gateway/repository.ts:211) 创建请求及价格快照，检查订阅资格，锁限流窗口，预留订阅 Token，追加 Token reserve 流水，更新请求状态及限流计数，一起提交。 |
 | 上游执行 | [proxy:231](/Users/dmeck/project/ink-admin-memory/app/lib/gateway/proxy-handler.ts:231)、[proxy:292](/Users/dmeck/project/ink-admin-memory/app/lib/gateway/proxy-handler.ts:292) 在预授权返回之后发送模型请求；报文写入使用独立操作。 |
-| 结算事务 | [billing repository:365](/Users/dmeck/project/ink-admin-memory/app/lib/billing/repository.ts:365) 锁请求，按价格快照计算成本，校正UTC限流Token，再结算额度与必要现金账户，追加流水并写入终态（修复后顺序）。 |
+| 结算事务 | [billing repository:365](/Users/dmeck/project/ink-admin-memory/app/lib/billing/repository.ts:365) 先读账号与稳定终态，取得账号事务锁后再锁请求，按价格快照计算成本，校正UTC限流Token，再结算额度与必要现金账户，追加流水并写入终态。 |
 | 异常与核对 | [lifecycle:84](/Users/dmeck/project/ink-admin-memory/app/lib/gateway/lifecycle.ts:84) 区分已知用量和未知用量；[settlement worker:149](/Users/dmeck/project/ink-admin-memory/app/lib/gateway/settlement-worker.ts:149) 处理符合条件的旧未知用量请求。 |
 | 管理复核 | [Admin resources:360](/Users/dmeck/project/ink-admin-memory/app/lib/admin/resources.ts:360) 提供请求状态、用量、额度、价格快照与错误；现有 Payload 权限入口承载受保护的完整报文。 |
 | 数据与版本 | `packages/db/src/schema/**` 是唯一 Drizzle schema；`drizzle/**` 是不可变迁移历史。当前 Gateway/Billing 热路径实际使用 `pg` 的 `PoolClient` 和领域 SQL，不应把本次问题说成 Drizzle 自动生成事务的问题。 |
@@ -56,7 +56,7 @@
 | 已知用量成功/失败/取消结算 | `settleGatewayRequest` 独立事务 | 请求 `FOR UPDATE` → Allowance `FOR UPDATE`/更新及 Token capture/release → 可选现金账户 → 可选额度金额流水 → 日、月限流 `UPDATE` → 现金流水/账户 → 请求终态 → 可选用户 suspend，提交 | 否 |
 | 确认未计费的失败释放 | 复用上一行结算事务，不另开释放业务路径 | 以零用量结算，释放该请求预留 Token，限流 Token 校正为零；分钟请求计数不回退 | 否 |
 | 用量未知标记 | `markGatewayRequestSettlementFailed` 独立事务 | 条件更新请求行，不修改额度或限流，提交；失败被外围吞掉 | 否 |
-| 用量未知后台核对 | 每个请求一个独立事务 | `gateway_requests FOR UPDATE SKIP LOCKED` → 再锁同一请求 → Allowance → Token capture → 请求 `settled_at`，提交；**不更新限流** | 否 |
+| 用量未知后台核对 | 每个请求一个独立事务 | 无锁选择候选 → 读取账号 → 账号事务锁 → 请求 `FOR UPDATE` 与终态复核 → Allowance → Token capture → 请求 `settled_at`，提交；**不更新限流** | 否 |
 | 单独 release helper | 仅有 `releaseSubscriptionAllowanceOnClient` 导出，未发现生产调用者 | 调用者负责事务；额度锁 → Token release 流水；函数本身没有请求终态守卫 | 否，不属于当前上游链 |
 
 预授权窗口顺序来自 [repository:96](/Users/dmeck/project/ink-admin-memory/app/lib/gateway/repository.ts:96)，锁语句在 [repository:124](/Users/dmeck/project/ink-admin-memory/app/lib/gateway/repository.ts:124)，额度预留在 [repository:403](/Users/dmeck/project/ink-admin-memory/app/lib/gateway/repository.ts:403)。结算额度锁在 [subscription gateway:382](/Users/dmeck/project/ink-admin-memory/app/lib/subscriptions/gateway.ts:382)，限流更新在 [billing repository:404](/Users/dmeck/project/ink-admin-memory/app/lib/billing/repository.ts:404)（当前修复后位置）。
@@ -154,7 +154,7 @@ GPT-6.1-Sol 空回复没有关联证据，本方案不解释、不修复该独�
 - 仅重试服务器明确中止的数据库事务，例如 `40P01` 或适用的 `40001`；不能将网络断连、COMMIT 结果未知、任意异常视为已回滚。
 - 从 `BEGIN` 重做完整事务闭包及锁下读取，不在已 aborted 的事务中重发最后一条 SQL。预授权闭包绝不包含 `sendProviderRequest`；结算闭包仅接收不可变 request id、usage 和 outcome。
 - 预授权重试继续使用同一用户/幂等键并在成功提交之后只发一次模型；已提交拒绝记录不能被内部重试改写成成功。没有客户端键时，内部尝试仍需固定逻辑请求身份，不能因重试制造多个已提交请求。
-- 结算每次先锁请求并检查 `settled_at`；已结算返回幂等结果。Token/现金流水继续使用原 request id 派生键，回滚事务的所有副作用一起撤销。
+- 结算先无锁读取账号和稳定终态；已结算直接返回。未结算时取得账号事务锁，再锁请求并复核 `settled_at`。Token/现金流水继续使用原 request id 派生键，回滚事务的所有副作用一起撤销。
 - 设置有限次数、退避和总时间边界，依据技术验证确定，不把任意常量包装成产品限额，也不建立通用可编辑重试配置系统。
 - 重试耗尽后保留可复核结算证据；**不得重试已经发出的模型调用**。
 
@@ -170,9 +170,9 @@ PostgreSQL 官方说明支持完整事务重试边界，但它不能替代锁序
 
 ### 2.8 验收标准与实施范围
 
-完整补丁的验收是“两个预授权之间、预授权与结算之间的交错不会形成已识别循环，同时计数与流水保持正确”，不是某个未经测试的并发数。所有提交效果须满足一次预留、一次终态结算、账本只追加、失败回滚无局部扣减、模型调用数不因数据库重试增加。
+完整补丁的验收是“两个预授权之间、预授权与结算之间的交错不会形成已识别循环，同时计数与流水保持正确”，不是某个未经测试的并发数。所有提交效果须满足一次预留、一次终态结算、账本只追加、失败回滚无局部扣减、模型调用数不因数据库重试增加。同一账号的数据库计费临界区允许排队，模型执行继续位于事务外并行。
 
-4.4 完整修复的最小实施文件预计为 `app/lib/billing/repository.ts`（结算顺序）、`app/lib/subscriptions/gateway.ts`（额度锁模式）、相关 focused tests、`app/lib/gateway/.folder.md`、Billing 上层目录合同及本设计/索引；业务代码实施时补齐文件头。不修改 Route Handler、schema、历史迁移、连接池或环境配置。异常边界补丁若另行实施，再涉及 `lifecycle.ts`、`proxy-handler.ts` 和 worker 的已知/未知筛选，须独立验收，不以锁序修复通过代替。
+实施文件包括 `app/lib/gateway/account-lock.ts`（账号事务锁）、`app/lib/gateway/repository.ts`（预授权入口）、`app/lib/billing/repository.ts`（结算入口与顺序）、`app/lib/gateway/settlement-worker.ts`（未知用量核对）、`app/lib/subscriptions/gateway.ts`（额度锁模式）、相关 focused tests、目录合同及本设计/索引。不修改 Route Handler、schema、历史迁移、连接池或运行配置。异常证据恢复若另行实施，再涉及 `lifecycle.ts` 与 `proxy-handler.ts`，须独立验收，不以锁序修复通过代替。
 
 ## 3. Mermaid 业务时序图
 
@@ -216,15 +216,14 @@ sequenceDiagram
     C->>G: 提交请求与幂等键
     G->>DB: 独立鉴权/模型快照读取；事务结束
         Note over G,DB: 预授权事务内
-        G->>DB: BEGIN；幂等检查；插入请求；共享锁Subscription
+        G->>DB: BEGIN；账号事务锁；幂等检查；插入请求；共享锁Subscription
         alt 资格查询已经发现额度不足
             G->>DB: 写rejected；COMMIT
             G-->>C: 402与额度信息；不请求模型
         else 初次资格检查通过
             G->>DB: 锁限流窗口，日→可选分钟→月
-            B->>DB: BEGIN；锁请求B；检查settled_at
-            B->>DB: 更新日窗口；等待A释放限流锁
-            Note over B,DB: B尚未取得额度锁，A可继续
+            B->>DB: BEGIN；读取B账号；等待同账号事务锁
+            Note over B,DB: B尚未锁请求、窗口或额度，A可继续
             alt 窗口检查超限
                 G->>DB: 写rejected；COMMIT；无额度预留
                 G-->>C: 429与窗口信息
@@ -239,8 +238,8 @@ sequenceDiagram
                     Note over G,DB: 全部预授权锁释放
                 end
             end
-            DB-->>B: A事务结束后，B日窗口更新可继续
-            B->>DB: 更新月窗口→锁Allowance→必要现金兼容→追加流水
+            DB-->>B: A事务结束后，B取得账号事务锁
+            B->>DB: 锁请求B→日/月窗口→Allowance→必要现金兼容→追加流水
             B->>DB: 写请求B终态；COMMIT
         end
     opt 仅当A预授权成功提交
@@ -248,7 +247,7 @@ sequenceDiagram
         G->>P: 调用模型；本修复不新增调用重试
         P-->>G: 响应及可靠usage
             Note over G,DB: A独立结算事务内
-            G->>DB: BEGIN；锁请求A；检查settled_at
+            G->>DB: BEGIN；读取A账号；账号事务锁→锁请求A；检查settled_at
             G->>DB: 日→月限流UPDATE；校正预估Token
             G->>DB: 锁Allowance；capture实际量/release余量
             G->>DB: 必要现金兼容；追加流水；写终态；COMMIT
@@ -271,12 +270,12 @@ sequenceDiagram
     G->>P: 模型请求
     alt 明确未计费的上游拒绝
         P-->>G: 拒绝且无计费用量
-        G->>DB: BEGIN；锁请求；日→月限流校正；锁额度
+        G->>DB: BEGIN；账号事务锁→锁请求；日→月限流校正；锁额度
         G->>DB: 零用量结算；追加release；失败终态；COMMIT
         G-->>C: 原上游错误分类与请求编号
     else 失败或取消但已有可靠usage
         P-->>G: 错误与已知用量
-        G->>DB: BEGIN；锁请求；日→月限流；锁额度
+        G->>DB: BEGIN；账号事务锁→锁请求；日→月限流；锁额度
         G->>DB: capture实际量/release余量；失败终态；COMMIT
         G-->>C: 原错误；实际用量仍计入
     else 超时或断连且用量未知
@@ -284,12 +283,12 @@ sequenceDiagram
         G->>DB: 独立事务标记settlement_failed；COMMIT
         Note over G,DB: 保留预留，不重发模型，不立即释放
         G-->>C: 超时/失败及请求编号，usage待核对
-        O->>DB: 宽限后，每请求一个事务；锁请求→额度
+        O->>DB: 宽限后，先读候选；每请求一个事务取得账号锁→请求锁→额度锁
         O->>DB: 保守capture预留量；记录未知事实；COMMIT
         Note over O,DB: 当前worker不校正限流，不伪造真实usage
     else 已知usage的结算事务失败
         P-->>G: 已执行，取得可靠usage
-        G->>DB: BEGIN；锁请求；日→月限流；额度结算
+        G->>DB: BEGIN；账号事务锁→锁请求；日→月限流；额度结算
         DB-->>G: 结算异常；ROLLBACK
         Note over G,P: 禁止再次调用模型
         Note over G,O: 建议保留可靠usage与结算原因；当前异常传播存在证据丢失风险
@@ -301,7 +300,7 @@ sequenceDiagram
 
 ### 3.4 推荐目标：分别标注事务边界与并行执行
 
-这张图对应 4.4 的推荐设计，不是当前实现。A、B 为同用户同模型的不同请求，B 的模型已经返回。**不使用覆盖所有参与者的背景色表示事务**；每笔事务由所属请求的 `BEGIN` 与 `COMMIT/ROLLBACK` 明确界定。`par` 表示 A 的后续执行与 B 的结算可以并行，不要求 A 等待 B 提交后才调用模型。B 在窗口处等待时只持有自己的请求锁，尚未持有额度写锁。
+这张图对应当前待验证实现。A、B 为同用户同模型的不同请求，B 的模型已经返回。**不使用覆盖所有参与者的背景色表示事务**；每笔事务由所属请求的 `BEGIN` 与 `COMMIT/ROLLBACK` 明确界定。账号事务锁只覆盖数据库计费临界区；`par` 表示 A 的模型调用与 B 的结算可以并行。
 
 ```mermaid
 sequenceDiagram
@@ -313,11 +312,11 @@ sequenceDiagram
     C->>A: 发起模型请求A
     Note over A: 完成鉴权、模型和价格快照、Token估算
     Note over B: 请求B的模型已返回，准备结算
-    A->>DB: BEGIN A预授权；同键防重；创建请求；共享锁订阅资格；绑定额度外键
+    A->>DB: BEGIN A预授权；取得账号事务锁；同键防重；创建请求；共享锁订阅资格；绑定额度外键
     Note over A,DB: 额度外键取得KEY SHARE，与NO KEY UPDATE兼容
     A->>DB: NO KEY UPDATE锁日→可选分钟→月窗口
-    B->>DB: BEGIN B结算；锁请求B；检查settled_at
-    B->>DB: UPDATE日窗口，等待A；尚未锁额度
+    B->>DB: BEGIN B结算；无锁读取B的账号归属
+    B->>DB: 等待同账号事务锁；尚未锁请求、窗口或额度
     alt A窗口超限
         A->>DB: 写429拒绝；不锁额度、不增加计数
     else A限流允许
@@ -328,7 +327,7 @@ sequenceDiagram
             A->>DB: 更新预留与窗口；追加reserve；写reserved
         end
     end
-    A->>DB: COMMIT A预授权；释放该事务全部锁
+    A->>DB: COMMIT A预授权；释放账号锁与全部行锁
     par A按预授权结果继续
         alt A预授权被拒绝
             A-->>C: 402或429与请求编号；不调用模型
@@ -337,7 +336,7 @@ sequenceDiagram
             A->>M: 调用模型，不因数据库冲突重复发送
             M-->>A: 返回响应或上游错误
             alt 有可靠usage或明确未计费
-                A->>DB: BEGIN A结算；锁请求A；settled_at防重
+                A->>DB: BEGIN A结算；读账号→账号事务锁→锁请求A；settled_at防重
                 A->>DB: 日→月窗口UPDATE；必要时等待B释放窗口
                 A->>DB: NO KEY UPDATE锁额度；扣实际量、退剩余预留
                 A->>DB: 追加capture或release；写请求终态
@@ -356,14 +355,15 @@ sequenceDiagram
             end
         end
     and B继续原请求的结算
-        DB-->>B: A预授权释放窗口后，B日窗口UPDATE继续
-        B->>DB: UPDATE月窗口；NO KEY UPDATE锁额度
+        DB-->>B: A预授权提交后，B取得账号事务锁
+        B->>DB: 锁请求B并复核settled_at；UPDATE日→月窗口
+        B->>DB: NO KEY UPDATE锁额度
         B->>DB: 结转预留、追加流水、写请求B终态
         B->>DB: COMMIT B结算；释放该事务全部锁
     end
 ```
 
-A 预授权、B 结算、A 结算是三笔独立事务，可能通过窗口/额度行排队，不共享事务提交。图中 B 展示正常结算分支，其失败同样须回滚自身事务；不要求与 A 一起提交或回滚。
+A 预授权、B 结算、A 结算是三笔独立事务。同账号事务先在 advisory lock 上排队，取得后仍按请求、窗口、额度顺序访问实际业务行；不共享事务提交。图中 B 展示正常结算分支，其失败同样只回滚自身事务。
 
 图中 402 是目标行为：锁下额度不足须在修改计数/流水之前成为领域拒绝；当前提前执行 `tokenLedgerSnapshot` 的异常映射尚需修复和验证。结算失败后的证据保存仍受现有 best-effort 限制，不能解释为已实现精确恢复。主体业务时序不依赖新增恢复系统。
 
@@ -407,13 +407,13 @@ PostgreSQL 的 UPDATE 与显式行锁都会参与等待，数据库检测循环�
 
 具体步骤：
 
-1. 结算仍先锁该 request，检查 `settled_at` 幂等守卫，读取预估量、创建时间、价格和订阅来源快照。
+1. 结算先无锁读取 request 的 `platform_user_id` 和终态；已结算直接返回。未结算时取得账号事务锁，再锁 request 并复核 `settled_at`，读取预估量、创建时间、价格和订阅来源快照。
 2. 计算 charge、actualTokens、estimatedTokens、tokenDelta；这些为纯计算，不取得额度锁。
 3. 把现有日、月 `UPDATE gateway_rate_limits` 循环移到 `settleSubscriptionAllowanceOnClient` 之前；依旧按日→月执行，使用相同 request 窗口定位与增量表达式。
 4. 后续额度结转、可选历史现金账户、流水、请求终态留在同一事务内。任何后续失败都回滚刚才的限流更新，不能分成“先单独提交限流、再结算额度”。
 5. 不新增先行 `SELECT FOR UPDATE`：当前 UPDATE 已能取得所需写锁；不创建新的不存在窗口，也不在结算阶段重新执行 admission 限流检查。
 
-新的共享写资源次序为 **限流窗口（日→可选分钟→月）→ Allowance → 可选现金账户**。结算只访问日、月，是预授权窗口顺序的同向子集。请求锁是每个操作自己的 request；预授权幂等 advisory lock 保持现有行为，不扩大成用户全局锁。订阅资格共享锁也保留在预授权原位置。
+新的完整资源次序为 **账号事务锁 → 请求/幂等资源 → 限流窗口（日→可选分钟→月）→ Allowance → 可选现金账户**。结算只访问日、月，是预授权窗口顺序的同向子集。账号锁按用户串行数据库计费临界区，预授权幂等 advisory lock 在它之后取得；订阅资格共享锁保留在预授权原位置。
 
 **为什么保留此基线**：移动事务内已有更新可删除显式反向边，但不能消除外键锁升级循环。若改为预授权先真正预留额度再检查限流，429 拒绝会要求补偿释放或回滚/再写拒绝记录，改变现有拒绝与流水语义。若仅先锁额度、晚些才预留，又需拆出新的锁 helper，增加改动范围。当前没有证据证明这些方案优于移动结算限流更新。
 
@@ -431,11 +431,11 @@ PostgreSQL 的 UPDATE 与显式行锁都会参与等待，数据库检测循环�
 
 **设计建议**：保持每笔请求的预留、结算、窗口计数、追加流水和终态原子性，按必要行定位，使用足以保护不变量的锁模式，并缩短共享写资源的持有区间。推荐保留 4.3 的限流→额度顺序，并将额度预留/结算的 `FOR NO KEY UPDATE` 列为必要组成，以兼容提前取得的额度外键键共享锁；请求/窗口减弱则按对应不变量验证。两种循环分别验证，不能单独用重排序或单独用减弱来宣称完成整个方案。
 
-“最小锁”指有业务依据的局部方案，不是未经测试的全局性能最优。没有上游网络等待、无新增全局互斥、无新的事务/数据库架构；不放宽鉴权，不把额度判断移到缓存。
+“最小锁”指有业务依据的局部方案，不是未经测试的全局性能最优。新增互斥只按平台用户分片，不是全系统锁；没有上游网络等待或新的事务/数据库架构，不放宽鉴权，不把额度判断移到缓存。
 
 #### 概念与规则
 
-- **锁定范围**：只保护本请求、本用户本模型的窗口和本订阅周期额度；不得对该用户全部模型或整张表加独占业务锁。PostgreSQL 的必要表级意向性质锁和外键/索引内部锁仍存在，不能承诺“只有几把数据库锁”。
+- **锁定范围**：账号 advisory lock 串行同一用户的短计费事务；实际行锁仍只保护本请求、本用户本模型的窗口和本订阅周期额度。不同用户使用不同锁键并行，禁止表级业务互斥。PostgreSQL 的必要表级意向性质锁和外键/索引内部锁仍存在。
 - **锁强度**：请求状态、窗口计数、额度数量改变，但主键及唯一身份列不改变时，推荐 `FOR NO KEY UPDATE`。它仍与同一行的计数更新互斥，但允许 `FOR KEY SHARE` 的外键引用并行；普通 SELECT 本就不受这类行锁阻塞，不能把更弱锁宣传为让所有读取突然并行。
 - **持有区间**：数据库行锁通常直到事务提交/回滚才释放。不能在已扣额度但未记流水时提前提交来“释放锁”；外部调用、正文处理、凭据续期和报文上传不进入计数/额度事务。
 - **原子性边界**：状态、计数和流水保持一个事务。即使当前请求没有配置日/月上限，这些窗口仍承载用量计数；不能为少锁两行而停止记录它们。
@@ -446,6 +446,7 @@ PostgreSQL 的 UPDATE 与显式行锁都会参与等待，数据库检测循环�
 
 | 资源 | 必须保护什么 | 推荐范围和方式 | 何时取得、释放 | 决定 |
 | --- | --- | --- | --- | --- |
+| 同一平台用户计费临界区 | 多进程预授权、在线结算和worker不得以不同顺序持有共享业务行 | `pg_advisory_xact_lock(hashtext('ink-memory:gateway-account'), hashtext(platformUserId))` 两键命名空间 | 事务开始、任何业务行锁之前；提交/回滚自动释放 | 保留。只串行数据库临界区，模型调用在事务外；与现有单键幂等锁使用不同key space。哈希碰撞仅导致额外串行，不破坏正确性。 |
 | 同用户同幂等键 | 两次同时首发不能创建两个业务请求 | 保留当前事务 advisory lock，只覆盖已有用户+键 | 预授权防重时取得；返回原记录或事务结束释放 | 保留。唯一索引本身不足以在不改错误路径的情况下替代现有协议。 |
 | 已存在的请求 | 并行成功/失败/worker终结不能重复结算 | 按 request id，目标 `FOR NO KEY UPDATE`；先检查 `settled_at` | 结算开始；提交/回滚释放 | 减弱请求结算读取的锁模式，保留幂等守卫。新请求插入本就受事务保护，不另加 SELECT 锁。 |
 | 订阅资格 | 取消、改周期不能与本次资格确认任意穿插 | 按本次选定 Subscription 保留 `FOR SHARE OF s` | 资格检查时；预授权提交/回滚 | 保留。`FOR KEY SHARE` 不能阻止非键状态变更；不为降低锁而改变资格生效边界。 |
@@ -455,7 +456,7 @@ PostgreSQL 的 UPDATE 与显式行锁都会参与等待，数据库检测循环�
 | Token流水 | reserve/capture/release不可丢失或重复 | 保留 INSERT、唯一幂等键、请求序号及来源约束 | 数量转换之后，同事务提交 | 不额外锁整份流水历史，不把写流水移到事务外。 |
 | 历史现金账户 | 旧请求现金冻结与捕获正确 | 原有按用户定位账户锁；新Token-only不取得 | 仅必要历史兼容分支，额度之后 | 本次不扩大现金锁重构；新请求已免除该资源。 |
 | Model/Provider/价格 | 读取一组可审查快照、保留现有启停语义 | 原有独立快照事务共享锁 | 准备阶段取得并先提交，不跨预授权/上游 | 不删除或跨阶段延长。若另做缓存，需单独失效/版本设计。 |
-| 后台未知用量领取 | worker不能重复领取同请求 | 保留单请求 `FOR UPDATE SKIP LOCKED` 领取协议 | 单次短事务，仅一个请求 | 暂不改领取强度；调用较弱额度helper不消除已取得的请求强锁，也不升级为批量持锁。 |
+| 后台未知用量领取 | worker不能重复结算同请求，也不能先锁请求再等待账号锁 | 候选查询不加行锁；随后账号锁→请求 `FOR UPDATE`→终态复核 | 单次短事务，仅一个请求 | 保留幂等终态守卫。并发worker可能选中同一候选，但在账号锁后复核并只有一次写入。 |
 
 **源码依据**：请求额度外键在显式窗口锁前绑定，普通外键检查取得键共享，非键更新锁与之兼容。Allowance 唯一键是订阅/周期等身份，[schema:1570](/Users/dmeck/project/ink-admin-memory/packages/db/src/schema/index.ts:1570)；热路径更新的是预留、消费、version 和时间，[reserve:254](/Users/dmeck/project/ink-admin-memory/app/lib/subscriptions/gateway.ts:254)、[settle:417](/Users/dmeck/project/ink-admin-memory/app/lib/subscriptions/gateway.ts:417)。请求更新的是状态/用量/结算字段，限流更新的是计数；来源触发器读关联身份，[provenance:128](/Users/dmeck/project/ink-admin-memory/drizzle/0021_subscription_token_ledger.sql:128)。因此推荐弱锁有静态依据，但实施前仍要证明没有触发器间接改键、锁模式升级或相邻管理路径逆序。
 
@@ -469,12 +470,12 @@ PostgreSQL 的 UPDATE 与显式行锁都会参与等待，数据库检测循环�
 | 额度→限流，资格时仅锁额度但先不预留 | 也能统一顺序，但跨模型请求先占用同一用户额度，再等待各自限流窗口；需拆分额度锁定与预留helper | **暂不采用**。未证明更短，且扩大跨模型串行区间；可以在隔离技术对照中比较，不因改动多就断言错误。 |
 | 额度先预留、限流后检查 | 被429拒绝的请求已经改变额度，需savepoint或补偿释放/拒绝记录语义 | **暂不采用**。改变拒绝流水和事务设计，本次缺少必要性。 |
 | 条件UPDATE RETURNING替代读锁再写 | 可以减少语句往返，但UPDATE仍取行锁；必须证明before/after快照、原子拒绝、来源校验和多窗口全成全败 | **暂不采用为首轮方案**。后续只有实测往返成为主要成本时再评审，不能等同于无锁。 |
-| 缓存余额/全用户互斥/拆成多个提交 | 缓存不能原子保护余额；全用户锁扩大串行范围；拆提交破坏窗口、额度、流水一致性 | **不采用**。与本次业务目标不符。 |
+| 缓存余额/系统全局互斥/拆成多个提交 | 缓存不能原子保护余额；系统全局锁扩大所有用户串行范围；拆提交破坏窗口、额度、流水一致性 | **不采用**。账号分片事务锁不属于系统全局锁。 |
 
 #### 缩短临界区的具体安排
 
 1. `BEGIN` 前完成请求解析、正文估算、与锁下余额无关的参数验证；现有模型快照事务已独立结束。不能把需要锁下最新额度才能决定的计算提前为不受保护的结论。
-2. 结算锁请求后立即检查终态；在取得共享窗口锁前完成实际Token、价格快照计价、tokenDelta等纯计算。已经结算的请求直接返回，不访问额度和窗口。
+2. 结算先读账号和终态；已结算直接返回。未结算时取得账号锁，再锁请求并复核终态；在取得共享窗口锁前完成实际Token、价格快照计价、tokenDelta等纯计算。
 3. 限流窗口逐一按固定顺序锁定并检查，超限立即写拒绝并提交；不继续锁额度。额度锁下不足在改余额、计数和流水之前返回领域402，避免当前 conservation异常变500。成功分支不产生“先预留、再补偿”的多余写入。
 4. 额度锁后只保留来源/余额复核、数量变化、必要流水和终态写入。报文捕获、Provider续期、网络调用、响应适配继续在该事务外。
 5. 不将整个用户多个请求或worker批次包进一个大事务。正常新请求的业务写资源是一个请求、一个订阅资格行、两个或三个窗口、一个额度；这是逻辑资源范围，不是数据库内部锁数量。
@@ -482,7 +483,7 @@ PostgreSQL 的 UPDATE 与显式行锁都会参与等待，数据库检测循环�
 
 #### 实施与验收边界
 
-本轮仍只更新文档。后续实现可以分为可独立回滚的两个补丁：统一顺序与额度预留/结算弱锁共同作为最低完整修复；可以拆提交分别检查，但不能在只完成重排序时验收死锁已解决。请求结算/限流预授权减弱可作为后续相同锁序下的优化补丁。锁下耗尽的领域拒绝另覆盖来源/余额不变量。未调用的独立 release helper如保持原锁，不得被当作新恢复入口。
+当前实现把账号事务锁、统一顺序与额度预留/结算弱锁组合为同一正确性方案；不能只看到新增 advisory lock 就删除业务行锁或幂等守卫。锁下耗尽的领域拒绝仍需覆盖来源/余额不变量。未调用的独立 release helper不得被当作绕过账号锁的新恢复入口。
 
 弱锁验证须新增：两个写请求仍互斥；外键引用兼容；删除/改键仍等待；同请求成功与失败结算只提交一次；同用户不同模型争用额度时不超发；管理员赠送/周期推进、worker既有强锁与新弱锁的交错不形成新增循环。比较获取额度前后的等待和持锁时长，分别报告窗口、额度、请求，不能仅看吞吐或平均HTTP延迟。
 
@@ -523,17 +524,17 @@ PostgreSQL 的 UPDATE 与显式行锁都会参与等待，数据库检测循环�
 
 ### 4.6 本次实施范围与状态
 
-**已实施源码事实**：`billing/repository.ts` 将原日、月窗口 UPDATE 移至额度结算前，不另开事务、不增加窗口 SELECT。`subscriptions/gateway.ts` 仅将预留与结算的 Allowance 读取改为 `FOR NO KEY UPDATE`；其修改的是计数/version 等非键字段，继续互斥写入并与外键 KEY SHARE 兼容。只读运行检查确认正常数据库时区为 Asia/Shanghai，因此本补丁还把结算 `date_trunc` 显式指定 UTC，与预授权窗口对齐；不改变数据库时区配置。请求锁、`settled_at` 守卫、价格快照、条件更新、追加流水及事务回滚保持原合同。依据：[结算顺序:402](/Users/dmeck/project/ink-admin-memory/app/lib/billing/repository.ts:402)、[预留锁:231](/Users/dmeck/project/ink-admin-memory/app/lib/subscriptions/gateway.ts:231)、[结算额度锁:382](/Users/dmeck/project/ink-admin-memory/app/lib/subscriptions/gateway.ts:382)。
+**已实施源码事实**：`account-lock.ts` 使用带业务命名空间的事务级 PostgreSQL advisory lock。预授权在幂等、请求、限流和额度资源前取得该锁；结算先无锁读取账号与稳定终态，未结算时取得账号锁，再锁请求并复核终态；unknown-usage worker改为无锁选择候选，再执行账号锁→请求锁→额度锁。`billing/repository.ts` 仍保持日、月窗口 UPDATE 在额度结算前；Allowance 预留与结算保持 `FOR NO KEY UPDATE`，与外键 KEY SHARE 兼容。模型调用不在这些事务内。
 
-**实施边界**：未弱化请求/限流锁，未增加用户全局锁、缓存、事务重试、模型重试、状态机或页面；未修改任何 schema/migration。未使用独立 `releaseSubscriptionAllowanceOnClient` 替代请求终态结算。4.4 中进一步优化锁强度、4.5 的吞吐候选、并发耗尽错误映射和已知用量结算证据恢复仍待独立评审，不属于已完成补丁。
+**实施边界**：新增的是按平台用户分片的数据库事务锁，不是进程内锁或全系统锁。未增加CAS自旋、事务重试、模型重试、缓存、状态机或页面；未修改任何 schema/migration。未使用独立 `releaseSubscriptionAllowanceOnClient` 替代请求终态结算。4.5 的吞吐候选、并发等待错误映射和已知用量结算证据恢复仍待独立评审。
 
-**验证层次**：`deadlock.integration.test.ts` 在真实迁移后的具名隔离 PostgreSQL 中强制两预授权提前绑定外键、等待相同/不同模型窗口，并验证结算交错、锁超时回滚及重复终态。`gateway-deadlock.spec.ts` 使用公开 Admin/Gateway、受控本机 Provider 和真实 Session，验证 8 个短回复请求与正常 Token 流水。正常端口 3000 的真实模型测试使用现有 Key/实体并保留正常请求/计费记录。后两者不得混报。
+**验证层次**：`deadlock.integration.test.ts` 在真实迁移后的具名隔离 PostgreSQL 通过10项用例证明同账号跨连接互斥、不同账号分离、相同/不同模型预授权、结算交错、8路守恒、锁超时回滚、非UTC会话及重复终态。`gateway-deadlock.spec.ts` 使用公开 Admin/Gateway、受控本机 Provider 和真实 Session，1项用例验证8个短回复请求与正常Token流水。聚焦单测18/18、TypeScript、全量lint和build通过；全量单测仍有3个与本改动无关的既有合同失败。正常端口3000和真实模型未在本轮复测，不能把隔离结果混报为容量证据。
 
 ## 5. 目标符合性及过度设计评审
 
 | 检查项 | 结论与处理 | 仍需验证 |
 | --- | --- | --- |
-| 消除已识别死锁循环 | **保留**统一写锁序与额度弱锁兼容外键；删除显式反向边及键共享升级冲突 | 用生产领域函数在隔离 PostgreSQL 中强制交错；运行日志不能只靠 mock 顺序断言。 |
+| 消除已识别死锁循环 | **保留**账号事务锁、统一写锁序与额度弱锁兼容外键；删除显式反向边及键共享升级冲突 | 隔离 PostgreSQL 10/10 已覆盖强制交错；部署后仍需用新版本日志确认生产不再出现该等待环。 |
 | 限流正确性 | **保留**日/月 actual−estimated 校正与分钟已接收计数；移动执行位置并明确UTC定位 | 隔离回归已证明回滚和非UTC会话；跨日/月、缺失窗口仍待确认。 |
 | 订阅额度正确性 | **保留**锁下余额约束、来源校验和 Token capture/release | 同账户多模型的预留竞争、实际 usage 超过预留、拒绝后无预留残留。 |
 | 计费与追加账本 | **保留**价格快照、整数 micro-USD、现金兼容和 Token 独立流水 | 新 Token-only 不动现金；旧现金/money_allowance 兼容路径仍原子。 |
@@ -544,13 +545,13 @@ PostgreSQL 的 UPDATE 与显式行锁都会参与等待，数据库检测循环�
 | 最小锁范围与模式 | **保留**4.4 的必要性评审，目标锁为相应非键更新行锁；仍须保护余额与终态 | 外键兼容、相邻强锁、触发器及等待区间对照；不能称为已测得的全局最优。 |
 | 数据库 migration | **暂不采用** | 如异常完整性后续证明现有字段不足，再独立评审，不提前改表。 |
 | 自动事务重试 | **暂不采用** | 先证明锁序；不得拿成功重试掩盖持续死锁。 |
-| 更多 advisory lock/用户互斥 | **暂不采用** | 没有证据需要更大串行粒度；进程内锁无法覆盖多实例。 |
+| 账号 advisory lock | **保留**事务级、按平台用户分片的 PostgreSQL 悲观锁 | 隔离测试已证明同账号跨连接串行、不同账号不共享锁键；公开Gateway回归证明模型调用仍在事务外。进程内锁仍不采用。 |
 | 新页面/状态机/配置 | **暂不采用** | 现有页面和状态足够展示；如修复错误提示只改相关文案/协议。 |
 | 已知结算失败精确恢复 | **保留为独立必要风险，尚未闭合** | 当前 catch 可能丢 usage；流式重复终结、标记失败、捕获覆盖都需要异常注入验证。 |
 | 吞吐优化范围 | **保留**4.5的分阶段评估；子预算/异步结算/准入机制暂不作为本次实施范围 | 区分正确完成率、锁等待、持锁时间、连接等待与响应时延；不能只统计接收请求数。 |
 | 并发容量承诺 | **暂不采用** | 真实模型每级单批测量只提供已观测范围，没有可承诺的绝对并发上限。 |
 
-总体结论：**4.4 的固定写锁序加额度外键兼容方案在设计上针对两类已识别循环；仅4.3重排序不充分。限流/额度/账本正确性依赖完整事务回滚和现有幂等守卫；隔离 PostgreSQL 8/8、相关单测16/16与8请求公开路由/后台回归已通过，真实模型与构建回执见 [验证记录](../verification/gateway-deadlock-concurrency-2026-10-02.md)。异常证据完整性不能与锁序修复混为一个已经完成的结论。**
+总体结论：**账号事务锁把同用户跨进程计费事务的竞争集中到一个最先取得的锁点；固定写锁序与额度外键兼容锁继续保护实际业务行。三者共同消除已识别的限流/额度等待环，同时保留限流、额度、账本和请求终态的原子性。隔离PostgreSQL 10/10、聚焦单测18/18、公开入口1/1、TypeScript、lint和build均通过；正常服务尚未运行本提交，异常证据恢复仍是独立问题。**
 
 ## 6. 后续验证计划与待确认事项
 

@@ -1,7 +1,7 @@
 // [Input] PostgreSQL transaction client, Gateway request identity, reliable usage and stored pricing snapshots.
 // [Output] Atomic, idempotent settlement of rate counters, subscription allowance and append-only financial effects.
-// [Pos] Billing persistence boundary; shared write order is rate windows before allowance, with model execution outside the transaction.
-// [Sync] 2026-10-02: acquire UTC day/month rate writes before allowance settlement to match Gateway preauthorization.
+// [Pos] Billing persistence boundary; account gate precedes request, rate, allowance and account row locks.
+// [Sync] 2026-10-03: serialize each user's short settlement transaction before taking shared row locks.
 
 import type { PoolClient } from "pg";
 import {
@@ -15,6 +15,7 @@ import type { PricingSnapshot, TokenUsage } from "./types";
 import { withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
 import { totalProcessedTokens } from "../gateway/usage";
+import { lockGatewayAccountOnClient } from "../gateway/account-lock";
 import { settleSubscriptionAllowanceOnClient } from "../subscriptions/gateway";
 
 type AccountRow = {
@@ -366,6 +367,23 @@ export async function settleGatewayRequestOnClient(
   client: PoolClient,
   input: SettleGatewayRequestInput,
 ) {
+    const identityResult = await client.query<Pick<
+      RequestRow,
+      "id" | "platform_user_id" | "settled_at"
+    >>(
+      `SELECT id, platform_user_id, settled_at
+       FROM gateway_requests
+       WHERE id = $1`,
+      [input.gatewayRequestId],
+    );
+    const identity = identityResult.rows[0];
+    if (!identity) throw new Error("GATEWAY_REQUEST_NOT_FOUND");
+    if (identity.settled_at) {
+      return { idempotent: true, requestId: identity.id };
+    }
+
+    await lockGatewayAccountOnClient(client, identity.platform_user_id);
+
     const { rows } = await client.query<RequestRow>(
       `SELECT id, platform_user_id, model_id, status, outcome,
               reserved_microusd, estimated_tokens, subscription_id,

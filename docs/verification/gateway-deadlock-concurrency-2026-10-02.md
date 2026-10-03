@@ -3,8 +3,27 @@
 <!-- [Pos] Gateway deadlock implementation/acceptance receipt; bounded measurements are not an absolute capacity guarantee. -->
 <!-- [Sync] 2026-10-02: track correctness repair, model evidence and read-only empty-response review; distinguish requested Token cap from Codex upstream behavior. -->
 <!-- [Sync] 2026-10-02: link the later streaming performance report; preserve this earlier nonstream batch and its unmeasured TTFT. -->
+<!-- [Sync] 2026-10-03: add the per-user transaction-gate implementation and isolated cross-process validation receipt. -->
 
 # Gateway 死锁修复与真实模型并发验证
+
+## 2026-10-03 同账号事务锁加固
+
+用户提供的新日志再次显示 `gateway_rate_limits` 与 `subscription_usage_allowances` 反向等待。复核确认当时 PR 尚未合并，运行的是旧实现。本次在原固定行锁序和 Allowance `FOR NO KEY UPDATE` 基础上增加 PostgreSQL 事务级账号锁：预授权在任何业务行锁前取得账号锁；结算先读账号与稳定终态，再按账号锁→请求锁→日/月窗口→Allowance→可选现金账户执行；unknown-usage worker无锁选择候选后按账号锁→请求锁→Allowance复核。模型调用仍在事务外，没有CAS自旋、事务自动重试或模型重发，也没有schema、migration或运行配置变化。
+
+账号锁使用两键 advisory lock：第一键是独立 `ink-memory:gateway-account` 命名空间，第二键来自 `platformUserId`。它与现有单键幂等锁处于PostgreSQL不同key space；同账号跨进程串行短数据库临界区，不同账号不共享锁键。哈希碰撞只会额外串行，不会导致额度超发。
+
+| 验证 | 退出码 | 本轮结果 |
+| --- | --- | --- |
+| 聚焦 Vitest：账号锁、Billing编排、worker、Allowance | 0 | 4 files、18/18 passed；账号锁先于请求/窗口/额度，已终态保持快速幂等返回。 |
+| 隔离 PostgreSQL core | 0 | 10/10 passed；同账号跨连接互斥、不同账号不串行、同/跨模型预授权、预授权与结算交错、8路同账号预留/结算守恒、锁超时回滚、非UTC会话与重复终结均通过。 |
+| 隔离 PostgreSQL + mock Provider + focused Playwright | 0 | 1/1 passed；8个公开Gateway请求完成，reserve=capture+release，Allowance归零预留且Admin可见。首次bootstrap因fixture缺少当前必填Admin Session TTL而503；harness补齐显式TTL后完整重跑通过。 |
+| `pnpm exec tsc --noEmit` | 0 | 无诊断。 |
+| `pnpm lint` | 0 | 全仓库无lint错误。 |
+| `pnpm build` | 0 | DB package、Next webpack/TypeScript、静态页20/20与构建追踪通过。 |
+| `pnpm test:run` | 1 | 291 files/2201 tests passed；3个既有无关合同仍失败，分别是两个schema快照和一个401/403期待。本次四个目标文件全部通过。 |
+
+两套自有隔离PostgreSQL集群、私有fixture和测试服务均已停止并删除。正常数据库、3000端口、真实Provider和业务记录没有被本轮验证访问或修改；本轮结果是技术正确性证据，不替代新的真实模型容量测试。
 
 ## 变更与边界
 

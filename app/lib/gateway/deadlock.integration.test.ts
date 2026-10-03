@@ -1,7 +1,7 @@
 // [Input] Primary-prepared, fully migrated disposable PostgreSQL with its real foreign keys and ledger triggers.
-// [Output] Forced preauthorization interleavings, settlement order, rollback, conservation and duplicate-finalization evidence.
+// [Output] Cross-process account serialization, forced interleavings, rollback, conservation and idempotent finalization evidence.
 // [Pos] Provider-free database contract invoking the production Gateway/Billing entry points; no alternate business path.
-// [Sync] 2026-10-02: gate real window rows so both requests bind the allowance before either can reserve it.
+// [Sync] 2026-10-03: include account advisory-lock waits and high-contention same-user preauthorization/settlement.
 import { readFile, stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
@@ -11,6 +11,7 @@ import { withPlatformTransaction } from "../platform-db";
 import { settleGatewayRequest, settleGatewayRequestOnClient } from "../billing/repository";
 import type { ResolvedBillableModel } from "../models/resolver";
 import type { GatewayPrincipal } from "./auth";
+import { lockGatewayAccountOnClient } from "./account-lock";
 import { beginGatewayRequest } from "./repository";
 
 beforeAll(async () => {
@@ -87,7 +88,8 @@ async function waitForBlocked(count: number) {
   while (Date.now() < deadline) {
     const result = await getPool().query(`SELECT count(*)::integer AS n FROM pg_stat_activity
       WHERE datname = current_database() AND wait_event_type = 'Lock'
-        AND query LIKE '%gateway_rate_limits%'`);
+        AND (query LIKE '%gateway_rate_limits%'
+          OR query LIKE '%pg_advisory_xact_lock%')`);
     if (result.rows[0].n >= count) return;
     await new Promise(resolve => setTimeout(resolve, 20));
   }
@@ -126,6 +128,29 @@ async function allowance(id: string) {
 }
 
 describe.skipIf(!process.env.INK_GATEWAY_DEADLOCK_FIXTURE)("real PostgreSQL Gateway deadlock correctness", () => {
+  it("uses one cross-connection lock per user without serializing another user", async () => {
+    const first = await fixture();
+    const second = await fixture();
+    const gate = await getPool().connect();
+    try {
+      await gate.query("BEGIN");
+      await lockGatewayAccountOnClient(gate, first.userId);
+
+      await expect(withPlatformTransaction(async client => {
+        await client.query("SET LOCAL lock_timeout = '200ms'");
+        await lockGatewayAccountOnClient(client, second.userId);
+      })).resolves.toBeUndefined();
+
+      await expect(withPlatformTransaction(async client => {
+        await client.query("SET LOCAL lock_timeout = '200ms'");
+        await lockGatewayAccountOnClient(client, first.userId);
+      })).rejects.toMatchObject({ code: "55P03" });
+    } finally {
+      await gate.query("ROLLBACK");
+      gate.release();
+    }
+  });
+
   it.each([false, true])("completes both foreign-key-bound preauthorizations, cross-model=%s", async crossModel => {
     const f = await fixture();
     const results = await gated(f, [() => f.begin(0), () => f.begin(crossModel ? 1 : 0)]);
@@ -134,11 +159,15 @@ describe.skipIf(!process.env.INK_GATEWAY_DEADLOCK_FIXTURE)("real PostgreSQL Gate
     expect(await allowance(f.allowance)).toEqual({ reserved: 200, consumed: 0 });
   });
 
-  it("does not over-reserve when two requests passed the initial unlocked balance check", async () => {
+  it("rejects the second serialized preauthorization without over-reserving", async () => {
     const f = await fixture(150);
     const results = await gated(f, [() => f.begin(), () => f.begin()]);
-    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
-    expect(results.filter(result => result.status === "rejected")).toHaveLength(1);
+    expect(results.every(result => result.status === "fulfilled")).toBe(true);
+    const fulfilled = results.flatMap(result =>
+      result.status === "fulfilled" ? [result.value] : []
+    );
+    expect(fulfilled.filter(result => result.kind === "reserved")).toHaveLength(1);
+    expect(fulfilled.filter(result => result.kind === "rejected")).toHaveLength(1);
     expect(await allowance(f.allowance)).toEqual({ reserved: 100, consumed: 0 });
     const ledger = await getPool().query("SELECT count(*)::integer AS n FROM subscription_token_ledger_entries WHERE subscription_allowance_id = $1", [f.allowance]);
     expect(ledger.rows[0].n).toBe(1);
@@ -153,6 +182,35 @@ describe.skipIf(!process.env.INK_GATEWAY_DEADLOCK_FIXTURE)("real PostgreSQL Gate
     ]);
     expect(results.every(result => result.status === "fulfilled")).toBe(true);
     expect(await allowance(f.allowance)).toEqual({ reserved: 100, consumed: 30 });
+  });
+
+  it("serializes high-contention accounting while preserving every request effect", async () => {
+    const f = await fixture();
+    const requests = await Promise.all(
+      Array.from({ length: 8 }, async () => reserved(await f.begin())),
+    );
+    expect(await allowance(f.allowance)).toEqual({ reserved: 800, consumed: 0 });
+
+    await Promise.all(requests.map(gatewayRequestId =>
+      settleGatewayRequest({ gatewayRequestId, usage: usage(), outcome: "succeeded" })
+    ));
+
+    expect(await allowance(f.allowance)).toEqual({ reserved: 0, consumed: 240 });
+    const ledger = await getPool().query(
+      `SELECT entry_type, count(*)::integer AS entries, sum(amount_tokens)::integer AS amount
+       FROM subscription_token_ledger_entries
+       WHERE subscription_allowance_id = $1
+       GROUP BY entry_type`,
+      [f.allowance],
+    );
+    expect(Object.fromEntries(ledger.rows.map(row => [row.entry_type, {
+      entries: row.entries,
+      amount: row.amount,
+    }]))).toEqual({
+      reserve: { entries: 8, amount: 800 },
+      capture: { entries: 8, amount: 240 },
+      release: { entries: 8, amount: 560 },
+    });
   });
 
   it("rolls rate writes back when the later allowance lock times out", async () => {

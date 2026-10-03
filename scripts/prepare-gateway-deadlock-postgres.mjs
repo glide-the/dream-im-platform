@@ -1,7 +1,7 @@
 // [Input] The unchanged Drizzle migration entry and a fresh, named, disposable PostgreSQL cluster.
 // [Output] Private core/UI fixture manifest; stdin or SIGTERM stops and removes only the owned cluster.
 // [Pos] Primary-owned technical setup; never reads or targets normal DATABASE_URL or real model credentials.
-// [Sync] 2026-10-02: isolate real-lock regression and public Subscription E2E before normal Gateway acceptance.
+// [Sync] 2026-10-03: provide the explicit Admin Session TTL required by the isolated public-route harness.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -87,6 +87,7 @@ try {
       AUTH_TRUSTED_ORIGINS: baseUrl, DREAM_API_RESOURCE: `${baseUrl}/api/internal/dream`,
       GOOGLE_CLIENT_ID: "isolated-google-client", GOOGLE_CLIENT_SECRET: "isolated-google-secret",
       ADMIN_CONSOLE_ENABLED: "true", ADMIN_SESSION_SECRET: randomBytes(48).toString("base64url"),
+      ADMIN_SESSION_TTL_SECONDS: "86400",
       ADMIN_BOOTSTRAP_E2E_TOKEN: randomBytes(32).toString("base64url"),
       ADMIN_ORIGIN_ALLOWLIST: baseUrl, GATEWAY_API_KEY_PEPPER: randomBytes(32).toString("base64url"),
       AI_CREDENTIAL_ENCRYPTION_KEY: randomBytes(32).toString("hex"),

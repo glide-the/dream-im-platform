@@ -1,4 +1,4 @@
-<!-- [Sync] 2026-10-02: Gateway design now includes staged throughput candidates and measurements; no runtime or schema changes. -->
+<!-- [Sync] 2026-10-03: Gateway deadlock design now records the implemented per-user transaction gate; no schema or runtime configuration change. -->
 <!-- [Sync] 2026-10-02: clarify Gateway sequence transaction boundaries and concurrent execution; remove shared background shading. -->
 <!-- [Input] Repository documentation tree and current product/architecture decisions. -->
 <!-- [Output] Canonical entry points for current design, architecture, deployment, and verification documents. -->
