@@ -1,6 +1,7 @@
 // [Input] Controlled provider JSON/SSE responses plus mocked billing and payload persistence boundaries.
 // [Output] Protocol, streaming, cancellation, timeout-refresh, settlement, and capture regression proof.
 // [Pos] Core Gateway proxy lifecycle unit tests.
+// [Sync] 2026-10-03: cover non-streaming delta aggregation when terminal output is absent.
 // [Sync] 2026-09-17: prove headerless Codex Responses SSE remains narrow and fully settled.
 // [Sync] 2026-10-02: prove both public protocols capture managed JSON/text rejections without exposing them downstream.
 
@@ -415,6 +416,24 @@ describe("gateway non-streaming protocol matrix", () => {
     expect(mocks.finalizeKnown).toHaveBeenCalledWith(expect.objectContaining({
       usage: expect.objectContaining({ inputTokens: 9, outputTokens: 4 }),
     }));
+  });
+
+  it.each(["openai", "anthropic"] as const)("retains streamed text for a non-streaming %s client without terminal output", async (externalProtocol) => {
+    mocks.send.mockResolvedValue(transport(new Response(sse([
+      'data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"hel"}\n\n',
+      'data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"lo"}\n\n',
+      'data: {"type":"response.completed","response":{"id":"resp_partial","status":"completed","output":[],"usage":{"input_tokens":9,"output_tokens":4}}}\n\n',
+    ]), { headers: { "content-type": "text/event-stream" } })));
+    const response = await proxyNonStreaming({
+      request: new Request("http://gateway/v1/chat/completions"), externalProtocol,
+      prepared: prepared("openai", "codex"),
+      body: { model: "alias", messages: [{ role: "user", content: "go" }], stream: false },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject(externalProtocol === "openai"
+      ? { choices: [{ message: { content: "hello" } }] }
+      : { content: [{ type: "text", text: "hello" }] });
+    expect(mocks.finalizeKnown).toHaveBeenCalledWith(expect.objectContaining({ usage: expect.objectContaining({ inputTokens: 9, outputTokens: 4 }) }));
   });
 
   it("returns a native Anthropic response without protocol pollution", async () => {

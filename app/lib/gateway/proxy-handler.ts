@@ -2,6 +2,7 @@
 // [Output] Adapted JSON/SSE response with payload capture, renewal snapshot, usage accounting, and settlement.
 // [Pos] Core provider proxy lifecycle joining protocol adapters, transport, billing, and response persistence.
 // [Sync] 2026-09-17: accept headerless Codex Responses SSE while keeping other provider content-type checks strict.
+// [Sync] 2026-10-03: retain streamed output when non-streaming terminal responses omit it.
 
 import type { z } from "zod";
 import { createHash } from "node:crypto";
@@ -21,7 +22,7 @@ import { adaptProviderRequest, adaptProviderResponse, record, type GatewayProtoc
 import { ProviderHttpError, sendProviderRequest } from "./provider-transport";
 import { createProtocolStreamAdapter } from "./stream-adapters";
 import { parseSseStream, serializeSse } from "./sse";
-import { responseObjectFromEvent } from "./responses-adapter";
+import { ResponsesStreamResponseState } from "./responses-adapter";
 import {
   applyAnthropicStreamEvent,
   applyOpenAIChatStreamChunk,
@@ -115,6 +116,7 @@ async function readProviderJsonResponse(
     );
   }
   let terminal: JsonRecord | undefined;
+  const state = new ResponsesStreamResponseState();
   for await (const event of parseSseStream(
     transport.response.body,
     transport.abort.signal,
@@ -122,7 +124,7 @@ async function readProviderJsonResponse(
   )) {
     if (event.data === "[DONE]") break;
     const value = parseProviderJson(event.data);
-    terminal = responseObjectFromEvent(value) ?? terminal;
+    terminal = state.push(value) ?? terminal;
   }
   if (!terminal) {
     throw new GatewayError(

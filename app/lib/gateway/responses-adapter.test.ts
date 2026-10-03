@@ -1,12 +1,14 @@
 // [Input] Representative OpenAI Chat requests and Responses JSON/SSE payloads.
 // [Output] Regression proof for text, tools, reasoning, usage, error, and multimodal contracts.
 // [Pos] Focused contract suite for the Codex/xAI Responses dialect boundary.
+// [Sync] 2026-10-03: cover sparse terminal output, snapshots, tools and failed aggregation.
 // [Sync] 2026-09-04: cover the product OAuth Gateway conversion matrix.
 
 import { describe, expect, it } from "vitest";
 import {
   openAIChatRequestToResponses,
   ResponsesToOpenAIChatStreamState,
+  ResponsesStreamResponseState,
   responsesResponseToOpenAIChat,
 } from "./responses-adapter";
 
@@ -111,5 +113,36 @@ describe("Responses product dialect", () => {
       error: { message: "denied" },
       output: [],
     }, "alias")).toThrow(/request failed/);
+  });
+});
+
+
+describe("Responses SSE aggregation", () => {
+  it("uses done snapshots without duplicating deltas and orders output by index", () => {
+    const state = new ResponsesStreamResponseState();
+    state.push({ type: "response.output_item.added", output_index: 1, item: { type: "function_call", id: "fc", call_id: "call", name: "lookup", arguments: "" } });
+    state.push({ type: "response.function_call_arguments.delta", output_index: 1, delta: "{}" });
+    state.push({ type: "response.function_call_arguments.done", output_index: 1, arguments: "{}" });
+    state.push({ type: "response.output_text.delta", output_index: 0, delta: "hi" });
+    state.push({ type: "response.output_item.done", output_index: 0, item: { type: "message", content: [{ type: "output_text", text: "hi" }] } });
+    state.push({ type: "response.reasoning_summary_text.delta", output_index: 2, delta: "brief" });
+    const result = state.push({ type: "response.completed", response: { status: "completed", usage: { input_tokens: 5, output_tokens: 2 } } });
+    expect(responsesResponseToOpenAIChat(result!, "alias")).toMatchObject({
+      choices: [{ message: { content: "hi", reasoning_content: "brief", tool_calls: [{ function: { arguments: "{}" } }] }, finish_reason: "tool_calls" }],
+      usage: { prompt_tokens: 5, completion_tokens: 2 },
+    });
+  });
+
+  it("keeps complete terminal output authoritative", () => {
+    const state = new ResponsesStreamResponseState();
+    state.push({ type: "response.output_text.delta", delta: "partial" });
+    const response = { status: "incomplete", output: [{ type: "message", content: [{ type: "output_text", text: "complete" }] }] };
+    expect(state.push({ type: "response.incomplete", response })).toBe(response);
+  });
+
+  it("requires a terminal event and rejects failures even after receiving text", () => {
+    const state = new ResponsesStreamResponseState();
+    expect(state.push({ type: "response.output_text.delta", delta: "partial" })).toBeUndefined();
+    expect(() => state.push({ type: "response.failed", response: { status: "failed" } })).toThrow(/request failed/);
   });
 });

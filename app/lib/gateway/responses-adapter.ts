@@ -2,6 +2,7 @@
 // [Output] Loss-bounded request, response, and stream conversions for Codex/xAI product adapters.
 // [Pos] Product-dialect boundary between the public Anthropic/OpenAI Gateway and Responses-only upstreams.
 // [Sync] 2026-09-04: add the shared Codex/xAI Responses contract without exposing product credentials.
+// [Sync] 2026-10-03: reconstruct non-streaming output from SSE when terminal output is omitted.
 
 import { GatewayError } from "./errors";
 
@@ -355,4 +356,54 @@ export function responseObjectFromEvent(event: JsonRecord) {
     return record(event.response) ?? event;
   }
   return undefined;
+}
+
+/** Retains output snapshots and deltas; terminal metadata and usage remain authoritative. */
+export class ResponsesStreamResponseState {
+  private readonly items = new Map<number, JsonRecord>();
+
+  push(event: JsonRecord) {
+    const type = text(event.type);
+    const index = integer(event.output_index);
+    const snapshot = record(event.item);
+    if (type === "response.output_item.added" || type === "response.output_item.done") {
+      if (snapshot) this.items.set(index, structuredClone(snapshot));
+    } else if (type === "response.output_text.delta" || type === "response.output_text.done"
+      || type === "response.refusal.delta" || type === "response.refusal.done"
+      || type === "response.content_part.added" || type === "response.content_part.done") {
+      const item = this.items.get(index) ?? { type: "message", role: "assistant", content: [] };
+      const content = array(item.content);
+      const partIndex = integer(event.content_index);
+      const refusal = type.startsWith("response.refusal.");
+      const field = refusal ? "refusal" : "text";
+      const part = record(content[partIndex]) ?? { type: refusal ? "refusal" : "output_text" };
+      if (type.startsWith("response.content_part.")) {
+        content[partIndex] = record(event.part) ?? part;
+      } else {
+        part[field] = type.endsWith(".delta") ? text(part[field]) + text(event.delta) : text(event[field]);
+        content[partIndex] = part;
+      }
+      item.content = content;
+      this.items.set(index, item);
+    } else if (type === "response.function_call_arguments.delta" || type === "response.function_call_arguments.done") {
+      const item = this.items.get(index);
+      if (item?.type === "function_call") {
+        item.arguments = type.endsWith(".delta") ? text(item.arguments) + text(event.delta) : text(event.arguments);
+      }
+    } else if (type === "response.reasoning_summary_text.delta" || type === "response.reasoning_summary_text.done") {
+      const item = this.items.get(index) ?? { type: "reasoning", summary: [] };
+      const summary = array(item.summary);
+      const summaryIndex = integer(event.summary_index);
+      const part = record(summary[summaryIndex]) ?? { type: "summary_text" };
+      part.text = type.endsWith(".delta") ? text(part.text) + text(event.delta) : text(event.text);
+      summary[summaryIndex] = part;
+      item.summary = summary;
+      this.items.set(index, item);
+    }
+    const terminal = responseObjectFromEvent(event);
+    if (!terminal) return undefined;
+    // Some product endpoints send the complete output only in preceding item events.
+    if (array(terminal.output).length > 0) return terminal;
+    return { ...terminal, output: [...this.items.entries()].sort(([a], [b]) => a - b).map(([, item]) => item) };
+  }
 }
