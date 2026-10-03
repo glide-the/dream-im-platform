@@ -1,12 +1,18 @@
+<!-- [Sync] 2026-10-03: Gateway deadlock design now records the implemented per-user transaction gate; no schema or runtime configuration change. -->
+<!-- [Sync] 2026-10-02: clarify Gateway sequence transaction boundaries and concurrent execution; remove shared background shading. -->
 <!-- [Input] Repository documentation tree and current product/architecture decisions. -->
 <!-- [Output] Canonical entry points for current design, architecture, deployment, and verification documents. -->
 <!-- [Pos] Root documentation inventory; historical documents are explicitly separated from current contracts. -->
+<!-- [Sync] 2026-10-02: index the Gateway deadlock proposal including minimum-lock review and business sequences; minimal correctness implementation and validation are tracked separately. -->
 <!-- [Sync] 2026-09-15: index Registry83 after isolated Reflections public/atomic acceptance; consumer remains pending. -->
 
 # 文档索引
 
 ## 当前执行入口
 
+- [Gateway 模型服务性能报告（QPS、TPS、TTFT）](verification/gateway-model-service-performance-2026-10-02.md)
+- [Gateway 数据库死锁：架构分析与交互方案（设计与最小修复）](architecture/gateway-deadlock-analysis-and-design.md)
+- [Gateway 死锁修复与真实模型并发验证](verification/gateway-deadlock-concurrency-2026-10-02.md)
 - [Admin / Dream 统一认证与数据访问契约](architecture/admin-dream-auth-data-contract.md)
 - [实际数据区域、表归属与角色权限](architecture/admin-dream-data-ownership.md)
 - [统一认证架构与登录交互](architecture/auth.md)
@@ -42,3 +48,4 @@ Dream 主库 43 表与 Notion Connector 5 表的 PostgreSQL 全量迁移、真�
 - [工作日志](verification/ink-memory-admin-correction-worklog.md)
 
 `docs/task`、`docs/exec`、`docs/stage`、`docs/issue` 及已标记 Superseded/Deferred 的旧 Gateway、计费和 Refine 文档只作为历史执行证据，不再代表 Dream 当前范围或实施顺序。
+<!-- [Sync] 2026-10-02: index normal Gateway model-service performance with effective QPS, reported TPS and streaming content TTFT. -->

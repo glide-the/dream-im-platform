@@ -1,6 +1,12 @@
+// [Input] Subscription eligibility, allowance reservation and settlement fixtures.
+// [Output] Provider-free provenance, conservation, non-key locking and legacy compatibility regressions.
+// [Pos] Subscription Gateway unit contracts; real foreign-key lock compatibility is verified on isolated PostgreSQL.
+// [Sync] 2026-10-02: cover reservation source checks and foreign-key-compatible non-key update locks.
+
 import type { PoolClient } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import {
+  reserveSubscriptionAllowanceOnClient,
   resolveGatewaySubscriptionOnClient,
   settleSubscriptionAllowanceOnClient,
 } from "./gateway";
@@ -354,5 +360,36 @@ describe("subscription Gateway eligibility", () => {
       50_000,
       30_000,
     ]);
+  });
+});
+
+
+describe("Gateway allowance reservation", () => {
+  const context = {
+    platformUserId: "usr_1", subscriptionId: "sub_1", planVersionId: "planv_1",
+    allowanceId: "allow_1", entitlementId: null, coverageMode: "token_allowance" as const,
+    allowanceReservedTokens: 100, limits: {}, snapshot: {},
+  };
+
+  it("reserves with a foreign-key-compatible lock and an append-only snapshot", async () => {
+    const query = vi.fn().mockResolvedValueOnce({ rows: [{
+      subscription_id: "sub_1", plan_version_id: "planv_1",
+      granted_tokens: 1_000, reserved_tokens: 10, consumed_tokens: 20,
+    }] }).mockResolvedValue({ rows: [], rowCount: 1 });
+    await reserveSubscriptionAllowanceOnClient(clientWith(query), context, "req_1");
+    expect(String(query.mock.calls[0][0])).toContain("FOR NO KEY UPDATE");
+    expect(query.mock.calls[1][1]).toEqual(["allow_1", 100]);
+    expect(String(query.mock.calls[2][0])).toContain("INSERT INTO subscription_token_ledger_entries");
+    expect(query.mock.calls[2][1].slice(9, 15)).toEqual([970, 870, 10, 110, 20, 20]);
+  });
+
+  it("does not update or append a ledger entry for mismatched allowance provenance", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{
+      subscription_id: "sub_other", plan_version_id: "planv_1",
+      granted_tokens: 1_000, reserved_tokens: 0, consumed_tokens: 0,
+    }] });
+    await expect(reserveSubscriptionAllowanceOnClient(clientWith(query), context, "req_1"))
+      .rejects.toThrow("SUBSCRIPTION_ALLOWANCE_PROVENANCE_MISMATCH");
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,3 +1,8 @@
+// [Input] PostgreSQL transaction client, Gateway request identity, reliable usage and stored pricing snapshots.
+// [Output] Atomic, idempotent settlement of rate counters, subscription allowance and append-only financial effects.
+// [Pos] Billing persistence boundary; account gate precedes request, rate, allowance and account row locks.
+// [Sync] 2026-10-03: serialize each user's short settlement transaction before taking shared row locks.
+
 import type { PoolClient } from "pg";
 import {
   creditAccount,
@@ -10,6 +15,7 @@ import type { PricingSnapshot, TokenUsage } from "./types";
 import { withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
 import { totalProcessedTokens } from "../gateway/usage";
+import { lockGatewayAccountOnClient } from "../gateway/account-lock";
 import { settleSubscriptionAllowanceOnClient } from "../subscriptions/gateway";
 
 type AccountRow = {
@@ -361,6 +367,23 @@ export async function settleGatewayRequestOnClient(
   client: PoolClient,
   input: SettleGatewayRequestInput,
 ) {
+    const identityResult = await client.query<Pick<
+      RequestRow,
+      "id" | "platform_user_id" | "settled_at"
+    >>(
+      `SELECT id, platform_user_id, settled_at
+       FROM gateway_requests
+       WHERE id = $1`,
+      [input.gatewayRequestId],
+    );
+    const identity = identityResult.rows[0];
+    if (!identity) throw new Error("GATEWAY_REQUEST_NOT_FOUND");
+    if (identity.settled_at) {
+      return { idempotent: true, requestId: identity.id };
+    }
+
+    await lockGatewayAccountOnClient(client, identity.platform_user_id);
+
     const { rows } = await client.query<RequestRow>(
       `SELECT id, platform_user_id, model_id, status, outcome,
               reserved_microusd, estimated_tokens, subscription_id,
@@ -387,6 +410,31 @@ export async function settleGatewayRequestOnClient(
       "reserved_microusd",
     );
     const actualTokens = totalProcessedTokens(input.usage);
+    const estimatedTokens = safeDbNumber(
+      request.estimated_tokens,
+      "estimated_tokens",
+    );
+    const tokenDelta = actualTokens - estimatedTokens;
+
+    // Match preauthorization: day, month, then allowance. All effects roll back together.
+    for (const windowType of ["day", "month"] as const) {
+      await client.query(
+        `UPDATE gateway_rate_limits
+         SET token_count = GREATEST(0, token_count + $5::bigint),
+             updated_at = NOW()
+         WHERE platform_user_id = $1 AND model_id = $2
+           AND window_type = $3
+           AND window_start = date_trunc($3, $4::timestamptz, 'UTC')`,
+        [
+          request.platform_user_id,
+          request.model_id,
+          windowType,
+          request.created_at,
+          tokenDelta,
+        ],
+      );
+    }
+
     const allowance = await settleSubscriptionAllowanceOnClient(client, {
       allowanceId: request.subscription_allowance_id,
       coverageMode: request.subscription_coverage_mode,
@@ -419,11 +467,6 @@ export async function settleGatewayRequestOnClient(
           allowance.cashChargeMicrousd,
         )
       : null;
-    const estimatedTokens = safeDbNumber(
-      request.estimated_tokens,
-      "estimated_tokens",
-    );
-    const tokenDelta = actualTokens - estimatedTokens;
 
     if (allowance.allowanceChargeMicrousd > 0) {
       if (!account) throw new Error("BILLING_ACCOUNT_NOT_FOUND");
@@ -444,24 +487,6 @@ export async function settleGatewayRequestOnClient(
         actorId: input.actorId ?? request.id,
         metadata: { allowanceChargedTokens: allowance.allowanceChargedTokens },
       });
-    }
-
-    for (const windowType of ["day", "month"] as const) {
-      await client.query(
-        `UPDATE gateway_rate_limits
-         SET token_count = GREATEST(0, token_count + $5::bigint),
-             updated_at = NOW()
-         WHERE platform_user_id = $1 AND model_id = $2
-           AND window_type = $3
-           AND window_start = date_trunc($3, $4::timestamptz)`,
-        [
-          request.platform_user_id,
-          request.model_id,
-          windowType,
-          request.created_at,
-          tokenDelta,
-        ],
-      );
     }
 
     if (account && transitions?.capture) {
