@@ -2,6 +2,7 @@
 // [Output] Provider-free Node tests for stable project-root resolution, integration launch and config validation.
 // [Pos] Startup configuration regression tests; no server or database lifecycle.
 // [Sync] 2026-09-18: pin the prebuilt embedded launch used by Dream integration.
+// [Sync] 2026-10-05: require the stdio preload in both normal Next.js runtime commands.
 // [Sync] 2026-09-15: pin NodeNext workspace extension aliases and all four fixed Dream codec traces.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -98,5 +99,6 @@ test('Webpack resolves NodeNext JavaScript specifiers to workspace TypeScript so
 test('stable local integration builds once and starts under the embedded PostgreSQL supervisor', () => {
   assert.equal(packageJson.scripts['start:embedded'], 'tsx packages/db/src/supervise.ts pnpm start');
   assert.equal(packageJson.scripts['local:stable'], 'pnpm build && pnpm run start:embedded');
-  assert.equal(packageJson.scripts['dev:app'], 'next dev --webpack -H 0.0.0.0');
+  assert.equal(packageJson.scripts['dev:app'], 'node --import ./scripts/next-stdio-guard.mjs ./node_modules/next/dist/bin/next dev --webpack -H 0.0.0.0');
+  assert.equal(packageJson.scripts.start, 'node --import ./scripts/next-stdio-guard.mjs ./node_modules/next/dist/bin/next start');
 });

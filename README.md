@@ -3,6 +3,7 @@
 <!-- [Sync] 2026-09-17: separate Dream Better Auth/OAuth authority from the independent Admin operator password/session domain in the repository overview. -->
 <!-- [Sync] 2026-09-17: align first-run instructions with the empty 14-character password form and required Admin Session TTL configuration. -->
 <!-- [Sync] 2026-09-18: document the prebuilt local integration server for Dream background DTO traffic. -->
+<!-- [Sync] 2026-10-05: document terminal-loss shutdown and the normal Next stdio preload. -->
 # Ink Memory Admin
 
 基于 Next.js 与 Refine 的 Ink Memory 运营控制台。当前应用版本为 `0.1.1`。一个项目内提供剧本数据运营、平台用户管理、AI Provider 与模型配置、Token 计费、Claude/OpenAI 兼容网关、文件存储、RBAC、系统设置和审计能力，结构化数据统一存储在 PostgreSQL `ink-memory`。
@@ -64,6 +65,8 @@ pnpm local:stable
 ```
 
 该命令先执行一次 `pnpm build`，再由既有 embedded PostgreSQL supervisor 运行 `next start`。它不执行 migration、不改变认证、DTO、事务或数据库路径；修改 Admin 源码后需要重新运行命令以生成新构建。
+
+正常 `pnpm start` 和 `pnpm dev` 的 Next 进程在日志终端或管道失效时会退出，避免错误日志自身触发 `EIO` 后不断重复。embedded supervisor 处理终端关闭信号 `SIGHUP`，并关闭本次启动的整个应用进程组，再停止 PostgreSQL；`INK_SUPERVISOR_SHUTDOWN_TIMEOUT_MS` 可设置退出等待期限，默认 10 秒，到期强制关闭仍未退出的自有应用进程。需要终端关闭后继续运行时，应通过服务管理器运行，并将标准输出和错误输出交给持久日志。
 
 打开 [http://localhost:3000/admin](http://localhost:3000/admin)。根路径 `/` 会跳转到管理后台。
 
@@ -158,6 +161,7 @@ cluster 路径切换，不会自动迁移、删除或用空库替代真实数据
 | `DATABASE_URL` | PostgreSQL 连接；本机默认 `127.0.0.1:54329/ink-memory` | 自动配置 |
 | `INK_DATABASE_MODE` | 明确数据库 topology capability | 本机/容器固定 `embedded-postgres` |
 | `EMBEDDED_POSTGRES_*` | 数据目录、端口、shared buffers 与连接数 | 本机自动配置；容器默认 5432/96MB/50 |
+| `INK_SUPERVISOR_SHUTDOWN_TIMEOUT_MS` | 自有应用进程组的退出等待期限，正整数毫秒 | 可选；默认 10000；不改变业务行为 |
 | `MIGRATION_DATABASE_URL` | 可选外部 migration 目标；未设置时只允许显式 embedded mode | 生产可由平台注入 |
 | `BETTER_AUTH_URL/SECRET` | 唯一认证issuer与Session密钥 | 显式origin + `/api/auth`；secret至少32bytes |
 | `AUTH_DATABASE_URL` | 专用auth角色 | 显式PostgreSQL，无fallback |

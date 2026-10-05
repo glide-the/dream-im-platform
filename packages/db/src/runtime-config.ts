@@ -2,6 +2,7 @@
 // [Output] Validated embedded PostgreSQL settings and connection strings.
 // [Pos] Configuration boundary for the @ink-memory/db runtime package.
 // [Sync] 2026-08-21: add explicit embedded-postgres topology without environment-name branching.
+// [Sync] 2026-10-05: resolve the supervisor shutdown deadline from explicit/local configuration.
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -43,13 +44,26 @@ function databaseName(value: string): string {
   return value;
 }
 
-export function resolveEmbeddedPostgresConfig(): EmbeddedPostgresConfig {
-  let local: Record<string, string> = {};
+function readLocalConfig(): Record<string, string> {
   try {
-    local = parseEnvFile(readFileSync(fileURLToPath(new URL("../../../.env.local", import.meta.url)), "utf8"));
+    return parseEnvFile(readFileSync(fileURLToPath(new URL("../../../.env.local", import.meta.url)), "utf8"));
   } catch (error) {
     if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+    return {};
   }
+}
+
+export function resolveSupervisorShutdownTimeoutMs(): number {
+  const raw = process.env.INK_SUPERVISOR_SHUTDOWN_TIMEOUT_MS?.trim() || readLocalConfig().INK_SUPERVISOR_SHUTDOWN_TIMEOUT_MS?.trim();
+  const value = raw ? Number(raw) : 10_000;
+  if (!Number.isSafeInteger(value) || value <= 0 || value > 2_147_483_647) {
+    throw new Error("INK_SUPERVISOR_SHUTDOWN_TIMEOUT_MS must be a positive Node timer duration.");
+  }
+  return value;
+}
+
+export function resolveEmbeddedPostgresConfig(): EmbeddedPostgresConfig {
+  const local = readLocalConfig();
   const configured = (name: string) => process.env[name]?.trim() || local[name]?.trim();
   const mode = (configured("INK_DATABASE_MODE") || "postgres") as DatabaseMode;
   if (mode !== "embedded-postgres" && mode !== "postgres") {
