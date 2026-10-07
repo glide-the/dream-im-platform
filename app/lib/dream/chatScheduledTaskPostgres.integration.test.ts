@@ -1,19 +1,25 @@
-// [Input] Explicitly owned, migrated isolated PostgreSQL and the production scheduled Chat domain services.
-// [Output] Claim, pre-model recovery, exact turn completion, task-link separation, inactive manual skip and nullable history evidence.
+// [Input] Explicitly owned, migrated isolated PostgreSQL and production v1/v2/v3 scheduled Chat services.
+// [Output] Recurrence, source/new Thread dispatch, model snapshots, concurrency, recovery and compatibility evidence.
 // [Pos] Provider-free service integration contract; a runner owns database creation, migration and cleanup.
-// [Sync] 2026-09-29: derive the UTC calendar key from the trigger instant instead of its database-session offset text.
+// [Sync] 2026-10-07: cover v3 recurrence, immutable model selection and source/new Thread execution semantics.
+// [Sync] 2026-10-07: resolve real signed v3 prepare authority for both Thread modes before model dispatch.
 import { randomBytes, randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { runChatThreadOperation, type ChatThreadActor } from "./chatThreadService";
-import { runChatScheduledBackgroundOperation, runChatScheduledUserOperation } from "./chatScheduledTaskService";
+import { runChatScheduledBackgroundOperation, runChatScheduledBackgroundV2Operation, runChatScheduledBackgroundV3Operation,
+  runChatScheduledUserOperation, runChatScheduledUserV2Operation, runChatScheduledUserV3Operation } from "./chatScheduledTaskService";
 import { resolveScheduledChatAuthority } from "./chatScheduledTaskAuthority";
 import { DelegationService } from "../auth/delegationService";
 import { claimScheduledTriggerResultDto, prepareScheduledTriggerResultDto,
   reconcileScheduledTriggerResultDto, scheduledTaskResultDto, scheduledTriggerResultDto,
   startScheduledTriggerResultDto, finishScheduledTriggerResultDto,
   scheduledTaskDayResultDto } from "./chatScheduledTaskDto";
+import { claimScheduledTriggerV2ResultDto, prepareScheduledTriggerV2ResultDto,
+  resolveScheduledAuthorityV2ResultDto, scheduledTaskV2ResultDto } from "./chatScheduledTaskDto";
+import { claimScheduledTriggerV3ResultDto, prepareScheduledTriggerV3ResultDto,
+  scheduledTaskHistoryV3ResultDto, scheduledTaskV3ResultDto, scheduledTriggerV3ResultDto } from "./chatScheduledTaskDto";
 
 const databaseUrl = process.env.SCHEDULED_CHAT_TEST_DATABASE_URL;
 const databaseName = databaseUrl ? new URL(databaseUrl).pathname.slice(1) : "";
@@ -37,6 +43,14 @@ describe.skipIf(!enabled)("scheduled Chat isolated PostgreSQL contract", () => {
     client = service) => database.transaction(tx => runChatScheduledUserOperation(operation, input, actor, tx, client.id));
   const worker = (operation: Parameters<typeof runChatScheduledBackgroundOperation>[0], input: unknown,
     client = service) => database.transaction(tx => runChatScheduledBackgroundOperation(operation, input, client, tx));
+  const userV2 = (operation: Parameters<typeof runChatScheduledUserV2Operation>[0], input: unknown,
+    client = service) => database.transaction(tx => runChatScheduledUserV2Operation(operation, input, actor, tx, client.id));
+  const workerV2 = (operation: Parameters<typeof runChatScheduledBackgroundV2Operation>[0], input: unknown,
+    client = service) => database.transaction(tx => runChatScheduledBackgroundV2Operation(operation, input, client, tx));
+  const userV3 = (operation: Parameters<typeof runChatScheduledUserV3Operation>[0], input: unknown,
+    client = service) => database.transaction(tx => runChatScheduledUserV3Operation(operation, input, actor, tx, client.id));
+  const workerV3 = (operation: Parameters<typeof runChatScheduledBackgroundV3Operation>[0], input: unknown,
+    client = service) => database.transaction(tx => runChatScheduledBackgroundV3Operation(operation, input, client, tx));
 
   beforeAll(async () => {
     const identity = await pool.query("SELECT current_database() AS name");
@@ -44,9 +58,9 @@ describe.skipIf(!enabled)("scheduled Chat isolated PostgreSQL contract", () => {
     const existing = await pool.query("SELECT count(*)::int AS count FROM users");
     if (existing.rows[0]?.count !== 0) throw new Error("SCHEDULED_TEST_DATABASE_NOT_EMPTY");
     const capabilities = await pool.query(`SELECT capability FROM drizzle.schema_capabilities
-      WHERE capability IN ('dream.chat-scheduled-task.v1', 'identity.scheduled-chat-runtime.v1',
+      WHERE capability IN ('dream.chat-scheduled-task.v1', 'dream.chat-scheduled-task.v2', 'dream.chat-scheduled-task.v3', 'identity.scheduled-chat-runtime.v1',
         'dream.chat-scheduled-turn-binding.v1', 'dream.chat-scheduled-link-lifecycle.v1')`);
-    expect(capabilities.rows).toHaveLength(4);
+    expect(capabilities.rows).toHaveLength(6);
     process.env.AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET = randomBytes(48).toString("base64url");
     process.env.AUTH_TOKEN_ENCRYPTION_KEY = randomBytes(32).toString("hex");
     process.env.AUTH_RUNTIME_DELEGATION_TTL_SECONDS = "120";
@@ -68,6 +82,173 @@ describe.skipIf(!enabled)("scheduled Chat isolated PostgreSQL contract", () => {
     expect(platform.rows).toEqual([{ status: "active" }]);
   });
   afterAll(async () => { await pool.end(); });
+
+  it("runs v3 in the source Thread, snapshots the model and records cross-task source conflicts", async () => {
+    const source = (await chat("chat-thread.create", { deck_id: null, voice_id: null,
+      title: "V3 source" })) as { thread_id: string };
+    const base = { source_thread_id: source.thread_id, title: "Workday review", prompt: "Review the latest work",
+      target_editor_session_id: null, run_thread_mode: "source_thread" as const, model_alias: "dream-balanced",
+      rule: { kind: "weekly" as const, weekdays: ["MO", "TU", "WE", "TH", "FR"] as const,
+        local_time: "09:00", time_zone: "Asia/Shanghai" } };
+    const first = scheduledTaskV3ResultDto.parse(await userV3("scheduled-task.v3.create", {
+      ...base, create_request_key: "v3-source-create",
+    })).task;
+    expect(first).toMatchObject({ run_thread_mode: "source_thread", model_alias: "dream-balanced",
+      rule: { kind: "weekly", weekdays: ["MO", "TU", "WE", "TH", "FR"] } });
+    const manual = scheduledTriggerV3ResultDto.parse(await userV3("scheduled-task.v3.run", {
+      task_id: first.id, manual_request_key: "v3-source-manual",
+    })).trigger;
+    expect(manual).toMatchObject({ target_thread_id: source.thread_id,
+      run_thread_mode_snapshot: "source_thread", model_alias_snapshot: "dream-balanced", status: "claimed" });
+
+    const second = scheduledTaskV3ResultDto.parse(await userV3("scheduled-task.v3.create", {
+      ...base, create_request_key: "v3-source-create-two", title: "Second review", model_alias: "dream-fast",
+    })).task;
+    const blocked = scheduledTriggerV3ResultDto.parse(await userV3("scheduled-task.v3.run", {
+      task_id: second.id, manual_request_key: "v3-source-busy",
+    })).trigger;
+    expect(blocked).toMatchObject({ status: "failed", error_code: "SCHEDULE_SOURCE_THREAD_BUSY",
+      run_thread_mode_snapshot: "source_thread", model_alias_snapshot: "dream-fast" });
+
+    const claim = claimScheduledTriggerV3ResultDto.parse(await workerV3("scheduled-trigger.v3.claim", {}));
+    if (claim.action !== "dispatch" || claim.trigger.id !== manual.id) throw new Error("V3_SOURCE_CLAIM_MISSING");
+    const prepared = prepareScheduledTriggerV3ResultDto.parse(await workerV3("scheduled-trigger.v3.prepare", {
+      trigger_id: manual.id, claim_id: claim.claim_id,
+    }));
+    if (!prepared.prepared) throw new Error(`V3_SOURCE_PREPARE_FAILED:${JSON.stringify(prepared)}`);
+    expect(prepared).toMatchObject({ task_session: null, target_thread_id: source.thread_id,
+      resume_existing_thread: true, model_alias: "dream-balanced" });
+    const sourceAuthority = await database.transaction(tx => resolveScheduledChatAuthority(
+      tx, prepared.authority_token, "scheduled-trigger.v3.authority.resolve", service.id));
+    expect(sourceAuthority).toMatchObject({ triggerId: manual.id, claimId: claim.claim_id,
+      threadScope: source.thread_id, sourceThreadScope: source.thread_id });
+    const input = (await pool.query("SELECT role, parts FROM chat_message WHERE id=$1 AND thread_id=$2",
+      [prepared.input_message_id, source.thread_id])).rows[0];
+    expect(input).toMatchObject({ role: "user" });
+    expect(JSON.stringify(input.parts)).toContain("Review the latest work");
+    expect(scheduledTriggerV3ResultDto.parse(await workerV3("scheduled-trigger.v3.start", {
+      trigger_id: manual.id, claim_id: claim.claim_id, target_turn_id: "v3-source-turn",
+    })).trigger).toMatchObject({ status: "running", task_session_id: null });
+    await chat("chat-message.persist", { thread_id: source.thread_id, message_id: "v3-source-final",
+      role: "assistant", parts: [{ type: "text", text: "Source result" }],
+      metadata: { turnId: "v3-source-turn", turnStatus: "completed", finalPartIndex: 0 },
+      history_final_text: "Source result", history_process_available: false, history_projection_version: 1 });
+    expect(scheduledTriggerV3ResultDto.parse(await workerV3("scheduled-trigger.v3.finish", {
+      trigger_id: manual.id, claim_id: claim.claim_id, status: "succeeded",
+      final_message_id: "v3-source-final", error_code: null,
+    })).trigger).toMatchObject({ status: "succeeded", final_message_id: "v3-source-final" });
+    const history = scheduledTaskHistoryV3ResultDto.parse(await userV3("scheduled-task.v3.history", {
+      task_id: first.id, limit: 20, before_created_at: null,
+    }));
+    expect(history.triggers.find(item => item.id === manual.id)).toMatchObject({
+      run_thread_mode_snapshot: "source_thread", model_alias_snapshot: "dream-balanced", status: "succeeded",
+    });
+  });
+
+  it("creates a child Thread for v3 new-chat mode and snapshots an edited model", async () => {
+    const source = (await chat("chat-thread.create", { deck_id: null, voice_id: null,
+      title: "V3 child source" })) as { thread_id: string };
+    const created = scheduledTaskV3ResultDto.parse(await userV3("scheduled-task.v3.create", {
+      source_thread_id: source.thread_id, create_request_key: "v3-child-create", title: "Hourly review",
+      prompt: "Review in a child chat", target_editor_session_id: null,
+      run_thread_mode: "new_thread_each_run", model_alias: "dream-balanced",
+      rule: { kind: "hourly", interval_hours: 1, minute: 0, time_zone: "Asia/Shanghai" },
+    })).task;
+    const edited = scheduledTaskV3ResultDto.parse(await userV3("scheduled-task.v3.edit", {
+      task_id: created.id, expected_revision: created.revision, title: created.title, prompt: created.prompt,
+      run_thread_mode: "new_thread_each_run", model_alias: "dream-fast",
+      rule: { kind: "hourly", interval_hours: 2, minute: 15, time_zone: "Asia/Shanghai" },
+    })).task;
+    expect(edited).toMatchObject({ revision: created.revision + 1, model_alias: "dream-fast",
+      rule: { kind: "hourly", interval_hours: 2, minute: 15 } });
+    const manual = scheduledTriggerV3ResultDto.parse(await userV3("scheduled-task.v3.run", {
+      task_id: edited.id, manual_request_key: "v3-child-manual",
+    })).trigger;
+    const claim = claimScheduledTriggerV3ResultDto.parse(await workerV3("scheduled-trigger.v3.claim", {}));
+    if (claim.action !== "dispatch" || claim.trigger.id !== manual.id) throw new Error("V3_CHILD_CLAIM_MISSING");
+    const prepared = prepareScheduledTriggerV3ResultDto.parse(await workerV3("scheduled-trigger.v3.prepare", {
+      trigger_id: manual.id, claim_id: claim.claim_id,
+    }));
+    if (!prepared.prepared) throw new Error(`V3_CHILD_PREPARE_FAILED:${JSON.stringify(prepared)}`);
+    expect(prepared.task_session).not.toBeNull();
+    expect(prepared.target_thread_id).not.toBe(source.thread_id);
+    expect(prepared).toMatchObject({ resume_existing_thread: false, model_alias: "dream-fast" });
+    const childAuthority = await database.transaction(tx => resolveScheduledChatAuthority(
+      tx, prepared.authority_token, "scheduled-trigger.v3.authority.resolve", service.id));
+    expect(childAuthority).toMatchObject({ triggerId: manual.id, claimId: claim.claim_id,
+      threadScope: prepared.target_thread_id, sourceThreadScope: source.thread_id });
+    expect(prepared.trigger).toMatchObject({ run_thread_mode_snapshot: "new_thread_each_run",
+      model_alias_snapshot: "dream-fast" });
+  });
+
+  it("collapses missed interval points, fences concurrent claims and preserves the Editor target through unknown recovery", async () => {
+    const source = (await chat("chat-thread.create", { deck_id: null, voice_id: null,
+      title: "Interval source" })) as { thread_id: string };
+    await pool.query("INSERT INTO user_sessions(id,user_id,name,editor_state_json) VALUES ($1,1,$2,$3)",
+      ["scheduled-editor-1", "Scheduled note", JSON.stringify({ id: "scheduled-editor-1", cells: [], commentors: [], tasks: [], weightPath: [], overlappedPhrases: [], notFoundPhrases: [] })]);
+    const created = scheduledTaskV2ResultDto.parse(await userV2("scheduled-task.v2.create", {
+      source_thread_id: source.thread_id, create_request_key: "interval-create-1",
+      title: "Every ten minutes", prompt: "Append a status note",
+      target_editor_session_id: "scheduled-editor-1",
+      rule: { kind: "interval", interval_minutes: 10, time_zone: "Asia/Shanghai" },
+    })).task;
+    expect(created.rule).toEqual({ kind: "interval", interval_minutes: 10, time_zone: "Asia/Shanghai" });
+    await pool.query("UPDATE chat_scheduled_task SET next_run_at=now()-interval '31 minutes' WHERE id=$1", [created.id]);
+    const claims = await Promise.all([
+      workerV2("scheduled-trigger.v2.claim", {}), workerV2("scheduled-trigger.v2.claim", {}),
+    ]);
+    const dispatches = claims.map(value => claimScheduledTriggerV2ResultDto.parse(value))
+      .filter(value => value.action === "dispatch");
+    expect(dispatches).toHaveLength(1);
+    const dispatch = dispatches[0];
+    if (dispatch.action !== "dispatch") throw new Error("INTERVAL_DISPATCH_MISSING");
+    const persisted = (await pool.query(`SELECT target_editor_session_id_snapshot, skipped_from_at,
+      skipped_through_at FROM chat_scheduled_trigger WHERE id=$1`, [dispatch.trigger.id])).rows[0];
+    expect(persisted.target_editor_session_id_snapshot).toBe("scheduled-editor-1");
+    expect(persisted.skipped_from_at).not.toBeNull();
+    expect(persisted.skipped_through_at).not.toBeNull();
+    const prepared = prepareScheduledTriggerV2ResultDto.parse(await workerV2("scheduled-trigger.v2.prepare", {
+      trigger_id: dispatch.trigger.id, claim_id: dispatch.claim_id,
+    }));
+    if (!prepared.prepared) throw new Error(`INTERVAL_PREPARE_FAILED:${JSON.stringify(prepared)}`);
+    expect(prepared.target_editor_session_id).toBe("scheduled-editor-1");
+    const resolved = resolveScheduledAuthorityV2ResultDto.parse(await database.transaction(async tx => {
+      const authority = await resolveScheduledChatAuthority(tx, prepared.authority_token,
+        "scheduled-trigger.v2.authority.resolve", service.id);
+      return { trigger_id: authority.triggerId, claim_id: authority.claimId,
+        service_client_id: service.id, client_id: service.oauthClientId,
+        subject: authority.principal.subject, canonical_user_id: authority.principal.canonical_user_id,
+        source_thread_id: authority.sourceThreadScope, target_thread_id: authority.threadScope,
+        target_editor_session_id: authority.targetEditorSessionId, scopes: authority.principal.scopes,
+        purpose: "scheduled-chat-persistence", issued_at: authority.issuedAt.toISOString(),
+        expires_at: authority.maximumExpiresAt.toISOString() };
+    }));
+    expect(resolved.target_editor_session_id).toBe("scheduled-editor-1");
+    const editorGrant = await database.transaction(tx => new DelegationService(tx).createForScheduledChatAuthority(
+      service, prepared.authority_token, "interval-editor-grant", {
+        purpose: "editor-stdio", thread_id: prepared.task_session.thread_id, run_id: null,
+        editor_session_id: "scheduled-editor-1", scopes: ["editor:read", "editor:write"],
+      }));
+    expect(editorGrant.editor_session_id).toBe("scheduled-editor-1");
+    const resolvedEditorGrant = await database.transaction(tx => new DelegationService(tx).resolve(
+      editorGrant.token, "editor:read", service.id, prepared.task_session.thread_id,
+      null, "scheduled-editor-1",
+    ));
+    expect(resolvedEditorGrant).toMatchObject({
+      purpose: "editor-stdio", editorSessionId: "scheduled-editor-1",
+      threadId: prepared.task_session.thread_id,
+    });
+    await workerV2("scheduled-trigger.v2.start", { trigger_id: dispatch.trigger.id,
+      claim_id: dispatch.claim_id, target_turn_id: "interval-turn-1" });
+    await workerV2("scheduled-trigger.v2.finish", { trigger_id: dispatch.trigger.id,
+      claim_id: dispatch.claim_id, status: "state_unknown", final_message_id: null,
+      error_code: "SCHEDULE_RESULT_UNKNOWN" });
+    await pool.query("UPDATE chat_scheduled_trigger SET unknown_recheck_at=now()-interval '1 second' WHERE id=$1", [dispatch.trigger.id]);
+    const reconcile = claimScheduledTriggerV2ResultDto.parse(await workerV2("scheduled-trigger.v2.claim", {}));
+    expect(reconcile).toEqual({ action: "reconcile", trigger_id: dispatch.trigger.id });
+    const idle = claimScheduledTriggerV2ResultDto.parse(await workerV2("scheduled-trigger.v2.claim", {}));
+    expect(idle.action).toBe("idle");
+  });
 
   it("fences claims, reuses prepared input before start and keeps history after target deletion", async () => {
     const source = (await chat("chat-thread.create", { deck_id: null, voice_id: null, title: "Scheduled source" })) as { thread_id: string };

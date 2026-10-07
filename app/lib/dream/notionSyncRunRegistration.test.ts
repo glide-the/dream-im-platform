@@ -2,6 +2,7 @@
 // [Output] Exact DTO/hash/requirement and immutable migration registration evidence.
 // [Pos] Source publication gate; isolated PostgreSQL verifies actual function permissions and transactions.
 // [Sync] 2026-10-07: distinguish published operation contracts from claim rollout activation.
+// [Sync] 2026-10-07: locate the exact contiguous Notion group by operation name, preserving all checks when later domains extend the registry.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
@@ -14,15 +15,19 @@ import { notionSyncOwnershipRequirement } from "./notionConnectorService";
 
 it("appends exactly four operations with strict scopes and exact capability", () => {
   expect(inventory).toEqual(dreamOperations);
-  expect(dreamOperations.slice(-4).map(op=>op.contract.name)).toEqual(Object.keys(notionSyncRunOperationContracts));
-  for (const descriptor of dreamOperations.slice(-4)) {
+  const names = Object.keys(notionSyncRunOperationContracts);
+  const registered = dreamOperations.filter(op => names.includes(op.contract.name));
+  expect(registered.map(op => op.contract.name)).toEqual(names);
+  const start = dreamOperations.findIndex(op => op.contract.name === names[0]);
+  expect(dreamOperations.slice(start, start + names.length)).toEqual(registered);
+  for (const descriptor of registered) {
     expect(isNotionConnectorOperation(descriptor.contract.name)).toBe(true);
     expect(descriptor.requirements).toContainEqual(notionSyncOwnershipRequirement);
     expect(descriptor.capability.contract_sha256).toBe(createHash("sha256").update(canonicalContractJson(descriptor.contract)).digest("hex"));
     expect(descriptor.contract.input.additionalProperties).toBe(false);
   }
-  expect(dreamOperations.at(-4)?.capability.user_scope).toBe("dream:write");
-  expect(dreamOperations.slice(-3).every(op=>op.capability.background_scope==="connectors:sync")).toBe(true);
+  expect(registered[0]?.capability.user_scope).toBe("dream:write");
+  expect(registered.slice(1).every(op=>op.capability.background_scope==="connectors:sync")).toBe(true);
 });
 it("binds capability hash to the restricted function body and exact safe attributes", () => {
   const { contract_sha256, ...definition }=contract;

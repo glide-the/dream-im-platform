@@ -1,0 +1,41 @@
+{
+  "capability": "dream.chat-scheduled-task.v2",
+  "version": 2,
+  "definition_table": "public.chat_scheduled_task",
+  "trigger_table": "public.chat_scheduled_trigger",
+  "execution_target": "public.chat_task_session",
+  "definition_states": [
+    "active",
+    "paused",
+    "exhausted",
+    "deleted"
+  ],
+  "trigger_states": [
+    "claimed",
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "state_unknown",
+    "skipped"
+  ],
+  "schedule_rules": [
+    "once",
+    "daily",
+    "interval"
+  ],
+  "time_zone": "fixed IANA; once requires explicit offset when ambiguous; daily skips missing and chooses earlier repeated instant; interval advances on a persisted UTC lattice",
+  "interval": "positive PostgreSQL int4 minutes; create/edit/resume starts at database now plus interval; missed points collapse to the latest due point",
+  "editor_target": "nullable owner-validated Editor session captured on the definition and copied immutably to each trigger",
+  "revision": "one effective definition, expected-revision compare-and-swap",
+  "uniqueness": [
+    "service_client_id+auth_user_id+create_request_key",
+    "task_id+scheduled_at",
+    "task_id+manual_request_key",
+    "one open trigger per task"
+  ],
+  "dispatch": "service-scoped claim and lease; dispatch/reconcile/idle action; server-issued trigger-bound authority; idempotent chat_task_session; persistent unknown-result recheck without model replay",
+  "date_projection": "owner-scoped UTC interval including persisted next interval point and trigger history",
+  "editor_grant": "scheduled-chat authority may create one editor-stdio grant only for the captured owner-validated Editor session",
+  "contract_sha256": "41de2c831e60a0365a8d9fb99b64e224a677f730de9f4d1a783b15cb6478d2e5"
+}
