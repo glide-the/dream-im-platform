@@ -4,6 +4,7 @@
 // [Sync] 2026-09-04: cover static validation plus Provider-owned managed-account gates.
 // [Sync] 2026-09-04: cover model/Pricing delete conflicts, tombstones, and secret-safe audit.
 // [Sync] 2026-09-04: block tombstoning while an unpointed live managed credential remains.
+// [Sync] 2026-10-05: named upstream usage sources reject coercible arrays and invalid selectors before writes.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -78,6 +79,7 @@ const encrypted = {
   tag: "candidate-tag",
   fingerprint: "sha256:candidate",
 };
+
 
 const before = {
   id: "provider_1",
@@ -198,6 +200,17 @@ describe("Provider mutation credential lifecycle", () => {
         message: expect.stringContaining("Provider Code"),
       },
     });
+  });
+
+  it.each(["arbitrary", ["openrouter"], 1, { source: "deepseek" }])("rejects invalid usageSource %j before opening a write transaction", async (usageSource) => {
+    const response = await handleAdminResourceCreate(new Request("http://localhost/api/admin/providers", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+        code: "usage-invalid", name: "Invalid usage", protocol: "openai", baseUrl: "https://openrouter.ai/api/v1",
+        status: "disabled", config: { usageSource },
+      }),
+    }), "providers");
+    expect(response.status).toBe(400);
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
   it("rejects OpenAI x-api-key configuration even for a disabled create", async () => {

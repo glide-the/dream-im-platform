@@ -1,3 +1,4 @@
+// [Sync] 2026-10-05: map independent routing policy UI to existing models RBAC.
 // [Input] Browser Admin session APIs and registered Refine resource-to-permission mappings.
 // [Output] Auth, access-control, and data providers for the Admin workspace.
 // [Pos] Client projection only; every Marketplace request repeats permission checks server-side.
@@ -17,6 +18,7 @@ const registeredResources = new Set([
   "users",
   "source-users",
   "platform-users",
+  "routing-policies",
   "providers",
   "models",
   "pricing-rules",
@@ -59,6 +61,7 @@ const resourcePermission: Record<
   "source-users": { read: "users.read", write: "users.read" },
   "platform-users": { read: "users.read", write: "users.write" },
   "user-model-permissions": { read: "users.read", write: "users.write" },
+  "routing-policies": { read: "models.read", write: "models.write" },
   providers: { read: "providers.read", write: "providers.write" },
   models: { read: "models.read", write: "models.write" },
   "pricing-rules": { read: "pricing.read", write: "pricing.write" },

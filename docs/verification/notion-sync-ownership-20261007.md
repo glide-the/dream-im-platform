@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-07: keep private ignored evidence paths as local references; retain all original commands, failures and rollout status. -->
 <!-- [Input] Independent design/source reviews, Luna raw receipts and primary-owned isolated PostgreSQL lifecycle. -->
 <!-- [Output] Exact Admin contract, technical validation evidence and remaining Dream/release gates. -->
 <!-- [Pos] Admin dependency receipt; technical validation does not establish normal business recovery or deployment. -->
@@ -8,7 +9,7 @@
 
 ## 交付与所有权
 
-实施聊天：`01a11331-2830-7220-bf91-4a144acfd62f`；来源聊天：`01a10c7f-51ad-7183-8260-00ba2d51c94c`。Git 基线为 `main` / `77935d5`。本轮未提交、未创建 PR。起始已有 Provider/routing 等改动，58 个已修改 tracked 文件的基线 hash 校验没有发现任何无关字节变化；共享 folder contracts 与 journal 只有本轮明确增量。[保护回执](../../output/notion-sync-ownership-20261007/workspace-preservation.json)。
+实施聊天：`01a11331-2830-7220-bf91-4a144acfd62f`；来源聊天：`01a10c7f-51ad-7183-8260-00ba2d51c94c`。Git 基线为 `main` / `77935d5`。本轮未提交、未创建 PR。起始已有 Provider/routing 等改动，58 个已修改 tracked 文件的基线 hash 校验没有发现任何无关字节变化；共享 folder contracts 与 journal 只有本轮明确增量。保护回执（本地 `output/notion-sync-ownership-20261007/workspace-preservation.json`）。
 
 复用原五张 Notion 表、connector config_json、行锁、ReceiptRepository 与同一 UOW。新增四个 operation 共用执行内核，保留旧 221 个完整 descriptor；旧 21 个 Notion wire shape/hash 不改。新 strict light snapshot 接受当前 Dream builder 的实际 metadata，不接受正文、config、额外字段、错身份、不完整数据库索引。当前执行字段不投影到公开 connector config。
 
@@ -22,7 +23,7 @@
 a54b947c69ea0f129d22fd440c3a9f5694026ac0977adef2d5b09a97d7a9e993
 ```
 
-0074 仅增加 identity actor SHARE-lock 的 SECURITY DEFINER 函数及 capability，不新增业务表/字段，不迁移 legacy 业务数据。函数固定静态查询和 search_path，PUBLIC 撤权，只给唯一 DATA role EXECUTE；DATA 没有身份 UPDATE 权限。owner 必须保持为 identity schema owner。旧历史不可修改；本轮已应用到隔离库的 SQL/snapshot/contract hash 已冻结。[合同及历史校验](../../output/notion-sync-ownership-20261007/contract-preservation.json)。
+0074 仅增加 identity actor SHARE-lock 的 SECURITY DEFINER 函数及 capability，不新增业务表/字段，不迁移 legacy 业务数据。函数固定静态查询和 search_path，PUBLIC 撤权，只给唯一 DATA role EXECUTE；DATA 没有身份 UPDATE 权限。owner 必须保持为 identity schema owner。旧历史不可修改；本轮已应用到隔离库的 SQL/snapshot/contract hash 已冻结。合同及历史校验（本地 `output/notion-sync-ownership-20261007/contract-preservation.json`）。
 
 | Operation | 输入/输出版本 | Wire contract SHA-256 |
 | --- | --- | --- |
@@ -39,7 +40,7 @@ Registry225 紧凑 JSON（保留字段插入顺序）SHA-256：`c588f78a76877f6a
 
 首批唯一技术目标：`ink_notion_sync_ownership_test_7692ac78e1`，127.0.0.1，主代理创建并验证 current_database/current_user/host。后续 consumer 新阶段使用另一具名隔离库，下文单列。迁移与故障准备只使用本轮私密凭证，没有写正常账户。
 
-主代理执行 `node scripts/prepare-notion-sync-validation.mjs`：真实 migration runner 完整 replay 至 0073，安装旧角色 ACL，再并发两个 production migrator 应用 0074，之后重复 production migration orchestrator。实际 75/75 migration receipts、精确 capability、旧/fresh DATA ACL、身份 SHARE-lock 阻挡停用直到 commit、停用后拒绝和 DATA identity UPDATE 拒绝均通过。[原始迁移/角色日志](../../output/notion-sync-ownership-20261007/prepare-rerun.log)。准备脚本为持有隔离 cluster 的进程，结束时的退出码及清理证据另列，不将启动输出冒称最终 exit 0。
+主代理执行 `node scripts/prepare-notion-sync-validation.mjs`：真实 migration runner 完整 replay 至 0073，安装旧角色 ACL，再并发两个 production migrator 应用 0074，之后重复 production migration orchestrator。实际 75/75 migration receipts、精确 capability、旧/fresh DATA ACL、身份 SHARE-lock 阻挡停用直到 commit、停用后拒绝和 DATA identity UPDATE 拒绝均通过。原始迁移/角色日志（本地 `output/notion-sync-ownership-20261007/prepare-rerun.log`）。准备脚本为持有隔离 cluster 的进程，结束时的退出码及清理证据另列，不将启动输出冒称最终 exit 0。
 
 Luna 不执行迁移、catalog 故障设置、凭证签发或服务清理。API lane 的 Node HTTP transport 直接调用生产 POST/receipt GET/capabilities GET Route Handlers，使用真实 DTO、认证、权限、SQL、状态机与 receipt/audit UOW；无测试专用业务 API。只读 observer 检查持久化结果，不扩大 DATA 的 audit INSERT-only 权限。此 lane 不启动 Next 或浏览器；不涉及 Chromium revision。
 
@@ -56,7 +57,7 @@ Luna 不执行迁移、catalog 故障设置、凭证签发或服务清理。API 
 | `INK_ADMIN_E2E_DIST_DIR=.next-e2e-notion-ownership-build-20261007 pnpm build` | 0 | Next 编译、typecheck、静态页面、路由收集通过；构建前自有 dist 不存在 |
 | `pnpm exec eslint scripts/prepare-notion-sync-boundaries.mjs scripts/prepare-notion-sync-validation.mjs tests/integration/notionSyncReleaseProbe.ts` | 0 | 无诊断 |
 
-原始日志：[Playwright](../../output/notion-sync-ownership-20261007/final-playwright.log)、[发布边界](../../output/notion-sync-ownership-20261007/boundary-verifier-complete.log)、[主代理恢复证明](../../output/notion-sync-ownership-20261007/boundary-prepare-complete.log)、[typecheck](../../output/notion-sync-ownership-20261007/final-tsc-rerun.log)、[lint](../../output/notion-sync-ownership-20261007/final-lint-rerun.log)、[全量 unit](../../output/notion-sync-ownership-20261007/final-test-run-rerun.log)、[builder oracle](../../output/notion-sync-ownership-20261007/final-focused.log)、[build](../../output/notion-sync-ownership-20261007/final-build.log)。跳过的是已有可选源/集成门禁及默认无跨项目 env 的 oracle；显式 oracle 另行通过。不据跳过结果主张全项目集成完成。
+原始日志：Playwright（本地 `output/notion-sync-ownership-20261007/final-playwright.log`）、发布边界（本地 `output/notion-sync-ownership-20261007/boundary-verifier-complete.log`）、主代理恢复证明（本地 `output/notion-sync-ownership-20261007/boundary-prepare-complete.log`）、typecheck（本地 `output/notion-sync-ownership-20261007/final-tsc-rerun.log`）、lint（本地 `output/notion-sync-ownership-20261007/final-lint-rerun.log`）、全量 unit（本地 `output/notion-sync-ownership-20261007/final-test-run-rerun.log`）、builder oracle（本地 `output/notion-sync-ownership-20261007/final-focused.log`）、build（本地 `output/notion-sync-ownership-20261007/final-build.log`）。跳过的是已有可选源/集成门禁及默认无跨项目 env 的 oracle；显式 oracle 另行通过。不据跳过结果主张全项目集成完成。
 
 ## 公开入口旅程
 
@@ -72,7 +73,7 @@ Luna 不执行迁移、catalog 故障设置、凭证签发或服务清理。API 
 | 旧 snapshot/后台 patch/identity 写与 reserved 注入拒绝；legacy marker 不被普通保存清除 | 通过 |
 | 实际 capabilities Route 发布精确 capability 与新四项 wire hashes | 通过 |
 
-发布边界独立验证：claims gate 关闭后的新 claim 拒绝、原 claim receipt、renew、finish 和原 finish receipt；actor 锁等待跨 DB lease 后拒绝续租；capability 缺失/错 hash、函数缺失/正文/owner/PUBLIC/其他角色 EXECUTE/DATA EXECUTE 缺失/grant option 漂移均使 operation、receipt GET、只读 readiness fail closed；每项由主代理恢复，最后 readiness 与原已提交 receipt 重新成功。[13 项完整日志](../../output/notion-sync-ownership-20261007/boundary-verifier-complete.log)。
+发布边界独立验证：claims gate 关闭后的新 claim 拒绝、原 claim receipt、renew、finish 和原 finish receipt；actor 锁等待跨 DB lease 后拒绝续租；capability 缺失/错 hash、函数缺失/正文/owner/PUBLIC/其他角色 EXECUTE/DATA EXECUTE 缺失/grant option 漂移均使 operation、receipt GET、只读 readiness fail closed；每项由主代理恢复，最后 readiness 与原已提交 receipt 重新成功。13 项完整日志（本地 `output/notion-sync-ownership-20261007/boundary-verifier-complete.log`）。
 
 ## 失败记录与修复
 
@@ -80,7 +81,7 @@ Luna 不执行迁移、catalog 故障设置、凭证签发或服务清理。API 
 
 全量 unit 首次 exit 1，仅历史注册测试固定总数 221；改为冻结原 scheduled 205–221 区段，完整重跑 exit 0。初次显式 env 未应用的 oracle skipped 不作为兼容证据；随后实际 builder oracle 3/3 通过。
 
-发布 boundary controller 两次 fixture 故障退出：capability 恢复漏 adopted_from、函数故障未保持参数名。对应 verifier 分别通过 4/6 项后 timeout exit 1；产品没有因此改动。主代理恢复本轮隔离 catalog，修复完整行保存和参数名，第三轮 13/13、controller/verifier exit 0。首次失败日志保留：[第一次](../../output/notion-sync-ownership-20261007/boundary-verifier.log)、[第二次](../../output/notion-sync-ownership-20261007/boundary-verifier-final.log)。此前无重定向的 reviewed 9/9 输出没有伪造为存在的日志文件，最终完整 9/9 原始日志已保存。
+发布 boundary controller 两次 fixture 故障退出：capability 恢复漏 adopted_from、函数故障未保持参数名。对应 verifier 分别通过 4/6 项后 timeout exit 1；产品没有因此改动。主代理恢复本轮隔离 catalog，修复完整行保存和参数名，第三轮 13/13、controller/verifier exit 0。首次失败日志保留：第一次（本地 `output/notion-sync-ownership-20261007/boundary-verifier.log`）、第二次（本地 `output/notion-sync-ownership-20261007/boundary-verifier-final.log`）。此前无重定向的 reviewed 9/9 输出没有伪造为存在的日志文件，最终完整 9/9 原始日志已保存。
 
 ## 独立评审与剩余门禁
 
@@ -96,9 +97,9 @@ Luna 不执行迁移、catalog 故障设置、凭证签发或服务清理。API 
 
 ## Dream consumer 实际集成补充
 
-来源聊天“实现日历互斥页签与今日文档”及其 backend worker 在本轮观察时仍运行。本轮早期观察时 Dream integration proposal 中“仅方案/未实现”描述已落后于代码，实际 DTO/store/factory/scheduler/version cache 和 Calendar/Thread gate 已存在。主代理仅只读 Dream，不编辑其源文件，不发送聊天消息。Dream 保存的 Admin artifact provenance 与当前五个 Admin 文件 bytes、四项 operation hashes 单独校验；源码存在不能代替部署。[artifact 校验及正常 catalog 观察](../../output/notion-sync-ownership-20261007/dream-artifact-verification.json)。
+来源聊天“实现日历互斥页签与今日文档”及其 backend worker 在本轮观察时仍运行。本轮早期观察时 Dream integration proposal 中“仅方案/未实现”描述已落后于代码，实际 DTO/store/factory/scheduler/version cache 和 Calendar/Thread gate 已存在。主代理仅只读 Dream，不编辑其源文件，不发送聊天消息。Dream 保存的 Admin artifact provenance 与当前五个 Admin 文件 bytes、四项 operation hashes 单独校验；源码存在不能代替部署。artifact 校验及正常 catalog 观察（本地 `output/notion-sync-ownership-20261007/dream-artifact-verification.json`）。
 
-新增 `tests/integration/notionDreamConsumerProbe.py` 导入实际 Dream client/DTO/store/factory/cache，连主代理另建的具名隔离 `ink_notion_sync_ownership_test_97ee8258fb` 和 loopback production-route HTTP harness。只有 Notion metadata provider、成功后丢 HTTP 响应和有限 ACK 延迟通过显式 injection 控制；没有复制 Admin 状态机。正常数据库、真实 provider、正常 Dream 服务未参与。新隔离 preparation 的 75/75、exact capability 和 ACL 原始输出见 [consumer prepare](../../output/notion-sync-ownership-20261007/dream-consumer-prepare.log)，仅用于该新增跨项目阶段。
+新增 `tests/integration/notionDreamConsumerProbe.py` 导入实际 Dream client/DTO/store/factory/cache，连主代理另建的具名隔离 `ink_notion_sync_ownership_test_97ee8258fb` 和 loopback production-route HTTP harness。只有 Notion metadata provider、成功后丢 HTTP 响应和有限 ACK 延迟通过显式 injection 控制；没有复制 Admin 状态机。正常数据库、真实 provider、正常 Dream 服务未参与。新隔离 preparation 的 75/75、exact capability 和 ACL 原始输出见 consumer prepare（本地 `output/notion-sync-ownership-20261007/dream-consumer-prepare.log`），仅用于该新增跨项目阶段。
 
 | 命令 | Exit | 实际结果 |
 | --- | --- | --- |
@@ -109,13 +110,13 @@ Luna 不执行迁移、catalog 故障设置、凭证签发或服务清理。API 
 | probe `--public-only` 首次 | 1 | 首个公开 case 在 Calendar 返回 NOTION_TIMEZONE_UNAVAILABLE；fixture 缺少时区，worker 未执行；12 文件指纹稳定 |
 | 补齐时区后的 probe `--public-only`，独立明确 clock injection transport/runtime | 0 | 2/2；选择失败/回读/显式重试/禁用后手动/busy/Calendar，真实后台 worker 将索引 1 页刷新为 2 页并由公开 Calendar 读取；12 文件指纹稳定 |
 
-原始日志：[首次失败](../../output/notion-sync-ownership-20261007/dream-consumer-probe.log)、[限定续租取消](../../output/notion-sync-ownership-20261007/dream-renewal-cancellation.log)、[实际持久化回读](../../output/notion-sync-ownership-20261007/dream-first-sync-persistence.json)。首次完整 lane 在记录 fingerprint 前失败，不能为它补造前后 hash。observer 诊断最初两条 SQL 因 text→jsonb 与旧字段名称报错，修正只读查询后 exit 0；不是产品写故障。
+原始日志：首次失败（本地 `output/notion-sync-ownership-20261007/dream-consumer-probe.log`）、限定续租取消（本地 `output/notion-sync-ownership-20261007/dream-renewal-cancellation.log`）、实际持久化回读（本地 `output/notion-sync-ownership-20261007/dream-first-sync-persistence.json`）。首次完整 lane 在记录 fingerprint 前失败，不能为它补造前后 hash。observer 诊断最初两条 SQL 因 text→jsonb 与旧字段名称报错，修正只读查询后 exit 0；不是产品写故障。
 
-**P1 历史失败，已修复**：Dream `credentials._read_private_file` 每次读取都 chmod(0600)，`effective_home` 调用它；原 `factory._credential_identity` 包含 ctime_ns，两次检查之间的正常读取改变 ctime，导致首次同步误判授权变化。主代理独立调用实际 effective_home，inode/size/mtime 相同而 ctime 变化；首次实际 consumer 失败和 PG 回读印证其影响。独立 reviewer 确认该缺口。Dream 作者随后改为 dev/ino/size/mtime 与有界读取 payload SHA-256 摘要比较，摘要只留内存，不投影/日志/落库；源码独立复核认可。完整 consumer 复测验证正常首次同步/缓存读取/thread 与真实凭证变化拒绝。[post-fix 完整原始回执](../../output/notion-sync-ownership-20261007/dream-consumer-postfix.log)。本 Admin 任务没有编辑 Dream 修复。
+**P1 历史失败，已修复**：Dream `credentials._read_private_file` 每次读取都 chmod(0600)，`effective_home` 调用它；原 `factory._credential_identity` 包含 ctime_ns，两次检查之间的正常读取改变 ctime，导致首次同步误判授权变化。主代理独立调用实际 effective_home，inode/size/mtime 相同而 ctime 变化；首次实际 consumer 失败和 PG 回读印证其影响。独立 reviewer 确认该缺口。Dream 作者随后改为 dev/ino/size/mtime 与有界读取 payload SHA-256 摘要比较，摘要只留内存，不投影/日志/落库；源码独立复核认可。完整 consumer 复测验证正常首次同步/缓存读取/thread 与真实凭证变化拒绝。post-fix 完整原始回执（本地 `output/notion-sync-ownership-20261007/dream-consumer-postfix.log`）。本 Admin 任务没有编辑 Dream 修复。
 
 此前 **P2**：renew waiter 被取消后可能等待超预算 ACK 再发 terminal。Dream 作者当前已增加 monotonic deadline/completed_at 和 cleanup 超预算检查，独立源码复核认可；限定实际 lane exit 0 关闭该交叉行为。没有把这一个通过场景替代首次同步、Calendar/Thread、LKG、未知 finish 响应与缓存乱序验收。
 
-公开路由首次失败分类为 fixture 未设置真实时区，保留 [exit 1 原日志](../../output/notion-sync-ownership-20261007/dream-public-worker.log)。后续使用现有 preferences.save 的真实 DTO/route 配置 UTC；主代理仅重签本轮 synthetic service/user credentials，未读取正常凭证、SQL 写 0。新 loopback harness 的明确 `clockShiftAllowed` 只对具名隔离 DB 开启，AsyncLocalStorage 以请求级偏移推进真实 Repository DB clock，偏移取实际 effective interval + 1 秒，UOW/DTO/租约/SQL 保持原入口；不修改产品策略或历史业务时间。[public/worker 最终日志](../../output/notion-sync-ownership-20261007/dream-public-worker-rerun.log)、[synthetic credential 准备](../../output/notion-sync-ownership-20261007/dream-public-credential-refresh.json)。
+公开路由首次失败分类为 fixture 未设置真实时区，保留 exit 1 原日志（本地 `output/notion-sync-ownership-20261007/dream-public-worker.log`）。后续使用现有 preferences.save 的真实 DTO/route 配置 UTC；主代理仅重签本轮 synthetic service/user credentials，未读取正常凭证、SQL 写 0。新 loopback harness 的明确 `clockShiftAllowed` 只对具名隔离 DB 开启，AsyncLocalStorage 以请求级偏移推进真实 Repository DB clock，偏移取实际 effective interval + 1 秒，UOW/DTO/租约/SQL 保持原入口；不修改产品策略或历史业务时间。public/worker 最终日志（本地 `output/notion-sync-ownership-20261007/dream-public-worker-rerun.log`）、synthetic credential 准备（本地 `output/notion-sync-ownership-20261007/dream-public-credential-refresh.json`）。
 
 FastAPI lane 明确注入已认证 AdminRequestActor 和真实 AdminRequestAuth，生产 Admin 每个操作仍重新验证真实 JWT/身份/权限；ASGI 不启动 app lifespan、正常 scheduler 或浏览器。两条成功 lane 分别绑定各自的源码指纹，不宣称是一份相同时间的单次 8 case；它们是 provider-free 技术集成，不是正常业务或真实模型/Notion 验收。
 
@@ -123,19 +124,19 @@ FastAPI lane 明确注入已认证 AdminRequestActor 和真实 AdminRequestAuth�
 
 ## 文档与清理
 
-受影响文件头、folder contracts、PRD 骨架、正常/失败时序及状态图已同步。`node output/notion-sync-ownership-20261007/check-docs.mjs` exit 0：Markdown inventory 250，5 个本轮文档、11 个本轮 folder 增量、25 个本地引用有效；3 个 Mermaid 图使用本机 Chrome 一次启动及官方 ESM 模块实际 parse/render 成功，无依赖安装。[图示及文档日志](../../output/notion-sync-ownership-20261007/docs-gate.log)。ESM 使用方式依据 [Mermaid 官方文档](https://mermaid.js.org/config/usage.html)。收尾新增证据链接后只复查引用，不重复启动 Chrome。
+受影响文件头、folder contracts、PRD 骨架、正常/失败时序及状态图已同步。`node output/notion-sync-ownership-20261007/check-docs.mjs` exit 0：Markdown inventory 250，5 个本轮文档、11 个本轮 folder 增量、25 个本地引用有效；3 个 Mermaid 图使用本机 Chrome 一次启动及官方 ESM 模块实际 parse/render 成功，无依赖安装。图示及文档日志（本地 `output/notion-sync-ownership-20261007/docs-gate.log`）。ESM 使用方式依据 [Mermaid 官方文档](https://mermaid.js.org/config/usage.html)。收尾新增证据链接后只复查引用，不重复启动 Chrome。
 
-构建改写的 `next-env.d.ts` 已恢复构建前原字节，SHA-256 `7b550dda9686c16f36a17bf9051d5dbf31e98555b30d114ac49fc49a1e712651`。主代理确认所有具名自有进程退出、PG 日志为 database system is shut down 后删除整个隔离 cluster/私密 fixture、自有 build 和 Playwright 生成目录；保留不含凭证的日志。正常 `.next`、正常数据库与用户服务没有清理或迁移。[实际 cleanup](../../output/notion-sync-ownership-20261007/cleanup.json)。
+构建改写的 `next-env.d.ts` 已恢复构建前原字节，SHA-256 `7b550dda9686c16f36a17bf9051d5dbf31e98555b30d114ac49fc49a1e712651`。主代理确认所有具名自有进程退出、PG 日志为 database system is shut down 后删除整个隔离 cluster/私密 fixture、自有 build 和 Playwright 生成目录；保留不含凭证的日志。正常 `.next`、正常数据库与用户服务没有清理或迁移。实际 cleanup（本地 `output/notion-sync-ownership-20261007/cleanup.json`）。
 
 本轮 prepare 持有进程结束为 exit 143：embedded-postgres 的 signal exit hook 在 cluster shutdown 后先结束 Node，未完成目录移除。此事实没有伪写为脚本 cleanup exit 0；主代理随后明确校验自有 PID 全部不存在，手动清理具名目录的 command exit 0。准备脚本现提供 `stop-owned-validation` stdin 指令并直接处理自有 child 异常，避免把内部收尾交给竞争的 signal hook；该收尾改动按独立静态检查验证，不追加一次无关 migration replay。最终引用/diff、工作区保护及冻结合同检查另存收尾日志。
 
 最终 `--references-only` exit 0：27 个本地引用、0 缺失，3 图内容不变、0 次新增 browser launch；清理脚本 ESLint 与 `git diff --check` 均 exit 0。最终保护校验为 74 条旧 journal、221 个旧 operation descriptor、冻结的 0074 三文件及 58 个起始 dirty 文件无无关变化，HEAD 保持 `77935d5523e5950558c01edd423cb628580f1bca`。
 
-后续 consumer 阶段收尾：`pnpm exec tsc --noEmit --incremental false` 与 `pnpm exec eslint tests/integration/notionSyncHttpHarness.ts scripts/prepare-notion-sync-validation.mjs` 均 exit 0，未重复已通过全量 unit/build。[typecheck](../../output/notion-sync-ownership-20261007/dream-consumer-final-tsc.log)、[harness lint](../../output/notion-sync-ownership-20261007/dream-consumer-final-eslint.log)。独立 final reviewer 确认当前 12 文件与 public rerun 指纹一致，源码复核关闭。
+后续 consumer 阶段收尾：`pnpm exec tsc --noEmit --incremental false` 与 `pnpm exec eslint tests/integration/notionSyncHttpHarness.ts scripts/prepare-notion-sync-validation.mjs` 均 exit 0，未重复已通过全量 unit/build。typecheck（本地 `output/notion-sync-ownership-20261007/dream-consumer-final-tsc.log`）、harness lint（本地 `output/notion-sync-ownership-20261007/dream-consumer-final-eslint.log`）。独立 final reviewer 确认当前 12 文件与 public rerun 指纹一致，源码复核关闭。
 
-本轮 preparation 起始 exec 没有分配交互 stdin，`stop-owned-validation` 写入返回 stdin closed；使用已核实的自有 parent SIGTERM，preparation exit 143。独立 public clock harness exit 0。主代理随后核实全部四个自有 PID 退出、PG 明确 shutdown、三个自有端口无 listener，再删除整个具名 private directory、两个 fixture 与全部 private runtimes；删除与核实命令 exit 0。[实际 consumer cleanup](../../output/notion-sync-ownership-20261007/dream-consumer-cleanup.json)。未来通过 tool 启动 preparation 时需 `tty:true` 才能使用 stdin shutdown；本轮不声称已验证此关停路径。
+本轮 preparation 起始 exec 没有分配交互 stdin，`stop-owned-validation` 写入返回 stdin closed；使用已核实的自有 parent SIGTERM，preparation exit 143。独立 public clock harness exit 0。主代理随后核实全部四个自有 PID 退出、PG 明确 shutdown、三个自有端口无 listener，再删除整个具名 private directory、两个 fixture 与全部 private runtimes；删除与核实命令 exit 0。实际 consumer cleanup（本地 `output/notion-sync-ownership-20261007/dream-consumer-cleanup.json`）。未来通过 tool 启动 preparation 时需 `tty:true` 才能使用 stdin shutdown；本轮不声称已验证此关停路径。
 
-收尾 Registry 校验最初错误地把 key-sorted canonical hash 与之前紧凑 JSON hash 比较，exit 1；没有业务或合同改动。改用同一序列化方式比较并分别记录两种 hash 后 exit 0，runtime Registry225 与保存 inventory 完全一致；58 个 baseline 的无关文件、74 条旧 journal、冻结 0074 和 HEAD 保持。[最终保护](../../output/notion-sync-ownership-20261007/dream-final-preservation.json)。文档中原先将紧凑 JSON hash 称为 canonical 的表述同时更正。
+收尾 Registry 校验最初错误地把 key-sorted canonical hash 与之前紧凑 JSON hash 比较，exit 1；没有业务或合同改动。改用同一序列化方式比较并分别记录两种 hash 后 exit 0，runtime Registry225 与保存 inventory 完全一致；58 个 baseline 的无关文件、74 条旧 journal、冻结 0074 和 HEAD 保持。最终保护（本地 `output/notion-sync-ownership-20261007/dream-final-preservation.json`）。文档中原先将紧凑 JSON hash 称为 canonical 的表述同时更正。
 
 本次最后的文档引用检查 exit 0：40 个本地引用、缺失 0、3 图不变、未再次启动浏览器；diff check exit 0。来源聊天仍 active，其最后观察为 Calendar 7 项异常刷新复测通过，任务导航取消与旧设置入口仍在检查；backend worker 的最后回执仍等待来源 Luna 完整首批/取消测试，不能将本任务 6+2 技术 lane 扩大为来源全部回归完成。
 
@@ -148,7 +149,7 @@ FastAPI lane 明确注入已认证 AdminRequestActor 和真实 AdminRequestAuth�
 .venv/bin/python -m pytest -q tests/test_notion_sync_cancellation_edges.py
 ```
 
-实际分别 exit 0、83 passed/16 subtests passed/6.90s 与 3 passed/2.94s；扩展 compileall exit 0。19 个 source/test SHA-256 均仍与当前文件匹配。[当前 hash 与原日志 byte 复制证明](../../output/notion-sync-ownership-20261007/dream-backend-current-receipt.json)、[核心原始日志](../../output/notion-sync-ownership-20261007/source-backend-core-rerun-20261007.log)、[取消原始日志](../../output/notion-sync-ownership-20261007/source-cancellation-edges-rerun-20261007.log)、[来源完整历史回执](../../output/notion-sync-ownership-20261007/source-backend-validation-receipt-20261007.md)。来源此前 root/backend 相对路径 exit 127、Bearer 测试期望/fixture 两项失败、取消文件 sibling 导入 collection exit 2，以及诊断 PYTHONPATH 后 3 passed 均在该历史回执保留；正确 package import 和真实 service Bearer 断言修正后，精确原命令通过。ruff 环境前置 exit 127 仍不算 lint pass，不安装工具或改变 source 环境。
+实际分别 exit 0、83 passed/16 subtests passed/6.90s 与 3 passed/2.94s；扩展 compileall exit 0。19 个 source/test SHA-256 均仍与当前文件匹配。当前 hash 与原日志 byte 复制证明（本地 `output/notion-sync-ownership-20261007/dream-backend-current-receipt.json`）、核心原始日志（本地 `output/notion-sync-ownership-20261007/source-backend-core-rerun-20261007.log`）、取消原始日志（本地 `output/notion-sync-ownership-20261007/source-cancellation-edges-rerun-20261007.log`）、来源完整历史回执（本地 `output/notion-sync-ownership-20261007/source-backend-validation-receipt-20261007.md`）。来源此前 root/backend 相对路径 exit 127、Bearer 测试期望/fixture 两项失败、取消文件 sibling 导入 collection exit 2，以及诊断 PYTHONPATH 后 3 passed 均在该历史回执保留；正确 package import 和真实 service Bearer 断言修正后，精确原命令通过。ruff 环境前置 exit 127 仍不算 lint pass，不安装工具或改变 source 环境。
 
 主代理检查现有 `read_normal_admin_notion_capabilities.py`，确认只调用正常 Admin confidential auth/capabilities 读取、输出受保护的 presence/hash 状态，没有业务操作。实际命令：
 
@@ -156,11 +157,11 @@ FastAPI lane 明确注入已认证 AdminRequestActor 和真实 AdminRequestAuth�
 PYTHONDONTWRITEBYTECODE=1 /Users/dmeck/project/ink-dream-memory/backend/.venv/bin/python /Users/dmeck/project/ink-dream-memory/output/notion-sync-ownership-dream-20261007/read_normal_admin_notion_capabilities.py
 ```
 
-exit 0：read_succeeded=true；request/claim/renew/finish 均 present=false/exact=false，schema_present=false/schema_exact=false，business_writes=0。`claims_enabled` 明确为 not_verified_by_read_only_catalog，不从缺 capability 推断 server gate 值。[本轮新的正常读取原始结果](../../output/notion-sync-ownership-20261007/normal-capabilities-read-audit.log)。没有 migration、Admin/Dream 发布、服务启停、claim、finish、正常业务数据或 legacy 状态写入。
+exit 0：read_succeeded=true；request/claim/renew/finish 均 present=false/exact=false，schema_present=false/schema_exact=false，business_writes=0。`claims_enabled` 明确为 not_verified_by_read_only_catalog，不从缺 capability 推断 server gate 值。本轮新的正常读取原始结果（本地 `output/notion-sync-ownership-20261007/normal-capabilities-read-audit.log`）。没有 migration、Admin/Dream 发布、服务启停、claim、finish、正常业务数据或 legacy 状态写入。
 
-来源前端实际完整命令在具名隔离 `frontend-build` 执行 `corepack pnpm exec playwright test e2e/calendar-right-panel-tabs.spec.ts e2e/scheduled-task-calendar.spec.ts e2e/calendar-auth-context.spec.ts e2e/notion-settings-save-recovery.spec.ts --workers=1 --trace=on`，退出码 0、71 passed（2.4m）；后续受影响 Scheduled 全旅程 11 passed、旧 Settings 自包含复跑脚本 1 passed，均 exit 0。原 command/output/exit bytes 和来源清理日志已复制：[完整命令](../../output/notion-sync-ownership-20261007/source-frontend-full71-handoff.command.log)、[完整日志](../../output/notion-sync-ownership-20261007/source-frontend-full71-handoff.log)、[后续 11 项](../../output/notion-sync-ownership-20261007/source-frontend-scheduled-final.log)、[复跑脚本](../../output/notion-sync-ownership-20261007/source-frontend-old-settings-vite-script-run4.log)。这是 provider-free 前端技术验证，不是正常业务验收。
+来源前端实际完整命令在具名隔离 `frontend-build` 执行 `corepack pnpm exec playwright test e2e/calendar-right-panel-tabs.spec.ts e2e/scheduled-task-calendar.spec.ts e2e/calendar-auth-context.spec.ts e2e/notion-settings-save-recovery.spec.ts --workers=1 --trace=on`，退出码 0、71 passed（2.4m）；后续受影响 Scheduled 全旅程 11 passed、旧 Settings 自包含复跑脚本 1 passed，均 exit 0。原 command/output/exit bytes 和来源清理日志已复制：完整命令（本地 `output/notion-sync-ownership-20261007/source-frontend-full71-handoff.command.log`）、完整日志（本地 `output/notion-sync-ownership-20261007/source-frontend-full71-handoff.log`）、后续 11 项（本地 `output/notion-sync-ownership-20261007/source-frontend-scheduled-final.log`）、复跑脚本（本地 `output/notion-sync-ownership-20261007/source-frontend-old-settings-vite-script-run4.log`）。这是 provider-free 前端技术验证，不是正常业务验收。
 
-首次只比较阶段 manifest 时，9 个已记录文件中有两个测试 hash 不匹配；未将旧 hash 说成当前一致。最终 Scheduled hash 与后续 11 个 trace 内测试源字节匹配当前文件；Settings 当前测试源字节在完整 71 轮的 8 个 trace 中均精确匹配。其余 7 个已记录文件 hash 与当前文件一致，共证明该 9 文件范围，不推断已清理副本的所有 bundle 字节。[原 manifest、后续回归及解决说明](../../output/notion-sync-ownership-20261007/dream-frontend-current-receipt.json)、[19 个保存 trace 的源字节比较](../../output/notion-sync-ownership-20261007/dream-frontend-trace-source-proof.json)。来源前端清理仅针对自有副本/端口，正常服务保留；本任务没有运行或清理来源资源。
+首次只比较阶段 manifest 时，9 个已记录文件中有两个测试 hash 不匹配；未将旧 hash 说成当前一致。最终 Scheduled hash 与后续 11 个 trace 内测试源字节匹配当前文件；Settings 当前测试源字节在完整 71 轮的 8 个 trace 中均精确匹配。其余 7 个已记录文件 hash 与当前文件一致，共证明该 9 文件范围，不推断已清理副本的所有 bundle 字节。原 manifest、后续回归及解决说明（本地 `output/notion-sync-ownership-20261007/dream-frontend-current-receipt.json`）、19 个保存 trace 的源字节比较（本地 `output/notion-sync-ownership-20261007/dream-frontend-trace-source-proof.json`）。来源前端清理仅针对自有副本/端口，正常服务保留；本任务没有运行或清理来源资源。
 
 逐项完成审计如下，技术验证与正常发布分别裁决：
 
@@ -187,9 +188,9 @@ exit 0：read_succeeded=true；request/claim/renew/finish 均 present=false/exac
 
 三个已结束的目标轮次 `01a11331-35e6-7951-be8c-c8f9cc0650a5`、`01a1135c-1704-7410-bab6-41fa60db10ef`、`01a1136c-0591-7df1-8679-3e0a7611cd15` 均记录同一项未闭合的正常发布/旧 writer 排空门禁。此前各轮确有独立技术进展；上一轮完成来源实际回执和 trace 字节核对，本轮按真实 handle 确认来源文档任务仍在执行，没有把观察 timeout 当成停止。
 
-本轮重新执行上述正常 catalog 只读命令，exit 0；四项 operation 与 schema capability 仍全部 absent，business_writes=0，claims 状态继续不可由 catalog 验证。[阻塞审计时的正常读取](../../output/notion-sync-ownership-20261007/normal-capabilities-blocked-audit.log)。来源独立集成复核同样明确没有正常切换、drain 或 claims 回执，且其结论不授权正常 DDL、遗留强制重置或停止用户服务。
+本轮重新执行上述正常 catalog 只读命令，exit 0；四项 operation 与 schema capability 仍全部 absent，business_writes=0，claims 状态继续不可由 catalog 验证。阻塞审计时的正常读取（本地 `output/notion-sync-ownership-20261007/normal-capabilities-blocked-audit.log`）。来源独立集成复核同样明确没有正常切换、drain 或 claims 回执，且其结论不授权正常 DDL、遗留强制重置或停止用户服务。
 
-本任务可执行的实现、独立评审、具名隔离验证、集成回执、保护和清理均已完成。来源正在进行的 Calendar 文档校验不授权本任务修改正常实例；剩余门禁需要正常发布所有者提供实际回执，或用户明确授权新的正常发布与服务切换阶段。当前已无可代替这些事实的技术动作，阻塞审计达到连续三轮及实际无法继续推进的门槛，整体目标不能标为 complete。[原任务边界、连续轮次和实时观察依据](../../output/notion-sync-ownership-20261007/goal-blocked-audit.json)。
+本任务可执行的实现、独立评审、具名隔离验证、集成回执、保护和清理均已完成。来源正在进行的 Calendar 文档校验不授权本任务修改正常实例；剩余门禁需要正常发布所有者提供实际回执，或用户明确授权新的正常发布与服务切换阶段。当前已无可代替这些事实的技术动作，阻塞审计达到连续三轮及实际无法继续推进的门槛，整体目标不能标为 complete。原任务边界、连续轮次和实时观察依据（本地 `output/notion-sync-ownership-20261007/goal-blocked-audit.json`）。
 
 ## 源码 Git 交付验证（2026-10-07）
 

@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-05: compare current cc-switch against the recorded baseline and implement account metrics plus server-owned same-model routing. -->
 <!-- [Input] Committed cc-switch UI/proxy evidence and Ink Memory Model Catalog/Gateway constraints. -->
 <!-- [Output] Reuse boundaries for Provider, Model, Pricing, Usage, and Gateway interaction patterns. -->
 <!-- [Pos] cc-switch adaptation guide; authentication capability decisions defer to the dedicated lifecycle contract. -->
@@ -7,7 +8,7 @@
 
 # cc-switch 模型设置与计费设计接入规范
 
-> 状态：页面实现的强制设计输入。最近审查日期：2026-09-04，源项目已提交 HEAD `92d529168560bdec4ca1b429b50a203c5fc8a87e`；本轮未执行远端 fetch，且工作树存在未跟踪文档，因此同步基线未确认。源项目 `/Users/dmeck/project/cc-switch` 只读；允许移植其页面结构、React 交互和纯函数逻辑到 Admin，但不修改源项目、不复制本地数据库或真实凭据。认证能力与安全裁决以[模型提供方认证能力与凭据生命周期](provider-authentication-capability-and-credential-lifecycle.md)为准。
+> 状态：页面实现的强制设计输入。最近审查日期：2026-10-05，既有参考基线 `92d529168560bdec4ca1b429b50a203c5fc8a87e`，当前源项目 HEAD `f5db60db87e240964b5a512eda76793e9f8f923f`（只读 ls-remote 与本地一致）；源工作树有未跟踪文档，未修改。源项目 `/Users/dmeck/project/cc-switch` 只读；允许移植其页面结构、React 交互和纯函数逻辑到 Admin，但不修改源项目、不复制本地数据库或真实凭据。认证能力与安全裁决以[模型提供方认证能力与凭据生命周期](provider-authentication-capability-and-credential-lifecycle.md)为准。
 
 ## 1. 采用范围与证据
 
@@ -15,7 +16,7 @@
 
 产品语义也采用 cc-switch 的“注册供应商后由代理统一出站”，但落为 PostgreSQL 多用户服务：`Provider → Model alias → Pricing → Gateway Key`。主要调用方是 `ink-dream-memory`；它只调用 Ink Memory 的 Anthropic/OpenAI 兼容入口，不保存上游 Provider Secret、Endpoint 或真实型号。
 
-Codex 的模型差异请求头允许显式覆盖 `user-agent` 与 `version`，未设置时沿用产品默认客户端标识。模型验证、Gateway 推理与 401 续期重放复用同一合并规则；账号、认证与 originator 由 Provider 托管，客户端兼容性配置不要求重新 Device OAuth 认证。
+Codex 的模型差异请求头允许显式覆盖 `user-agent` 与 `version`，未设置时沿用产品默认客户端标识。2026-10-05 按 cc-switch `d0b57827` 将默认 wire/catalog 版本同步到0.159.0，独立 `resourceClientVersion` 不进入既有 registration fingerprint；具名覆盖与模型差异请求头保持有效。模型验证、Gateway 推理与 401 续期重放复用同一合并规则；账号、认证与 originator 由 Provider 托管，客户端兼容性配置不要求重新 Device OAuth 认证。最新协议变更逐项裁决见[上游用量与同模型动态路由设计](provider-usage-and-routing.md#9-源码证据与技术边界)。
 
 | cc-switch 证据 | 可复用模式 | Ink Memory 落点 |
 |---|---|---|
@@ -96,11 +97,11 @@ cc-switch 是本地代理配置工具，Ink Memory 是 PostgreSQL 多用户运�
 | Provider/Model 统计详情 | Drawer | 保持 Usage 仪表盘筛选与时间范围，不重置上下文 |
 | 定价删除 | 不提供 | 历史安全边界；仅未生效且未被引用的错误记录可走受控后台兼容流程，不开放通用 UI |
 
-Provider 卡片的 Endpoint Speed Test 被适配为纯 reachability；Model 卡片另提供 Credential/Model validation。前者不带 Secret，后者使用服务端加密 Secret 发送 1 Token 上限请求且不读取响应内容。cc-switch 的桌面“接管本机配置”ProxyToggle 不复制：Ink Memory Gateway 是部署后始终提供 `/v1/*` 的服务端代理，是否开放由部署环境、Gateway Key 与路由健康决定，而不是浏览器内开关。cc-switch 的本地 failover queue 也不能直接套用到当前唯一 alias→Provider 结算快照；若未来引入多上游候选，必须先新增版本化路由策略、逐尝试请求审计与费用归属，而不能在客户端静默切换。
+Provider 卡片的 Endpoint Speed Test 被适配为纯 reachability；Model 卡片另提供 Credential/Model validation。前者不带 Secret，后者使用服务端加密 Secret 发送 1 Token 上限请求且不读取响应内容。cc-switch 的桌面“接管本机配置”ProxyToggle 不复制：Ink Memory Gateway 是部署后始终提供 `/v1/*` 的服务端代理，是否开放由明确 capability、Gateway Key 与有效供给决定，而不是浏览器内开关。本次通过版本化路由策略、服务端候选冻结、逐尝试记录和最终 Provider 归属扩展同模型供给；保留默认 alias→Provider 和价格快照。cc-switch 的 app queue/breaker 参数不直接复制，采用 ordered 或显式 weighted，拒绝后备规则见 [当前完整设计](provider-usage-and-routing.md)。
 
 ### 3.1 桌面交互定稿（1440×1000）
 
-- AI 模型中心顶部使用 56px sticky 域切换：Provider / Models / Pricing / 模型权限 / Usage；当前项用纸面实底/下划线和文字共同表达，不用默认 Tabs 胶囊海。
+- AI 模型中心顶部使用 56px sticky 域切换：Provider / Models / Pricing；路由策略在独立菜单，模型权限在 Gateway 限流，Usage 在计费模块；当前项用纸面实底/下划线和文字共同表达，不用默认 Tabs 胶囊海。
 - Provider 主区单列：工具行高度约 52px；卡片最小 112px，身份/事实/操作约 34%/44%/22%。managed 身份显示 name/code/protocol 与 `账号：label/未连接`，generic 身份显示 base URL；事实显示 credential health、pricing coverage、recent requests；操作常显 models/usage/edit。
 - 新增/编辑、discover review、Pricing sync 都使用 `position: fixed; inset: 0` 的全窗口层并覆盖 Admin 侧栏。Header 64px、Footer 72px；body 锁滚，只有中间内容滚动。该结构直接对应 cc-switch `FullScreenPanel`，但使用 URL 路由以支持刷新/后退和 RBAC 403。
 - Provider 主写入与 Discover 始终是两个可区分结果：Ink generic 新建成功后自动 Discover 一次并保留手动入口；managed Provider 认证成功时先提交 connected credential/account，再自动执行一次账号级 Discover。成功返回 snapshot 并进入 review；失败分别保留已保存 Provider 或已连接账号，并显示可重试错误。
@@ -197,3 +198,7 @@ Snapshot 保存全部候选 key 和完整目录价格，不截断为二十项。
 - 1440×1000 下 Provider 表单最大内容宽度 1120px；详情/Usage 保持密集信息层级，禁止无来源装饰性大卡片。
 - light/dark 均使用 Ink Memory Token；不复制 cc-switch 的硬编码蓝色、灰色或默认 Radix/Shadcn 视觉。
 - 自动化至少覆盖：Provider 新增/编辑/密钥不回显、Provider 停用影响确认、Model 关系选择、Pricing 新版本与 409 重叠、Usage 全局筛选、请求详情、移动端焦点与无溢出。
+
+## 2026-10-05 相关变更同步裁决
+
+采用 `3b1292fe` 的绑定账号 quota 展示和 `c0e093a2` 的 reset 信息；现有 Provider-owned broker 已满足账号归属与续期，`15c0b3ce` 的 desktop direct/proxy 不适用服务端控制面。纯指标解析可移植；Rust/Tauri/本地 DB/脚本执行器不移植。generic 具名 OpenRouter/DeepSeek 查询和 Codex/Copilot 账号查询新增至现有 adapter 结构，保留上次成功值。当前基线证据、影响矩阵及 OpenRouter 条件见 [完整调研设计](provider-usage-and-routing.md)。

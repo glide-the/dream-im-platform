@@ -1,3 +1,4 @@
+// [Sync] 2026-10-05: expose safe routing desired/effective/default revisions and request attempts.
 // [Input] Authenticated Admin list/detail requests and capability-gated PostgreSQL projections.
 // [Output] Paginated active Admin resources with model Runtime fields and safe dependency counts.
 // [Pos] Read-only Admin resource query boundary.
@@ -32,6 +33,7 @@ import {
 
 export type AdminResource =
   | "platform-users"
+  | "routing-policies"
   | "providers"
   | "models"
   | "pricing-rules"
@@ -89,6 +91,16 @@ const resources: Record<AdminResource, ResourceConfig> = {
     },
     defaultSort: "created_at",
     filterFields: ["source", "email", "display_name", "tier", "status", "projection_ready", "billing_account_ready"],
+  },
+  "routing-policies": {
+    permission: "models.read",
+    select: `r.model_id AS id, r.model_id, m.code AS model_code, m.display_name,
+             r.status, r.revision, r.desired, r.effective, r.updated_at,
+             jsonb_build_object('providerId', m.provider_id, 'upstreamModel', m.upstream_model) AS default_target`,
+    from: "FROM ai_model_route_policies r JOIN ai_models m ON m.id = r.model_id",
+    columns: { id: "r.model_id", model_id: "r.model_id", model_code: "m.code", status: "r.status", updated_at: "r.updated_at" },
+    defaultSort: "updated_at",
+    filterFields: ["model_id", "model_code", "status"],
   },
   providers: {
     permission: "providers.read",
@@ -366,7 +378,7 @@ const resources: Record<AdminResource, ResourceConfig> = {
              r.subscription_id, r.subscription_plan_version_id,
              r.subscription_entitlement_id, r.subscription_allowance_id,
              r.subscription_snapshot, r.subscription_coverage_mode,
-             r.requested_model, r.resolved_model, r.upstream_request_id,
+             r.requested_model, r.resolved_model, r.upstream_request_id, r.routing_snapshot, r.routing_attempts,
              r.protocol, r.status, r.outcome, r.input_token_semantics,
              r.estimated_tokens, r.input_tokens, r.output_tokens,
              r.cache_read_tokens, r.cache_write_tokens,

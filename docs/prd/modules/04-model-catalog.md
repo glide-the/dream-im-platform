@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-05: align upstream account usage, independent routing and immutable billing ownership. -->
 <!-- [Sync] 2026-09-17: separate the Gateway enabled-model catalog from the Product Plan-rights catalog. -->
 # 模块 PRD：Provider、Model 与 Pricing
 
@@ -57,3 +58,9 @@
 - MOD-06（Implemented / release candidate）：`/api/product/v1/me/model-catalog`只返回当前Plan Entitlement权益投影，空集是真实empty；Gateway `/v1/models`另按enabled Model和实时资格返回目录，缺Entitlement为`allowance-only`。两者均不回退静态模型；真实Provider canary仍是生产Release Gate。
 
 交互验收映射：MOD-01 → UI-MOD-01；MOD-02 → UI-MOD-02；MOD-03/04 → UI-MOD-03；MOD-05 → UI-MOD-04。
+
+### 同模型供给与上游用量（2026-10-05）
+
+新增独立路由策略资源 `routing-policies`（`models.read/write`）和 `/admin/routing` 菜单；原 `ai_models.provider_id/upstream_model` 为默认供给，新增 revisioned policy/targets 为同一 alias 扩展多个 Provider。desired/effective 分开，active 保存原子生效，draft/disabled 使用默认路径。候选型号必须已登记并启用，能力与 context/output 覆盖 alias，协议及 adapter kind 一致；Gateway 每请求重验可用性。
+
+Provider 卡片在 `providers.read` 边界手动查询真实上游指标，服务端解密与解析，客户端无凭据。金额/请求次数/窗口使用率各自保留语义；无数据不显示零，失败保留过期成功值。新增 `ai_model_route_policies/ai_model_route_targets` 与请求证据列为 expand，不搬迁历史记录。验收要求成功、非法输入、只读角色、CAS、后备、流中失败和账本一致。[交互与完整规则](../../design/provider-usage-and-routing.md)。

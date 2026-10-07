@@ -246,6 +246,7 @@ export interface ProviderProductAdapter {
   revoke(material: ProviderRevocationMaterial): Promise<RevokeResult>;
   fetchModelCatalog(bundle: ProviderTokenBundle): Promise<ProviderModelCatalogResult>;
   getResourceContract(): ResourceContractResult;
+  getUsageAccess?(bundle: ProviderTokenBundle): { source: "codex" | "github_copilot"; url: string; headers: Headers };
 }
 
 export interface ProviderProductRegistry {
@@ -256,3 +257,4 @@ export interface ProviderProductRegistry {
 
 export type ProviderFetch = typeof fetch;
 export type ProviderClock = () => number;
+// [Sync] 2026-10-05: product adapters optionally expose server-only account usage request coordinates.

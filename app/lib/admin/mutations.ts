@@ -1,3 +1,4 @@
+// [Sync] 2026-10-05: validate named upstream usage source without accepting query scripts or credentials.
 // [Input] Authenticated Admin mutation requests, strict resource schemas, and PostgreSQL transactions.
 // [Output] Audited CRUD writes, including dependency-gated Provider tombstones and model Runtime settings.
 // [Pos] Shared Admin mutation domain; routes delegate here after Origin/RBAC checks.
@@ -131,6 +132,9 @@ const providerConfigSchema = z
         path: forbiddenPath,
         message: "Provider config cannot contain credential or secret fields",
       });
+    }
+    if (config.usageSource !== undefined && (typeof config.usageSource !== "string" || !["none", "openrouter", "deepseek"].includes(config.usageSource))) {
+      context.addIssue({ code: "custom", path: ["usageSource"], message: "usageSource must be none, openrouter or deepseek" });
     }
     if (
       config.authMode !== undefined &&

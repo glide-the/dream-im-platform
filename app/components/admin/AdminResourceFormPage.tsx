@@ -105,6 +105,7 @@ export function normalizeProviderFormPayload(
   if (normalized.config && typeof normalized.config === "object" && !Array.isArray(normalized.config)) {
     const config = { ...(normalized.config as Record<string, unknown>) };
     delete config.authMode;
+    delete config.usageSource;
     normalized.config = config;
   }
   return normalized;
@@ -488,7 +489,7 @@ export default function AdminResourceFormPage({
                   if ((field.section ?? "main") !== section.id) return false;
                   if (
                     managedProvider &&
-                    ["protocol", "baseUrl", "apiKey", "authMode", "expectedAuthRevision", "config"].includes(field.key)
+                    ["protocol", "baseUrl", "apiKey", "authMode", "usageSource", "expectedAuthRevision", "config"].includes(field.key)
                   ) return false;
                   if (managedProvider && mode === "create" && field.key === "status") return false;
                   if (mode === "create" && field.updateOnly) return false;
@@ -605,3 +606,4 @@ export default function AdminResourceFormPage({
     </section>
   );
 }
+// [Sync] 2026-10-05: named static usage source is excluded from managed product forms and payloads.

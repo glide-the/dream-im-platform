@@ -2,6 +2,8 @@
 // [Output] Validated provider product config, named resource/model endpoints, readiness, and fingerprint.
 // [Pos] Composition boundary mirroring the pinned cc-switch product integrations without exposing secrets.
 // [Sync] 2026-09-04: add separately validated per-product model catalog endpoints.
+// [Sync] 2026-10-05: add named account-usage endpoints without changing registration identity fingerprints.
+// [Sync] 2026-10-05: sync Codex wire/catalog version independently of the existing OAuth registration fingerprint.
 
 import { createHash } from "node:crypto";
 import { ProviderProtocolError } from "./errors";
@@ -21,6 +23,7 @@ export type ProviderEndpointOverrides = Readonly<Partial<{
   revoke: string;
   resource: string;
   models: string;
+  usage: string;
 }>>;
 
 type BaseDeploymentConfigInput = Readonly<{
@@ -34,6 +37,7 @@ export type CodexDeploymentConfigInput = BaseDeploymentConfigInput & Readonly<{
   product: "codex";
   integrationId?: string;
   integrationVersion?: string;
+  resourceClientVersion?: string;
   modelCatalogClientVersion?: string;
 }>;
 
@@ -73,6 +77,7 @@ export type ResolvedCodexConfig = Readonly<{
   userAgent: string;
   integrationId: string;
   integrationVersion: string;
+  resourceClientVersion: string;
   modelCatalogClientVersion: string;
   endpoints: Readonly<{
     deviceAuthorization: string;
@@ -84,6 +89,7 @@ export type ResolvedCodexConfig = Readonly<{
     resource: string;
     models: string;
     jwks: string;
+    usage: string;
   }>;
 }>;
 
@@ -116,6 +122,7 @@ export type ResolvedGitHubCopilotConfig = Readonly<{
     revoke: string;
     resource: string;
     models: string;
+    usage: string;
   }>;
 }>;
 
@@ -134,6 +141,7 @@ const DEFAULT_ENDPOINTS = {
     revoke: "https://auth.openai.com/oauth/revoke",
     resource: "https://chatgpt.com/backend-api/codex/responses",
     models: "https://chatgpt.com/backend-api/codex/models",
+    usage: "https://chatgpt.com/backend-api/wham/usage",
     jwks: "https://auth.openai.com/.well-known/jwks.json",
   },
   xai: {
@@ -149,13 +157,16 @@ const DEFAULT_ENDPOINTS = {
     revoke: "https://api.github.com/applications",
     resource: "https://api.githubcopilot.com/chat/completions",
     models: "https://api.githubcopilot.com/models",
+    usage: "https://api.github.com/copilot_internal/user",
   },
 } as const;
 
 /**
  * Public native-client metadata mirrored from cc-switch HEAD
  * 92d529168560bdec4ca1b429b50a203c5fc8a87e. These values identify the
- * upstream product integration; none is a client secret. Named environment
+ * OAuth registration identity; none is a client secret. Codex wire/catalog
+ * versions separately follow cc-switch d0b57827 (0.159.0) without rebinding
+ * existing grants. Named environment
  * values remain supported as explicit forward-compatible overrides.
  */
 const DEFAULT_PRODUCT_CONFIG = {
@@ -165,7 +176,8 @@ const DEFAULT_PRODUCT_CONFIG = {
     userAgent: "cc-switch-codex-oauth",
     integrationId: "codex_cli_rs",
     integrationVersion: "0.144.1",
-    modelCatalogClientVersion: "3.20.1",
+    resourceClientVersion: "0.159.0",
+    modelCatalogClientVersion: "0.159.0",
   },
   xai: {
     clientId: "b1a00492-073a-47ea-816f-4c329264a828",
@@ -387,6 +399,8 @@ export function resolveProviderConfig(input: ProviderDeploymentConfigInput): Res
   if (input.product === "codex") {
     assertHeaderValue("originator", nonEmpty(input.integrationId)!);
     assertHeaderValue("version", nonEmpty(input.integrationVersion)!);
+    const resourceClientVersion = nonEmpty(input.resourceClientVersion) ?? nonEmpty(input.integrationVersion)!;
+    assertHeaderValue("version", resourceClientVersion);
     const endpoint = (key: keyof typeof DEFAULT_ENDPOINTS.codex, purpose: Parameters<typeof resolveProviderEndpoint>[0]["purpose"]) =>
       resolveProviderEndpoint({
         product: input.product,
@@ -400,6 +414,7 @@ export function resolveProviderConfig(input: ProviderDeploymentConfigInput): Res
       userAgent,
       integrationId: nonEmpty(input.integrationId)!,
       integrationVersion: nonEmpty(input.integrationVersion)!,
+      resourceClientVersion,
       modelCatalogClientVersion:
         nonEmpty(input.modelCatalogClientVersion)
         ?? DEFAULT_PRODUCT_CONFIG.codex.modelCatalogClientVersion,
@@ -412,6 +427,9 @@ export function resolveProviderConfig(input: ProviderDeploymentConfigInput): Res
         revoke: endpoint("revoke", "revocation"),
         resource: endpoint("resource", "resource"),
         models: endpoint("models", "models"),
+        // Optional usage reads validate their endpoint at that boundary, so a
+        // malformed display-only override cannot disable inference or login.
+        usage: override.usage ?? DEFAULT_ENDPOINTS.codex.usage,
         jwks: endpoint("jwks", "identity"),
       },
     };
@@ -482,6 +500,7 @@ export function resolveProviderConfig(input: ProviderDeploymentConfigInput): Res
       revoke: endpoint("revoke", "revocation"),
       resource: endpoint("resource", "resource"),
       models: endpoint("models", "models"),
+      usage: override.usage ?? DEFAULT_ENDPOINTS.github_copilot.usage,
     },
   };
 }
@@ -505,6 +524,7 @@ function endpointOverrides(environment: NodeJS.ProcessEnv, prefix: string): Prov
     revoke: nonEmpty(environment[`${prefix}_REVOKE_ENDPOINT`]),
     resource: nonEmpty(environment[`${prefix}_RESOURCE_ENDPOINT`]),
     models: nonEmpty(environment[`${prefix}_MODELS_ENDPOINT`]),
+    usage: nonEmpty(environment[`${prefix}_USAGE_ENDPOINT`]),
   };
 }
 
@@ -524,6 +544,9 @@ export function providerProductConfigsFromEnv(
         ?? DEFAULT_PRODUCT_CONFIG.codex.integrationId,
       integrationVersion: nonEmpty(environment.INK_PROVIDER_CODEX_INTEGRATION_VERSION)
         ?? DEFAULT_PRODUCT_CONFIG.codex.integrationVersion,
+      resourceClientVersion: nonEmpty(environment.INK_PROVIDER_CODEX_RESOURCE_CLIENT_VERSION)
+        ?? nonEmpty(environment.INK_PROVIDER_CODEX_INTEGRATION_VERSION)
+        ?? DEFAULT_PRODUCT_CONFIG.codex.resourceClientVersion,
       modelCatalogClientVersion:
         nonEmpty(environment.INK_PROVIDER_CODEX_MODEL_CATALOG_CLIENT_VERSION)
         ?? DEFAULT_PRODUCT_CONFIG.codex.modelCatalogClientVersion,

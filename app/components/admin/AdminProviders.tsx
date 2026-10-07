@@ -1,3 +1,4 @@
+// [Sync] 2026-10-05: register routing policies as an independent business menu.
 // [Input] Admin auth/data/access providers and the protected Refine resource registry.
 // [Output] Client-side Admin Refine shell including the Claude Agent governance resource.
 // [Pos] Admin provider composition; server Route Handlers remain the authorization authority.
@@ -59,6 +60,11 @@ const resources = [
     name: "story-workflow-runs",
     list: "/admin/story/workflow-runs",
     meta: { label: "Dream 运行" },
+  },
+  {
+    name: "routing-policies",
+    list: "/admin/routing",
+    meta: { label: "路由策略", icon: "⇄" },
   },
   {
     name: "models",

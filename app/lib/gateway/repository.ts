@@ -1,3 +1,4 @@
+// [Sync] 2026-10-05: persist credential-free frozen routing evidence with the original reservation.
 // [Input] Resolved model/auth snapshots, Gateway principal, request reservation, and settlement measurements.
 // [Output] Transactional request ledger rows with billing plus Provider auth epoch/revision evidence.
 // [Pos] PostgreSQL persistence boundary for the Gateway request lifecycle and append-only billing effects.
@@ -283,6 +284,11 @@ export async function beginGatewayRequest(input: {
         input.isStreaming,
       ],
     );
+    if (input.resolved.routing) {
+      await client.query("UPDATE gateway_requests SET routing_snapshot = $2::jsonb WHERE id = $1",
+        [requestId, JSON.stringify(input.resolved.routing.snapshot)]);
+    }
+
     const subscriptionEligibility = await resolveGatewaySubscriptionOnClient(client, {
       platformUserId: input.principal.platformUserId,
       modelId: input.resolved.model.id,

@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-05: align upstream account usage, independent routing and immutable billing ownership. -->
 <!-- [Input] cc-switch evidence, official OAuth/RFC contracts, and the approved one-Provider-one-account lifecycle. -->
 <!-- [Output] Go decision, single-account Provider rules, fenced Gateway lifecycle, migration path, and release acceptance. -->
 <!-- [Pos] Canonical Provider authentication design; schema, Admin, Gateway, migration, deployment, and E2E docs must stay aligned with this contract. -->
@@ -502,3 +503,11 @@ sequenceDiagram
 - Authorization Server Metadata：[RFC 8414](https://www.rfc-editor.org/rfc/rfc8414.html)。
 - Token Revocation：[RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html)。
 - OAuth 2.0 Security Best Current Practice：[RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html)。
+
+## 2026-10-05 上游查询与路由扩展
+
+账号所有权保持不变：每个 managed Provider 仍直接拥有一个 credential；同模型策略只是引用多个 Provider，不能改绑、共享账号或读取 product default。Codex/Copilot 用量查询通过现有 managed broker 的 live epoch/revision/registration fence，使用产品账户查询凭据，而不是把临时推理 Token 当作查询凭据；xAI 暂无支持。查询和缓存只投影安全字段，不保存原始正文或 Secret。
+
+generic 只允许具名 OpenRouter/DeepSeek 查询来源，沿用 Endpoint allowlist 与服务器解密；禁止脚本/任意 URL。路由快照不包含密文或 Header，已撤销账号在 live transport fence fail closed。已有 managed 非流式 401 续期保持；流式及跨 Provider 后备限制见 [用量与路由设计](provider-usage-and-routing.md)。
+
+Codex 默认推理/catalog 客户端版本按源项目同步至0.159.0；请求层 `resourceClientVersion` 与 `modelCatalogClientVersion` 不加入 registration fingerprint，原 `integrationVersion` 身份继续保留，已有账号无需重新认证。模型显式 `version` 请求头继续覆盖 wire 默认值；命名环境覆盖不提供通用变量编辑入口。

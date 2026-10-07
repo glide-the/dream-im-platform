@@ -4,6 +4,8 @@
 // [Sync] 2026-09-17: accept headerless Codex Responses SSE while keeping other provider content-type checks strict.
 // [Sync] 2026-10-03: retain streamed output when non-streaming terminal responses omit it.
 
+// [Sync] 2026-10-05: use frozen pre-response routing and finish the chosen attempt without re-reserving or re-pricing.
+import { sendRoutedProviderRequest, finishRoutingAttempt } from "./routing";
 import type { z } from "zod";
 import { createHash } from "node:crypto";
 import type { ResolvedBillableModel } from "../models/resolver";
@@ -18,7 +20,7 @@ import {
   safePayloadWrite,
   startGatewayResponsePayload,
 } from "./payloads";
-import { adaptProviderRequest, adaptProviderResponse, record, type GatewayProtocol } from "./protocol-adapters";
+import { adaptProviderResponse, record, type GatewayProtocol } from "./protocol-adapters";
 import { ProviderHttpError, sendProviderRequest } from "./provider-transport";
 import { createProtocolStreamAdapter } from "./stream-adapters";
 import { parseSseStream, serializeSse } from "./sse";
@@ -220,17 +222,9 @@ export async function proxyNonStreaming(input: {
   body: JsonRecord;
 }) {
   const startedAt = Date.now();
-  const upstreamBody = adaptProviderRequest({
-    externalProtocol: input.externalProtocol,
-    providerProtocol: input.prepared.resolved.provider.protocol,
-    providerAdapterKind: input.prepared.resolved.provider.adapterKind,
-    body: { ...input.body, stream: false },
-    model: input.prepared.resolved.model.upstreamModel,
-    maxOutputTokens: input.prepared.effectiveMaxOutputTokens,
-  });
-  let transport: Awaited<ReturnType<typeof sendProviderRequest>>;
+  let transport: Awaited<ReturnType<typeof sendProviderRequest>> | undefined;
   try {
-    transport = await sendProviderRequest({ resolved: input.prepared.resolved, body: upstreamBody, requestSignal: input.request.signal, requestHeaders: input.request.headers, requestUrl: input.request.url, gatewayRequestId: input.prepared.requestId, allowManagedCredentialRetry: true });
+    transport = await sendRoutedProviderRequest({ resolved: input.prepared.resolved, requestId: input.prepared.requestId, externalProtocol: input.externalProtocol, body: input.body, request: input.request, streaming: false, maxOutputTokens: input.prepared.effectiveMaxOutputTokens });
     const providerBody = await readProviderJsonResponse(
       transport,
       input.prepared.resolved.provider.adapterKind,
@@ -248,6 +242,7 @@ export async function proxyNonStreaming(input: {
     if (usage && !usage.upstreamRequestId) usage.upstreamRequestId = providerRequestId;
     const headers = responseHeaders(input.prepared.requestId);
     if (!usage) {
+      if (input.prepared.resolved.routing) await finishRoutingAttempt(input.prepared.requestId, "failed", 502, "UPSTREAM_USAGE_MISSING");
       const error = new GatewayError("UPSTREAM_USAGE_MISSING", "The upstream response did not contain reliable billable usage", 502, "upstream_error");
       const errorBody = publicErrorBody(input.externalProtocol, error, input.prepared.requestId);
       await safePayloadWrite(recordGatewayJsonResponse({ requestId: input.prepared.requestId, status: 502, headers, body: errorBody, errorBody: providerBody }), input.prepared.requestId);
@@ -256,8 +251,11 @@ export async function proxyNonStreaming(input: {
     }
     await safePayloadWrite(recordGatewayJsonResponse({ requestId: input.prepared.requestId, status: 200, headers, body: output, providerRequestId: providerRequestId ?? usage.upstreamRequestId }), input.prepared.requestId);
     await finalizeKnownUsage({ requestId: input.prepared.requestId, usage, outcome: "succeeded", httpStatus: 200, startedAt, responseSummary: { id: usage.upstreamRequestId, model: usage.providerModel } });
+    if (input.prepared.resolved.routing) await finishRoutingAttempt(input.prepared.requestId, "succeeded", 200);
     return Response.json(output, { status: 200, headers });
   } catch (error) {
+    transport?.abort.cleanup();
+    if (input.prepared.resolved.routing) await finishRoutingAttempt(input.prepared.requestId, "failed");
     const mapped = await finalizeProviderFailure({ requestId: input.prepared.requestId, protocol: input.externalProtocol, error, startedAt, cancelled: input.request.signal.aborted });
     const headers = responseHeaders(input.prepared.requestId);
     const body = publicErrorBody(input.externalProtocol, mapped, input.prepared.requestId);
@@ -280,19 +278,12 @@ export async function proxyStreaming(input: {
   body: JsonRecord;
 }) {
   const startedAt = Date.now();
-  const upstreamBody = adaptProviderRequest({
-    externalProtocol: input.externalProtocol,
-    providerProtocol: input.prepared.resolved.provider.protocol,
-    providerAdapterKind: input.prepared.resolved.provider.adapterKind,
-    body: { ...input.body, stream: true, ...(input.prepared.resolved.provider.protocol === "openai" ? { stream_options: { ...(record(input.body.stream_options) ?? {}), include_usage: true } } : {}) },
-    model: input.prepared.resolved.model.upstreamModel,
-    maxOutputTokens: input.prepared.effectiveMaxOutputTokens,
-  });
   await markGatewayRequestStreaming(input.prepared.requestId);
   let transport: Awaited<ReturnType<typeof sendProviderRequest>>;
   try {
-    transport = await sendProviderRequest({ resolved: input.prepared.resolved, body: upstreamBody, requestSignal: input.request.signal, requestHeaders: input.request.headers, requestUrl: input.request.url, gatewayRequestId: input.prepared.requestId });
+    transport = await sendRoutedProviderRequest({ resolved: input.prepared.resolved, requestId: input.prepared.requestId, externalProtocol: input.externalProtocol, body: input.body, request: input.request, streaming: true, maxOutputTokens: input.prepared.effectiveMaxOutputTokens });
   } catch (error) {
+    if (input.prepared.resolved.routing) await finishRoutingAttempt(input.prepared.requestId, "failed");
     const mapped = await finalizeProviderFailure({ requestId: input.prepared.requestId, protocol: input.externalProtocol, error, startedAt, cancelled: input.request.signal.aborted });
     const headers = responseHeaders(input.prepared.requestId);
     const body = publicErrorBody(input.externalProtocol, mapped, input.prepared.requestId);
@@ -302,6 +293,7 @@ export async function proxyStreaming(input: {
   const upstream = transport.response;
   const upstreamHeaderRequestId = responseRequestId(upstream);
   if (!upstream.body || !isProviderEventStream(upstream, input.prepared.resolved.provider.adapterKind)) {
+    if (input.prepared.resolved.routing) await finishRoutingAttempt(input.prepared.requestId, "failed", 502, "UPSTREAM_STREAM_INVALID");
     transport.abort.cleanup();
     const error = new GatewayError("UPSTREAM_STREAM_INVALID", "The upstream provider did not return an SSE stream", 502, "upstream_error");
     await finalizeProviderFailure({ requestId: input.prepared.requestId, protocol: input.externalProtocol, error, startedAt });
@@ -362,6 +354,7 @@ export async function proxyStreaming(input: {
     const finalError = await settleStream({ requestId: input.prepared.requestId, protocol: input.externalProtocol, usage, startedAt, firstTokenAt, outcome: cancelled ? "cancelled" : "succeeded" });
     if (finalError && !cancelled) await emit(controller, publicErrorBody(input.externalProtocol, finalError, input.prepared.requestId) as JsonRecord);
     else if (input.externalProtocol === "openai" && !cancelled) await emit(controller, "[DONE]");
+    if (input.prepared.resolved.routing) await finishRoutingAttempt(input.prepared.requestId, cancelled ? "cancelled" : finalError ? "failed" : "succeeded", finalError ? 502 : 200);
     transport.abort.cleanup();
     await captureQueue.enqueue(() => completeGatewayStreamPayload({ requestId: input.prepared.requestId, status: cancelled ? "cancelled" : finalError ? "failed" : "complete", providerRequestId: upstreamHeaderRequestId ?? usage.upstreamRequestId, sha256: finishResponseHash(), captureError: captureFailed ? "One or more stream payload writes failed" : undefined }));
     await captureQueue.drain();
@@ -388,6 +381,7 @@ export async function proxyStreaming(input: {
         }
       } catch (error) {
         terminal = true;
+        if (input.prepared.resolved.routing) await finishRoutingAttempt(input.prepared.requestId, "failed", undefined, "UPSTREAM_STREAM_INTERRUPTED");
         const mapped = await settleStream({ requestId: input.prepared.requestId, protocol: input.externalProtocol, usage, startedAt, firstTokenAt, outcome: cancelled || input.request.signal.aborted ? "cancelled" : "failed", error });
         if (!cancelled) await emit(controller, publicErrorBody(input.externalProtocol, mapped ?? toGatewayError(error), input.prepared.requestId) as JsonRecord);
         transport.abort.cleanup();
@@ -400,6 +394,7 @@ export async function proxyStreaming(input: {
       if (terminal) return;
       terminal = true;
       cancelled = true;
+      if (input.prepared.resolved.routing) await finishRoutingAttempt(input.prepared.requestId, "cancelled");
       transport.abort.abort();
       await iterator.return?.(undefined);
       await settleStream({ requestId: input.prepared.requestId, protocol: input.externalProtocol, usage, startedAt, firstTokenAt, outcome: "cancelled", error: new DOMException("Downstream client cancelled", "AbortError") });

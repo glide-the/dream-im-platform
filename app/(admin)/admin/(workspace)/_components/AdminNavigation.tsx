@@ -1,3 +1,4 @@
+// [Sync] 2026-10-05: add independent routing strategy navigation, gated by models.read.
 // [Input] Current protected Admin path, theme state, and permission-filtered navigation descriptors.
 // [Output] Accessible Admin workspace navigation including Claude Agent system governance.
 // [Pos] Admin chrome; resource authorization remains server-owned.
@@ -110,6 +111,10 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
       { label: "Models", href: "/admin/models/models", permission: "models.read", mark: "MD" },
       { label: "Pricing", href: "/admin/models/pricing", permission: "pricing.read", mark: "PR" },
     ],
+  },
+  {
+    label: "路由策略",
+    items: [{ label: "模型路由", href: "/admin/routing", permission: "models.read", mark: "RT" }],
   },
   {
     label: "订阅中心",

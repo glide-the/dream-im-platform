@@ -3,6 +3,7 @@
 // [Pos] Managed credential broker following a Provider's owned credential pointer, AES-GCM envelopes, and cross-instance refresh leases.
 // [Sync] 2026-09-04: allow disabled Providers only through the explicit Admin model-catalog path while keeping Gateway access active-only.
 
+// [Sync] 2026-10-05: reuse the account-owned renewal boundary for server-only upstream quota access.
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 
@@ -652,4 +653,10 @@ export async function resolveManagedProviderCatalogAccess(input: {
     registrationFingerprint: resolved.row.registration_fingerprint,
     renewed: resolved.renewed,
   };
+}
+
+/** Server-only metadata access: headers never cross an Admin response boundary. */
+export async function resolveManagedProviderUsageAccess(input: Parameters<typeof resolveManagedProviderCatalogAccess>[0]) {
+  const resolved = await resolveManagedCredential(input, "admin_catalog");
+  return resolved.registry.get(resolved.row.provider_adapter_kind).getUsageAccess?.(resolved.bundle) ?? null;
 }

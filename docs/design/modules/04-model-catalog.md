@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-05: align upstream account usage, independent routing and immutable billing ownership. -->
 <!-- [Input] Model Catalog PRD, Provider lifecycle contract, and implemented Admin resource behavior. -->
 <!-- [Output] Current Provider, Model, Pricing, discovery, validation, and responsive interaction rules. -->
 <!-- [Pos] Module interaction contract for `/admin/models/**`; security details link to the cross-domain auth design. -->
@@ -65,3 +66,9 @@ Pricing 列表列 model/tier、四类价格、markup/discount、source/status/ef
 - UI-MOD-10：自动或手动 Discover 成功只进入 review；Apply 后新 Model 为 disabled、已有 Model 只刷新 catalog 元数据、缺失 Model 不变，且没有 Pricing 行被隐式创建或修改。
 - UI-MOD-11：Copilot catalog 中与当前 Gateway dialect 不兼容的 OpenAI/Responses 模型显示为 unsupported 且不可选择；上游隐藏模型不进入可应用候选。
 - UI-MOD-12：歧义定价默认折叠且无预选金额，展开显示完整候选与四类价格；明确单选后自动勾选模型，收起/筛选保留选择，Apply 使用所选 snapshot 来源并写审计；非法候选与客户端价格覆盖被拒绝，旧快照需重新同步。1440×1000 与 390×844 均可操作且无页面水平溢出。
+
+### Provider 上游用量与独立路由（2026-10-05）
+
+Provider 卡片在平台 24h 请求摘要下增加独立“上游用量”。generic 通过具名 `usageSource` 选择 OpenRouter Key 支出或 DeepSeek 余额；托管 Codex/Copilot 使用此 Provider 自己的账号。只显示实际上游数据和单位，缺失为不可用；手动查询、配置 TTL、合并在途查询、过期与失败保留上次成功值。静态来源控件不出现在托管表单。
+
+“路由策略”是独立侧边菜单 `/admin/routing`，不混入模型中心 Tab。列表按模型显示状态、选择方式、策略候选和版本；详情显示默认关联、期望配置和生效配置。编辑有序 targets、正整数权重和后备开关；普通保存无确认。active 原子生效，draft/disabled 回到默认 Provider；CAS 冲突保留表单。候选须有启用的型号登记，协议/产品类型一致且能力与窗口满足 alias。详见 [完整设计与时序](../provider-usage-and-routing.md)。

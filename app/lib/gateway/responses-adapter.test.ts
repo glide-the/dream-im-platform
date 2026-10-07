@@ -3,6 +3,7 @@
 // [Pos] Focused contract suite for the Codex/xAI Responses dialect boundary.
 // [Sync] 2026-10-03: cover sparse terminal output, snapshots, tools and failed aggregation.
 // [Sync] 2026-09-04: cover the product OAuth Gateway conversion matrix.
+// [Sync] 2026-10-05: confirm late tool arguments are finalized at response completion, not empty item end events.
 
 import { describe, expect, it } from "vitest";
 import {
@@ -118,6 +119,31 @@ describe("Responses product dialect", () => {
 
 
 describe("Responses SSE aggregation", () => {
+  it("retains late tool arguments after empty done events in Chat streaming and JSON aggregation", () => {
+    const chat = new ResponsesToOpenAIChatStreamState("alias");
+    const aggregate = new ResponsesStreamResponseState();
+    const item = { type: "function_call", id: "fc_late", call_id: "call_late", name: "lookup", arguments: "" };
+    const events = [
+      { type: "response.output_item.added", output_index: 0, item },
+      { type: "response.function_call_arguments.done", output_index: 0, item_id: "fc_late", arguments: "" },
+      { type: "response.output_item.done", output_index: 0, item },
+      { type: "response.function_call_arguments.delta", output_index: 0, item_id: "fc_late", delta: '{"q":1}' },
+      { type: "response.completed", response: { status: "completed", usage: { input_tokens: 5, output_tokens: 2 } } },
+    ];
+    const chunks = events.flatMap((event) => chat.push(event));
+    const argumentsText = chunks.flatMap((chunk) => chunk.choices ?? [])
+      .flatMap((choice: { delta?: { tool_calls?: { function?: { arguments?: string } }[] } }) => choice.delta?.tool_calls ?? [])
+      .map((call: { function?: { arguments?: string } }) => call.function?.arguments ?? "").join("");
+    expect(argumentsText).toBe('{"q":1}');
+    expect(chunks.slice(0, -1).every((chunk) => chunk.choices?.[0]?.finish_reason == null)).toBe(true);
+    expect(chunks.at(-1)).toMatchObject({ choices: [{ finish_reason: "tool_calls" }], usage: { prompt_tokens: 5, completion_tokens: 2 } });
+    let result;
+    for (const event of events) result = aggregate.push(event);
+    expect(responsesResponseToOpenAIChat(result!, "alias")).toMatchObject({
+      choices: [{ message: { tool_calls: [{ function: { arguments: '{"q":1}' } }] } }],
+    });
+  });
+
   it("uses done snapshots without duplicating deltas and orders output by index", () => {
     const state = new ResponsesStreamResponseState();
     state.push({ type: "response.output_item.added", output_index: 1, item: { type: "function_call", id: "fc", call_id: "call", name: "lookup", arguments: "" } });

@@ -1,5 +1,6 @@
 "use client";
 
+// [Sync] 2026-10-05: present frozen routing revision and actual attempts alongside existing settlement evidence.
 // [Input] Gateway request summary and explicitly revealed, permission-checked application payloads.
 // [Output] Request details, full JSON/text/SSE payloads, and separately captured upstream error evidence.
 // [Pos] Admin Gateway request detail panel; protected payload access retains the existing server audit boundary.
@@ -117,6 +118,7 @@ export default function GatewayRequestDetail({ record, onClose }: { record: Reco
     <Summary title="Request Summary" record={record} keys={["protocol", "status", "outcome", "http_status", "is_streaming", "requested_model", "resolved_model", "provider_code", "model_code"]} />
     <Summary title="User、Gateway Key 与路由" record={record} keys={["platform_user_id", "email", "gateway_api_key_id", "gateway_key_name", "key_prefix", "provider_id", "model_id", "upstream_request_id"]} />
     <Summary title="Token、价格快照与延迟" record={record} keys={["estimated_tokens", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "input_price_snapshot", "output_price_snapshot", "cache_read_price_snapshot", "cache_write_price_snapshot", "first_token_ms", "latency_ms", "created_at", "completed_at"]} />
+    <Summary title="路由决策与尝试" record={record} keys={["routing_snapshot", "routing_attempts"]} />
     <RateLimitReason record={record} />
     <Summary title="错误与中断" record={record} keys={["error_code", "error_message", "response_summary", "status", "outcome"]} />
     <div className="flex flex-wrap gap-3"><Link href={`/admin/billing/ledger?gateway_request_id=${encodeURIComponent(String(record.id))}`} className="inline-flex min-h-11 items-center border border-border px-4 text-sm font-semibold">查看 Ledger</Link><Link href={`/admin/system/audit?resource_id=${encodeURIComponent(String(record.id))}`} className="inline-flex min-h-11 items-center border border-border px-4 text-sm font-semibold">查看 Audit</Link></div>
