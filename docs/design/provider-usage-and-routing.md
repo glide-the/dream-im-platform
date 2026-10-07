@@ -2,6 +2,7 @@
 <!-- [Output] Reviewed interaction, impact, routing/billing contracts and acceptance criteria. -->
 <!-- [Pos] Current Provider upstream usage and same-model routing design; supersedes single-provider-only limits in historical model/gateway designs. -->
 <!-- [Sync] 2026-10-06: preserve explicit migration prerequisite and link the subsequently authorized normal backup/release recovery proof. -->
+<!-- [Sync] 2026-10-07: registered model selection, live request sequence and separate real-observation routing health view. -->
 
 # Provider 上游用量与同模型动态路由
 
@@ -94,6 +95,100 @@ Provider 卡片的 24h 请求/成功率来自本平台，不足以判断上游�
 
 独立 `/admin/routing` 列表按模型分页；显示模型、状态、选择方式、策略候选、revision；策略候选数量为配置数，可用性在每请求重验。编辑使用模型选择、有序 target 行（Provider、上游型号、权重、上下移/删除）、后备开关和状态；有权重策略才编辑 weight。详情展示 desired/effective/default。保存成功更新列表与 revision，CAS 冲突要求重新读取。没有策略时引导添加；错误不清空表单。请求详情显示逐尝试记录供核对。
 
+### 2026-10-07：上游型号选择与请求规则预览
+
+背景与问题：文本输入上游型号容易保存未登记或不匹配的型号；简单的Provider箭头没有说明候选筛选、后备开关和权重含义，可能误读为每次请求都会调用全部账号。
+
+目标与边界：上游型号使用所选Provider已登记、已启用、能力和窗口满足公开模型的下拉选项；复用公开models/Provider读取接口与既有能力判定。采用服务器分页和搜索，不拉取无限目录，不调用上游发现或真实推理。保持Gateway、计费、管理写入合同及schema不变。
+
+概念与规则：切换Provider清空型号，要求重新选择；加载/读取失败/无匹配型号和已保存型号未在当前页的状态分别说明，不能把未加载当作停用。保存仍由服务端重复验证。每个候选只代表同一公开模型的一项供给，不按相似型号名自动推断等价。
+
+“保存策略”下方先显示当前生效版本与规则，再显示随编辑更新的“保存后的预期请求规则”。草稿/停用预览默认Provider；启用预览desired候选，保存前不能称为已生效。按序先过滤不可用候选，再取首个可用项；关闭后备仍可在筛选时跳过不可用项，但不会在上游失败后调用第二项。权重只影响首选，其余保留配置顺序；显示配置权重占比，并说明请求时按可用候选重算，不表示固定调用顺序。
+
+规则列出无候选、允许后备的明确HTTP拒绝、超时/网络执行不明/响应开始后不切换，以及一次预授权、原价格快照和按已确认用量结算。时序图与规则使用同一编辑状态，呈现用户→Gateway→Provider→请求记录与计费，分别标明流式转发与非流式返回；后备仅画为条件分支。保留移动端容器内横向滚动和等价文字规则，不新增图表依赖。
+
+影响与审查：仅路由编辑组件、展示辅助模块、对应设计/目录合同和有界测试；无迁移、授权放宽、真实配置保存或服务重启。验证包括Provider切换清空型号、目录分页/失败/空状态、禁用与能力不匹配排除、未保存/保存成功、ordered/weighted/后备开关/草稿预览及移动端不溢出。
+
+```mermaid
+sequenceDiagram
+  actor U as 用户
+  participant G as Gateway
+  participant C as 平台记录与计费
+  participant P1 as Codex
+  participant P2 as Codex-dmeck1
+  U->>G: model=gpt-6.1-sol + Gateway Key
+  G->>G: 鉴权、权限、请求限制；筛选可用候选
+  G->>C: 固定策略版本与价格快照；校验权益/额度，预授权一次
+  G->>P1: 第一可用候选：gpt-6.1-sol
+  alt 首选接受请求
+    P1-->>G: JSON或SSE与后续可靠用量
+  else 允许后备且明确429/502/503/504，无usage/response执行证据
+    P1-->>G: 明确拒绝（响应开始前）
+    G->>C: 记录首选失败和后备尝试
+    G->>P2: 同一请求，gpt-6.1-sol
+    P2-->>G: JSON或SSE与后续可靠用量
+  else 不满足后备条件
+    P1-->>G: 不可后备的错误
+  end
+  Note over G,P2: 首项在筛选阶段不可用时，第二项可直接成为首选；这不是故障转移
+  alt 非流式成功
+    G->>C: 实际Provider/尝试/用量，原快照结算
+    G-->>U: 返回结果
+  else 流式成功
+    G-->>U: 边接收边转发；开始后不再切换
+    G->>C: 流结束后按已确认用量结算
+  else 失败
+    G->>C: 记录失败；已知用量按事实处理，执行不明留待核对
+    G-->>U: 返回错误；不再次预授权或重复结算
+  end
+```
+
+示例参与者名称来自用户截图，不进入生产业务实现。示意中的响应/用量在非流式一次返回，在流式过程中逐步到达；流式向用户输出之后不会进入后备分支。
+
+### 2026-10-07：查看与编辑分离、可用性与链路健康
+
+背景与问题：配置列表的“查看 / 编辑”混合了观察与修改；管理员无法判断后备是否改善实际请求结果，也无法比较候选链路的失败与延迟。
+
+目标与边界：配置后提供独立“查看”“编辑”按钮，编辑保留现有表单、下拉型号、规则预览和CAS保存。查看呈现只读健康面板，参考[OpenRouter Uptime](https://openrouter.ai/openai/gpt-6-luna-decisions#uptime)的概览/时间条与[Performance](https://openrouter.ai/openai/gpt-6-luna-decisions#performance)的分位数曲线和Provider对比（访问2026-10-07）。沿用项目视觉，不导入其数据，不新增探测、推理调用、冷却、路由决策或计费规则。
+
+概念与规则：本项目没有持续可用性探测，只展示本机Gateway真实请求样本的成功率，不能声称时间在线率或OpenRouter的Uptime。统计公开模型的全部历史策略版本，当前规则独立标明revision；当前候选和历史执行链路明确区分。数据窗口为最近24小时/3天/7天，默认3天，与参考页面的日/3日观察和周回看需求对应；小时粒度、Provider分页与默认窗口统一在显式展示政策中定义。打开、切换范围和手动刷新才读取，无后台轮询或上游调用。
+
+查看信息架构：模型/当前状态与版本 → 当前生效顺序/权重及后备开关 → 窗口与刷新 → 成功率、已完成/进行中请求、后备恢复 → 小时成功率时间条及曲线 → Gateway执行耗时/流式首Token P50/P95曲线 → Provider尝试成功率、取消/进行中、最终成功请求执行耗时、最后观测与当前启用状态。鼠标/键盘可读每小时样本；无样本显示灰色和“无数据”，曲线缺口不插值为成功或零。缺少首Token时间仅该指标为空；读取失败提供重试并清楚标记旧数据，403说明需要Gateway读取权限。
+
+指标合同：只纳入至少开始一次上游尝试的请求；鉴权/权益/额度等执行前拒绝不混入上游健康。请求成功严格使用已settled且outcome=succeeded，不以HTTP200代替流式最终结果；失败进入已完成分母，取消和进行中单列。后备恢复为最终成功且存在多次尝试的请求。Provider按每次尝试归属计数，首选失败不会被最终Provider覆盖；成功/失败为尝试终态，取消与未结束单列。存量无routing snapshot但已started的请求兼容为一次旧链路观测。耗时沿用Gateway已有latency_ms，包含后备耗时；Provider列明确是最终成功请求的Gateway执行耗时，不伪称单次上游耗时。首Token仅使用成功流式记录的first_token_ms，不用0补缺，不计算缺少生成阶段时长的Token/s。
+
+权限与兼容：只读健康API重复验证Admin Session、models.read与gateway.read，严格校验窗口/分页/path，返回计数/分位数/安全Provider名称，不返回用户、正文、Key、凭据或原始错误。models.write继续仅控制编辑与现有保存API；查看无写操作、不改revision或审计/账本。复用gateway_requests、routing_attempts与既有索引，不修改schema或迁移。
+
+| 影响项 | 现状与拟修改 | 兼容风险与验证 |
+| --- | --- | --- |
+| 菜单/页面/交互 | 路由菜单保留，列表两个按钮；新增只读面板，编辑原样 | 编辑回归、只读无保存、关闭/切换、桌面/窄屏 |
+| Session/权限/API | 新增薄层GET health，业务SQL/DTO在app/lib/admin | 401/403、严格未知/重复参数400、安全字段 |
+| Provider/模型/密钥 | 查询安全身份及当前配置，不解密或调用上游 | 停用与无观测分开，历史供给不混为当前候选 |
+| Gateway/路由/流式 | 只读已有尝试/最终结果；不改执行 | 首选失败后成功、全失败、流中断、取消及未结束口径 |
+| 价格/预授权/账本 | 无写入，沿用原记录 | 公开Gateway技术回归，查看前后revision不变 |
+| PostgreSQL/历史数据 | 无DDL，服务端聚合与Provider分页 | 具名隔离库检验SQL与单Provider路径、无样本/缺失指标；存量无snapshot分支保留，正常历史数据展示未验收 |
+| 文档/测试 | 同步本设计、受影响folder/header与验证报告 | typecheck/lint/unit/focused Chrome/引用/diff |
+
+审查结论：采用观测成功率与缺口展示，拒绝无证据在线率；复用现有持久化与授权，当前业务不需要探测器、告警阈值、地区筛选、吞吐推算或新迁移。
+
+```mermaid
+sequenceDiagram
+  actor A as 管理员
+  participant UI as 路由策略查看
+  participant API as 受保护健康API
+  participant DB as PostgreSQL
+  A->>UI: 查看已保存策略
+  UI->>API: 模型ID、展示窗口与分页
+  API->>API: Session、models.read、gateway.read、严格DTO
+  API->>DB: 读取当前规则与真实请求/逐尝试聚合
+  DB-->>API: 安全名称、计数、分位数和无样本缺口
+  API-->>UI: no-store只读数据
+  UI-->>A: 可用性时间条、性能曲线、Provider对比
+  A->>UI: 切换窗口或手动刷新
+  UI->>API: 重新读取，不调用上游模型
+  Note over UI,DB: 查看不改策略版本、请求、审计或账本
+```
+
 ## 7. 业务时序
 
 ```mermaid
@@ -148,15 +243,24 @@ sequenceDiagram
   G->>P1: frozen target inference
   alt 成功
     P1-->>G: JSON/SSE + usage
-  else 明确可后备的 HTTP 拒绝且无 usage
+  else 允许后备且明确 HTTP 拒绝，无 usage/response 执行证据
     P1-->>G: 429/502/503/504
     G->>PG: failed attempt
     G->>P2: 后备开关允许时下一候选
     P2-->>G: response + usage
   end
-  G->>PG: 实际 Provider/attempt，usage，原价格快照结算
-  PG->>PG: 终态幂等，追加账本/释放预授权
-  G-->>C: 响应或终态错误
+  alt 非流式成功
+    G->>PG: 实际 Provider/attempt、usage；原快照结算
+    PG->>PG: 终态幂等，追加账本/释放预授权
+    G-->>C: 响应
+  else 流式成功
+    G-->>C: 边接收边转发 SSE
+    G->>PG: 流结束后按已确认用量结算
+    PG->>PG: 终态幂等，追加账本/释放预授权
+  else 失败
+    G->>PG: 记录失败；已知用量按事实处理，执行不明留待核对
+    G-->>C: 终态错误
+  end
   Note over G,P2: SSE 接受响应后不切换；未知执行失败不重试
 ```
 

@@ -13,6 +13,7 @@ const eslintConfig = [
     "html/**",
     "coverage/**",
     "test-results/**",
+    "output/**",
     "playwright-report/**",
     "agent-workspaces/**",
     "next-env.d.ts",
@@ -31,6 +32,6 @@ const eslintConfig = [
 ];
 
 export default eslintConfig;
-// [Input] Authored workspace source and named Next build/E2E output directories.
+// [Input] Authored workspace source and named Next build/E2E/output archive directories.
 // [Output] Source-only lint coverage excluding generated bundles, dependencies and reports.
 // [Pos] Shared validation boundary; application rules remain identical across all source folders.
