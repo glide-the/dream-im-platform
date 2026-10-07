@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-05: align upstream account usage, independent routing and immutable billing ownership. -->
 # Ink Memory Admin 与模型网关接入
 
 > 状态：**Superseded / 历史入口（2026-08-09 范围重启）**
@@ -17,3 +18,7 @@ Dream 的 Claude Agent、Dream、Chat、Workflow、模型设置与其他已审�
 ## 历史处理
 
 原文件中的 Gateway 调用入口、管理流程、Key、错误码和 Story CRUD 描述只保留在 Git 历史。新的 06/07 文档已经基于当前 Admin Gateway、Dream Session、canonical 用户、安全与结算证据重建合同；不能直接恢复旧步骤。
+
+## 2026-10-05 同模型供给扩展
+
+Gateway 内部可按管理员 effective 路由策略在同一 alias 的多个 Provider 间选择。Dream 继续只持 Gateway 服务凭据与公开 alias；无需保存 Provider、上游账号或路由偏好。公开调用协议及订阅/计费门禁不变，详情见 [Provider 用量与路由设计](../design/provider-usage-and-routing.md)。

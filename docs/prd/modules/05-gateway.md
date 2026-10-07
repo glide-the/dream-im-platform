@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-05: align upstream account usage, independent routing and immutable billing ownership. -->
 <!-- [Sync] 2026-09-17: align the current Gateway flow and errors with optional Entitlement limits and allowance-only callability. -->
 # 模块 PRD：Gateway、Key、Request、Payload 与限流
 
@@ -114,3 +115,9 @@ Token allowance 错误已使用 `available_tokens/required_tokens` 与明确 Tok
 - GTW-11（Implemented / release candidate）：Gateway `/v1` snake_case 诊断经 Dream BFF 逐字段转为 Product camelCase envelope；contract test 证明 Token 值不进 micro-USD 字段、Secret/未知字段不被透传。
 
 交互验收映射：GTW-01 → UI-GTW-01；GTW-02/05 → UI-GTW-03 + API/数据库断言；GTW-03 由协议 contract E2E；GTW-04 → UI-GTW-02/04。
+
+### 同模型动态路由（2026-10-05）
+
+调用方始终提交同一 alias；服务端读取其 effective 策略，筛除禁用、凭据/配置失效或型号能力不足的候选。ordered 顺序选择，weighted 按显式权重选首个，其余按原顺序；无策略仍单 Provider。每请求冻结策略与价格，只在可证明拒绝且允许后备时切换；无可用候选在预授权前返回 503 `ROUTING_NO_CANDIDATE`，不落已计费 Request。
+
+无故障冷却或价格加权常量；超时/未知执行/已接受 SSE 不后备。Request/Usage 记录实际 Provider，尝试记录保留被拒绝候选，Token 与金额账本继续一次终态、幂等、只追加。`GET /v1/models` 的供给就绪检查使用生效池，不能因默认 Provider 停用而隐藏可用后备。[设计与业务时序](../../design/provider-usage-and-routing.md)。

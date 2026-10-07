@@ -1,5 +1,6 @@
 "use client";
 
+// [Sync] 2026-10-05: add server-only upstream account usage separately from local traffic.
 // [Input] Safe Provider list projections for static and managed credentials plus Admin permissions.
 // [Output] Provider cards with one managed account identity and dependency-aware deletion.
 // [Pos] Provider operations overview; credential validation and authorization remain server-owned.
@@ -12,6 +13,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AdminCollapsibleFilters, AdminListHeader, countActiveFilterValues } from "./AdminListChrome";
+import ProviderUpstreamUsage from "./ProviderUpstreamUsage";
 import ProviderDeleteAction from "./ProviderDeleteAction";
 
 type ReachabilityState = {
@@ -365,6 +367,7 @@ export default function AIProviderRegistry() {
                     <ProviderDeleteAction provider={provider} onDeleted={async () => { await query.refetch(); }} />
                   </div>
                 </div>
+                <ProviderUpstreamUsage key={`${providerId}:${provider.auth_revision}:${provider.auth_epoch}:${provider.managed_credential_revision}`} providerId={providerId} />
               </article>
             );
           })}

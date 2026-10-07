@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-05: align upstream account usage, independent routing and immutable billing ownership. -->
 # 模块交互：Usage、账户、Ledger 与报表
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[账务运营](../../prd/modules/06-billing.md)
@@ -51,3 +52,7 @@ Ledger 列 entry type、signed amount、available/reserved after、user、reques
 - UI-BIL-04：报表不可用时不显示假指标或空 CSV。
 - UI-BIL-05（Target release gate）：1440×1000 与 390×844 的 Token/micro-USD 列名、详情分区、402 恢复和 CSV 单位一致；订阅动作前后独立现金账户与金额 Ledger 不变。
 - UI-BIL-06（Deferred）：Payment/Webhook 单独立项前无 DOM、路由或测试成功态；未来 refund/reversal 只能新增独立现金 Ledger，不改变 Subscription Token。
+
+### 多 Provider 的计费核对（2026-10-05）
+
+Usage 归属最终实际执行 Provider；详情复用 Gateway 的候选快照与逐尝试证据。公开 alias 的 input/output/cache/markup/discount 在一次 reserve 时冻结，后备不改价、不再预授权，也不另扣被明确拒绝的前置尝试。订阅仍计 Token，价格仍是历史成本快照；未知 usage 不按零成功结算。Provider 卡片的上游余额、消费与配额完全独立于本页 Usage、Token Allowance 和金额 Ledger。[合同与时序](../provider-usage-and-routing.md)。

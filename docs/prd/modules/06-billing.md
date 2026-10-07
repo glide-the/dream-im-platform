@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-05: align upstream account usage, independent routing and immutable billing ownership. -->
 # 模块 PRD：Usage、计费账户、Ledger 与报表
 
 > 返回：[平台 PRD 总纲](../ink-memory-admin-prd-v3.md) · 交互：[账务运营](../../design/modules/06-billing.md)
@@ -57,3 +58,7 @@
 - BIL-08（Implemented / release candidate）：`/api/product/v1/me/usage` 只返回 canonical user 当前/历史用户周期的 Token Usage，强制用户隔离、服务端分页、稳定 total 和不可变投影；Dream 产品 API 不提供现金 Ledger endpoint。生产大分页/Session 冒烟仍待执行。
 
 交互验收映射：BIL-01/02/06 → UI-BIL-01；BIL-03/04 → UI-BIL-02/03；BIL-05 → UI-BIL-04；BIL-07/08 → Dream Payment/Usage。不得把测试 Adapter 宣称为外部支付闭环。
+
+### 路由与金额边界（2026-10-05）
+
+同模型多 Provider 共用 alias 的现有四类 micro-USD 价格快照；不是上游账号真实成本表，因此不采用价格平方反比策略。后备尝试不重复 reserve/capture；最终 Provider、Usage 与一次结算必须可核对。未知执行的费用保留原 reconciliation 合同，不声称上游未收费。上游账户额度/余额仅在 Provider 页面展示，不合并到用户订阅、Usage 或 Ledger。[路由合同](../../design/provider-usage-and-routing.md)。

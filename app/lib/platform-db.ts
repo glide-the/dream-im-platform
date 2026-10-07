@@ -1,3 +1,6 @@
+// [Input] PostgreSQL capability objects installed by explicit migrations.
+// [Output] Fail-closed domain clients/transactions without startup DDL.
+// [Pos] Shared platform readiness, including same-model routing evidence.
 import type { PoolClient } from "pg";
 import { getPool } from "./db";
 
@@ -24,8 +27,15 @@ export async function assertPlatformSchema() {
         admin_users: string | null;
         payment_intents: string | null;
         estimated_tokens: string | null;
+        routing_policies: string | null;
+        routing_targets: string | null;
+        routing_snapshot: string | null;
       }>(
         `SELECT
+          to_regclass('public.ai_model_route_policies')::text AS routing_policies,
+          to_regclass('public.ai_model_route_targets')::text AS routing_targets,
+          (SELECT column_name FROM information_schema.columns WHERE table_schema = 'public'
+            AND table_name = 'gateway_requests' AND column_name = 'routing_snapshot') AS routing_snapshot,
           to_regclass('public.platform_users')::text AS users,
           to_regclass('public.gateway_requests')::text AS requests,
           to_regclass('public.billing_ledger_entries')::text AS ledger,
@@ -47,7 +57,7 @@ export async function assertPlatformSchema() {
           !row.ledger ||
           !row.admin_users ||
           !row.payment_intents ||
-          !row.estimated_tokens
+          !row.estimated_tokens || !row.routing_policies || !row.routing_targets || !row.routing_snapshot
         ) {
           throw new PlatformSchemaNotReadyError();
         }

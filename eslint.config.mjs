@@ -6,6 +6,7 @@ const eslintConfig = [
   globalIgnores([
     "node_modules/**",
     ".next/**",
+    ".next-e2e-*/**",
     "out/**",
     "build/**",
     "packages/db/dist/**",
@@ -30,3 +31,6 @@ const eslintConfig = [
 ];
 
 export default eslintConfig;
+// [Input] Authored workspace source and named Next build/E2E output directories.
+// [Output] Source-only lint coverage excluding generated bundles, dependencies and reports.
+// [Pos] Shared validation boundary; application rules remain identical across all source folders.

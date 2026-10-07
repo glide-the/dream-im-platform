@@ -2,9 +2,12 @@
 // [Output] Codex auth lifecycle, account model catalog, identity, and Responses contracts.
 // [Pos] First-party-sensitive adapter; no Codex client ID or integration fingerprint is embedded here.
 // [Sync] 2026-09-04: add the account-scoped ChatGPT Codex catalog with an isolated bounded byte budget.
+// [Sync] 2026-10-05: use the explicit wire client version while preserving OAuth registration ownership.
+// [Sync] 2026-10-05: account quota uses this adapter's named config and owned OAuth account header.
 
 import type { CodexDeploymentConfigInput, ResolvedCodexConfig } from "./config";
 import { providerReadiness, resolveProviderConfig } from "./config";
+import { resolveProviderEndpoint } from "./endpoint-policy";
 import { operationFailure, ProviderProtocolError } from "./errors";
 import {
   oauthErrorCode,
@@ -134,6 +137,16 @@ export class CodexProviderAdapter implements ProviderProductAdapter {
 
   readiness(): ProviderReadiness {
     return providerReadiness(this.product, this.input);
+  }
+
+  getUsageAccess(bundle: ProviderTokenBundle) {
+    assertProduct(this.product, bundle.product);
+    const current = bundle as CodexTokenBundle;
+    const config = this.config();
+    return { source: this.product, url: resolveProviderEndpoint({ product: this.product, purpose: "resource", value: config.endpoints.usage }), headers: new Headers({
+      accept: "application/json", authorization: `Bearer ${current.accessToken}`,
+      "chatgpt-account-id": current.identity.chatgptAccountId, "user-agent": config.userAgent,
+    }) };
   }
 
   private config(): ResolvedCodexConfig {
@@ -438,7 +451,7 @@ export class CodexProviderAdapter implements ProviderProductAdapter {
                   authorization: `Bearer ${current.accessToken}`,
                   "chatgpt-account-id": current.identity.chatgptAccountId,
                   originator: config.integrationId,
-                  version: config.integrationVersion,
+                  version: config.resourceClientVersion,
                   "user-agent": config.userAgent,
                   "content-type": "application/json",
                 }),

@@ -2,6 +2,7 @@
 // [Output] GitHub identity, Copilot token lifecycle, safe model catalog, revoke, and Chat contract.
 // [Pos] Copilot product adapter; ordinary GitHub OAuth success is never reported as a connected Copilot account.
 // [Sync] 2026-09-04: add filtered Copilot discovery with per-vendor compatibility and a bounded catalog budget.
+// [Sync] 2026-10-05: account quotas use the source OAuth token and registered integration profile.
 
 import type {
   GitHubCopilotDeploymentConfigInput,
@@ -115,6 +116,15 @@ export class GitHubCopilotProviderAdapter implements ProviderProductAdapter {
 
   readiness(): ProviderReadiness {
     return providerReadiness(this.product, this.input);
+  }
+
+  getUsageAccess(bundle: ProviderTokenBundle) {
+    assertProduct(this.product, bundle.product);
+    const current = bundle as GitHubCopilotTokenBundle;
+    const config = this.config();
+    return { source: this.product, url: resolveProviderEndpoint({ product: this.product, purpose: "identity", value: config.endpoints.usage }), headers: new Headers({
+      ...this.profileHeaders(config), accept: "application/json", authorization: `Bearer ${current.sourceAccessToken}`,
+    }) };
   }
 
   private config(): ResolvedGitHubCopilotConfig {

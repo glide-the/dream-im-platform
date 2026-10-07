@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-05: align upstream account usage, independent routing and immutable billing ownership. -->
 <!-- [Input] Gateway PRD, billing/entitlement contracts, and Provider authentication lifecycle. -->
 <!-- [Output] Gateway Key, request observability, payload access, rate-limit, and upstream authentication boundaries. -->
 <!-- [Pos] Gateway Admin interaction contract; execution-plane credential rules link to the Provider auth design. -->
@@ -68,3 +69,9 @@ Dream BFF 不把 Gateway `/v1` 的 snake_case 诊断原样透传给产品页；�
 - UI-GTW-06（Target release gate）：Request Drawer 能追溯 canonical user→Subscription→Version→enabled Model/Provider/Pricing→nullable Entitlement limits→Permission→current-period Token Allowance→Usage；缺失Entitlement明确显示`allowance-only`，独立Pricing/Cost/Ledger另区显示，且每个快照是请求时版本，不被新配置重算。
 - UI-GTW-07（Target release gate）：Subscription Token 用尽只显示 Token 402，不继续扣 cash；cash-only canary 关闭后无 Subscription 显示真实 403/开通路径。ASR 在 streaming-audio 合同完成前不出现为可选 Gateway capability。
 - UI-GTW-08（Target release gate）：轮换新 Key 只显示一次，旧 Key 保留 revoked 历史；转动前后 Request 快照均可追溯且无明文回读。
+
+### 同模型路由与请求证据（2026-10-05）
+
+Request 详情增加安全 `routing_snapshot` 与 `routing_attempts`：策略 revision、候选与筛除原因、逐尝试 Provider/上游型号、开始/结束时间、HTTP/错误码及最终状态。显示最终实际 Provider，不用当前策略重建历史。
+
+路由管理另在 `/admin/routing`；Gateway Key 与公开模型 DTO 不开放客户端 Provider 选择。每请求冻结同模型候选、alias 价格并只预授权一次；允许后备且明确收到无 usage/response 证据的 429/502/503/504 时才切换。超时、认证失败、已接受 SSE、流中错误或响应解析失败不切换；未知执行保留结算失败事实。详见 [路由与结算时序](../provider-usage-and-routing.md)。

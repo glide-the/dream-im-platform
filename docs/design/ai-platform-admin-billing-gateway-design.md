@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-05: align upstream account usage, independent routing and immutable billing ownership. -->
 # Ink Memory AI 平台控制面设计
 
 > **Superseded（历史设计，不再作为实现基线）**：本文包含旧 Story CRUD 与“不保存完整报文”等已失效表述。当前规范请使用 [平台 PRD v3](../prd/ink-memory-admin-prd-v3.md)、[Gateway PRD](../prd/modules/05-gateway.md) 和 [Gateway 交互规范](modules/05-gateway.md)。本文仅保留作决策演进证据。
@@ -47,3 +48,7 @@ Story 资源是 PostgreSQL 一等实体，支持完整运营 CRUD；不再通过
 - Gateway Key 使用 revoke。
 - Billing ledger、usage、audit 永不 update/delete。
 - 自定义 Admin Role 可删除；内置角色受保护。
+
+## 2026-10-05 当前规范指针
+
+本文继续保留为历史决策。当前已扩展 Provider 上游用量与独立同模型多 Provider 路由；旧单 Provider 限制不再作为实现要求。default 关联保留，版本化 effective 策略和逐尝试记录扩展供给，alias 价格冻结及账本只追加不变。请使用 [完整设计与时序](provider-usage-and-routing.md) 与上述模块现行规范。

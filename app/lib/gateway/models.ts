@@ -1,3 +1,4 @@
+// [Sync] 2026-10-05: catalog readiness uses the effective same-model pool instead of a disabled default alone.
 // [Input] Authenticated Gateway subject plus Admin-owned model, Provider auth, and billing PostgreSQL state.
 // [Output] Strict callable model catalog with product adapter/auth readiness and server-only runtime settings.
 // [Pos] Public Gateway catalog consumed by Dream; credentials and upstream account identity remain excluded.
@@ -100,7 +101,25 @@ export async function listAvailableGatewayModels(input: {
               model.claude_code_auto_compact_window,
               model.claude_code_max_context_tokens,
               model.capabilities,
-              (
+              CASE WHEN route_policy.effective IS NOT NULL THEN EXISTS (
+                SELECT 1 FROM ai_model_route_targets target JOIN ai_providers candidate ON candidate.id = target.provider_id
+                JOIN ai_models supply ON supply.provider_id = candidate.id AND supply.upstream_model = target.upstream_model
+                WHERE target.model_id = model.id AND candidate.status = 'active'
+                  AND supply.enabled = TRUE
+                  AND (model.context_window IS NULL OR supply.context_window >= model.context_window)
+                  AND (model.max_output_tokens IS NULL OR supply.max_output_tokens >= model.max_output_tokens)
+                  AND NOT EXISTS (
+                    SELECT 1 FROM jsonb_each(COALESCE(model.capabilities, '{}'::jsonb)) requirement
+                    WHERE requirement.value = 'true'::jsonb
+                      AND COALESCE(supply.capabilities -> requirement.key, 'false'::jsonb) <> 'true'::jsonb
+                  )
+                  AND candidate.protocol = provider.protocol AND candidate.adapter_kind = provider.adapter_kind
+                  AND ((candidate.adapter_kind = 'generic' AND candidate.active_credential_kind = 'static_api_key'
+                    AND candidate.api_key_ciphertext IS NOT NULL AND candidate.api_key_iv IS NOT NULL AND candidate.api_key_tag IS NOT NULL)
+                    OR (candidate.active_credential_kind = 'managed_oauth' AND EXISTS (
+                      SELECT 1 FROM ai_provider_managed_credentials credential WHERE credential.id = candidate.managed_credential_id
+                        AND credential.provider_id = candidate.id AND credential.adapter_kind = candidate.adapter_kind AND credential.status = 'connected')))
+              ) ELSE (
                 provider.status = 'active'
                 AND (
                   (
@@ -123,7 +142,7 @@ export async function listAvailableGatewayModels(input: {
                     )
                   )
                 )
-              ) AS provider_ready,
+              ) END AS provider_ready,
               EXISTS (
                 SELECT 1 FROM ai_pricing_rules AS pricing
                 WHERE pricing.model_id = model.id
@@ -156,6 +175,7 @@ export async function listAvailableGatewayModels(input: {
               required_plan.plan_code AS required_plan_code
        FROM ai_models AS model
        JOIN ai_providers AS provider ON provider.id = model.provider_id
+       LEFT JOIN ai_model_route_policies route_policy ON route_policy.model_id = model.id
        LEFT JOIN LATERAL (
          SELECT candidate.*
          FROM subscriptions AS candidate

@@ -1,3 +1,7 @@
+// [Input] Admin resource/action selector.
+// [Output] Delegated protected domain response.
+// [Pos] Thin action ingress, including upstream usage reads.
+import { handleProviderUsage } from "../../../../../lib/admin/provider-usage";
 import { handleStorySourceAction } from "../../../../../lib/story-source/mutations";
 import { handleProviderReachability } from "../../../../../lib/admin/provider-reachability";
 import { handleModelValidation } from "../../../../../lib/admin/model-validation";
@@ -31,6 +35,7 @@ export async function POST(
   if (resource === "users" && action === "set-product-role") {
     return await handleDreamUserRoleAction(request, id);
   }
+  if (resource === "providers" && action === "usage") return handleProviderUsage(request, id);
   if (resource === "providers" && action === "reachability") {
     return await handleProviderReachability(request, id);
   }

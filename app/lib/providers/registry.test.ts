@@ -2,6 +2,8 @@
 // [Output] Regression proof for readiness, auth lifecycle, resources, and safe account model catalogs.
 // [Pos] Provider-free unit contract for the shared product registry; no real account or network is used.
 // [Sync] 2026-09-04: cover product-specific model endpoints, compatibility, and isolated catalog byte budgets.
+// [Sync] 2026-10-05: prove owned-account usage headers, named endpoint isolation and stable registration fingerprints.
+// [Sync] 2026-10-05: verify current Codex wire/catalog metadata without changing existing registration fingerprints.
 
 import { generateKeyPairSync } from "node:crypto";
 import { SignJWT } from "jose";
@@ -135,6 +137,31 @@ const githubBundle: GitHubCopilotTokenBundle = {
   identity: { numericId: 42, login: "octo" },
 };
 
+describe("product account usage access", () => {
+  it("uses the bound Codex account and Copilot source token, with the registered client profile", () => {
+    const registry = createProviderProductRegistry({ configs: { codex: codexConfig, github_copilot: githubConfig } });
+    const codex = registry.get("codex").getUsageAccess!(codexBundle);
+    expect(codex.url).toBe("https://chatgpt.com/backend-api/wham/usage");
+    expect(codex.headers.get("chatgpt-account-id")).toBe("workspace-1");
+    expect(codex.headers.get("authorization")).toBe("Bearer codex-access-old");
+    expect(codex.headers.get("user-agent")).toBe(codexConfig.userAgent);
+    const copilot = registry.get("github_copilot").getUsageAccess!(githubBundle);
+    expect(copilot.url).toBe("https://api.github.com/copilot_internal/user");
+    expect(copilot.headers.get("authorization")).toBe("Bearer github-source-token");
+    expect(copilot.headers.get("copilot-integration-id")).toBe(githubConfig.integrationProfile?.integrationId);
+    expect(() => registry.get("codex").getUsageAccess!(githubBundle)).toThrow();
+  });
+  it("rejects a foreign usage endpoint without changing registration or inference readiness", () => {
+    const override = { ...codexConfig, endpoints: { usage: "https://foreign.example/usage" } };
+    const registry = createProviderProductRegistry({ configs: { codex: override } });
+    expect(registry.readiness("codex").status).toBe("ready");
+    expect(registry.get("codex").getResourceContract().status).toBe("ready");
+    expect(() => registry.get("codex").getUsageAccess!(codexBundle)).toThrow();
+    expect(registrationFingerprint(resolveProviderConfig(override))).toBe(registrationFingerprint(resolveProviderConfig(codexConfig)));
+    expect(providerProductConfigsFromEnv({ NODE_ENV: "test", INK_PROVIDER_CODEX_USAGE_ENDPOINT: "https://chatgpt.com/custom/usage" }).codex?.endpoints?.usage).toBe("https://chatgpt.com/custom/usage");
+  });
+});
+
 const xaiDiscovery = {
   issuer: "https://auth.x.ai",
   device_authorization_endpoint: "https://auth.x.ai/oauth2/device/code",
@@ -154,7 +181,8 @@ describe("provider product configuration", () => {
       userAgent: "cc-switch-codex-oauth",
       integrationId: "codex_cli_rs",
       integrationVersion: "0.144.1",
-      modelCatalogClientVersion: "3.20.1",
+      resourceClientVersion: "0.159.0",
+      modelCatalogClientVersion: "0.159.0",
     });
     expect(configs.xai).toMatchObject({
       clientId: "b1a00492-073a-47ea-816f-4c329264a828",
@@ -209,6 +237,26 @@ describe("provider product configuration", () => {
       editorVersion: "vscode/9.9.9",
       integrationId: "vscode-chat",
     });
+  });
+
+  it("updates Codex wire and catalog versions without rebinding the existing OAuth registration", async () => {
+    const configs = providerProductConfigsFromEnv({ NODE_ENV: "test" });
+    const current = resolveProviderConfig(configs.codex!);
+    const old = resolveProviderConfig({ ...configs.codex!, resourceClientVersion: "0.144.1", modelCatalogClientVersion: "3.20.1" });
+    expect(registrationFingerprint(current)).toBe(registrationFingerprint(old));
+    const fetchMock = queuedFetch([jsonResponse({ models: ["gpt-catalog"] })]);
+    const adapter = createProviderProductRegistry({ configs, fetch: fetchMock }).get("codex");
+    const resource = adapter.getResourceContract();
+    if (resource.status !== "ready") throw new Error("resource contract not ready");
+    const headers = resource.contract.buildHeaders(codexBundle);
+    if (headers.status !== "ready") throw new Error("resource headers not ready");
+    expect(headers.headers.get("version")).toBe("0.159.0");
+    expect(headers.headers.get("originator")).toBe("codex_cli_rs");
+    await adapter.fetchModelCatalog(codexBundle);
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams.get("client_version")).toBe("0.159.0");
+    const override = providerProductConfigsFromEnv({ NODE_ENV: "test", INK_PROVIDER_CODEX_RESOURCE_CLIENT_VERSION: "0.160.0" });
+    expect(registrationFingerprint(resolveProviderConfig(override.codex!))).toBe(registrationFingerprint(current));
+    expect(() => resolveProviderConfig({ ...configs.codex!, resourceClientVersion: "bad\nheader" })).toThrow();
   });
 
   it("fails closed when an explicit product override violates required scopes", () => {
@@ -490,7 +538,7 @@ describe("CodexProviderAdapter", () => {
     expect(`${requestUrl.origin}${requestUrl.pathname}`).toBe(
       "https://chatgpt.com/backend-api/codex/models",
     );
-    expect(requestUrl.searchParams.get("client_version")).toBe("3.20.1");
+    expect(requestUrl.searchParams.get("client_version")).toBe("0.159.0");
     const headers = new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers);
     expect(Object.fromEntries(headers.entries())).toEqual({
       authorization: "Bearer codex-access-old",

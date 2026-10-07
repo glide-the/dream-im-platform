@@ -3,6 +3,10 @@
 // [Pos] Shared PostgreSQL resolver feeding Gateway transport, billing reservation, and request persistence.
 // [Sync] 2026-09-04: resolve only the credential directly owned and selected by the Provider with immutable request fences.
 
+// [Sync] 2026-10-05: freeze same-model routing candidates while preserving alias pricing and permission ownership.
+import { orderRoutingTargets, routingConfigSchema, type RoutingSnapshot, type RoutingTarget, targetSupportsModel, type RoutingModelCapability } from "./routing-policy";
+import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
+import { resolveProviderAuthMode } from "../gateway/provider-auth";
 import type { PoolClient } from "pg";
 import type {
   AiProviderProtocol,
@@ -24,6 +28,7 @@ type ModelProviderRow = {
   max_output_tokens: number | null;
   capabilities: Record<string, boolean> | null;
   request_headers: unknown;
+  provider_status: string;
   provider_id: string;
   provider_code: string;
   protocol: AiProviderProtocol;
@@ -126,6 +131,7 @@ export type ResolvedBillableModel = {
     maxRetries: number;
     config: Record<string, unknown>;
   };
+  routing?: { snapshot: RoutingSnapshot; candidates: Array<{ provider: ResolvedBillableModel["provider"]; upstreamModel: string }> };
   pricingRuleId: string;
   pricing: PricingSnapshot;
   limits: {
@@ -134,6 +140,81 @@ export type ResolvedBillableModel = {
     monthlyTokenLimit?: number;
   };
 };
+
+function providerReadyReason(row: ModelProviderRow) {
+  if (row.provider_status !== "active") return "provider_disabled";
+  const generic = row.adapter_kind === "generic" && row.active_credential_kind === "static_api_key"
+    && row.api_key_ciphertext && row.api_key_iv && row.api_key_tag;
+  const managed = row.active_credential_kind === "managed_oauth" && row.adapter_kind !== "generic"
+    && row.managed_credential_status === "connected" && row.managed_credential_revision !== null;
+  if (!generic && !managed) return "credential_unavailable";
+  if (generic) {
+    try {
+      resolveProviderBaseUrl({ protocol: row.protocol, baseUrl: row.base_url ?? "" });
+      resolveProviderAuthMode({ protocol: row.protocol, config: row.provider_config ?? {} });
+    }
+    catch { return "endpoint_invalid"; }
+  }
+  return null;
+}
+
+function resolvedProvider(row: ModelProviderRow): ResolvedBillableModel["provider"] {
+  return {
+    id: row.provider_id, code: row.provider_code, protocol: row.protocol, baseUrl: row.base_url,
+    adapterKind: row.adapter_kind, activeCredentialKind: row.active_credential_kind,
+    authEpoch: row.auth_epoch, managedAccountId: row.resolved_managed_credential_id ?? undefined,
+    managedAccountAuthEpoch: row.managed_account_auth_epoch ?? undefined,
+    credentialRevision: row.active_credential_kind === "managed_oauth" ? row.managed_credential_revision ?? undefined : row.auth_revision,
+    ...(row.adapter_kind === "generic" && row.api_key_ciphertext && row.api_key_iv && row.api_key_tag ? {
+      encryptedCredential: { ciphertext: row.api_key_ciphertext, iv: row.api_key_iv, tag: row.api_key_tag },
+    } : {}),
+    timeoutMs: row.timeout_ms, maxRetries: row.max_retries, config: row.provider_config ?? {},
+  };
+}
+
+async function resolveRoutes(client: PoolClient, row: ModelProviderRow) {
+  const policy = (await client.query<{ revision: number; effective: unknown }>(
+    "SELECT revision, effective FROM ai_model_route_policies WHERE model_id = $1 FOR SHARE", [row.model_id],
+  )).rows[0];
+  const excluded: RoutingSnapshot["excluded"] = [];
+  const defaultTarget = { providerId: row.provider_id, upstreamModel: row.upstream_model, weight: 1 };
+  if (!policy?.effective) {
+    const reason = providerReadyReason(row);
+    if (reason) throw new GatewayError("PROVIDER_CREDENTIAL_UNAVAILABLE", "The default provider is unavailable", 503, "configuration_error");
+    return { snapshot: { revision: policy?.revision ?? 0, strategy: "default" as const, allowFallbacks: false, candidates: [defaultTarget], excluded },
+      candidates: [{ provider: resolvedProvider(row), upstreamModel: row.upstream_model }] };
+  }
+  const parsed = routingConfigSchema.safeParse(policy.effective);
+  if (!parsed.success) throw new GatewayError("ROUTING_POLICY_INVALID", "The effective routing policy is invalid", 503, "configuration_error");
+  const config = parsed.data;
+  const providers = (await client.query<ModelProviderRow>(
+    `SELECT p.status AS provider_status, p.id AS provider_id, p.code AS provider_code, p.protocol, p.base_url,
+      p.adapter_kind, p.active_credential_kind, p.auth_epoch, p.auth_revision,
+      p.api_key_ciphertext, p.api_key_iv, p.api_key_tag, p.timeout_ms, p.max_retries, p.config AS provider_config,
+      managed.id AS resolved_managed_credential_id, managed.status AS managed_credential_status,
+      managed.auth_epoch AS managed_account_auth_epoch, managed.revision AS managed_credential_revision
+     FROM ai_providers p LEFT JOIN ai_provider_managed_credentials managed ON managed.provider_id = p.id
+       AND managed.adapter_kind = p.adapter_kind AND managed.id = p.managed_credential_id
+     WHERE p.id = ANY($1::text[]) FOR SHARE OF p`, [config.targets.map((target) => target.providerId)],
+  )).rows;
+  const mappedModels = (await client.query<RoutingModelCapability & { provider_id: string; upstream_model: string }>(
+    "SELECT provider_id, upstream_model, capabilities, context_window, max_output_tokens FROM ai_models WHERE enabled = TRUE AND provider_id = ANY($1::text[]) FOR SHARE",
+    [config.targets.map((target) => target.providerId)],
+  )).rows;
+  const eligible: RoutingTarget[] = [];
+  for (const target of config.targets) {
+    const provider = providers.find((value) => value.provider_id === target.providerId);
+    const mapped = mappedModels.find((value) => value.provider_id === target.providerId && value.upstream_model === target.upstreamModel);
+    const reason = !mapped || !targetSupportsModel(row, mapped) ? "model_capability_incompatible" : !provider ? "provider_missing" : provider.protocol !== row.protocol || provider.adapter_kind !== row.adapter_kind
+      ? "protocol_incompatible" : providerReadyReason(provider);
+    if (reason) excluded.push({ providerId: target.providerId, reason });
+    else eligible.push(target);
+  }
+  const ordered = orderRoutingTargets(config, eligible);
+  if (!ordered.length) throw new GatewayError("ROUTING_NO_CANDIDATE", "No usable provider exists for the effective routing policy", 503, "configuration_error");
+  return { snapshot: { revision: policy.revision, strategy: config.strategy, allowFallbacks: config.allowFallbacks, candidates: ordered, excluded },
+    candidates: ordered.map((target) => ({ provider: resolvedProvider(providers.find((value) => value.provider_id === target.providerId)!), upstreamModel: target.upstreamModel })) };
+}
 
 export async function resolveBillableModel(input: {
   platformUserId: string;
@@ -147,7 +228,7 @@ export async function resolveBillableModel(input: {
       `SELECT m.id AS model_id, m.code AS model_code, m.upstream_model,
               m.display_name, m.context_window, m.max_output_tokens,
               m.capabilities, m.request_headers, p.id AS provider_id, p.code AS provider_code,
-              p.protocol, p.base_url, p.api_key_ciphertext, p.api_key_iv,
+              p.status AS provider_status, p.protocol, p.base_url, p.api_key_ciphertext, p.api_key_iv,
               p.api_key_tag, p.timeout_ms, p.max_retries,
               p.adapter_kind, p.active_credential_kind, p.auth_epoch,
               p.managed_credential_id AS provider_managed_credential_id,
@@ -162,7 +243,7 @@ export async function resolveBillableModel(input: {
          ON managed.provider_id = p.id
         AND managed.adapter_kind = p.adapter_kind
         AND managed.id = p.managed_credential_id
-       WHERE m.code = $1 AND m.enabled = TRUE AND p.status = 'active'
+       WHERE m.code = $1 AND m.enabled = TRUE
        FOR SHARE OF m, p`,
       [input.requestedModel],
     );
@@ -173,24 +254,6 @@ export async function resolveBillableModel(input: {
         "The requested model is not available",
         404,
         "invalid_request_error",
-      );
-    }
-    // The public endpoint protocol and the selected provider protocol are
-    // independent. A protocol adapter is selected by the gateway handler when
-    // they differ; model resolution must not reject that valid matrix entry.
-    const staticCredentialReady = row.active_credential_kind === "static_api_key"
-      && row.adapter_kind === "generic"
-      && Boolean(row.api_key_ciphertext && row.api_key_iv && row.api_key_tag);
-    const managedCredentialReady = row.active_credential_kind === "managed_oauth"
-      && row.adapter_kind !== "generic"
-      && row.managed_credential_status === "connected"
-      && row.managed_credential_revision !== null;
-    if (!staticCredentialReady && !managedCredentialReady) {
-      throw new GatewayError(
-        "PROVIDER_CREDENTIAL_UNAVAILABLE",
-        "The selected provider has no usable credential",
-        503,
-        "configuration_error",
       );
     }
     const requestHeaders = modelRequestHeadersSchema.safeParse(row.request_headers ?? {});
@@ -223,6 +286,7 @@ export async function resolveBillableModel(input: {
         "permission_error",
       );
     }
+    const routing = await resolveRoutes(client, row);
 
     const at = input.at ?? new Date();
     const pricingResult = await client.query<PricingRow>(
@@ -257,39 +321,15 @@ export async function resolveBillableModel(input: {
       model: {
         id: row.model_id,
         code: row.model_code,
-        upstreamModel: row.upstream_model,
+        upstreamModel: routing.candidates[0].upstreamModel,
         displayName: row.display_name,
         contextWindow: row.context_window ?? undefined,
         maxOutputTokens: row.max_output_tokens ?? undefined,
         capabilities: row.capabilities ?? {},
         requestHeaders: requestHeaders.data,
       },
-      provider: {
-        id: row.provider_id,
-        code: row.provider_code,
-        protocol: row.protocol,
-        baseUrl: row.base_url,
-        adapterKind: row.adapter_kind,
-        activeCredentialKind: row.active_credential_kind,
-        authEpoch: row.auth_epoch,
-        managedAccountId: row.resolved_managed_credential_id ?? undefined,
-        managedAccountAuthEpoch: row.managed_account_auth_epoch ?? undefined,
-        credentialRevision: row.active_credential_kind === "managed_oauth"
-          ? row.managed_credential_revision ?? undefined
-          : row.auth_revision,
-        ...(staticCredentialReady
-          ? {
-              encryptedCredential: {
-                ciphertext: row.api_key_ciphertext!,
-                iv: row.api_key_iv!,
-                tag: row.api_key_tag!,
-              },
-            }
-          : {}),
-        timeoutMs: row.timeout_ms,
-        maxRetries: row.max_retries,
-        config: row.provider_config ?? {},
-      },
+      provider: routing.candidates[0].provider,
+      routing,
       pricingRuleId: pricing.id,
       pricing: {
         inputPriceMicrousdPerMillion: safeDbNumber(
