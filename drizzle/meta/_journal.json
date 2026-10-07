@@ -512,6 +512,20 @@
       "when": 1790606082705,
       "tag": "0072_chief_mentor",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1791213456280,
+      "tag": "0073_majestic_ken_ellis",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1791323772175,
+      "tag": "0074_notion_sync_ownership",
+      "breakpoints": true
     }
   ]
 }

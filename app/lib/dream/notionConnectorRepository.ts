@@ -1,3 +1,4 @@
+// [Sync] 2026-10-07: protect execution state, advance context revisions, and reserve snapshot publication for fenced finish.
 // [Input] Canonical actor or background connector ID plus one caller-owned Admin data transaction.
 // [Output] Owner-filtered connector, resource, snapshot and Thread-binding persistence.
 // [Pos] Typed Drizzle Repository for the Notion connector domain; no HTTP, Notion SDK or filesystem access.
@@ -17,6 +18,7 @@ import { decimalIdDto } from "../auth/dto";
 import { pgTimestampToIso } from "./chatThreadDto";
 import type { DataTransaction } from "./database";
 import * as dto from "./notionConnectorDto";
+import { assertExternalConfig, executionConfigKey, executionState, invalidateContext, patchPolicy, storedPolicy, syncPolicyConfigKey } from "./notionSyncRunState";
 
 type ConnectorPatch = z.infer<typeof dto.notionConnectorPatchDto>;
 type ResourceSelection = z.infer<typeof dto.notionResourceSelectionDto>;
@@ -45,7 +47,7 @@ function pageTimestamp(value: unknown) {
 export class NotionConnectorRepository {
   private readonly actor: string | null;
 
-  constructor(private readonly tx: DataTransaction, actor: string | null) {
+  constructor(protected readonly tx: DataTransaction, actor: string | null) {
     this.actor = actor === null ? null : decimalIdDto.parse(actor);
   }
 
@@ -95,11 +97,13 @@ export class NotionConnectorRepository {
     });
   }
 
-  private async projectConnector(row: Record<string, unknown>) {
+  private async projectConnector(row: Record<string, unknown>, internal = false) {
     const { config_json, ...publicRow } = row;
+    const config = parseObject(String(config_json), "NOTION_CONNECTOR_DATA_INVALID");
+    if (!internal) delete config[executionConfigKey];
     return dto.notionConnectorDto.parse({
       ...publicRow,
-      config: parseObject(String(config_json), "NOTION_CONNECTOR_DATA_INVALID"),
+      config,
       last_synced_at: timestamp(row.last_synced_at === null ? null : String(row.last_synced_at)),
       created_at: pgTimestampToIso(String(row.created_at)),
       updated_at: pgTimestampToIso(String(row.updated_at)),
@@ -131,7 +135,14 @@ export class NotionConnectorRepository {
     return connector;
   }
 
+  protected async storedConnector(connectorId: string, background = false) {
+    const row = await this.connectorRow(connectorId, true, background);
+    if (!row) throw new AuthBoundaryError("NOTION_CONNECTOR_NOT_FOUND", 404);
+    return this.projectConnector(row, true);
+  }
+
   async create(name: string, platform: string, config: Record<string, unknown>) {
+    assertExternalConfig(config, true);
     const id = randomUUID();
     await this.tx.insert(connectors).values({
       id,
@@ -139,7 +150,7 @@ export class NotionConnectorRepository {
       name,
       platform,
       auth_status: "pending",
-      config_json: JSON.stringify(config),
+      config_json: JSON.stringify({ ...config, [executionConfigKey]: executionState({}) }),
     });
     return this.requireConnector(id);
   }
@@ -166,9 +177,21 @@ export class NotionConnectorRepository {
     return Promise.all(rows.map(row => this.projectConnector(row)));
   }
 
-  async patch(connectorId: string, patch: ConnectorPatch, background = false) {
-    const current = await this.requireConnector(connectorId, { lock: true, background });
-    const config = { ...current.config, ...(patch.config_patch ?? {}) };
+  async patch(connectorId: string, patch: ConnectorPatch, background = false, authState = false) {
+    if (background || ["current_snapshot_version", "current_source_revision", "current_sync_cursor", "last_synced_at"].some(key => Object.hasOwn(patch, key)))
+      throw new AuthBoundaryError("NOTION_SYNC_LEGACY_WRITE_FORBIDDEN", 409);
+    assertExternalConfig(patch.config_patch ?? {});
+    const current = await this.storedConnector(connectorId, background);
+    let config = { ...current.config, ...(patch.config_patch ?? {}), [executionConfigKey]: executionState(current.config) };
+    if (Object.hasOwn(patch.config_patch ?? {}, syncPolicyConfigKey))
+      config[syncPolicyConfigKey] = patchPolicy(current.config, patch.config_patch![syncPolicyConfigKey], current.last_synced_at);
+    if (authState || (patch.auth_status !== undefined && patch.auth_status !== current.auth_status)
+      || (patch.platform !== undefined && patch.platform !== current.platform)
+      || Object.hasOwn(patch.config_patch ?? {}, "auth_session")) {
+      config = invalidateContext(config, "authorization");
+      const policy = storedPolicy(config);
+      config[syncPolicyConfigKey] = { ...policy, status: policy.effective.enabled ? "applied" : "disabled", last_error_code: null };
+    }
     const where = background
       ? eq(connectors.id, connectorId)
       : and(eq(connectors.id, connectorId), this.actorFilter());
@@ -210,7 +233,7 @@ export class NotionConnectorRepository {
   }
 
   async replaceResources(connectorId: string, databases: ResourceSelection[], pages: ResourceSelection[]) {
-    const current = await this.requireConnector(connectorId, { lock: true });
+    const current = await this.storedConnector(connectorId);
     await this.tx.delete(resources).where(and(
       eq(resources.connector_id, connectorId),
       sql`${resources.resource_type} IN ('notion_database', 'notion_page')`,
@@ -219,21 +242,38 @@ export class NotionConnectorRepository {
     for (const item of pages) await this.insertResource(connectorId, "notion_page", item);
     await this.tx.update(connectors).set({
       config_json: JSON.stringify({
-        ...current.config,
+        ...invalidateContext(current.config, "selection"),
+        [syncPolicyConfigKey]: { ...storedPolicy(current.config), status: storedPolicy(current.config).effective.enabled ? "applied" : "disabled",
+          ...(databases.length + pages.length === 0 ? { last_attempt_at: null, last_success_at: null, last_error_code: null, next_sync_at: null } : {}) },
         selected_databases: databases.map(item => item.external_id),
         selected_pages: pages.map(item => item.external_id),
       }),
+      ...(databases.length + pages.length === 0 ? { current_snapshot_version: null, current_source_revision: null, current_sync_cursor: null, last_synced_at: null } : {}),
       updated_at: sql`CURRENT_TIMESTAMP`,
     }).where(and(eq(connectors.id, connectorId), this.actorFilter()));
     return this.requireConnector(connectorId);
   }
 
   async deleteResource(connectorId: string, resourceId: string) {
-    await this.requireConnector(connectorId, { lock: true });
+    const current = await this.storedConnector(connectorId);
     const rows = await this.tx.delete(resources).where(and(
       eq(resources.id, resourceId), eq(resources.connector_id, connectorId),
     )).returning({ id: resources.id });
-    return rows.length === 1;
+    if (rows.length === 0) return false;
+    const remaining = await this.listResources(connectorId);
+    const empty = remaining.length === 0;
+    const policy = storedPolicy(current.config);
+    await this.tx.update(connectors).set({
+      config_json: JSON.stringify({ ...invalidateContext(current.config, "selection"),
+        selected_databases: remaining.filter(r => r.resource_type === "notion_database").map(r => r.external_id),
+        selected_pages: remaining.filter(r => r.resource_type === "notion_page").map(r => r.external_id),
+        [syncPolicyConfigKey]: { ...policy, status: policy.effective.enabled ? "applied" : "disabled",
+          ...(empty ? { last_attempt_at: null, last_success_at: null, last_error_code: null, next_sync_at: null } : {}) },
+      }),
+      ...(empty ? { current_snapshot_version: null, current_source_revision: null, current_sync_cursor: null, last_synced_at: null } : {}),
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    }).where(and(eq(connectors.id, connectorId), this.actorFilter()));
+    return true;
   }
 
   private async snapshotRow(connectorId: string, version: string | null) {
@@ -270,8 +310,11 @@ export class NotionConnectorRepository {
     });
   }
 
-  async saveSnapshot(input: SnapshotSave, background = false) {
-    const current = await this.requireConnector(input.connector_id, { lock: true, background });
+  async saveSnapshot(_input: SnapshotSave, _background = false): Promise<z.infer<typeof dto.notionSnapshotDto>> {
+    throw new AuthBoundaryError("NOTION_SYNC_LEGACY_WRITE_FORBIDDEN", 409);
+  }
+
+  protected async persistSnapshot(input: SnapshotSave, background = false) {
     const metadata = dto.notionSnapshotMetadataDto.parse(input.snapshot.metadata);
     if (metadata.resource_connector_id !== input.connector_id || metadata.workspace_id !== input.workspace_id) {
       throw new AuthBoundaryError("NOTION_SNAPSHOT_IDENTITY_CONFLICT", 409);
@@ -281,13 +324,6 @@ export class NotionConnectorRepository {
       snapshot_version: metadata.snapshot_version, source_revision: metadata.source_revision,
       sync_cursor: metadata.sync_cursor, fetched_at: metadata.fetched_at, state: metadata.state,
       snapshot_json: JSON.stringify(input.snapshot), created_at: metadata.fetched_at,
-    }).onConflictDoUpdate({
-      target: [snapshots.connector_id, snapshots.snapshot_version],
-      set: {
-        source_revision: metadata.source_revision, sync_cursor: metadata.sync_cursor,
-        fetched_at: metadata.fetched_at, state: metadata.state,
-        snapshot_json: JSON.stringify(input.snapshot), updated_at: sql`CURRENT_TIMESTAMP`,
-      },
     });
     const databasePages = input.snapshot.database_pages;
     if (typeof databasePages !== "object" || databasePages === null || Array.isArray(databasePages)) {
@@ -332,7 +368,6 @@ export class NotionConnectorRepository {
       auth_status: "authenticated",
       updated_at: sql`CURRENT_TIMESTAMP`,
     }).where(where);
-    void current;
     return dto.notionSnapshotDto.parse(input.snapshot);
   }
 

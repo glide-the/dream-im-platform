@@ -1,16 +1,23 @@
+// [Sync] 2026-10-07: compose single-owner sync operations with exact capability and verified service binding.
 // [Input] Strict Notion operation, current OAuth/server-persistence actor or configured sync service, and Admin UOW.
 // [Output] Owner-filtered connector DTO results with compound writes kept inside the caller transaction.
 // [Pos] Notion data-domain service; Dream retains remote Notion, credentials, sync policy, Runtime and files.
 // [Sync] 2026-09-16: expose complete Notion persistence through named DTO/ORM operations.
 import { AuthBoundaryError, type DreamServiceClient } from "../auth/config";
 import { principalDto, type PrincipalDto } from "../auth/dto";
-import { requireBackgroundScope } from "../auth/serviceIdentity";
+import contract from "../../../drizzle/contracts/dream-notion-sync-ownership-v1.json";
+import { allNotionOperationContracts, notionSyncRunRequestDto, notionSyncRunClaimDto, notionSyncRunKeyDto, notionSyncRunFinishDto, type NotionUserOperation, type NotionBackgroundOperation } from "./notionSyncRunDto";
+import { NotionSyncRunRepository } from "./notionSyncRunRepository";
 import type { DataTransaction } from "./database";
 import { dreamUnifiedSchemaRequirement } from "./chatThreadService";
 import * as dto from "./notionConnectorDto";
 import { NotionConnectorRepository } from "./notionConnectorRepository";
 
 export const notionConnectorSchemaRequirements = [dreamUnifiedSchemaRequirement] as const;
+export const notionSyncOwnershipRequirement = { capability: "dream.notion-sync-ownership.v1", version: 1, contractSha256: contract.contract_sha256 } as const;
+export function notionOperationSchemaRequirements(name: string) {
+  return name.startsWith("notion.sync-run.") ? [...notionConnectorSchemaRequirements, notionSyncOwnershipRequirement] : notionConnectorSchemaRequirements;
+}
 
 export type NotionConnectorActor = {
   principal: PrincipalDto;
@@ -39,17 +46,24 @@ function requireActor(rawActor: NotionConnectorActor, authority: dto.NotionAutho
 }
 
 export async function runNotionConnectorUserOperation(
-  name: dto.NotionConnectorUserOperation,
+  name: NotionUserOperation,
   rawInput: unknown,
   actor: NotionConnectorActor,
   tx: DataTransaction,
+  service?: NotionSyncService,
 ) {
-  const operation = dto.notionConnectorOperationContracts[name];
+  const operation = allNotionOperationContracts[name];
   if (!operation || operation.audience !== "user") throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
   const parsed = operation.input.safeParse(rawInput);
   if (!parsed.success) throw new AuthBoundaryError("INPUT_INVALID", 400);
   const input = parsed.data;
   const principal = requireActor(actor, input.authority, operation.userScope);
+  if (name === "notion.sync-run.request") {
+    if (!service?.backgroundScopes.includes("connectors:sync")) throw new AuthBoundaryError("DREAM_SERVICE_SCOPE_REQUIRED", 403);
+    const value = notionSyncRunRequestDto.parse(input);
+    return operation.output.parse(await new NotionSyncRunRepository(tx, principal.canonical_user_id)
+      .claim(value, service.id, true, principal.subject));
+  }
   const store = new NotionConnectorRepository(tx, principal.canonical_user_id);
   let result: unknown;
   switch (name) {
@@ -83,7 +97,7 @@ export async function runNotionConnectorUserOperation(
       const value = dto.notionAuthStateSaveInputDto.parse(input);
       result = { connector: await store.patch(value.connector_id, {
         auth_status: value.auth_status, config_patch: value.config_patch,
-      }) };
+      }, false, true) };
       break;
     }
     case "notion.resources.replace": {
@@ -143,7 +157,7 @@ export function notionBackgroundReceiptActor(connectorId: string) {
 }
 
 export async function runNotionConnectorBackgroundOperation(
-  name: dto.NotionConnectorBackgroundOperation,
+  name: NotionBackgroundOperation,
   rawInput: unknown,
   service: NotionSyncService,
   tx: DataTransaction,
@@ -151,10 +165,14 @@ export async function runNotionConnectorBackgroundOperation(
   if (!service.backgroundScopes.includes("connectors:sync")) {
     throw new AuthBoundaryError("DREAM_SERVICE_SCOPE_REQUIRED", 403);
   }
-  const operation = dto.notionConnectorOperationContracts[name];
+  const operation = allNotionOperationContracts[name];
   if (!operation || operation.audience !== "background") throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
   const parsed = operation.input.safeParse(rawInput);
   if (!parsed.success) throw new AuthBoundaryError("INPUT_INVALID", 400);
+  const execution = new NotionSyncRunRepository(tx, null);
+  if (name === "notion.sync-run.claim") return operation.output.parse(await execution.claim(notionSyncRunClaimDto.parse(parsed.data), service.id, false));
+  if (name === "notion.sync-run.renew") return operation.output.parse(await execution.renew(notionSyncRunKeyDto.parse(parsed.data), service.id));
+  if (name === "notion.sync-run.finish") return operation.output.parse(await execution.finish(notionSyncRunFinishDto.parse(parsed.data), service.id));
   const store = new NotionConnectorRepository(tx, null);
   let result: unknown;
   switch (name) {

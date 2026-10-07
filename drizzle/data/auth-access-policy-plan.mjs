@@ -1,3 +1,4 @@
+// [Sync] 2026-10-07: grant only DATA the forward Notion actor-lock function when the exact capability is installed.
 // [Input] A verified PostgreSQL connection, database name and four distinct limited role names.
 // [Output] One deterministic least-privilege statement plan and redacted policy digest.
 // [Pos] Shared ACL planner used by isolated validation and explicit normal-database activation.
@@ -157,6 +158,12 @@ export async function buildAuthAccessPolicy(client, database, roles) {
   }
   grant(roles.auth, "EXECUTE", "FUNCTION identity.register_canonical_user(text, text, text)");
   grant(roles.control, "SELECT, INSERT, UPDATE, DELETE", "TABLE public.admin_users, public.admin_user_roles, public.admin_roles, public.admin_role_permissions, public.admin_permissions, identity.subject_links");
+  const notionCapability = (await client.query("SELECT contract_sha256 FROM drizzle.schema_capabilities WHERE capability = 'dream.notion-sync-ownership.v1' AND version = 1")).rows[0];
+  if (notionCapability) {
+    const notionContract = JSON.parse(await readFile(new URL("../contracts/dream-notion-sync-ownership-v1.json", import.meta.url), "utf8"));
+    if (notionCapability.contract_sha256 !== notionContract.contract_sha256) throw new Error("NOTION_SYNC_CAPABILITY_MISMATCH");
+    grant(roles.data, "EXECUTE", "FUNCTION identity.lock_active_notion_sync_actor(bigint, text)");
+  }
   grant(roles.data, "SELECT (id, \"publicKey\", alg)", "TABLE identity.jwks");
   grant(roles.data, "SELECT (\"userId\", \"providerId\")", "TABLE identity.account");
   grant(roles.data, "SELECT, INSERT, UPDATE, DELETE", "TABLE identity.runtime_delegations, dream.operation_receipts");

@@ -2,6 +2,7 @@
 // [Output] Exact additive relation, source-claim guards and capability publication evidence.
 // [Pos] Provider-free migration contract test; isolated PostgreSQL proves execution separately.
 // [Sync] 2026-09-27: protect result uniqueness, source input and dual claim authorization.
+// [Sync] 2026-10-05: bind the immutable capability migration by its journal index while allowing forward migrations.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -43,6 +44,6 @@ describe("Chat task result physical capability", () => {
     expect(migration).toContain("'task-result-claim'");
     expect(migration).toContain("'server-persistence'");
     expect(migration).toContain("'gateway-cli'");
-    expect(journal.entries.at(-1).tag).toBe("0068_cool_psylocke");
+    expect(journal.entries.find((entry: { idx: number }) => entry.idx === 68)).toMatchObject({ idx: 68, tag: "0068_cool_psylocke" });
   });
 });

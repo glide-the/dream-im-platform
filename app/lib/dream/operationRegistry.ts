@@ -1,3 +1,4 @@
+// [Sync] 2026-10-07: append four Notion execution operations after the frozen existing registry.
 // [Sync] 2026-09-28: append once/daily scheduled Chat operations with separate storage and Runtime-source requirements.
 // [Sync] 2026-09-27: append Registry199-204 returning-task and result handoff operations.
 // [Sync] 2026-09-27: append the task-session links descriptor under the existing v2 capability.
@@ -88,6 +89,8 @@ import { deckPluginBindingSchemaRequirements } from "./deckPluginBindingService"
 import { managedMcpOperationContracts } from "./managedMcpDto";
 import { managedMcpSchemaRequirements } from "./managedMcpService";
 import { notionConnectorOperationContracts } from "./notionConnectorDto";
+import { notionSyncRunOperationContracts } from "./notionSyncRunDto";
+import { notionSyncOwnershipRequirement } from "./notionConnectorService";
 import { notionConnectorSchemaRequirements } from "./notionConnectorService";
 import { dreamAutoRepairOperationContracts } from "./dreamAutoRepairDto";
 import { dreamAutoRepairSchemaRequirements } from "./dreamAutoRepairService";
@@ -241,6 +244,11 @@ export const dreamOperations = [
     name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
     operation.input, operation.output, [identitySchemaRequirement, ...chatScheduledTaskSchemaRequirements,
       ...(operation.audience === "background" ? [scheduledChatRuntimeSchemaRequirement] : [])],
+    operation.audience === "user" ? operation.userScope : null,
+  )),
+  ...Object.entries(notionSyncRunOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
+    operation.input, operation.output, [identitySchemaRequirement, ...notionConnectorSchemaRequirements, notionSyncOwnershipRequirement],
     operation.audience === "user" ? operation.userScope : null,
   )),
 ] as const;

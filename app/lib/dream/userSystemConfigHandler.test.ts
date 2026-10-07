@@ -2,8 +2,10 @@
 // [Output] Exact read/write scopes, null entity actor and same-UOW write receipt/audit execution.
 // [Pos] Registered handler gate; no public Route, PostgreSQL, Runtime or user-selected codec.
 // [Sync] 2026-09-15: prove get is direct while patch is atomically receipt-wrapped for the OAuth owner.
+// [Sync] 2026-10-05: exercise the existing scheduled-delegation resolver instead of sending delegated tokens to the OAuth mock.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), transaction: vi.fn(), run: vi.fn(), receipt: vi.fn(), identity: vi.fn() }));
+const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), delegation: vi.fn(), transaction: vi.fn(), run: vi.fn(), receipt: vi.fn(), identity: vi.fn() }));
+vi.mock("../auth/delegationService", () => ({ DelegationService: class { async resolve(...args: unknown[]) { return mocks.delegation(...args); } } }));
 vi.mock("../auth/serviceIdentity", async original => ({ ...await original<typeof import("../auth/serviceIdentity")>(), requireDreamService: mocks.service }));
 vi.mock("../auth/serviceAccessToken", () => ({ principalForServiceToken: mocks.principal }));
 vi.mock("./database", () => ({ withDataTransaction: mocks.transaction }));
@@ -49,10 +51,17 @@ it("rejects identity, entity, storage, executable and Runtime selectors before U
 });
 it.each(["ACCESS_SCOPE_REQUIRED", "DELEGATION_PURPOSE_DENIED", "DREAM_DATA_SCHEMA_NOT_READY"])("fails closed on %s", async code => {
   if (code === "DREAM_DATA_SCHEMA_NOT_READY") mocks.transaction.mockRejectedValueOnce(new AuthBoundaryError(code));
+  else if (code === "DELEGATION_PURPOSE_DENIED") mocks.delegation.mockRejectedValueOnce(new AuthBoundaryError(code, 403));
   else mocks.principal.mockRejectedValueOnce(new AuthBoundaryError(code, 403));
   const token = code === "DELEGATION_PURPOSE_DENIED" ? "idg_entity" : "user";
   expect((await handleUserSystemConfig(request({}, token), "user-system-config.get", codec)).status).toBe(code === "DREAM_DATA_SCHEMA_NOT_READY" ? 503 : 403);
   expect(mocks.run).not.toHaveBeenCalled(); expect(mocks.receipt).not.toHaveBeenCalled();
+});
+it("rejects an invalid delegated token as unauthenticated before config execution", async () => {
+  mocks.delegation.mockRejectedValueOnce(new AuthBoundaryError("DELEGATION_INVALID", 401));
+  expect((await handleUserSystemConfig(request({}, "idg_invalid"), "user-system-config.get", codec)).status).toBe(401);
+  expect(mocks.run).not.toHaveBeenCalled();
+  expect(mocks.principal).not.toHaveBeenCalled();
 });
 it("rejects an unrelated command before parsing or acquiring UOW", async () => {
   expect((await handleUserSystemConfig(request(), "user-system-config.replace", codec)).status).toBe(404); expect(mocks.transaction).not.toHaveBeenCalled();

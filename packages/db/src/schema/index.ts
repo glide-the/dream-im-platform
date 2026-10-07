@@ -12,6 +12,7 @@
 // accounts with explicit defaults, Provider bindings, and account-level fences.
 // [Sync] 2026-09-04: restore direct Provider ownership while retaining the
 // pinned binding marker only as an internal compatibility field.
+// [Sync] 2026-10-05: expand same-model routing policies/targets and safe request routing evidence.
 import {
   bigint,
   boolean,
@@ -923,6 +924,31 @@ export const aiModels = pgTable(
   ],
 );
 
+export const aiModelRoutePolicies = pgTable("ai_model_route_policies", {
+  model_id: text("model_id").primaryKey().references(() => aiModels.id, { onDelete: "restrict" }),
+  status: text("status").notNull(),
+  revision: integer("revision").notNull(),
+  desired: jsonb("desired").$type<Record<string, unknown>>().notNull(),
+  effective: jsonb("effective").$type<Record<string, unknown>>(),
+  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+}, (table) => [
+  check("ai_model_route_policies_status_check", sql`${table.status} IN ('draft', 'active', 'disabled')`),
+  check("ai_model_route_policies_revision_check", sql`${table.revision} > 0`),
+  check("ai_model_route_policies_effective_check", sql`(${table.status} = 'active' AND ${table.effective} IS NOT NULL) OR (${table.status} <> 'active' AND ${table.effective} IS NULL)`),
+]);
+
+export const aiModelRouteTargets = pgTable("ai_model_route_targets", {
+  model_id: text("model_id").notNull().references(() => aiModelRoutePolicies.model_id, { onDelete: "cascade" }),
+  provider_id: text("provider_id").notNull().references(() => aiProviders.id, { onDelete: "restrict" }),
+  upstream_model: text("upstream_model").notNull(),
+  weight: integer("weight").notNull(),
+  position: integer("position").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.model_id, table.provider_id] }),
+  check("ai_model_route_targets_weight_check", sql`${table.weight} > 0`),
+  check("ai_model_route_targets_position_check", sql`${table.position} >= 0`),
+]);
+
 export const aiPricingRules = pgTable(
   "ai_pricing_rules",
   {
@@ -1769,6 +1795,8 @@ export const gatewayRequests = pgTable(
       .default(false),
     requested_model: text("requested_model").notNull(),
     resolved_model: text("resolved_model").notNull(),
+    routing_snapshot: jsonb("routing_snapshot").$type<Record<string, unknown>>(),
+    routing_attempts: jsonb("routing_attempts").$type<Record<string, unknown>[]>().notNull().default([]),
     upstream_request_id: text("upstream_request_id"),
     status: text("status").notNull().default("received"),
     outcome: text("outcome").notNull().default("pending"),
