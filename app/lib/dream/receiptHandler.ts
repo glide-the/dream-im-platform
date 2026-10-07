@@ -7,6 +7,7 @@
 // [Sync] 2026-09-16: recover Registry134-147 managed-MCP writes under original OAuth or server-persistence authority.
 // [Sync] 2026-09-16: recover Registry127/129/132 Runtime writes under their original OAuth actor.
 // [Sync] 2026-09-16: recover Registry120 confirmation submit under its original OAuth Run/Thread scope.
+// [Sync] 2026-10-07: recover original Notion execution receipts with their exact capability and current service scopes.
 // [Input] Original request ID plus an implemented operation name and its exact OAuth, background or task authority.
 // [Output] Strict original request evidence bound to the derived service, actor and Reflections task when applicable.
 // [Pos] Unknown-commit recovery ingress; absence never causes automatic retry.
@@ -88,9 +89,11 @@ import { deckPluginControlSchemaRequirements } from "./deckPluginControlService"
 import { managedMcpOperationContracts } from "./managedMcpDto";
 import { isManagedMcpOperation } from "./managedMcpHandler";
 import { managedMcpSchemaRequirements } from "./managedMcpService";
-import { notionConnectorOperationContracts, notionSyncConnectorInputDto } from "./notionConnectorDto";
+import { notionSyncConnectorInputDto } from "./notionConnectorDto";
+import { assertNotionSyncOwnershipSchema } from "./notionSyncRunSchema";
+import { allNotionOperationContracts as notionConnectorOperationContracts } from "./notionSyncRunDto";
 import { isNotionConnectorOperation } from "./notionConnectorHandler";
-import { notionBackgroundReceiptActor, notionConnectorSchemaRequirements } from "./notionConnectorService";
+import { notionBackgroundReceiptActor, notionOperationSchemaRequirements } from "./notionConnectorService";
 import { dreamAutoRepairOperationContracts } from "./dreamAutoRepairDto";
 import { isDreamAutoRepairOperation } from "./dreamAutoRepairHandler";
 import { dreamAutoRepairSchemaRequirements } from "./dreamAutoRepairService";
@@ -159,6 +162,8 @@ export async function handleReceipt(request: Request, requestId: string) {
     }
     if (isNotionConnectorOperation(name)) {
       const operation = notionConnectorOperationContracts[name];
+      const requirements = notionOperationSchemaRequirements(name);
+      if (name === "notion.sync-run.request") requireBackgroundScope(service, "connectors:sync");
       if (operation.kind !== "write") throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
       const receiptResultDto = z.discriminatedUnion("status", [
         z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
@@ -171,7 +176,8 @@ export async function handleReceipt(request: Request, requestId: string) {
         }
         if (hasDelegatedUserBearer(request)) throw new AuthBoundaryError("NOTION_BROWSER_CREDENTIAL_FORBIDDEN", 400);
         requireBackgroundScope(service, "connectors:sync");
-        return withDataTransaction([identitySchemaRequirement, ...notionConnectorSchemaRequirements], async tx => {
+        return withDataTransaction([identitySchemaRequirement, ...requirements], async tx => {
+          if (name.startsWith("notion.sync-run.")) await assertNotionSyncOwnershipSchema(tx);
           const row = await new ReceiptRepository(tx, service.id, notionBackgroundReceiptActor(connectorId.data)).find(name, parsed.data);
           if (row && (
             !/^[0-9a-f]{64}$/.test(row.inputSha256)
@@ -188,9 +194,10 @@ export async function handleReceipt(request: Request, requestId: string) {
       const token = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
       const delegated = token.startsWith("idg_");
       return withDataTransaction([
-        identitySchemaRequirement, ...notionConnectorSchemaRequirements,
+        identitySchemaRequirement, ...requirements,
         ...(delegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : []),
       ], async tx => {
+        if (name.startsWith("notion.sync-run.")) await assertNotionSyncOwnershipSchema(tx);
         let subject: string;
         let threadScope: string | null = null;
         let runScope: string | null = null;

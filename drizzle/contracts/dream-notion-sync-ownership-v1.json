@@ -1,0 +1,45 @@
+{
+  "capability": "dream.notion-sync-ownership.v1",
+  "version": 1,
+  "storage": "public.resource_connectors.config_json.snapshot_sync_execution",
+  "clock": "PostgreSQL clock_timestamp after connector lock and after receipt/audit before commit",
+  "ownership": [
+    "run_id",
+    "fence_epoch",
+    "service_client_id",
+    "worker_id",
+    "owner_user_id",
+    "selection_revision",
+    "authorization_revision"
+  ],
+  "revision": "Admin monotonic context and fence; receipt replay does not advance",
+  "operations": [
+    "notion.sync-run.request",
+    "notion.sync-run.claim",
+    "notion.sync-run.renew",
+    "notion.sync-run.finish"
+  ],
+  "atomicity": "snapshot+page relations+current identity+current policy status+terminal run+receipt+audit",
+  "legacy": "old snapshot/identity/status writes denied by new ingress; ownerless syncing unresolved; drain all old Dream/Admin instances before default-closed claim gate opens",
+  "cache": "Dream commits Admin first, writes isolated accepted versions and validates full current connector/version identity on every read",
+  "configuration": [
+    "NOTION_SYNC_EXECUTION_POLICY_JSON",
+    "NOTION_SYNC_OWNERSHIP_CLAIMS_ENABLED"
+  ],
+  "actor_lock": {
+    "signature": "identity.lock_active_notion_sync_actor(bigint,text)",
+    "language": "plpgsql",
+    "security_definer": true,
+    "volatility": "volatile",
+    "parallel": "unsafe",
+    "search_path": [
+      "pg_catalog",
+      "pg_temp"
+    ],
+    "body_sha256": "3ad79c06daee5c7425fb487e7d01d91f585f46ef35d2ed89eda4b1d541b07888",
+    "execute": "only exact DATA role; not PUBLIC/auth/control/Dream",
+    "owner": "migration owner; DATA cannot replace or own",
+    "locks": "FOR SHARE OF identity.subject_links, public.users, public.platform_users until outer UOW commit"
+  },
+  "contract_sha256": "a54b947c69ea0f129d22fd440c3a9f5694026ac0977adef2d5b09a97d7a9e993"
+}

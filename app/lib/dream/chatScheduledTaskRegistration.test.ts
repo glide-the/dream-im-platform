@@ -1,7 +1,7 @@
 // [Input] Immutable Registry204 prefix, four physical capabilities and closed schedule DTOs.
 // [Output] Additive operation names, audience separation and rejection of actor/physical selectors.
 // [Pos] Provider-free scheduled Chat protocol registration contract.
-// [Sync] 2026-09-28: require storage, Runtime source, turn binding and link lifecycle before worker dispatch.
+// [Sync] 2026-10-07: freeze scheduled operations 205–221 while allowing later reviewed registry additions.
 import { expect, it } from "vitest";
 import generated from "../../../docs/architecture/admin-dream-operation-contracts.json";
 import { dreamOperations } from "./operationRegistry";
@@ -11,8 +11,8 @@ import { createScheduledTaskInputDto, finishScheduledTriggerInputDto, startSched
 
 it("preserves Registry204 and appends exact scheduled user and worker operations", () => {
   expect(generated).toEqual(dreamOperations);
-  expect(dreamOperations).toHaveLength(221);
-  const added = dreamOperations.slice(204);
+  expect(dreamOperations.length).toBeGreaterThanOrEqual(221);
+  const added = dreamOperations.slice(204, 221);
   expect(added.map(item => item.contract.name)).toEqual([
     "scheduled-task.create", "scheduled-task.get", "scheduled-task.day", "scheduled-task.history",
     "scheduled-task.edit", "scheduled-task.pause", "scheduled-task.resume", "scheduled-task.delete",

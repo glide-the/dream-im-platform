@@ -1,3 +1,4 @@
+// [Sync] 2026-10-07: snapshot publication is protected by the execution Repository; base kernel retains compound writes.
 // [Input] Production Notion Repository source, typed Drizzle rows and five Admin table mappings.
 // [Output] ORM-only ownership plus exact storage-row to strict DTO projection coverage.
 // [Pos] Provider-free Repository contract gate; Service/Handler and isolated database gates cover higher layers.
@@ -91,7 +92,8 @@ it("uses the five typed Drizzle tables without raw query execution or connection
 
 it("keeps resource replacement in one Repository command", () => {
   const body = source.slice(source.indexOf("async replaceResources"), source.indexOf("async deleteResource"));
-  expect(body).toContain("requireConnector(connectorId, { lock: true })");
+  expect(body).toContain("storedConnector(connectorId)");
+  expect(source).toContain("connectorRow(connectorId, true, background)");
   expect(body).toContain("this.tx.delete(resources)");
   expect(body).toContain("insertResource(connectorId");
   expect(body).toContain("this.tx.update(connectors)");
@@ -99,7 +101,8 @@ it("keeps resource replacement in one Repository command", () => {
 
 it("keeps snapshot, page, resource-status and connector-current writes in one Repository command", () => {
   const body = source.slice(source.indexOf("async saveSnapshot"), source.indexOf("async attachThread"));
-  expect(body).toContain("requireConnector(input.connector_id, { lock: true, background })");
+  expect(body).toContain("NOTION_SYNC_LEGACY_WRITE_FORBIDDEN");
+  expect(body).toContain("protected async persistSnapshot");
   expect(body).toContain("this.tx.insert(snapshots)");
   expect(body).toContain("this.tx.delete(resourcePages)");
   expect(body).toContain("this.tx.update(resources)");
