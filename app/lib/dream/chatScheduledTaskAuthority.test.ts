@@ -2,11 +2,16 @@
 // [Output] Fail-closed proof before any database identity or message read.
 // [Pos] Provider-free scheduled Chat bearer boundary test.
 // [Sync] 2026-09-28: reject forged claims and expired tokens without exposing bearer contents.
+// [Sync] 2026-10-07: all released authority resolution versions reach token validation; unregistered operations remain denied.
 import { afterEach, expect, it, vi } from "vitest";
 import { issueScheduledChatAuthority, resolveScheduledChatAuthority } from "./chatScheduledTaskAuthority";
 import type { DataTransaction } from "./database";
 
 afterEach(() => vi.unstubAllEnvs());
+it.each(["scheduled-trigger.authority.resolve", "scheduled-trigger.v2.authority.resolve", "scheduled-trigger.v3.authority.resolve"])("validates the bearer for released authority operation %s", async operation => {
+  await expect(resolveScheduledChatAuthority(null as unknown as DataTransaction, "invalid", operation, "dream-service"))
+    .rejects.toMatchObject({ code: "SCHEDULE_AUTHORITY_REQUIRED", status: 401 });
+});
 it("requires a configured secret and rejects forged or expired tokens before database access", async () => {
   vi.stubEnv("AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET", "a-valid-server-only-secret-of-at-least-32-bytes");
   const now = Date.now();

@@ -1,7 +1,8 @@
 // [Input] Admin-prepared trigger, configured service identity and short-lived signed bearer.
-// [Output] Exact trigger/claim/owner/target-bound Chat persistence actor after live database checks.
+// [Output] Exact trigger/claim/owner/Chat/Editor-bound persistence actor after live database checks.
 // [Pos] Scheduled worker authority boundary; this token is not OAuth or a general runtime delegation.
-// [Sync] 2026-09-28: expose the verified live claim lease for bounded scheduled delegation renewal.
+// [Sync] 2026-10-07: expose the immutable trigger Editor target for v2 editor-stdio delegation.
+// [Sync] 2026-10-07: permit the registered v3 authority resolution under the same exact live claim checks.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -19,7 +20,7 @@ const payloadDto = z.strictObject({
   issued_at: z.number().int().positive().safe(), expires_at: z.number().int().positive().safe(),
 });
 type Payload = z.infer<typeof payloadDto>;
-const allowedOperations = new Set(["chat-user-message.persist", "chat-message.persist", "chat-thread.get", "chat-thread.update-session", "runtime-delegation.create", "scheduled-trigger.authority.resolve"]);
+const allowedOperations = new Set(["chat-user-message.persist", "chat-message.persist", "chat-thread.get", "chat-thread.update-session", "runtime-delegation.create", "scheduled-trigger.authority.resolve", "scheduled-trigger.v2.authority.resolve", "scheduled-trigger.v3.authority.resolve"]);
 function secret() {
   const value = requiredAuthValue("AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET");
   if (Buffer.byteLength(value) < 32) throw new AuthBoundaryError("SCHEDULE_AUTHORITY_NOT_CONFIGURED");
@@ -62,6 +63,7 @@ export async function resolveScheduledChatClaim(tx: DataTransaction, binding: {
     client_id: `scheduled-chat:${binding.serviceId}`, scopes: ["dream:read", "dream:write"], status: "active" as const },
     threadScope: binding.targetThreadId, sourceThreadScope: row.trigger.source_thread_id, runScope: null,
     triggerId: binding.triggerId, claimId: binding.claimId,
+    targetEditorSessionId: row.trigger.target_editor_session_id_snapshot,
     claimLeaseExpiresAt: new Date(row.trigger.lease_expires_at) };
 }
 export async function resolveScheduledChatAuthority(tx: DataTransaction, token: string, operation: string, serviceId: string) {

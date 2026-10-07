@@ -1,0 +1,43 @@
+{
+  "capability": "dream.chat-scheduled-task.v3",
+  "version": 3,
+  "definition_table": "public.chat_scheduled_task",
+  "trigger_table": "public.chat_scheduled_trigger",
+  "execution_targets": [
+    "public.chat_task_session",
+    "public.chat_thread"
+  ],
+  "definition_states": [
+    "active",
+    "paused",
+    "exhausted",
+    "deleted"
+  ],
+  "trigger_states": [
+    "claimed",
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "state_unknown",
+    "skipped"
+  ],
+  "schedule_rules": [
+    "once",
+    "daily",
+    "interval",
+    "hourly",
+    "weekly"
+  ],
+  "recurrence": "structured public rules; Admin-owned canonical restricted RRULE storage; IANA calendar evaluation; missed occurrences coalesce",
+  "thread_modes": [
+    "source_thread",
+    "new_thread_each_run"
+  ],
+  "model": "exact alias on v3 create/edit and immutable trigger snapshot; legacy v1/v2 null retains execution-time default resolution",
+  "source_concurrency": "one open source-thread trigger per target thread; conflicts become failed history and advance the schedule",
+  "source_delete": "source thread cascades definition and trigger history",
+  "revision": "one effective definition, expected-revision compare-and-swap",
+  "dispatch": "service-scoped claim and lease; source/new-thread prepare; ThreadFactory final per-session admission; persistent unknown-result reconciliation without model replay",
+  "contract_sha256": "b96dbec6e1fafe249c9e545b3aa5d8549e6e02d17b968e7dcf164bde814d7f91"
+}

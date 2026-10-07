@@ -1,7 +1,7 @@
-// [Input] Registered scheduled Chat operation, configured service and OAuth, exact Thread delegation or background credential.
+// [Input] Registered v1/v2/v3 scheduled Chat operation, configured service and OAuth, exact Thread delegation or background credential.
 // [Output] Strict capability-gated DTO from one Admin transaction with owner receipts or service audit.
 // [Pos] Thin scheduled Chat ingress; business time, status and SQL remain in the domain service.
-// [Sync] 2026-09-28: accept source-Thread-scoped Workflow grants for create while keeping prepare/renew bearers out of receipts.
+// [Sync] 2026-10-07: route additive v3 recurrence/Thread/model operations through the shared state machine.
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { adminAuditLogs } from "@ink-memory/db/schema";
@@ -12,23 +12,37 @@ import { handleInternalAuthRequest, parseAuthDto } from "../auth/internalHandler
 import { principalForServiceToken } from "../auth/serviceAccessToken";
 import { hasDelegatedUserBearer } from "../auth/serviceIdentity";
 import { withDataTransaction } from "./database";
-import { chatScheduledTaskOperationContracts, type ChatScheduledBackgroundOperation, type ChatScheduledTaskOperation, type ChatScheduledUserOperation } from "./chatScheduledTaskDto";
-import { chatScheduledTaskSchemaRequirements, runChatScheduledBackgroundOperation, runChatScheduledUserOperation } from "./chatScheduledTaskService";
+import { chatScheduledTaskOperationContracts, chatScheduledTaskV2OperationContracts, chatScheduledTaskV3OperationContracts,
+  type ChatScheduledBackgroundOperation, type ChatScheduledBackgroundV2Operation, type ChatScheduledBackgroundV3Operation,
+  type ChatScheduledTaskOperation, type ChatScheduledTaskV2Operation, type ChatScheduledTaskV3Operation,
+  type ChatScheduledUserOperation, type ChatScheduledUserV2Operation, type ChatScheduledUserV3Operation } from "./chatScheduledTaskDto";
+import { chatScheduledTaskSchemaRequirements, chatScheduledTaskV2SchemaRequirements, chatScheduledTaskV3SchemaRequirements,
+  runChatScheduledBackgroundOperation, runChatScheduledBackgroundV2Operation, runChatScheduledBackgroundV3Operation,
+  runChatScheduledUserOperation, runChatScheduledUserV2Operation, runChatScheduledUserV3Operation } from "./chatScheduledTaskService";
 import { identitySchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement, scheduledChatRuntimeSchemaRequirement } from "./schemaRequirements";
 import { ReceiptRepository, operationInputDigest } from "./receipts";
 import { resolveScheduledChatAuthority } from "./chatScheduledTaskAuthority";
 
-export function isChatScheduledTaskOperation(name: string): name is ChatScheduledTaskOperation { return Object.hasOwn(chatScheduledTaskOperationContracts, name); }
+export function isChatScheduledTaskOperation(name: string): name is ChatScheduledTaskOperation | ChatScheduledTaskV2Operation | ChatScheduledTaskV3Operation {
+  return Object.hasOwn(chatScheduledTaskOperationContracts, name) || Object.hasOwn(chatScheduledTaskV2OperationContracts, name)
+    || Object.hasOwn(chatScheduledTaskV3OperationContracts, name);
+}
 export async function handleChatScheduledTaskOperation(request: Request, name: string) {
   return handleInternalAuthRequest(request, async (service, setRequestId) => {
     if (!isChatScheduledTaskOperation(name)) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
-    const contract = chatScheduledTaskOperationContracts[name];
+    const v3 = Object.hasOwn(chatScheduledTaskV3OperationContracts, name);
+    const v2 = Object.hasOwn(chatScheduledTaskV2OperationContracts, name);
+    const contract = (v3 ? chatScheduledTaskV3OperationContracts[name as ChatScheduledTaskV3Operation]
+      : v2 ? chatScheduledTaskV2OperationContracts[name as ChatScheduledTaskV2Operation]
+      : chatScheduledTaskOperationContracts[name as ChatScheduledTaskOperation]);
+    const requirements = v3 ? chatScheduledTaskV3SchemaRequirements : v2 ? chatScheduledTaskV2SchemaRequirements : chatScheduledTaskSchemaRequirements;
     const envelope = await parseAuthDto(request, z.strictObject({ request_id: requestIdDto, input: contract.input }), Number(requiredAuthValue("DREAM_DATA_MAX_BODY_BYTES")));
     setRequestId(envelope.request_id);
     if (contract.audience === "background") {
-      const resolveAuthority = name === "scheduled-trigger.authority.resolve";
+      const resolveAuthority = name === "scheduled-trigger.authority.resolve" || name === "scheduled-trigger.v2.authority.resolve"
+        || name === "scheduled-trigger.v3.authority.resolve";
       if ((!resolveAuthority && hasDelegatedUserBearer(request)) || request.headers.has("cookie")) throw new AuthBoundaryError("SCHEDULE_BROWSER_CREDENTIAL_FORBIDDEN", 400);
-      return withDataTransaction([identitySchemaRequirement, ...chatScheduledTaskSchemaRequirements,
+      return withDataTransaction([identitySchemaRequirement, ...requirements,
         scheduledChatRuntimeSchemaRequirement], async tx => {
         if (resolveAuthority) {
           if (!service.backgroundScopes.includes("schedule:execute")) throw new AuthBoundaryError("DREAM_SERVICE_SCOPE_REQUIRED", 403);
@@ -40,11 +54,15 @@ export async function handleChatScheduledTaskOperation(request: Request, name: s
             service_client_id: service.id, client_id: service.oauthClientId,
             subject: authority.principal.subject, canonical_user_id: authority.principal.canonical_user_id,
             source_thread_id: authority.sourceThreadScope, target_thread_id: authority.threadScope,
+            ...(v2 || v3 ? { target_editor_session_id: authority.targetEditorSessionId } : {}),
             scopes: authority.principal.scopes, purpose: "scheduled-chat-persistence",
             issued_at: authority.issuedAt.toISOString(), expires_at: authority.maximumExpiresAt.toISOString() });
         }
-        const action = () => runChatScheduledBackgroundOperation(name as ChatScheduledBackgroundOperation, envelope.input, service, tx);
-        if (name === "scheduled-trigger.prepare" || name === "scheduled-trigger.renew") {
+        const action = () => v3
+          ? runChatScheduledBackgroundV3Operation(name as ChatScheduledBackgroundV3Operation, envelope.input, service, tx)
+          : v2 ? runChatScheduledBackgroundV2Operation(name as ChatScheduledBackgroundV2Operation, envelope.input, service, tx)
+            : runChatScheduledBackgroundOperation(name as ChatScheduledBackgroundOperation, envelope.input, service, tx);
+        if (name.endsWith(".prepare") || name.endsWith(".renew")) {
           // The output contains an expiring bearer. Only a digest goes into durable audit; replay derives a new bearer from the same fenced trigger.
           const result = await action();
           await tx.insert(adminAuditLogs).values({ id: `audit_${randomUUID().replaceAll("-", "")}`, actor_type: "service",
@@ -59,11 +77,11 @@ export async function handleChatScheduledTaskOperation(request: Request, name: s
     }
     const bearer = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
     const delegated = bearer.startsWith("idg_");
-    return withDataTransaction([identitySchemaRequirement, ...chatScheduledTaskSchemaRequirements,
+    return withDataTransaction([identitySchemaRequirement, ...requirements,
       ...(delegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : [])], async tx => {
       let actor;
       if (delegated) {
-        if (name !== "scheduled-task.create") throw new AuthBoundaryError("SCHEDULE_DELEGATION_SCOPE_DENIED", 403);
+        if (name !== "scheduled-task.create" && name !== "scheduled-task.v2.create" && name !== "scheduled-task.v3.create") throw new AuthBoundaryError("SCHEDULE_DELEGATION_SCOPE_DENIED", 403);
         const sourceThreadId = (envelope.input as { source_thread_id: string }).source_thread_id;
         const resolved = await new DelegationService(tx).resolve(bearer, contract.userScope, service.id, sourceThreadId);
         if (resolved.purpose !== "server-persistence" || resolved.editorSessionId !== null
@@ -72,9 +90,12 @@ export async function handleChatScheduledTaskOperation(request: Request, name: s
       } else {
         actor = { principal: await principalForServiceToken(tx, bearer, service, contract.userScope), threadScope: null };
       }
-      const action = () => runChatScheduledUserOperation(name as ChatScheduledUserOperation, envelope.input, actor, tx, service.id);
+      const action = () => v3
+        ? runChatScheduledUserV3Operation(name as ChatScheduledUserV3Operation, envelope.input, actor, tx, service.id)
+        : v2 ? runChatScheduledUserV2Operation(name as ChatScheduledUserV2Operation, envelope.input, actor, tx, service.id)
+          : runChatScheduledUserOperation(name as ChatScheduledUserOperation, envelope.input, actor, tx, service.id);
       if (contract.kind === "read") return contract.output.parse(await action());
-      const receiptId = name === "scheduled-task.run" ? (envelope.input as { manual_request_key: string }).manual_request_key : envelope.request_id;
+      const receiptId = name.endsWith(".run") ? (envelope.input as { manual_request_key: string }).manual_request_key : envelope.request_id;
       return new ReceiptRepository(tx, service.id, actor.principal.subject).execute(name, receiptId,
         envelope.input, contract.output as z.ZodType, action, actor.threadScope);
     });

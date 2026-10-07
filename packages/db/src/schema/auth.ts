@@ -2,6 +2,7 @@
 // [Output] Explicit subject links, encrypted BFF sessions, claim-bound Runtime delegations, receipts and immutable Preflight requests.
 // [Pos] Admin-owned identity and persistence control schema; all DDL uses forward Drizzle migration.
 // [Sync] 2026-09-28: bind scheduled Chat Runtime grants to one live trigger claim through 0070.
+// [Sync] 2026-10-07: allow a scheduled-chat authority to mint an exact Editor stdio grant for its captured session.
 // [Sync] 2026-09-27: fence source continuation grants to one dispatching task-result claim.
 // [Sync] 2026-09-16: bind background Reflections Gateway grants to their live task authority.
 // [Sync] 2026-09-16: add optional Story confirmation claim bindings to existing Runtime delegations.
@@ -135,11 +136,11 @@ export const runtimeDelegations = identity.table("runtime_delegations", {
     AND ${table.sourceReflectionAuthorityHash} IS NULL
     AND ${table.sourceTaskResultId} IS NULL
     AND ${table.sourceTaskResultClaimId} IS NULL
-    AND ${table.purpose} IN ('server-persistence','gateway-cli')
+    AND ${table.purpose} IN ('server-persistence','gateway-cli','editor-stdio')
     AND ${table.runId} IS NULL
-    AND ${table.editorSessionId} IS NULL
-    AND ((${table.purpose} = 'server-persistence' AND ${table.gatewayApiKeyId} IS NULL)
-      OR (${table.purpose} = 'gateway-cli' AND ${table.gatewayApiKeyId} IS NOT NULL))
+    AND ((${table.purpose} = 'server-persistence' AND ${table.editorSessionId} IS NULL AND ${table.gatewayApiKeyId} IS NULL)
+      OR (${table.purpose} = 'gateway-cli' AND ${table.editorSessionId} IS NULL AND ${table.gatewayApiKeyId} IS NOT NULL)
+      OR (${table.purpose} = 'editor-stdio' AND ${table.editorSessionId} IS NOT NULL AND ${table.gatewayApiKeyId} IS NULL))
   )`),
   check("runtime_delegations_purpose_check", sql`(${table.purpose} IS NULL AND ${table.editorSessionId} IS NULL) OR (${table.purpose} IS NOT NULL AND cardinality(${table.scopes}) > 0 AND array_position(${table.scopes}, NULL) IS NULL AND (
     (${table.purpose} = 'server-persistence' AND ${table.editorSessionId} IS NULL AND ${table.gatewayApiKeyId} IS NULL AND ${table.scopes} <@ ARRAY['dream:read','dream:write']::text[]) OR

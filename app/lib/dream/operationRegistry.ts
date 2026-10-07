@@ -1,3 +1,6 @@
+// [Sync] 2026-10-07: append scheduled Thread activity after all existing operations, preserving every prior descriptor.
+// [Sync] 2026-10-07: append scheduled Chat v2 interval, Editor-target and reconciliation operations while retaining the frozen v1 prefix.
+// [Sync] 2026-10-07: append scheduled Chat v3 recurrence, Thread-mode/model snapshot operations after the frozen v1/v2 descriptors.
 // [Sync] 2026-10-07: append four Notion execution operations after the frozen existing registry.
 // [Sync] 2026-09-28: append once/daily scheduled Chat operations with separate storage and Runtime-source requirements.
 // [Sync] 2026-09-27: append Registry199-204 returning-task and result handoff operations.
@@ -100,8 +103,9 @@ import { claudePluginOperationContracts } from "./claudePluginDataDto";
 import { claudePluginDataSchemaRequirements } from "./claudePluginDataService";
 import { storyWorkspaceArtifactOperationContracts } from "./storyWorkspaceArtifactDto";
 import { storyWorkspaceArtifactSchemaRequirements } from "./storyWorkspaceArtifactService";
-import { chatScheduledTaskOperationContracts } from "./chatScheduledTaskDto";
-import { chatScheduledTaskSchemaRequirements } from "./chatScheduledTaskService";
+import { chatScheduledTaskOperationContracts, chatScheduledTaskV2OperationContracts, chatScheduledTaskV3OperationContracts,
+  scheduledTaskThreadInputDto, scheduledTaskThreadResultDto, scheduledTaskThreadV3ResultDto } from "./chatScheduledTaskDto";
+import { chatScheduledTaskSchemaRequirements, chatScheduledTaskV2SchemaRequirements, chatScheduledTaskV3SchemaRequirements } from "./chatScheduledTaskService";
 function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
@@ -246,9 +250,25 @@ export const dreamOperations = [
       ...(operation.audience === "background" ? [scheduledChatRuntimeSchemaRequirement] : [])],
     operation.audience === "user" ? operation.userScope : null,
   )),
+  ...Object.entries(chatScheduledTaskV2OperationContracts).filter(([name]) => name !== "scheduled-task.v2.thread").map(([name, operation]) => descriptor(
+    name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
+    operation.input, operation.output, [identitySchemaRequirement, ...chatScheduledTaskV2SchemaRequirements,
+      ...(operation.audience === "background" ? [scheduledChatRuntimeSchemaRequirement] : [])],
+    operation.audience === "user" ? operation.userScope : null,
+  )),
+  ...Object.entries(chatScheduledTaskV3OperationContracts).filter(([name]) => name !== "scheduled-task.v3.thread").map(([name, operation]) => descriptor(
+    name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
+    operation.input, operation.output, [identitySchemaRequirement, ...chatScheduledTaskV3SchemaRequirements,
+      ...(operation.audience === "background" ? [scheduledChatRuntimeSchemaRequirement] : [])],
+    operation.audience === "user" ? operation.userScope : null,
+  )),
   ...Object.entries(notionSyncRunOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
     operation.input, operation.output, [identitySchemaRequirement, ...notionConnectorSchemaRequirements, notionSyncOwnershipRequirement],
     operation.audience === "user" ? operation.userScope : null,
   )),
+  descriptor("scheduled-task.v2.thread", "read", null, scheduledTaskThreadInputDto, scheduledTaskThreadResultDto,
+    [identitySchemaRequirement, ...chatScheduledTaskV2SchemaRequirements], "dream:read"),
+  descriptor("scheduled-task.v3.thread", "read", null, scheduledTaskThreadInputDto, scheduledTaskThreadV3ResultDto,
+    [identitySchemaRequirement, ...chatScheduledTaskV3SchemaRequirements], "dream:read"),
 ] as const;

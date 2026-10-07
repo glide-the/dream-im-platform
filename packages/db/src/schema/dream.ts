@@ -1,3 +1,5 @@
+// [Sync] 2026-10-07: declare v3 recurrence, source/new Thread mode, model snapshots and mode-scoped trigger uniqueness for forward 0077.
+// [Sync] 2026-10-07: declare interval cadence, immutable Editor targets and durable unknown-recheck cursors for forward 0075.
 // [Sync] 2026-09-28: declare effective scheduled Chat definitions and fenced trigger history for 0069.
 // [Sync] 2026-09-27: declare one revisioned completion notice per task and target turn, with source-resume fencing.
 // [Sync] 2026-09-27: declare Admin-owned chat_task_session binding and launch status.
@@ -703,7 +705,7 @@ export const chat_task_session = pgTable("chat_task_session", {
 	check("ck_chat_task_session_launch_status", sql`launch_status IN ('pending','starting','failed')`),
 ]);
 
-// [Sync] 2026-09-28: persist one effective scheduled definition and fenced trigger history; execution reuses chat_task_session.
+// [Sync] 2026-10-07: add canonical recurrence, Thread-mode/model snapshots, source-Thread concurrency fencing, Editor targets and reconciliation cursors.
 export const chat_scheduled_task = pgTable("chat_scheduled_task", {
 	id: text().primaryKey().notNull(),
 	user_id: bigint({ mode: "number" }).notNull(),
@@ -716,8 +718,13 @@ export const chat_scheduled_task = pgTable("chat_scheduled_task", {
 	schedule_kind: text().notNull(),
 	time_zone: text().notNull(),
 	local_date: text(),
-	local_time: text().notNull(),
+	local_time: text(),
 	single_offset_minutes: integer(),
+	interval_minutes: integer(),
+	rrule: text(),
+	run_thread_mode: text().default("new_thread_each_run").notNull(),
+	model_alias: text(),
+	target_editor_session_id: text(),
 	next_run_at: timestamp({ withTimezone: true, mode: "string" }),
 	status: text().default("active").notNull(),
 	status_before_delete: text(),
@@ -730,10 +737,17 @@ export const chat_scheduled_task = pgTable("chat_scheduled_task", {
 	index("idx_chat_scheduled_task_owner").on(table.user_id, table.source_thread_id),
 	foreignKey({ columns: [table.user_id], foreignColumns: [users.id], name: "fk_chat_scheduled_task_user" }).onDelete("cascade"),
 	foreignKey({ columns: [table.source_thread_id], foreignColumns: [chat_thread.id], name: "fk_chat_scheduled_task_source" }).onDelete("cascade"),
-	check("ck_chat_scheduled_task_kind", sql`schedule_kind IN ('once','daily')`),
+	check("ck_chat_scheduled_task_kind", sql`schedule_kind IN ('once','daily','interval','rrule')`),
 	check("ck_chat_scheduled_task_status", sql`status IN ('active','paused','exhausted','deleted')`),
 	check("ck_chat_scheduled_task_revision", sql`revision >= 1`),
-	check("ck_chat_scheduled_task_rule", sql`(schedule_kind = 'once' AND local_date IS NOT NULL AND single_offset_minutes IS NOT NULL) OR (schedule_kind = 'daily' AND local_date IS NULL AND single_offset_minutes IS NULL)`),
+	check("ck_chat_scheduled_task_thread_mode", sql`run_thread_mode IN ('source_thread','new_thread_each_run')`),
+	check("ck_chat_scheduled_task_model_alias", sql`model_alias IS NULL OR (char_length(model_alias) BETWEEN 1 AND 120 AND model_alias ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$')`),
+	check("ck_chat_scheduled_task_rule", sql`
+		(schedule_kind = 'once' AND local_date IS NOT NULL AND local_time IS NOT NULL AND single_offset_minutes IS NOT NULL AND interval_minutes IS NULL AND rrule IS NULL)
+		OR (schedule_kind = 'daily' AND local_date IS NULL AND local_time IS NOT NULL AND single_offset_minutes IS NULL AND interval_minutes IS NULL AND rrule IS NULL)
+		OR (schedule_kind = 'interval' AND local_date IS NULL AND local_time IS NULL AND single_offset_minutes IS NULL AND interval_minutes IS NOT NULL AND interval_minutes >= 1 AND rrule IS NULL)
+		OR (schedule_kind = 'rrule' AND local_date IS NULL AND local_time IS NULL AND single_offset_minutes IS NULL AND interval_minutes IS NULL AND rrule IS NOT NULL AND char_length(rrule) BETWEEN 1 AND 512)
+	`),
 ]);
 
 export const chat_scheduled_trigger = pgTable("chat_scheduled_trigger", {
@@ -748,6 +762,9 @@ export const chat_scheduled_trigger = pgTable("chat_scheduled_trigger", {
 	prompt_snapshot: text().notNull(),
 	source_thread_id: text().notNull(),
 	time_zone_snapshot: text().notNull(),
+	run_thread_mode_snapshot: text().default("new_thread_each_run").notNull(),
+	model_alias_snapshot: text(),
+	target_editor_session_id_snapshot: text(),
 	status: text().notNull(),
 	claim_id: text(),
 	lease_expires_at: timestamp({ withTimezone: true, mode: "string" }),
@@ -759,17 +776,22 @@ export const chat_scheduled_trigger = pgTable("chat_scheduled_trigger", {
 	error_code: text(),
 	skipped_from_at: timestamp({ withTimezone: true, mode: "string" }),
 	skipped_through_at: timestamp({ withTimezone: true, mode: "string" }),
+	unknown_recheck_at: timestamp({ withTimezone: true, mode: "string" }),
 	created_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
 	updated_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
 }, table => [
 	uniqueIndex("uq_chat_scheduled_trigger_plan").on(table.task_id, table.scheduled_at).where(sql`kind = 'scheduled'`),
 	uniqueIndex("uq_chat_scheduled_trigger_manual").on(table.task_id, table.manual_request_key).where(sql`kind = 'manual'`),
 	unique("uq_chat_scheduled_trigger_task_session").on(table.task_session_id),
-	unique("uq_chat_scheduled_trigger_target_thread").on(table.target_thread_id),
+	uniqueIndex("uq_chat_scheduled_trigger_new_target_thread").on(table.target_thread_id)
+		.where(sql`run_thread_mode_snapshot = 'new_thread_each_run' AND target_thread_id IS NOT NULL`),
+	uniqueIndex("uq_chat_scheduled_trigger_source_thread_open").on(table.target_thread_id)
+		.where(sql`run_thread_mode_snapshot = 'source_thread' AND target_thread_id IS NOT NULL AND status IN ('claimed','queued','running','state_unknown')`),
 	unique("uq_chat_scheduled_trigger_input").on(table.input_message_id),
 	unique("uq_chat_scheduled_trigger_turn").on(table.target_turn_id),
 	index("idx_chat_scheduled_trigger_owner_time").on(table.user_id, table.scheduled_at),
 	index("idx_chat_scheduled_trigger_reconcile").on(table.lease_expires_at).where(sql`status IN ('claimed','queued','running')`),
+	index("idx_chat_scheduled_trigger_unknown_recheck").on(table.unknown_recheck_at).where(sql`status = 'state_unknown'`),
 	uniqueIndex("uq_chat_scheduled_trigger_open").on(table.task_id).where(sql`status IN ('claimed','queued','running','state_unknown')`),
 	foreignKey({ columns: [table.task_id], foreignColumns: [chat_scheduled_task.id], name: "fk_chat_scheduled_trigger_task" }).onDelete("cascade"),
 	foreignKey({ columns: [table.user_id], foreignColumns: [users.id], name: "fk_chat_scheduled_trigger_user" }).onDelete("cascade"),
@@ -781,6 +803,8 @@ export const chat_scheduled_trigger = pgTable("chat_scheduled_trigger", {
 	check("ck_chat_scheduled_trigger_kind", sql`(kind = 'scheduled' AND scheduled_at IS NOT NULL AND manual_request_key IS NULL) OR (kind = 'manual' AND scheduled_at IS NULL AND manual_request_key IS NOT NULL)`),
 	check("ck_chat_scheduled_trigger_status", sql`status IN ('claimed','queued','running','succeeded','failed','state_unknown','skipped')`),
 	check("ck_chat_scheduled_trigger_revision", sql`definition_revision >= 1`),
+	check("ck_chat_scheduled_trigger_thread_mode", sql`run_thread_mode_snapshot IN ('source_thread','new_thread_each_run')`),
+	check("ck_chat_scheduled_trigger_model_alias", sql`model_alias_snapshot IS NULL OR (char_length(model_alias_snapshot) BETWEEN 1 AND 120 AND model_alias_snapshot ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$')`),
 	check("ck_chat_scheduled_trigger_turn", sql`status <> 'running' OR target_turn_id IS NOT NULL`),
 ]);
 
