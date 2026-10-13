@@ -1,3 +1,4 @@
+// [Sync] 2026-10-13: include persisted content provenance in task-linked reports without changing Registry99 DTOs.
 // [Input] Verified OAuth owner or configured Reflections executor, closed command and existing Admin UOW.
 // [Output] Validated task aggregate projection; task writes and receipts remain in the same transaction.
 // [Pos] Registered Reflections service; no browser token retention, Agent, scheduler, EventBus, SSE or files.
@@ -164,7 +165,9 @@ function sessionText(raw: string) {
 }
 async function buildLaunchSnapshot(store: ReflectionTaskRepository, row: ReflectionTaskStorageRow, sections: readonly z.infer<typeof dto.reflectionSectionDto>[]) {
   const input = dto.reflectionTaskPublicInputDto.parse(parseJson(row.inputSnapshotJson, "REFLECTION_TASK_DATA_INVALID"));
-  const source = await store.sourceSessions(row.userId, input);
+  const analysisContent = row.agentContractVersion === "reflections-analysis-content-v1"
+    ? await import("./reflectionAnalysisContentService").then(content => content.readReflectionAnalysisInput(store.transaction(), row.id)) : null;
+  const source = analysisContent?.diary_session_ids?.length === 0 ? [] : await store.sourceSessions(row.userId, input);
   const sessions = source.map(item => {
     const text = sessionText(item.stateJson);
     return dto.reflectionSessionSnapshotDto.parse({ id: item.id, name: item.name, created_at: timestamp(item.createdAt), updated_at: timestamp(item.updatedAt), labels: labels(item.labelsJson), first_line: text.firstLine, text: text.text });
@@ -217,7 +220,9 @@ export async function runReflectionTaskBackgroundOperation(name: dto.ReflectionT
       if (!sections.success) throw new AuthBoundaryError("REFLECTION_TASK_DATA_INVALID");
       await store.insertMissingSections(row, sections.data);
       let snapshot = row.launchSnapshotJson === null ? await buildLaunchSnapshot(store, row, sections.data) : parseLaunchSnapshot(row);
-      const bytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8");
+      const contentBytes = row.agentContractVersion === "reflections-analysis-content-v1"
+        ? Buffer.byteLength(JSON.stringify(await import("./reflectionAnalysisContentService").then(content => content.readReflectionAnalysisInput(tx, taskId))), "utf8") : 0;
+      const bytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8") + contentBytes;
       if (bytes > policy.launchSnapshotMaxBytes) throw new AuthBoundaryError("REFLECTION_LAUNCH_SNAPSHOT_TOO_LARGE", 413);
       if (row.launchSnapshotJson === null) {
         const publicInput = dto.reflectionTaskPublicInputDto.parse({ ...JSON.parse(row.inputSnapshotJson), session_count: snapshot.sessions.length });
@@ -310,7 +315,12 @@ export async function runReflectionTaskBackgroundOperation(name: dto.ReflectionT
       if (!persisted.length || !completed.length) return { report_id: null, report_type: null, created: false };
       const bySection = Object.fromEntries(dto.reflectionSectionDto.options.map(section => [section, persisted.filter(item => item.section === section)]));
       const reportType = new Set(completed).size === dto.reflectionSectionDto.options.length ? "full_analysis" : completed.length === 1 ? `reflections_${completed[0]}` : "reflections_partial";
-      const inserted = await store.insertReport(row, reportType, canonicalContractJson({ ...bySection, stats: snapshot.stats }));
+      const analysisContent = row.agentContractVersion === "reflections-analysis-content-v1"
+        ? await import("./reflectionAnalysisContentService").then(async content => {
+          const projection = await import("./reflectionAnalysisContentDto");
+          return projection.reflectionAnalysisSummary(await content.readReflectionAnalysisInput(tx, taskId));
+        }) : null;
+      const inserted = await store.insertReport(row, reportType, canonicalContractJson({ ...bySection, stats: snapshot.stats, task_id: taskId, failed_sections: sections.filter(item => item.status === "FAILED").map(item => item.section), ...(analysisContent === null ? {} : { analysis_content: analysisContent }) }));
       if (!inserted) throw new AuthBoundaryError("REFLECTION_REPORT_WRITE_FAILED");
       return { report_id: inserted.id, report_type: inserted.reportType, created: true };
     });

@@ -3,6 +3,7 @@
 // [Pos] Provider-free Reflections authority gate; no Registry, Route, PostgreSQL, network or Agent.
 // [Sync] 2026-09-16: admit only the Admin-side Gateway grant exchange beyond child persistence operations.
 // [Sync] 2026-09-15: prove a worker restart can recover within the hard maximum without exposing bearer receipts.
+// [Sync] 2026-10-13: direct authority renewal preserves the encrypted bearer internally while returning the token-free DTO.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   lockToken: vi.fn(), lockLive: vi.fn(), create: vi.fn(), renew: vi.fn(), revoke: vi.fn(), revokeTask: vi.fn(), verifyAggregate: vi.fn(), findActive: vi.fn(),
@@ -13,10 +14,11 @@ vi.mock("./reflectionTaskAuthorityRepository", () => ({ ReflectionTaskAuthorityR
 vi.mock("../auth/subjectRepository", () => ({ SubjectRepository: class { findActive = mocks.findActive; } }));
 import type { DataTransaction } from "./database";
 import type { ReflectionSectionStorageRow, ReflectionTaskStorageRow } from "./reflectionTaskRepository";
-import { encryptAuthBundle } from "../auth/tokenEncryption";
+import { decryptAuthBundle, encryptAuthBundle } from "../auth/tokenEncryption";
 import {
   recoverReflectionTaskAuthority, reflectionAuthorityHash, reflectionTaskAuthorityOperationScopes,
   requireReflectionTaskAuthorityOperation, resolveReflectionTaskAuthority,
+  renewReflectionTaskAuthority,
 } from "./reflectionTaskAuthorityService";
 
 const now = new Date("2026-09-15T00:00:00.000Z"), taskId = "11111111-1111-4111-8111-111111111111", threadId = "22222222-2222-4222-8222-222222222222";
@@ -61,6 +63,43 @@ it("recovers the same encrypted bearer after short expiry and renews only within
   expect(recovered.token).toBe(token);
   expect(mocks.renew).toHaveBeenCalledExactlyOnceWith(tokenHash, new Date(now.getTime() + 300_000), expect.any(String));
   expect(JSON.parse(mocks.renew.mock.calls[0][2])).not.toHaveProperty("token");
+});
+
+it("renews the authority with the stable encrypted bearer and returns no token", async () => {
+  const expired = new Date(now.getTime() - 1_000), maximum = new Date(now.getTime() + 600_000);
+  mocks.lockLive.mockResolvedValue(row(expired, maximum));
+  const renewed = await renewReflectionTaskAuthority(tx, task, section, "dream");
+  expect(renewed).toEqual({
+    purpose: "reflections-worker", task_id: taskId, section: "echoes", thread_id: threadId,
+    scopes: ["dream:read", "dream:write"], expires_at: new Date(now.getTime() + 300_000).toISOString(),
+    maximum_expires_at: maximum.toISOString(),
+  });
+  expect(renewed).not.toHaveProperty("token");
+  expect(mocks.renew).toHaveBeenCalledExactlyOnceWith(
+    tokenHash,
+    new Date(now.getTime() + 300_000),
+    expect.any(String),
+  );
+  const encrypted = decryptAuthBundle(mocks.renew.mock.calls[0][2]);
+  expect(encrypted).toMatchObject({
+    token, purpose: "reflections-worker", task_id: taskId, section: "echoes", thread_id: threadId,
+    scopes: ["dream:read", "dream:write"], maximum_expires_at: maximum.toISOString(),
+  });
+});
+
+it.each(["maximum expiry", "revocation", "terminal task", "terminal section"] as const)("rejects direct renewal after %s", async label => {
+  const expired = label === "maximum expiry", revoked = label === "revocation";
+  const stored = row(
+    new Date(now.getTime() + (expired ? -2_000 : 10_000)),
+    new Date(now.getTime() + (expired ? -1_000 : 20_000)),
+    revoked ? now : null,
+  );
+  const taskRow = label === "terminal task" ? { ...task, status: "COMPLETED" } : task;
+  const sectionRow = label === "terminal section" ? { ...section, status: "COMPLETED" } : section;
+  mocks.lockLive.mockResolvedValue(stored);
+  await expect(renewReflectionTaskAuthority(tx, taskRow as ReflectionTaskStorageRow, sectionRow as ReflectionSectionStorageRow, "dream"))
+    .rejects.toMatchObject({ code: "REFLECTION_AUTHORITY_REQUIRED", status: 401 });
+  expect(mocks.renew).not.toHaveBeenCalled();
 });
 
 it.each(["maximum expiry", "revocation", "terminal task", "terminal section"] as const)("rejects recovery after %s", async label => {

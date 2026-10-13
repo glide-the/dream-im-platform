@@ -1,0 +1,15 @@
+{
+  "contract_sha256": "29e5fbc327dff07c65ce4be8be1e42e520f0408b38062ecfdaec866838d55afe",
+  "version": 1,
+  "table": "public.reflection_task",
+  "columns": {
+    "analysis_content_json": {
+      "type": "text",
+      "nullable": true
+    }
+  },
+  "input": "immutable-owner-verified-notion-bodies-and-admin-agent-prompt",
+  "legacy": "null-default-diary",
+  "worker": "service-task-bound-read",
+  "public": "metadata-only"
+}

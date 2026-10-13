@@ -1,3 +1,4 @@
+// [Sync] 2026-10-13: recover original content-aware task creation under the exact owner, operation and request key.
 // [Sync] 2026-10-10: register exact image-turn bind/select and original entity-bound receipt recovery.
 // [Sync] 2026-10-10: recover independent Image preference writes under their exact original operation.
 // [Sync] 2026-09-17: recover Registry174 Deck Plugin apply under its original OAuth subject.
@@ -63,6 +64,9 @@ import { userSystemConfigSchemaRequirements } from "./userSystemConfigService";
 import { isReflectionsSectionConfigReceiptOperation, readOriginalReflectionsSectionConfigReceipt } from "./reflectionsSectionConfigOriginalReceiptService";
 import { reflectionsSectionConfigSchemaRequirements } from "./reflectionsSectionConfigService";
 import { reflectionTaskIdDto, reflectionTaskOperationContracts, type ReflectionTaskBackgroundOperation, type ReflectionTaskOperation } from "./reflectionTaskDto";
+import { reflectionAnalysisContentOperations } from "./reflectionAnalysisContentDto";
+import { reflectionAnalysisSchemaRequirement } from "./reflectionAnalysisContentService";
+// [Sync] 2026-10-13: recover the original owner-scoped content-create receipt.
 import { readOriginalReflectionTaskBackgroundReceipt } from "./reflectionTaskService";
 import { isLocalDataImportOperation } from "./localDataImportHandler";
 import { localDataImportOperationContracts } from "./localDataImportDto";
@@ -291,6 +295,20 @@ export async function handleReceipt(request: Request, requestId: string) {
         const row = await new ReceiptRepository(tx, service.id, principal.subject).find(name, parsed.data);
         if (row && (!/^[0-9a-f]{64}$/.test(row.inputSha256) || row.threadScope !== null || row.editorSessionScope !== null || row.runScope !== null)) throw new AuthBoundaryError("LOCAL_DATA_RECEIPT_INVALID");
         return receiptResultDto.parse({ status: row ? "committed" : "absent", operation: name, request_id: parsed.data, ...(row ? { result: row.result } : {}) });
+      });
+    }
+    if (name === "reflection-task.create-with-content") {
+      if (query.size !== 1 || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+      const operation = reflectionAnalysisContentOperations[name];
+      const output = z.discriminatedUnion("status", [
+        z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
+        z.strictObject({ status: z.literal("committed"), operation: z.literal(name), request_id: requestIdDto, result: operation.output }),
+      ]);
+      return withDataTransaction([identitySchemaRequirement, ...reflectionTaskSchemaRequirements, reflectionAnalysisSchemaRequirement], async tx => {
+        const principal = await principalForServiceToken(tx, request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", service, "dream:write");
+        const row = await new ReceiptRepository(tx, service.id, principal.subject).find(name, parsed.data);
+        if (row && (!/^[0-9a-f]{64}$/.test(row.inputSha256) || row.threadScope !== null || row.editorSessionScope !== null || row.runScope !== null)) throw new AuthBoundaryError("REFLECTION_RECEIPT_DATA_INVALID");
+        return output.parse({ status: row ? "committed" : "absent", operation: name, request_id: parsed.data, ...(row ? { result: row.result } : {}) });
       });
     }
     const reflectionTaskOperation = Object.hasOwn(reflectionTaskOperationContracts, name) ? reflectionTaskOperationContracts[name as ReflectionTaskOperation] : null;
