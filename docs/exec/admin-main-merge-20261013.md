@@ -1,7 +1,7 @@
 <!-- [Input] User authorization to create/merge the pending Admin pull request and switch to main. -->
 <!-- [Output] Frozen source scope, validation commands/results and repository integration evidence. -->
 <!-- [Pos] Admin source integration receipt; existing product and migration contracts remain authoritative. -->
-<!-- [Sync] 2026-10-13: current source validation and disposable migration/E2E passed; normal 400 diagnosis is separate. -->
+<!-- [Sync] 2026-10-13: validation passed; raw normal 400 identifies a model unsupported by the ChatGPT-account Codex channel. -->
 
 # Admin 主分支集成
 
@@ -46,6 +46,6 @@
 
 验证期间用户报告正常新对话失败，正常3000/8765已由用户重新启动，监听PID为97366/44514。本轮未重新停止或重启这两个服务。按该请求ID进行一次正常数据库只读事务，读取必要请求元数据，不复制正常env、凭据或历史正文到隔离checkout。
 
-请求 `req_321de19d77e34e608c4face4410a225d` 为text、`gpt-6.1-sol`、Codex主Provider，2026-10-13 10:15:04北京时间派发，约2.6秒后HTTP400，settled/failed、input/output tokens均0。原transport读取并脱敏上游错误，但 `toProviderGatewayError` 把400/404/422映射成统一的 `UPSTREAM_REQUEST_REJECTED`；本请求safe summary只有用量/结算状态，未保留具体上游拒绝内容。不能从现有记录断言哪个参数、权限或账号状态导致拒绝，不能宣称此错误已修复。`resume=False/thread_id=None` 是新CLI会话，不作为故障原因。
+请求 `req_321de19d77e34e608c4face4410a225d` 为text、`gpt-6.1-sol`、Codex主Provider，2026-10-13 10:15:04北京时间派发，约2.6秒后HTTP400，settled/failed、input/output tokens均0。原transport读取并脱敏上游错误，但 `toProviderGatewayError` 把400/404/422映射成统一的 `UPSTREAM_REQUEST_REJECTED`。初次只读了safe summary，误以为具体原因未保留；随后查到本请求确有一条request/response payload，response.error_body.detail明确为：`The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account.` 当前所选模型与这条ChatGPT账户Codex通道不兼容，不能把它归为本地SDK初始化或工作目录故障。`resume=False/thread_id=None` 是新CLI会话。
 
-只读安全结果为 `/tmp/im-repositories-pr-20261013/normal-request-400.json`。本步骤新增真实模型调用0、正常数据库写入0；历史成功/失败和未知usage均保留。这一诊断与fake E2E、Git集成结果分别记录。
+只读安全结果为 `/tmp/im-repositories-pr-20261013/normal-request-400.json` 与 `normal-400-error-fields.json`。仅从已脱敏error_body提取错误类型/代码/参数/说明，不读取用户请求正文或认证头。本步骤新增真实模型调用0、正常数据库写入0；历史成功/失败和未知usage均保留。这一诊断与fake E2E、Git集成结果分别记录。本轮没有改用户模型选择、Provider账户或路由策略，也没有宣称该运行错误已修复。
