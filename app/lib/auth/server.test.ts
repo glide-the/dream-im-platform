@@ -1,6 +1,7 @@
 // [Input] Installed Better Auth composition with an injected opaque protocol/storage failure.
 // [Output] Rethrow configuration, generic no-store 503 and RFC 8628 preflight error evidence.
 // [Pos] Provider-free auth server error-boundary regression tests.
+// [Sync] 2026-10-11: browser-only cookie/baseURL projection cannot alter JWT or token/JWKS/backchannel authority.
 // [Sync] 2026-09-15: prevent Better Call from logging SQL parameters or protocol credentials.
 // [Sync] 2026-09-16: cover Device token client binding, terminal states, polling slowdown and actor-input rejection.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   rollback: vi.fn(),
   drizzleAdapter: vi.fn(() => ({})),
-  jwt: vi.fn(() => ({ id: "jwt" })),
+  jwt: vi.fn((_options: unknown) => ({ id: "jwt" })),
   oauthProvider: vi.fn(() => ({ id: "oauth-provider" })),
   oauthDeviceAuthorization: vi.fn(() => ({ id: "oauth-device-authorization" })),
 }));
@@ -24,12 +25,13 @@ vi.mock("@better-auth/oauth-provider", () => ({
   oauthProvider: mocks.oauthProvider,
   oauthDeviceAuthorization: mocks.oauthDeviceAuthorization,
 }));
-vi.mock("./config", () => ({
+vi.mock("./config", async () => ({
+  ...await vi.importActual<typeof import("./config")>("./config"),
   accessTokenLifetimeSeconds: 300,
   authConfiguration: () => ({
     issuer: "https://admin.example.test/api/auth",
     secret: "opaque-fixture-secret-longer-than-32-bytes",
-    origins: ["https://admin.example.test"],
+    origins: ["https://admin.example.test", "http://localhost:3000"],
     googleClientId: "fixture-google-client",
     googleClientSecret: "fixture-google-secret",
     resource: "https://dream.example.test/api",
@@ -37,10 +39,6 @@ vi.mock("./config", () => ({
   }),
   authScopes: ["threads:read"],
   oauthProviderScopes: ["threads:read", "capabilities:read"],
-  AuthBoundaryError: class AuthBoundaryError extends Error {
-    readonly code = "AUTH_NOT_CONFIGURED";
-    readonly status = 503;
-  },
   requiredAuthValue: () => "fixture-device-client",
 }));
 vi.mock("./database", () => ({ withAuthTransaction: mocks.transaction }));
@@ -124,6 +122,17 @@ function pendingDevice(overrides: Partial<DeviceRecord> = {}): DeviceRecord {
 }
 
 describe("Admin auth server error boundary", () => {
+  it("uses local cookies on browser endpoints but stable authority on token and metadata endpoints", async () => {
+    for (const path of ["oauth2/authorize", "oauth2/consent", "oauth2/end-session", "oauth2/end-session/confirm", "get-session", "sign-in/email", "callback/google"]) {
+      await handleAuthOnTransaction(new Request(`http://localhost:3000/api/auth/${path}`), transaction);
+      expect(mocks.betterAuth.mock.lastCall?.[0]).toMatchObject({ baseURL: "http://localhost:3000/api/auth", advanced: { useSecureCookies: false } });
+      expect(mocks.jwt.mock.lastCall?.[0]).toMatchObject({ jwt: { issuer: "https://admin.example.test/api/auth", audience: "https://dream.example.test/api" } });
+    }
+    for (const path of ["oauth2/token", "oauth2/userinfo", "oauth2/revoke", "oauth2/introspect", "jwks", ".well-known/openid-configuration"]) {
+      await handleAuthOnTransaction(new Request(`http://localhost:3000/api/auth/${path}`), transaction);
+      expect(mocks.betterAuth.mock.lastCall?.[0]).toMatchObject({ baseURL: "https://admin.example.test/api/auth", advanced: { useSecureCookies: true } });
+    }
+  });
   it("configures Better Auth to rethrow internal API failures", () => {
     createAdminAuth(transaction as AuthRepositoryDatabase);
     const options = mocks.betterAuth.mock.calls[0]?.[0] as {

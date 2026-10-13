@@ -1,0 +1,30 @@
+{
+  "contract_sha256": "2f7e1eedb84d974b6bf203611acaf22b00d1cb82e377276a73822e73253f96e2",
+  "version": 1,
+  "capability": "dream.image-turn.v1",
+  "storage": {
+    "binding_selection_source_execution": "dream.operation_receipts",
+    "response_association": "public.gateway_requests.response_summary",
+    "saved_user_message": "public.chat_message"
+  },
+  "ownership": "authenticated-service-subject-canonical-user-thread-run",
+  "facts": "append-only-deterministic-turn-keys",
+  "source": "actual-complete-provider-tool-call-and-cli-hook-match",
+  "execution": "one-external-request-per-turn-atomic-with-original-gateway-reservation",
+  "locks": [
+    "account",
+    "turn",
+    "idempotency-or-receipt"
+  ],
+  "payload": "no-prompt-base64-or-provider-raw-event-in-receipts",
+  "permissions": {
+    "gateway": [
+      "dream-schema-usage",
+      "operation-receipts-select",
+      "operation-receipts-insert",
+      "admin-audit-logs-insert"
+    ],
+    "data": "original-server-persistence-domain-permissions",
+    "activation": "explicit-role-activation-separate-from-capability-publication"
+  }
+}

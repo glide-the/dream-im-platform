@@ -1,7 +1,9 @@
+// [Sync] 2026-10-10: cover explicit generic Responses selection, original defaults and fail-closed ownership.
 // [Input] Secret-safe managed-auth view models and Provider form payloads.
 // [Output] UI contract coverage for one-account Provider actions, preset codes, and Device guidance.
 // [Pos] Pure Admin presentation tests; server lifecycle authorization remains independently tested.
 // [Sync] 2026-09-04: distinguish failed reauthorization history from the effective current account.
+// [Sync] 2026-10-10: preserve Image admission marker without affecting ordinary Provider payloads.
 
 import { describe, expect, it } from "vitest";
 
@@ -125,6 +127,12 @@ describe("managed Provider auth presentation", () => {
     };
     expect(normalizeProviderFormPayload(payload, { adapterKind: "generic" }, "create"))
       .toBe(payload);
+  });
+
+  it("fixes OpenAI protocol and Image admission metadata in Image Provider forms", () => {
+    expect(normalizeProviderFormPayload({ protocol: "anthropic", config: { customFlag: true } }, { adapterKind: "generic" }, "create", true)).toMatchObject({ protocol: "openai", config: { customFlag: true, imageApi: { kind: "openai" } } });
+    expect(normalizeProviderFormPayload({ name: "changed", config: {} }, { adapterKind: "generic" }, "edit", true)).toEqual({ name: "changed", config: { imageApi: { kind: "openai" } } });
+    expect(normalizeProviderFormPayload({ adapterKind: "codex", config: {} }, { adapterKind: "codex" }, "create", true)).toEqual({ adapterKind: "codex", protocol: "openai", status: "disabled", config: {} });
   });
 
   it("presents managed account states independently of static key metadata", () => {
@@ -305,4 +313,12 @@ describe("managed Provider auth presentation", () => {
       Date.parse("2026-09-04T10:01:31.000Z"),
     )).toBe(true);
   });
+  it("keeps generic OpenAI API selection and removes hidden Anthropic or product overrides", () => {
+    const payload = { config: { openaiApi: "responses", authMode: "bearer", customFlag: true } };
+    expect(normalizeProviderFormPayload(payload, { adapterKind: "generic", protocol: "openai" }, "edit")).toBe(payload);
+    expect(normalizeProviderFormPayload(payload, { adapterKind: "generic", protocol: "anthropic" }, "edit")).toEqual({ config: { authMode: "bearer", customFlag: true } });
+    expect(normalizeProviderFormPayload(payload, { adapterKind: "codex", protocol: "openai" }, "edit")).toEqual({ config: { customFlag: true } });
+    expect(normalizeProviderFormPayload(payload, { adapterKind: "generic", protocol: "openai" }, "edit", true)).toMatchObject({ config: { openaiApi: "responses", imageApi: { kind: "openai" } } });
+  });
+
 });

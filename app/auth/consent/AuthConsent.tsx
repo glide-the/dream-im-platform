@@ -1,11 +1,12 @@
 // [Input] Server-validated client/scopes/resource display context.
 // [Output] One accept/deny action through the installed signed-query provider client.
 // [Pos] OAuth consent interaction; no duplicate confirmation.
+// [Sync] 2026-10-09: describe the explicit Images invocation scope without exposing a raw scope name.
 "use client";
 import { useState } from "react";
 import { adminAuthClient } from "../../lib/auth/client";
 import { authResponseRedirect } from "../../lib/auth/browserRedirect";
-const labels: Record<string, string> = { openid: "确认登录身份", profile: "读取个人资料", email: "读取邮箱", offline_access: "保持登录", "dream:read": "读取 Dream 中的数据", "dream:write": "保存 Dream 中的数据", "product:read": "读取模型及订阅信息", "product:write": "更新产品设置", "messages:create": "使用模型并按实际用量计费", "messages:count_tokens": "计算输入 Token", "models:list": "读取可用模型" };
+const labels: Record<string, string> = { openid: "确认登录身份", profile: "读取个人资料", email: "读取邮箱", offline_access: "保持登录", "dream:read": "读取 Dream 中的数据", "dream:write": "保存 Dream 中的数据", "product:read": "读取模型及订阅信息", "product:write": "更新产品设置", "messages:create": "使用模型并按实际用量计费", "messages:count_tokens": "计算输入 Token", "models:list": "读取可用模型", "images:create": "生成和编辑图片并按实际用量计费" };
 export default function AuthConsent({ context }: { context: { clientName: string; scopes: string[]; resource: string } }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   async function decide(accept: boolean) {

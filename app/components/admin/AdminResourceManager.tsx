@@ -4,6 +4,7 @@
 // [Output] Generic list/form serialization and controls without exposing stored credential material.
 // [Pos] Shared Admin resource presentation boundary; domain validation and authorization remain server-owned.
 // [Sync] 2026-09-15: preserve declarative relation filters across search and pagination.
+// [Sync] 2026-10-10: keep nullable Image prices distinct from zero and preserve non-visible capability values.
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -78,6 +79,7 @@ export type AdminFieldDefinition = {
   options?: Array<{
     label: string;
     value: string;
+    hidden?: boolean;
     when?: { field: string; equals: string | boolean };
   }>;
   relation?: {
@@ -325,7 +327,7 @@ export function valuesFromRecord(
         return [field.key, toLocalDateTime(raw)];
       }
       if (field.control === "money") {
-        return [field.key, microUsdToUsd(raw)];
+        return [field.key, field.nullable && (raw === null || raw === undefined) ? "" : microUsdToUsd(raw)];
       }
       if (field.control === "percentage") {
         return [field.key, raw === null || raw === undefined ? "" : String(Number(raw) / 100)];
@@ -391,7 +393,7 @@ export function buildPayload(
         assign(number);
       }
     } else if (field.control === "money") {
-      assign(usdToMicroUsd(String(value ?? "")));
+      assign(field.nullable && value === "" ? null : usdToMicroUsd(String(value ?? "")));
     } else if (field.control === "percentage") {
       assign(percentageToBps(String(value ?? "")));
     } else if (field.control === "json") {
@@ -746,7 +748,7 @@ export function FieldControl({
         </span>
       ) : field.control === "multiselect" || field.control === "capabilities" ? (
         <span className="mt-2 grid gap-2 border border-border bg-bg-surface p-3 sm:grid-cols-2" role="group" aria-labelledby={labelId}>
-          {options.map((option) => {
+          {options.filter((option) => !option.hidden).map((option) => {
             const selected = Array.isArray(value) && value.includes(option.value);
             return <label key={option.value} className="flex min-h-9 items-center gap-2 text-sm font-normal text-text-primary"><input type="checkbox" checked={selected} disabled={disabled} onChange={(event) => onChange(event.target.checked ? [...(Array.isArray(value) ? value : []), option.value] : (Array.isArray(value) ? value : []).filter((item) => item !== option.value))} />{option.label}</label>;
           })}

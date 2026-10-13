@@ -2,6 +2,7 @@
 // [Output] Redacted drift plan or one atomic Gateway service-key rotation with an audit record.
 // [Pos] Gateway control-plane domain boundary; plaintext keys never enter DTOs, database rows or receipts.
 // [Sync] 2026-09-17: support explicit audited emergency rotation when scopes are unchanged.
+// [Sync] 2026-10-09: include images:create in the canonical Gateway service-key scope set.
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
@@ -14,12 +15,13 @@ export const canonicalGatewayScopeDto = z.enum([
   "messages:create",
   "messages:count_tokens",
   "models:list",
+  "images:create",
 ]);
 
 export const gatewayServiceKeyTargetDto = z.strictObject({
   serviceClientId: z.string().trim().min(1).max(160)
     .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
-  scopes: z.array(canonicalGatewayScopeDto).min(1).max(3)
+  scopes: z.array(canonicalGatewayScopeDto).min(1).max(4)
     .refine(scopes => new Set(scopes).size === scopes.length, "Scopes must be unique"),
   requestId: z.string().trim().min(8).max(128)
     .regex(/^[A-Za-z0-9._:-]+$/),

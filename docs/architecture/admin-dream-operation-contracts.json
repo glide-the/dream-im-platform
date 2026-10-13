@@ -69011,5 +69011,642 @@
       "output_schema_version": 1,
       "contract_sha256": "059f068a107c5d8a025b2742ab510d52eea8143c2d679699ee8368d9349f47c1"
     }
+  },
+  {
+    "contract": {
+      "name": "user-system-config.patch-image-model",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "image_model": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$"
+          }
+        },
+        "required": [
+          "image_model"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "success"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      }
+    ],
+    "capability": {
+      "name": "user-system-config.patch-image-model",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "6ac28e46b8c7cc8d7588c14cce623e93e597392f49cfd1222b4b5e80fe89f913"
+    }
+  },
+  {
+    "contract": {
+      "name": "image-turn.bind",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "turn_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "turn_key": {
+            "type": "string",
+            "pattern": "^dream-turn-[0-9a-f]{64}$"
+          },
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "ai_model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          },
+          "image_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "materials": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uri": {
+                  "type": "string",
+                  "pattern": "^workspace:\\/\\/files\\/[^\\s?#]+$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "uri",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "thread_id",
+          "turn_id",
+          "turn_key",
+          "message_id",
+          "ai_model",
+          "image_model",
+          "materials"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "turn_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "turn_key": {
+            "type": "string",
+            "pattern": "^dream-turn-[0-9a-f]{64}$"
+          },
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "ai_model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          },
+          "image_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "materials": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uri": {
+                  "type": "string",
+                  "pattern": "^workspace:\\/\\/files\\/[^\\s?#]+$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "uri",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "canonical_user_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[A-Za-z0-9._:-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "thread_id",
+          "turn_id",
+          "turn_key",
+          "message_id",
+          "ai_model",
+          "image_model",
+          "materials",
+          "canonical_user_id",
+          "run_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "identity.runtime-delegation.v1",
+        "version": 1,
+        "contractSha256": "1a682e29c2fcfa6d870a64c131773f0fa2ce49866fc56b30f334e07040e79a83"
+      },
+      {
+        "capability": "identity.runtime-purpose.v1",
+        "version": 1,
+        "contractSha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447"
+      },
+      {
+        "capability": "dream.image-turn.v1",
+        "version": 1,
+        "contractSha256": "2f7e1eedb84d974b6bf203611acaf22b00d1cb82e377276a73822e73253f96e2"
+      }
+    ],
+    "capability": {
+      "name": "image-turn.bind",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "b65b67e0eed869a30081251a648bd5fa40e922478efdae8a1c66a97aef1dcf45"
+    }
+  },
+  {
+    "contract": {
+      "name": "image-turn.select",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "turn_key": {
+            "type": "string",
+            "pattern": "^dream-turn-[0-9a-f]{64}$"
+          },
+          "source_call_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "unclear",
+                  "native_generate",
+                  "native_edit",
+                  "image_gen_generate",
+                  "image_gen_edit"
+                ]
+              },
+              "prompt": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reference_images": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^workspace:\\/\\/files\\/[^\\s?#]+$"
+                }
+              }
+            },
+            "required": [
+              "operation",
+              "prompt",
+              "reference_images"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "thread_id",
+          "turn_key",
+          "source_call_id",
+          "arguments"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "turn_key": {
+            "type": "string",
+            "pattern": "^dream-turn-[0-9a-f]{64}$"
+          },
+          "source_call_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "none",
+              "unclear",
+              "native_generate",
+              "native_edit",
+              "image_gen_generate",
+              "image_gen_edit"
+            ]
+          },
+          "arguments_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "reference_images": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^workspace:\\/\\/files\\/[^\\s?#]+$"
+            }
+          }
+        },
+        "required": [
+          "turn_key",
+          "source_call_id",
+          "operation",
+          "arguments_sha256",
+          "reference_images"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "identity.runtime-delegation.v1",
+        "version": 1,
+        "contractSha256": "1a682e29c2fcfa6d870a64c131773f0fa2ce49866fc56b30f334e07040e79a83"
+      },
+      {
+        "capability": "identity.runtime-purpose.v1",
+        "version": 1,
+        "contractSha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447"
+      },
+      {
+        "capability": "dream.image-turn.v1",
+        "version": 1,
+        "contractSha256": "2f7e1eedb84d974b6bf203611acaf22b00d1cb82e377276a73822e73253f96e2"
+      }
+    ],
+    "capability": {
+      "name": "image-turn.select",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "d6b342bc0992c80b7db91353d2c56235013d417c2146dca9faa2dd22b2276814"
+    }
+  },
+  {
+    "contract": {
+      "name": "image-turn.result",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "turn_key": {
+            "type": "string",
+            "pattern": "^dream-turn-[0-9a-f]{64}$"
+          },
+          "gateway_request_id": {
+            "type": "string",
+            "pattern": "^req_[0-9a-f]{32}$"
+          },
+          "call_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "thread_id",
+          "turn_key",
+          "gateway_request_id",
+          "call_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "gatewayRequestId": {
+            "type": "string",
+            "pattern": "^req_[0-9a-f]{32}$"
+          },
+          "responseId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "providerHttpRequestId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[A-Za-z0-9._:-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "configuredImageModel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reportedImageModel": {
+            "type": "null"
+          },
+          "usageKnown": {
+            "type": "boolean",
+            "const": false
+          },
+          "usageUnknownReason": {
+            "type": "string",
+            "const": "responses_image_usage_not_reported"
+          },
+          "imageCalls": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "callId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "^[A-Za-z0-9._:-]+$"
+                },
+                "outputIndex": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "status": {
+                  "type": "string",
+                  "const": "completed"
+                },
+                "operation": {
+                  "type": "string",
+                  "enum": [
+                    "generate",
+                    "edit"
+                  ]
+                },
+                "reportedAction": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "generate",
+                        "edit"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "png",
+                    "jpeg",
+                    "webp"
+                  ]
+                },
+                "byteLength": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "callId",
+                "outputIndex",
+                "status",
+                "operation",
+                "reportedAction",
+                "format",
+                "byteLength",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "gatewayRequestId",
+          "responseId",
+          "providerHttpRequestId",
+          "configuredImageModel",
+          "reportedImageModel",
+          "usageKnown",
+          "usageUnknownReason",
+          "imageCalls"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "identity.runtime-delegation.v1",
+        "version": 1,
+        "contractSha256": "1a682e29c2fcfa6d870a64c131773f0fa2ce49866fc56b30f334e07040e79a83"
+      },
+      {
+        "capability": "identity.runtime-purpose.v1",
+        "version": 1,
+        "contractSha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447"
+      },
+      {
+        "capability": "dream.image-turn.v1",
+        "version": 1,
+        "contractSha256": "2f7e1eedb84d974b6bf203611acaf22b00d1cb82e377276a73822e73253f96e2"
+      }
+    ],
+    "capability": {
+      "name": "image-turn.result",
+      "kind": "read",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "be0cf93f9b947031371e82d4180ac16661bf08e85838b49bdb01d14ee45dd99f"
+    }
   }
 ]

@@ -1,3 +1,8 @@
+// [Input] Validated Token usage, immutable micro-USD price snapshots, and reservation estimates.
+// [Output] Safe integer provider/charged costs for text or Image requests and conservative reserves.
+// [Pos] Pure billing arithmetic; persistence, allowance capture, and ledger writes are repository-owned.
+// [Sync] 2026-10-09: reserve Image requests using separate text-input, image-input, and image-output Token prices.
+
 import type {
   ChargeBreakdown,
   PricingSnapshot,
@@ -42,6 +47,14 @@ function validateUsage(usage: TokenUsage) {
   assertNonNegativeSafeInteger(usage.outputTokens, "outputTokens");
   assertNonNegativeSafeInteger(usage.cacheReadTokens, "cacheReadTokens");
   assertNonNegativeSafeInteger(usage.cacheWriteTokens, "cacheWriteTokens");
+  for (const [name, value] of [
+    ["inputTextTokens", usage.inputTextTokens],
+    ["inputImageTokens", usage.inputImageTokens],
+    ["outputTextTokens", usage.outputTextTokens],
+    ["outputImageTokens", usage.outputImageTokens],
+  ] as const) {
+    if (value !== undefined) assertNonNegativeSafeInteger(value, name);
+  }
 }
 
 function validatePricing(pricing: PricingSnapshot) {
@@ -63,6 +76,18 @@ function validatePricing(pricing: PricingSnapshot) {
   );
   assertNonNegativeSafeInteger(pricing.markupBps, "markupBps");
   assertNonNegativeSafeInteger(pricing.discountBps, "discountBps");
+  if (pricing.imageInputPriceMicrousdPerMillion !== undefined) {
+    assertNonNegativeSafeInteger(
+      pricing.imageInputPriceMicrousdPerMillion,
+      "imageInputPriceMicrousdPerMillion",
+    );
+  }
+  if (pricing.imageOutputPriceMicrousdPerMillion !== undefined) {
+    assertNonNegativeSafeInteger(
+      pricing.imageOutputPriceMicrousdPerMillion,
+      "imageOutputPriceMicrousdPerMillion",
+    );
+  }
   if (pricing.discountBps > 10_000) {
     throw new RangeError("discountBps must not exceed 10000");
   }
@@ -82,20 +107,70 @@ export function calculateCharge(
   validateUsage(usage);
   validatePricing(pricing);
 
+  const imageDetails = [
+    usage.inputTextTokens,
+    usage.inputImageTokens,
+    usage.outputTextTokens,
+    usage.outputImageTokens,
+  ];
+  const isImageUsage = imageDetails.some((value) => value !== undefined);
+  if (isImageUsage && imageDetails.some((value) => value === undefined)) {
+    throw new RangeError("Image token usage details must be complete");
+  }
+  if (isImageUsage) {
+    if (usage.cacheReadTokens !== 0 || usage.cacheWriteTokens !== 0) {
+      throw new RangeError("Image requests must not contain cache tokens");
+    }
+    if (usage.outputTextTokens !== 0) {
+      throw new RangeError("Image outputTextTokens must be zero");
+    }
+    if (usage.inputTokens !== usage.inputTextTokens! + usage.inputImageTokens!) {
+      throw new RangeError("Image input token details do not match inputTokens");
+    }
+    if (usage.outputTokens !== usage.outputImageTokens!) {
+      throw new RangeError("Image output token details do not match outputTokens");
+    }
+    if (
+      usage.inputImageTokens! > 0 &&
+      pricing.imageInputPriceMicrousdPerMillion === undefined
+    ) {
+      throw new RangeError("imageInputPriceMicrousdPerMillion is required");
+    }
+    if (
+      usage.outputImageTokens! > 0 &&
+      pricing.imageOutputPriceMicrousdPerMillion === undefined
+    ) {
+      throw new RangeError("imageOutputPriceMicrousdPerMillion is required");
+    }
+  }
+
   const cachedInput = usage.cacheReadTokens + usage.cacheWriteTokens;
   const billableInputTokens =
     usage.inputTokenSemantics === "total_including_cache"
       ? Math.max(0, usage.inputTokens - cachedInput)
       : usage.inputTokens;
 
-  const inputCost = tokenComponent(
-    billableInputTokens,
-    pricing.inputPriceMicrousdPerMillion,
-  );
-  const outputCost = tokenComponent(
-    usage.outputTokens,
-    pricing.outputPriceMicrousdPerMillion,
-  );
+  const inputCost = isImageUsage
+    ? tokenComponent(
+        usage.inputTextTokens!,
+        pricing.inputPriceMicrousdPerMillion,
+      ) + tokenComponent(
+        usage.inputImageTokens!,
+        pricing.imageInputPriceMicrousdPerMillion ?? 0,
+      )
+    : tokenComponent(
+        billableInputTokens,
+        pricing.inputPriceMicrousdPerMillion,
+      );
+  const outputCost = isImageUsage
+    ? tokenComponent(
+        usage.outputImageTokens!,
+        pricing.imageOutputPriceMicrousdPerMillion ?? 0,
+      )
+    : tokenComponent(
+        usage.outputTokens,
+        pricing.outputPriceMicrousdPerMillion,
+      );
   const cacheReadCost = tokenComponent(
     usage.cacheReadTokens,
     pricing.cacheReadPriceMicrousdPerMillion,
@@ -152,6 +227,38 @@ export function estimateReservation(input: {
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
       inputTokenSemantics: "fresh",
+    },
+    input.pricing,
+  );
+  return Math.max(
+    estimate.chargedMicrousd,
+    input.minimumReserveMicrousd ?? 0,
+  );
+}
+
+export function estimateImageReservation(input: {
+  estimatedInputTextTokens: number;
+  estimatedInputImageTokens: number;
+  maxOutputImageTokens: number;
+  pricing: PricingSnapshot;
+  minimumReserveMicrousd?: number;
+}) {
+  assertNonNegativeSafeInteger(
+    input.minimumReserveMicrousd ?? 0,
+    "minimumReserveMicrousd",
+  );
+  const estimate = calculateCharge(
+    {
+      inputTokens:
+        input.estimatedInputTextTokens + input.estimatedInputImageTokens,
+      outputTokens: input.maxOutputImageTokens,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      inputTokenSemantics: "fresh",
+      inputTextTokens: input.estimatedInputTextTokens,
+      inputImageTokens: input.estimatedInputImageTokens,
+      outputTextTokens: 0,
+      outputImageTokens: input.maxOutputImageTokens,
     },
     input.pricing,
   );

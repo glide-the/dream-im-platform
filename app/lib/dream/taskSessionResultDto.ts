@@ -3,9 +3,10 @@
 // [Pos] Task result wire contract; actor, session and process identity are server-derived.
 // [Sync] 2026-09-27: include service-only global recovery and claim-bound dual grants.
 // [Sync] 2026-09-27: bind each result to one completed target turn and one source claim.
+// [Sync] 2026-10-09: retain the frozen result-claim delegation scope enum.
 import { z } from "zod";
 import { decimalIdDto, isoTimeDto } from "../auth/dto";
-import { delegationOutputDto } from "../auth/delegationDto";
+import { dreamOperationDelegationOutputDto } from "../auth/delegationDto";
 
 const id = z.string().min(1).max(255);
 const revision = z.number().int().positive().safe();
@@ -37,7 +38,7 @@ export const resultCommitOutputDto = z.strictObject({ result: taskResultDto.null
 export const resultListOutputDto = z.strictObject({ results: z.array(taskResultDto) });
 export const resultClaimOutputDto = z.strictObject({ result: taskResultDto, actor_id: decimalIdDto, source_session_id: id,
   source_input_message_id: id, source_input_text: z.string().min(1),
-  source_persistence_authorization: delegationOutputDto, source_gateway_authorization: delegationOutputDto });
+  source_persistence_authorization: dreamOperationDelegationOutputDto, source_gateway_authorization: dreamOperationDelegationOutputDto });
 export const resultClaimNextOutputDto = z.strictObject({ claim: resultClaimOutputDto.nullable() });
 export const resultSettleOutputDto = z.strictObject({ result: taskResultDto });
 export const taskSessionResultContracts = {

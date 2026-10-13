@@ -1,3 +1,5 @@
+// [Sync] 2026-10-10: register exact image-turn bind/select and original entity-bound receipt recovery.
+// [Sync] 2026-10-10: recover independent Image preference writes under their exact original operation.
 // [Sync] 2026-09-17: recover Registry174 Deck Plugin apply under its original OAuth subject.
 // [Sync] 2026-09-17: distinguish service-only client_credentials receipts from dual-bearer user receipts.
 // [Sync] 2026-09-16: recover Registry187-188/190-191 Story Workspace Artifact writes.
@@ -16,6 +18,9 @@ import { z } from "zod";
 import { AuthBoundaryError } from "../auth/config";
 import { requestIdDto } from "../auth/dto";
 import { handleInternalAuthRequest } from "../auth/internalHandler";
+import { imageTurnOperationContracts, imageTurnReceiptKey } from "./imageTurnDto";
+import { isImageTurnOperation } from "./imageTurnHandler";
+import { imageTurnSchemaRequirements } from "./imageTurnService";
 import { hasDelegatedUserBearer, requireBackgroundScope } from "../auth/serviceIdentity";
 import { withDataTransaction } from "./database";
 import { identitySchemaRequirement, reflectionTaskSchemaRequirement, reflectionTaskSchemaRequirements, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement, workflowPreflightExecutionSchemaRequirements } from "./schemaRequirements";
@@ -319,7 +324,31 @@ export async function handleReceipt(request: Request, requestId: string) {
         return readOriginalReflectionsSectionConfigReceipt(tx, service.id, principal, name, parsed.data);
       });
     }
-    if (name === "user-system-config.patch") {
+    if (isImageTurnOperation(name)) {
+      if (imageTurnOperationContracts[name].kind !== "write") throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+      const receiptResultDto = z.discriminatedUnion("status", [
+        z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
+        z.strictObject({ status: z.literal("committed"), operation: z.literal(name), request_id: requestIdDto,
+          result: imageTurnOperationContracts[name].output }),
+      ]);
+      if (query.size !== 1 || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
+      const authorization = request.headers.get("authorization") ?? "";
+      if (!authorization.startsWith("Bearer idg_")) throw new AuthBoundaryError("IMAGE_TURN_AUTHORITY_REQUIRED", 403);
+      return withDataTransaction(imageTurnSchemaRequirements, async tx => {
+        const authority = await new DelegationService(tx).resolve(authorization.slice(7), "dream:write", service.id);
+        if (authority.purpose !== "server-persistence" || authority.editorSessionId !== null) throw new AuthBoundaryError("IMAGE_TURN_AUTHORITY_REQUIRED", 403);
+        const row = await new ReceiptRepository(tx, service.id, authority.principal.subject).find(name, parsed.data);
+        if (!row) return receiptResultDto.parse({ status: "absent", operation: name, request_id: parsed.data });
+        const result = imageTurnOperationContracts[name].output.safeParse(row.result);
+        if (!result.success || !("turn_key" in result.data) || row.threadScope !== authority.threadId || row.runScope !== authority.runId || row.editorSessionScope !== null
+          || imageTurnReceiptKey(result.data.turn_key) !== parsed.data
+          || ("canonical_user_id" in result.data && result.data.canonical_user_id !== authority.principal.canonical_user_id)) {
+          throw new AuthBoundaryError("IMAGE_TURN_RECEIPT_INVALID", 503);
+        }
+        return receiptResultDto.parse({ status: "committed", operation: name, request_id: parsed.data, result: result.data });
+      });
+    }
+    if (name === "user-system-config.patch" || name === "user-system-config.patch-image-model") {
       if ([...query.keys()].some(key => key !== "operation") || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
       return withDataTransaction([identitySchemaRequirement, ...userSystemConfigSchemaRequirements], async tx => {
         const principal = await principalForServiceToken(tx, request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", service, "dream:write");

@@ -1,9 +1,16 @@
+// [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
+// [Sync] 2026-10-10: preserve user image blocks in the existing cross-protocol request conversion.
 // [Input] Validated public Anthropic/OpenAI requests plus target protocol, product adapter, and model policy.
 // [Output] Upstream request bodies and JSON responses translated across Messages, Chat, and Responses dialects.
 // [Pos] Pure Gateway protocol boundary; transport, authentication, streaming, and persistence stay outside.
 // [Sync] 2026-09-04: route Codex/xAI through Responses while retaining generic and Copilot Chat behavior.
+// [Sync] 2026-10-10: use each selected Provider's explicit API configuration for request and response conversion.
 
 import { anthropicMessageSchema, openAIChatCompletionSchema } from "./protocols";
+import { GatewayError } from "./errors";
+import { imageApiPolicy } from "../../../config/image-api-policy";
+import { validateBase64Image } from "./image-protocols";
+import { resolveResponsesAdapter } from "./provider-endpoint";
 import {
   openAIChatRequestToResponses,
   responsesResponseToOpenAIChat,
@@ -39,13 +46,83 @@ function int(value: unknown) {
 function anthropicContentToOpenAI(content: unknown) {
   if (typeof content === "string") return content;
   const parts = array(content);
-  const textParts = parts
-    .filter((part) => record(part)?.type === "text")
-    .map((part) => ({ type: "text", text: text(record(part)?.text) }));
-  return textParts.length ? textParts : text(parts.map((part) => record(part)?.text).filter(Boolean).join("\n"));
+  const converted: JsonRecord[] = [];
+  for (const block of parts) {
+    const part = record(block);
+    if (part?.type === "text") converted.push({ type: "text", text: text(part.text) });
+    if (part?.type === "image") {
+      const source = record(part.source);
+      const url = source?.type === "base64" && text(source.media_type) && text(source.data)
+        ? `data:${text(source.media_type)};base64,${text(source.data)}`
+        : source?.type === "url" ? text(source.url) : "";
+      if (!url) throw new GatewayError("UPSTREAM_DIALECT_UNSUPPORTED", "Invalid image content", 400, "invalid_request_error");
+      converted.push({ type: "image_url", image_url: { url } });
+    }
+  }
+  return converted.length ? converted : text(parts.map((part) => record(part)?.text).filter(Boolean).join("\n"));
 }
 
-export function anthropicRequestToOpenAI(body: JsonRecord, model: string) {
+function nativeImageHistory(blocks: unknown[], role: string) {
+  const starts = blocks.map(record).filter(part => part?.type === "server_tool_use" && part.name === "image_generation");
+  const results = blocks.map(record).filter(part => part?.type === "image_generation_tool_result");
+  const invalid = () => new GatewayError("UPSTREAM_DIALECT_UNSUPPORTED", "The saved image result is invalid. Add the image file to a new message", 400, "invalid_request_error");
+  if (!starts.length && !results.length) return new Map<unknown, { id: string; data: string; media: string }>();
+  if (role !== "assistant" || starts.length !== results.length || new Set(starts.map(part => part!.id)).size !== starts.length) throw invalid();
+  const pairs = new Map<unknown, { id: string; data: string; media: string }>();
+  for (const result of results) {
+    const start = starts.find(part => part!.id === result!.tool_use_id);
+    const content = array(result!.content), image = record(content[0]), source = record(image?.source);
+    const data = text(source?.data), media = text(source?.media_type), id = text(start?.id);
+    if (!start || !/^[A-Za-z0-9._:-]{1,200}$/.test(id) || pairs.size >= starts.length
+      || [...pairs.values()].some(pair => pair.id === id) || content.length !== 1 || image?.type !== "image"
+      || source?.type !== "base64" || !["image/png", "image/jpeg", "image/webp"].includes(media)
+      || !data || data.length > Math.ceil(imageApiPolicy.maxImageBytes / 3) * 4
+      || data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)
+      || Buffer.from(data, "base64").byteLength > imageApiPolicy.maxImageBytes
+      || Buffer.from(data, "base64").toString("base64") !== data) throw invalid();
+    pairs.set(result, { id, data, media });
+  }
+  return pairs;
+}
+
+export async function validateNativeImageHistory(body: unknown) {
+  const parsed = record(body);
+  if (!parsed) throw new GatewayError("UPSTREAM_DIALECT_UNSUPPORTED", "Invalid conversation history", 400, "invalid_request_error");
+  for (const value of array(parsed.messages)) {
+    const message = record(value);
+    if (!message) continue;
+    for (const image of nativeImageHistory(array(message.content), text(message.role)).values()) {
+      try {
+        if (await validateBase64Image(image.data) !== image.media) throw new Error("Image format mismatch");
+      } catch {
+        throw new GatewayError("UPSTREAM_DIALECT_UNSUPPORTED", "The saved image cannot be read. Add its image file to a new message", 400, "invalid_request_error");
+      }
+    }
+  }
+}
+
+export function nativeHistoryForAnthropic(body: JsonRecord) {
+  return { ...body, messages: array(body.messages).flatMap(value => {
+    const message = record(value);
+    if (!message || !Array.isArray(message.content)) return [value];
+    const native = nativeImageHistory(message.content, text(message.role));
+    if (!native.size) return [value];
+    const output: unknown[] = []; let content: unknown[] = [];
+    for (const block of message.content) {
+      const image = native.get(block);
+      if (image) {
+        if (content.length) output.push({ ...message, content });
+        content = [];
+        output.push({ role: "user", content: [{ type: "text", text: `Previously generated image: ${image.id}` },
+          { type: "image", source: { type: "base64", media_type: image.media, data: image.data } }] });
+      } else if (!(record(block)?.type === "server_tool_use" && record(block)?.name === "image_generation")) content.push(block);
+    }
+    if (content.length) output.push({ ...message, content });
+    return output;
+  }) };
+}
+
+export function anthropicRequestToOpenAI(body: JsonRecord, model: string, preserveNativeImages = false) {
   const messages: JsonRecord[] = [];
   const systemParts: string[] = [];
   if (body.system) {
@@ -64,6 +141,7 @@ export function anthropicRequestToOpenAI(body: JsonRecord, model: string) {
     }
     const role = message.role === "assistant" ? "assistant" : "user";
     const blocks = array(message.content);
+    const native = nativeImageHistory(blocks, role);
     if (!blocks.length || typeof message.content === "string") {
       messages.push({ role, content: anthropicContentToOpenAI(message.content) });
       continue;
@@ -72,12 +150,14 @@ export function anthropicRequestToOpenAI(body: JsonRecord, model: string) {
       const type = record(block)?.type;
       return type === "text" || type === "image";
     });
-    if (normalBlocks.length) {
+    if (normalBlocks.length && !native.size) {
       messages.push({ role, content: anthropicContentToOpenAI(normalBlocks) });
     }
     for (const block of blocks) {
       const item = record(block);
-      if (item?.type === "tool_use") {
+      if (native.size && (item?.type === "text" || item?.type === "image")) {
+        messages.push({ role, content: anthropicContentToOpenAI([block]) });
+      } else if (item?.type === "tool_use") {
         messages.push({
           role: "assistant",
           content: null,
@@ -87,11 +167,17 @@ export function anthropicRequestToOpenAI(body: JsonRecord, model: string) {
             function: { name: text(item.name), arguments: JSON.stringify(item.input ?? {}) },
           }],
         });
+      } else if (native.has(block)) {
+        const image = native.get(block)!;
+        messages.push(preserveNativeImages ? { ink_native_image_call: { type: "image_generation_call", id: image.id, result: image.data, status: "completed" } }
+          : { role: "user", content: [{ type: "text", text: `Previously generated image: ${image.id}` }, { type: "image_url", image_url: { url: `data:${image.media};base64,${image.data}` } }] });
       } else if (item?.type === "tool_result") {
         messages.push({
           role: "tool",
           tool_call_id: text(item.tool_use_id),
-          content: typeof item.content === "string" ? item.content : JSON.stringify(item.content ?? ""),
+          content: array(item.content).some((block) => record(block)?.type === "image")
+            ? anthropicContentToOpenAI(item.content)
+            : typeof item.content === "string" ? item.content : JSON.stringify(item.content ?? ""),
         });
       }
     }
@@ -259,16 +345,19 @@ export function adaptProviderRequest(input: {
   externalProtocol: GatewayProtocol;
   providerProtocol: GatewayProtocol;
   providerAdapterKind?: string;
+  providerConfig?: JsonRecord;
   body: JsonRecord;
   model: string;
   maxOutputTokens: number;
 }) {
   const matrix: ProtocolMatrix = `${input.externalProtocol}:${input.providerProtocol}`;
-  if (input.providerAdapterKind === "codex" || input.providerAdapterKind === "xai") {
+  const responsesAdapter = resolveResponsesAdapter({ protocol: input.providerProtocol, adapterKind: input.providerAdapterKind, config: input.providerConfig });
+  if (responsesAdapter) {
     const openAIChatBody = input.externalProtocol === "anthropic"
       ? anthropicRequestToOpenAI(
           { ...input.body, max_tokens: input.maxOutputTokens },
           input.model,
+          true,
         )
       : {
           ...input.body,
@@ -279,9 +368,10 @@ export function adaptProviderRequest(input: {
     return openAIChatRequestToResponses({
       body: openAIChatBody,
       model: input.model,
-      adapterKind: input.providerAdapterKind,
+      adapterKind: responsesAdapter,
       stream: Boolean(input.body.stream),
       maxOutputTokens: input.maxOutputTokens,
+      allowNativeImageHistory: input.externalProtocol === "anthropic",
     });
   }
   if (matrix === "anthropic:openai") {
@@ -290,18 +380,19 @@ export function adaptProviderRequest(input: {
   if (matrix === "openai:anthropic") {
     return openAIRequestToAnthropic({ ...input.body, max_completion_tokens: input.maxOutputTokens }, input.model);
   }
-  return { ...input.body, model: input.model, ...(input.externalProtocol === "anthropic" ? { max_tokens: input.maxOutputTokens } : {}), stream: Boolean(input.body.stream) };
+  return { ...(matrix === "anthropic:anthropic" ? nativeHistoryForAnthropic(input.body) : input.body), model: input.model, ...(input.externalProtocol === "anthropic" ? { max_tokens: input.maxOutputTokens } : {}), stream: Boolean(input.body.stream) };
 }
 
 export function adaptProviderResponse(input: {
   externalProtocol: GatewayProtocol;
   providerProtocol: GatewayProtocol;
   providerAdapterKind?: string;
+  providerConfig?: JsonRecord;
   body: JsonRecord;
   requestedModel: string;
 }) {
   const matrix: ProtocolMatrix = `${input.externalProtocol}:${input.providerProtocol}`;
-  if (input.providerAdapterKind === "codex" || input.providerAdapterKind === "xai") {
+  if (resolveResponsesAdapter({ protocol: input.providerProtocol, adapterKind: input.providerAdapterKind, config: input.providerConfig })) {
     const chat = responsesResponseToOpenAIChat(input.body, input.requestedModel);
     return input.externalProtocol === "anthropic"
       ? openAIResponseToAnthropic(chat, input.requestedModel)

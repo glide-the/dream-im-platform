@@ -1,9 +1,10 @@
 // [Input] Explicit configuration fixtures without credentials or live services.
 // [Output] Success/failure evidence for exact origin/issuer and per-service permissions.
 // [Pos] Provider-free auth configuration tests.
+// [Sync] 2026-10-11: browser request authority may vary; unknown relay and loopback port substitution remain denied.
 // [Sync] 2026-09-15: cover the exact Reflections executor background scope.
 import { describe, expect, it } from "vitest";
-import { authConfiguration, dreamServiceClients, exactAuthUrl } from "./config";
+import { authConfiguration, browserAuthOrigin, dreamServiceClients, exactAuthUrl } from "./config";
 
 const environment = {
   BETTER_AUTH_URL: "https://admin.example.test/api/auth", BETTER_AUTH_SECRET: "fixture-secret-longer-than-32-bytes",
@@ -28,5 +29,19 @@ describe("auth configuration", () => {
     expect(dreamServiceClients({ DREAM_DATA_SERVICE_CLIENTS: JSON.stringify([client]) })[0].backgroundScopes).toEqual(["capabilities:read", "reflections:execute"]);
     expect(() => dreamServiceClients({ DREAM_DATA_SERVICE_CLIENTS: JSON.stringify([{ ...client, redirectUri: "https://other.example.test/auth/callback" }]) })).toThrow("AUTH_INVALID_REDIRECT");
     expect(() => dreamServiceClients({ DREAM_DATA_SERVICE_CLIENTS: JSON.stringify([{ ...client, backgroundScopes: ["*"] }]) })).toThrow("AUTH_NOT_CONFIGURED");
+  });
+  it("selects only allowed public or same-listener loopback browser origins", () => {
+    const configuration = authConfiguration({ ...environment, AUTH_TRUSTED_ORIGINS: `${environment.AUTH_TRUSTED_ORIGINS},http://localhost:3000,http://localhost:5173` });
+    const request = (headers: Record<string, string> = {}) => new Request("http://localhost:3000/api/auth/oauth2/authorize", { headers });
+    expect(browserAuthOrigin(request(), configuration)).toBe("http://localhost:3000");
+    expect(browserAuthOrigin(request({ host: "relay.example", "x-forwarded-host": "admin.example.test", "x-forwarded-proto": "https" }), configuration)).toBe("https://admin.example.test");
+    for (const headers of [
+      { host: "attacker.example" },
+      { "x-forwarded-host": "admin.example.test" },
+      { "x-forwarded-host": "admin.example.test, attacker.example", "x-forwarded-proto": "https" },
+      { "x-forwarded-host": "dream.example.test", "x-forwarded-proto": "https" },
+      { "x-forwarded-host": "localhost:5173", "x-forwarded-proto": "http" },
+      { "x-forwarded-host": "localhost:3000/path", "x-forwarded-proto": "http" },
+    ]) expect(() => browserAuthOrigin(request(headers), configuration)).toThrow("AUTH_BROWSER_ORIGIN_DENIED");
   });
 });

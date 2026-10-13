@@ -1,6 +1,12 @@
+// [Input] Public Gateway JSON bodies, idempotency headers, and configured body capacity.
+// [Output] Strict parsed DTOs and stable request fingerprints without unbounded buffering.
+// [Pos] Shared Gateway request-body boundary used before model resolution and Provider dispatch.
+// [Sync] 2026-10-09: stream-cap every JSON request before decoding so chunked bodies cannot bypass the limit.
+
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { GatewayError } from "./errors";
+import { BodyLimitExceededError, readLimitedBody } from "./read-limited-body";
 
 const DEFAULT_MAX_BODY_BYTES = 20 * 1024 * 1024;
 
@@ -31,8 +37,15 @@ export async function parseGatewayJsonCapture<T extends z.ZodTypeAny>(
   schema: T,
 ): Promise<{ data: z.infer<T>; rawBody: string; body: unknown }> {
   const maxBytes = configuredMaxBodyBytes();
-  const contentLength = request.headers.get("content-length");
-  if (contentLength && Number(contentLength) > maxBytes) {
+  let bytes: Uint8Array;
+  try {
+    bytes = await readLimitedBody({
+      body: request.body,
+      declaredLength: request.headers.get("content-length"),
+      maxBytes,
+    });
+  } catch (error) {
+    if (!(error instanceof BodyLimitExceededError)) throw error;
     throw new GatewayError(
       "REQUEST_BODY_TOO_LARGE",
       `The request body exceeds the ${maxBytes} byte limit`,
@@ -40,16 +53,7 @@ export async function parseGatewayJsonCapture<T extends z.ZodTypeAny>(
       "invalid_request_error",
     );
   }
-
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > maxBytes) {
-    throw new GatewayError(
-      "REQUEST_BODY_TOO_LARGE",
-      `The request body exceeds the ${maxBytes} byte limit`,
-      413,
-      "invalid_request_error",
-    );
-  }
+  const text = new TextDecoder().decode(bytes);
 
   let json: unknown;
   try {

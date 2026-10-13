@@ -2,6 +2,7 @@
 // [Output] Contract coverage for complete candidates, immutable selection and invalid-choice rejection.
 // [Pos] Provider-free pricing discovery and apply-selection unit tests.
 // [Sync] 2026-09-14: cover manual candidate resolution without client price overrides or truncation.
+// [Sync] 2026-10-10: cover Image discovery, platform image-input pricing and text/Image price isolation.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -10,6 +11,8 @@ import {
   matchModelsDevPricing,
   normalizeModelIdForPricing,
   resolvePricingSyncSelections,
+  pricingSyncApplySchema,
+  pricingSyncVersionAmounts,
 } from "./pricing-sync";
 
 describe("models.dev pricing sync", () => {
@@ -94,5 +97,39 @@ describe("models.dev pricing sync", () => {
     expect(() => resolvePricingSyncSelections(matches, ["m1"], [{ localModelId: "m1", key: "one/model-a" }])).toThrow("不接受候选覆盖");
     expect(() => resolvePricingSyncSelections(matches, ["missing"], [])).toThrow("没有可用的目录价格");
     expect(() => resolvePricingSyncSelections(matchModelsDevPricing([local], []), ["m1"], [])).toThrow("没有可用的目录价格");
+  });
+
+  const images = {
+    openai: { name: "OpenAI", models: {
+      "image-model": { cost: { input: 2.5, output: 15, cache_read: 1 }, modalities: { output: ["image"] } },
+      "no-price": { modalities: { output: ["image"] } },
+      "missing-output": { cost: { input: 2 }, modalities: { output: ["image"] } },
+      "text-model": { cost: { input: 1, output: 2 }, modalities: { output: ["text"] } },
+      "old-image": { status: "deprecated", cost: { input: 1, output: 2 }, modalities: { output: ["image"] } },
+    } },
+  };
+  it("discovers only priced Image output without inventing an image-input reference", () => {
+    const catalog = flattenModelsDevCatalog(images, true);
+    expect(catalog).toHaveLength(1);
+    expect(catalog[0]).toMatchObject({ kind: "image", inputMicrousd: "2500000", outputMicrousd: "0", imageOutputMicrousd: "15000000", cacheReadMicrousd: "0" });
+    expect(flattenModelsDevCatalog(images).map((entry) => entry.modelId)).toEqual(["text-model"]);
+    const match = matchModelsDevPricing([{ ...local, upstream_model: "image-model", image_input_price: "4000000", requires_image_input: true }], catalog, true)[0];
+    expect(match).toMatchObject({ kind: "image", imageInputMicrousd: "4000000", requiresImageInput: true });
+    expect(matchModelsDevPricing([local], [], true)[0]).toMatchObject({ kind: "image", match: "unmatched", imageInputMicrousd: null });
+  });
+  it("writes catalog image output to the Image column and preserves mixed-model text prices", () => {
+    const match = matchModelsDevPricing([{ ...local, upstream_model: "image-model" }], flattenModelsDevCatalog(images, true), true)[0];
+    const current = { output_price_microusd_per_million: "7000000", cache_read_price_microusd_per_million: "1000000", cache_write_price_microusd_per_million: "2000000", image_input_price_microusd_per_million: "4000000", image_output_price_microusd_per_million: "12000000" };
+    expect(pricingSyncVersionAmounts(match, current)).toEqual({ input: "2500000", output: "7000000", cacheRead: "1000000", cacheWrite: "2000000", imageInput: "4000000", imageOutput: "15000000" });
+    expect(pricingSyncVersionAmounts(match, current, 0).imageInput).toBe("0");
+    expect(pricingSyncVersionAmounts(match, undefined).imageInput).toBeNull();
+    expect(pricingSyncVersionAmounts({ ...catalog[0], localModelId: "m1", localModelCode: "alias", upstreamModel: "model-a", providerCode: "custom", match: "exact" }, current)).toMatchObject({ imageInput: "4000000", imageOutput: "12000000" });
+  });
+  it("accepts only an explicit safe platform Image input amount, not catalog price overrides", () => {
+    expect(pricingSyncApplySchema.safeParse({ modelIds: ["m1"], imageInputPrices: [{ localModelId: "m1", microusd: 0 }] }).success).toBe(true);
+    for (const microusd of [-1, 0.5, "0", Number.MAX_SAFE_INTEGER + 1]) {
+      expect(pricingSyncApplySchema.safeParse({ modelIds: ["m1"], imageInputPrices: [{ localModelId: "m1", microusd }] }).success).toBe(false);
+    }
+    expect(pricingSyncApplySchema.safeParse({ modelIds: ["m1"], imageInputPrices: [{ localModelId: "m1", microusd: 1, outputMicrousd: 0 }] }).success).toBe(false);
   });
 });

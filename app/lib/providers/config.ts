@@ -4,6 +4,7 @@
 // [Sync] 2026-09-04: add separately validated per-product model catalog endpoints.
 // [Sync] 2026-10-05: add named account-usage endpoints without changing registration identity fingerprints.
 // [Sync] 2026-10-05: sync Codex wire/catalog version independently of the existing OAuth registration fingerprint.
+// [Sync] 2026-10-09: keep Codex generation and edit endpoints deployment-owned and host-validated.
 
 import { createHash } from "node:crypto";
 import { ProviderProtocolError } from "./errors";
@@ -24,6 +25,8 @@ export type ProviderEndpointOverrides = Readonly<Partial<{
   resource: string;
   models: string;
   usage: string;
+  imageGenerations: string;
+  imageEdits: string;
 }>>;
 
 type BaseDeploymentConfigInput = Readonly<{
@@ -90,6 +93,8 @@ export type ResolvedCodexConfig = Readonly<{
     models: string;
     jwks: string;
     usage: string;
+    imageGenerations: string;
+    imageEdits: string;
   }>;
 }>;
 
@@ -142,6 +147,8 @@ const DEFAULT_ENDPOINTS = {
     resource: "https://chatgpt.com/backend-api/codex/responses",
     models: "https://chatgpt.com/backend-api/codex/models",
     usage: "https://chatgpt.com/backend-api/wham/usage",
+    imageGenerations: "https://chatgpt.com/backend-api/codex/images/generations",
+    imageEdits: "https://chatgpt.com/backend-api/codex/images/edits",
     jwks: "https://auth.openai.com/.well-known/jwks.json",
   },
   xai: {
@@ -430,6 +437,8 @@ export function resolveProviderConfig(input: ProviderDeploymentConfigInput): Res
         // Optional usage reads validate their endpoint at that boundary, so a
         // malformed display-only override cannot disable inference or login.
         usage: override.usage ?? DEFAULT_ENDPOINTS.codex.usage,
+        imageGenerations: endpoint("imageGenerations", "resource"),
+        imageEdits: endpoint("imageEdits", "resource"),
         jwks: endpoint("jwks", "identity"),
       },
     };
@@ -525,6 +534,8 @@ function endpointOverrides(environment: NodeJS.ProcessEnv, prefix: string): Prov
     resource: nonEmpty(environment[`${prefix}_RESOURCE_ENDPOINT`]),
     models: nonEmpty(environment[`${prefix}_MODELS_ENDPOINT`]),
     usage: nonEmpty(environment[`${prefix}_USAGE_ENDPOINT`]),
+    imageGenerations: nonEmpty(environment[`${prefix}_IMAGE_GENERATIONS_ENDPOINT`]),
+    imageEdits: nonEmpty(environment[`${prefix}_IMAGE_EDITS_ENDPOINT`]),
   };
 }
 

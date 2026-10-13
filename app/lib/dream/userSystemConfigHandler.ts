@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: separate Image Settings ownership and fail closed on unimplemented Responses images.
 // [Input] Configured service, live OAuth token and closed user SystemConfig operation envelope.
 // [Output] Exact raw read or same-UOW patch/receipt/audit through the mandatory fixed codec.
 // [Pos] Thin account-config ingress; entity grants and caller identities cannot manage settings.
@@ -11,7 +12,7 @@ import { principalForServiceToken } from "../auth/serviceAccessToken";
 import { withDataTransaction } from "./database";
 import { ReceiptRepository } from "./receipts";
 import { identitySchemaRequirement } from "./schemaRequirements";
-import { userSystemConfigOperationContracts as contracts, type UserSystemConfigOperation } from "./userSystemConfigDto";
+import { allUserSystemConfigOperationContracts as contracts, type UserSystemConfigOperation } from "./userSystemConfigDto";
 import { runUserSystemConfigOperation, userSystemConfigSchemaRequirements, type UserSystemConfigCodec } from "./userSystemConfigService";
 import { encodeUserSystemConfig } from "./userSystemConfigCodec";
 import { DelegationService } from "../auth/delegationService";

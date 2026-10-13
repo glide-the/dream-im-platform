@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: verify independent Image Settings and fail-closed native capability separation.
 // [Input] Closed SystemConfig DTO/service, original typed repository and mandatory codec seams.
 // [Output] OAuth/entity/strict field/precision/failure/order assertions without SQL or provider.
 // [Pos] Candidate checks; concurrency, receipt and public behavior require later registered contracts.
@@ -6,11 +7,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DataTransaction } from "./database";
 import { UserSystemConfigRepository } from "./userSystemConfigRepository";
 import { runUserSystemConfigOperation, type UserSystemConfigActor } from "./userSystemConfigService";
-import { userSystemConfigPatchDto } from "./userSystemConfigDto";
+import { userSystemConfigPatchDto, userImageModelPatchDto, userSystemConfigOperationContracts } from "./userSystemConfigDto";
 const actor: UserSystemConfigActor = { principal: { subject: "config-subject", canonical_user_id: "9007199254740993", client_id: "browser", scopes: ["dream:read", "dream:write"], status: "active" }, threadScope: null, runScope: null, editorSessionScope: null };
 const tx = {} as DataTransaction;
 afterEach(() => vi.restoreAllMocks());
 describe("closed normalized SystemConfig", () => {
+  it("keeps the frozen AI patch closed and gives Image selection a separate DTO", () => {
+    expect(userSystemConfigPatchDto.safeParse({ image_model: 'image-a' }).success).toBe(false);
+    expect(userImageModelPatchDto.parse({ image_model: 'image-a' })).toEqual({ image_model: 'image-a' });
+    for (const input of [{ image_model: null }, { image_model: ' image-a' }, { image_model: 'image-a', model: 'chat-a' }])
+      expect(userImageModelPatchDto.safeParse(input).success).toBe(false);
+    expect(userSystemConfigOperationContracts['user-system-config.patch'].input.safeParse({ image_model: 'image-a' }).success).toBe(false);
+  });
   it.each(["user_id", "actor_id", "sql", "table", "system_config_json", "arbitrary_key"])("rejects %s", key => expect(userSystemConfigPatchDto.safeParse({ [key]: "caller" }).success).toBe(false));
   it("preserves original model pair and Python codepoint prompt", () => expect(userSystemConfigPatchDto.parse({ model: "platform:model-1", provider: "gateway", system_prompt: "😀".repeat(16384) })).toEqual({ model: "platform:model-1", provider: "gateway", system_prompt: "😀".repeat(16384) }));
   it("rejects unpaired model/provider", () => { expect(userSystemConfigPatchDto.safeParse({ model: "model" }).success).toBe(false); expect(userSystemConfigPatchDto.safeParse({ provider: "gateway" }).success).toBe(false); });
@@ -19,6 +27,16 @@ describe("closed normalized SystemConfig", () => {
   it("rejects nonnormalized paths, duplicate domains and python whitespace", () => { expect(userSystemConfigPatchDto.safeParse({ sandbox_fs_allowed_write_paths: ["relative"] }).success).toBe(false); expect(userSystemConfigPatchDto.safeParse({ sandbox_network_allowed_domains: ["example.com", "example.com"] }).success).toBe(false); expect(userSystemConfigPatchDto.safeParse({ env_vars: { "\u0085LANG": "value" } }).success).toBe(false); });
 });
 describe("SystemConfig service", () => {
+  it("merges only the independent Image selection through the existing locked repository", async () => {
+    const raw = '{"model":"chat-a","large":9007199254740993}';
+    vi.spyOn(UserSystemConfigRepository.prototype, "ensureLocked").mockResolvedValue({ system_config_json: raw });
+    const merged = '{"model":"chat-a","large":9007199254740993,"image_model":"image-a"}';
+    const update = vi.spyOn(UserSystemConfigRepository.prototype, "update").mockResolvedValue(undefined);
+    const codec = vi.fn().mockResolvedValue({ config_json: merged });
+    expect(await runUserSystemConfigOperation('user-system-config.patch-image-model', { image_model: 'image-a' }, actor, tx, codec)).toEqual({ success: true });
+    expect(codec).toHaveBeenCalledExactlyOnceWith({ action: 'merge', stored_json: raw, patch: { image_model: 'image-a' } });
+    expect(update).toHaveBeenCalledExactlyOnceWith(merged);
+  });
   it("returns exact raw JSON without JS number conversion", async () => { const raw = '{"large":9007199254740993,"float":1.0,"negative":-0.0,"unknown":{"文字":"Ω"}}'; vi.spyOn(UserSystemConfigRepository.prototype, "get").mockResolvedValue({ system_config_json: raw }); const codec = vi.fn().mockResolvedValue({ config_json: raw }); expect(await runUserSystemConfigOperation("user-system-config.get", {}, actor, tx, codec)).toEqual({ config_json: raw }); expect(codec).toHaveBeenCalledExactlyOnceWith({ action: "read", stored_json: raw }); });
   it("passes absence to codec instead of default on failure", async () => { vi.spyOn(UserSystemConfigRepository.prototype, "get").mockResolvedValue(null); const codec = vi.fn().mockResolvedValue({ config_json: "{}" }); expect(await runUserSystemConfigOperation("user-system-config.get", {}, actor, tx, codec)).toEqual({ config_json: "{}" }); expect(codec).toHaveBeenCalledExactlyOnceWith({ action: "read", stored_json: null }); });
   it("locks before merge and updates only the codec result", async () => { const events: string[] = [], raw = '{"old":9007199254740993}', merged = '{"old":9007199254740993,"theme":"dark"}'; vi.spyOn(UserSystemConfigRepository.prototype, "ensureLocked").mockImplementation(async () => { events.push("lock"); return { system_config_json: raw }; }); const update = vi.spyOn(UserSystemConfigRepository.prototype, "update").mockImplementation(async () => { events.push("update"); }); const codec = vi.fn().mockImplementation(async () => { events.push("codec"); return { config_json: merged }; }); expect(await runUserSystemConfigOperation("user-system-config.patch", { theme: "dark" }, actor, tx, codec)).toEqual({ success: true }); expect(events).toEqual(["lock", "codec", "update"]); expect(update).toHaveBeenCalledExactlyOnceWith(merged); expect(codec).toHaveBeenCalledExactlyOnceWith({ action: "merge", stored_json: raw, patch: { theme: "dark" } }); });

@@ -1,3 +1,7 @@
+<!-- [Input] Subscription product rules, lifecycle contracts and Admin interaction requirements. -->
+<!-- [Output] Token-only subscription management design and lifecycle recovery behavior. -->
+<!-- [Pos] Formal interaction design for the existing subscriptions business module. -->
+<!-- [Sync] 2026-10-09: non-renew transitions preserve exact PostgreSQL period boundaries. -->
 # 模块交互：Token-only 月度订阅、版本与权益
 
 > 返回：[全局交互规范](../refine-admin-ui-v3-interaction-design.md) · PRD：[订阅中心](../../prd/modules/03-subscriptions.md)
@@ -114,6 +118,7 @@ flowchart LR
 - 用户订阅行只展示“取消当前套餐”；取消立即停止当前套餐使用资格，保留历史 Token、周期和审计记录。已取消/已过期状态明确显示“不可使用”，并保留重新订阅入口。
 - 续约由用户主动触发；平台管理员不提供续约按钮。周期结束时未发生新的有效订阅或付费，当前订阅进入不可用状态，不追溯补发已错过周期的 Token。
 - 不新增暂停、恢复、期末取消或撤销期末取消入口；这些复杂操作不属于当前产品目标。
+- 升级、降级、暂停、恢复或取消等非续期动作只改变该动作拥有的状态字段，必须原样保留数据库中的当前周期边界和周期序号；只有续期可以推进周期。这样避免 PostgreSQL `timestamp(6)` 经应用毫秒时间往返后被误判为周期边界变化，不增加新的页面状态或恢复入口。
 - 补发 Token 使用独立危险能力提示和二次确认；数量、原因、Allowance version、幂等键缺一不可。409 时保留输入并要求刷新最新额度，权限不足时完全隐藏动作；普通 `subscriptions.write` 不能代替 `subscriptions.grant`。
 - 提交中禁用重复动作；同幂等结果复用原回执。409 保留 Modal、聚焦冲突摘要并提供“载入最新”，不盲写。
 

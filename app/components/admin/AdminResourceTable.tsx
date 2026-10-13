@@ -1,5 +1,10 @@
 "use client";
 
+// [Input] Refine list rows, declarative filters/columns, and optional Gateway detail records.
+// [Output] Responsive paged resource table with safe value formatting.
+// [Pos] Shared Admin list component; authorization and data shaping remain server-side.
+// [Sync] 2026-10-09: distinguish known, unknown, and pending Image usage in request tables.
+
 import { type CrudFilter, useList } from "@refinedev/core";
 import { FormEvent, useMemo, useState } from "react";
 import GatewayRequestDetail from "./GatewayRequestDetail";
@@ -13,13 +18,15 @@ import {
 export type AdminTableColumn = {
   key: string;
   label: string;
-  format?: "money" | "date" | "boolean" | "json" | "status" | "copy" | "binding";
+  format?: "money" | "date" | "boolean" | "json" | "status" | "copy" | "binding" | "usage";
 };
 
 type FilterDefinition = {
+  id?: string;
   field: string;
   label: string;
-  operator?: "eq" | "contains";
+  operator?: "eq" | "contains" | "gte" | "lte";
+  inputType?: "text" | "datetime-local";
   options?: Array<{ label: string; value: string }>;
 };
 
@@ -47,6 +54,11 @@ function renderValue(value: unknown, format?: AdminTableColumn["format"]) {
     return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("zh-CN");
   }
   if (format === "boolean") return value ? "启用" : "停用";
+  if (format === "usage") return value === true
+    ? "实际用量已知"
+    : value === false
+      ? "实际用量未知"
+      : "待确认";
   if (format === "json") return JSON.stringify(value);
   return String(value);
 }
@@ -104,16 +116,21 @@ export default function AdminResourceTable({
     event.preventDefault();
     const nextFilterValues = Object.fromEntries(
       filterDefinitions.flatMap((filter) => {
-        const value = draftFilters[filter.field]?.trim();
-        return value ? [[filter.field, value]] : [];
+        const key = filter.id ?? `${filter.field}-${filter.operator ?? "contains"}`;
+        const value = draftFilters[key]?.trim();
+        return value ? [[key, value]] : [];
       }),
     );
     setAppliedFilterValues(nextFilterValues);
     setAppliedFilters([
       ...defaultFilters,
       ...filterDefinitions.flatMap((filter) => {
-        const value = draftFilters[filter.field]?.trim();
-        return value ? [{ field: filter.field, operator: filter.operator ?? "contains", value } as CrudFilter] : [];
+        const key = filter.id ?? `${filter.field}-${filter.operator ?? "contains"}`;
+        const value = draftFilters[key]?.trim();
+        const normalized = value && filter.inputType === "datetime-local"
+          ? new Date(value).toISOString()
+          : value;
+        return normalized ? [{ field: filter.field, operator: filter.operator ?? "contains", value: normalized } as CrudFilter] : [];
       }),
     ]);
     setPage(1);
@@ -143,15 +160,15 @@ export default function AdminResourceTable({
         >
           <form onSubmit={applyFilters} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(3,minmax(150px,1fr))_auto]">
             {filterDefinitions.map((filter) => (
-              <label key={filter.field} className="text-xs font-semibold text-text-secondary">
+              <label key={filter.id ?? `${filter.field}-${filter.operator ?? "contains"}`} className="text-xs font-semibold text-text-secondary">
                 {filter.label}
                 {filter.options ? (
-                  <select className="admin-field mt-1 block text-sm" value={draftFilters[filter.field] ?? ""} onChange={(event) => setDraftFilters((value) => ({ ...value, [filter.field]: event.target.value }))}>
+                  <select className="admin-field mt-1 block text-sm" value={draftFilters[filter.id ?? `${filter.field}-${filter.operator ?? "contains"}`] ?? ""} onChange={(event) => setDraftFilters((value) => ({ ...value, [filter.id ?? `${filter.field}-${filter.operator ?? "contains"}`]: event.target.value }))}>
                     <option value="">全部</option>
                     {filter.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 ) : (
-                  <input className="admin-field mt-1 block text-sm" value={draftFilters[filter.field] ?? ""} onChange={(event) => setDraftFilters((value) => ({ ...value, [filter.field]: event.target.value }))} placeholder={`筛选${filter.label}`} />
+                  <input type={filter.inputType ?? "text"} className="admin-field mt-1 block text-sm" value={draftFilters[filter.id ?? `${filter.field}-${filter.operator ?? "contains"}`] ?? ""} onChange={(event) => setDraftFilters((value) => ({ ...value, [filter.id ?? `${filter.field}-${filter.operator ?? "contains"}`]: event.target.value }))} placeholder={`筛选${filter.label}`} />
                 )}
               </label>
             ))}

@@ -1,15 +1,18 @@
+// [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
 // [Input] Resolved generic/product Provider, request body, cancellation signal, credential revision, and timeout policy.
 // [Output] Authenticated response, credential-redacted upstream error bodies, lifecycle-safe abort control, and bounded 401 recovery.
 // [Pos] Low-level Gateway HTTP transport joining static credentials or the managed product credential broker.
 // [Sync] 2026-09-04: managed transport follows one Provider-owned credential and keeps bounded renewal retry fences.
 // [Sync] 2026-10-02: retain managed inference errors for protected payload capture while removing echoed credentials.
 // [Sync] 2026-10-02: preserve model-scoped Codex client metadata during initial and renewed credential merges.
+// [Sync] 2026-10-09: share static credential opening with the isolated Images transport.
+// [Sync] 2026-10-10: send static requests to the explicitly configured inference API without dialect fallback.
 
 import { decryptCredential } from "../security/credential-encryption";
 import type { ResolvedBillableModel } from "../models/resolver";
 import { GatewayError } from "./errors";
 import { resolveProviderAuthMode } from "./provider-auth";
-import { resolveProviderBaseUrl } from "./provider-endpoint";
+import { resolveProviderInferenceEndpoint } from "./provider-endpoint";
 import { applyManagedProviderRequestHeaders, applyModelRequestHeaders } from "../models/request-headers";
 import { resolveManagedProviderAccess } from "./managed-provider-credentials";
 import { recordGatewayProviderCredentialUse } from "./repository";
@@ -39,7 +42,7 @@ export function isProviderTimeoutError(error: unknown): error is ProviderTimeout
     || (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "TimeoutError");
 }
 
-function providerCredential(resolved: ResolvedBillableModel) {
+export function resolveProviderCredential(resolved: ResolvedBillableModel) {
   if (!resolved.provider.encryptedCredential) {
     throw new GatewayError(
       "PROVIDER_CREDENTIAL_UNAVAILABLE",
@@ -58,20 +61,6 @@ function providerCredential(resolved: ResolvedBillableModel) {
       "configuration_error",
     );
   }
-}
-
-function endpoint(baseUrl: string, protocol: "anthropic" | "openai", requestUrl?: string) {
-  const url = new URL(baseUrl);
-  const suffix = protocol === "anthropic" ? "messages" : "chat/completions";
-  const current = url.pathname.replace(/\/+$/, "");
-  if (!current.endsWith(`/${suffix}`)) {
-    url.pathname = current.endsWith("/v1") ? `${current}/${suffix}` : `${current}/v1/${suffix}`;
-  }
-  if (protocol === "anthropic" && requestUrl) {
-    const beta = new URL(requestUrl).searchParams.get("beta");
-    if (beta === "true" || beta === "1") url.searchParams.set("beta", beta);
-  }
-  return url.toString();
 }
 
 function linkedAbort(input: { requestSignal: AbortSignal; timeoutMs: number }) {
@@ -105,6 +94,7 @@ export async function sendProviderRequest(input: {
   requestUrl?: string;
   gatewayRequestId?: string;
   allowManagedCredentialRetry?: boolean;
+  onDispatch?: () => void;
 }) {
   const protocol = input.resolved.provider.protocol;
   const headers = new Headers({
@@ -169,9 +159,8 @@ export async function sendProviderRequest(input: {
         "configuration_error",
       );
     }
-    const baseUrl = resolveProviderBaseUrl({ protocol, baseUrl: input.resolved.provider.baseUrl });
-    requestEndpoint = endpoint(baseUrl, protocol, input.requestUrl);
-    const secret = providerCredential(input.resolved);
+    requestEndpoint = resolveProviderInferenceEndpoint({ ...input.resolved.provider, baseUrl: input.resolved.provider.baseUrl, requestUrl: input.requestUrl });
+    const secret = resolveProviderCredential(input.resolved);
     const authMode = resolveProviderAuthMode({
       protocol,
       config: input.resolved.provider.config,
@@ -182,10 +171,13 @@ export async function sendProviderRequest(input: {
   const abort = linkedAbort({ requestSignal: input.requestSignal, timeoutMs: input.resolved.provider.timeoutMs });
   const credentialHeaders = [new Headers(headers)];
   try {
+    const serializedBody = JSON.stringify(input.body);
+    if (input.onDispatch && input.requestSignal.aborted) throw input.requestSignal.reason;
+    input.onDispatch?.();
     let response = await fetch(requestEndpoint, {
       method: "POST",
       headers,
-      body: JSON.stringify(input.body),
+      body: serializedBody,
       signal: abort.signal,
       redirect: "error",
     });

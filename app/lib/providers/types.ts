@@ -2,6 +2,7 @@
 // [Output] Shared protocol results, safe account model catalogs, and product-minimal revocation handoffs.
 // [Pos] Secret-aware product boundary; persistence and database ownership remain outside this directory.
 // [Sync] 2026-09-04: add account-scoped model catalog results without exposing raw upstream payloads.
+// [Sync] 2026-10-09: publish the Codex Images resource contract without treating it as the Responses resource.
 
 export type ProviderProductKind = "codex" | "xai" | "github_copilot";
 
@@ -217,6 +218,22 @@ export type ResourceContractResult =
     }>
   | ProviderOperationFailure;
 
+export type ProviderImageResourceContract = Readonly<{
+  product: "codex";
+  generationsUrl: string;
+  editsUrl: string;
+  managedHeaderNames: readonly string[];
+  buildHeaders(bundle: ProviderTokenBundle): ResourceHeadersResult;
+}>;
+
+export type ImageResourceContractResult =
+  | Readonly<{
+      status: "ready";
+      product: "codex";
+      contract: ProviderImageResourceContract;
+    }>
+  | ProviderOperationFailure;
+
 export type ProviderUpstreamDialect = "openai_responses" | "openai_chat";
 
 export type ProviderCatalogModel = Readonly<{
@@ -246,6 +263,7 @@ export interface ProviderProductAdapter {
   revoke(material: ProviderRevocationMaterial): Promise<RevokeResult>;
   fetchModelCatalog(bundle: ProviderTokenBundle): Promise<ProviderModelCatalogResult>;
   getResourceContract(): ResourceContractResult;
+  getImageResourceContract?(): ImageResourceContractResult;
   getUsageAccess?(bundle: ProviderTokenBundle): { source: "codex" | "github_copilot"; url: string; headers: Headers };
 }
 

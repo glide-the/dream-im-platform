@@ -1,3 +1,9 @@
+// [Sync] 2026-10-10: include Responses image requests with unknown complete usage after conservative settlement.
+// [Input] Permission-checked daily Gateway report filters and persisted usage facts.
+// [Output] Known usage/amount subtotals plus explicit unknown Image request counts.
+// [Pos] Read-only Admin billing report; no ledger or request mutation.
+// [Sync] 2026-10-10: prevent unknown Image usage from appearing as a complete zero-cost total.
+// [Sync] 2026-10-10: align daily dates and range boundaries with explicit UTC usage queries.
 import { z } from "zod";
 import { withPlatformClient } from "../platform-db";
 import { AdminError, adminErrorResponse } from "./errors";
@@ -22,25 +28,26 @@ export async function handleAdminBillingReport(request: Request) {
 
     const rows = await withPlatformClient(async (client) => {
       const result = await client.query<Record<string, unknown>>(
-        `SELECT created_at::date::text AS day,
+        `SELECT (created_at AT TIME ZONE 'UTC')::date::text AS day,
                 COUNT(*)::text AS requests,
-                COALESCE(SUM(input_tokens), 0)::text AS input_tokens,
-                COALESCE(SUM(output_tokens), 0)::text AS output_tokens,
-                COALESCE(SUM(cache_read_tokens), 0)::text AS cache_read_tokens,
-                COALESCE(SUM(cache_write_tokens), 0)::text AS cache_write_tokens,
-                COALESCE(SUM(provider_cost_microusd), 0)::text AS provider_cost_microusd,
-                COALESCE(SUM(charged_microusd), 0)::text AS charged_microusd,
+                COUNT(*) FILTER (WHERE response_summary ->> 'usageKnown' = 'false')::text AS unknown_usage_requests,
+                COALESCE(SUM(input_tokens) FILTER (WHERE NOT COALESCE(response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS input_tokens,
+                COALESCE(SUM(output_tokens) FILTER (WHERE NOT COALESCE(response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS output_tokens,
+                COALESCE(SUM(cache_read_tokens) FILTER (WHERE NOT COALESCE(response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS cache_read_tokens,
+                COALESCE(SUM(cache_write_tokens) FILTER (WHERE NOT COALESCE(response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS cache_write_tokens,
+                COALESCE(SUM(provider_cost_microusd) FILTER (WHERE NOT COALESCE(response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS provider_cost_microusd,
+                COALESCE(SUM(charged_microusd) FILTER (WHERE NOT COALESCE(response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS charged_microusd,
                 COUNT(*) FILTER (WHERE status = 'settlement_failed')::text AS settlement_failures
          FROM gateway_requests
-         WHERE created_at >= $1::date
-           AND created_at < ($2::date + INTERVAL '1 day')
-         GROUP BY created_at::date
-         ORDER BY created_at::date DESC`,
+         WHERE created_at >= ($1::date::timestamp AT TIME ZONE 'UTC')
+           AND created_at < (($2::date + 1)::timestamp AT TIME ZONE 'UTC')
+         GROUP BY (created_at AT TIME ZONE 'UTC')::date
+         ORDER BY (created_at AT TIME ZONE 'UTC')::date DESC`,
         [parsed.data.from, parsed.data.to],
       );
       return result.rows;
     });
-    return Response.json({ data: rows, meta: { from: parsed.data.from, to: parsed.data.to, days } }, { headers: { "cache-control": "no-store", "x-request-id": requestId } });
+    return Response.json({ data: rows, meta: { from: parsed.data.from, to: parsed.data.to, days, timezone: "UTC", amounts: "micro-USD", totals: "known_usage_subtotal" } }, { headers: { "cache-control": "no-store", "x-request-id": requestId } });
   } catch (error) {
     return adminErrorResponse(error, requestId);
   }

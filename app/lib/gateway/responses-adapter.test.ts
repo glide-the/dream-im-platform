@@ -1,3 +1,5 @@
+// [Sync] 2026-10-10: verify independent Image Settings and fail-closed native capability separation.
+// [Sync] 2026-10-10: image input is supported; retain rejection coverage for unsupported audio.
 // [Input] Representative OpenAI Chat requests and Responses JSON/SSE payloads.
 // [Output] Regression proof for text, tools, reasoning, usage, error, and multimodal contracts.
 // [Pos] Focused contract suite for the Codex/xAI Responses dialect boundary.
@@ -14,6 +16,19 @@ import {
 } from "./responses-adapter";
 
 describe("Responses product dialect", () => {
+  it("rejects native image output until the complete image bridge is implemented", () => {
+    const image = { type: 'image_generation_call', id: 'ig_call', status: 'completed', result: 'private-base64' };
+    expect(() => responsesResponseToOpenAIChat({ id: 'resp', status: 'completed', output: [image] }, 'alias'))
+      .toThrow(expect.objectContaining({ code: 'UPSTREAM_DIALECT_UNSUPPORTED' }));
+    for (const event of [
+      { type: 'response.image_generation_call.in_progress', item_id: 'ig_call' },
+      { type: 'response.output_item.done', item: image },
+      { type: 'response.completed', response: { id: 'resp', status: 'completed', output: [image] } },
+    ]) {
+      expect(() => new ResponsesToOpenAIChatStreamState('alias').push(event))
+        .toThrow(expect.objectContaining({ code: 'UPSTREAM_DIALECT_UNSUPPORTED' }));
+    }
+  });
   it("lifts instructions, function calls, tool results, and reasoning effort", () => {
     const result = openAIChatRequestToResponses({
       adapterKind: "xai",
@@ -47,7 +62,7 @@ describe("Responses product dialect", () => {
     ]));
   });
 
-  it("enforces the Codex request surface and rejects multimodal input", () => {
+  it("enforces the Codex request surface and rejects unsupported multimodal input", () => {
     const result = openAIChatRequestToResponses({
       adapterKind: "codex",
       model: "gpt-codex",
@@ -70,7 +85,7 @@ describe("Responses product dialect", () => {
       model: "gpt-codex",
       stream: true,
       maxOutputTokens: 10,
-      body: { messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "data:x" } }] }] },
+      body: { messages: [{ role: "user", content: [{ type: "audio", audio: "unsupported" }] }] },
     })).toThrow(/multimodal/i);
   });
 

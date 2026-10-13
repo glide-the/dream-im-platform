@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
 // [Input] Parsed Anthropic/OpenAI content, resolved Provider protocol, and server-owned image estimate.
 // [Output] An approximate input token reservation separating image blocks from JSON text.
 // [Pos] Pure Gateway input estimate; it does not change requests, context limits, or actual usage.
@@ -35,11 +36,12 @@ export function estimateInputTokens(
   protocol: "anthropic" | "openai",
   input: { messages: unknown; system?: unknown; tools?: unknown; response_format?: unknown },
   providerProtocol: "anthropic" | "openai" = protocol,
+  imageProjection: { nativeImageHistory?: boolean; currentImageMaterials?: boolean } = {},
 ) {
   // Existing cross-protocol adapters may stringify image tool results as real
   // text. Keep their original conservative estimate until conversion supports
   // images, rather than under-reserving that upstream text.
-  if (providerProtocol !== protocol) return estimateJsonTokens(input);
+  if (providerProtocol !== protocol && !imageProjection.nativeImageHistory && !imageProjection.currentImageMaterials) return estimateJsonTokens(input);
   let imageCount = 0;
   const content = (value: unknown): unknown => {
     // Never inspect strings as JSON: base64 printed by Bash/Read is real text.
@@ -62,7 +64,8 @@ export function estimateInputTokens(
         // Drop encoding only from the estimation projection, never the request.
         return { type: block.type };
       }
-      if (protocol === "anthropic" && block.type === "tool_result") {
+      if (protocol === "anthropic" && (block.type === "tool_result"
+        || (imageProjection.nativeImageHistory && block.type === "image_generation_tool_result"))) {
         return { ...block, content: content(block.content) };
       }
       return item;

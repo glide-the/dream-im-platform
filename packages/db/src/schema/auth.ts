@@ -6,6 +6,7 @@
 // [Sync] 2026-09-27: fence source continuation grants to one dispatching task-result claim.
 // [Sync] 2026-09-16: bind background Reflections Gateway grants to their live task authority.
 // [Sync] 2026-09-16: add optional Story confirmation claim bindings to existing Runtime delegations.
+// [Sync] 2026-10-09: allow the images:create scope for gateway-cli runtime delegations.
 import { sql } from "drizzle-orm";
 import { bigint, boolean, check, foreignKey, index, jsonb, pgSchema, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { adminUsers, gatewayApiKeys, users } from "./index.js";
@@ -144,7 +145,7 @@ export const runtimeDelegations = identity.table("runtime_delegations", {
   )`),
   check("runtime_delegations_purpose_check", sql`(${table.purpose} IS NULL AND ${table.editorSessionId} IS NULL) OR (${table.purpose} IS NOT NULL AND cardinality(${table.scopes}) > 0 AND array_position(${table.scopes}, NULL) IS NULL AND (
     (${table.purpose} = 'server-persistence' AND ${table.editorSessionId} IS NULL AND ${table.gatewayApiKeyId} IS NULL AND ${table.scopes} <@ ARRAY['dream:read','dream:write']::text[]) OR
-    (${table.purpose} = 'gateway-cli' AND ${table.editorSessionId} IS NULL AND ${table.gatewayApiKeyId} IS NOT NULL AND ${table.scopes} <@ ARRAY['messages:create','messages:count_tokens','models:list']::text[]) OR
+    (${table.purpose} = 'gateway-cli' AND ${table.editorSessionId} IS NULL AND ${table.gatewayApiKeyId} IS NOT NULL AND ${table.scopes} <@ ARRAY['messages:create','messages:count_tokens','models:list','images:create']::text[]) OR
     (${table.purpose} = 'editor-stdio' AND ${table.editorSessionId} IS NOT NULL AND ${table.gatewayApiKeyId} IS NULL AND ${table.scopes} <@ ARRAY['editor:read','editor:write']::text[])
   ))`),
 ]);

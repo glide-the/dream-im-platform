@@ -1,5 +1,10 @@
 "use client";
 
+// [Input] Admin-selected Gateway key name, user binding, and delegated scopes.
+// [Output] Strict key-create command including the optional Images invocation scope.
+// [Pos] Gateway key form; server-side RBAC and scope validation remain authoritative.
+// [Sync] 2026-10-09: expose images:create for explicitly authorized callers.
+
 import { useCreate } from "@refinedev/core";
 import { FormEvent, useState } from "react";
 
@@ -7,6 +12,7 @@ const gatewayScopes = [
   ["messages:create", "Claude Messages"],
   ["chat:create", "OpenAI Chat"],
   ["models:list", "模型列表"],
+  ["images:create", "图像生成与编辑"],
 ] as const;
 
 export default function GatewayKeyForm() {

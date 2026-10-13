@@ -1,11 +1,14 @@
+// [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
 // [Input] Authenticated request context, selected model, and numeric/provider-aware token estimate.
 // [Output] A context-checked reservation or existing replay/rejection response.
 // [Pos] Gateway preparation; model resolution selects the estimator protocol before reservation.
 // [Sync] 2026-09-13: allow image estimates to depend on the resolved Provider protocol.
+// [Sync] 2026-10-09: share only the existing minimum reserve policy with direct Images reservations.
 
 import { estimateReservation } from "../billing/money";
 import type { AiProviderProtocol } from "../billing/types";
 import { resolveBillableModel } from "../models/resolver";
+import { validateNativeImageHistory } from "./protocol-adapters";
 import { authenticateGatewayRequest, type GatewayPrincipal } from "./auth";
 import { GatewayError } from "./errors";
 import {
@@ -18,8 +21,10 @@ import {
   beginGatewayRequest,
   type BeginGatewayRequestResult,
 } from "./repository";
+import { prepareConversationImageTurn, type NativeImageTurn } from "./image-conversation-turn";
+import type { ImageTurnContext } from "./image-turn-receipts";
 
-function minimumReserveMicrousd() {
+export function minimumGatewayReserveMicrousd() {
   const raw = process.env.GATEWAY_MIN_RESERVE_MICROUSD;
   if (!raw) return 0;
   const parsed = Number(raw);
@@ -46,6 +51,9 @@ export type PreparedGatewayRequest = {
   requestId: string;
   effectiveMaxOutputTokens: number;
   estimatedTokens: number;
+  imageTurnContext?: ImageTurnContext;
+  nativeImageTurn?: NativeImageTurn;
+  conversationBody?: Record<string, unknown>;
 };
 
 export type PrepareGatewayRequestResult =
@@ -74,6 +82,7 @@ export async function prepareGatewayRequest(input: {
   requestedMaxOutputTokens?: number | null;
   outputChoices?: number;
   requestCapture?: GatewayRequestCapture;
+  imageConversation?: { turnKey: string; body: Record<string, unknown> };
 }): Promise<PrepareGatewayRequestResult> {
   if (typeof input.estimatedInputTokens !== "function") {
     validateInputTokenEstimate(input.estimatedInputTokens);
@@ -87,6 +96,9 @@ export async function prepareGatewayRequest(input: {
     requestedModel: input.requestedModel,
     protocol: input.protocol,
   });
+  if (input.protocol === "anthropic" && input.requestCapture?.body) await validateNativeImageHistory(input.requestCapture.body);
+  const imagePlan = input.imageConversation ? await prepareConversationImageTurn({ principal, resolved,
+    turnKey: input.imageConversation.turnKey, body: input.imageConversation.body }) : undefined;
   const estimatedInputTokens = typeof input.estimatedInputTokens === "function"
     ? input.estimatedInputTokens(resolved.provider.protocol)
     : input.estimatedInputTokens;
@@ -118,7 +130,9 @@ export async function prepareGatewayRequest(input: {
       "invalid_request_error",
     );
   }
-  const estimatedTokens = estimatedInputTokens + estimatedOutputTokens;
+  const imageTokens = imagePlan?.native ? imagePlan.native.inputImages * (resolved.model.imageInputTokenReservePerImage ?? 0)
+    + (resolved.model.imageOutputTokenReservePerImage ?? 0) : 0;
+  const estimatedTokens = estimatedInputTokens + estimatedOutputTokens + imageTokens;
   if (!Number.isSafeInteger(estimatedTokens)) {
     throw new GatewayError(
       "REQUEST_TOKEN_ESTIMATE_INVALID",
@@ -131,7 +145,7 @@ export async function prepareGatewayRequest(input: {
     estimatedInputTokens,
     maxOutputTokens: estimatedOutputTokens,
     pricing: resolved.pricing,
-    minimumReserveMicrousd: minimumReserveMicrousd(),
+    minimumReserveMicrousd: minimumGatewayReserveMicrousd(),
   });
   const result = await beginGatewayRequest({
     principal,
@@ -143,6 +157,10 @@ export async function prepareGatewayRequest(input: {
     reservationMicrousd,
     estimatedTokens,
     requiredScope: input.requiredScope,
+    disablePayloadCapture: Boolean(imagePlan?.native),
+    imageExecution: imagePlan?.native ? { context: imagePlan.context, claim: {
+      operation: imagePlan.native.selection.operation as "native_generate" | "native_edit", selected_model: input.requestedModel,
+      selection_call_id: imagePlan.native.selection.source_call_id } } : undefined,
     limits: {
       requestsPerMinute: resolved.limits.requestsPerMinute,
       dailyTokenLimit: optionalMinimum(
@@ -159,7 +177,7 @@ export async function prepareGatewayRequest(input: {
   // repository has already created its gateway_requests row, so capture the
   // exact request before returning the policy/billing error. Replays point at
   // an older request and must never overwrite that request's original body.
-  if (input.requestCapture && result.kind !== "replay") {
+  if (input.requestCapture && result.kind !== "replay" && !imagePlan?.native) {
     await safePayloadWrite(
       recordGatewayRequestPayload({
         requestId: result.requestId,
@@ -180,6 +198,9 @@ export async function prepareGatewayRequest(input: {
       requestId: result.requestId,
       effectiveMaxOutputTokens,
       estimatedTokens,
+      imageTurnContext: imagePlan?.context,
+      nativeImageTurn: imagePlan?.native,
+      conversationBody: imagePlan?.body,
     },
   };
 }

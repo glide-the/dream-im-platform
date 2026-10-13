@@ -4,6 +4,7 @@
 // [Sync] 2026-09-04: add the account-scoped ChatGPT Codex catalog with an isolated bounded byte budget.
 // [Sync] 2026-10-05: use the explicit wire client version while preserving OAuth registration ownership.
 // [Sync] 2026-10-05: account quota uses this adapter's named config and owned OAuth account header.
+// [Sync] 2026-10-09: expose separately owned Codex Images endpoints and managed headers.
 
 import type { CodexDeploymentConfigInput, ResolvedCodexConfig } from "./config";
 import { providerReadiness, resolveProviderConfig } from "./config";
@@ -38,6 +39,7 @@ import type {
   DeviceFlowState,
   DevicePollResult,
   DeviceStartResult,
+  ImageResourceContractResult,
   ProviderProductAdapter,
   ProviderCatalogModel,
   ProviderModelCatalogResult,
@@ -454,6 +456,49 @@ export class CodexProviderAdapter implements ProviderProductAdapter {
                   version: config.resourceClientVersion,
                   "user-agent": config.userAgent,
                   "content-type": "application/json",
+                }),
+              };
+            } catch (error) {
+              return operationFailure(this.product, error);
+            }
+          },
+        },
+      };
+    } catch (error) {
+      return operationFailure(this.product, error);
+    }
+  }
+
+  getImageResourceContract(): ImageResourceContractResult {
+    try {
+      const config = this.config();
+      return {
+        status: "ready",
+        product: this.product,
+        contract: {
+          product: this.product,
+          generationsUrl: config.endpoints.imageGenerations,
+          editsUrl: config.endpoints.imageEdits,
+          managedHeaderNames: [
+            "authorization",
+            "chatgpt-account-id",
+            "originator",
+            "version",
+            "user-agent",
+            "x-codex-image-turn-id",
+          ],
+          buildHeaders: (bundle) => {
+            try {
+              assertProduct(this.product, bundle.product);
+              const current = bundle as CodexTokenBundle;
+              return {
+                status: "ready",
+                headers: new Headers({
+                  authorization: `Bearer ${current.accessToken}`,
+                  "chatgpt-account-id": current.identity.chatgptAccountId,
+                  originator: config.integrationId,
+                  version: config.resourceClientVersion,
+                  "user-agent": config.userAgent,
                 }),
               };
             } catch (error) {

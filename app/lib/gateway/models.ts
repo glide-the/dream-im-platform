@@ -1,13 +1,20 @@
+// [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
+// [Sync] 2026-10-10: separate Image Settings ownership and fail closed on unimplemented Responses images.
+// [Sync] 2026-10-10: preserve existing allowance-only text eligibility while retaining independent Images authorization.
 // [Sync] 2026-10-05: catalog readiness uses the effective same-model pool instead of a disabled default alone.
 // [Input] Authenticated Gateway subject plus Admin-owned model, Provider auth, and billing PostgreSQL state.
 // [Output] Strict callable model catalog with product adapter/auth readiness and server-only runtime settings.
 // [Pos] Public Gateway catalog consumed by Dream; credentials and upstream account identity remain excluded.
 // [Sync] 2026-09-04: managed readiness follows the Provider's directly owned credential pointer.
+// [Sync] 2026-10-09: publish endpoint-specific Messages, Chat, and Images availability without secrets.
+// [Sync] 2026-10-11: include declared Codex hosted image capabilities without enabling them by adapter name.
 
 import { withPlatformClient } from "../platform-db";
 import { claudeCodeRuntimeCapabilityAvailable } from "../db/claude-code-runtime-capability";
 import { authenticateGatewayRequest } from "./auth";
 import { GatewayError, gatewayErrorResponse } from "./errors";
+import { modelSupportsConversation } from "./image-policy";
+import { imageTurnCapabilityAvailable } from "../db/image-turn-capability";
 
 export type ModelAvailability =
   | "included"
@@ -23,11 +30,19 @@ export type ModelCatalogRow = {
   protocol: "anthropic" | "openai";
   context_window: number | null;
   max_output_tokens: number | null;
+  image_input_token_reserve_per_image: number | null;
+  image_output_token_reserve_per_image: number | null;
   claude_code_auto_compact_window: number | null;
   claude_code_max_context_tokens: number | null;
   capabilities: Record<string, boolean> | null;
   provider_ready: boolean;
   pricing_ready: boolean;
+  image_pricing_ready: boolean;
+  image_provider_ready: boolean;
+  responses_image_provider_ready?: boolean;
+  messages_entitled: boolean;
+  chat_entitled: boolean;
+  images_entitled: boolean;
   subscription_id: string | null;
   subscription_status: string | null;
   current_period_start: Date | null;
@@ -95,12 +110,19 @@ export async function listAvailableGatewayModels(input: {
         true,
       );
     }
+    const nativeContractReady = await imageTurnCapabilityAvailable(client);
     const { rows } = await client.query<ModelCatalogRow>(
       `SELECT model.code, model.display_name, provider.protocol,
               model.context_window, model.max_output_tokens,
+              model.image_input_token_reserve_per_image,
+              model.image_output_token_reserve_per_image,
               model.claude_code_auto_compact_window,
               model.claude_code_max_context_tokens,
               model.capabilities,
+              (provider.protocol = 'openai'
+               AND (provider.adapter_kind = 'codex' OR (provider.adapter_kind = 'generic'
+                 AND provider.config @> '{"openaiApi":"responses"}'::jsonb))
+               AND route_policy.effective IS NULL) AS responses_image_provider_ready,
               CASE WHEN route_policy.effective IS NOT NULL THEN EXISTS (
                 SELECT 1 FROM ai_model_route_targets target JOIN ai_providers candidate ON candidate.id = target.provider_id
                 JOIN ai_models supply ON supply.provider_id = candidate.id AND supply.upstream_model = target.upstream_model
@@ -151,6 +173,48 @@ export async function listAvailableGatewayModels(input: {
                   AND pricing.effective_from <= NOW()
                   AND (pricing.effective_to IS NULL OR pricing.effective_to > NOW())
               ) AS pricing_ready,
+              EXISTS (
+                SELECT 1 FROM ai_pricing_rules AS image_pricing
+                WHERE image_pricing.model_id = model.id
+                  AND image_pricing.status = 'active'
+                  AND image_pricing.user_tier IN ($2, 'default')
+                  AND image_pricing.effective_from <= NOW()
+                  AND (image_pricing.effective_to IS NULL OR image_pricing.effective_to > NOW())
+                  AND image_pricing.image_output_price_microusd_per_million IS NOT NULL
+                  AND (
+                    COALESCE((model.capabilities ->> 'image_edit')::boolean, FALSE) = FALSE
+                    OR image_pricing.image_input_price_microusd_per_million IS NOT NULL
+                  )
+              ) AS image_pricing_ready,
+              (
+                provider.adapter_kind = 'codex'
+                OR (
+                  provider.adapter_kind = 'generic'
+                  AND provider.protocol = 'openai'
+                  AND provider.config @> '{"imageApi":{"kind":"openai"}}'::jsonb
+                )
+              ) AS image_provider_ready,
+              EXISTS (
+                SELECT 1 FROM subscription_plan_entitlements AS message_scope
+                WHERE message_scope.plan_version_id = version.id
+                  AND message_scope.model_id = model.id
+                  AND message_scope.enabled = TRUE
+                  AND message_scope.gateway_scopes @> ARRAY['messages:create']::text[]
+              ) AS messages_entitled,
+              EXISTS (
+                SELECT 1 FROM subscription_plan_entitlements AS chat_scope
+                WHERE chat_scope.plan_version_id = version.id
+                  AND chat_scope.model_id = model.id
+                  AND chat_scope.enabled = TRUE
+                  AND chat_scope.gateway_scopes @> ARRAY['chat:create']::text[]
+              ) AS chat_entitled,
+              EXISTS (
+                SELECT 1 FROM subscription_plan_entitlements AS image_scope
+                WHERE image_scope.plan_version_id = version.id
+                  AND image_scope.model_id = model.id
+                  AND image_scope.enabled = TRUE
+                  AND image_scope.gateway_scopes @> ARRAY['images:create']::text[]
+              ) AS images_entitled,
               subscription.id AS subscription_id,
               subscription.status AS subscription_status,
               subscription.current_period_start,
@@ -227,15 +291,35 @@ export async function listAvailableGatewayModels(input: {
     const at = new Date();
     const data = rows.map((row) => {
       const evaluated = evaluateModelAvailability(row, at);
+      const capabilities = row.capabilities ?? {};
+      // Text Gateway accepts allowance-only coverage; a missing per-model
+      // plan row is not a new permission denial. Images keeps its own scope.
+      const textCallable = evaluated.callable && modelSupportsConversation(capabilities);
+      const imageConfigured = Boolean(
+        (capabilities.image_generation || capabilities.image_edit)
+        && row.image_output_token_reserve_per_image
+        && (!capabilities.image_edit || row.image_input_token_reserve_per_image)
+        && row.image_pricing_ready
+        && row.image_provider_ready,
+      );
+      const responsesImageConfigured = Boolean(nativeContractReady && row.responses_image_provider_ready
+        && capabilities.chat === true && capabilities.tools === true
+        && (capabilities.responses_image_generation || capabilities.responses_image_edit)
+        && row.image_output_token_reserve_per_image
+        && (!capabilities.responses_image_edit || row.image_input_token_reserve_per_image));
       return {
         id: row.code,
         display_name: row.display_name,
         protocol: row.protocol,
         context_window: row.context_window,
         max_output_tokens: row.max_output_tokens,
+        image_input_token_reserve_per_image:
+          row.image_input_token_reserve_per_image,
+        image_output_token_reserve_per_image:
+          row.image_output_token_reserve_per_image,
         claude_code_auto_compact_window: row.claude_code_auto_compact_window,
         claude_code_max_context_tokens: row.claude_code_max_context_tokens,
-        capabilities: row.capabilities ?? {},
+        capabilities,
         enabled: true as const,
         callable: evaluated.callable,
         availability: evaluated.availability,
@@ -243,12 +327,38 @@ export async function listAvailableGatewayModels(input: {
         upgrade_hint: evaluated.availability === "upgrade_required" && row.required_plan_code
           ? `View the ${row.required_plan_code} plan`
           : null,
+        endpoint_availability: {
+          // This describes the implemented Messages bridge, not the upstream
+          // vendor's product name or the independent Images checkbox.
+          responses_image: {
+            generation: capabilities.responses_image_generation === true,
+            edit: capabilities.responses_image_edit === true,
+            configured: responsesImageConfigured,
+            entitled: row.messages_entitled || textCallable,
+            callable: textCallable && responsesImageConfigured,
+          },
+          messages: {
+            callable: textCallable,
+            entitled: row.messages_entitled || textCallable,
+          },
+          chat: {
+            callable: textCallable,
+            entitled: row.chat_entitled || textCallable,
+          },
+          images: {
+            callable: evaluated.callable && row.images_entitled && imageConfigured,
+            entitled: row.images_entitled,
+            configured: imageConfigured,
+            generation: capabilities.image_generation === true,
+            edit: capabilities.image_edit === true,
+          },
+        },
       };
     });
     return {
       data,
       defaultModelAlias: rows.find((row, index) =>
-        row.entitlement_is_default && data[index]?.callable)?.code ?? null,
+        row.entitlement_is_default && data[index]?.endpoint_availability.messages.callable)?.code ?? null,
     };
   });
 }

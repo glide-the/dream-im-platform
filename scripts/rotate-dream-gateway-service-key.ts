@@ -4,6 +4,7 @@
 // [Output] Redacted dry-run/apply receipt while atomically rotating the canonical-subject key through Drizzle.
 // [Pos] Release operator entry point; plaintext moves only from the private Dream env into the in-process proof/replace boundary.
 // [Sync] 2026-09-17: add explicit force rotation for compromised same-scope service keys.
+// [Sync] 2026-10-10: include images:create in the deployed Dream service-key target for the Image tool.
 import { randomUUID } from "node:crypto";
 import { lstat, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -79,7 +80,7 @@ if (!currentPlaintextKey || !dreamServiceClientId) throw new Error("DREAM_GATEWA
 const binding = gatewayClientForService(dreamServiceClientId);
 const target = gatewayServiceKeyTargetDto.parse({
   serviceClientId: binding.gateway_client_id,
-  scopes: ["messages:create", "messages:count_tokens", "models:list"],
+  scopes: ["messages:create", "messages:count_tokens", "models:list", "images:create"],
   requestId: arguments_.requestId,
   force: arguments_.force,
 });

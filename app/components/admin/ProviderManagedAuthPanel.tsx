@@ -332,7 +332,8 @@ type ManagedAction =
   | { kind: "retry-revocation" }
   | { kind: "sync-models" };
 
-export default function ProviderManagedAuthPanel({ providerId }: { providerId: string }) {
+// [Sync] 2026-10-10: Image account connection stays in its center instead of redirecting to text catalog review.
+export default function ProviderManagedAuthPanel({ providerId, imageMode = false }: { providerId: string; imageMode?: boolean }) {
   const router = useRouter();
   const [view, setView] = useState<ProviderManagedAuthView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -428,14 +429,16 @@ export default function ProviderManagedAuthPanel({ providerId }: { providerId: s
           `/api/admin/provider-auth-attempts/${encodeURIComponent(attempt.id)}/poll`,
           { method: "POST", body: JSON.stringify({ expectedRevision: attempt.revision }) },
         );
-        if (result.catalogSync?.status === "succeeded") {
+        if (imageMode && result.status === "succeeded") {
+          setMessage("账号已连接，可返回 Image 模型中心配置图像模型。");
+        } else if (!imageMode && result.catalogSync?.status === "succeeded") {
           setMessage(
             `账号已连接，已获取 ${result.catalogSync.discoveredCount} 个可用模型；请确认差异后应用。`,
           );
           router.push(
             `/admin/models/providers/${encodeURIComponent(providerId)}/discover/${encodeURIComponent(result.catalogSync.snapshotId)}`,
           );
-        } else if (result.catalogSync?.status === "failed") {
+        } else if (!imageMode && result.catalogSync?.status === "failed") {
           setMessage("账号已连接，但模型目录自动同步未完成；可点击“同步模型”重试。");
         }
       } else if (action.kind === "cancel" && attempt) {
@@ -507,7 +510,7 @@ export default function ProviderManagedAuthPanel({ providerId }: { providerId: s
       actionInFlight.current = false;
       setPendingAction(null);
     }
-  }, [pendingAction, providerId, refresh, request, router, view]);
+  }, [imageMode, pendingAction, providerId, refresh, request, router, view]);
 
   const attempt = view ? managedAuthAttempt(view) : null;
   const nextPollCountdown = managedAuthCountdown(attempt?.nextPollAt ?? null, clock);
@@ -613,14 +616,14 @@ export default function ProviderManagedAuthPanel({ providerId }: { providerId: s
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button
+                {!imageMode ? <button
                   type="button"
                   disabled={Boolean(pendingAction)}
                   onClick={() => void run({ kind: "sync-models" })}
                   className="min-h-10 border border-accent/35 bg-accent-light px-3 text-xs font-semibold text-accent disabled:opacity-40"
                 >
                   {pendingAction === "sync-models" ? "同步中…" : "同步模型"}
-                </button>
+                </button> : null}
                 <button
                   type="button"
                   disabled={Boolean(pendingAction)}
@@ -640,7 +643,7 @@ export default function ProviderManagedAuthPanel({ providerId }: { providerId: s
 
         <p className="mt-4 text-xs text-text-tertiary">
           需要接入另一个 {PRODUCT_LABELS[view.provider.adapterKind]} 账号？
-          <Link className="ml-1 font-semibold text-accent underline underline-offset-2" href="/admin/models/providers/new">
+          <Link className="ml-1 font-semibold text-accent underline underline-offset-2" href={imageMode ? "/admin/image-models/providers/new" : "/admin/models/providers/new"}>
             新建 Provider
           </Link>
         </p>

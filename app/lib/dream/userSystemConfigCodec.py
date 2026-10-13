@@ -1,3 +1,4 @@
+# [Sync] 2026-10-10: merge the dedicated image_model command into the existing preference column.
 # [Input] Fixed read/merge action, raw stored JSON and closed normalized patch from Admin service.
 # [Output] Python JSON config preserving integer/float/negative-zero/Unicode and unknown stored keys.
 # [Pos] Pure server codec candidate; no imports of Dream, database, environment, filesystem or network.
@@ -19,7 +20,7 @@ def execute(request):
         raise ValueError("invalid config")
     if request["action"] == "merge":
         patch = request["patch"]
-        keys = {"model", "provider", "system_prompt", "workspace_enabled", "sandbox_network_mode", "sandbox_network_allowed_domains", "sandbox_fs_allowed_write_paths", "im_full_access_enabled", "theme", "env_vars"}
+        keys = {"image_model", "model", "provider", "system_prompt", "workspace_enabled", "sandbox_network_mode", "sandbox_network_allowed_domains", "sandbox_fs_allowed_write_paths", "im_full_access_enabled", "theme", "env_vars"}
         if not isinstance(patch, dict) or not set(patch).issubset(keys):
             raise ValueError("invalid config")
         value.update(patch)

@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: verify independent Image Settings and fail-closed native capability separation.
 // [Input] Configured service, live OAuth and closed user SystemConfig envelopes with captured codec/UOW seams.
 // [Output] Exact read/write scopes, null entity actor and same-UOW write receipt/audit execution.
 // [Pos] Registered handler gate; no public Route, PostgreSQL, Runtime or user-selected codec.
@@ -33,6 +34,7 @@ afterEach(() => vi.unstubAllEnvs());
 it.each([
   ["user-system-config.get", {}, "dream:read", { config_json: "{}" }, false],
   ["user-system-config.patch", { theme: "dark" }, "dream:write", { success: true }, true],
+  ["user-system-config.patch-image-model", { image_model: "image-a" }, "dream:write", { success: true }, true],
 ] as const)("executes %s with exact OAuth authority and receipt semantics", async (name, input, scope, output, wrapped) => {
   const response = await handleUserSystemConfig(request(input), name, codec); expect(response.status).toBe(200); expect(await response.json()).toEqual({ data: output, request_id: "original" });
   expect(mocks.transaction.mock.calls[0][0]).toEqual([identitySchemaRequirement, ...userSystemConfigSchemaRequirements]);

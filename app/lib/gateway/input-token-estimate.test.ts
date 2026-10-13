@@ -85,3 +85,12 @@ describe("protocol-aware input token estimate", () => {
     expect(() => estimateInputTokens("anthropic", input)).toThrow("outside the supported range");
   });
 });
+it.each(['anthropic','openai'] as const)('estimates validated native history visually for %s without altering its payload', provider => {
+  const input=(length:number)=>({messages:[{role:'assistant',content:[{type:'server_tool_use',id:'ig_actual',name:'image_generation',input:{}},
+    {type:'image_generation_tool_result',tool_use_id:'ig_actual',content:[image(length)]},{type:'text',text:'Completed'}]},{role:'user',content:[{type:'text',text:'Describe the previous image'}]}]});
+  const large=input(1_398_104), before=JSON.stringify(large), options={nativeImageHistory:true};
+  expect(estimateInputTokens('anthropic',large,provider,options)).toBe(estimateInputTokens('anthropic',input(4),provider,options));
+  expect(estimateInputTokens('anthropic',large,provider,options)).toBeGreaterThanOrEqual(4784);
+  expect(estimateInputTokens('anthropic',large,provider,options)).toBeLessThan(6000);
+  expect(JSON.stringify(large)).toBe(before);
+});

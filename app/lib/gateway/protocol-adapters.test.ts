@@ -1,6 +1,11 @@
+// [Input] Explicit Provider API configuration and controlled protocol responses.
+// [Output] Regression evidence for selected wire dialect and preserved compatibility.
+// [Pos] Provider-free Gateway protocol contracts.
+// [Sync] 2026-10-10: cover explicit generic Responses selection, original defaults and fail-closed ownership.
 import { describe, expect, it } from "vitest";
 import {
   adaptProviderRequest,
+  adaptProviderResponse,
   anthropicRequestToOpenAI,
   anthropicResponseToOpenAI,
   openAIRequestToAnthropic,
@@ -74,4 +79,19 @@ describe("explicit Anthropic/OpenAI protocol adapters", () => {
     const result = anthropicResponseToOpenAI({ id: "msg_1", model: "claude", stop_reason: "max_tokens", content: [{ type: "thinking", thinking: "reason" }, { type: "text", text: "answer" }, { type: "tool_use", id: "toolu_1", name: "write", input: { x: 1 } }], usage: { input_tokens: 6, output_tokens: 5, cache_read_input_tokens: 4, cache_creation_input_tokens: 2 } }, "alias");
     expect(result).toMatchObject({ choices: [{ finish_reason: "length", message: { content: "answer", reasoning_content: "reason", tool_calls: [{ id: "toolu_1" }] } }], usage: { prompt_tokens: 12, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 4, cache_write_tokens: 2 } } });
   });
+  it("uses generic Responses only when explicitly configured and preserves ordinary tools and images", () => {
+    const input = { externalProtocol: "anthropic" as const, providerProtocol: "openai" as const,
+      body: { messages: [{ role: "user", content: [{ type: "text", text: "hello" }, { type: "image", source: { type: "base64", media_type: "image/png", data: "aGVsbG8=" } }] }],
+        tools: [{ name: "search", input_schema: { type: "object" } }], stream: false }, model: "upstream", maxOutputTokens: 64 };
+    expect(adaptProviderRequest(input)).toHaveProperty("messages");
+    const responses = adaptProviderRequest({ ...input, providerConfig: { openaiApi: "responses" } });
+    expect(responses).toMatchObject({ store: false, stream: false, max_output_tokens: 64, tools: [{ type: "function", name: "search" }] });
+    expect(responses).not.toHaveProperty("messages");
+    expect(JSON.stringify(responses)).toContain('"type":"input_image"');
+    expect(JSON.stringify(responses)).not.toContain('"type":"image_generation"');
+    expect(adaptProviderResponse({ externalProtocol: "anthropic", providerProtocol: "openai", providerConfig: { openaiApi: "responses" }, requestedModel: "alias", body: {
+      id: "resp_generic", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "answer" }] }], usage: { input_tokens: 7, output_tokens: 2 },
+    } })).toMatchObject({ id: "resp_generic", content: [{ type: "text", text: "answer" }], usage: { input_tokens: 7, output_tokens: 2 } });
+  });
+
 });

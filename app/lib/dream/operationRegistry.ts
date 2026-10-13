@@ -1,3 +1,7 @@
+// [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
+// [Sync] 2026-10-10: register exact image-turn bind/select and original entity-bound receipt recovery.
+// [Sync] 2026-10-11: image-turn discovery remains conditional on its published capability and existing identity/domain requirements.
+// [Sync] 2026-10-10: separate Image Settings ownership and fail closed on unimplemented Responses images.
 // [Sync] 2026-10-07: append scheduled Thread activity after all existing operations, preserving every prior descriptor.
 // [Sync] 2026-10-07: append scheduled Chat v2 interval, Editor-target and reconciliation operations while retaining the frozen v1 prefix.
 // [Sync] 2026-10-07: append scheduled Chat v3 recurrence, Thread-mode/model snapshot operations after the frozen v1/v2 descriptors.
@@ -57,7 +61,9 @@ import { dreamLaunchReplayOperationContracts, dreamLaunchSourceOperationContract
 import { dreamLaunchDispatchOperationContracts } from "./dreamLaunchDispatchDto";
 import { workspaceDefaultOperationContracts } from "./workspaceDefaultDto";
 import { dreamLaunchFailureOperationContracts } from "./dreamLaunchFailureDto";
-import { userSystemConfigOperationContracts } from "./userSystemConfigDto";
+import { userSystemConfigOperationContracts, userImageModelOperationContracts } from "./userSystemConfigDto";
+import { imageTurnOperationContracts } from "./imageTurnDto";
+import { imageTurnSchemaRequirements } from "./imageTurnService";
 import { userSystemConfigSchemaRequirements } from "./userSystemConfigService";
 import { threadSystemConfigOperationContracts } from "./threadSystemConfigDto";
 import { threadSystemConfigSchemaRequirements } from "./threadSystemConfigService";
@@ -271,4 +277,11 @@ export const dreamOperations = [
     [identitySchemaRequirement, ...chatScheduledTaskV2SchemaRequirements], "dream:read"),
   descriptor("scheduled-task.v3.thread", "read", null, scheduledTaskThreadInputDto, scheduledTaskThreadV3ResultDto,
     [identitySchemaRequirement, ...chatScheduledTaskV3SchemaRequirements], "dream:read"),
+  ...Object.entries(userImageModelOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...userSystemConfigSchemaRequirements], operation.userScope,
+  )),
+  ...Object.entries(imageTurnOperationContracts).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output, imageTurnSchemaRequirements, operation.userScope,
+  )),
 ] as const;

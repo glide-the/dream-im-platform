@@ -1,4 +1,9 @@
-import { describe, expect, it } from "vitest";
+// [Input] JSON Gateway requests, chunked bodies, idempotency keys, and strict schemas.
+// [Output] Regression evidence for bounded parsing, stable hashing, and validation errors.
+// [Pos] Provider-free unit contract for the shared Gateway request-body boundary.
+// [Sync] 2026-10-09: reject chunked JSON bodies that exceed the configured byte limit.
+
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { GatewayError } from "./errors";
 import {
@@ -38,6 +43,24 @@ describe("gateway request body", () => {
         z.unknown(),
       ),
     ).rejects.toMatchObject({ code: "REQUEST_BODY_TOO_LARGE" });
+
+    vi.stubEnv("GATEWAY_MAX_BODY_BYTES", "1024");
+    const chunk = new Uint8Array(700).fill(0x20);
+    const chunked = new Request("http://localhost", {
+      method: "POST",
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(chunk);
+          controller.enqueue(chunk);
+          controller.close();
+        },
+      }),
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    await expect(parseGatewayJson(chunked, z.unknown())).rejects.toMatchObject({
+      code: "REQUEST_BODY_TOO_LARGE",
+    });
+    vi.unstubAllEnvs();
   });
 
   it("validates idempotency keys and returns a conservative estimate", () => {

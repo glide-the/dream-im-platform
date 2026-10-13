@@ -1,5 +1,12 @@
 "use client";
 
+// [Input] Existing price-version resources, permissions, and optional Image-only context.
+// [Output] Shared effective/revisioned pricing timeline with Image Token dimensions when relevant.
+// [Pos] AI model-center pricing UI; price validation and persistence remain server-owned.
+// [Sync] 2026-10-10: retain Image Pricing creation/replacement within its independent center.
+// [Sync] 2026-10-09: distinguish platform settlement prices from optional upstream reference evidence.
+// [Sync] 2026-10-10: enable scoped models.dev discovery in both model centers.
+
 import { type CrudFilter, useCan, useInvalidate, useList } from "@refinedev/core";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -15,6 +22,13 @@ function usd(value: unknown) {
   } catch {
     return "—";
   }
+}
+
+function imagePricingBasisLabel(value: unknown, source: unknown) {
+  if (value === "openai_api_usd") return "OpenAI API USD";
+  if (value === "codex_reference_api_usd") return "Codex · API 参考价";
+  if (value === "codex_managed_usd_contract") return "Codex · 独立 USD 合同";
+  return source === "models.dev" ? "models.dev 参考价" : "平台配置价";
 }
 
 function localDateTime(value: unknown) {
@@ -67,7 +81,7 @@ function PricingEndDialog({
       <div className="admin-dialog-frame">
         <header className="admin-dialog-header"><div><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary">Pricing lifecycle</p><h2 className="mt-2 font-display text-2xl font-semibold">结束价格版本</h2><p className="mt-2 font-mono text-[11px] text-text-tertiary">{String(record.model_code)} · {String(record.user_tier)}</p></div><button type="button" onClick={onClose} className="min-h-11 border border-border px-4 text-sm">关闭</button></header>
         <div className="admin-dialog-body space-y-5">
-          <p className="border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary">历史四类 Token 价格和生效时间不会被修改。此操作只关闭当前有效窗口；调价请创建新版本。</p>
+          <p className="border border-warning/40 bg-accent-orange-light p-4 text-sm leading-6 text-text-secondary">历史 Token 价格和生效时间不会被修改。此操作只关闭当前有效窗口；调价请创建新版本。</p>
           <label className="block text-xs font-semibold text-text-secondary">结束状态<select className="admin-field mt-2 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}><option value="disabled">停用</option><option value="active">保持 active，仅设置结束时间</option></select></label>
           <label className="block text-xs font-semibold text-text-secondary">结束时间 *<input type="datetime-local" className="admin-field mt-2 text-sm" value={effectiveTo} onChange={(event) => setEffectiveTo(event.target.value)} required /></label>
           {error ? <p className="border border-danger/35 bg-danger-light p-3 text-sm text-danger" role="alert">{error}</p> : null}
@@ -78,8 +92,9 @@ function PricingEndDialog({
   );
 }
 
-export default function AIPricingTimeline() {
+export default function AIPricingTimeline({ imageOnly = false }: { imageOnly?: boolean }) {
   const router = useRouter();
+  const centerPath = imageOnly ? "/admin/image-models" : "/admin/models";
   const pageSize = 20;
   const invalidate = useInvalidate();
   const access = useCan({ resource: "pricing-rules", action: "create" });
@@ -94,7 +109,8 @@ export default function AIPricingTimeline() {
     model && { field: "model_code", operator: "contains" as const, value: model },
     tier && { field: "user_tier", operator: "eq" as const, value: tier },
     status && { field: "status", operator: "eq" as const, value: status },
-  ].filter(Boolean) as CrudFilter[], [model, status, tier]);
+    imageOnly && { field: "image_capable", operator: "eq" as const, value: "true" },
+  ].filter(Boolean) as CrudFilter[], [imageOnly, model, status, tier]);
   const { result, query } = useList<Record<string, unknown>>({ resource: "pricing-rules", pagination: { currentPage: page, pageSize }, sorters: [{ field: "effective_from", order: "desc" }], filters });
   async function refresh() {
     await invalidate({ resource: "pricing-rules", invalidates: ["list", "detail"] });
@@ -107,11 +123,11 @@ export default function AIPricingTimeline() {
       const response = await fetch("/api/admin/pricing-sync", {
         method: "POST",
         headers: { accept: "application/json", "content-type": "application/json" },
-        body: JSON.stringify({ force: true }),
+        body: JSON.stringify({ force: true, ...(imageOnly ? { imageOnly: true } : {}) }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body.data?.id) throw new Error(body.error?.message ?? "models.dev 同步失败");
-      router.push(`/admin/models/pricing/sync/${encodeURIComponent(String(body.data.id))}`);
+      router.push(`${centerPath}/pricing/sync/${encodeURIComponent(String(body.data.id))}`);
     } catch (caught) {
       setSyncError(caught instanceof Error ? caught.message : "models.dev 同步失败");
     } finally {
@@ -120,13 +136,13 @@ export default function AIPricingTimeline() {
   }
   return (
     <section className="admin-panel overflow-hidden">
-      <AdminListHeader eyebrow="Versioned model pricing" title="模型定价" description="cc-switch 四类 Token 配置方式；PostgreSQL 中只追加价格版本。" actions={access.data?.can ? <div className="flex flex-wrap gap-2"><button type="button" disabled={syncing} onClick={syncModelsDev} className="min-h-11 border border-accent/35 bg-accent-light px-4 text-sm font-semibold text-accent disabled:opacity-50">{syncing ? "同步中…" : "↻ models.dev 同步"}</button><Link href="/admin/models/pricing/new" className="inline-flex min-h-11 items-center bg-accent px-4 text-sm font-semibold text-white">＋ 创建价格版本</Link></div> : null} />
+      <AdminListHeader eyebrow="Versioned model pricing" title={imageOnly ? "图像 Token 定价" : "模型定价"} description={imageOnly ? "分别配置文本输入、图像输入与图像输出的 USD / 1M Token；历史版本只追加。" : "cc-switch 四类 Token 配置方式；PostgreSQL 中只追加价格版本。"} actions={access.data?.can ? <div className="flex flex-wrap gap-2"><button type="button" disabled={syncing} onClick={syncModelsDev} className="min-h-11 border border-accent/35 bg-accent-light px-4 text-sm font-semibold text-accent disabled:opacity-50">{syncing ? "同步中…" : "↻ models.dev 同步"}</button><Link href={`${centerPath}/pricing/new${imageOnly ? "?kind=image" : ""}`} className="inline-flex min-h-11 items-center bg-accent px-4 text-sm font-semibold text-white">＋ 创建价格版本</Link></div> : null} />
       {syncError ? <div className="m-4 border border-danger/35 bg-danger-light p-4 text-sm text-danger" role="alert"><p className="font-semibold">价格目录同步失败</p><p className="mt-1">{syncError}</p></div> : null}
       <AdminCollapsibleFilters activeCount={countActiveFilterValues({ model, tier, status })}>
         <div className="grid gap-3 sm:grid-cols-3"><input className="admin-field text-sm" value={model} onChange={(event) => { setModel(event.target.value); setPage(1); }} placeholder="模型 alias" aria-label="筛选模型 alias" /><input className="admin-field text-sm" value={tier} onChange={(event) => { setTier(event.target.value); setPage(1); }} placeholder="用户层级" aria-label="筛选用户层级" /><select className="admin-field text-sm" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} aria-label="筛选价格状态"><option value="">全部状态</option><option value="active">Active</option><option value="disabled">Disabled</option></select></div>
       </AdminCollapsibleFilters>
       {query.error ? <div className="m-4 border border-danger/35 bg-danger-light p-4 text-sm text-danger" role="alert">{query.error.message}</div> : null}
-      <div className="max-w-full overflow-x-auto"><table className="min-w-[1080px] w-full text-left text-sm"><thead><tr className="border-b border-border bg-bg-secondary/45">{["模型 / Tier", "Input", "Output", "Cache read", "Cache write", "Markup / Discount", "生效窗口", "状态", "操作"].map((label) => <th key={label} className="whitespace-nowrap px-4 py-3 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">{label}</th>)}</tr></thead><tbody>{query.isLoading ? Array.from({ length: 5 }).map((_, index) => <tr key={index}><td colSpan={9} className="border-b border-border px-4 py-4"><span className="block h-4 animate-pulse bg-bg-secondary" /></td></tr>) : result.data.map((row) => <tr key={String(row.id)} className="border-b border-border"><td className="px-4 py-4"><span className="block font-semibold">{String(row.model_code)}</span><span className="mt-1 block font-mono text-[10px] text-text-tertiary">{String(row.user_tier)} · {String(row.source ?? "manual")}</span></td>{["input_price_microusd_per_million", "output_price_microusd_per_million", "cache_read_price_microusd_per_million", "cache_write_price_microusd_per_million"].map((key) => <td key={key} className="px-4 py-4 font-mono text-xs">{usd(row[key])}<span className="mt-1 block text-[9px] text-text-tertiary">/ 1M</span></td>)}<td className="px-4 py-4 font-mono text-xs">{Number(row.markup_bps ?? 0) / 100}% / {Number(row.discount_bps ?? 0) / 100}%</td><td className="px-4 py-4 text-xs"><span className="block">{new Date(String(row.effective_from)).toLocaleString("zh-CN")}</span><span className="mt-1 block text-text-tertiary">至 {row.effective_to ? new Date(String(row.effective_to)).toLocaleString("zh-CN") : "持续有效"}</span></td><td className="px-4 py-4"><span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${row.status === "active" ? "border-success/35 bg-success-light text-success" : "border-border bg-bg-secondary text-text-tertiary"}`}>{String(row.status)}</span></td><td className="px-4 py-4"><div className="flex gap-2">{row.status === "active" && !row.effective_to ? <Link href={`/admin/models/pricing/new?replaces=${encodeURIComponent(String(row.id))}`} className="inline-flex min-h-10 items-center rounded-xl bg-text-primary px-3 text-xs font-semibold text-bg-surface">新版本</Link> : null}{row.status === "active" && !row.effective_to ? <button type="button" onClick={() => setEnding(row)} className="min-h-10 rounded-xl border border-danger/35 px-3 text-xs font-semibold text-danger">结束</button> : null}</div></td></tr>)}{!query.isLoading && !query.error && result.data.length === 0 ? <tr><td colSpan={9} className="p-14 text-center"><p className="font-display text-xl font-semibold">暂无定价版本</p><p className="mt-2 text-sm text-text-tertiary">创建版本后，Gateway 才能为对应 Tier 结算。</p></td></tr> : null}</tbody></table></div>
+      <div className="max-w-full overflow-x-auto"><table className="min-w-[1080px] w-full text-left text-sm"><thead><tr className="border-b border-border bg-bg-secondary/45">{["模型 / Tier", ...(imageOnly ? ["Prompt input", "Image input", "Image output"] : ["Input", "Output", "Cache read", "Cache write"]), "Markup / Discount", "生效窗口", "状态", "操作"].map((label) => <th key={label} className="whitespace-nowrap px-4 py-3 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">{label}</th>)}</tr></thead><tbody>{query.isLoading ? Array.from({ length: 5 }).map((_, index) => <tr key={index}><td colSpan={imageOnly ? 8 : 9} className="border-b border-border px-4 py-4"><span className="block h-4 animate-pulse bg-bg-secondary" /></td></tr>) : result.data.map((row) => <tr key={String(row.id)} className="border-b border-border"><td className="px-4 py-4"><span className="block font-semibold">{String(row.model_code)}</span><span className="mt-1 block font-mono text-[10px] text-text-tertiary">{String(row.user_tier)} · {String(row.source ?? "manual")}{imageOnly ? ` · ${imagePricingBasisLabel(row.image_pricing_basis, row.source)}` : ""}</span></td>{(imageOnly ? ["input_price_microusd_per_million", "image_input_price_microusd_per_million", "image_output_price_microusd_per_million"] : ["input_price_microusd_per_million", "output_price_microusd_per_million", "cache_read_price_microusd_per_million", "cache_write_price_microusd_per_million"]).map((key) => <td key={key} className="px-4 py-4 font-mono text-xs">{row[key] === null || row[key] === undefined ? "未配置" : usd(row[key])}<span className="mt-1 block text-[9px] text-text-tertiary">/ 1M Token</span></td>)}<td className="px-4 py-4 font-mono text-xs">{Number(row.markup_bps ?? 0) / 100}% / {Number(row.discount_bps ?? 0) / 100}%</td><td className="px-4 py-4 text-xs"><span className="block">{new Date(String(row.effective_from)).toLocaleString("zh-CN")}</span><span className="mt-1 block text-text-tertiary">至 {row.effective_to ? new Date(String(row.effective_to)).toLocaleString("zh-CN") : "持续有效"}</span></td><td className="px-4 py-4"><span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${row.status === "active" ? "border-success/35 bg-success-light text-success" : "border-border bg-bg-secondary text-text-tertiary"}`}>{String(row.status)}</span></td><td className="px-4 py-4"><div className="flex gap-2">{row.status === "active" && !row.effective_to ? <Link href={`${centerPath}/pricing/new?${new URLSearchParams({ replaces: String(row.id), ...(imageOnly ? { kind: "image" } : {}) }).toString()}`} className="inline-flex min-h-10 items-center rounded-xl bg-text-primary px-3 text-xs font-semibold text-bg-surface">新版本</Link> : null}{row.status === "active" && !row.effective_to ? <button type="button" onClick={() => setEnding(row)} className="min-h-10 rounded-xl border border-danger/35 px-3 text-xs font-semibold text-danger">结束</button> : null}</div></td></tr>)}{!query.isLoading && !query.error && result.data.length === 0 ? <tr><td colSpan={imageOnly ? 8 : 9} className="p-14 text-center"><p className="font-display text-xl font-semibold">暂无定价版本</p><p className="mt-2 text-sm text-text-tertiary">创建版本后，Gateway 才能为对应 Tier 结算。</p></td></tr> : null}</tbody></table></div>
       {!query.error && result.total > pageSize ? <nav className="flex items-center justify-between border-t border-border p-4" aria-label="定价分页"><button type="button" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="min-h-10 border border-border px-4 text-xs font-semibold disabled:opacity-40">上一页</button><span className="font-mono text-xs text-text-tertiary">第 {page} / {Math.max(1, Math.ceil(result.total / pageSize))} 页 · 共 {result.total} 项</span><button type="button" disabled={page * pageSize >= result.total} onClick={() => setPage((current) => current + 1)} className="min-h-10 border border-border px-4 text-xs font-semibold disabled:opacity-40">下一页</button></nav> : null}
       {ending ? <PricingEndDialog record={ending} onClose={() => setEnding(null)} onSaved={refresh} /> : null}
     </section>

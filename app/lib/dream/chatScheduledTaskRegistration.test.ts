@@ -3,6 +3,7 @@
 // [Pos] Provider-free scheduled Chat protocol registration contract.
 // [Sync] 2026-10-07: append v3 recurrence/thread/model operations and keep every v1/v2 descriptor unchanged.
 // [Sync] 2026-10-07: freeze v1 operations 205–221 and append exact v2 operations 222–238.
+// [Sync] 2026-10-11: freeze original Thread-read positions while allowing later image operations.
 import { expect, it } from "vitest";
 import generated from "../../../docs/architecture/admin-dream-operation-contracts.json";
 import { dreamOperations } from "./operationRegistry";
@@ -14,9 +15,9 @@ it("appends the owned Thread reads after all existing descriptors", () => {
   expect(dreamOperations.slice(255, 259).map(item => item.contract.name)).toEqual([
     "notion.sync-run.request", "notion.sync-run.claim", "notion.sync-run.renew", "notion.sync-run.finish",
   ]);
-  expect(dreamOperations.at(-2)?.capability).toMatchObject({ name: "scheduled-task.v2.thread", kind: "read",
+  expect(dreamOperations[259]?.capability).toMatchObject({ name: "scheduled-task.v2.thread", kind: "read",
     user_scope: "dream:read", background_scope: null });
-  expect(dreamOperations.at(-1)?.capability).toMatchObject({ name: "scheduled-task.v3.thread", kind: "read",
+  expect(dreamOperations[260]?.capability).toMatchObject({ name: "scheduled-task.v3.thread", kind: "read",
     user_scope: "dream:read", background_scope: null });
   expect(scheduledTaskThreadInputDto.safeParse({ thread_id: "thread-1" }).success).toBe(true);
   expect(scheduledTaskThreadInputDto.safeParse({ thread_id: "thread-1", user_id: "2" }).success).toBe(false);

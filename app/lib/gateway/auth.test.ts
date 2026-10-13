@@ -1,6 +1,7 @@
 // [Input] Real Gateway authentication with injected Admin verifier/identity/data persistence boundaries.
 // [Output] Key billing identity, exact canonical mapping, live scope/client checks and opaque runtime isolation.
 // [Pos] Provider-free Gateway authority contract; cryptography is covered by auth/accessToken.test.ts.
+// [Sync] 2026-10-10: preserve only verified Runtime scopes and immutable entity identity for the image binding prerequisite.
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ query: vi.fn(), verify: vi.fn(), active: vi.fn(), resolve: vi.fn() }));
 vi.mock("../platform-db", () => ({ withPlatformClient: (callback: (tx: { query: typeof mocks.query }) => unknown) => callback({ query: mocks.query }) }));
@@ -70,9 +71,14 @@ describe("Gateway Admin authority", () => {
   });
   it("accepts entity-bound runtime proof without sharing or hashing a service key", async () => {
     const token = `idg_${"x".repeat(43)}`;
-    mocks.resolve.mockResolvedValue({ gatewayApiKeyId: "service-key", principal: { canonical_user_id: "9007199254740993", scopes: ["messages:create"] }, threadId: "owned-thread" });
+    mocks.resolve.mockResolvedValue({ gatewayApiKeyId: "service-key", principal: { subject: "auth-runtime-subject", canonical_user_id: "9007199254740993", scopes: ["messages:create", "not-granted"] }, serviceClientId: "dream-service", threadId: "owned-thread", runId: null, purpose: "gateway-cli", tokenHash: "private-token-hash" });
     delete process.env.GATEWAY_API_KEY_PEPPER;
-    expect(await authenticateGatewayRequest(new Headers({ authorization: `Bearer ${token}` }), "messages:create")).toMatchObject({ apiKeyId: "service-key", scopes: ["messages:create"] });
+    const principal = await authenticateGatewayRequest(new Headers({ authorization: `Bearer ${token}`, "x-dream-image-turn": "caller-turn" }), "messages:create");
+    expect(principal).toMatchObject({ apiKeyId: "service-key", scopes: ["messages:create"], runtimeIdentity: { authSubject: "auth-runtime-subject", canonicalUserId: "9007199254740993", serviceClientId: "dream-service", threadId: "owned-thread", runId: null, purpose: "gateway-cli" } });
+    expect(Object.isFrozen(principal.runtimeIdentity)).toBe(true);
+    expect(principal.runtimeIdentity).not.toHaveProperty("turnId");
+    expect(JSON.stringify(principal)).not.toContain("private-token-hash");
+    expect(JSON.stringify(principal)).not.toContain(token);
     expect(mocks.resolve).toHaveBeenCalledWith(token, "messages:create");
     expect(mocks.verify).not.toHaveBeenCalled();
   });

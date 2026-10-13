@@ -1,3 +1,8 @@
+// [Input] Synthetic text and Image Token usage with immutable micro-USD price snapshots.
+// [Output] Exact integer charge and reservation regression evidence.
+// [Pos] Provider-free billing arithmetic contract.
+// [Sync] 2026-10-09: cover separate text-input, image-input, and image-output Token pricing.
+
 import { describe, expect, it } from "vitest";
 import { calculateCharge, estimateReservation } from "./money";
 import type { PricingSnapshot, TokenUsage } from "./types";
@@ -65,6 +70,51 @@ describe("calculateCharge", () => {
 
     expect(result.providerCostMicrousd).toBe(1);
     expect(result.chargedMicrousd).toBe(2);
+  });
+
+  it("prices direct Images from text input, image input, and image output details", () => {
+    expect(calculateCharge({
+      inputTokens: 1_100,
+      outputTokens: 2_000,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      inputTokenSemantics: "fresh",
+      inputTextTokens: 100,
+      inputImageTokens: 1_000,
+      outputTextTokens: 0,
+      outputImageTokens: 2_000,
+    }, {
+      ...pricing,
+      imageInputPriceMicrousdPerMillion: 10_000_000,
+      imageOutputPriceMicrousdPerMillion: 40_000_000,
+    })).toEqual({
+      billableInputTokens: 1_100,
+      inputCostMicrousd: 10_300,
+      outputCostMicrousd: 80_000,
+      cacheReadCostMicrousd: 0,
+      cacheWriteCostMicrousd: 0,
+      providerCostMicrousd: 90_300,
+      chargedMicrousd: 90_300,
+    });
+  });
+
+  it("rejects incomplete or unsupported direct Images usage", () => {
+    const base: TokenUsage = {
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      inputTokenSemantics: "fresh",
+      inputTextTokens: 1,
+      inputImageTokens: 0,
+      outputTextTokens: 0,
+      outputImageTokens: 1,
+    };
+    expect(() => calculateCharge(base, pricing)).toThrow("imageOutputPrice");
+    expect(() => calculateCharge({ ...base, outputTextTokens: 1 }, {
+      ...pricing,
+      imageOutputPriceMicrousdPerMillion: 1,
+    })).toThrow("outputTextTokens");
   });
 
   it("rejects invalid financial inputs", () => {

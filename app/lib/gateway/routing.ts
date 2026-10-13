@@ -1,6 +1,7 @@
 // [Input] Frozen same-model candidates, public protocol body and persisted request reservation.
 // [Output] One accepted transport or bounded explicit-rejection failover with durable attempt evidence.
 // [Pos] Pre-response routing only; unknown execution and accepted SSE never switch providers.
+// [Sync] 2026-10-10: freeze request dialect from each actual candidate's explicit Provider configuration.
 import type { ResolvedBillableModel } from "../models/resolver";
 import { withPlatformClient } from "../platform-db";
 import { adaptProviderRequest, type GatewayProtocol } from "./protocol-adapters";
@@ -58,7 +59,7 @@ export async function sendRoutedProviderRequest(input: {
       });
     }
     const body = adaptProviderRequest({ externalProtocol: input.externalProtocol, providerProtocol: target.provider.protocol,
-      providerAdapterKind: target.provider.adapterKind, body: { ...input.body, stream: input.streaming,
+      providerAdapterKind: target.provider.adapterKind, providerConfig: target.provider.config, body: { ...input.body, stream: input.streaming,
         ...(input.streaming && target.provider.protocol === "openai" ? { stream_options: { include_usage: true } } : {}) },
       model: target.upstreamModel, maxOutputTokens: input.maxOutputTokens });
     try {

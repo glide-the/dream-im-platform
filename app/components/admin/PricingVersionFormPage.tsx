@@ -1,5 +1,12 @@
 "use client";
 
+// [Input] Existing pricing version, model identity, and optional Image-center mode.
+// [Output] Shared immutable pricing-version form with text and Image Token components.
+// [Pos] AI model-center pricing interaction; integer conversion and write validation remain server-owned.
+// [Sync] 2026-10-10: return Image pricing to the independent center and filter model choices.
+// [Sync] 2026-10-09: separate runnable configured Image prices from optional audited Provider billing evidence.
+// [Sync] 2026-10-09: persist the Provider-matched Image pricing contract basis with each version.
+
 import { useEffect, useState } from "react";
 
 import AdminResourceFormPage from "./AdminResourceFormPage";
@@ -9,9 +16,20 @@ import { pricingFields } from "./AdminResourceViews";
 const sections = [
   { id: "relation", title: "模型与用户层级", description: "关系来自真实模型注册表；从当前版本进入时自动继承。" },
   { id: "price", title: "四类 Token 定价", description: "按 cc-switch 分别填写 Input、Output、Cache read、Cache write 的 USD / 1M tokens。" },
+  { id: "image-price", title: "图像 Token 定价", description: "按 Provider 实际用量分别填写 Image input 与 Image output；留空表示该分项尚未可调用。" },
   { id: "formula", title: "计价公式", description: "Markup 与 Discount 使用 bps，提交前保留精确整数。" },
   { id: "window", title: "生效窗口", description: "提交时自动识别相同 Model/Tier 的开放版本，并在同一事务结束旧窗口、创建新版本。" },
 ];
+
+export const imagePricingFields = pricingFields.map((field) => {
+  if (field.key === "modelId" && field.relation) return {
+    ...field, relation: { ...field.relation, filters: [{ field: "image_capable", operator: "eq" as const, value: "true" }] },
+  };
+  if (["outputPriceMicrousdPerMillion", "cacheReadPriceMicrousdPerMillion", "cacheWritePriceMicrousdPerMillion"].includes(field.key)) return { ...field, section: "image-internal" };
+  return field;
+});
+
+const imageSections = sections.map((section) => section.id === "price" ? { ...section, title: "文本输入价格", description: "配置图片描述的输入 Token 平台单价。" } : section);
 
 type CurrentPricing = {
   id: string;
@@ -22,13 +40,15 @@ type CurrentPricing = {
   output_price_microusd_per_million: string;
   cache_read_price_microusd_per_million: string;
   cache_write_price_microusd_per_million: string;
+  image_input_price_microusd_per_million?: string | null;
+  image_output_price_microusd_per_million?: string | null;
   effective_from: string;
   effective_to: string | null;
 };
 
-function usd(value: string) {
+function usd(value: unknown) {
   try {
-    const micros = BigInt(value);
+    const micros = BigInt(String(value ?? 0));
     const whole = micros / 1_000_000n;
     const fraction = (micros % 1_000_000n)
       .toString()
@@ -138,10 +158,12 @@ function PricingReplacementContext({
               ["Output", current.output_price_microusd_per_million],
               ["Cache read", current.cache_read_price_microusd_per_million],
               ["Cache write", current.cache_write_price_microusd_per_million],
+              ["Image input", current.image_input_price_microusd_per_million ?? "未配置"],
+              ["Image output", current.image_output_price_microusd_per_million ?? "未配置"],
             ].map(([label, value]) => (
               <div key={label} className="border-b border-r border-border p-3">
                 <dt className="text-text-tertiary">{label}</dt>
-                <dd className="mt-1 font-mono font-semibold">{usd(value)}</dd>
+                <dd className="mt-1 font-mono font-semibold">{value === "未配置" ? value : usd(value)}</dd>
               </div>
             ))}
           </dl>
@@ -164,10 +186,12 @@ export default function PricingVersionFormPage({
   modelId,
   replaces,
   initialEffectiveFrom,
+  imageMode = false,
 }: {
   modelId: string;
   replaces?: string;
   initialEffectiveFrom: string;
+  imageMode?: boolean;
 }) {
   return (
     <AdminResourceFormPage
@@ -182,10 +206,10 @@ export default function PricingVersionFormPage({
       }}
       title="创建价格版本"
       eyebrow="cc-switch · model pricing"
-      description="历史价格不可覆盖。选择 Model/Tier 后会显示当前开放版本；提交时由 PostgreSQL 事务结束旧窗口并创建新版本。所有金额以整数 micro-USD 写入。"
-      backHref="/admin/models/pricing"
-      fields={pricingFields}
-      sections={sections}
+      description={imageMode ? "Admin 平台按这里配置的文本输入、图像输入和图像输出 Token 单价结算，不按图片张数收费。OpenAI、models.dev 或其他上游价格只作为可选参考来源，不是运行门禁，也不表示上游逐请求扣款。历史版本不可覆盖。" : "历史价格不可覆盖。选择 Model/Tier 后会显示当前开放版本；提交时由 PostgreSQL 事务结束旧窗口并创建新版本。所有金额以整数 micro-USD 写入。"}
+      backHref={imageMode ? "/admin/image-models/pricing" : "/admin/models/pricing"}
+      fields={imageMode ? imagePricingFields : pricingFields}
+      sections={imageMode ? imageSections : sections}
       defaults={{
         modelId,
         replacesPricingRuleId: replaces ?? "",
@@ -194,6 +218,11 @@ export default function PricingVersionFormPage({
         outputPriceMicrousdPerMillion: 0,
         cacheReadPriceMicrousdPerMillion: 0,
         cacheWritePriceMicrousdPerMillion: 0,
+        imageInputPriceMicrousdPerMillion: null,
+        imageOutputPriceMicrousdPerMillion: null,
+        imagePricingBasis: null,
+        priceSourceRef: null,
+        priceSourceVersion: null,
         markupBps: 0,
         discountBps: 0,
         effectiveFrom: initialEffectiveFrom,

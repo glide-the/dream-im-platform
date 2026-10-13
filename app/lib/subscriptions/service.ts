@@ -2,6 +2,7 @@
 // [Output] Transactional, optimistic, idempotent subscription writes and append-only audit.
 // [Pos] Subscription domain service; routes only orchestrate public requests.
 // [Sync] 2026-09-15: check enabled models on entitlement creation and lock model/Provider readiness before publishing.
+// [Sync] 2026-10-09: preserve PostgreSQL microsecond period boundaries during non-renewal lifecycle updates.
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
@@ -854,17 +855,20 @@ export async function transitionSubscriptionOnClient(
   } else {
     throw new AdminError("SUBSCRIPTION_ACTION_NOT_FOUND", "The requested subscription action does not exist", 404);
   }
+  const advancesPeriod = input.action === "renew";
   const updated = await client.query(
     `UPDATE subscriptions SET plan_version_id = $2,
        pending_plan_version_id = $3, status = $4,
-       current_period_start = $5, current_period_end = $6,
-       renewal_enabled = $7, current_period_number = $8,
+       current_period_start = CASE WHEN $10::boolean THEN $5 ELSE current_period_start END,
+       current_period_end = CASE WHEN $10::boolean THEN $6 ELSE current_period_end END,
+       renewal_enabled = $7,
+       current_period_number = CASE WHEN $10::boolean THEN $8 ELSE current_period_number END,
        paused_at = CASE WHEN $4 = 'paused' THEN NOW() ELSE NULL END,
        cancelled_at = CASE WHEN $4 = 'cancelled' THEN NOW() ELSE NULL END,
        version = version + 1, updated_at = NOW()
      WHERE id = $1 AND version = $9`,
     [before.id, versionId, pendingVersionId, status, start, end,
-      renewalEnabled, periodNumber, input.expectedVersion],
+      renewalEnabled, periodNumber, input.expectedVersion, advancesPeriod],
   );
   if (updated.rowCount !== 1) {
     throw new AdminError(

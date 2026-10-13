@@ -1,6 +1,7 @@
 // [Input] Module-specific title, status, navigation tabs, and content.
 // [Output] Shared Admin module shell, including Story/Dream run navigation.
 // [Pos] Presentational Admin route layout; it owns no resource data or commands.
+// [Sync] 2026-10-10: keep AI and Image model centers separate while sharing the module shell.
 
 import AdminPageHeader from "./AdminPageHeader";
 import AdminSectionTabs from "./AdminSectionTabs";
@@ -39,6 +40,12 @@ export const modelTabs = [
   { label: "Provider", href: "/admin/models/providers" },
   { label: "Models", href: "/admin/models/models" },
   { label: "Pricing", href: "/admin/models/pricing" },
+];
+
+export const imageModelTabs = [
+  { label: "Provider", href: "/admin/image-models/providers" },
+  { label: "Models", href: "/admin/image-models/models" },
+  { label: "Pricing", href: "/admin/image-models/pricing" },
 ];
 
 export const billingTabs = [

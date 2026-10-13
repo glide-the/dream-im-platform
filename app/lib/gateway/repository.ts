@@ -1,8 +1,10 @@
+// [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
 // [Sync] 2026-10-05: persist credential-free frozen routing evidence with the original reservation.
 // [Input] Resolved model/auth snapshots, Gateway principal, request reservation, and settlement measurements.
 // [Output] Transactional request ledger rows with billing plus Provider auth epoch/revision evidence.
 // [Pos] PostgreSQL persistence boundary for the Gateway request lifecycle and append-only billing effects.
 // [Sync] 2026-10-03: acquire the account transaction gate before idempotency, rate and allowance locks.
+// [Sync] 2026-10-09: snapshot Image operation/prices and disable payload capture at request creation.
 
 import type { InputTokenSemantics } from "../billing/types";
 import type { ResolvedBillableModel } from "../models/resolver";
@@ -10,6 +12,9 @@ import { withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
 import type { GatewayPrincipal } from "./auth";
 import { lockGatewayAccountOnClient } from "./account-lock";
+import { lockImageTurnOnClient, validateImageExecutionOnClient, claimImageExecutionOnClient, type ImageTurnContext, type ImageExecutionSource } from "./image-turn-receipts";
+import type { z } from "zod";
+import type { imageExecutionClaimDto } from "../dream/imageTurnDto";
 import {
   reserveSubscriptionAllowanceOnClient,
   resolveGatewaySubscriptionOnClient,
@@ -199,6 +204,9 @@ export async function beginGatewayRequest(input: {
   resolved: ResolvedBillableModel;
   requestedModel: string;
   protocol: "anthropic" | "openai";
+  operation?: "text" | "images.generations" | "images.edits";
+  imageExecution?: { context: ImageTurnContext; claim: Omit<z.infer<typeof imageExecutionClaimDto>, "gateway_request_id">; source?: ImageExecutionSource };
+  disablePayloadCapture?: boolean;
   isStreaming: boolean;
   idempotencyKey?: string;
   reservationMicrousd: number;
@@ -215,6 +223,9 @@ export async function beginGatewayRequest(input: {
       client,
       input.principal.platformUserId,
     );
+    if (input.imageExecution) {
+      await lockImageTurnOnClient(client, input.imageExecution.context);
+    }
     if (input.idempotencyKey) {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
         `${input.principal.platformUserId}:${input.idempotencyKey}`,
@@ -232,6 +243,7 @@ export async function beginGatewayRequest(input: {
       }
     }
 
+    if (input.imageExecution) await validateImageExecutionOnClient(client, input.imageExecution.context, input.imageExecution.claim, input.imageExecution.source);
     const requestId = createPlatformId("req");
     const inputTokenSemantics: InputTokenSemantics =
       input.protocol === "anthropic" ? "fresh" : "total_including_cache";
@@ -241,7 +253,7 @@ export async function beginGatewayRequest(input: {
     await client.query(
       `INSERT INTO gateway_requests (
          id, idempotency_key, platform_user_id, gateway_api_key_id,
-         provider_id, model_id, pricing_rule_id, protocol,
+         provider_id, model_id, pricing_rule_id, protocol, operation,
          requested_model, resolved_model, input_token_semantics, estimated_tokens,
          provider_adapter_kind, provider_auth_epoch,
          provider_credential_revision, provider_managed_credential_id,
@@ -249,11 +261,13 @@ export async function beginGatewayRequest(input: {
          provider_renewal_attempted,
          input_price_snapshot, output_price_snapshot,
          cache_read_price_snapshot, cache_write_price_snapshot,
-         markup_bps_snapshot, discount_bps_snapshot, is_streaming
+         image_input_price_snapshot, image_output_price_snapshot,
+         markup_bps_snapshot, discount_bps_snapshot, is_streaming,
+         payload_capture_status
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-         $13, $14, $15, $16, $17, $18, $19,
-         $20, $21, $22, $23, $24, $25, $26
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+         $14, $15, $16, $17, $18, $19, $20,
+         $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
        )`,
       [
         requestId,
@@ -264,6 +278,7 @@ export async function beginGatewayRequest(input: {
         input.resolved.model.id,
         input.resolved.pricingRuleId,
         input.protocol,
+        input.operation ?? "text",
         input.requestedModel,
         input.resolved.model.upstreamModel,
         inputTokenSemantics,
@@ -279,9 +294,14 @@ export async function beginGatewayRequest(input: {
         input.resolved.pricing.outputPriceMicrousdPerMillion,
         input.resolved.pricing.cacheReadPriceMicrousdPerMillion,
         input.resolved.pricing.cacheWritePriceMicrousdPerMillion,
+        input.imageExecution?.claim.operation.startsWith("native_") ? null : input.resolved.pricing.imageInputPriceMicrousdPerMillion ?? null,
+        input.imageExecution?.claim.operation.startsWith("native_") ? null : input.resolved.pricing.imageOutputPriceMicrousdPerMillion ?? null,
         input.resolved.pricing.markupBps,
         input.resolved.pricing.discountBps,
         input.isStreaming,
+        input.disablePayloadCapture || (input.operation && input.operation !== "text")
+          ? "policy_disabled"
+          : "pending",
       ],
     );
     if (input.resolved.routing) {
@@ -452,6 +472,8 @@ export async function beginGatewayRequest(input: {
       modelId: input.resolved.model.id,
       windows: limiter.windows,
     });
+    if (input.imageExecution) await claimImageExecutionOnClient(client, input.imageExecution.context,
+      { ...input.imageExecution.claim, gateway_request_id: requestId }, input.imageExecution.source);
     return {
       kind: "reserved",
       requestId,

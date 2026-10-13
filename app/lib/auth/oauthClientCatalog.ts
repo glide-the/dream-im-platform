@@ -1,7 +1,9 @@
+// [Sync] 2026-10-11: enforce same-client exact callbacks and reject incompatible DPoP without changing token protocol.
 // [Input] Validated Admin auth/service configuration and the dedicated auth Drizzle transaction.
 // [Output] Redacted plan/receipt plus public browser/device and confidential service OAuth clients.
 // [Pos] Release-time OAuth client catalog service; runtime auth routes only consume the registered rows.
 // [Sync] 2026-09-17: provision confidential client_credentials registrations for background service calls.
+// [Sync] 2026-10-11: publish the Dream application's exact callbacks to each existing Browser client; narrow updates never rewrite credentials or grants.
 import { createHash } from "node:crypto";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import {
@@ -56,6 +58,7 @@ type OAuthCatalogSnapshot = {
   resource: OAuthCatalogDto["resource"] | null;
   clients: OAuthCatalogClientDto[];
   links: Array<{ clientId: string; resourceId: string }>;
+  dpop?: { resourceRequired: boolean | null; clients: Array<{ clientId: string; bound: boolean | null }> };
 };
 
 export type OAuthCatalogPlan = {
@@ -92,6 +95,7 @@ export function dreamOAuthCatalogDto(environment: Record<string, string | undefi
   const services = dreamServiceClients(environment);
   const deviceClientId = requiredAuthValue("AUTH_DEVICE_CLIENT_ID", environment);
   const browsers = new Map<string, { origins: Set<string>; redirects: Set<string> }>();
+  const applicationCallbacks = uniqueSorted(services.map(service => service.redirectUri));
   for (const service of services) {
     const current = browsers.get(service.oauthClientId) ?? { origins: new Set(), redirects: new Set() };
     current.origins.add(service.origin);
@@ -107,7 +111,7 @@ export function dreamOAuthCatalogDto(environment: Record<string, string | undefi
       clientId,
       name: "Ink Dream Browser",
       uri: values.origins.size === 1 ? [...values.origins][0] : null,
-      redirectUris: [...values.redirects],
+      redirectUris: applicationCallbacks,
       scopes: [...authScopes],
       grantTypes: ["authorization_code", "refresh_token"],
       responseTypes: ["code"],
@@ -203,6 +207,7 @@ async function readSnapshot(database: AuthRepositoryDatabase, target: OAuthCatal
       signingAlgorithm: oauthResource.signingAlgorithm,
       allowedScopes: oauthResource.allowedScopes,
       disabled: oauthResource.disabled,
+      dpopRequired: oauthResource.dpopBoundAccessTokensRequired,
     }).from(oauthResource).where(eq(oauthResource.identifier, target.resource.identifier)).limit(1),
     database.select({
       clientId: oauthClient.clientId,
@@ -220,6 +225,7 @@ async function readSnapshot(database: AuthRepositoryDatabase, target: OAuthCatal
       skipConsent: oauthClient.skipConsent,
       clientCredentialsScopes: oauthClient.clientCredentialsScopes,
       clientSecretHash: oauthClient.clientSecret,
+      dpopBound: oauthClient.dpopBoundAccessTokens,
     }).from(oauthClient).where(inArray(oauthClient.clientId, target.clients.map(client => client.clientId))),
     database.select({ clientId: oauthClientResource.clientId, resourceId: oauthClientResource.resourceId })
       .from(oauthClientResource)
@@ -253,6 +259,8 @@ async function readSnapshot(database: AuthRepositoryDatabase, target: OAuthCatal
       clientSecretHash: row.clientSecretHash,
     })),
     links: linkRows,
+    dpop: { resourceRequired: resource?.dpopRequired ?? null,
+      clients: clientRows.map(row => ({ clientId: row.clientId, bound: row.dpopBound })) },
   };
 }
 
@@ -340,4 +348,84 @@ export async function provisionDreamOAuthCatalog(database: AuthRepositoryDatabas
     throw new AuthBoundaryError("AUTH_CLIENT_CATALOG_WRITE_FAILED");
   }
   return { mode: apply ? "apply" as const : "dry-run" as const, resource: target.resource.identifier, plan, verified: apply };
+}
+
+/** The confidential service keeps its own Browser client; only a published exact callback is selected. */
+export async function publishedBrowserRedirectAvailable(database: AuthRepositoryDatabase, clientId: string, resource: string, redirectUri: string): Promise<boolean> {
+  const rows = await database.select({
+    disabled: oauthClient.disabled, requirePKCE: oauthClient.requirePKCE,
+    authentication: oauthClient.tokenEndpointAuthMethod, redirects: oauthClient.redirectUris,
+    grants: oauthClient.grantTypes, responses: oauthClient.responseTypes,
+    resourceDisabled: oauthResource.disabled,
+    clientDpop: oauthClient.dpopBoundAccessTokens,
+    resourceDpop: oauthResource.dpopBoundAccessTokensRequired,
+  }).from(oauthClient)
+    .innerJoin(oauthClientResource, eq(oauthClientResource.clientId, oauthClient.clientId))
+    .innerJoin(oauthResource, eq(oauthResource.identifier, oauthClientResource.resourceId))
+    .where(and(eq(oauthClient.clientId, clientId), eq(oauthClientResource.resourceId, resource)));
+  const row = rows[0];
+  return rows.length === 1 && row.disabled === false && row.resourceDisabled === false
+    && row.clientDpop === false && row.resourceDpop === false
+    && row.requirePKCE === true && row.authentication === "none"
+    && row.grants?.includes("authorization_code") === true && row.responses?.includes("code") === true
+    && row.redirects.filter(uri => uri === redirectUri).length === 1;
+}
+
+export function planDreamBrowserRedirects(target: OAuthCatalogDto, current: OAuthCatalogSnapshot) {
+  const plan = planDreamOAuthCatalog(target, current);
+  if (plan.resource !== "unchanged" || plan.links.some(item => item.action !== "unchanged")) {
+    throw new AuthBoundaryError("AUTH_BROWSER_REDIRECT_CATALOG_DRIFT");
+  }
+  if (current.dpop?.resourceRequired !== false || target.clients.some(client =>
+    client.grantTypes.includes("authorization_code")
+    && current.dpop?.clients.find(row => row.clientId === client.clientId)?.bound !== false)) {
+    throw new AuthBoundaryError("AUTH_BROWSER_REDIRECT_CATALOG_DRIFT");
+  }
+  const updates: { clientId: string; redirectUris: string[]; added: string[] }[] = [];
+  for (const desired of target.clients) {
+    const existing = current.clients.find(client => client.clientId === desired.clientId);
+    if (!existing) throw new AuthBoundaryError("AUTH_BROWSER_REDIRECT_CATALOG_DRIFT");
+    const browser = desired.grantTypes.includes("authorization_code") && desired.tokenEndpointAuthMethod === "none";
+    if (!sameValue({ ...desired, redirectUris: [] }, { ...existing, redirectUris: [] })
+      || (!browser && !sameValue(desired.redirectUris, existing.redirectUris))) {
+      throw new AuthBoundaryError("AUTH_BROWSER_REDIRECT_CATALOG_DRIFT");
+    }
+    if (existing.redirectUris.some(uri => !desired.redirectUris.includes(uri))) {
+      throw new AuthBoundaryError("AUTH_BROWSER_REDIRECT_SHRINK_DENIED");
+    }
+    if (browser && !sameValue(desired.redirectUris, existing.redirectUris)) {
+      updates.push({ clientId: desired.clientId, redirectUris: desired.redirectUris,
+        added: desired.redirectUris.filter(uri => !existing.redirectUris.includes(uri)) });
+    }
+  }
+  return updates;
+}
+
+/** Release-time, existing-client-only callback expansion in the caller's controlled transaction. */
+export async function provisionDreamBrowserRedirects(database: AuthRepositoryDatabase, apply: boolean) {
+  const target = dreamOAuthCatalogDto();
+  const beforeRows = apply ? await database.select().from(oauthClient)
+    .where(inArray(oauthClient.clientId, target.clients.map(client => client.clientId))).for("update") : [];
+  const updates = planDreamBrowserRedirects(target, await readSnapshot(database, target));
+  if (apply) {
+    for (const update of updates) {
+      await database.update(oauthClient).set({ redirectUris: update.redirectUris, updatedAt: new Date() })
+        .where(eq(oauthClient.clientId, update.clientId));
+    }
+    const afterRows = await database.select().from(oauthClient)
+      .where(inArray(oauthClient.clientId, target.clients.map(client => client.clientId)));
+    const changed = new Set(updates.map(update => update.clientId));
+    for (const before of beforeRows) {
+      const after = afterRows.find(row => row.clientId === before.clientId);
+      if (!after || Object.keys(before).some(key => {
+        if (changed.has(before.clientId) && ["redirectUris", "updatedAt"].includes(key)) return false;
+        return !sameValue(before[key as keyof typeof before], after[key as keyof typeof after]);
+      })) throw new AuthBoundaryError("AUTH_BROWSER_REDIRECT_WRITE_FAILED");
+    }
+    if (planDreamBrowserRedirects(target, await readSnapshot(database, target)).length) {
+      throw new AuthBoundaryError("AUTH_BROWSER_REDIRECT_WRITE_FAILED");
+    }
+  }
+  return { mode: apply ? "apply" as const : "dry-run" as const, purpose: "browser-redirects" as const,
+    resource: target.resource.identifier, updates, verified: apply };
 }

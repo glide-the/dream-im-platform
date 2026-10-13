@@ -1,8 +1,12 @@
+// [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
+// [Sync] 2026-10-10: separate Image Settings ownership and fail closed on unimplemented Responses images.
+// [Sync] 2026-10-10: convert user image_url to Responses input_image without adding a platform image tool.
 // [Input] Normalized OpenAI Chat requests and OpenAI Responses JSON/SSE events.
-// [Output] Loss-bounded request, response, and stream conversions for Codex/xAI product adapters.
+// [Output] Loss-bounded request, response, and stream conversions for explicit generic Responses and Codex/xAI adapters.
 // [Pos] Product-dialect boundary between the public Anthropic/OpenAI Gateway and Responses-only upstreams.
 // [Sync] 2026-09-04: add the shared Codex/xAI Responses contract without exposing product credentials.
 // [Sync] 2026-10-03: reconstruct non-streaming output from SSE when terminal output is omitted.
+// [Sync] 2026-10-10: generic Responses uses standard token limits and store=false without managed Codex defaults.
 
 import { GatewayError } from "./errors";
 
@@ -57,12 +61,34 @@ function messageText(content: unknown) {
   return parts.join("");
 }
 
-function responseInput(body: JsonRecord) {
+function responseContent(content: unknown, role: string): JsonRecord[] {
+  if (typeof content === "string") return content ? [{ type: role === "assistant" ? "output_text" : "input_text", text: content }] : [];
+  return array(content).map((sourcePart) => {
+    const part = record(sourcePart);
+    if (["text", "input_text", "output_text"].includes(text(part?.type))) {
+      return { type: role === "assistant" ? "output_text" : "input_text", text: text(part?.text) };
+    }
+    if (role !== "assistant" && part?.type === "image_url") {
+      const image = record(part.image_url);
+      const url = typeof part.image_url === "string" ? part.image_url : text(image?.url);
+      if (url) return { type: "input_image", image_url: url, ...(image?.detail ? { detail: image.detail } : {}) };
+    }
+    throw new GatewayError("UPSTREAM_DIALECT_UNSUPPORTED", "Invalid multimodal content", 400, "invalid_request_error");
+  });
+}
+
+function responseInput(body: JsonRecord, allowNativeImageHistory = false) {
   const input: JsonRecord[] = [];
   const instructions: string[] = [];
   for (const sourceMessage of array(body.messages)) {
     const message = record(sourceMessage);
     if (!message) continue;
+    const nativeImageCall = record(message.ink_native_image_call);
+    if (nativeImageCall) {
+      if (!allowNativeImageHistory) throw new GatewayError("UPSTREAM_DIALECT_UNSUPPORTED", "Private image history fields are not accepted in public Chat messages", 400, "invalid_request_error");
+      input.push(nativeImageCall);
+      continue;
+    }
     const role = text(message.role);
     if (role === "system" || role === "developer") {
       const value = messageText(message.content);
@@ -73,7 +99,9 @@ function responseInput(body: JsonRecord) {
       input.push({
         type: "function_call_output",
         call_id: text(message.tool_call_id),
-        output: jsonText(message.content),
+        output: array(message.content).some((part) => record(part)?.type === "image_url")
+          ? responseContent(message.content, "user")
+          : jsonText(message.content),
       });
       continue;
     }
@@ -86,15 +114,9 @@ function responseInput(body: JsonRecord) {
       );
     }
 
-    const content = messageText(message.content);
-    if (content) {
-      input.push({
-        role: role === "assistant" ? "assistant" : "user",
-        content: [{
-          type: role === "assistant" ? "output_text" : "input_text",
-          text: content,
-        }],
-      });
+    const content = responseContent(message.content, role);
+    if (content.length) {
+      input.push({ role: role === "assistant" ? "assistant" : "user", content });
     }
     for (const sourceCall of array(message.tool_calls)) {
       const call = record(sourceCall);
@@ -137,11 +159,12 @@ function responseToolChoice(choice: unknown) {
 export function openAIChatRequestToResponses(input: {
   body: JsonRecord;
   model: string;
-  adapterKind: "codex" | "xai";
+  adapterKind: "codex" | "xai" | "openai";
   stream: boolean;
   maxOutputTokens: number;
+  allowNativeImageHistory?: boolean;
 }) {
-  const converted = responseInput(input.body);
+  const converted = responseInput(input.body, input.allowNativeImageHistory);
   const tools = responseTools(input.body);
   const choice = responseToolChoice(input.body.tool_choice);
   const configuredReasoning = record(input.body.reasoning);
@@ -162,6 +185,7 @@ export function openAIChatRequestToResponses(input: {
     output.store = false;
     output.include = ["reasoning.encrypted_content"];
   } else {
+    if (input.adapterKind === "openai") output.store = false;
     output.max_output_tokens = input.maxOutputTokens;
     if (typeof input.body.temperature === "number") output.temperature = input.body.temperature;
     if (typeof input.body.top_p === "number") output.top_p = input.body.top_p;
@@ -178,7 +202,14 @@ function responseStopReason(response: JsonRecord, hasToolCalls: boolean) {
   return "stop";
 }
 
+function assertNoUnsupportedImageResult(response: JsonRecord) {
+  if (array(response.output).some(item => record(item)?.type === "image_generation_call")) {
+    throw new GatewayError("UPSTREAM_DIALECT_UNSUPPORTED", "Built-in image results are not supported by the Messages bridge", 502, "upstream_error");
+  }
+}
+
 function assertSuccessfulResponse(response: JsonRecord) {
+  assertNoUnsupportedImageResult(response);
   const status = text(response.status);
   if (status === "failed" || status === "cancelled") {
     throw new GatewayError(
@@ -284,9 +315,13 @@ export class ResponsesToOpenAIChatStreamState {
 
   push(event: JsonRecord) {
     const type = text(event.type);
+    if (type.startsWith("response.image_generation_call.") || record(event.item)?.type === "image_generation_call") {
+      throw new GatewayError("UPSTREAM_DIALECT_UNSUPPORTED", "Built-in image events are not supported by the Messages bridge", 502, "upstream_error");
+    }
     const outputs: JsonRecord[] = [];
     const response = record(event.response);
     if (response) {
+      assertNoUnsupportedImageResult(response);
       if (text(response.id)) this.id = text(response.id).replace(/^resp_/, "chatcmpl_");
       if (text(response.model)) this.model = text(response.model);
     }

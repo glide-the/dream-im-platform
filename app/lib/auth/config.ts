@@ -4,6 +4,8 @@
 // [Pos] Server-only configuration boundary shared by auth/domain services.
 // [Sync] 2026-09-27: reserve a service-only task-return dispatch scope.
 // [Sync] 2026-09-17: separate delegated scopes from confidential-client background scopes.
+// [Sync] 2026-10-09: admit images:create only as an explicit Gateway delegated scope.
+// [Sync] 2026-10-11: validate browser Admin request authority independently of stable token issuer.
 import { z } from "zod";
 import type { DreamDomainErrorDetails } from "../dream/errorDto";
 
@@ -31,7 +33,7 @@ export function exactAuthUrl(value: string, originOnly = false): string {
   return originOnly ? url.origin : url.href.replace(/\/$/, "");
 }
 
-export const authScopes = ["openid", "profile", "email", "offline_access", "dream:read", "dream:write", "editor:read", "editor:write", "product:read", "product:write", "messages:create", "messages:count_tokens", "models:list"] as const;
+export const authScopes = ["openid", "profile", "email", "offline_access", "dream:read", "dream:write", "editor:read", "editor:write", "product:read", "product:write", "messages:create", "messages:count_tokens", "models:list", "images:create"] as const;
 export const backgroundAuthScopes = ["capabilities:read", "resource-policy:read", "resource-observer:write", "connectors:sync", "plugins:catalog", "reflections:execute", "story-confirmation:dispatch", "task-return:dispatch", "schedule:execute"] as const;
 export const oauthProviderScopes = [...authScopes, ...backgroundAuthScopes] as const;
 export const accessTokenLifetimeSeconds = 300;
@@ -76,4 +78,31 @@ export function authConfiguration(environment: AuthEnvironment = process.env) {
     googleClientSecret: requiredAuthValue("GOOGLE_CLIENT_SECRET", environment),
     secureCookies: new URL(issuer).protocol === "https:",
   };
+}
+
+/** Browser navigation may use the allowed relay or loopback center; token authority stays fixed. */
+export function browserAuthOrigin(request: Request, configuration: Pick<ReturnType<typeof authConfiguration>, "issuer" | "origins">): string {
+  const incoming = new URL(request.url);
+  const authority = new URL(configuration.issuer);
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const deny = () => { throw new AuthBoundaryError("AUTH_BROWSER_ORIGIN_DENIED", 403); };
+  let candidate: string;
+  if (forwardedHost !== null || forwardedProto !== null) {
+    if (forwardedHost === null || forwardedProto === null || forwardedHost.includes(",") || forwardedProto.includes(",")) return deny();
+    candidate = `${forwardedProto.toLowerCase()}://${forwardedHost.toLowerCase()}`;
+  } else {
+    const host = request.headers.get("host");
+    candidate = host === null ? incoming.origin
+      : host.toLowerCase() === authority.host.toLowerCase() ? authority.origin
+      : `${incoming.protocol}//${host.toLowerCase()}`;
+  }
+  let browser: URL;
+  try { browser = new URL(candidate); } catch { return deny(); }
+  if (browser.origin.toLowerCase() !== candidate || browser.username || browser.password) return deny();
+  if (browser.origin === authority.origin) return browser.origin;
+  const loopback = (url: URL) => ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (!configuration.origins.includes(browser.origin) || !loopback(browser) || !loopback(incoming)
+    || browser.protocol !== incoming.protocol || browser.port !== incoming.port) return deny();
+  return browser.origin;
 }

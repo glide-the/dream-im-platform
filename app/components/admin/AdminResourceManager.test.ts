@@ -1,7 +1,14 @@
+// [Sync] 2026-10-11: verify unset Provider API omission and explicit Responses preservation.
+// [Input] Shared Admin field definitions and actual AI/Image form route composition.
+// [Output] Serialization and mounted-field regressions, including non-visible numeric Image fields.
+// [Pos] Provider-free tests; no application persistence or credential access.
+// [Sync] 2026-10-10: verify shared forms preserve typed prices and existing text capabilities.
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { modelFields, pricingFields, providerFields } from "./AdminResourceViews";
+import { imageModelFields } from "./ModelFormPage";
+import { imagePricingFields } from "./PricingVersionFormPage";
 import {
   adminListErrorPresentation,
   availableFieldOptions,
@@ -16,16 +23,58 @@ import {
 } from "./providers";
 
 describe("admin resource form serialization", () => {
+  it("distinguishes missing nullable Image prices from explicitly free prices", () => {
+    const fields = pricingFields.filter((field) => field.key === "imageInputPriceMicrousdPerMillion" || field.key === "imageOutputPriceMicrousdPerMillion");
+    const unset = valuesFromRecord(fields, undefined, { imageInputPriceMicrousdPerMillion: null, imageOutputPriceMicrousdPerMillion: null }, "create");
+    expect(unset).toEqual({ imageInputPriceMicrousdPerMillion: "", imageOutputPriceMicrousdPerMillion: "" });
+    expect(buildPayload(fields, unset, "create")).toEqual({ imageInputPriceMicrousdPerMillion: null, imageOutputPriceMicrousdPerMillion: null });
+    const free = valuesFromRecord(fields, { image_input_price_microusd_per_million: "0", image_output_price_microusd_per_million: "0" }, {}, "create");
+    expect(free).toEqual({ imageInputPriceMicrousdPerMillion: "0", imageOutputPriceMicrousdPerMillion: "0" });
+    expect(buildPayload(fields, free, "create")).toEqual({ imageInputPriceMicrousdPerMillion: 0, imageOutputPriceMicrousdPerMillion: 0 });
+  });
   it("mounts Claude Code Runtime fields on both real AIModelRegistry form routes", () => {
     for (const relativePath of [
       "../../(admin)/admin/(workspace)/models/models/new/page.tsx",
       "../../(admin)/admin/(workspace)/models/models/[id]/edit/page.tsx",
     ]) {
       const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
-      expect(source).toContain('id: "claude-runtime"');
-      expect(source).toContain("claudeCodeAutoCompactWindow");
-      expect(source).toContain("claudeCodeMaxContextTokens");
+      expect(source).toContain('import ModelFormPage from "@/components/admin/ModelFormPage"');
+      expect(source).toContain("<ModelFormPage");
     }
+    const formSource = readFileSync(new URL("./ModelFormPage.tsx", import.meta.url), "utf8");
+    expect(formSource).toContain('id: "claude-runtime"');
+    expect(formSource).toContain("claudeCodeAutoCompactWindow");
+    expect(formSource).toContain("claudeCodeMaxContextTokens");
+    expect(formSource).toContain("imageMode ? imageModelFields : modelFields");
+  });
+
+  it("preserves numeric and capability serialization for non-visible Image form fields", () => {
+    const modelValues = valuesFromRecord(imageModelFields, {
+      capabilities: { chat: true, image_generation: true }, context_window: 8192,
+      max_output_tokens: 4096, claude_code_auto_compact_window: 1024,
+      image_output_token_reserve_per_image: 200,
+    }, {}, "edit");
+    expect(buildPayload(imageModelFields, modelValues, "edit")).toMatchObject({
+      contextWindow: 8192, maxOutputTokens: 4096, claudeCodeAutoCompactWindow: 1024,
+      capabilities: { chat: true, image_generation: true },
+    });
+    const pricingValues = valuesFromRecord(imagePricingFields, undefined, {
+      inputPriceMicrousdPerMillion: 1_000_000, outputPriceMicrousdPerMillion: 123456,
+      cacheReadPriceMicrousdPerMillion: 0, cacheWritePriceMicrousdPerMillion: 0,
+      markupBps: 0, discountBps: 0,
+    }, "create");
+    expect(buildPayload(imagePricingFields, pricingValues, "create")).toMatchObject({
+      inputPriceMicrousdPerMillion: 1_000_000, outputPriceMicrousdPerMillion: 123456,
+      cacheReadPriceMicrousdPerMillion: 0, cacheWritePriceMicrousdPerMillion: 0,
+    });
+  });
+
+  it("preserves an explicitly selected Responses API on Provider edit", () => {
+    const values = valuesFromRecord(providerFields, {
+      protocol: "openai", config: { openaiApi: "responses", authMode: "bearer", customFlag: true },
+      auth_revision: 7,
+    }, {}, "edit");
+    expect((buildPayload(providerFields, values, "edit").config as Record<string, unknown>).openaiApi).toBe("responses");
   });
 
   it("keeps Provider secrets blank on edit and merges named config fields", () => {
@@ -176,6 +225,7 @@ describe("admin resource form serialization", () => {
       outputPriceMicrousdPerMillion: 0,
       cacheReadPriceMicrousdPerMillion: 0,
       cacheWritePriceMicrousdPerMillion: 0,
+      imagePricingBasis: "openai_api_usd",
       markupBps: 0,
       discountBps: 0,
       status: "active",
@@ -192,6 +242,7 @@ describe("admin resource form serialization", () => {
       outputPriceMicrousdPerMillion: 16_000_000,
       markupBps: 225,
       discountBps: 50,
+      imagePricingBasis: "openai_api_usd",
     });
   });
 

@@ -53,6 +53,7 @@
                 "messages:create",
                 "messages:count_tokens",
                 "models:list",
+                "images:create",
                 "editor:read",
                 "editor:write"
               ]
@@ -127,6 +128,7 @@
                 "messages:create",
                 "messages:count_tokens",
                 "models:list",
+                "images:create",
                 "editor:read",
                 "editor:write"
               ]
@@ -163,6 +165,11 @@
         "contractSha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447"
       },
       {
+        "capability": "identity.runtime-reflection-authority.v1",
+        "version": 1,
+        "contractSha256": "edaab1b52c9a8791270c729ce5f87b01df6a858cfcd25295b7ab3bdff539402d"
+      },
+      {
         "capability": "dream.schema.unified.v1",
         "version": 1,
         "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
@@ -174,7 +181,7 @@
       "path": "/api/internal/dream/v1/runtime-delegations",
       "input_schema_version": 1,
       "output_schema_version": 1,
-      "contract_sha256": "61186cc930977683a9739b412de0b0837ac482230ba0cf8c493d57f20d918273"
+      "contract_sha256": "e2aa6eac5c34d090c013755270bc9363e2e79b9a05902dfef73ab54494fb5091"
     }
   },
   {
@@ -251,6 +258,7 @@
                 "messages:create",
                 "messages:count_tokens",
                 "models:list",
+                "images:create",
                 "editor:read",
                 "editor:write"
               ]
@@ -284,6 +292,11 @@
         "capability": "identity.runtime-purpose.v1",
         "version": 1,
         "contractSha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447"
+      },
+      {
+        "capability": "identity.runtime-reflection-authority.v1",
+        "version": 1,
+        "contractSha256": "edaab1b52c9a8791270c729ce5f87b01df6a858cfcd25295b7ab3bdff539402d"
       }
     ],
     "capability": {
@@ -292,7 +305,7 @@
       "path": "/api/runtime-delegations/renew",
       "input_schema_version": 1,
       "output_schema_version": 1,
-      "contract_sha256": "1d611aeb0c70864d330042e2f3825191a0624f177b81a62ba83fae31587117db"
+      "contract_sha256": "bfcd929e88f4a44b7353446cfb80c410e9a363ede0c94f7f6db4aad7269e4284"
     }
   },
   {
@@ -344,6 +357,11 @@
         "capability": "identity.runtime-purpose.v1",
         "version": 1,
         "contractSha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447"
+      },
+      {
+        "capability": "identity.runtime-reflection-authority.v1",
+        "version": 1,
+        "contractSha256": "edaab1b52c9a8791270c729ce5f87b01df6a858cfcd25295b7ab3bdff539402d"
       }
     ],
     "capability": {
@@ -479,6 +497,7 @@
                             "messages:create",
                             "messages:count_tokens",
                             "models:list",
+                            "images:create",
                             "editor:read",
                             "editor:write"
                           ]
@@ -589,6 +608,11 @@
         "capability": "identity.runtime-purpose.v1",
         "version": 1,
         "contractSha256": "20f6c9bf727ac1ecc874c96880de12764a9406b5948c4764f0cfc0a107030447"
+      },
+      {
+        "capability": "identity.runtime-reflection-authority.v1",
+        "version": 1,
+        "contractSha256": "edaab1b52c9a8791270c729ce5f87b01df6a858cfcd25295b7ab3bdff539402d"
       }
     ],
     "capability": {
@@ -597,7 +621,7 @@
       "path": "/api/runtime-delegations/receipts/{request_id}",
       "input_schema_version": 1,
       "output_schema_version": 1,
-      "contract_sha256": "19bfb6e3eaa0ee783d688035afc347b3f2ec4b6771161e0ba445ed9b890ffdfc"
+      "contract_sha256": "ee6832f6ca1f6e23562c04507ada9fe2c58d8bc7928591d6a4bc116fa559e02e"
     }
   }
 ]

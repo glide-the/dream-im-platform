@@ -1,3 +1,9 @@
+// [Sync] 2026-10-10: preserve unknown complete image usage after conservative reservation closure.
+// [Input] Product read/write fixtures and controlled repository dependencies.
+// [Output] Safe public plan, entitlement, usage and subscription projections.
+// [Pos] Provider-free Product service unit coverage; persistence has separate integration tests.
+// [Sync] 2026-10-09: include the persisted Gateway operation in usage fixtures.
+
 import type { PoolClient } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -269,6 +275,20 @@ describe("Product read projections", () => {
     });
   });
 
+  it("keeps successful image delivery usage unknown after conservative worker closure", async () => {
+    const result = await getProductUsage(principal, usageQuerySchema.parse({ page: "1", pageSize: "25" }), baseDependencies({
+      findSubscription: vi.fn().mockResolvedValue(current),
+      findAllowance: vi.fn().mockResolvedValue({ granted_tokens: "1000000", reserved_tokens: "0", consumed_tokens: "150" }),
+      listUsage: vi.fn().mockResolvedValue({ summary: { request_count: "1", input_tokens: "0", output_tokens: "0",
+        cache_read_tokens: "0", cache_write_tokens: "0", total_tokens: "0", unknown_usage_count: "1" }, total: 1,
+        rows: [{ gateway_request_id: "req_native", model_alias: "dream-balanced", protocol: "anthropic", operation: "text",
+          status: "settled", usage_unknown: true, outcome: "succeeded", http_status: 200, error_code: "RESPONSES_IMAGE_USAGE_UNKNOWN",
+          input_tokens: "0", output_tokens: "0", cache_read_tokens: "0", cache_write_tokens: "0", total_tokens: "0",
+          allowance_reserved_tokens: "150", allowance_charged_tokens: "150", occurred_at: new Date("2030-01-10T12:00:00.000Z") }] }) }));
+    expect(result.data.summary.unknownUsageCount).toBe(1);
+    expect(result.data.items[0]).toMatchObject({ outcome: "completed", settlementState: "usageUnknown", errorCategory: "usageUnknown" });
+  });
+
   it("returns an atomic, paginated Token usage projection", async () => {
     const query = usageQuerySchema.parse({ page: "1", pageSize: "25" });
     const result = await getProductUsage(
@@ -297,6 +317,7 @@ describe("Product read projections", () => {
               gateway_request_id: "req_1",
               model_alias: "dream-balanced",
               protocol: "anthropic",
+              operation: "text",
               status: "settled",
               outcome: "succeeded",
               http_status: 200,

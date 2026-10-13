@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: cover explicit generic Responses selection, original defaults and fail-closed ownership.
 // [Input] Generic/managed Provider HTTP writes and mocked PostgreSQL credential lifecycle receipts.
 // [Output] Coverage for credential lifecycle plus revisioned, dependency-gated Provider deletion.
 // [Pos] Focused regression tests for Provider mutation integration without external Provider calls.
@@ -5,8 +6,10 @@
 // [Sync] 2026-09-04: cover model/Pricing delete conflicts, tombstones, and secret-safe audit.
 // [Sync] 2026-09-04: block tombstoning while an unpointed live managed credential remains.
 // [Sync] 2026-10-05: named upstream usage sources reject coercible arrays and invalid selectors before writes.
+// [Sync] 2026-10-11: verify audited Codex native declarations and unsupported/missing-budget rejection.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { claudeAgentResourcePolicy } from "../../../config/claude-agent-resource-policy";
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
@@ -752,5 +755,57 @@ describe("Provider mutation credential lifecycle", () => {
       error: { code: "ADMIN_INPUT_INVALID" },
     });
     expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+  it.each([null, "auto", ["responses"], true])("rejects invalid explicit API configuration before writing: %j", async (openaiApi) => {
+    const response = await handleAdminResourceCreate(mutationRequest("/api/admin/providers", "POST", { code: "responses-fixture", name: "Fixture", protocol: "openai", baseUrl: "https://api.openai.com", status: "disabled", config: { openaiApi } }), "providers");
+    expect(response.status).toBe(400);
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+  it("rejects a Responses override on an Anthropic Provider", async () => {
+    const response = await handleAdminResourceCreate(mutationRequest("/api/admin/providers", "POST", { code: "responses-fixture", name: "Fixture", protocol: "anthropic", baseUrl: "https://api.anthropic.com", status: "disabled", config: { openaiApi: "responses" } }), "providers");
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "PROVIDER_API_INVALID" } });
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale non-sensitive form that would roll back a concurrently validated API", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [{ ...before, protocol: "openai", base_url: "https://api.openai.com", config: { openaiApi: "responses", authMode: "bearer" }, auth_revision: 2 }] });
+    mocks.prepare.mockResolvedValue({ sensitive: false });
+    const response = await handleAdminResourceUpdate(mutationRequest("/api/admin/providers/provider_1", "PATCH", { name: "changed", config: { openaiApi: "chat", authMode: "bearer" }, expectedAuthRevision: 1 }), "providers", "provider_1");
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: "PROVIDER_AUTH_REVISION_CONFLICT" } });
+    expect(mocks.query).toHaveBeenCalledTimes(1);
+    expect(mocks.query.mock.calls[0][0]).toContain("FOR UPDATE");
+  });
+
+});
+
+describe("Responses image model publication boundaries", () => {
+  beforeEach(() => {
+    vi.clearAllMocks(); mocks.query.mockReset();
+    mocks.requireAdminRequest.mockResolvedValue(identity);
+    mocks.transaction.mockImplementation(async callback => callback({ query: mocks.query }));
+  });
+  it.each([
+    { adapter: "codex", config: {}, capabilities: { chat: true, tools: true, responses_image_generation: true, responses_image_edit: true }, output: 120000, input: 4784, status: 200 },
+    { adapter: "generic", config: { openaiApi: "responses" }, capabilities: { chat: true, tools: true, responses_image_generation: true }, output: 120000, input: null, status: 200 },
+    { adapter: "xai", config: {}, capabilities: { chat: true, tools: true, responses_image_generation: true }, output: 120000, input: null, status: 400 },
+    { adapter: "generic", config: {}, capabilities: { chat: true, tools: true, responses_image_generation: true }, output: 120000, input: null, status: 400 },
+    { adapter: "codex", config: {}, capabilities: { chat: false, tools: true, responses_image_generation: true }, output: 120000, input: null, status: 400 },
+    { adapter: "codex", config: {}, capabilities: { chat: true, tools: true, responses_image_generation: true }, output: null, input: null, status: 409 },
+    { adapter: "codex", config: {}, capabilities: { chat: true, tools: true, responses_image_edit: true }, output: 120000, input: null, status: 409 },
+  ])("publishes or rejects explicit native declarations before writes: $adapter/$status", async row => {
+    const runtime = claudeAgentResourcePolicy.claudeCodeRuntime;
+    mocks.query.mockImplementation(async sql => ({ rows: String(sql).includes("drizzle.schema_capabilities")
+      ? [{ version: runtime.version, contract_sha256: runtime.contractSha256 }]
+      : String(sql).includes("SELECT adapter_kind, protocol, config") ? [{ adapter_kind: row.adapter, protocol: "openai", config: row.config }]
+      : [{ id: "model_fixture", provider_id: "provider_fixture", capabilities: { chat: true, tools: true }, enabled: true }] }));
+    const response = await handleAdminResourceUpdate(mutationRequest("/api/admin/models/model_fixture", "PATCH", {
+      capabilities: row.capabilities, imageInputTokenReservePerImage: row.input, imageOutputTokenReservePerImage: row.output,
+    }), "models", "model_fixture");
+    expect(response.status).toBe(row.status);
+    const updates = mocks.query.mock.calls.filter(([sql]) => String(sql).startsWith("UPDATE ai_models"));
+    if (row.status === 200) { expect(updates).toHaveLength(1); expect(mocks.audit).toHaveBeenCalledOnce(); }
+    else { expect(updates).toHaveLength(0); expect(mocks.audit).not.toHaveBeenCalled(); }
   });
 });

@@ -6,6 +6,9 @@
 // [Sync] 2026-09-04: project static and managed Provider readiness metadata without credential material.
 // [Sync] 2026-09-04: resolve each managed Provider only through its single owned account.
 // [Sync] 2026-09-04: hide deleted Provider tombstones and project Pricing dependencies.
+// [Sync] 2026-10-09: separate Image runtime readiness from optional pricing/reservation audit evidence.
+// [Sync] 2026-10-10: filter the independent Image Provider view with image_api_configured on shared resources.
+// [Sync] 2026-10-10: allow date-range filters in the existing usage and Gateway request resources.
 
 import type { PoolClient } from "pg";
 import { claudeCodeRuntimeCapabilityAvailable } from "../db/claude-code-runtime-capability";
@@ -117,8 +120,26 @@ const resources: Record<AdminResource, ResourceConfig> = {
              managed.account_label AS managed_account_label,
              managed.access_expires_at AS managed_access_expires_at,
              p.config, p.created_at, p.updated_at,
+             (p.adapter_kind = 'codex' OR (
+               p.adapter_kind = 'generic' AND p.protocol = 'openai'
+               AND p.config -> 'imageApi' ->> 'kind' = 'openai'
+             )) AS image_api_configured,
+             (p.status = 'active' AND (
+               (p.adapter_kind = 'codex'
+                 AND p.active_credential_kind = 'managed_oauth'
+                 AND managed.status = 'connected')
+               OR (p.adapter_kind = 'generic' AND p.protocol = 'openai'
+                 AND p.config -> 'imageApi' ->> 'kind' = 'openai'
+                 AND p.active_credential_kind = 'static_api_key'
+                 AND p.api_key_ciphertext IS NOT NULL
+                 AND p.api_key_iv IS NOT NULL
+                 AND p.api_key_tag IS NOT NULL)
+             )) AS image_provider_ready,
              md5(extract(epoch FROM p.updated_at)::text) AS delete_revision,
              (SELECT COUNT(*)::int FROM ai_models AS m WHERE m.provider_id = p.id) AS model_count,
+             (SELECT COUNT(*)::int FROM ai_models AS m WHERE m.provider_id = p.id
+               AND (m.capabilities @> '{"image_generation":true}'::jsonb
+                 OR m.capabilities @> '{"image_edit":true}'::jsonb)) AS image_model_count,
              (SELECT COUNT(*)::int FROM ai_models AS m WHERE m.provider_id = p.id AND m.enabled = TRUE) AS enabled_model_count,
              (SELECT COUNT(*)::int
                 FROM ai_pricing_rules AS pricing
@@ -146,13 +167,17 @@ const resources: Record<AdminResource, ResourceConfig> = {
       name: "p.name",
       adapter_kind: "p.adapter_kind",
       protocol: "p.protocol",
+      image_api_configured: `(p.adapter_kind = 'codex' OR (
+        p.adapter_kind = 'generic' AND p.protocol = 'openai'
+        AND p.config -> 'imageApi' ->> 'kind' = 'openai'
+      ))`,
       status: "p.status",
       created_at: "p.created_at",
       updated_at: "p.updated_at",
       last_request_at: "(SELECT MAX(r.created_at) FROM gateway_requests AS r WHERE r.provider_id = p.id)",
     },
     defaultSort: "created_at",
-    filterFields: ["search", "code", "name", "protocol", "status"],
+    filterFields: ["search", "code", "name", "protocol", "status", "image_api_configured"],
     basePredicate: "p.status <> 'deleted'",
   },
   models: {
@@ -160,7 +185,13 @@ const resources: Record<AdminResource, ResourceConfig> = {
     select: `m.id, m.provider_id, p.code AS provider_code,
              m.code, m.upstream_model, m.display_name, m.context_window,
              m.max_output_tokens, m.claude_code_auto_compact_window,
-             m.claude_code_max_context_tokens, m.capabilities, m.request_headers,
+             m.claude_code_max_context_tokens,
+             m.image_input_token_reserve_per_image,
+             m.image_output_token_reserve_per_image,
+             m.metadata ->> 'imageReservationSource' AS image_reservation_source,
+             m.capabilities, m.request_headers,
+             (m.capabilities @> '{"image_generation":true}'::jsonb
+               OR m.capabilities @> '{"image_edit":true}'::jsonb) AS image_capable,
              m.enabled, m.metadata,
              (p.status = 'active' AND (
                (p.adapter_kind = 'generic'
@@ -178,12 +209,65 @@ const resources: Record<AdminResource, ResourceConfig> = {
                       AND managed.status = 'connected'
                  ))
              )) AS provider_ready,
+             (p.status = 'active' AND (
+               (p.adapter_kind = 'generic'
+                 AND p.protocol = 'openai'
+                 AND p.config -> 'imageApi' ->> 'kind' = 'openai'
+                 AND p.active_credential_kind = 'static_api_key'
+                 AND p.api_key_ciphertext IS NOT NULL
+                 AND p.api_key_iv IS NOT NULL
+                 AND p.api_key_tag IS NOT NULL)
+               OR (p.adapter_kind = 'codex'
+                 AND p.active_credential_kind = 'managed_oauth'
+                 AND EXISTS (
+                   SELECT 1 FROM ai_provider_managed_credentials AS managed
+                    WHERE managed.adapter_kind = 'codex'
+                      AND managed.id = p.managed_credential_id
+                      AND managed.provider_id = p.id
+                      AND managed.status = 'connected'
+                 ))
+             )) AS image_provider_ready,
+             (m.image_output_token_reserve_per_image IS NOT NULL
+               AND (
+                 NOT (m.capabilities @> '{"image_edit":true}'::jsonb)
+                 OR m.image_input_token_reserve_per_image IS NOT NULL
+               )) AS image_reservation_ready,
+             (NULLIF(BTRIM(m.metadata ->> 'imageReservationSource'), '') IS NOT NULL)
+               AS image_reservation_documented,
              EXISTS (
                SELECT 1 FROM ai_pricing_rules AS pricing
                WHERE pricing.model_id = m.id AND pricing.status = 'active'
                  AND pricing.effective_from <= NOW()
                  AND (pricing.effective_to IS NULL OR pricing.effective_to > NOW())
              ) AS pricing_ready,
+             EXISTS (
+               SELECT 1 FROM ai_pricing_rules AS pricing
+               WHERE pricing.model_id = m.id AND pricing.status = 'active'
+                 AND pricing.effective_from <= NOW()
+                 AND (pricing.effective_to IS NULL OR pricing.effective_to > NOW())
+                 AND pricing.image_output_price_microusd_per_million IS NOT NULL
+                 AND (
+                   NOT (m.capabilities @> '{"image_edit":true}'::jsonb)
+                   OR pricing.image_input_price_microusd_per_million IS NOT NULL
+                 )
+             ) AS image_pricing_ready,
+             EXISTS (
+               SELECT 1 FROM ai_pricing_rules AS pricing
+               WHERE pricing.model_id = m.id AND pricing.status = 'active'
+                 AND pricing.effective_from <= NOW()
+                 AND (pricing.effective_to IS NULL OR pricing.effective_to > NOW())
+                 AND pricing.source IN ('reference', 'provider_contract')
+                 AND pricing.source_ref IS NOT NULL
+                 AND pricing.source_version IS NOT NULL
+                 AND (
+                   (p.adapter_kind = 'codex'
+                     AND pricing.source_metadata ->> 'imagePricingBasis' IN (
+                       'codex_reference_api_usd', 'codex_managed_usd_contract'
+                     ))
+                   OR (p.adapter_kind = 'generic' AND p.protocol = 'openai'
+                     AND pricing.source_metadata ->> 'imagePricingBasis' = 'openai_api_usd')
+                 )
+             ) AS image_pricing_audited,
              EXISTS (
                SELECT 1
                FROM subscription_plan_entitlements AS entitlement
@@ -193,6 +277,15 @@ const resources: Record<AdminResource, ResourceConfig> = {
                  AND entitlement.gateway_scopes @> ARRAY['messages:create']::text[]
                  AND version.status = 'published'
              ) AS published_messages_entitlement,
+             EXISTS (
+               SELECT 1
+               FROM subscription_plan_entitlements AS entitlement
+               JOIN subscription_plan_versions AS version
+                 ON version.id = entitlement.plan_version_id
+               WHERE entitlement.model_id = m.id AND entitlement.enabled
+                 AND entitlement.gateway_scopes @> ARRAY['images:create']::text[]
+                 AND version.status = 'published'
+             ) AS published_images_entitlement,
              m.created_at, m.updated_at`,
     from: "FROM ai_models AS m JOIN ai_providers AS p ON p.id = m.provider_id",
     columns: {
@@ -203,11 +296,13 @@ const resources: Record<AdminResource, ResourceConfig> = {
       code: "m.code",
       display_name: "m.display_name",
       enabled: "m.enabled::text",
+      image_capable: `(m.capabilities @> '{"image_generation":true}'::jsonb
+        OR m.capabilities @> '{"image_edit":true}'::jsonb)::text`,
       created_at: "m.created_at",
       updated_at: "m.updated_at",
     },
     defaultSort: "created_at",
-    filterFields: ["search", "provider_id", "provider_code", "code", "display_name", "enabled"],
+    filterFields: ["search", "provider_id", "provider_code", "code", "display_name", "enabled", "image_capable"],
   },
   "pricing-rules": {
     permission: "pricing.read",
@@ -216,8 +311,13 @@ const resources: Record<AdminResource, ResourceConfig> = {
              pr.output_price_microusd_per_million,
              pr.cache_read_price_microusd_per_million,
              pr.cache_write_price_microusd_per_million,
+             pr.image_input_price_microusd_per_million,
+             pr.image_output_price_microusd_per_million,
+             (m.capabilities @> '{"image_generation":true}'::jsonb
+               OR m.capabilities @> '{"image_edit":true}'::jsonb) AS image_capable,
              pr.markup_bps, pr.discount_bps, pr.status,
              pr.source, pr.source_ref, pr.source_version, pr.source_metadata,
+             pr.source_metadata ->> 'imagePricingBasis' AS image_pricing_basis,
              pr.effective_from, pr.effective_to, pr.created_at, pr.updated_at`,
     from: "FROM ai_pricing_rules AS pr JOIN ai_models AS m ON m.id = pr.model_id",
     columns: {
@@ -227,12 +327,14 @@ const resources: Record<AdminResource, ResourceConfig> = {
       user_tier: "pr.user_tier",
       status: "pr.status",
       source: "pr.source",
+      image_capable: `(m.capabilities @> '{"image_generation":true}'::jsonb
+        OR m.capabilities @> '{"image_edit":true}'::jsonb)::text`,
       effective_from: "pr.effective_from",
       created_at: "pr.created_at",
       updated_at: "pr.updated_at",
     },
     defaultSort: "effective_from",
-    filterFields: ["model_id", "model_code", "user_tier", "status", "source"],
+    filterFields: ["model_id", "model_code", "user_tier", "status", "source", "image_capable"],
   },
   "billing-accounts": {
     permission: "billing.read",
@@ -263,12 +365,15 @@ const resources: Record<AdminResource, ResourceConfig> = {
              k.name AS gateway_key_name, k.key_prefix,
              r.provider_id, p.code AS provider_code, r.model_id,
              m.code AS model_code, r.pricing_rule_id,
-             r.requested_model, r.resolved_model, r.protocol, r.status,
+             r.requested_model, r.resolved_model, r.protocol, r.operation, r.status,
              r.outcome, r.input_token_semantics, r.estimated_tokens,
              r.input_tokens, r.output_tokens, r.cache_read_tokens,
-             r.cache_write_tokens, r.input_price_snapshot,
+             r.cache_write_tokens, r.input_text_tokens,
+             r.input_image_tokens, r.output_text_tokens,
+             r.output_image_tokens, r.input_price_snapshot,
              r.output_price_snapshot, r.cache_read_price_snapshot,
-             r.cache_write_price_snapshot, r.markup_bps_snapshot,
+             r.cache_write_price_snapshot, r.image_input_price_snapshot,
+             r.image_output_price_snapshot, r.markup_bps_snapshot,
              r.discount_bps_snapshot, r.reserved_microusd,
              r.subscription_id, r.subscription_plan_version_id,
              r.subscription_entitlement_id, r.subscription_allowance_id,
@@ -276,6 +381,14 @@ const resources: Record<AdminResource, ResourceConfig> = {
              r.allowance_charged_microusd, r.allowance_reserved_tokens,
              r.allowance_charged_tokens,
              r.provider_cost_microusd, r.charged_microusd,
+             CASE WHEN r.response_summary ->> 'usageKnown' = 'false' THEN NULL
+                  ELSE r.provider_cost_microusd END AS display_provider_cost_microusd,
+             CASE WHEN r.response_summary ->> 'usageKnown' = 'false' THEN NULL
+                  ELSE r.charged_microusd END AS display_charged_microusd,
+             CASE WHEN r.response_summary ? 'usageKnown'
+                    THEN (r.response_summary ->> 'usageKnown')::boolean
+                  WHEN r.settled_at IS NOT NULL THEN TRUE
+                  ELSE NULL END AS usage_known,
              r.http_status, r.error_code, r.error_message,
              r.first_token_ms, r.latency_ms, r.response_summary,
              r.created_at, r.started_at, r.completed_at, r.settled_at`,
@@ -295,6 +408,7 @@ const resources: Record<AdminResource, ResourceConfig> = {
       provider_code: "p.code",
       model_code: "m.code",
       protocol: "r.protocol",
+      operation: "r.operation",
       status: "r.status",
       outcome: "r.outcome",
       error_code: "r.error_code",
@@ -302,7 +416,7 @@ const resources: Record<AdminResource, ResourceConfig> = {
       settled_at: "r.settled_at",
     },
     defaultSort: "created_at",
-    filterFields: ["platform_user_id", "provider_id", "model_id", "subscription_id", "email", "provider_code", "model_code", "requested_model", "protocol", "status", "outcome", "error_code"],
+    filterFields: ["platform_user_id", "provider_id", "model_id", "subscription_id", "email", "provider_code", "model_code", "requested_model", "protocol", "operation", "status", "outcome", "error_code", "created_at"],
   },
   ledger: {
     permission: "billing.read",
@@ -379,16 +493,27 @@ const resources: Record<AdminResource, ResourceConfig> = {
              r.subscription_entitlement_id, r.subscription_allowance_id,
              r.subscription_snapshot, r.subscription_coverage_mode,
              r.requested_model, r.resolved_model, r.upstream_request_id, r.routing_snapshot, r.routing_attempts,
-             r.protocol, r.status, r.outcome, r.input_token_semantics,
+             r.protocol, r.operation, r.status, r.outcome, r.input_token_semantics,
              r.estimated_tokens, r.input_tokens, r.output_tokens,
-             r.cache_read_tokens, r.cache_write_tokens,
+             r.cache_read_tokens, r.cache_write_tokens, r.input_text_tokens,
+             r.input_image_tokens, r.output_text_tokens, r.output_image_tokens,
              r.input_price_snapshot, r.output_price_snapshot,
              r.cache_read_price_snapshot, r.cache_write_price_snapshot,
+             r.image_input_price_snapshot, r.image_output_price_snapshot,
              r.markup_bps_snapshot, r.discount_bps_snapshot,
              r.reserved_microusd, r.allowance_reserved_microusd,
              r.allowance_charged_microusd, r.allowance_reserved_tokens,
              r.allowance_charged_tokens, r.provider_cost_microusd,
-             r.charged_microusd, r.is_streaming, r.http_status,
+             r.charged_microusd,
+             CASE WHEN r.response_summary ->> 'usageKnown' = 'false' THEN NULL
+                  ELSE r.provider_cost_microusd END AS display_provider_cost_microusd,
+             CASE WHEN r.response_summary ->> 'usageKnown' = 'false' THEN NULL
+                  ELSE r.charged_microusd END AS display_charged_microusd,
+             CASE WHEN r.response_summary ? 'usageKnown'
+                    THEN (r.response_summary ->> 'usageKnown')::boolean
+                  WHEN r.settled_at IS NOT NULL THEN TRUE
+                  ELSE NULL END AS usage_known,
+             r.is_streaming, r.http_status,
              r.error_code, r.error_message, r.first_token_ms, r.latency_ms,
              r.response_summary, r.payload_capture_status,
              r.payload_capture_error, r.created_at, r.started_at,
@@ -407,6 +532,7 @@ const resources: Record<AdminResource, ResourceConfig> = {
       model_code: "m.code",
       requested_model: "r.requested_model",
       protocol: "r.protocol",
+      operation: "r.operation",
       status: "r.status",
       outcome: "r.outcome",
       error_code: "r.error_code",
@@ -414,7 +540,7 @@ const resources: Record<AdminResource, ResourceConfig> = {
       completed_at: "r.completed_at",
     },
     defaultSort: "created_at",
-    filterFields: ["platform_user_id", "subscription_id", "email", "provider_code", "requested_model", "protocol", "status", "outcome", "error_code"],
+    filterFields: ["platform_user_id", "subscription_id", "email", "provider_code", "requested_model", "protocol", "operation", "status", "outcome", "error_code", "created_at"],
   },
   "gateway-api-keys": {
     permission: "gateway.read",

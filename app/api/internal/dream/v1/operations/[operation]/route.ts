@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: register exact image-turn bind/select and original entity-bound receipt recovery.
 // [Input] Explicit registered local-data, Thread/message, scheduled Chat, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
 // [Sync] 2026-09-28: route named scheduled Chat user and background operations to one capability-gated handler.
 // [Output] Strict domain DTO, never generic SQL or arbitrary function dispatch.
@@ -53,9 +54,11 @@ import { handleClaudePluginOperation, isClaudePluginOperation } from "../../../.
 import { handleStoryWorkspaceArtifact, isStoryWorkspaceArtifactOperation } from "../../../../../../lib/dream/storyWorkspaceArtifactHandler";
 import { handleTaskSessionResult, isTaskSessionResultOperation } from "../../../../../../lib/dream/taskSessionResultHandler";
 import { handleChatScheduledTaskOperation, isChatScheduledTaskOperation } from "../../../../../../lib/dream/chatScheduledTaskHandler";
+import { handleImageTurnOperation, isImageTurnOperation } from "../../../../../../lib/dream/imageTurnHandler";
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
+  if (isImageTurnOperation(name)) return handleImageTurnOperation(request, name);
   if (isChatScheduledTaskOperation(name)) return handleChatScheduledTaskOperation(request, name);
   if (isTaskSessionResultOperation(name)) return handleTaskSessionResult(request, name);
   if (isStoryWorkspaceArtifactOperation(name)) return handleStoryWorkspaceArtifact(request, name);

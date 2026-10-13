@@ -1,4 +1,6 @@
+// [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
 // [Sync] 2026-10-05: validate named upstream usage source without accepting query scripts or credentials.
+// [Sync] 2026-10-10: validate explicit generic OpenAI inference APIs and reject product/protocol ownership overrides.
 // [Input] Authenticated Admin mutation requests, strict resource schemas, and PostgreSQL transactions.
 // [Output] Audited CRUD writes, including dependency-gated Provider tombstones and model Runtime settings.
 // [Pos] Shared Admin mutation domain; routes delegate here after Origin/RBAC checks.
@@ -6,15 +8,23 @@
 // [Sync] 2026-09-04: preserve static validation while gating managed activation on live registry/encryption/fingerprint readiness.
 // [Sync] 2026-09-04: create managed Providers unbound and require their own account before enablement.
 // [Sync] 2026-09-04: add revision-fenced Provider deletion without erasing billing or OAuth history.
+// [Sync] 2026-10-09: keep Image pricing evidence optional while validating any supplied Provider/source tuple.
+// [Sync] 2026-10-10: share unchanged pricing-scope/window guards with catalog Apply.
+// [Sync] 2026-10-11: permit explicitly declared Codex hosted Responses capabilities with existing reservations.
 
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { resolveGatewayBaseUrl } from "../gateway/public-base-url";
 import { creditBillingAccountOnClient } from "../billing/repository";
+import {
+  expectedImagePricingBasis,
+  imagePricingBasisMatchesProvider,
+  IMAGE_PRICING_BASES,
+} from "../billing/image-pricing-contract";
 import { createGatewayApiKey } from "../gateway/api-keys";
 import { GatewayError } from "../gateway/errors";
 import { resolveProviderAuthMode } from "../gateway/provider-auth";
-import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
+import { resolveProviderBaseUrl, resolveProviderApi, resolveProviderInferenceEndpoint } from "../gateway/provider-endpoint";
 import { claudeCodeRuntimeCapabilityAvailable } from "../db/claude-code-runtime-capability";
 import { withPlatformClient, withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
@@ -43,6 +53,7 @@ import {
 } from "./guard";
 import type { AdminIdentity } from "./session";
 import { hashAdminPassword } from "./password";
+import { assertPricingWindow, lockPricingScope } from "./pricing-windows";
 import {
   findForbiddenProviderConfigKey,
   sanitizeProviderRecord,
@@ -104,6 +115,9 @@ function findManagedProviderOwnedConfigKey(
 
 function assertManagedProviderConfig(config: Record<string, unknown> | undefined) {
   if (!config) return;
+  if (Object.hasOwn(config, "openaiApi")) {
+    throw new AdminError("PROVIDER_API_INVALID", "Managed product inference APIs are owned by the product registry", 400);
+  }
   if (config.authMode !== undefined) {
     throw new AdminError(
       "PROVIDER_MANAGED_AUTH_MODE_NOT_EDITABLE",
@@ -125,6 +139,9 @@ const optionalLimit = z.number().int().nonnegative().nullable().optional();
 const providerConfigSchema = z
   .record(z.string(), z.unknown())
   .superRefine((config, context) => {
+    if (Object.hasOwn(config, "openaiApi") && (typeof config.openaiApi !== "string" || !["chat", "responses"].includes(config.openaiApi))) {
+      context.addIssue({ code: "custom", path: ["openaiApi"], message: "openaiApi must be chat or responses" });
+    }
     const forbiddenPath = findForbiddenProviderConfigKey(config);
     if (forbiddenPath) {
       context.addIssue({
@@ -191,7 +208,97 @@ const providerConfigSchema = z
         message: "manualModel is required when model discovery is disabled",
       });
     }
+    if (config.imageApi !== undefined) {
+      const parsed = z.object({ kind: z.literal("openai") }).strict()
+        .safeParse(config.imageApi);
+      if (!parsed.success) {
+        context.addIssue({
+          code: "custom",
+          path: ["imageApi"],
+          message: "imageApi must be exactly { kind: 'openai' }",
+        });
+      }
+    }
   });
+
+function assertImageProviderConfig(input: {
+  adapterKind: "generic" | "codex" | "xai" | "github_copilot";
+  protocol: "anthropic" | "openai";
+  config?: Record<string, unknown>;
+}) {
+  if (input.config?.imageApi === undefined) return;
+  if (input.adapterKind !== "generic" || input.protocol !== "openai") {
+    throw new AdminError(
+      "PROVIDER_IMAGE_API_OWNERSHIP_INVALID",
+      "Only a generic OpenAI-protocol Provider may declare the OpenAI Image API marker",
+      400,
+    );
+  }
+}
+
+async function assertImageModelConfiguration(
+  client: PoolClient,
+  input: {
+    providerId: string;
+    capabilities: Record<string, boolean>;
+    imageInputTokenReservePerImage?: number | null;
+    imageOutputTokenReservePerImage?: number | null;
+    imageReservationSource?: string | null;
+    enabled: boolean;
+  },
+) {
+  const generates = input.capabilities.image_generation === true;
+  const edits = input.capabilities.image_edit === true;
+  const nativeGenerates = input.capabilities.responses_image_generation === true;
+  const nativeEdits = input.capabilities.responses_image_edit === true;
+  if (!generates && !edits && !nativeGenerates && !nativeEdits) return;
+  const provider = (await client.query<{
+    adapter_kind: "generic" | "codex" | "xai" | "github_copilot";
+    protocol: "anthropic" | "openai";
+    config: Record<string, unknown> | null;
+  }>(
+    "SELECT adapter_kind, protocol, config FROM ai_providers WHERE id = $1 AND status <> 'deleted'",
+    [input.providerId],
+  )).rows[0];
+  if (!provider) {
+    throw new AdminError("PROVIDER_NOT_FOUND", "The selected Provider does not exist", 400);
+  }
+  if (nativeGenerates || nativeEdits) {
+    if (provider.protocol !== "openai" || !(provider.adapter_kind === "codex"
+      || (provider.adapter_kind === "generic" && provider.config?.openaiApi === "responses"))
+      || input.capabilities.chat !== true || input.capabilities.tools !== true) {
+      throw new AdminError("RESPONSES_IMAGE_PROVIDER_UNSUPPORTED", "Responses image capabilities require a conversation/tool model on Codex or an explicitly configured OpenAI Responses Provider", 400);
+    }
+    if (input.enabled && (!input.imageOutputTokenReservePerImage || (nativeEdits && !input.imageInputTokenReservePerImage))) {
+      throw new AdminError("IMAGE_TOKEN_RESERVATION_REQUIRED", "Responses image operations require output reservation and editing also requires input reservation", 409);
+    }
+  }
+  if (!generates && !edits) return;
+  const supported = provider.adapter_kind === "codex"
+    || (
+      provider.adapter_kind === "generic"
+      && provider.protocol === "openai"
+      && (provider.config?.imageApi as { kind?: unknown } | undefined)?.kind === "openai"
+    );
+  if (!supported) {
+    throw new AdminError(
+      "IMAGE_PROVIDER_UNSUPPORTED",
+      "Image models require Codex or an explicitly marked OpenAI Images Provider",
+      400,
+    );
+  }
+  if (
+    input.enabled
+    && (!input.imageOutputTokenReservePerImage
+      || (edits && !input.imageInputTokenReservePerImage))
+  ) {
+    throw new AdminError(
+      "IMAGE_TOKEN_RESERVATION_REQUIRED",
+      "Enabled Image models require output reservation, and edit models also require input reservation",
+      409,
+    );
+  }
+}
 
 const providerCreateSchema = z.strictObject({
   code: codeSchema,
@@ -224,6 +331,9 @@ const modelCreateSchema = z.strictObject({
   displayName: z.string().trim().min(1).max(160),
   contextWindow: z.number().int().positive().nullable().optional(),
   maxOutputTokens: z.number().int().positive().nullable().optional(),
+  imageInputTokenReservePerImage: z.number().int().positive().nullable().optional(),
+  imageOutputTokenReservePerImage: z.number().int().positive().nullable().optional(),
+  imageReservationSource: z.string().trim().min(3).max(1_000).nullable().optional(),
   claudeCodeAutoCompactWindow: z.number().int().positive()
     .max(CLAUDE_CODE_RUNTIME_INTEGER_MAX).nullable().optional(),
   claudeCodeMaxContextTokens: z.number().int().positive()
@@ -238,6 +348,9 @@ const modelUpdateSchema = z.strictObject({
   displayName: z.string().trim().min(1).max(160).optional(),
   contextWindow: z.number().int().positive().nullable().optional(),
   maxOutputTokens: z.number().int().positive().nullable().optional(),
+  imageInputTokenReservePerImage: z.number().int().positive().nullable().optional(),
+  imageOutputTokenReservePerImage: z.number().int().positive().nullable().optional(),
+  imageReservationSource: z.string().trim().min(3).max(1_000).nullable().optional(),
   claudeCodeAutoCompactWindow: z.number().int().positive()
     .max(CLAUDE_CODE_RUNTIME_INTEGER_MAX).nullable().optional(),
   claudeCodeMaxContextTokens: z.number().int().positive()
@@ -254,6 +367,11 @@ const pricingCreateSchema = z.strictObject({
   outputPriceMicrousdPerMillion: z.number().int().nonnegative(),
   cacheReadPriceMicrousdPerMillion: z.number().int().nonnegative().default(0),
   cacheWritePriceMicrousdPerMillion: z.number().int().nonnegative().default(0),
+  imageInputPriceMicrousdPerMillion: z.number().int().nonnegative().nullable().optional(),
+  imageOutputPriceMicrousdPerMillion: z.number().int().nonnegative().nullable().optional(),
+  priceSourceRef: z.string().trim().min(3).max(2_000).nullable().optional(),
+  priceSourceVersion: z.string().trim().min(1).max(200).nullable().optional(),
+  imagePricingBasis: z.enum(IMAGE_PRICING_BASES).nullable().optional(),
   markupBps: z.number().int().min(0).max(100_000).default(0),
   discountBps: z.number().int().min(0).max(10_000).default(0),
   status: z.enum(["active", "disabled"]).default("active"),
@@ -294,7 +412,7 @@ const userModelPermissionUpdateSchema = z.strictObject({
 const gatewayKeyCommonCreateFields = {
   name: z.string().trim().min(1).max(120),
   scopes: z
-    .array(z.enum(["messages:create", "chat:create", "models:list"]))
+    .array(z.enum(["messages:create", "chat:create", "models:list", "images:create"]))
     .min(1),
   expiresAt: z.iso.datetime().nullable().optional(),
 } as const;
@@ -456,6 +574,7 @@ async function insertProvider(
   input: z.infer<typeof providerCreateSchema>,
 ) {
   const managed = input.adapterKind !== "generic";
+  assertImageProviderConfig(input);
   if (managed && input.protocol !== "openai") {
     throw new AdminError(
       "PROVIDER_MANAGED_PROTOCOL_REQUIRED",
@@ -481,11 +600,12 @@ async function insertProvider(
   if (!managed) {
     try {
       resolveProviderAuthMode({ protocol: input.protocol, config: input.config });
+      resolveProviderApi({ protocol: input.protocol, config: input.config });
     } catch (error) {
       if (!(error instanceof GatewayError)) throw error;
       throw new AdminError(
         error.code,
-        "The Provider authentication configuration is invalid",
+        error.code === "PROVIDER_API_INVALID" ? error.message : "The Provider authentication configuration is invalid",
         400,
       );
     }
@@ -503,6 +623,14 @@ async function insertProvider(
         protocol: input.protocol,
         baseUrl: input.baseUrl!,
       });
+  if (!managed) {
+    try {
+      resolveProviderInferenceEndpoint({ protocol: input.protocol, baseUrl: baseUrl!, config: input.config });
+    } catch (error) {
+      if (!(error instanceof GatewayError)) throw error;
+      throw new AdminError(error.code, error.message, 400);
+    }
+  }
   if (!managed && input.status === "active" && !input.apiKey) {
     throw new AdminError(
       "PROVIDER_CREDENTIAL_REQUIRED",
@@ -573,18 +701,23 @@ async function insertModel(
       503,
     );
   }
+  await assertImageModelConfiguration(client, input);
   const id = createPlatformId("model");
   const result = await client.query<Record<string, unknown>>(
     `INSERT INTO ai_models (
        id, provider_id, code, upstream_model, display_name,
        context_window, max_output_tokens,
+       image_input_token_reserve_per_image,
+       image_output_token_reserve_per_image,
        claude_code_auto_compact_window, claude_code_max_context_tokens,
-       capabilities, request_headers, enabled
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12)
+       capabilities, request_headers, enabled, metadata
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15::jsonb)
      RETURNING id, provider_id, code, upstream_model, display_name,
                context_window, max_output_tokens,
+               image_input_token_reserve_per_image,
+               image_output_token_reserve_per_image,
                claude_code_auto_compact_window, claude_code_max_context_tokens,
-               capabilities, request_headers, enabled,
+               capabilities, request_headers, enabled, metadata,
                created_at, updated_at`,
     [
       id,
@@ -594,60 +727,21 @@ async function insertModel(
       input.displayName,
       input.contextWindow ?? null,
       input.maxOutputTokens ?? null,
+      input.imageInputTokenReservePerImage ?? null,
+      input.imageOutputTokenReservePerImage ?? null,
       input.claudeCodeAutoCompactWindow ?? null,
       input.claudeCodeMaxContextTokens ?? null,
       JSON.stringify(input.capabilities),
       JSON.stringify(input.requestHeaders),
       input.enabled,
+      JSON.stringify(input.imageReservationSource
+        ? { imageReservationSource: input.imageReservationSource }
+        : {}),
     ],
   );
   return result.rows[0];
 }
 
-async function lockPricingScope(
-  client: PoolClient,
-  modelId: string,
-  userTier: string,
-) {
-  await client.query(
-    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-    [`${modelId}:${userTier}`],
-  );
-}
-
-async function assertPricingWindow(
-  client: PoolClient,
-  input: {
-    modelId: string;
-    userTier: string;
-    effectiveFrom: string;
-    effectiveTo?: string | null;
-    excludeId?: string;
-  },
-) {
-  const overlap = await client.query(
-    `SELECT 1 FROM ai_pricing_rules
-     WHERE model_id = $1 AND user_tier = $2 AND status = 'active'
-       AND id <> COALESCE($5, '')
-       AND tstzrange(effective_from, effective_to, '[)') &&
-           tstzrange($3::timestamptz, $4::timestamptz, '[)')
-     LIMIT 1`,
-    [
-      input.modelId,
-      input.userTier,
-      input.effectiveFrom,
-      input.effectiveTo ?? "infinity",
-      input.excludeId ?? null,
-    ],
-  );
-  if (overlap.rows[0]) {
-    throw new AdminError(
-      "PRICING_WINDOW_CONFLICT",
-      "该模型与用户层级已有价格版本覆盖此生效时间，请晚于当前版本开始时间或检查未来价格窗口",
-      409,
-    );
-  }
-}
 
 async function loadOpenPricingRuleForReplacement(
   client: PoolClient,
@@ -685,6 +779,90 @@ async function insertPricing(
   client: PoolClient,
   input: z.infer<typeof pricingCreateSchema>,
 ) {
+  const pricedModel = (await client.query<{
+    capabilities: Record<string, boolean> | null;
+    adapter_kind: string;
+    protocol: "anthropic" | "openai";
+  }>(`SELECT m.capabilities, p.adapter_kind, p.protocol
+       FROM ai_models AS m
+       JOIN ai_providers AS p ON p.id = m.provider_id
+       WHERE m.id = $1`, [input.modelId])).rows[0];
+  if (!pricedModel) {
+    throw new AdminError("MODEL_NOT_FOUND", "The selected model does not exist", 400);
+  }
+  const imagePricing = pricedModel.capabilities?.image_generation === true
+    || pricedModel.capabilities?.image_edit === true;
+  const requiredImagePricingBasis = imagePricing
+    ? expectedImagePricingBasis({
+        adapterKind: pricedModel.adapter_kind,
+        protocol: pricedModel.protocol,
+      })
+    : undefined;
+  const hasImagePriceSourceRef = Boolean(input.priceSourceRef);
+  const hasImagePriceSourceVersion = Boolean(input.priceSourceVersion);
+  const hasImagePricingBasis = Boolean(input.imagePricingBasis);
+  const auditedImagePricing = imagePricing
+    && hasImagePriceSourceRef
+    && hasImagePriceSourceVersion
+    && hasImagePricingBasis;
+  const imagePricingSource = !auditedImagePricing
+    ? "manual"
+    : input.imagePricingBasis === "codex_managed_usd_contract"
+      ? "provider_contract"
+      : "reference";
+  if (input.status === "active") {
+    const capabilities = pricedModel.capabilities ?? {};
+    if (
+      (capabilities.image_generation === true || capabilities.image_edit === true)
+      && (input.imageOutputPriceMicrousdPerMillion === undefined
+        || input.imageOutputPriceMicrousdPerMillion === null)
+    ) {
+      throw new AdminError(
+        "IMAGE_OUTPUT_PRICING_REQUIRED",
+        "Active Image pricing requires an image-output Token price",
+        400,
+      );
+    }
+    if (
+      capabilities.image_edit === true
+      && (input.imageInputPriceMicrousdPerMillion === undefined
+        || input.imageInputPriceMicrousdPerMillion === null)
+    ) {
+      throw new AdminError(
+        "IMAGE_INPUT_PRICING_REQUIRED",
+        "Active Image edit pricing requires an image-input Token price",
+        400,
+      );
+    }
+    if (
+      imagePricing
+      && (hasImagePriceSourceRef || hasImagePriceSourceVersion || hasImagePricingBasis)
+      && !auditedImagePricing
+    ) {
+      throw new AdminError(
+        "IMAGE_PRICE_AUDIT_INCOMPLETE",
+        "Image pricing audit metadata must include contract type, reference, and version together",
+        400,
+      );
+    }
+    if (
+      auditedImagePricing
+      && input.imagePricingBasis
+      && !imagePricingBasisMatchesProvider({
+        adapterKind: pricedModel.adapter_kind,
+        protocol: pricedModel.protocol,
+        basis: input.imagePricingBasis,
+      })
+    ) {
+      throw new AdminError(
+        "IMAGE_PRICING_BASIS_MISMATCH",
+        requiredImagePricingBasis
+          ? `Image pricing evidence does not match this Provider; use ${requiredImagePricingBasis} as the normal reference basis`
+          : "The selected Provider has no supported Image pricing contract",
+        400,
+      );
+    }
+  }
   if (
     input.effectiveTo &&
     new Date(input.effectiveTo) <= new Date(input.effectiveFrom)
@@ -756,9 +934,12 @@ async function insertPricing(
        output_price_microusd_per_million,
        cache_read_price_microusd_per_million,
        cache_write_price_microusd_per_million,
-       markup_bps, discount_bps, status, effective_from, effective_to
+       image_input_price_microusd_per_million,
+       image_output_price_microusd_per_million,
+       markup_bps, discount_bps, status, source, source_ref, source_version,
+       source_metadata, effective_from, effective_to
      ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
      ) RETURNING *`,
     [
       id,
@@ -768,9 +949,17 @@ async function insertPricing(
       input.outputPriceMicrousdPerMillion,
       input.cacheReadPriceMicrousdPerMillion,
       input.cacheWritePriceMicrousdPerMillion,
+      input.imageInputPriceMicrousdPerMillion ?? null,
+      input.imageOutputPriceMicrousdPerMillion ?? null,
       input.markupBps,
       input.discountBps,
       input.status,
+      imagePricingSource,
+      input.priceSourceRef ?? null,
+      input.priceSourceVersion ?? null,
+      auditedImagePricing && input.imagePricingBasis
+        ? { imagePricingBasis: input.imagePricingBasis }
+        : {},
       input.effectiveFrom,
       input.effectiveTo ?? null,
     ],
@@ -1083,6 +1272,13 @@ async function updateProvider(
     );
   }
   const managed = before.adapter_kind !== "generic";
+  if (input.config !== undefined) {
+    assertImageProviderConfig({
+      adapterKind: before.adapter_kind as "generic" | "codex" | "xai" | "github_copilot",
+      protocol: before.protocol as "anthropic" | "openai",
+      config: input.config,
+    });
+  }
   if (prepared.sensitive) {
     const currentAuthRevision = Number(before.auth_revision);
     if (currentAuthRevision !== prepared.expectedAuthRevision) {
@@ -1238,6 +1434,20 @@ async function updateProvider(
   const baseUrl = input.baseUrl
     ? resolveAdminProviderBaseUrl({ protocol, baseUrl: input.baseUrl })
     : undefined;
+  if (!managed) {
+    try {
+      resolveProviderInferenceEndpoint({ protocol, baseUrl: baseUrl ?? String(before.base_url), config: input.config ?? before.config as Record<string, unknown> });
+      if (!prepared.sensitive && input.config !== undefined
+        && resolveProviderApi({ protocol, config: input.config }) !== resolveProviderApi({ protocol, config: before.config as Record<string, unknown> })) {
+        throw new AdminError("PROVIDER_AUTH_REVISION_CONFLICT", "The Provider inference API has changed; reload the current configuration before saving", 409, {
+          providerCode: before.code, currentAuthRevision: Number(before.auth_revision), expectedAuthRevision: input.expectedAuthRevision,
+        });
+      }
+    } catch (error) {
+      if (!(error instanceof GatewayError)) throw error;
+      throw new AdminError(error.code, error.message, 400);
+    }
+  }
   const encrypted = !managed && input.apiKey ? encryptCredential(input.apiKey) : undefined;
   if (
     !managed &&
@@ -1334,12 +1544,44 @@ async function updateModel(
     );
   }
   const before = await loadRowForUpdate(client, "ai_models", id);
+  await assertImageModelConfiguration(client, {
+    providerId: String(before.provider_id),
+    capabilities: (input.capabilities ?? before.capabilities ?? {}) as Record<string, boolean>,
+    imageInputTokenReservePerImage: input.imageInputTokenReservePerImage === undefined
+      ? before.image_input_token_reserve_per_image as number | null
+      : input.imageInputTokenReservePerImage,
+    imageOutputTokenReservePerImage: input.imageOutputTokenReservePerImage === undefined
+      ? before.image_output_token_reserve_per_image as number | null
+      : input.imageOutputTokenReservePerImage,
+    imageReservationSource: input.imageReservationSource === undefined
+      ? ((before.metadata as Record<string, unknown> | null)?.imageReservationSource as string | undefined)
+      : input.imageReservationSource,
+    enabled: input.enabled ?? Boolean(before.enabled),
+  });
   const values: unknown[] = [id];
   const updates: string[] = [];
   addUpdate(updates, values, "upstream_model", input.upstreamModel);
   addUpdate(updates, values, "display_name", input.displayName);
   addUpdate(updates, values, "context_window", input.contextWindow);
   addUpdate(updates, values, "max_output_tokens", input.maxOutputTokens);
+  addUpdate(
+    updates,
+    values,
+    "image_input_token_reserve_per_image",
+    input.imageInputTokenReservePerImage,
+  );
+  addUpdate(
+    updates,
+    values,
+    "image_output_token_reserve_per_image",
+    input.imageOutputTokenReservePerImage,
+  );
+  if (input.imageReservationSource !== undefined) {
+    const metadata = { ...((before.metadata as Record<string, unknown> | null) ?? {}) };
+    if (input.imageReservationSource === null) delete metadata.imageReservationSource;
+    else metadata.imageReservationSource = input.imageReservationSource;
+    addUpdate(updates, values, "metadata", JSON.stringify(metadata), "::jsonb");
+  }
   addUpdate(
     updates,
     values,

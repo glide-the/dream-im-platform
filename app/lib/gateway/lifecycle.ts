@@ -1,3 +1,10 @@
+// [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
+// [Input] Provider outcome, reliable or unknown usage, and reserved Gateway request identity.
+// [Output] Atomic settlement or persisted recovery facts with stable public errors.
+// [Pos] Shared Gateway finalization boundary; it never replays Provider requests.
+// [Sync] 2026-10-09: preserve reliable Image details/known-usage markers and require full Token allowance capture.
+// [Sync] 2026-10-10: preserve successful native-image delivery independently of unknown complete billing usage.
+
 import {
   markGatewayRequestSettlementFailed,
   settleGatewayRequest,
@@ -26,6 +33,7 @@ export async function finalizeKnownUsage(input: {
   startedAt: number;
   firstTokenAt?: number;
   responseSummary?: Record<string, unknown>;
+  requireFullTokenAllowanceCapture?: boolean;
 }) {
   try {
     return await settleGatewayRequest({
@@ -40,9 +48,38 @@ export async function finalizeKnownUsage(input: {
         input.firstTokenAt === undefined
           ? undefined
           : input.firstTokenAt - input.startedAt,
-      responseSummary: input.responseSummary,
+      responseSummary: {
+        ...(input.responseSummary ?? {}),
+        usageKnown: true,
+        settlementResolution: "actual_usage",
+      },
+      requireFullTokenAllowanceCapture:
+        input.requireFullTokenAllowanceCapture,
     });
   } catch {
+    try {
+      await markGatewayRequestSettlementFailed({
+        gatewayRequestId: input.requestId,
+        outcome: input.outcome === "succeeded" ? "failed" : input.outcome,
+        errorCode: "BILLING_SETTLEMENT_UNAVAILABLE",
+        errorMessage: "Reliable provider usage is awaiting billing settlement",
+        httpStatus: 503,
+        latencyMs: Date.now() - input.startedAt,
+        firstTokenMs:
+          input.firstTokenAt === undefined
+            ? undefined
+            : input.firstTokenAt - input.startedAt,
+        usage: input.usage,
+        responseSummary: {
+          ...(input.responseSummary ?? {}),
+          usageKnown: true,
+          settlementResolution: "actual_usage_pending",
+        },
+      });
+    } catch {
+      // The caller still receives the stable settlement error. A database-wide
+      // failure cannot persist recovery facts in this process.
+    }
     throw new GatewayError(
       "BILLING_SETTLEMENT_UNAVAILABLE",
       "The model response could not be finalized in the billing ledger",
@@ -55,15 +92,17 @@ export async function finalizeKnownUsage(input: {
 
 export async function finalizeUnknownUsage(input: {
   requestId: string;
-  outcome: "failed" | "cancelled";
+  outcome: "succeeded" | "failed" | "cancelled";
   errorCode: string;
   errorMessage: string;
   httpStatus?: number;
   startedAt: number;
   firstTokenAt?: number;
+  responseSummary?: Record<string, unknown>;
+  requireTransition?: boolean;
 }) {
   try {
-    await markGatewayRequestSettlementFailed({
+    const result = await markGatewayRequestSettlementFailed({
       gatewayRequestId: input.requestId,
       outcome: input.outcome,
       errorCode: input.errorCode,
@@ -74,10 +113,17 @@ export async function finalizeUnknownUsage(input: {
         input.firstTokenAt === undefined
           ? undefined
           : input.firstTokenAt - input.startedAt,
+      responseSummary: {
+        ...(input.responseSummary ?? {}),
+        usageKnown: false,
+        settlementResolution: "conservative_estimated_capture_pending",
+      },
     });
+    return !input.requireTransition || result.updated;
   } catch {
     // The immutable request/error record remains available for an idempotent
     // automated recovery after the database becomes available again.
+    return false;
   }
 }
 
@@ -89,6 +135,8 @@ export async function finalizeProviderFailure(input: {
   startedAt: number;
   firstTokenAt?: number;
   cancelled?: boolean;
+  requireFullTokenAllowanceCapture?: boolean;
+  responseSummary?: Record<string, unknown>;
 }) {
   const mapped = toProviderGatewayError(input.error);
   const usage = input.usage ?? emptyTokenUsage(
@@ -110,6 +158,12 @@ export async function finalizeProviderFailure(input: {
       errorMessage: mapped.message,
       startedAt: input.startedAt,
       firstTokenAt: input.firstTokenAt,
+      responseSummary: {
+        ...(input.responseSummary ?? {}),
+        usageKnown: true,
+      },
+      requireFullTokenAllowanceCapture:
+        input.requireFullTokenAllowanceCapture,
     });
   } else {
     await finalizeUnknownUsage({
@@ -122,6 +176,7 @@ export async function finalizeProviderFailure(input: {
       httpStatus: mapped.status,
       startedAt: input.startedAt,
       firstTokenAt: input.firstTokenAt,
+      responseSummary: input.responseSummary,
     });
   }
   return mapped;
