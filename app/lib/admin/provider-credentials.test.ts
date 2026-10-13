@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: cover explicit generic Responses selection, original defaults and fail-closed ownership.
 // [Input] Provider PATCH candidates, current auth revisions, deterministic models, and mocked upstream results.
 // [Output] Regression coverage for sensitive-change detection, fail-closed validation, and secret-safe auditing.
 // [Pos] Unit contract for the Provider static-credential lifecycle preparation boundary.
@@ -275,4 +276,15 @@ describe("Provider credential update preparation", () => {
       status: 409,
     });
   });
+  it("validates a Chat-to-Responses change but treats an explicit legacy Chat default as unchanged", async () => {
+    const row = { ...providerRow, protocol: "openai", base_url: "https://api.openai.com", config: { authMode: "bearer" } };
+    mocks.query.mockResolvedValue({ rows: [row] });
+    const unchanged = { config: { authMode: "bearer", openaiApi: "chat" } };
+    expect(await prepareProviderCredentialUpdate({ providerId: row.id, update: unchanged, identity, request: request(unchanged), requestId: "req_chat" })).toEqual({ sensitive: false });
+    expect(mocks.validate).not.toHaveBeenCalled();
+    const changed = { config: { authMode: "bearer", openaiApi: "responses" }, expectedAuthRevision: 3 };
+    expect(await prepareProviderCredentialUpdate({ providerId: row.id, update: changed, identity, request: request(changed), requestId: "req_responses" })).toMatchObject({ sensitive: true, expectedAuthRevision: 3 });
+    expect(mocks.validate).toHaveBeenCalledWith(expect.objectContaining({ protocol: "openai", config: changed.config }));
+  });
+
 });

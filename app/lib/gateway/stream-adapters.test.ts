@@ -1,3 +1,7 @@
+// [Input] Explicit Provider API configuration and controlled protocol responses.
+// [Output] Regression evidence for selected wire dialect and preserved compatibility.
+// [Pos] Provider-free Gateway protocol contracts.
+// [Sync] 2026-10-10: cover explicit generic Responses selection, original defaults and fail-closed ownership.
 import { describe, expect, it } from "vitest";
 import { createProtocolStreamAdapter } from "./stream-adapters";
 
@@ -26,4 +30,16 @@ describe("cross-protocol stream state machines", () => {
     ];
     expect(output).toEqual(expect.arrayContaining([expect.objectContaining({ choices: [expect.objectContaining({ delta: expect.objectContaining({ tool_calls: expect.any(Array) }) })] }), expect.objectContaining({ choices: [expect.objectContaining({ finish_reason: "tool_calls" })] }), expect.objectContaining({ choices: [], usage: expect.objectContaining({ prompt_tokens: 9, completion_tokens: 4 }) })]));
   });
+  it("decodes generic Responses events under the explicit Provider configuration", () => {
+    const adapter = createProtocolStreamAdapter({ externalProtocol: "anthropic", providerProtocol: "openai", providerConfig: { openaiApi: "responses" }, requestedModel: "alias" });
+    const output = [
+      ...adapter.push("response.created", { type: "response.created", response: { id: "resp_generic", model: "upstream" } }),
+      ...adapter.push("response.output_text.delta", { type: "response.output_text.delta", delta: "answer" }),
+      ...adapter.push("response.completed", { type: "response.completed", response: { id: "resp_generic", model: "upstream", status: "completed", usage: { input_tokens: 7, output_tokens: 2 } } }),
+      ...adapter.finish(),
+    ];
+    expect(output).toEqual(expect.arrayContaining([expect.objectContaining({ delta: { type: "text_delta", text: "answer" } }), expect.objectContaining({ type: "message_stop" })]));
+    expect(JSON.stringify(output)).toContain('"output_tokens":2');
+  });
+
 });

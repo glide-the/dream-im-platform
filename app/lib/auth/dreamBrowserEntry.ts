@@ -1,6 +1,7 @@
 // [Input] Dream browser form requests and bounded browser form fields.
 // [Output] Better Auth email/register/Google navigation with request-origin CORS and safe redirects.
 // [Pos] Admin-owned Dream login interaction; Dream renders the form but never receives credentials.
+// [Sync] 2026-10-11: bind Session baseURL/cookie to the validated actual Admin browser request.
 // [Sync] 2026-09-18: return each Dream browser login to its initiating origin across configured local/public deployment clients.
 import { APIError } from "better-auth/api";
 import { z } from "zod";
@@ -128,7 +129,7 @@ function defaultProtocol(): DreamBrowserEntryProtocol {
   return {
     async password(input, request, callbackURL) {
       return withAuthTransaction(async tx => {
-        const auth = createAdminAuth(tx);
+        const auth = createAdminAuth(tx, request);
         const headers = new Headers(request.headers);
         return input.mode === "register"
           ? auth.api.signUpEmail({ body: { email: input.email, password: input.password, name: input.name?.trim() ?? "", callbackURL }, headers, asResponse: true })
@@ -136,7 +137,7 @@ function defaultProtocol(): DreamBrowserEntryProtocol {
       });
     },
     async google(_input, request, callbackURL, errorCallbackURL) {
-      return withAuthTransaction(tx => createAdminAuth(tx).api.signInSocial({
+      return withAuthTransaction(tx => createAdminAuth(tx, request).api.signInSocial({
         body: { provider: "google", callbackURL, errorCallbackURL }, headers: new Headers(request.headers), asResponse: true,
       }));
     },

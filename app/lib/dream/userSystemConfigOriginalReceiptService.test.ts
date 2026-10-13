@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: verify the exact Image write receipt without config mutation.
 // [Input] Original user SystemConfig patch receipt and current live OAuth owner on captured storage seams.
 // [Output] Bounded absent/committed result with strict digest, null entity scopes and no config reapply.
 // [Pos] Original recovery domain gate; no current config read, codec, SQL selector or Runtime execution.
@@ -67,4 +68,11 @@ it("fails closed for incomplete, false, extra-field or nonobject stored results"
 });
 it("propagates storage failure without reporting absence or reissuing the patch", async () => {
   mocks.find.mockRejectedValueOnce(new Error("Receipt store unavailable")); await expect(read()).rejects.toThrow("Receipt store unavailable"); assertNoConfigAccess();
+});
+
+it("recovers the independent Image receipt by its own original operation and identity", async () => {
+  const imageOperation = 'user-system-config.patch-image-model';
+  expect(await read(imageOperation)).toEqual({ status: 'committed', operation: imageOperation, request_id: 'original', result: { success: true } });
+  expect(mocks.find).toHaveBeenCalledExactlyOnceWith(imageOperation, 'original');
+  assertNoConfigAccess();
 });

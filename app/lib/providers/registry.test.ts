@@ -3,7 +3,7 @@
 // [Pos] Provider-free unit contract for the shared product registry; no real account or network is used.
 // [Sync] 2026-09-04: cover product-specific model endpoints, compatibility, and isolated catalog byte budgets.
 // [Sync] 2026-10-05: prove owned-account usage headers, named endpoint isolation and stable registration fingerprints.
-// [Sync] 2026-10-05: verify current Codex wire/catalog metadata without changing existing registration fingerprints.
+// [Sync] 2026-10-09: verify current Codex wire/catalog metadata and separately owned Images endpoints without changing registration fingerprints.
 
 import { generateKeyPairSync } from "node:crypto";
 import { SignJWT } from "jose";
@@ -159,6 +159,54 @@ describe("product account usage access", () => {
     expect(() => registry.get("codex").getUsageAccess!(codexBundle)).toThrow();
     expect(registrationFingerprint(resolveProviderConfig(override))).toBe(registrationFingerprint(resolveProviderConfig(codexConfig)));
     expect(providerProductConfigsFromEnv({ NODE_ENV: "test", INK_PROVIDER_CODEX_USAGE_ENDPOINT: "https://chatgpt.com/custom/usage" }).codex?.endpoints?.usage).toBe("https://chatgpt.com/custom/usage");
+  });
+});
+
+describe("Codex Images resource contract", () => {
+  it("uses registry-owned endpoints and account-bound managed headers", () => {
+    const registry = createProviderProductRegistry({ configs: { codex: codexConfig } });
+    const result = registry.get("codex").getImageResourceContract?.();
+    expect(result?.status).toBe("ready");
+    if (!result || result.status !== "ready") throw new Error("Image contract not ready");
+    expect(result.contract.generationsUrl).toBe(
+      "https://chatgpt.com/backend-api/codex/images/generations",
+    );
+    expect(result.contract.editsUrl).toBe(
+      "https://chatgpt.com/backend-api/codex/images/edits",
+    );
+    const built = result.contract.buildHeaders(codexBundle);
+    expect(built.status).toBe("ready");
+    if (built.status !== "ready") throw new Error("Image headers not ready");
+    expect(built.headers.get("authorization")).toBe("Bearer codex-access-old");
+    expect(built.headers.get("chatgpt-account-id")).toBe("workspace-1");
+    expect(built.headers.get("originator")).toBe("ink-memory");
+    expect(built.headers.get("version")).toBe(codexConfig.integrationVersion);
+    expect(built.headers.get("x-codex-image-turn-id")).toBeNull();
+    expect(result.contract.buildHeaders(githubBundle).status).toBe("failed");
+  });
+
+  it("accepts only named ChatGPT Codex endpoint overrides", () => {
+    const configs = providerProductConfigsFromEnv({
+      NODE_ENV: "test",
+      INK_PROVIDER_CODEX_IMAGE_GENERATIONS_ENDPOINT:
+        "https://chatgpt.com/custom/images/generations",
+      INK_PROVIDER_CODEX_IMAGE_EDITS_ENDPOINT:
+        "https://chatgpt.com/custom/images/edits",
+    });
+    const resolved = resolveProviderConfig(configs.codex!);
+    expect(resolved).toMatchObject({
+      endpoints: {
+        imageGenerations: "https://chatgpt.com/custom/images/generations",
+        imageEdits: "https://chatgpt.com/custom/images/edits",
+      },
+    });
+    expect(() => resolveProviderConfig({
+      ...configs.codex!,
+      endpoints: {
+        ...configs.codex?.endpoints,
+        imageGenerations: "https://foreign.example/images/generations",
+      },
+    })).toThrow();
   });
 });
 

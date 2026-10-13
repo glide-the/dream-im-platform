@@ -1,5 +1,6 @@
 "use client";
 
+// [Sync] 2026-10-10: retain independent Image Provider navigation with server-side admission filtering.
 // [Sync] 2026-10-05: add server-only upstream account usage separately from local traffic.
 // [Input] Safe Provider list projections for static and managed credentials plus Admin permissions.
 // [Output] Provider cards with one managed account identity and dependency-aware deletion.
@@ -103,7 +104,8 @@ function providerHealth(provider: Record<string, unknown>) {
   return { label: "配置就绪", className: "border-success/35 bg-success-light text-success" };
 }
 
-export default function AIProviderRegistry() {
+export default function AIProviderRegistry({ imageOnly = false }: { imageOnly?: boolean }) {
+  const centerPath = imageOnly ? "/admin/image-models" : "/admin/models";
   const router = useRouter();
   const pageSize = 12;
   const [search, setSearch] = useState("");
@@ -121,8 +123,9 @@ export default function AIProviderRegistry() {
         search && { field: "search", operator: "contains" as const, value: search },
         protocol && { field: "protocol", operator: "eq" as const, value: protocol },
         status && { field: "status", operator: "eq" as const, value: status },
+        imageOnly && { field: "image_api_configured", operator: "eq" as const, value: "true" },
       ].filter(Boolean) as CrudFilter[],
-    [protocol, search, status],
+    [imageOnly, protocol, search, status],
   );
   const { result, query } = useList<Record<string, unknown>>({
     resource: "providers",
@@ -208,13 +211,13 @@ export default function AIProviderRegistry() {
   return (
     <div className="space-y-6">
       <section className="admin-panel overflow-hidden">
-        <AdminListHeader eyebrow="Provider registry · proxy supply" title="供应商" description="每个 Provider 对应一个上游账号和一组运行配置；同一产品接入多个账号时，请分别创建多个 Provider。" actions={access.data?.can ? <Link href="/admin/models/providers/new" className="inline-flex min-h-11 items-center bg-accent px-4 text-sm font-semibold text-white hover:brightness-95">＋ 添加 Provider</Link> : null} />
+        <AdminListHeader eyebrow="Provider registry · proxy supply" title="供应商" description="每个 Provider 对应一个上游账号和一组运行配置；同一产品接入多个账号时，请分别创建多个 Provider。" actions={access.data?.can ? <Link href={`${centerPath}/providers/new`} className="inline-flex min-h-11 items-center bg-accent px-4 text-sm font-semibold text-white hover:brightness-95">＋ 添加 Provider</Link> : null} />
 
         {automaticDiscoveryFailed ? (
           <div className="border-b border-warning/40 bg-accent-orange-light px-4 py-3 text-sm text-text-secondary" role="status">
             Provider 已保存，但自动获取模型目录未完成。可检查 Endpoint 后重试，也可以
             {savedProviderId ? (
-              <Link className="mx-1 font-semibold text-accent underline" href={`/admin/models/models/new?providerId=${encodeURIComponent(savedProviderId)}`}>
+              <Link className="mx-1 font-semibold text-accent underline" href={`${centerPath}/models/new?providerId=${encodeURIComponent(savedProviderId)}`}>
                 直接手工添加模型
               </Link>
             ) : "直接手工添加模型"}
@@ -229,7 +232,7 @@ export default function AIProviderRegistry() {
               <input className="admin-field pl-4 text-sm" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="搜索名称或 Code" />
             </label>
             <div className="flex max-w-full gap-1 overflow-x-auto bg-bg-secondary p-1" aria-label="协议筛选">
-              {[["", "全部"], ["anthropic", "Anthropic"], ["openai", "OpenAI"]].map(([value, itemLabel]) => (
+              {(imageOnly ? [["", "OpenAI / Codex"]] : [["", "全部"], ["anthropic", "Anthropic"], ["openai", "OpenAI"]]).map(([value, itemLabel]) => (
                 <button key={itemLabel} type="button" onClick={() => { setProtocol(value); setPage(1); }} className={`min-h-10 whitespace-nowrap px-4 text-sm font-semibold ${protocol === value ? "bg-bg-surface text-text-primary shadow-soft" : "text-text-tertiary"}`}>{itemLabel}</button>
               ))}
             </div>
@@ -325,7 +328,7 @@ export default function AIProviderRegistry() {
                   </dl>
 
                   <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
-                    {access.data?.can && !manualCatalog ? (
+                    {access.data?.can && !manualCatalog && !imageOnly ? (
                       <button
                         type="button"
                         disabled={discoveryResult?.pending || !credentialValidation.valid}
@@ -342,9 +345,9 @@ export default function AIProviderRegistry() {
                         {discoveryResult?.pending ? "同步中…" : "同步模型"}
                       </button>
                     ) : null}
-                    {access.data?.can && (managed || manualCatalog) ? (
+                    {access.data?.can && (imageOnly || managed || manualCatalog) ? (
                       <Link
-                        href={`/admin/models/models/new?providerId=${encodeURIComponent(providerId)}${typeof providerConfig.manualModel === "string" && providerConfig.manualModel.trim() ? `&upstreamModel=${encodeURIComponent(providerConfig.manualModel.trim())}` : ""}`}
+                        href={`${centerPath}/models/new?providerId=${encodeURIComponent(providerId)}${typeof providerConfig.manualModel === "string" && providerConfig.manualModel.trim() ? `&upstreamModel=${encodeURIComponent(providerConfig.manualModel.trim())}` : ""}`}
                         className="inline-flex min-h-10 items-center rounded-xl border border-accent/35 bg-accent-light px-3 text-xs font-semibold text-accent hover:brightness-95"
                       >
                         手工添加模型
@@ -362,8 +365,8 @@ export default function AIProviderRegistry() {
                       </button>
                     ) : null}
                     <Link href={`/admin/billing/usage?providerId=${encodeURIComponent(String(provider.id))}`} className="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-xs font-semibold hover:bg-bg-secondary">监控</Link>
-                    <Link href={`/admin/models/models?provider_id=${encodeURIComponent(String(provider.id))}`} className="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-xs font-semibold hover:bg-bg-secondary">模型</Link>
-                    <Link href={`/admin/models/providers/${encodeURIComponent(String(provider.id))}/edit`} className="inline-flex min-h-10 items-center rounded-xl bg-text-primary px-4 text-xs font-semibold text-bg-surface">设置</Link>
+                    <Link href={`${centerPath}/models?provider_id=${encodeURIComponent(String(provider.id))}`} className="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-xs font-semibold hover:bg-bg-secondary">模型</Link>
+                    <Link href={`${centerPath}/providers/${encodeURIComponent(String(provider.id))}/edit`} className="inline-flex min-h-10 items-center rounded-xl bg-text-primary px-4 text-xs font-semibold text-bg-surface">设置</Link>
                     <ProviderDeleteAction provider={provider} onDeleted={async () => { await query.refetch(); }} />
                   </div>
                 </div>

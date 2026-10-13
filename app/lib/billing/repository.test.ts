@@ -2,6 +2,8 @@
 // [Output] Account-before-request/rate/allowance order, short-circuit idempotency and error propagation evidence.
 // [Pos] Provider-free settlement unit contract; actual row-lock and rollback behavior has separate PostgreSQL coverage.
 // [Sync] 2026-10-03: assert the account gate precedes request and shared accounting row locks.
+// [Sync] 2026-10-09: include absent Image price snapshots in legacy text-request fixtures.
+// [Sync] 2026-10-11: known settlement drops obsolete unknown markers from worker input while preserving image identity and actual recovery.
 
 import type { PoolClient } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,13 +20,13 @@ import { settleGatewayRequestOnClient } from "./repository";
 
 describe("Token-only Gateway settlement", () => {
   beforeEach(() => mocks.settleAllowance.mockReset());
-  it("captures subscription Tokens without locking or mutating a cash account", async () => {
+  it.each(["actual_usage_recovered", "actual_usage"])("captures subscription Tokens and normalizes %s without a cash-account mutation", async (resolution) => {
     mocks.settleAllowance.mockResolvedValue({
       cashChargeMicrousd: 0,
       allowanceChargeMicrousd: 0,
       allowanceChargedTokens: 300,
     });
-    const query = vi.fn(async (sql: string) => {
+    const query = vi.fn(async (sql: string, _values?: unknown[]) => {
       if (sql.includes("FROM gateway_requests")) {
         return {
           rows: [
@@ -48,6 +50,8 @@ describe("Token-only Gateway settlement", () => {
               output_price_snapshot: 2_000_000,
               cache_read_price_snapshot: 0,
               cache_write_price_snapshot: 0,
+              image_input_price_snapshot: null,
+              image_output_price_snapshot: null,
               markup_bps_snapshot: 0,
               discount_bps_snapshot: 0,
             },
@@ -70,6 +74,9 @@ describe("Token-only Gateway settlement", () => {
           inputTokenSemantics: "fresh",
         },
         outcome: "succeeded",
+        responseSummary: { usageKnown: false, unknownReason: "provider-disconnected",
+          resolvedAt: "2026-10-10T00:00:00Z", responseId: "resp_original", imageCallId: "ig_original",
+          settlementResolution: resolution === "actual_usage_recovered" ? resolution : "allowance_reservation_reconciled" },
       },
     );
 
@@ -97,6 +104,10 @@ describe("Token-only Gateway settlement", () => {
     }
     expect(executedSql).not.toContain("billing_accounts");
     expect(executedSql).not.toContain("billing_ledger_entries");
+    const requestWrite = query.mock.calls.find(([sql]) => sql.includes("SET status = 'settled'"));
+    expect(requestWrite).toBeDefined();
+    expect(JSON.parse(String(requestWrite![1]![14]))).toEqual({ usageKnown: true,
+      responseId: "resp_original", imageCallId: "ig_original", settlementResolution: resolution });
     expect(result).toMatchObject({
       idempotent: false,
       requestId: "req_token_1",
@@ -137,6 +148,7 @@ describe("Token-only Gateway settlement", () => {
       created_at: new Date("2026-10-03T00:00:00Z"),
       input_price_snapshot: 0, output_price_snapshot: 0,
       cache_read_price_snapshot: 0, cache_write_price_snapshot: 0,
+      image_input_price_snapshot: null, image_output_price_snapshot: null,
       markup_bps_snapshot: 0, discount_bps_snapshot: 0,
     };
     const query = vi.fn(async (sql: string) => {

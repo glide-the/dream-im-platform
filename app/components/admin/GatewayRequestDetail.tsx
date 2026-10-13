@@ -1,10 +1,13 @@
 "use client";
+// [Sync] 2026-10-11: preserve official Responses reported-Token scope and inclusive cache accounting.
 
 // [Sync] 2026-10-05: present frozen routing revision and actual attempts alongside existing settlement evidence.
 // [Input] Gateway request summary and explicitly revealed, permission-checked application payloads.
 // [Output] Request details, full JSON/text/SSE payloads, and separately captured upstream error evidence.
 // [Pos] Admin Gateway request detail panel; protected payload access retains the existing server audit boundary.
 // [Sync] 2026-10-02: show captured upstream errors after the existing full-payload reveal.
+// [Sync] 2026-10-09: show Image usage/price dimensions and suppress payload reveal for Images requests.
+// [Sync] 2026-10-10: label platform base amounts without implying an upstream invoice.
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -23,7 +26,7 @@ function render(value: unknown) {
 }
 
 function Summary({ title, record, keys }: { title: string; record: Record<string, unknown>; keys: string[] }) {
-  return <section className="border-t border-border pt-5"><h3 className="font-display text-lg font-semibold">{title}</h3><dl className="mt-3 grid gap-x-5 sm:grid-cols-2">{keys.map((key) => <div key={key} className="min-w-0 border-b border-border py-3"><dt className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">{key}</dt><dd className="mt-1 break-words font-mono text-xs leading-6 text-text-secondary tabular-nums">{render(record[key])}</dd></div>)}</dl></section>;
+  return <section className="border-t border-border pt-5"><h3 className="font-display text-lg font-semibold">{title}</h3><dl className="mt-3 grid gap-x-5 sm:grid-cols-2">{keys.map((key) => <div key={key} className="min-w-0 border-b border-border py-3"><dt className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">{key === "provider_cost_microusd" ? "平台基础金额（micro-USD）" : key === "charged_microusd" ? "调用方收费（micro-USD）" : key}</dt><dd className="mt-1 break-words font-mono text-xs leading-6 text-text-secondary tabular-nums">{render(record[key])}</dd></div>)}</dl></section>;
 }
 
 function asRecord(value: unknown) {
@@ -113,16 +116,28 @@ export default function GatewayRequestDetail({ record, onClose }: { record: Reco
     response_sha256: payload.response?.sha256,
     provider_request_id: payload.response?.provider_request_id,
   } : {};
+  const summary = record.response_summary && typeof record.response_summary === "object" ? record.response_summary as Record<string, unknown> : undefined;
+  const nativeRequest = summary?.billingScope === "responses_reported_tokens" || (Array.isArray(summary?.imageCalls) && summary.imageCalls.length > 0);
+  const imageRequest = nativeRequest || String(record.operation ?? "").startsWith("images.");
+  const displayRecord = imageRequest && record.usage_known === false
+    ? {
+        ...record,
+        provider_cost_microusd: null,
+        charged_microusd: null,
+      }
+    : record;
 
   return <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="gateway-request-detail-title"><button type="button" className="absolute inset-0 bg-black/40" onClick={onClose} aria-label="关闭请求详情" /><aside className="absolute inset-y-0 right-0 w-full max-w-full overflow-y-auto border-l border-border bg-bg-surface shadow-medium sm:w-[min(92vw,860px)]"><header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-border bg-bg-surface px-5 py-5 sm:px-7"><div className="min-w-0"><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">Gateway request trace</p><h2 id="gateway-request-detail-title" className="mt-2 font-display text-2xl font-semibold">请求详情</h2><p className="mt-2 break-all font-mono text-[11px] text-text-tertiary">{String(record.id)}</p></div><button type="button" onClick={onClose} className="min-h-11 shrink-0 border border-border px-4 text-sm">关闭</button></header><div className="space-y-7 p-5 sm:p-7">
-    <Summary title="Request Summary" record={record} keys={["protocol", "status", "outcome", "http_status", "is_streaming", "requested_model", "resolved_model", "provider_code", "model_code"]} />
+    <Summary title="Request Summary" record={displayRecord} keys={["protocol", "operation", "status", "outcome", "usage_known", "http_status", "is_streaming", "requested_model", "resolved_model", "provider_code", "model_code"]} />
     <Summary title="User、Gateway Key 与路由" record={record} keys={["platform_user_id", "email", "gateway_api_key_id", "gateway_key_name", "key_prefix", "provider_id", "model_id", "upstream_request_id"]} />
-    <Summary title="Token、价格快照与延迟" record={record} keys={["estimated_tokens", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "input_price_snapshot", "output_price_snapshot", "cache_read_price_snapshot", "cache_write_price_snapshot", "first_token_ms", "latency_ms", "created_at", "completed_at"]} />
+    {imageRequest && record.usage_known === false ? <section className="border border-warning/45 bg-accent-orange-light p-4" role="status"><h3 className="font-display text-lg font-semibold">实际用量未知</h3><p className="mt-2 text-sm leading-6 text-text-secondary">{nativeRequest ? "未取得有效的 Responses 请求用量，实际 Token 和平台金额保持未知。结算状态及预留处理以本记录和 Ledger 为准，不按图片尺寸推算实际用量。" : "Provider 未返回可核验的完整 Token 明细。本记录仅保守消费预授权 Token；平台基础金额和请求费用保持未知，不显示为 0。"}</p></section> : null}
+    {nativeRequest ? <section className="border border-border p-4" role="status"><h3 className="font-display text-lg font-semibold">Responses 报告用量</h3><p className="mt-2 text-sm leading-6 text-text-secondary">有效的请求报告 Token 按平台模型价格快照结算；缓存已包含在输入 Token 中，推理已包含在输出中。图片引擎、图片缓存与完整上游图片费用未单独报告，不能由本记录推算。</p></section> : null}
+    <Summary title="Token、价格快照与延迟" record={displayRecord} keys={["estimated_tokens", "input_tokens", "output_tokens", "input_text_tokens", "input_image_tokens", "output_text_tokens", "output_image_tokens", "cache_read_tokens", "cache_write_tokens", "input_price_snapshot", "output_price_snapshot", "image_input_price_snapshot", "image_output_price_snapshot", "cache_read_price_snapshot", "cache_write_price_snapshot", "provider_cost_microusd", "charged_microusd", "first_token_ms", "latency_ms", "created_at", "completed_at", "settled_at"]} />
     <Summary title="路由决策与尝试" record={record} keys={["routing_snapshot", "routing_attempts"]} />
     <RateLimitReason record={record} />
     <Summary title="错误与中断" record={record} keys={["error_code", "error_message", "response_summary", "status", "outcome"]} />
     <div className="flex flex-wrap gap-3"><Link href={`/admin/billing/ledger?gateway_request_id=${encodeURIComponent(String(record.id))}`} className="inline-flex min-h-11 items-center border border-border px-4 text-sm font-semibold">查看 Ledger</Link><Link href={`/admin/system/audit?resource_id=${encodeURIComponent(String(record.id))}`} className="inline-flex min-h-11 items-center border border-border px-4 text-sm font-semibold">查看 Audit</Link></div>
-    <section className="border border-warning/45 bg-accent-orange-light p-4"><h3 className="font-display text-lg font-semibold">完整应用层报文</h3><p className="mt-2 text-sm leading-6 text-text-secondary">需要 <code className="font-mono text-xs">gateway.payloads.read</code>。默认不加载；每次查看都会留下只含访问元数据的不可变审计，内容不会发送到 analytics。</p>{!payload ? <button type="button" disabled={loading} onClick={reveal} className="mt-4 min-h-11 bg-text-primary px-5 text-sm font-semibold text-bg-surface disabled:opacity-50">{loading ? "正在读取…" : "二次确认并查看完整报文"}</button> : null}{error ? <p className="mt-3 border border-danger/35 bg-danger-light p-3 text-sm text-danger" role="alert">{error}</p> : null}</section>
+    <section className="border border-warning/45 bg-accent-orange-light p-4"><h3 className="font-display text-lg font-semibold">完整应用层报文</h3>{imageRequest ? <p className="mt-2 text-sm leading-6 text-text-secondary">图像请求按策略永久关闭报文捕获。Prompt、参考图片和结果图片不会写入 payload 表，也不能通过 Admin API 揭示。</p> : <><p className="mt-2 text-sm leading-6 text-text-secondary">需要 <code className="font-mono text-xs">gateway.payloads.read</code>。默认不加载；每次查看都会留下只含访问元数据的不可变审计，内容不会发送到 analytics。</p>{!payload ? <button type="button" disabled={loading} onClick={reveal} className="mt-4 min-h-11 bg-text-primary px-5 text-sm font-semibold text-bg-surface disabled:opacity-50">{loading ? "正在读取…" : "二次确认并查看完整报文"}</button> : null}</>}{error ? <p className="mt-3 border border-danger/35 bg-danger-light p-3 text-sm text-danger" role="alert">{error}</p> : null}</section>
     {payload ? <div className="min-w-0 space-y-6" data-testid="gateway-full-payload"><Summary title="报文捕获状态" record={capture} keys={Object.keys(capture)} /><Viewer label="请求 Headers（持久化前已脱敏）" content={payload.request?.headers} json /><Viewer label="完整请求 JSON" content={payload.request?.body_json} json /><Viewer label="请求 Raw Body" content={payload.request?.body_text} />{payload.response?.body_json ? <Viewer label="非流式完整响应 JSON" content={payload.response.body_json} json /> : null}{payload.response?.body_text ? <Viewer label="响应 Raw Body" content={payload.response.body_text} /> : null}{payload.response?.error_body !== undefined && payload.response.error_body !== null ? <Viewer label="上游错误正文（凭据已脱敏）" content={payload.response.error_body} json={typeof payload.response.error_body !== "string"} /> : null}{payload.events.length ? <section className="min-w-0"><h3 className="font-display text-lg font-semibold">SSE Event 时间线</h3><div className="mt-3 max-w-full overflow-x-auto border border-border"><table className="min-w-full text-left text-xs"><thead><tr className="border-b border-border bg-bg-secondary/45">{["Sequence", "Event Type", "Elapsed", "Bytes", "Time", "Raw Data"].map((item) => <th key={item} className="whitespace-nowrap px-3 py-3 font-mono text-[10px] uppercase text-text-tertiary">{item}</th>)}</tr></thead><tbody>{payload.events.map((event) => <tr key={String(event.sequence)} className="border-b border-border align-top"><td className="px-3 py-3 font-mono tabular-nums">{String(event.sequence)}</td><td className="px-3 py-3"><span className="inline-flex whitespace-nowrap border border-border bg-bg-secondary px-2 py-1 font-semibold">{String(event.event_type)}</span></td><td className="whitespace-nowrap px-3 py-3 font-mono tabular-nums">{String(event.elapsed_ms)} ms</td><td className="px-3 py-3 font-mono tabular-nums">{String(event.byte_length)}</td><td className="whitespace-nowrap px-3 py-3 font-mono tabular-nums">{new Date(String(event.emitted_at)).toLocaleString("zh-CN")}</td><td className="max-w-[420px] px-3 py-3"><pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-4">{String(event.raw_data)}</pre></td></tr>)}</tbody></table></div></section> : null}{payload.rawSse ? <Viewer label="Raw SSE Viewer" content={payload.rawSse} /> : null}</div> : null}
   </div></aside></div>;
 }

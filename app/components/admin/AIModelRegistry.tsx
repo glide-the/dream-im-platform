@@ -3,6 +3,9 @@
 // [Pos] Admin model-registry list; edits remain in the shared resource form/API boundary.
 // [Sync] 2026-08-28: display configured compact/context Runtime values without exposing env implementation names.
 // [Sync] 2026-10-02: show concrete upstream rejection diagnostics below the validation status.
+// [Sync] 2026-10-10: preserve independent Image center paths and restrict Provider choices.
+// [Sync] 2026-10-09: show Image runtime readiness separately from non-blocking pricing/source audit notes.
+// [Sync] 2026-10-11: verify hosted Responses generation separately from text validation and capability publication.
 
 "use client";
 
@@ -21,6 +24,11 @@ type ValidationState = {
   message?: string;
   upstreamMessage?: string;
   upstreamRequestId?: string;
+  validationKind?: "responses_image_generation";
+  failureCode?: string;
+  upstreamErrorCode?: string;
+  upstreamErrorType?: string;
+  imageSummary?: { responseId: string; imageCalls: { callId: string; byteLength: number; sha256: string }[] };
 };
 
 function capabilityLabels(value: unknown) {
@@ -31,13 +39,18 @@ function capabilityLabels(value: unknown) {
     tools: "Tool Use",
     vision: "Vision",
     json: "JSON",
+    image_generation: "Images 图像生成",
+    image_edit: "Images 图像编辑",
+    responses_image_generation: "Responses 图像生成",
+    responses_image_edit: "Responses 图像编辑",
   };
   return Object.entries(value as Record<string, unknown>)
     .filter(([, enabled]) => enabled === true)
     .map(([key]) => labels[key] ?? key);
 }
 
-export default function AIModelRegistry() {
+export default function AIModelRegistry({ imageOnly = false }: { imageOnly?: boolean }) {
+  const centerPath = imageOnly ? "/admin/image-models" : "/admin/models";
   const pageSize = 12;
   const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
@@ -50,6 +63,7 @@ export default function AIModelRegistry() {
     resource: "providers",
     pagination: { currentPage: 1, pageSize: 100 },
     sorters: [{ field: "name", order: "asc" }],
+    filters: imageOnly ? [{ field: "image_api_configured", operator: "eq", value: "true" }] : [],
   });
   const filters = useMemo<CrudFilter[]>(
     () =>
@@ -57,8 +71,9 @@ export default function AIModelRegistry() {
         search && { field: "search", operator: "contains" as const, value: search },
         enabled && { field: "enabled", operator: "eq" as const, value: enabled },
         providerId && { field: "provider_id", operator: "eq" as const, value: providerId },
+        imageOnly && { field: "image_capable", operator: "eq" as const, value: "true" },
       ].filter(Boolean) as CrudFilter[],
-    [enabled, providerId, search],
+    [enabled, imageOnly, providerId, search],
   );
   const { result, query } = useList<Record<string, unknown>>({
     resource: "models",
@@ -67,12 +82,13 @@ export default function AIModelRegistry() {
     filters,
   });
 
-  async function validateModel(modelId: string) {
-    setValidation((current) => ({ ...current, [modelId]: { pending: true, message: "正在验证已保存凭据与上游模型…" } }));
+  async function validateModel(modelId: string, validationKind?: "responses_image_generation") {
+    setValidation((current) => ({ ...current, [modelId]: { pending: true, message: validationKind ? "正在核实 Responses 图片生成…" : "正在验证已保存凭据与上游模型…" } }));
     try {
       const response = await fetch(`/api/admin/models/${encodeURIComponent(modelId)}/validate`, {
         method: "POST",
-        headers: { accept: "application/json" },
+        headers: { accept: "application/json", ...(validationKind ? { "content-type": "application/json" } : {}) },
+        ...(validationKind ? { body: JSON.stringify({ validationKind }) } : {}),
       });
       const body = (await response.json().catch(() => ({}))) as { data?: ValidationState; error?: { message?: string } };
       if (!response.ok || !body.data) throw new Error(body.error?.message ?? "模型验证失败");
@@ -87,7 +103,7 @@ export default function AIModelRegistry() {
 
   return (
     <section className="admin-panel overflow-hidden">
-      <AdminListHeader eyebrow="Model alias registry" title="模型" description="外部请求只使用稳定 alias；上游型号留在 Provider 路由内部。" actions={access.data?.can ? <Link href={`/admin/models/models/new${providerId ? `?providerId=${encodeURIComponent(providerId)}` : ""}`} className="inline-flex min-h-11 items-center bg-accent px-4 text-sm font-semibold text-white">＋ 添加模型</Link> : null} />
+      <AdminListHeader eyebrow="Model alias registry" title={imageOnly ? "图像模型" : "模型"} description={imageOnly ? "沿用模型 alias、Provider、权限和版本化价格；生成与编辑能力单独声明。" : "外部请求只使用稳定 alias；上游型号留在 Provider 路由内部。"} actions={access.data?.can ? <Link href={`${centerPath}/models/new?${new URLSearchParams({ ...(providerId ? { providerId } : {}), ...(imageOnly ? { kind: "image" } : {}) }).toString()}`} className="inline-flex min-h-11 items-center bg-accent px-4 text-sm font-semibold text-white">＋ 添加{imageOnly ? "图像" : ""}模型</Link> : null} />
       <AdminCollapsibleFilters activeCount={countActiveFilterValues({ search, providerId, enabled })}>
         <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,320px)_180px]">
           <label><span className="sr-only">搜索模型</span><input className="admin-field text-sm" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="搜索名称、alias 或上游型号" /></label>
@@ -102,8 +118,30 @@ export default function AIModelRegistry() {
           const capabilities = capabilityLabels(model.capabilities);
           const modelId = String(model.id);
           const validationResult = validation[modelId];
-          const runtimeReady = model.provider_ready === true
-            && model.pricing_ready === true;
+          const provider = providers.result.data.find(item => item.id === model.provider_id);
+          const providerConfig = provider?.config as Record<string, unknown> | undefined;
+          const modelCapabilities = model.capabilities as Record<string, unknown> | undefined;
+          const canVerifyResponsesImage = !imageOnly && modelCapabilities?.chat === true && modelCapabilities.tools === true && (provider?.adapter_kind === "codex"
+            || (provider?.adapter_kind === "generic" && provider.protocol === "openai" && providerConfig?.openaiApi === "responses"));
+          const providerReady = imageOnly
+            ? model.image_provider_ready === true
+            : model.provider_ready === true;
+          const pricingReady = imageOnly
+            ? model.image_pricing_ready === true
+            : model.pricing_ready === true;
+          const entitlementReady = imageOnly
+            ? model.published_images_entitlement === true
+            : true;
+          const reservationReady = imageOnly
+            ? model.image_reservation_ready === true
+            : true;
+          const reservationDocumented = imageOnly
+            ? model.image_reservation_documented === true
+            : true;
+          const pricingAudited = imageOnly
+            ? model.image_pricing_audited === true
+            : true;
+          const runtimeReady = providerReady && pricingReady && entitlementReady && reservationReady;
           return (
             <article key={String(model.id)} className="rounded-2xl border border-border bg-bg-surface p-5 shadow-soft">
               <div className="flex items-start justify-between gap-4">
@@ -112,22 +150,27 @@ export default function AIModelRegistry() {
               </div>
               <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-border py-4 text-xs">
                 <div><dt className="text-text-tertiary">上游型号</dt><dd className="mt-1 break-all font-mono text-[11px]">{String(model.upstream_model)}</dd></div>
-                <div><dt className="text-text-tertiary">Context / Max output</dt><dd className="mt-1 font-mono text-[11px]">{model.context_window ? Number(model.context_window).toLocaleString("zh-CN") : "—"} / {model.max_output_tokens ? Number(model.max_output_tokens).toLocaleString("zh-CN") : "—"}</dd></div>
-                <div className="col-span-2"><dt className="text-text-tertiary">Claude Code 自动压缩 / 最大上下文</dt><dd className="mt-1 font-mono text-[11px]">{model.claude_code_auto_compact_window ? Number(model.claude_code_auto_compact_window).toLocaleString("zh-CN") : "—"} / {model.claude_code_max_context_tokens ? Number(model.claude_code_max_context_tokens).toLocaleString("zh-CN") : "—"}</dd></div>
+                {imageOnly ? <><div><dt className="text-text-tertiary">参考图预留 / 张</dt><dd className="mt-1 font-mono text-[11px]">{model.image_input_token_reserve_per_image ? Number(model.image_input_token_reserve_per_image).toLocaleString("zh-CN") : "—"}</dd></div><div><dt className="text-text-tertiary">结果图预留 / 张</dt><dd className="mt-1 font-mono text-[11px]">{model.image_output_token_reserve_per_image ? Number(model.image_output_token_reserve_per_image).toLocaleString("zh-CN") : "—"}</dd></div></> : <><div><dt className="text-text-tertiary">Context / Max output</dt><dd className="mt-1 font-mono text-[11px]">{model.context_window ? Number(model.context_window).toLocaleString("zh-CN") : "—"} / {model.max_output_tokens ? Number(model.max_output_tokens).toLocaleString("zh-CN") : "—"}</dd></div><div className="col-span-2"><dt className="text-text-tertiary">Claude Code 自动压缩 / 最大上下文</dt><dd className="mt-1 font-mono text-[11px]">{model.claude_code_auto_compact_window ? Number(model.claude_code_auto_compact_window).toLocaleString("zh-CN") : "—"} / {model.claude_code_max_context_tokens ? Number(model.claude_code_max_context_tokens).toLocaleString("zh-CN") : "—"}</dd></div></>}
               </dl>
               <div className="mt-4 flex min-h-8 flex-wrap gap-2">{capabilities.length ? capabilities.map((label) => <span key={label} className="rounded-full bg-bg-secondary px-2.5 py-1 text-[10px] text-text-secondary">{label}</span>) : <span className="text-xs text-text-tertiary">未声明能力</span>}</div>
               {model.enabled ? <p className={`mt-3 text-xs ${runtimeReady ? "text-success" : "text-accent-orange"}`}>
                 {runtimeReady
-                  ? `公共目录可见 · 用户具备有效 Token 额度时可调用${model.published_messages_entitlement === true ? " · 已配置套餐级模型限额" : " · 未配置套餐级模型限额"}。`
-                  : `公共目录可见 · 运行配置待修复${model.provider_ready !== true ? " · Provider未就绪" : ""}${model.pricing_ready !== true ? " · 缺有效定价" : ""}`}
+                  ? imageOnly
+                    ? `公共目录可见 · Image Provider、分项价格和已发布套餐权益均已就绪${!reservationDocumented ? " · 预留依据未记录" : ""}${!pricingAudited ? " · 参考价格来源未记录" : ""}。`
+                    : `公共目录可见 · 用户具备有效 Token 额度时可调用${model.published_messages_entitlement === true ? " · 已配置套餐级模型限额" : " · 未配置套餐级模型限额"}。`
+                  : imageOnly
+                    ? `公共目录可见 · 运行配置待修复${!providerReady ? " · Image Provider未就绪" : ""}${!reservationReady ? " · 缺图像预留预算" : ""}${!pricingReady ? " · 缺有效图像分项定价" : ""}${!entitlementReady ? " · 缺已发布images:create权益" : ""}`
+                    : `公共目录可见 · 运行配置待修复${!providerReady ? " · Provider未就绪" : ""}${!pricingReady ? " · 缺有效定价" : ""}`}
               </p> : <p className="mt-3 text-xs text-text-tertiary">公共目录不可见 · 模型已停用。</p>}
               {validationResult?.message ? <p className={`mt-3 text-xs ${validationResult.status === "failed" ? "text-danger" : validationResult.status === "degraded" ? "text-accent-orange" : "text-success"}`} role="status">{validationResult.message}{validationResult.responseTimeMs !== undefined && validationResult.responseTimeMs !== null ? ` · ${validationResult.responseTimeMs} ms` : ""}{validationResult.httpStatus ? ` · HTTP ${validationResult.httpStatus}` : ""}</p> : null}
               {validationResult?.upstreamMessage ? <div className="mt-2 rounded-xl border border-danger/25 bg-danger-light p-3 text-xs" role="alert"><p className="font-semibold text-danger">上游具体原因</p><pre className="mt-1 whitespace-pre-wrap break-words font-mono text-text-secondary">{validationResult.upstreamMessage}</pre>{validationResult.upstreamRequestId ? <p className="mt-2 break-all text-text-tertiary">上游请求 ID：{validationResult.upstreamRequestId}</p> : null}</div> : null}
+              {validationResult?.validationKind ? <p className="mt-2 break-all text-xs text-text-tertiary">{validationResult.failureCode ? `分类：${validationResult.failureCode}` : "完整图片已解码"}{validationResult.upstreamErrorCode || validationResult.upstreamErrorType ? ` · 上游类型：${validationResult.upstreamErrorCode ?? validationResult.upstreamErrorType}` : ""}{validationResult.upstreamRequestId ? ` · 请求：${validationResult.upstreamRequestId}` : ""}{validationResult.imageSummary ? ` · Response：${validationResult.imageSummary.responseId} · 调用：${validationResult.imageSummary.imageCalls.map(call => call.callId).join(", ")}` : ""}</p> : null}
               <div className="mt-5 flex flex-wrap justify-end gap-2">
-                {access.data?.can ? <button type="button" disabled={validationResult?.pending} onClick={() => validateModel(modelId)} className="min-h-10 rounded-xl border border-border px-3 text-xs font-semibold disabled:cursor-wait disabled:opacity-60" title="发送一次最小上游验证请求；失败时显示脱敏原因，不保存响应内容">{validationResult?.pending ? "验证中…" : "验证配置"}</button> : null}
-                <Link href={`/admin/models/pricing/new?modelId=${encodeURIComponent(String(model.id))}`} className="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-xs font-semibold">添加定价</Link>
+                {access.data?.can && !imageOnly ? <button type="button" disabled={validationResult?.pending} onClick={() => validateModel(modelId)} className="min-h-10 rounded-xl border border-border px-3 text-xs font-semibold disabled:cursor-wait disabled:opacity-60" title="发送一次最小上游验证请求；失败时显示脱敏原因，不保存响应内容">{validationResult?.pending ? "验证中…" : "验证配置"}</button> : null}
+                {access.data?.can && canVerifyResponsesImage ? <button type="button" disabled={validationResult?.pending} onClick={() => validateModel(modelId, "responses_image_generation")} className="min-h-10 rounded-xl border border-border px-3 text-xs font-semibold disabled:cursor-wait disabled:opacity-60" title="实际生成一张简单图片以核实内置能力；不自动修改或发布模型能力">核实 Responses 图片生成</button> : null}
+                <Link href={`${centerPath}/pricing/new?${new URLSearchParams({ modelId: String(model.id), ...(imageOnly ? { kind: "image" } : {}) }).toString()}`} className="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-xs font-semibold">添加定价</Link>
                 <Link href={`/admin/billing/usage?modelId=${encodeURIComponent(String(model.id))}`} className="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-xs font-semibold">查看用量</Link>
-                <Link href={`/admin/models/models/${encodeURIComponent(String(model.id))}/edit`} className="inline-flex min-h-10 items-center rounded-xl bg-text-primary px-4 text-xs font-semibold text-bg-surface">模型设置</Link>
+                <Link href={`${centerPath}/models/${encodeURIComponent(String(model.id))}/edit${imageOnly ? "?kind=image" : ""}`} className="inline-flex min-h-10 items-center rounded-xl bg-text-primary px-4 text-xs font-semibold text-bg-surface">模型设置</Link>
               </div>
             </article>
           );

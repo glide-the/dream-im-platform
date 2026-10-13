@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: separate Image Settings ownership and fail closed on unimplemented Responses images.
 // [Input] Dream-normalized Settings patch and verified actor, without caller SQL/key/identity selectors.
 // [Output] Closed ten-field commands and raw Python JSON result preserving stored numeric categories.
 // [Pos] Unregistered SystemConfig DTO; five-field Preferences remains separate.
@@ -27,5 +28,15 @@ export const userSystemConfigOperationContracts = {
   "user-system-config.get": { kind: "read" as const, input: z.strictObject({}), output: userSystemConfigReadOutputDto, userScope: "dream:read" },
   "user-system-config.patch": { kind: "write" as const, input: userSystemConfigPatchDto, output: userSystemConfigPatchOutputDto, userScope: "dream:write" },
 };
+// Separate contract keeps the original Settings patch and registry prefix immutable.
+export const userImageModelPatchDto = z.strictObject({
+  image_model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/),
+});
+export const userImageModelOperationContracts = {
+  "user-system-config.patch-image-model": { kind: "write" as const, input: userImageModelPatchDto,
+    output: userSystemConfigPatchOutputDto, userScope: "dream:write" },
+};
+export const allUserSystemConfigOperationContracts = { ...userSystemConfigOperationContracts, ...userImageModelOperationContracts };
+export type UserImageModelPatch = z.output<typeof userImageModelPatchDto>;
 export type UserSystemConfigPatch = z.output<typeof userSystemConfigPatchDto>;
-export type UserSystemConfigOperation = keyof typeof userSystemConfigOperationContracts;
+export type UserSystemConfigOperation = keyof typeof allUserSystemConfigOperationContracts;

@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: cover explicit generic Responses selection, original defaults and fail-closed ownership.
 // [Input] Static Provider endpoints plus explicit host/local-topology capabilities.
 // [Output] Regression proof for canonicalization, HTTPS/SSRF fencing, and label-independent localhost opt-in.
 // [Pos] Unit contract for the shared static Provider endpoint resolver.
@@ -5,7 +6,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GatewayError } from "./errors";
-import { resolveProviderBaseUrl } from "./provider-endpoint";
+import { resolveProviderBaseUrl, resolveProviderApi, resolveProviderInferenceEndpoint } from "./provider-endpoint";
 
 const originalEnv = { ...process.env };
 
@@ -76,5 +77,28 @@ describe("resolveProviderBaseUrl", () => {
         baseUrl: "http://localhost:8787",
       }),
     ).toThrowError(GatewayError);
+  });
+});
+
+
+describe("explicit inference API", () => {
+  it("keeps legacy Chat and owned product APIs and rejects overrides", () => {
+    expect(resolveProviderApi({ protocol: "openai" })).toBe("chat");
+    expect(resolveProviderApi({ protocol: "anthropic" })).toBe("messages");
+    expect(resolveProviderApi({ protocol: "openai", adapterKind: "codex" })).toBe("responses");
+    expect(resolveProviderApi({ protocol: "openai", adapterKind: "github_copilot" })).toBe("chat");
+    for (const openaiApi of [null, "", true, ["responses"], "auto"]) {
+      expect(() => resolveProviderApi({ protocol: "openai", config: { openaiApi } })).toThrowError(GatewayError);
+    }
+    expect(() => resolveProviderApi({ protocol: "anthropic", config: { openaiApi: "responses" } })).toThrowError(GatewayError);
+    expect(() => resolveProviderApi({ protocol: "openai", adapterKind: "codex", config: { openaiApi: "responses" } })).toThrowError(GatewayError);
+  });
+  it("uses the configured endpoint once and refuses a contradictory full API path", () => {
+    for (const baseUrl of ["https://api.openai.com", "https://api.openai.com/v1", "https://api.openai.com/v1/responses"]) {
+      expect(resolveProviderInferenceEndpoint({ protocol: "openai", baseUrl, config: { openaiApi: "responses" } })).toBe("https://api.openai.com/v1/responses");
+    }
+    expect(resolveProviderInferenceEndpoint({ protocol: "openai", baseUrl: "https://api.openai.com/v1/chat/completions" })).toBe("https://api.openai.com/v1/chat/completions");
+    expect(() => resolveProviderInferenceEndpoint({ protocol: "openai", baseUrl: "https://api.openai.com/v1/chat/completions", config: { openaiApi: "responses" } })).toThrowError(expect.objectContaining({ code: "PROVIDER_ENDPOINT_API_MISMATCH" }));
+    expect(() => resolveProviderInferenceEndpoint({ protocol: "openai", baseUrl: "https://api.openai.com/v1/responses" })).toThrowError(GatewayError);
   });
 });

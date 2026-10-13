@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: verify independent Image Settings and fail-closed native capability separation.
 // [Input] Fixed SystemConfig codec name with raw Python JSON and a closed normalized merge patch.
 // [Output] Actual isolated Python transport preserving stored numeric categories, Unicode and unknown keys.
 // [Pos] Provider-free fixed-codec integration; no database, Runtime import, network or executable selector.
@@ -16,4 +17,8 @@ it("merges only the normalized patch while preserving unknown stored keys", asyn
 });
 it.each(["[]", "null", "{broken", '{"value":NaN}'])("fails closed on invalid stored config %s", async stored_json => {
   await expect(encodeUserSystemConfig({ action: "read", stored_json })).rejects.toMatchObject({ code: "DREAM_CODEC_UNAVAILABLE", status: 503 });
+});
+it("preserves AI selection and unknown numeric values when saving the Image selection", async () => {
+  expect(await encodeUserSystemConfig({ action: 'merge', stored_json: '{"model":"chat-a","unknown":9007199254740993}', patch: { image_model: 'image-a' } }))
+    .toEqual({ config_json: '{"model": "chat-a", "unknown": 9007199254740993, "image_model": "image-a"}' });
 });

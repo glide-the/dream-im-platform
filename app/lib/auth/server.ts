@@ -1,6 +1,7 @@
 // [Input] Strict auth configuration, dedicated ORM transaction and installed protocol schema.
 // [Output] Admin Better Auth handler with Google, OAuth access tokens, device grant and refresh rotation.
 // [Pos] Authentication composition root; Route Handlers only delegate here.
+// [Sync] 2026-10-11: browser-only request baseURL/cookies; retain fixed token, metadata and JWT authority.
 // [Sync] 2026-09-17: keep Dream Google entry account-selectable while advertising separate delegated/background scopes.
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
@@ -10,24 +11,25 @@ import { oauthProvider, oauthDeviceAuthorization } from "@better-auth/oauth-prov
 import { and, eq, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { betterAuthSchema, deviceCode } from "@ink-memory/db/schema/auth-generated";
-import { accessTokenLifetimeSeconds, authConfiguration, oauthProviderScopes, AuthBoundaryError } from "./config";
+import { accessTokenLifetimeSeconds, authConfiguration, browserAuthOrigin, oauthProviderScopes, AuthBoundaryError } from "./config";
 import { withAuthTransaction, type AuthRepositoryDatabase, type AuthTransaction } from "./database";
 import { SubjectRepository } from "./subjectRepository";
 import { requiredAuthValue } from "./config";
 import { oauthClient } from "@ink-memory/db/schema/auth-generated";
 import { hashUnifiedPassword, productPasswordMinimumLength, verifyUnifiedPassword } from "./password";
 
-export function createAdminAuth(database: AuthRepositoryDatabase) {
+export function createAdminAuth(database: AuthRepositoryDatabase, browserRequest?: Request) {
   const configuration = authConfiguration();
+  const browserOrigin = browserRequest ? browserAuthOrigin(browserRequest, configuration) : null;
   const subjects = new SubjectRepository(database);
   return betterAuth({
-    baseURL: configuration.issuer, basePath: "/api/auth", secret: configuration.secret,
+    baseURL: browserOrigin ? `${browserOrigin}/api/auth` : configuration.issuer, basePath: "/api/auth", secret: configuration.secret,
     trustedOrigins: configuration.origins,
     database: drizzleAdapter(database, { provider: "pg", schema: betterAuthSchema, transaction: true }),
     emailAndPassword: { enabled: true, requireEmailVerification: false, minPasswordLength: productPasswordMinimumLength, password: { hash: hashUnifiedPassword, verify: verifyUnifiedPassword } },
     socialProviders: { google: { clientId: configuration.googleClientId, clientSecret: configuration.googleClientSecret, prompt: "select_account" } },
     account: { encryptOAuthTokens: true, accountLinking: { enabled: false, disableImplicitLinking: true } },
-    advanced: { useSecureCookies: configuration.secureCookies, defaultCookieAttributes: { httpOnly: true, sameSite: "lax" } },
+    advanced: { useSecureCookies: browserOrigin ? new URL(browserOrigin).protocol === "https:" : configuration.secureCookies, defaultCookieAttributes: { httpOnly: true, sameSite: "lax" } },
     disabledPaths: ["/token", "/device/token"],
     onAPIError: { throw: true },
     logger: { disabled: true },
@@ -102,10 +104,18 @@ async function prepareProtocolRequest(request: Request, tx: AuthTransaction) {
 
 class ProtocolRollback extends Error { constructor(readonly response: Response) { super("AUTH_PROTOCOL_ROLLBACK"); } }
 
+// These installed endpoints read/write browser Session cookies. Backchannel endpoints deliberately retain fixed baseURL.
+const browserProtocolPaths = new Set([
+  "/api/auth/oauth2/authorize", "/api/auth/oauth2/consent", "/api/auth/oauth2/continue",
+  "/api/auth/oauth2/end-session", "/api/auth/oauth2/end-session/confirm",
+  "/api/auth/sign-in/email", "/api/auth/sign-up/email", "/api/auth/sign-in/social", "/api/auth/callback/google",
+  "/api/auth/get-session", "/api/auth/sign-out", "/api/auth/device", "/api/auth/device/approve", "/api/auth/device/deny",
+]);
+
 export async function handleAuthOnTransaction(request: Request, tx: AuthTransaction) {
   const prepared = await prepareProtocolRequest(request, tx);
   if (prepared) return prepared;
-  const response = await createAdminAuth(tx).handler(request);
+  const response = await createAdminAuth(tx, browserProtocolPaths.has(new URL(request.url).pathname) ? request : undefined).handler(request);
   if (response.status >= 500) throw new ProtocolRollback(response);
   response.headers.set("Cache-Control", "no-store");
   return response;

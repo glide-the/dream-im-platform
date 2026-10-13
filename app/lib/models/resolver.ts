@@ -1,9 +1,11 @@
+// [Sync] 2026-10-10: reject Images-only aliases at the conversation request boundary.
 // [Input] Public model alias, enabled model/provider state, pricing policy, and Provider authentication state.
 // [Output] A revisioned billable model with either generic static or product-managed auth coordinates.
 // [Pos] Shared PostgreSQL resolver feeding Gateway transport, billing reservation, and request persistence.
 // [Sync] 2026-09-04: resolve only the credential directly owned and selected by the Provider with immutable request fences.
 
 // [Sync] 2026-10-05: freeze same-model routing candidates while preserving alias pricing and permission ownership.
+// [Sync] 2026-10-09: keep Image pricing-source metadata auditable without making it a runtime availability gate.
 import { orderRoutingTargets, routingConfigSchema, type RoutingSnapshot, type RoutingTarget, targetSupportsModel, type RoutingModelCapability } from "./routing-policy";
 import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
 import { resolveProviderAuthMode } from "../gateway/provider-auth";
@@ -18,6 +20,7 @@ import {
   modelRequestHeadersSchema,
   type ModelRequestHeaders,
 } from "./request-headers";
+import { modelSupportsConversation, providerSupportsImages } from "../gateway/image-policy";
 
 type ModelProviderRow = {
   model_id: string;
@@ -26,6 +29,9 @@ type ModelProviderRow = {
   display_name: string;
   context_window: number | null;
   max_output_tokens: number | null;
+  image_input_token_reserve_per_image: number | null;
+  image_output_token_reserve_per_image: number | null;
+  model_metadata: Record<string, unknown> | null;
   capabilities: Record<string, boolean> | null;
   request_headers: unknown;
   provider_status: string;
@@ -56,8 +62,14 @@ type PricingRow = {
   output_price_microusd_per_million: string | number;
   cache_read_price_microusd_per_million: string | number;
   cache_write_price_microusd_per_million: string | number;
+  image_input_price_microusd_per_million: string | number | null;
+  image_output_price_microusd_per_million: string | number | null;
   markup_bps: number;
   discount_bps: number;
+  source: string;
+  source_ref: string | null;
+  source_version: string | null;
+  source_metadata: Record<string, unknown> | null;
 };
 
 function safeDbNumber(value: string | number, name: string) {
@@ -108,6 +120,8 @@ export type ResolvedBillableModel = {
     displayName: string;
     contextWindow?: number;
     maxOutputTokens?: number;
+    imageInputTokenReservePerImage?: number;
+    imageOutputTokenReservePerImage?: number;
     capabilities: Record<string, boolean>;
     requestHeaders: ModelRequestHeaders;
   };
@@ -216,10 +230,25 @@ async function resolveRoutes(client: PoolClient, row: ModelProviderRow) {
     candidates: ordered.map((target) => ({ provider: resolvedProvider(providers.find((value) => value.provider_id === target.providerId)!), upstreamModel: target.upstreamModel })) };
 }
 
+function requireImageProvider(
+  provider: ResolvedBillableModel["provider"],
+  requiredCapability: "image_generation" | "image_edit" | undefined,
+) {
+  if (requiredCapability && !providerSupportsImages(provider)) {
+    throw new GatewayError(
+      "IMAGE_PROVIDER_UNSUPPORTED",
+      "The selected provider is not configured for the OpenAI or Codex Images API",
+      503,
+      "configuration_error",
+    );
+  }
+}
+
 export async function resolveBillableModel(input: {
   platformUserId: string;
   requestedModel: string;
   protocol: AiProviderProtocol;
+  requiredCapability?: "image_generation" | "image_edit";
   at?: Date;
 }): Promise<ResolvedBillableModel> {
   return await withPlatformTransaction(async (client) => {
@@ -227,7 +256,10 @@ export async function resolveBillableModel(input: {
     const { rows } = await client.query<ModelProviderRow>(
       `SELECT m.id AS model_id, m.code AS model_code, m.upstream_model,
               m.display_name, m.context_window, m.max_output_tokens,
-              m.capabilities, m.request_headers, p.id AS provider_id, p.code AS provider_code,
+              m.image_input_token_reserve_per_image,
+              m.image_output_token_reserve_per_image,
+              m.capabilities, m.request_headers, m.metadata AS model_metadata,
+              p.id AS provider_id, p.code AS provider_code,
               p.status AS provider_status, p.protocol, p.base_url, p.api_key_ciphertext, p.api_key_iv,
               p.api_key_tag, p.timeout_ms, p.max_retries,
               p.adapter_kind, p.active_credential_kind, p.auth_epoch,
@@ -265,7 +297,20 @@ export async function resolveBillableModel(input: {
         "configuration_error",
       );
     }
-
+    if (
+      input.requiredCapability &&
+      row.capabilities?.[input.requiredCapability] !== true
+    ) {
+      throw new GatewayError(
+        "IMAGE_MODEL_CAPABILITY_REQUIRED",
+        "The requested model does not support this Image operation",
+        400,
+        "invalid_request_error",
+      );
+    }
+    if (!input.requiredCapability && !modelSupportsConversation(row.capabilities)) {
+      throw new GatewayError("MODEL_CHAT_CAPABILITY_REQUIRED", "The requested model is only published for Images operations", 400, "invalid_request_error");
+    }
     const permissionResult = await client.query<{
       enabled: boolean;
       requests_per_minute: number | null;
@@ -294,7 +339,10 @@ export async function resolveBillableModel(input: {
               output_price_microusd_per_million,
               cache_read_price_microusd_per_million,
               cache_write_price_microusd_per_million,
-              markup_bps, discount_bps
+              image_input_price_microusd_per_million,
+              image_output_price_microusd_per_million,
+              markup_bps, discount_bps, source, source_ref, source_version,
+              source_metadata
        FROM ai_pricing_rules
        WHERE model_id = $1
          AND status = 'active'
@@ -316,6 +364,9 @@ export async function resolveBillableModel(input: {
         "configuration_error",
       );
     }
+    for (const candidate of routing.candidates) {
+      requireImageProvider(candidate.provider, input.requiredCapability);
+    }
 
     return {
       model: {
@@ -325,6 +376,10 @@ export async function resolveBillableModel(input: {
         displayName: row.display_name,
         contextWindow: row.context_window ?? undefined,
         maxOutputTokens: row.max_output_tokens ?? undefined,
+        imageInputTokenReservePerImage:
+          row.image_input_token_reserve_per_image ?? undefined,
+        imageOutputTokenReservePerImage:
+          row.image_output_token_reserve_per_image ?? undefined,
         capabilities: row.capabilities ?? {},
         requestHeaders: requestHeaders.data,
       },
@@ -348,6 +403,20 @@ export async function resolveBillableModel(input: {
           pricing.cache_write_price_microusd_per_million,
           "cache_write",
         ),
+        imageInputPriceMicrousdPerMillion:
+          pricing.image_input_price_microusd_per_million === null
+            ? undefined
+            : safeDbNumber(
+                pricing.image_input_price_microusd_per_million,
+                "image_input",
+              ),
+        imageOutputPriceMicrousdPerMillion:
+          pricing.image_output_price_microusd_per_million === null
+            ? undefined
+            : safeDbNumber(
+                pricing.image_output_price_microusd_per_million,
+                "image_output",
+              ),
         markupBps: pricing.markup_bps,
         discountBps: pricing.discount_bps,
       },

@@ -1,3 +1,8 @@
+// [Input] Controlled Admin identity, transaction, request-summary, payload, and audit fixtures.
+// [Output] Permission/confirmation behavior and server-side Image payload-denial evidence.
+// [Pos] Provider-free Admin payload boundary unit test; no production payload is read.
+// [Sync] 2026-10-09: prove Image operations are denied before any payload table is queried.
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminError } from "./errors";
 import { handleGatewayPayloadDetail } from "./gateway-payloads";
@@ -40,5 +45,23 @@ describe("full gateway payload access", () => {
     const response = await handleGatewayPayloadDetail(new Request("http://localhost/api/admin/gateway-requests/req_1/payload", { headers: { "x-gateway-payload-confirmation": "reveal" } }), "req_1");
     expect(response.status).toBe(403);
     expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("denies Image payload reads after the safe summary lookup", async () => {
+    const query = vi.fn().mockResolvedValueOnce({
+      rows: [{ id: "req_image", operation: "images.edits" }],
+      rowCount: 1,
+    });
+    mocks.transaction.mockImplementation(async (
+      callback: (client: { query: typeof query }) => Promise<unknown>,
+    ) => await callback({ query }));
+    const response = await handleGatewayPayloadDetail(new Request(
+      "http://localhost/api/admin/gateway-requests/req_image/payload",
+      { headers: { "x-gateway-payload-confirmation": "reveal" } },
+    ), "req_image");
+    expect(response.status).toBe(403);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(String(query.mock.calls[0]?.[0])).not.toContain("gateway_request_payloads");
+    expect(mocks.audit).not.toHaveBeenCalled();
   });
 });

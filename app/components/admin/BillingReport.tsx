@@ -1,10 +1,19 @@
 "use client";
 
+// [Input] Authorized daily Gateway known subtotals and unknown Image request counts.
+// [Output] Daily billing table/CSV that identifies incomplete totals and platform base amounts.
+// [Pos] Shared Admin report presentation; server owns permission checks and aggregation.
+// [Sync] 2026-10-10: show unknown usage counts alongside known amount subtotals.
+
 import { FormEvent, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AdminCollapsibleFilters, AdminListHeader, countActiveFilterValues, haveFilterValuesChanged } from "./AdminListChrome";
 
 type ReportRow = Record<string, string> & { day: string };
+
+function knownSubtotal(value: string, row: ReportRow) {
+  return Number(row.unknown_usage_requests ?? 0) > 0 ? `${value}（已知小计）` : value;
+}
 
 function defaultRange() {
   const today = new Date();
@@ -32,7 +41,7 @@ export default function BillingReport() {
 
   function exportCsv() {
     const rows = query.data ?? [];
-    const headers = ["day", "requests", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "provider_cost_microusd", "charged_microusd", "settlement_failures"];
+    const headers = ["day", "requests", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "provider_cost_microusd", "charged_microusd", "unknown_usage_requests", "settlement_failures"];
     const csv = [headers.join(","), ...rows.map((row) => headers.map((header) => JSON.stringify(row[header] ?? "")).join(","))].join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
@@ -42,5 +51,5 @@ export default function BillingReport() {
     URL.revokeObjectURL(url);
   }
 
-  return <section className="admin-panel overflow-hidden"><AdminListHeader title="按日计费报表" description="汇总真实 Gateway 请求；范围最多 366 天。CSV 使用当前筛选结果。" /><AdminCollapsibleFilters activeCount={countActiveFilterValues(range)} dirty={haveFilterValuesChanged(draft, range)}><form onSubmit={submit} className="flex flex-wrap items-end gap-3"><label className="text-xs font-semibold text-text-secondary">开始日期<input type="date" className="admin-field mt-1 block" value={draft.from} onChange={(event) => setDraft((value) => ({ ...value, from: event.target.value }))} required /></label><label className="text-xs font-semibold text-text-secondary">结束日期<input type="date" className="admin-field mt-1 block" value={draft.to} onChange={(event) => setDraft((value) => ({ ...value, to: event.target.value }))} required /></label><button className="min-h-11 bg-text-primary px-4 text-sm font-semibold text-bg-surface">生成报表</button><button type="button" onClick={exportCsv} disabled={!query.data?.length} className="min-h-11 border border-border bg-bg-surface px-4 text-sm disabled:opacity-40">导出 CSV</button></form></AdminCollapsibleFilters>{query.error ? <p className="m-4 border border-danger/35 bg-danger-light p-4 text-sm text-danger" role="alert">{query.error.message}</p> : null}<div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead><tr className="border-b border-border bg-bg-secondary/45">{["日期", "请求", "Input", "Output", "Cache read", "Cache write", "Provider 成本", "收费", "结算失败记录"].map((label) => <th key={label} className="whitespace-nowrap px-4 py-3 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">{label}</th>)}</tr></thead><tbody>{query.data?.map((row) => <tr key={row.day} className="border-b border-border"><td className="px-4 py-3 font-mono text-xs">{row.day}</td><td className="px-4 py-3">{row.requests}</td><td className="px-4 py-3">{row.input_tokens}</td><td className="px-4 py-3">{row.output_tokens}</td><td className="px-4 py-3">{row.cache_read_tokens}</td><td className="px-4 py-3">{row.cache_write_tokens}</td><td className="px-4 py-3 font-mono text-xs">{row.provider_cost_microusd}</td><td className="px-4 py-3 font-mono text-xs">{row.charged_microusd}</td><td className="px-4 py-3">{row.settlement_failures}</td></tr>)}{!query.isLoading && !query.data?.length ? <tr><td colSpan={9} className="px-5 py-12 text-center text-sm text-text-tertiary">所选时间范围内没有 Gateway 请求。</td></tr> : null}</tbody></table></div></section>;
+  return <section className="admin-panel overflow-hidden"><AdminListHeader title="按日计费报表" description="汇总真实 Gateway 请求；未知用量单独列出，金额为已知小计（micro-USD）。CSV 使用当前筛选结果。" /><AdminCollapsibleFilters activeCount={countActiveFilterValues(range)} dirty={haveFilterValuesChanged(draft, range)}><form onSubmit={submit} className="flex flex-wrap items-end gap-3"><label className="text-xs font-semibold text-text-secondary">开始日期<input type="date" className="admin-field mt-1 block" value={draft.from} onChange={(event) => setDraft((value) => ({ ...value, from: event.target.value }))} required /></label><label className="text-xs font-semibold text-text-secondary">结束日期<input type="date" className="admin-field mt-1 block" value={draft.to} onChange={(event) => setDraft((value) => ({ ...value, to: event.target.value }))} required /></label><button className="min-h-11 bg-text-primary px-4 text-sm font-semibold text-bg-surface">生成报表</button><button type="button" onClick={exportCsv} disabled={!query.data?.length} className="min-h-11 border border-border bg-bg-surface px-4 text-sm disabled:opacity-40">导出 CSV</button></form></AdminCollapsibleFilters>{query.error ? <p className="m-4 border border-danger/35 bg-danger-light p-4 text-sm text-danger" role="alert">{query.error.message}</p> : null}<div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead><tr className="border-b border-border bg-bg-secondary/45">{["日期", "请求", "Input", "Output", "Cache read", "Cache write", "平台基础金额", "收费", "用量未知", "结算失败记录"].map((label) => <th key={label} className="whitespace-nowrap px-4 py-3 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">{label}</th>)}</tr></thead><tbody>{query.data?.map((row) => <tr key={row.day} className="border-b border-border"><td className="px-4 py-3 font-mono text-xs">{row.day}</td><td className="px-4 py-3">{row.requests}</td><td className="px-4 py-3">{knownSubtotal(row.input_tokens, row)}</td><td className="px-4 py-3">{knownSubtotal(row.output_tokens, row)}</td><td className="px-4 py-3">{knownSubtotal(row.cache_read_tokens, row)}</td><td className="px-4 py-3">{knownSubtotal(row.cache_write_tokens, row)}</td><td className="px-4 py-3 font-mono text-xs">{knownSubtotal(row.provider_cost_microusd, row)}</td><td className="px-4 py-3 font-mono text-xs">{knownSubtotal(row.charged_microusd, row)}</td><td className="px-4 py-3">{row.unknown_usage_requests ?? "0"}</td><td className="px-4 py-3">{row.settlement_failures}</td></tr>)}{!query.isLoading && !query.data?.length ? <tr><td colSpan={10} className="px-5 py-12 text-center text-sm text-text-tertiary">所选时间范围内没有 Gateway 请求。</td></tr> : null}</tbody></table></div></section>;
 }

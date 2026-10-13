@@ -2,14 +2,17 @@
 // [Output] Catalog matches and audited price versions from unique or explicitly selected snapshot candidates.
 // [Pos] Server boundary for pricing discovery, candidate validation and transactional apply.
 // [Sync] 2026-09-14: retain all candidate prices and validate manual choices against the locked snapshot.
+// [Sync] 2026-10-10: scope Image discovery and retain a separately configured image-input platform price.
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 
 import { withPlatformClient, withPlatformTransaction } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
+import { imageApiCapabilityAvailable } from "../db/image-api-capability";
 import { recordAdminAuditOnClient } from "./audit";
 import { AdminError, adminErrorResponse } from "./errors";
+import { assertPricingWindow, lockPricingScope } from "./pricing-windows";
 import {
   adminRequestId,
   assertAdminMutationOrigin,
@@ -32,6 +35,8 @@ export type ModelsDevEntry = {
   outputMicrousd: string;
   cacheReadMicrousd: string;
   cacheWriteMicrousd: string;
+  kind?: "image";
+  imageOutputMicrousd?: string;
 };
 
 export type PricingSyncMatch = ModelsDevEntry & {
@@ -42,6 +47,8 @@ export type PricingSyncMatch = ModelsDevEntry & {
   match: "exact" | "normalized" | "ambiguous" | "unmatched";
   candidates?: string[];
   candidateDetails?: ModelsDevEntry[];
+  imageInputMicrousd?: string | null;
+  requiresImageInput?: boolean;
 };
 
 type LocalModel = {
@@ -50,6 +57,8 @@ type LocalModel = {
   upstream_model: string;
   provider_code: string;
   provider_name: string;
+  image_input_price?: string | null;
+  requires_image_input?: boolean;
 };
 
 type PricingSnapshot = {
@@ -111,7 +120,7 @@ function isTextModel(modelId: string, model: Record<string, unknown>) {
   return !NON_TEXT_MARKERS.some((marker) => searchable.includes(marker));
 }
 
-export function flattenModelsDevCatalog(payload: unknown): ModelsDevEntry[] {
+export function flattenModelsDevCatalog(payload: unknown, imageOnly = false): ModelsDevEntry[] {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new AdminError("MODELS_DEV_CATALOG_INVALID", "models.dev 目录格式无效", 502);
   }
@@ -125,11 +134,16 @@ export function flattenModelsDevCatalog(payload: unknown): ModelsDevEntry[] {
     for (const [modelId, modelValue] of Object.entries(models as Record<string, unknown>)) {
       if (!modelValue || typeof modelValue !== "object" || Array.isArray(modelValue)) continue;
       const model = modelValue as Record<string, unknown>;
-      if (!isTextModel(modelId, model)) continue;
+      if (imageOnly) {
+        const modalities = model.modalities as { output?: unknown } | undefined;
+        if (model.status === "deprecated" || !Array.isArray(modalities?.output)
+          || !modalities.output.includes("image")) continue;
+      } else if (!isTextModel(modelId, model)) continue;
       const cost = model.cost && typeof model.cost === "object"
         ? model.cost as Record<string, unknown>
         : {};
       if (cost.input === undefined && cost.output === undefined) continue;
+      if (imageOnly && (![cost.input, cost.output].every((value) => typeof value === "number" || typeof value === "string"))) continue;
       const normalizedId = normalizeModelIdForPricing(modelId);
       if (!normalizedId) continue;
       entries.push({
@@ -141,9 +155,10 @@ export function flattenModelsDevCatalog(payload: unknown): ModelsDevEntry[] {
         modelName: typeof model.name === "string" ? model.name : modelId,
         releaseDate: typeof model.release_date === "string" ? model.release_date : "",
         inputMicrousd: decimalUsdToMicrousd(cost.input ?? 0),
-        outputMicrousd: decimalUsdToMicrousd(cost.output ?? 0),
-        cacheReadMicrousd: decimalUsdToMicrousd(cost.cache_read ?? 0),
-        cacheWriteMicrousd: decimalUsdToMicrousd(cost.cache_write ?? 0),
+        outputMicrousd: imageOnly ? "0" : decimalUsdToMicrousd(cost.output ?? 0),
+        cacheReadMicrousd: imageOnly ? "0" : decimalUsdToMicrousd(cost.cache_read ?? 0),
+        cacheWriteMicrousd: imageOnly ? "0" : decimalUsdToMicrousd(cost.cache_write ?? 0),
+        ...(imageOnly ? { kind: "image" as const, imageOutputMicrousd: decimalUsdToMicrousd(cost.output) } : {}),
       });
       if (entries.length > MAX_MATCHES) {
         throw new AdminError("MODELS_DEV_CATALOG_TOO_LARGE", "models.dev 可计费模型超过安全限制", 502);
@@ -159,8 +174,12 @@ function providerMatches(local: LocalModel, remote: ModelsDevEntry) {
   return localProvider.includes(remote.providerId.toLowerCase().replace(/[^a-z0-9]+/g, "")) || remoteProvider.includes(local.provider_code.toLowerCase().replace(/[^a-z0-9]+/g, ""));
 }
 
-export function matchModelsDevPricing(localModels: LocalModel[], entries: ModelsDevEntry[]) {
+export function matchModelsDevPricing(localModels: LocalModel[], entries: ModelsDevEntry[], imageOnly = false) {
   return localModels.map<PricingSyncMatch>((local) => {
+    const imageFields = imageOnly ? {
+      kind: "image" as const, imageInputMicrousd: local.image_input_price ?? null,
+      requiresImageInput: local.requires_image_input === true,
+    } : {};
     const exactAll = entries.filter((entry) => entry.modelId === local.upstream_model);
     const exactPreferred = exactAll.filter((entry) => providerMatches(local, entry));
     const exact = exactPreferred.length === 1 ? exactPreferred : exactAll;
@@ -177,10 +196,12 @@ export function matchModelsDevPricing(localModels: LocalModel[], entries: Models
         cacheReadMicrousd: "0", cacheWriteMicrousd: "0", localModelId: local.id,
         localModelCode: local.code, upstreamModel: local.upstream_model, providerCode: local.provider_code,
         match: "unmatched",
+        ...imageFields,
       };
     }
     return {
       ...selected,
+      ...imageFields,
       localModelId: local.id,
       localModelCode: local.code,
       upstreamModel: local.upstream_model,
@@ -194,7 +215,7 @@ export function matchModelsDevPricing(localModels: LocalModel[], entries: Models
   });
 }
 
-async function fetchCatalog(fetcher: typeof fetch = fetch) {
+async function fetchCatalog(imageOnly: boolean, fetcher: typeof fetch = fetch) {
   const response = await fetcher(MODELS_DEV_API_URL, {
     headers: { accept: "application/json", "accept-encoding": "identity", "user-agent": "Ink-Memory-Admin/Pricing-Sync" },
     cache: "no-store",
@@ -213,28 +234,46 @@ async function fetchCatalog(fetcher: typeof fetch = fetch) {
     throw new AdminError("MODELS_DEV_CATALOG_INVALID", "models.dev 目录不是有效 JSON", 502);
   }
   const hash = createHash("sha256").update(bytes).digest("hex");
-  return { entries: flattenModelsDevCatalog(payload), hash, version: response.headers.get("etag") ?? hash.slice(0, 16) };
+  return { entries: flattenModelsDevCatalog(payload, imageOnly), hash, version: response.headers.get("etag") ?? hash.slice(0, 16) };
 }
 
-async function loadLocalModels(client: PoolClient, providerId?: string) {
+async function loadLocalModels(client: PoolClient, providerId?: string, imageOnly = false, localModelId?: string) {
+  if (imageOnly && !await imageApiCapabilityAvailable(client)) {
+    throw new AdminError("PLATFORM_SCHEMA_NOT_READY", "Image schema capability is not installed", 503);
+  }
   const { rows } = await client.query<LocalModel>(
     `SELECT m.id, m.code, m.upstream_model, p.code AS provider_code, p.name AS provider_name
+       ${imageOnly ? `, (m.capabilities @> '{"image_edit":true}'::jsonb) AS requires_image_input,
+       (SELECT pr.image_input_price_microusd_per_million::text FROM ai_pricing_rules pr
+        WHERE pr.model_id = m.id AND pr.user_tier = 'default' AND pr.status = 'active'
+          AND pr.effective_from <= now() AND (pr.effective_to IS NULL OR pr.effective_to > now())
+        ORDER BY pr.effective_from DESC LIMIT 1) AS image_input_price` : ""}
      FROM ai_models m JOIN ai_providers p ON p.id = m.provider_id
      WHERE ($1::text IS NULL OR m.provider_id = $1)
-     ORDER BY p.code, m.code`,
-    [providerId ?? null],
+       AND ($2::text IS NULL OR m.id = $2)
+       ${imageOnly ? `AND (m.capabilities @> '{"image_generation":true}'::jsonb OR m.capabilities @> '{"image_edit":true}'::jsonb)
+       AND (p.adapter_kind = 'codex' OR (p.adapter_kind = 'generic' AND p.protocol = 'openai'
+         AND p.config #>> '{imageApi,kind}' = 'openai'))` : ""}
+     ORDER BY p.code, m.code${localModelId ? " FOR SHARE OF m, p" : ""}`,
+    [providerId ?? null, localModelId ?? null],
   );
   return rows;
 }
+
+const pricingSyncCreateSchema = z.strictObject({
+  providerId: z.string().min(1).max(100).optional(),
+  force: z.boolean().default(false),
+  imageOnly: z.boolean().default(false),
+});
 
 export async function handlePricingSyncCreate(request: Request) {
   const requestId = adminRequestId(request);
   try {
     assertAdminMutationOrigin(request);
     const identity = await requireAdminRequest(request, "pricing.write");
-    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
-    const providerId = typeof body.providerId === "string" && body.providerId ? body.providerId : undefined;
-    const force = body.force === true;
+    const parsed = pricingSyncCreateSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) throw new AdminError("ADMIN_VALIDATION_ERROR", "价格同步参数无效", 400);
+    const { providerId, force, imageOnly } = parsed.data;
     if (!force) {
       const recent = await withPlatformClient(async (client) => {
         const { rows } = await client.query(
@@ -242,8 +281,10 @@ export async function handlePricingSyncCreate(request: Request) {
            WHERE provider_id IS NOT DISTINCT FROM $1::text
              AND created_at >= now() - interval '6 hours'
              AND expires_at > now()
+             AND jsonb_array_length(matches) > 0
+             AND COALESCE(matches -> 0 ->> 'kind', 'text') = $2
            ORDER BY created_at DESC LIMIT 1`,
-          [providerId ?? null],
+          [providerId ?? null, imageOnly ? "image" : "text"],
         );
         return rows[0]?.id as string | undefined;
       });
@@ -252,10 +293,10 @@ export async function handlePricingSyncCreate(request: Request) {
       }
     }
     const [catalog, localModels] = await Promise.all([
-      fetchCatalog(),
-      withPlatformClient((client) => loadLocalModels(client, providerId)),
+      fetchCatalog(imageOnly),
+      withPlatformClient((client) => loadLocalModels(client, providerId, imageOnly)),
     ]);
-    const matches = matchModelsDevPricing(localModels, catalog.entries);
+    const matches = matchModelsDevPricing(localModels, catalog.entries, imageOnly);
     const id = createPlatformId("pricing_sync");
     const data = await withPlatformTransaction(async (client) => {
       if (providerId) {
@@ -273,7 +314,7 @@ export async function handlePricingSyncCreate(request: Request) {
       await recordAdminAuditOnClient(client, {
         identity, action: "models_dev_pricing_discovery", resourceType: "pricing", resourceId: id,
         requestId, request, metadata: {
-          providerId: providerId ?? null, catalogHash: catalog.hash, localModelCount: localModels.length,
+          providerId: providerId ?? null, imageOnly, catalogHash: catalog.hash, localModelCount: localModels.length,
           exactCount: matches.filter((item) => item.match === "exact").length,
           normalizedCount: matches.filter((item) => item.match === "normalized").length,
           ambiguousCount: matches.filter((item) => item.match === "ambiguous").length,
@@ -315,10 +356,14 @@ const candidateSelectionSchema = z.object({
   localModelId: z.string().min(1),
   key: z.string().min(1),
 }).strict();
-const pricingSyncApplySchema = z.object({
+export const pricingSyncApplySchema = z.object({
   modelIds: z.array(z.string().min(1)).min(1).max(MAX_MATCHES),
   candidateSelections: z.array(candidateSelectionSchema).max(MAX_MATCHES).default([]),
   effectiveFrom: z.string().datetime({ offset: true }).optional(),
+  imageInputPrices: z.array(z.strictObject({
+    localModelId: z.string().min(1),
+    microusd: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  })).max(MAX_MATCHES).default([]),
 }).strict();
 
 function applyInput(body: unknown) {
@@ -327,6 +372,7 @@ function applyInput(body: unknown) {
   return {
     modelIds: [...new Set(parsed.data.modelIds)],
     candidateSelections: parsed.data.candidateSelections,
+    imageInputPrices: parsed.data.imageInputPrices,
     effectiveFrom: parsed.data.effectiveFrom ? new Date(parsed.data.effectiveFrom) : new Date(),
   };
 }
@@ -361,11 +407,24 @@ export function resolvePricingSyncSelections(
   });
 }
 
-function samePrice(row: Record<string, unknown>, match: PricingSyncMatch) {
-  return String(row.input_price_microusd_per_million) === match.inputMicrousd
-    && String(row.output_price_microusd_per_million) === match.outputMicrousd
-    && String(row.cache_read_price_microusd_per_million) === match.cacheReadMicrousd
-    && String(row.cache_write_price_microusd_per_million) === match.cacheWriteMicrousd;
+export function pricingSyncVersionAmounts(match: PricingSyncMatch, current: Record<string, unknown> | undefined, imageInput?: number) {
+  return {
+    input: match.inputMicrousd,
+    output: match.kind === "image" ? String(current?.output_price_microusd_per_million ?? 0) : match.outputMicrousd,
+    cacheRead: match.kind === "image" ? String(current?.cache_read_price_microusd_per_million ?? 0) : match.cacheReadMicrousd,
+    cacheWrite: match.kind === "image" ? String(current?.cache_write_price_microusd_per_million ?? 0) : match.cacheWriteMicrousd,
+    imageInput: imageInput === undefined ? current?.image_input_price_microusd_per_million ?? null : String(imageInput),
+    imageOutput: match.kind === "image" ? match.imageOutputMicrousd : current?.image_output_price_microusd_per_million ?? null,
+  };
+}
+
+function samePrice(row: Record<string, unknown>, amounts: ReturnType<typeof pricingSyncVersionAmounts>) {
+  return String(row.input_price_microusd_per_million) === amounts.input
+    && String(row.output_price_microusd_per_million) === amounts.output
+    && String(row.cache_read_price_microusd_per_million) === amounts.cacheRead
+    && String(row.cache_write_price_microusd_per_million) === amounts.cacheWrite
+    && String(row.image_input_price_microusd_per_million ?? null) === String(amounts.imageInput)
+    && String(row.image_output_price_microusd_per_million ?? null) === String(amounts.imageOutput);
 }
 
 export async function handlePricingSyncApply(request: Request, snapshotId: string) {
@@ -379,32 +438,59 @@ export async function handlePricingSyncApply(request: Request, snapshotId: strin
       if (snapshot.status !== "ready" || snapshot.expires_at <= new Date()) {
         throw new AdminError("PRICING_SYNC_EXPIRED", "价格同步快照已应用或过期，请重新同步", 409);
       }
-      const selected = resolvePricingSyncSelections(snapshot.matches, input.modelIds, input.candidateSelections);
+      const selected = resolvePricingSyncSelections(snapshot.matches, input.modelIds, input.candidateSelections)
+        .sort((left, right) => left.localModelId < right.localModelId ? -1 : left.localModelId > right.localModelId ? 1 : 0);
+      const imageInputPrices = new Map<string, number>();
+      for (const price of input.imageInputPrices) {
+        if (imageInputPrices.has(price.localModelId) || !selected.some((match) => match.localModelId === price.localModelId && match.kind === "image")) {
+          throw new AdminError("PRICING_SYNC_SELECTION_INVALID", "图像输入价重复或不属于所选图像模型", 409);
+        }
+        imageInputPrices.set(price.localModelId, price.microusd);
+      }
+      const imageSchema = await imageApiCapabilityAvailable(client);
+      if (selected.some((match) => match.kind === "image") && !imageSchema) {
+        throw new AdminError("PLATFORM_SCHEMA_NOT_READY", "Image schema capability is not installed", 503);
+      }
       const created: string[] = [];
       const unchanged: string[] = [];
       for (const match of selected) {
-        await client.query(
-          "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-          [`${match.localModelId}:default`],
-        );
+        let imageModel: LocalModel | undefined;
+        if (match.kind === "image") {
+          imageModel = (await loadLocalModels(client, undefined, true, match.localModelId))[0];
+          if (!imageModel || imageModel.upstream_model !== match.upstreamModel || !match.imageOutputMicrousd) {
+            throw new AdminError("PRICING_SYNC_SELECTION_INVALID", "图像模型或目录价格已不适用，请重新同步", 409);
+          }
+        }
+        await lockPricingScope(client, match.localModelId, "default");
         const { rows } = await client.query<Record<string, unknown>>(
           `SELECT * FROM ai_pricing_rules
            WHERE model_id = $1 AND user_tier = 'default' AND status = 'active' AND effective_to IS NULL
-           ORDER BY effective_from DESC LIMIT 1 FOR UPDATE`,
+           ORDER BY effective_from DESC LIMIT 2 FOR UPDATE`,
           [match.localModelId],
         );
-        const current = rows[0];
-        if (current && samePrice(current, match) && (match.match !== "ambiguous" || current.source_ref === match.key)) {
-          unchanged.push(String(current.id));
+        if (rows.length > 1) throw new AdminError("PRICING_CURRENT_VERSION_AMBIGUOUS", "检测到多个开放的当前价格版本，请先核对并结束重复窗口", 409);
+        const open = rows[0];
+        const current = open ?? (await client.query<Record<string, unknown>>(
+          `SELECT * FROM ai_pricing_rules WHERE model_id = $1 AND user_tier = 'default'
+           AND status = 'active' AND effective_from <= $2
+           ORDER BY effective_from DESC LIMIT 1 FOR UPDATE`, [match.localModelId, input.effectiveFrom],
+        )).rows[0];
+        const amounts = pricingSyncVersionAmounts(match, current, imageInputPrices.get(match.localModelId));
+        if (imageModel?.requires_image_input && amounts.imageInput === null) {
+          throw new AdminError("IMAGE_INPUT_PRICING_REQUIRED", "请填写图像输入平台价，models.dev 未提供该分项", 400);
+        }
+        if (open && samePrice(open, amounts) && (match.match !== "ambiguous" || open.source_ref === match.key)) {
+          unchanged.push(String(open.id));
           continue;
         }
-        if (current) {
-          const currentFrom = new Date(String(current.effective_from));
+        if (open) {
+          const currentFrom = new Date(String(open.effective_from));
           if (input.effectiveFrom <= currentFrom) {
             throw new AdminError("PRICING_EFFECTIVE_TIME_CONFLICT", `模型 ${match.localModelCode} 的生效时间必须晚于当前价格版本`, 409);
           }
-          await client.query("UPDATE ai_pricing_rules SET effective_to = $2, updated_at = now() WHERE id = $1", [current.id, input.effectiveFrom]);
+          await client.query("UPDATE ai_pricing_rules SET effective_to = $2, updated_at = now() WHERE id = $1", [open.id, input.effectiveFrom]);
         }
+        await assertPricingWindow(client, { modelId: match.localModelId, userTier: "default", effectiveFrom: input.effectiveFrom.toISOString() });
         const id = createPlatformId("pricing");
         await client.query(
           `INSERT INTO ai_pricing_rules (
@@ -413,15 +499,17 @@ export async function handlePricingSyncApply(request: Request, snapshotId: strin
              cache_read_price_microusd_per_million, cache_write_price_microusd_per_million,
              markup_bps, discount_bps, status, source, source_ref, source_version,
              source_metadata, effective_from
+             ${imageSchema ? ", image_input_price_microusd_per_million, image_output_price_microusd_per_million" : ""}
            ) VALUES ($1, $2, 'default', $3, $4, $5, $6, $7, $8, 'active',
-                     'models.dev', $9, $10, $11::jsonb, $12)`,
+                     'models.dev', $9, $10, $11::jsonb, $12${imageSchema ? ", $13, $14" : ""})`,
           [
-            id, match.localModelId, match.inputMicrousd, match.outputMicrousd,
-            match.cacheReadMicrousd, match.cacheWriteMicrousd,
+            id, match.localModelId, amounts.input, amounts.output,
+            amounts.cacheRead, amounts.cacheWrite,
             Number(current?.markup_bps ?? 0), Number(current?.discount_bps ?? 0),
             match.key, snapshot.catalog_version,
-            JSON.stringify({ snapshotId, providerId: match.providerId, modelId: match.modelId, catalogHash: snapshot.catalog_hash, match: match.match, manualSelection: match.match === "ambiguous" }),
+            JSON.stringify({ snapshotId, providerId: match.providerId, modelId: match.modelId, catalogHash: snapshot.catalog_hash, match: match.match, manualSelection: match.match === "ambiguous", ...(match.kind === "image" ? { kind: "image", referenceOnly: true, imageInputSource: imageInputPrices.has(match.localModelId) ? "platform_configured" : current?.image_input_price_microusd_per_million !== null && current?.image_input_price_microusd_per_million !== undefined ? "previous_version" : "not_configured" } : {}) }),
             input.effectiveFrom,
+            ...(imageSchema ? [amounts.imageInput, amounts.imageOutput] : []),
           ],
         );
         created.push(id);

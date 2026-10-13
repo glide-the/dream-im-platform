@@ -1,7 +1,10 @@
+// [Sync] 2026-10-11: known usage clears obsolete unknown markers and preserves the settlement worker actual-usage recovery resolution.
+// [Sync] 2026-10-10: keep delivery outcome and merge safe request associations when complete usage is unknown.
 // [Input] PostgreSQL transaction client, Gateway request identity, reliable usage and stored pricing snapshots.
 // [Output] Atomic, idempotent settlement of rate counters, subscription allowance and append-only financial effects.
 // [Pos] Billing persistence boundary; account gate precedes request, rate, allowance and account row locks.
 // [Sync] 2026-10-03: serialize each user's short settlement transaction before taking shared row locks.
+// [Sync] 2026-10-09: persist Image usage details and enforce transactional full Token allowance capture.
 
 import type { PoolClient } from "pg";
 import {
@@ -33,6 +36,7 @@ type RequestRow = {
   model_id: string;
   status: string;
   outcome: string;
+  operation: string;
   reserved_microusd: string | number;
   estimated_tokens: string | number;
   subscription_id: string | null;
@@ -47,6 +51,8 @@ type RequestRow = {
   output_price_snapshot: string | number;
   cache_read_price_snapshot: string | number;
   cache_write_price_snapshot: string | number;
+  image_input_price_snapshot: string | number | null;
+  image_output_price_snapshot: string | number | null;
   markup_bps_snapshot: number;
   discount_bps_snapshot: number;
 };
@@ -343,6 +349,20 @@ function pricingFromRequest(row: RequestRow): PricingSnapshot {
       row.cache_write_price_snapshot,
       "cache_write_price_snapshot",
     ),
+    imageInputPriceMicrousdPerMillion:
+      row.image_input_price_snapshot === null
+        ? undefined
+        : safeDbNumber(
+            row.image_input_price_snapshot,
+            "image_input_price_snapshot",
+          ),
+    imageOutputPriceMicrousdPerMillion:
+      row.image_output_price_snapshot === null
+        ? undefined
+        : safeDbNumber(
+            row.image_output_price_snapshot,
+            "image_output_price_snapshot",
+          ),
     markupBps: row.markup_bps_snapshot,
     discountBps: row.discount_bps_snapshot,
   };
@@ -361,6 +381,7 @@ export type SettleGatewayRequestInput = {
   actorType?: "gateway" | "admin" | "system";
   actorId?: string;
   settlementDescription?: string;
+  requireFullTokenAllowanceCapture?: boolean;
 };
 
 export async function settleGatewayRequestOnClient(
@@ -385,13 +406,14 @@ export async function settleGatewayRequestOnClient(
     await lockGatewayAccountOnClient(client, identity.platform_user_id);
 
     const { rows } = await client.query<RequestRow>(
-      `SELECT id, platform_user_id, model_id, status, outcome,
+      `SELECT id, platform_user_id, model_id, status, outcome, operation,
               reserved_microusd, estimated_tokens, subscription_id,
               subscription_plan_version_id, subscription_allowance_id,
               subscription_coverage_mode,
               allowance_reserved_microusd, allowance_reserved_tokens, created_at,
               settled_at, input_price_snapshot, output_price_snapshot,
               cache_read_price_snapshot, cache_write_price_snapshot,
+              image_input_price_snapshot, image_output_price_snapshot,
               markup_bps_snapshot, discount_bps_snapshot
        FROM gateway_requests
        WHERE id = $1
@@ -453,6 +475,12 @@ export async function settleGatewayRequestOnClient(
       subscriptionId: request.subscription_id ?? undefined,
       planVersionId: request.subscription_plan_version_id ?? undefined,
     });
+    if (
+      input.requireFullTokenAllowanceCapture &&
+      allowance.allowanceChargedTokens !== actualTokens
+    ) {
+      throw new Error("SUBSCRIPTION_IMAGE_ALLOWANCE_CAPTURE_INCOMPLETE");
+    }
     const needsFinancialAccount =
       reserved !== 0 ||
       allowance.cashChargeMicrousd !== 0 ||
@@ -531,6 +559,9 @@ export async function settleGatewayRequestOnClient(
     if (account && transitions) {
       await updateAccount(client, account.id, transitions.final);
     }
+    const responseSummary = { ...(input.responseSummary ?? {}) };
+    delete responseSummary.unknownReason;
+    delete responseSummary.resolvedAt;
     await client.query(
       `UPDATE gateway_requests
        SET status = 'settled', outcome = $2,
@@ -540,9 +571,12 @@ export async function settleGatewayRequestOnClient(
            upstream_request_id = COALESCE($9, upstream_request_id),
            http_status = $10, error_code = $11, error_message = $12,
            latency_ms = $13, first_token_ms = $14,
-           response_summary = $15::jsonb,
+           response_summary = (COALESCE(response_summary, '{}'::jsonb)
+             - 'unknownReason' - 'settlementResolution' - 'resolvedAt') || $15::jsonb,
            allowance_charged_microusd = $16,
            allowance_charged_tokens = $17,
+           input_text_tokens = $18, input_image_tokens = $19,
+           output_text_tokens = $20, output_image_tokens = $21,
            completed_at = COALESCE(completed_at, NOW()), settled_at = NOW()
        WHERE id = $1`,
       [
@@ -560,9 +594,14 @@ export async function settleGatewayRequestOnClient(
         input.errorMessage?.slice(0, 1_000) ?? null,
         input.latencyMs ?? null,
         input.firstTokenMs ?? null,
-        JSON.stringify(input.responseSummary ?? {}),
+        JSON.stringify({ ...responseSummary, usageKnown: true,
+          settlementResolution: input.responseSummary?.settlementResolution === "actual_usage_recovered" ? "actual_usage_recovered" : "actual_usage" }),
         allowance.allowanceChargeMicrousd,
         allowance.allowanceChargedTokens,
+        input.usage.inputTextTokens ?? null,
+        input.usage.inputImageTokens ?? null,
+        input.usage.outputTextTokens ?? null,
+        input.usage.outputImageTokens ?? null,
       ],
     );
 
@@ -592,12 +631,14 @@ export async function settleGatewayRequest(input: SettleGatewayRequestInput) {
 
 export async function markGatewayRequestSettlementFailed(input: {
   gatewayRequestId: string;
-  outcome: "failed" | "cancelled";
+  outcome: "succeeded" | "failed" | "cancelled";
   errorCode: string;
   errorMessage: string;
   httpStatus?: number;
   latencyMs?: number;
   firstTokenMs?: number;
+  usage?: TokenUsage;
+  responseSummary?: Record<string, unknown>;
 }) {
   return await withPlatformTransaction(async (client) => {
     const result = await client.query(
@@ -605,6 +646,17 @@ export async function markGatewayRequestSettlementFailed(input: {
        SET status = 'settlement_failed', outcome = $2,
            http_status = $3, error_code = $4, error_message = $5,
            latency_ms = $6, first_token_ms = $7,
+           input_tokens = COALESCE($8, input_tokens),
+           output_tokens = COALESCE($9, output_tokens),
+           cache_read_tokens = COALESCE($10, cache_read_tokens),
+           cache_write_tokens = COALESCE($11, cache_write_tokens),
+           input_text_tokens = COALESCE($12, input_text_tokens),
+           input_image_tokens = COALESCE($13, input_image_tokens),
+           output_text_tokens = COALESCE($14, output_text_tokens),
+           output_image_tokens = COALESCE($15, output_image_tokens),
+           upstream_request_id = COALESCE($16, upstream_request_id),
+           response_summary = COALESCE(response_summary, '{}'::jsonb)
+             || COALESCE($17::jsonb, '{}'::jsonb),
            completed_at = COALESCE(completed_at, NOW())
        WHERE id = $1 AND settled_at IS NULL
          AND status IN ('reserved', 'streaming')`,
@@ -616,6 +668,16 @@ export async function markGatewayRequestSettlementFailed(input: {
         input.errorMessage.slice(0, 1_000),
         input.latencyMs ?? null,
         input.firstTokenMs ?? null,
+        input.usage?.inputTokens ?? null,
+        input.usage?.outputTokens ?? null,
+        input.usage?.cacheReadTokens ?? null,
+        input.usage?.cacheWriteTokens ?? null,
+        input.usage?.inputTextTokens ?? null,
+        input.usage?.inputImageTokens ?? null,
+        input.usage?.outputTextTokens ?? null,
+        input.usage?.outputImageTokens ?? null,
+        input.usage?.upstreamRequestId ?? null,
+        input.responseSummary ? JSON.stringify(input.responseSummary) : null,
       ],
     );
     return { updated: result.rowCount === 1 };

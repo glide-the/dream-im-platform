@@ -1,4 +1,4 @@
-// [Sync] 2026-10-05: add independent routing strategy navigation, gated by models.read.
+// [Sync] 2026-10-10: add the independent Image model center with existing resource permissions.
 // [Input] Current protected Admin path, theme state, and permission-filtered navigation descriptors.
 // [Output] Accessible Admin workspace navigation including Claude Agent system governance.
 // [Pos] Admin chrome; resource authorization remains server-owned.
@@ -110,6 +110,14 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
       { label: "Provider", href: "/admin/models/providers", permission: "providers.read", mark: "PV" },
       { label: "Models", href: "/admin/models/models", permission: "models.read", mark: "MD" },
       { label: "Pricing", href: "/admin/models/pricing", permission: "pricing.read", mark: "PR" },
+    ],
+  },
+  {
+    label: "Image 模型中心",
+    items: [
+      { label: "Provider", href: "/admin/image-models/providers", permission: "providers.read", mark: "PV" },
+      { label: "Models", href: "/admin/image-models/models", permission: "models.read", mark: "MD" },
+      { label: "Pricing", href: "/admin/image-models/pricing", permission: "pricing.read", mark: "PR" },
     ],
   },
   {

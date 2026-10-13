@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-10: 同步Dream模型用途、公开能力与历史索引；本轮验证见专项执行记录。 -->
 <!-- [Sync] 2026-10-03: Gateway deadlock design now records the implemented per-user transaction gate; no schema or runtime configuration change. -->
 <!-- [Sync] 2026-10-02: clarify Gateway sequence transaction boundaries and concurrent execution; remove shared background shading. -->
 <!-- [Input] Repository documentation tree and current product/architecture decisions. -->
@@ -9,6 +10,25 @@
 # 文档索引
 
 ## 当前执行入口
+
+- [Dream 图片模型分工专项执行记录](/Users/dmeck/project/ink-dream-memory/docs/exec/image-model-call-division-20261010.md)
+- [Image 模型分工修订前 PRD 原文（历史）](prd/image-model-center/history-20261010-dream-model-division.md)
+- [Image 模型分工修订前正式设计原文（历史）](design/image-model-center.history-20261010-dream-model-division.md)
+
+- [Image 模型中心 PRD](prd/image-model-center/README.md)
+- [Image 模型中心正式设计](design/image-model-center.md)
+- [Image 日志与计费归属修正回执](verification/image-model-center-module-boundaries-20261010.md)
+- [Image 职责修正前完整设计（历史）](design/image-model-center.history-20261010-module-boundaries.md)
+- [Image 职责修正前完整 PRD（历史）](prd/image-model-center/history-20261010-module-boundaries.md)
+- [Image 模型中心更新前完整设计原文（历史）](design/image-model-center.history-20261010.md)
+- [Image 模型中心更新前完整 PRD（历史）](prd/image-model-center/history-20261010.md)
+- [Image 价格同步增量前完整设计（历史）](design/image-model-center.history-20261010-pricing-sync.md)
+- [Image 价格同步增量前完整 PRD（历史）](prd/image-model-center/history-20261010-pricing-sync.md)
+- [Image 模型中心源码调查与处理判断](verification/image-model-center-investigation.md)
+- [Image 模型中心独立设计评审](verification/image-model-center-design-review.md)
+- [Image 模型中心实现与验证回执](verification/image-model-center-implementation.md)
+- [Image Provider 简化与价格同步增量回执](verification/image-model-center-pricing-sync-20261010.md)
+- [Image 模型中心执行计划](task/image-model-center-plan.md)
 
 - [Gateway 模型服务性能报告（QPS、TPS、TTFT）](verification/gateway-model-service-performance-2026-10-02.md)
 - [Gateway 数据库死锁：架构分析与交互方案（设计与最小修复）](architecture/gateway-deadlock-analysis-and-design.md)

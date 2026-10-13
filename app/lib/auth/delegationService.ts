@@ -6,6 +6,7 @@
 // [Sync] 2026-09-17: recover a claim grant without reversing the claim-message/grant lock order.
 // [Sync] 2026-09-16: exchange live Reflections task authority for source-fenced gateway-cli grants.
 // [Sync] 2026-09-16: issue server-persistence grants from exact live Story confirmation claims.
+// [Sync] 2026-10-09: allow explicitly requested Images grants without widening frozen Dream-operation grants.
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -70,7 +71,7 @@ export class DelegationService {
     }
     const workflowContext = await authoritativeWorkflowContext(this.tx, principal.canonical_user_id, input.thread_id);
     if ((workflowContext?.workflow_run_id ?? null) !== input.run_id) throw new AuthBoundaryError("DELEGATION_WORKFLOW_CONTEXT_DENIED", 403);
-    const gatewayScopes = input.scopes.filter(scope => ["messages:create", "messages:count_tokens", "models:list"].includes(scope));
+    const gatewayScopes = input.scopes.filter(scope => ["messages:create", "messages:count_tokens", "models:list", "images:create"].includes(scope));
     let gatewayApiKeyId: string | null = null;
     if (gatewayScopes.length) {
       const binding = gatewayClientForService(service.id);
@@ -534,7 +535,7 @@ export class DelegationService {
     if (row.editorSessionId !== null && !await this.repository.ownsEditorSession(row.canonicalUserId.toString(), row.editorSessionId)) throw new AuthBoundaryError("ENTITY_NOT_FOUND", 404);
     if (row.gatewayApiKeyId) {
       const gateway = await this.repository.gatewayKeyById(row.gatewayApiKeyId);
-      if (!gateway || gateway.clientId !== gatewayClientForService(row.serviceClientId).gateway_client_id || row.scopes.filter(scope => ["messages:create", "messages:count_tokens", "models:list"].includes(scope)).some(scope => !gateway.scopes.includes(scope))) throw new AuthBoundaryError("GATEWAY_SCOPE_REQUIRED", 403);
+      if (!gateway || gateway.clientId !== gatewayClientForService(row.serviceClientId).gateway_client_id || row.scopes.filter(scope => ["messages:create", "messages:count_tokens", "models:list", "images:create"].includes(scope)).some(scope => !gateway.scopes.includes(scope))) throw new AuthBoundaryError("GATEWAY_SCOPE_REQUIRED", 403);
     }
     return { principal: { subject: row.authUserId, canonical_user_id: row.canonicalUserId.toString(), client_id: row.oauthClientId, scopes: row.scopes, status: "active" }, serviceClientId: row.serviceClientId, threadId: row.threadId, runId: row.runId, purpose: row.purpose as DelegatedPrincipal["purpose"], editorSessionId: row.editorSessionId, tokenHash: row.tokenHash, gatewayApiKeyId: row.gatewayApiKeyId };
   }

@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: cover explicit generic Responses selection, original defaults and fail-closed ownership.
 // [Input] Controlled provider JSON/SSE responses plus mocked billing and payload persistence boundaries.
 // [Output] Protocol, streaming, cancellation, timeout-refresh, settlement, and capture regression proof.
 // [Pos] Core Gateway proxy lifecycle unit tests.
@@ -448,4 +449,20 @@ describe("gateway non-streaming protocol matrix", () => {
     const response = await proxyNonStreaming({ request: new Request("http://gateway/v1/chat/completions"), externalProtocol: "openai", prepared: prepared("anthropic"), body: { model: "alias", messages: [], max_completion_tokens: 32 } });
     expect(await response.json()).toMatchObject({ object: "chat.completion", choices: [{ message: { content: "converted" }, finish_reason: "stop" }], usage: { prompt_tokens: 7, completion_tokens: 3 } });
   });
+  it.each([false, true])("handles explicitly configured generic Responses with stream=%s", async (stream) => {
+    const candidate = prepared("openai");
+    candidate.resolved.provider.config = { openaiApi: "responses" };
+    mocks.send.mockResolvedValue(transport(new Response(sse([
+      'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_generic","model":"upstream"}}\n\n',
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"answer"}\n\n',
+      'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_generic","model":"upstream","status":"completed","usage":{"input_tokens":7,"output_tokens":2}}}\n\n',
+    ]), { headers: { "content-type": "text/event-stream", "x-request-id": "upstream-generic" } })));
+    const response = await (stream ? proxyStreaming : proxyNonStreaming)({ request: new Request("http://gateway/v1/messages"), externalProtocol: "anthropic", prepared: candidate, body: { model: "alias", messages: [{ role: "user", content: "hello" }], max_tokens: 32, stream } });
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).toContain("answer");
+    expect(mocks.finalizeKnown).toHaveBeenCalledWith(expect.objectContaining({ usage: expect.objectContaining({ inputTokens: 7, outputTokens: 2, providerModel: "upstream", upstreamRequestId: stream ? "chatcmpl_generic" : "resp_generic" }) }));
+    expect(stream ? mocks.completePayload : mocks.jsonPayload).toHaveBeenCalledWith(expect.objectContaining({ providerRequestId: "upstream-generic" }));
+  });
+
 });

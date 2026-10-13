@@ -3,6 +3,7 @@
 // [Pos] Regression coverage for Provider Admin read-boundary sanitization.
 // [Sync] 2026-09-04: cover secret sanitization and direct Provider-owned account resolution.
 // [Sync] 2026-09-04: cover deleted Provider exclusion and Pricing dependency projection.
+// [Sync] 2026-10-09: cover explicit Image Provider, reservation, pricing, and entitlement readiness SQL.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -70,6 +71,8 @@ describe("Provider resource config sanitization", () => {
     expect(listSql).not.toContain("ai_provider_managed_account_defaults");
     expect(listSql).toContain("managed.id = p.managed_credential_id");
     expect(listSql).toContain("managed.provider_id = p.id");
+    expect(listSql).toContain("image_api_configured");
+    expect(listSql).toContain("image_provider_ready");
     expect(listSql).toContain("pricing_rule_count");
     expect(listSql).toContain("delete_revision");
     expect(listSql).toContain("p.status <> 'deleted'");
@@ -111,6 +114,16 @@ describe("Provider resource config sanitization", () => {
     expect(listSql).toContain("managed.id = p.managed_credential_id");
     expect(listSql).not.toContain("ai_provider_managed_account_defaults");
     expect(listSql).toContain("managed.provider_id = p.id");
+    expect(listSql).toContain("image_reservation_ready");
+    expect(listSql).toContain("image_reservation_documented");
+    expect(listSql).toContain("image_pricing_ready");
+    expect(listSql).toContain("image_pricing_audited");
+    expect(listSql).toContain("published_images_entitlement");
+    expect(listSql).toContain("pricing.source IN ('reference', 'provider_contract')");
+    expect(listSql).toContain("pricing.source_metadata ->> 'imagePricingBasis'");
+    expect(listSql).toContain("codex_managed_usd_contract");
+    expect(listSql).toContain("codex_reference_api_usd");
+    expect(listSql).toContain("openai_api_usd");
   });
 
   it("sanitizes historical Provider snapshots returned through audit resources", async () => {

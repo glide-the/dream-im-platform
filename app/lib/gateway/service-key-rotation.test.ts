@@ -2,6 +2,7 @@
 // [Output] DTO, secret-proof, exact-scope and secret-safe rotation contract evidence.
 // [Pos] Unit contract for release-time canonical-subject key rotation.
 // [Sync] 2026-09-17: cover explicit same-scope emergency rotation without plaintext receipts.
+// [Sync] 2026-10-10: require the Image tool scope in the Dream runtime key target.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createGatewayApiKey } from "./api-keys";
@@ -14,7 +15,7 @@ import {
 const pepper = "gateway-key-rotation-test-pepper-at-least-32-bytes";
 const target = {
   serviceClientId: "ink-dream-runtime",
-  scopes: ["messages:create", "messages:count_tokens", "models:list"] as const,
+  scopes: ["messages:create", "messages:count_tokens", "models:list", "images:create"] as const,
   requestId: "release-20260916-runtime-scopes",
 };
 

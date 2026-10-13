@@ -1,3 +1,9 @@
+// [Sync] 2026-10-10: preserve unknown complete usage independently of the reservation settlement status.
+// [Input] Validated product identity, plan, subscription, and usage query parameters.
+// [Output] PostgreSQL rows for the public product service without secret or payload content.
+// [Pos] Product read repository; business interpretation remains in the service.
+// [Sync] 2026-10-09: map Image request operations to the images:create usage scope.
+
 import type { PoolClient } from "pg";
 import type { PlansQuery, UsageQuery } from "./contracts";
 
@@ -293,7 +299,9 @@ export type ProductUsageRow = {
   gateway_request_id: string;
   model_alias: string;
   protocol: "anthropic" | "openai";
+  operation: string;
   status: string;
+  usage_unknown?: boolean;
   outcome: string;
   http_status: number | null;
   error_code: string | null;
@@ -325,18 +333,22 @@ function usageFilters(query: UsageQuery, startingParameter: number) {
   }
   if (query.modelAlias) add("model.code = ?", query.modelAlias);
   if (query.gatewayScope) {
-    const protocol =
-      query.gatewayScope === "messages:create"
+    if (query.gatewayScope === "images:create") {
+      clauses.push("request.operation IN ('images.generations', 'images.edits')");
+    } else {
+      const protocol = query.gatewayScope === "messages:create"
         ? "anthropic"
         : query.gatewayScope === "chat:create"
           ? "openai"
           : "__unsupported__";
-    add("request.protocol = ?", protocol);
+      add("request.protocol = ?", protocol);
+      clauses.push("request.operation = 'text'");
+    }
   }
   if (query.settlementState) {
     const condition = {
-      settled: "request.status = 'settled'",
-      usage_unknown: "request.status = 'settlement_failed'",
+      settled: "request.status = 'settled' AND NOT COALESCE(request.response_summary ->> 'usageKnown' = 'false', false)",
+      usage_unknown: "(request.status = 'settlement_failed' OR request.response_summary ->> 'usageKnown' = 'false')",
       in_progress: "request.status IN ('received', 'reserved', 'streaming')",
       rejected: "request.status = 'rejected'",
     }[query.settlementState];
@@ -375,13 +387,13 @@ export async function listProductUsageOnClient(
       AND request.subscription_coverage_mode = 'token_allowance'`;
   const summary = await client.query<ProductUsageSummaryRow>(
     `SELECT COUNT(*)::text AS request_count,
-            COALESCE(SUM(request.input_tokens), 0)::text AS input_tokens,
-            COALESCE(SUM(request.output_tokens), 0)::text AS output_tokens,
-            COALESCE(SUM(request.cache_read_tokens), 0)::text AS cache_read_tokens,
-            COALESCE(SUM(request.cache_write_tokens), 0)::text AS cache_write_tokens,
-            COALESCE(SUM(${productTotalTokensSql}), 0)::text AS total_tokens,
+            COALESCE(SUM(request.input_tokens) FILTER (WHERE NOT COALESCE(request.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS input_tokens,
+            COALESCE(SUM(request.output_tokens) FILTER (WHERE NOT COALESCE(request.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS output_tokens,
+            COALESCE(SUM(request.cache_read_tokens) FILTER (WHERE NOT COALESCE(request.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS cache_read_tokens,
+            COALESCE(SUM(request.cache_write_tokens) FILTER (WHERE NOT COALESCE(request.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS cache_write_tokens,
+            COALESCE(SUM(${productTotalTokensSql}) FILTER (WHERE NOT COALESCE(request.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS total_tokens,
             COUNT(*) FILTER (
-              WHERE request.status = 'settlement_failed'
+              WHERE request.status = 'settlement_failed' OR request.response_summary ->> 'usageKnown' = 'false'
             )::text AS unknown_usage_count
      ${from}`,
     commonParameters,
@@ -399,8 +411,9 @@ export async function listProductUsageOnClient(
   const direction = query.order === "asc" ? "ASC" : "DESC";
   const rows = await client.query<ProductUsageRow>(
     `SELECT request.id AS gateway_request_id, model.code AS model_alias,
-            request.protocol, request.status, request.outcome,
+            request.protocol, request.operation, request.status, request.outcome,
             request.http_status, request.error_code,
+            COALESCE(request.response_summary ->> 'usageKnown' = 'false', false) AS usage_unknown,
             request.input_tokens, request.output_tokens,
             request.cache_read_tokens, request.cache_write_tokens,
             ${productTotalTokensSql} AS total_tokens,

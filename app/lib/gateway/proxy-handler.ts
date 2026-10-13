@@ -5,6 +5,8 @@
 // [Sync] 2026-10-03: retain streamed output when non-streaming terminal responses omit it.
 
 // [Sync] 2026-10-05: use frozen pre-response routing and finish the chosen attempt without re-reserving or re-pricing.
+// [Sync] 2026-10-10: decode generic Responses using the accepted Provider snapshot; headerless SSE remains Codex-only.
+import { resolveResponsesAdapter } from "./provider-endpoint";
 import { sendRoutedProviderRequest, finishRoutingAttempt } from "./routing";
 import type { z } from "zod";
 import { createHash } from "node:crypto";
@@ -35,6 +37,8 @@ import {
 } from "./usage";
 import { markGatewayRequestStreaming } from "./repository";
 import { BoundedTaskQueue } from "./bounded-task-queue";
+import { ImageTurnSourceObserver } from "./image-turn-source";
+import type { ImageTurnContext } from "./image-turn-receipts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -42,6 +46,7 @@ export type ReadyGatewayRequest = {
   requestId: string;
   effectiveMaxOutputTokens: number;
   resolved: ResolvedBillableModel;
+  imageTurnContext?: ImageTurnContext;
 };
 
 function responseHeaders(requestId: string, streaming = false) {
@@ -103,10 +108,10 @@ function isProviderEventStream(response: Response, adapterKind?: string) {
 
 async function readProviderJsonResponse(
   transport: Awaited<ReturnType<typeof sendProviderRequest>>,
-  adapterKind?: string,
+  provider: ReadyGatewayRequest["resolved"]["provider"],
 ) {
-  const isResponsesAdapter = adapterKind === "codex" || adapterKind === "xai";
-  if (!isResponsesAdapter || !isProviderEventStream(transport.response, adapterKind)) {
+  const isResponsesAdapter = resolveResponsesAdapter(provider);
+  if (!isResponsesAdapter || !isProviderEventStream(transport.response, provider.adapterKind)) {
     return parseProviderJson(await transport.response.text());
   }
   if (!transport.response.body) {
@@ -227,16 +232,19 @@ export async function proxyNonStreaming(input: {
     transport = await sendRoutedProviderRequest({ resolved: input.prepared.resolved, requestId: input.prepared.requestId, externalProtocol: input.externalProtocol, body: input.body, request: input.request, streaming: false, maxOutputTokens: input.prepared.effectiveMaxOutputTokens });
     const providerBody = await readProviderJsonResponse(
       transport,
-      input.prepared.resolved.provider.adapterKind,
+      input.prepared.resolved.provider,
     );
     transport.abort.cleanup();
     const output = adaptProviderResponse({
       externalProtocol: input.externalProtocol,
       providerProtocol: input.prepared.resolved.provider.protocol,
       providerAdapterKind: input.prepared.resolved.provider.adapterKind,
+      providerConfig: input.prepared.resolved.provider.config,
       body: providerBody,
       requestedModel: input.body.model as string,
     });
+    if (input.prepared.imageTurnContext) await new ImageTurnSourceObserver(input.prepared.imageTurnContext,
+      input.prepared.requestId, new Set((Array.isArray(input.body.tools) ? input.body.tools : []).map(tool => String(record(tool)?.name)))).json(providerBody, output);
     const usage = outputUsage(input.externalProtocol, output);
     const providerRequestId = responseRequestId(transport.response);
     if (usage && !usage.upstreamRequestId) usage.upstreamRequestId = providerRequestId;
@@ -301,6 +309,8 @@ export async function proxyStreaming(input: {
   }
 
   const headers = responseHeaders(input.prepared.requestId, true);
+  const imageSource = input.prepared.imageTurnContext ? new ImageTurnSourceObserver(input.prepared.imageTurnContext,
+    input.prepared.requestId, new Set((Array.isArray(input.body.tools) ? input.body.tools : []).map(tool => String(record(tool)?.name)))) : undefined;
   let captureFailed = false;
   const captureQueue = new BoundedTaskQueue(32, async (error) => {
     captureFailed = true;
@@ -317,6 +327,7 @@ export async function proxyStreaming(input: {
     externalProtocol: input.externalProtocol,
     providerProtocol: input.prepared.resolved.provider.protocol,
     providerAdapterKind: input.prepared.resolved.provider.adapterKind,
+    providerConfig: input.prepared.resolved.provider.config,
     requestedModel: String(input.body.model),
   });
   let usage = emptyUsage(input.externalProtocol);
@@ -335,6 +346,7 @@ export async function proxyStreaming(input: {
   };
 
   const emit = async (controller: ReadableStreamDefaultController<Uint8Array>, data: JsonRecord | "[DONE]") => {
+    if (data !== "[DONE]") await imageSource?.output(data, input.externalProtocol);
     const eventType = data === "[DONE]" ? "done" : input.externalProtocol === "anthropic" ? String(data.type ?? "message") : "message";
     const serialized = serializeSse({ protocol: input.externalProtocol, data, eventType });
     responseHash.update(serialized.rawEvent);
@@ -375,6 +387,7 @@ export async function proxyStreaming(input: {
           let providerEvent: JsonRecord;
           try { providerEvent = parseProviderJson(next.value.data); }
           catch (error) { throw new GatewayError("UPSTREAM_SSE_INVALID", "The upstream provider returned an invalid SSE event", 502, "upstream_error"); }
+          imageSource?.provider(providerEvent);
           const outputs = adapter.push(next.value.event, providerEvent);
           for (const output of outputs) await emit(controller, output);
           if (outputs.length) return;

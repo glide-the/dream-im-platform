@@ -4,6 +4,7 @@
 // [Sync] 2026-09-04: allow disabled Providers only through the explicit Admin model-catalog path while keeping Gateway access active-only.
 
 // [Sync] 2026-10-05: reuse the account-owned renewal boundary for server-only upstream quota access.
+// [Sync] 2026-10-09: resolve Codex Images endpoints through the same fenced credential lifecycle.
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 
@@ -55,6 +56,17 @@ export type ManagedProviderAccess = {
   accountId: string;
   accountAuthEpoch: number;
   defaultRevision: number | null;
+  renewed: boolean;
+};
+
+export type ManagedProviderImageAccess = {
+  adapterKind: "codex";
+  generationsUrl: string;
+  editsUrl: string;
+  headers: Headers;
+  credentialRevision: number;
+  accountId: string;
+  accountAuthEpoch: number;
   renewed: boolean;
 };
 
@@ -275,6 +287,48 @@ function buildAccess(
     accountId: row.credential_id,
     accountAuthEpoch: row.account_auth_epoch,
     defaultRevision: null,
+    renewed,
+  };
+}
+
+function buildImageAccess(
+  row: ManagedCredentialRow,
+  bundle: ProviderTokenBundle,
+  registry: ProviderProductRegistry,
+  renewed: boolean,
+): ManagedProviderImageAccess {
+  if (row.provider_adapter_kind !== "codex") {
+    throw gatewayConfigurationError(
+      "PROVIDER_IMAGE_API_UNSUPPORTED",
+      "The selected managed Provider does not expose the Images API",
+    );
+  }
+  const adapter = registry.get(row.provider_adapter_kind);
+  const result = adapter.getImageResourceContract?.();
+  if (!result || result.status !== "ready") {
+    const error = result?.status === "failed" ? result.error : undefined;
+    throw gatewayConfigurationError(
+      error?.code ?? "PROVIDER_IMAGE_API_UNAVAILABLE",
+      error?.message ?? "The selected managed Provider Images contract is unavailable",
+      error?.retryable ?? false,
+    );
+  }
+  const headerResult = result.contract.buildHeaders(bundle);
+  if (headerResult.status !== "ready") {
+    throw gatewayConfigurationError(
+      headerResult.error.code,
+      headerResult.error.message,
+      headerResult.error.retryable,
+    );
+  }
+  return {
+    adapterKind: "codex",
+    generationsUrl: result.contract.generationsUrl,
+    editsUrl: result.contract.editsUrl,
+    headers: headerResult.headers,
+    credentialRevision: row.credential_revision,
+    accountId: row.credential_id,
+    accountAuthEpoch: row.account_auth_epoch,
     renewed,
   };
 }
@@ -607,6 +661,18 @@ export async function resolveManagedProviderAccess(input: {
 }): Promise<ManagedProviderAccess> {
   const resolved = await resolveManagedCredential(input, "gateway");
   return buildAccess(resolved.row, resolved.bundle, resolved.registry, resolved.renewed);
+}
+
+export async function resolveManagedProviderImageAccess(
+  input: Parameters<typeof resolveManagedProviderAccess>[0],
+): Promise<ManagedProviderImageAccess> {
+  const resolved = await resolveManagedCredential(input, "gateway");
+  return buildImageAccess(
+    resolved.row,
+    resolved.bundle,
+    resolved.registry,
+    resolved.renewed,
+  );
 }
 
 export async function resolveManagedProviderCatalogAccess(input: {

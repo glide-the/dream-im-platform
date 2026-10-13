@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: cover explicit generic Responses selection, original defaults and fail-closed ownership.
 // [Input] Mock provider fetch, resolved credentials/config, client cancellation, and fake timeout clock.
 // [Output] Regression proof for safe headers, captured upstream errors, credential redaction, and timeout behavior.
 // [Pos] Focused provider transport contract tests for the Gateway domain.
@@ -513,4 +514,19 @@ describe("provider transport Claude Code compatibility", () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+  it("sends generic Responses to its configured URL without any protocol retry", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+    const candidate = { ...resolved(), provider: { ...resolved().provider, protocol: "openai" as const, baseUrl: "https://api.openai.com/v1/responses", config: { openaiApi: "responses" } } };
+    const body = { model: "upstream", input: [], store: false };
+    const result = await sendProviderRequest({ resolved: candidate, body, requestSignal: new AbortController().signal });
+    result.abort.cleanup();
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0][0]).toBe("https://api.openai.com/v1/responses");
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual(body);
+    expect(new Headers(fetcher.mock.calls[0][1].headers).get("authorization")).toBe("Bearer provider-secret");
+    await expect(sendProviderRequest({ resolved: { ...candidate, provider: { ...candidate.provider, baseUrl: "https://api.openai.com/v1/chat/completions" } }, body, requestSignal: new AbortController().signal })).rejects.toMatchObject({ code: "PROVIDER_ENDPOINT_API_MISMATCH" });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
 });

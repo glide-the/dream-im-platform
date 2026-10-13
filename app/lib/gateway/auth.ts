@@ -2,6 +2,7 @@
 // [Output] Canonical billing principal preserving active key scope and account/model restrictions.
 // [Pos] Gateway authentication; Dream cannot sign user tokens or share a service key with runtime.
 // [Sync] 2026-09-14: retire HS256 subject authority and add opaque delegation authentication.
+// [Sync] 2026-10-10: retain verified Runtime entity identity for server-bound image routing without exposing credentials.
 import type { PoolClient } from "pg";
 import { withPlatformClient } from "../platform-db";
 import { extractGatewayApiKey, hashGatewayApiKey } from "./api-keys";
@@ -25,6 +26,14 @@ export type GatewayPrincipal = {
   scopes: string[];
   dailyTokenLimit?: number;
   monthlyTokenLimit?: number;
+  runtimeIdentity?: Readonly<{
+    authSubject: string;
+    canonicalUserId: string;
+    serviceClientId: string;
+    threadId: string;
+    runId: string | null;
+    purpose: string;
+  }>;
 };
 
 type GatewaySubjectMode = "fixed_user" | "canonical_subject";
@@ -310,7 +319,17 @@ async function authenticateRuntimeGateway(token: string, requiredScope: string):
       const identity = await findCanonicalIdentity(client, actor.principal.canonical_user_id);
       if (!identity) throw new GatewayError("GATEWAY_CANONICAL_USER_REQUIRED", "An active canonical user is required", 403, "permission_error");
       await client.query("UPDATE gateway_api_keys SET last_used_at = NOW() WHERE id = $1", [key.rows[0].id]);
-      return principalFromIdentity(key.rows[0].id, actor.principal.scopes.filter(scope => key.rows[0].scopes.includes(scope)), identity);
+      return {
+        ...principalFromIdentity(key.rows[0].id, actor.principal.scopes.filter(scope => key.rows[0].scopes.includes(scope)), identity),
+        runtimeIdentity: Object.freeze({
+          authSubject: actor.principal.subject,
+          canonicalUserId: actor.principal.canonical_user_id,
+          serviceClientId: actor.serviceClientId,
+          threadId: actor.threadId,
+          runId: actor.runId,
+          purpose: actor.purpose,
+        }),
+      };
     });
   } catch (error) {
     if (error instanceof GatewayError) throw error;

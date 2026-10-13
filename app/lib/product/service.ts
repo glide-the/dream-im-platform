@@ -1,3 +1,9 @@
+// [Sync] 2026-10-10: do not present conservative unknown-usage closure as actual settled model usage.
+// [Input] Authenticated product commands/queries and PostgreSQL service dependencies.
+// [Output] Public plan, subscription, and usage projections.
+// [Pos] Product domain service; Gateway and Billing retain execution ownership.
+// [Sync] 2026-10-09: include Images entitlement and usage scope projections.
+
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import type {
@@ -55,6 +61,7 @@ const gatewayScopes = new Set([
   "messages:create",
   "chat:create",
   "models:list",
+  "images:create",
 ]);
 const productIdentifierPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
@@ -652,7 +659,9 @@ function usageOutcome(value: string): ProductUsageItemDto["outcome"] {
 
 function settlementState(
   value: string,
+  usageUnknown = false,
 ): ProductUsageItemDto["settlementState"] {
+  if (usageUnknown) return "usageUnknown";
   if (value === "settled") return "settled";
   if (value === "settlement_failed") return "usageUnknown";
   if (["received", "reserved", "streaming"].includes(value)) {
@@ -668,7 +677,7 @@ function settlementState(
 
 function errorCategory(row: ProductUsageRow) {
   if (!row.error_code) return null;
-  if (row.status === "settlement_failed") return "usageUnknown";
+  if (row.status === "settlement_failed" || row.usage_unknown) return "usageUnknown";
   if (row.outcome === "cancelled") return "cancelled";
   if (row.http_status === 402) return "tokenAllowanceExhausted";
   if (row.http_status === 403) return "entitlementDenied";
@@ -694,11 +703,14 @@ function usageItem(row: ProductUsageRow): ProductUsageItemDto {
       100,
     ),
     modelAlias: safeIdentifier(row.model_alias, "usage.modelAlias", 120),
-    gatewayScope:
-      row.protocol === "anthropic" ? "messages:create" : "chat:create",
+    gatewayScope: row.operation.startsWith("images.")
+      ? "images:create"
+      : row.protocol === "anthropic"
+        ? "messages:create"
+        : "chat:create",
     protocol: row.protocol,
     outcome: usageOutcome(row.outcome),
-    settlementState: settlementState(row.status),
+    settlementState: settlementState(row.status, row.usage_unknown),
     inputTokens: safeInteger(row.input_tokens, "usage.inputTokens"),
     outputTokens: safeInteger(row.output_tokens, "usage.outputTokens"),
     cacheReadTokens: safeInteger(

@@ -1,11 +1,57 @@
 // [Input] Provider protocol/base URL plus explicit host and local-topology capabilities.
-// [Output] A canonical SSRF-fenced Provider base URL or a safe configuration error.
+// [Output] A canonical SSRF-fenced Provider base URL, explicitly selected inference API and endpoint, or a safe configuration error.
 // [Pos] Shared static Provider endpoint boundary for Admin validation and Gateway execution.
 // [Sync] 2026-09-04: make localhost opt-in an explicit capability independent of deployment labels.
+// [Sync] 2026-10-10: share explicit generic OpenAI Chat/Responses selection between validation, transport and response adapters.
 
 import { isIP } from "node:net";
 import type { AiProviderProtocol } from "../billing/types";
 import { GatewayError } from "./errors";
+
+type ProviderApiInput = {
+  protocol: AiProviderProtocol;
+  adapterKind?: string;
+  config?: Record<string, unknown>;
+};
+
+export function resolveProviderApi(input: ProviderApiInput): "messages" | "chat" | "responses" {
+  const adapter = input.adapterKind ?? "generic";
+  const configured = input.config && Object.hasOwn(input.config, "openaiApi");
+  if (adapter !== "generic" && input.protocol !== "openai") {
+    throw new GatewayError("PROVIDER_API_INVALID", "Managed product Providers require the OpenAI protocol", 503, "configuration_error");
+  }
+  if (configured && (input.protocol !== "openai" || adapter !== "generic"
+    || !["chat", "responses"].includes(String(input.config?.openaiApi))
+    || typeof input.config?.openaiApi !== "string")) {
+    throw new GatewayError("PROVIDER_API_INVALID", "OpenAI inference API must be chat or responses on a generic OpenAI Provider", 503, "configuration_error");
+  }
+  if (adapter === "codex" || adapter === "xai") return "responses";
+  return input.protocol === "anthropic" ? "messages"
+    : input.config?.openaiApi === "responses" ? "responses" : "chat";
+}
+
+export function resolveResponsesAdapter(input: ProviderApiInput): "codex" | "xai" | "openai" | undefined {
+  if (resolveProviderApi(input) !== "responses") return undefined;
+  return input.adapterKind === "codex" || input.adapterKind === "xai" ? input.adapterKind : "openai";
+}
+
+export function resolveProviderInferenceEndpoint(input: ProviderApiInput & { baseUrl: string; requestUrl?: string }) {
+  const api = resolveProviderApi(input);
+  const url = new URL(resolveProviderBaseUrl(input));
+  const suffix = api === "messages" ? "messages" : api === "responses" ? "responses" : "chat/completions";
+  const current = url.pathname.replace(/\/+$/, "");
+  if (!current.endsWith(`/${suffix}`)) {
+    if (/\/(messages|chat\/completions|responses|images\/(generations|edits))$/.test(current)) {
+      throw new GatewayError("PROVIDER_ENDPOINT_API_MISMATCH", "The Provider endpoint does not match its configured inference API", 503, "configuration_error");
+    }
+    url.pathname = current.endsWith("/v1") ? `${current}/${suffix}` : `${current}/v1/${suffix}`;
+  }
+  if (api === "messages" && input.requestUrl) {
+    const beta = new URL(input.requestUrl).searchParams.get("beta");
+    if (beta === "true" || beta === "1") url.searchParams.set("beta", beta);
+  }
+  return url.toString();
+}
 
 const DEFAULT_PROVIDER_HOSTS: Record<AiProviderProtocol, ReadonlySet<string>> = {
   anthropic: new Set(["api.anthropic.com", "api.deepseek.com"]),

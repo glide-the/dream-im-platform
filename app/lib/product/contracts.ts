@@ -1,3 +1,8 @@
+// [Input] Public product plan/usage queries and subscription command payloads.
+// [Output] Strict DTOs including the explicit Images invocation scope.
+// [Pos] Product API validation boundary; persistence and authorization remain in service/repository layers.
+// [Sync] 2026-10-09: expose images:create as a selectable subscription entitlement scope.
+
 import { z } from "zod";
 import { productActions } from "./types";
 
@@ -30,7 +35,7 @@ export const usageQuerySchema = z.strictObject({
     .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/)
     .optional(),
   gatewayScope: z
-    .enum(["messages:create", "chat:create", "models:list"])
+    .enum(["messages:create", "chat:create", "models:list", "images:create"])
     .optional(),
   settlementState: z
     .enum(["settled", "usage_unknown", "in_progress", "rejected"])

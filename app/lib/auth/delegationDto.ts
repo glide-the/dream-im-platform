@@ -2,15 +2,17 @@
 // [Output] Strict entity-limited delegation and renewal DTOs, independent of ORM storage.
 // [Pos] Long-turn/runtime protocol; no global credential, arbitrary actor or new identity authority.
 // [Sync] 2026-09-14: separate server/CLI/Editor purposes and bind Editor to its actual Session.
+// [Sync] 2026-10-09: extend gateway-cli with the explicit Images invocation scope.
+// [Sync] 2026-10-09: preserve frozen Dream-operation outputs while the standalone delegation contract expands.
 import { z } from "zod";
 import { requestIdDto, isoTimeDto } from "./dto";
 export const delegationPurposeScopes = {
   "server-persistence": ["dream:read", "dream:write"],
-  "gateway-cli": ["messages:create", "messages:count_tokens", "models:list"],
+  "gateway-cli": ["messages:create", "messages:count_tokens", "models:list", "images:create"],
   "editor-stdio": ["editor:read", "editor:write"],
 } as const;
 export const delegationPurposeDto = z.enum(["server-persistence", "gateway-cli", "editor-stdio"]);
-export const runtimeScopeDto = z.enum(["dream:read", "dream:write", "messages:create", "messages:count_tokens", "models:list", "editor:read", "editor:write"]);
+export const runtimeScopeDto = z.enum(["dream:read", "dream:write", "messages:create", "messages:count_tokens", "models:list", "images:create", "editor:read", "editor:write"]);
 export const delegationTokenDto = z.string().regex(/^idg_[A-Za-z0-9_-]{43}$/);
 export const delegationCreateInputDto = z.strictObject({ purpose: delegationPurposeDto, thread_id: z.string().min(1), run_id: z.string().min(1).nullable(), editor_session_id: z.string().min(1).nullable(), scopes: z.array(runtimeScopeDto).min(1) });
 export function validDelegationPurpose(input: { purpose: string | null; scopes: string[]; editorSessionId: string | null; gatewayApiKeyId?: string | null }) {
@@ -23,6 +25,8 @@ export function validDelegationPurpose(input: { purpose: string | null; scopes: 
 }
 export const delegationCreateRequestDto = z.strictObject({ request_id: requestIdDto, input: delegationCreateInputDto });
 export const delegationOutputDto = z.strictObject({ token: delegationTokenDto, expires_at: isoTimeDto, maximum_expires_at: isoTimeDto, purpose: delegationPurposeDto, thread_id: z.string(), run_id: z.string().nullable(), editor_session_id: z.string().nullable(), scopes: z.array(runtimeScopeDto) });
+const dreamOperationRuntimeScopeDto = z.enum(["dream:read", "dream:write", "messages:create", "messages:count_tokens", "models:list", "editor:read", "editor:write"]);
+export const dreamOperationDelegationOutputDto = z.strictObject({ token: delegationTokenDto, expires_at: isoTimeDto, maximum_expires_at: isoTimeDto, purpose: delegationPurposeDto, thread_id: z.string(), run_id: z.string().nullable(), editor_session_id: z.string().nullable(), scopes: z.array(dreamOperationRuntimeScopeDto) });
 export const delegationActionRequestDto = z.strictObject({ request_id: requestIdDto });
 export const delegationRenewOutputDto = delegationOutputDto.omit({ token: true });
 export const delegationRevokeOutputDto = z.strictObject({ revoked: z.literal(true) });

@@ -1,3 +1,8 @@
+// [Input] Authenticated Admin payload-detail requests and one existing Gateway request identity.
+// [Output] Confirmed text payload detail or policy denial with immutable content-free audit metadata.
+// [Pos] Admin payload read boundary; Image request bodies and results are permanently unavailable.
+// [Sync] 2026-10-09: deny Image payload reads server-side because Image capture is permanently disabled.
+
 import { withPlatformTransaction } from "../platform-db";
 import { recordAdminAuditOnClient } from "./audit";
 import { AdminError, adminErrorResponse } from "./errors";
@@ -23,7 +28,7 @@ export async function handleGatewayPayloadDetail(
                 k.name AS gateway_key_name, k.key_prefix, r.provider_id,
                 p.code AS provider_code, p.protocol AS provider_protocol,
                 r.model_id, m.code AS model_code, r.requested_model,
-                r.resolved_model, r.protocol, r.status, r.outcome,
+                r.resolved_model, r.protocol, r.operation, r.status, r.outcome,
                 r.http_status, r.input_tokens, r.output_tokens,
                 r.cache_read_tokens, r.cache_write_tokens,
                 r.input_price_snapshot, r.output_price_snapshot,
@@ -41,6 +46,13 @@ export async function handleGatewayPayloadDetail(
       );
       if (!summary.rows[0]) {
         throw new AdminError("GATEWAY_REQUEST_NOT_FOUND", "The gateway request does not exist", 404);
+      }
+      if (String(summary.rows[0].operation).startsWith("images.")) {
+        throw new AdminError(
+          "GATEWAY_IMAGE_PAYLOAD_CAPTURE_DISABLED",
+          "Image prompts, uploads, and outputs are not captured or available through Admin payload APIs",
+          403,
+        );
       }
       const requestPayload = await client.query<Record<string, unknown>>(
         `SELECT method, path, query, protocol, requested_model,

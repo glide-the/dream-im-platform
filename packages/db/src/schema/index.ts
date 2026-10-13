@@ -3,6 +3,7 @@
 // [Pos] @ink-memory/db schema source; the root drizzle history is its immutable DDL ledger.
 // [Sync] 2026-08-21: move the canonical schema into the Paperclip-style database workspace package.
 // [Sync] 2026-08-28: add nullable positive Claude Code Runtime model windows; 0041 publishes the exact capability.
+// [Sync] 2026-10-09: add Image reserves, Token prices, request operation/details, and immutable price snapshots.
 // [Sync] 2026-09-04: add revisioned static Provider credential validation state.
 // [Sync] 2026-09-04: add fenced product-account Provider authentication state,
 // encrypted managed credentials/attempts, and non-secret Gateway auth snapshots.
@@ -13,6 +14,7 @@
 // [Sync] 2026-09-04: restore direct Provider ownership while retaining the
 // pinned binding marker only as an internal compatibility field.
 // [Sync] 2026-10-05: expand same-model routing policies/targets and safe request routing evidence.
+// [Sync] 2026-10-09: add Image model reservation, actual Token pricing, and request settlement dimensions.
 import {
   bigint,
   boolean,
@@ -879,6 +881,12 @@ export const aiModels = pgTable(
     display_name: text("display_name").notNull(),
     context_window: integer("context_window"),
     max_output_tokens: integer("max_output_tokens"),
+    image_input_token_reserve_per_image: integer(
+      "image_input_token_reserve_per_image",
+    ),
+    image_output_token_reserve_per_image: integer(
+      "image_output_token_reserve_per_image",
+    ),
     claude_code_auto_compact_window: integer(
       "claude_code_auto_compact_window",
     ),
@@ -920,6 +928,14 @@ export const aiModels = pgTable(
     check(
       "ai_models_claude_code_max_context_tokens_check",
       sql`${table.claude_code_max_context_tokens} IS NULL OR ${table.claude_code_max_context_tokens} > 0`,
+    ),
+    check(
+      "ai_models_image_input_token_reserve_check",
+      sql`${table.image_input_token_reserve_per_image} IS NULL OR ${table.image_input_token_reserve_per_image} > 0`,
+    ),
+    check(
+      "ai_models_image_output_token_reserve_check",
+      sql`${table.image_output_token_reserve_per_image} IS NULL OR ${table.image_output_token_reserve_per_image} > 0`,
     ),
   ],
 );
@@ -977,6 +993,14 @@ export const aiPricingRules = pgTable(
     )
       .notNull()
       .default(0),
+    image_input_price_microusd_per_million: bigint(
+      "image_input_price_microusd_per_million",
+      { mode: "number" },
+    ),
+    image_output_price_microusd_per_million: bigint(
+      "image_output_price_microusd_per_million",
+      { mode: "number" },
+    ),
     markup_bps: integer("markup_bps").notNull().default(0),
     discount_bps: integer("discount_bps").notNull().default(0),
     status: text("status").notNull().default("active"),
@@ -1025,6 +1049,14 @@ export const aiPricingRules = pgTable(
     check(
       "ai_pricing_rules_cache_write_price_check",
       sql`${table.cache_write_price_microusd_per_million} >= 0`,
+    ),
+    check(
+      "ai_pricing_rules_image_input_price_check",
+      sql`${table.image_input_price_microusd_per_million} IS NULL OR ${table.image_input_price_microusd_per_million} >= 0`,
+    ),
+    check(
+      "ai_pricing_rules_image_output_price_check",
+      sql`${table.image_output_price_microusd_per_million} IS NULL OR ${table.image_output_price_microusd_per_million} >= 0`,
     ),
     check(
       "ai_pricing_rules_markup_check",
@@ -1776,6 +1808,7 @@ export const gatewayRequests = pgTable(
       Record<string, unknown>
     >(),
     protocol: text("protocol").notNull(),
+    operation: text("operation").notNull().default("text"),
     provider_adapter_kind: text("provider_adapter_kind")
       .notNull()
       .default("generic"),
@@ -1814,6 +1847,10 @@ export const gatewayRequests = pgTable(
     cache_write_tokens: bigint("cache_write_tokens", { mode: "number" })
       .notNull()
       .default(0),
+    input_text_tokens: bigint("input_text_tokens", { mode: "number" }),
+    input_image_tokens: bigint("input_image_tokens", { mode: "number" }),
+    output_text_tokens: bigint("output_text_tokens", { mode: "number" }),
+    output_image_tokens: bigint("output_image_tokens", { mode: "number" }),
     input_price_snapshot: bigint("input_price_snapshot", { mode: "number" })
       .notNull(),
     output_price_snapshot: bigint("output_price_snapshot", { mode: "number" })
@@ -1828,6 +1865,12 @@ export const gatewayRequests = pgTable(
     })
       .notNull()
       .default(0),
+    image_input_price_snapshot: bigint("image_input_price_snapshot", {
+      mode: "number",
+    }),
+    image_output_price_snapshot: bigint("image_output_price_snapshot", {
+      mode: "number",
+    }),
     markup_bps_snapshot: integer("markup_bps_snapshot").notNull().default(0),
     discount_bps_snapshot: integer("discount_bps_snapshot").notNull().default(0),
     reserved_microusd: bigint("reserved_microusd", { mode: "number" })
@@ -1915,6 +1958,22 @@ export const gatewayRequests = pgTable(
     check(
       "gateway_requests_cache_write_tokens_check",
       sql`${table.cache_write_tokens} >= 0`,
+    ),
+    check(
+      "gateway_requests_operation_check",
+      sql`${table.operation} IN ('text', 'images.generations', 'images.edits')`,
+    ),
+    check(
+      "gateway_requests_image_token_details_check",
+      sql`(${table.input_text_tokens} IS NULL OR ${table.input_text_tokens} >= 0)
+          AND (${table.input_image_tokens} IS NULL OR ${table.input_image_tokens} >= 0)
+          AND (${table.output_text_tokens} IS NULL OR ${table.output_text_tokens} >= 0)
+          AND (${table.output_image_tokens} IS NULL OR ${table.output_image_tokens} >= 0)`,
+    ),
+    check(
+      "gateway_requests_image_price_snapshot_check",
+      sql`(${table.image_input_price_snapshot} IS NULL OR ${table.image_input_price_snapshot} >= 0)
+          AND (${table.image_output_price_snapshot} IS NULL OR ${table.image_output_price_snapshot} >= 0)`,
     ),
     check(
       "gateway_requests_provider_adapter_kind_check",

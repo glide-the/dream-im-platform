@@ -359,3 +359,11 @@ pnpm build
 - 计费金额使用整数 micro-USD；交易账本只追加，异常结算进入人工核对。
 - 不要提交 `.env.local`、`docker/.env`、数据库备份、Provider Key 或 Gateway Key。
 - 不要提交 Blob Token、AWS/S3 凭据；生产环境通过 Secret Manager 注入。
+
+## Dream 图片模型选择
+
+Dream 设置分别保存 AI 主对话模型与 Image 工具模型。Image 选择复用原偏好JSON，由新增 `user-system-config.patch-image-model` 操作和原receipt事务写入；旧设置patch及registry前缀不变，偏好复用原表；图片执行精确合同由Admin Drizzle管理。模型“Images 图像生成/编辑”只表达独立Images接口，公开目录将能力、配置和调用资格分开。主对话内置能力单独位于 `endpoint_availability.responses_image`，按明确Responses配置、四项发布事实、预算、精确image-turn合同与实际Gateway角色权限开放。原Messages入口已接通严格native结果、身份与原文件/历史；用量或价格缺失保留未确认状态，不按零结算。三项新image-turn操作复用原receipt/审计，Admin 0080前向migration登记精确合同，正常服务尚未发布或真实模型验收。参考[Dream专项设计](/Users/dmeck/project/ink-dream-memory/docs/design/claude-agent/image-model-call-division.md)与[本轮回执](/Users/dmeck/project/ink-dream-memory/docs/exec/image-model-call-division-20261010.md)。
+
+### 主对话与图片工具接口
+
+通用OpenAI Provider的原设置可明确选择Chat或Responses主对话API，旧配置默认Chat；验证、实际发送和JSON/SSE转换复用相同配置。独立Images接口与Image模型选择分别控制，Responses选择本身不开放内置图片能力。切换须经原模型验证和auth revision CAS，并拒绝并发旧草稿写回。专项当前状态及本轮回执见[执行记录](/Users/dmeck/project/ink-dream-memory/docs/exec/image-model-call-division-20261010.md)。

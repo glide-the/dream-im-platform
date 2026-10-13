@@ -5,6 +5,8 @@
 // [Pos] Admin form interaction boundary; authorization, credentials, and CAS remain server-owned.
 // [Sync] 2026-09-04: add managed Provider payload normalization, collision-resistant preset codes, and edit-page lifecycle content.
 // [Sync] 2026-09-04: expose the same dependency-aware Provider deletion used by the registry.
+// [Sync] 2026-10-10: retain center-local Provider navigation without changing resource API behavior.
+// [Sync] 2026-10-10: show explicit API selection only for generic OpenAI and remove hidden protocol/product overrides.
 
 import { useInvalidate } from "@refinedev/core";
 import { useRouter } from "next/navigation";
@@ -44,6 +46,8 @@ type AdminResourceFormPageProps = {
   eyebrow: string;
   description: string;
   backHref: string;
+  providerCenterPath?: string;
+  providerImageMode?: boolean;
   fields: AdminFieldDefinition[];
   sections: Section[];
   defaults?: Record<string, unknown>;
@@ -91,8 +95,18 @@ export function normalizeProviderFormPayload(
   payload: Record<string, unknown>,
   values: FormValues,
   mode: "create" | "edit",
+  imageMode = false,
 ) {
-  if (!isManagedProviderAdapter(values.adapterKind)) return payload;
+  if (!isManagedProviderAdapter(values.adapterKind)) {
+    if (!imageMode && (values.protocol === "openai" || !payload.config || typeof payload.config !== "object" || !Object.hasOwn(payload.config, "openaiApi"))) return payload;
+    const config = payload.config && typeof payload.config === "object" && !Array.isArray(payload.config)
+      ? { ...payload.config as Record<string, unknown> } : {};
+    if (!imageMode) {
+      delete config.openaiApi;
+      return { ...payload, ...(payload.config !== undefined ? { config } : {}) };
+    }
+    return { ...payload, ...(mode === "create" ? { protocol: "openai" } : {}), config: { ...config, imageApi: { kind: "openai" } } };
+  }
   const normalized = { ...payload };
   delete normalized.baseUrl;
   delete normalized.apiKey;
@@ -106,6 +120,7 @@ export function normalizeProviderFormPayload(
     const config = { ...(normalized.config as Record<string, unknown>) };
     delete config.authMode;
     delete config.usageSource;
+    delete config.openaiApi;
     normalized.config = config;
   }
   return normalized;
@@ -140,6 +155,8 @@ export default function AdminResourceFormPage({
   eyebrow,
   description,
   backHref,
+  providerCenterPath = "/admin/models",
+  providerImageMode = false,
   fields,
   sections,
   defaults,
@@ -268,7 +285,7 @@ export default function AdminResourceFormPage({
     try {
       const rawPayload = buildPayload(fields, values, mode);
       const payload = providerForm
-        ? normalizeProviderFormPayload(rawPayload, values, mode)
+        ? normalizeProviderFormPayload(rawPayload, values, mode, providerImageMode)
         : rawPayload;
       const endpoint =
         mode === "create"
@@ -299,7 +316,12 @@ export default function AdminResourceFormPage({
       const savedId = String(body.data.id ?? recordId ?? "");
       if (mode === "create" && resource === "providers" && savedId) {
         if (isManagedProviderAdapter(body.data.adapter_kind ?? payload.adapterKind)) {
-          router.push(`/admin/models/providers/${encodeURIComponent(savedId)}/edit?created=managed`);
+          router.push(`${providerCenterPath}/providers/${encodeURIComponent(savedId)}/edit?created=managed`);
+          router.refresh();
+          return;
+        }
+        if (providerImageMode) {
+          router.push(`${backHref}?saved=${encodeURIComponent(savedId)}`);
           router.refresh();
           return;
         }
@@ -489,8 +511,10 @@ export default function AdminResourceFormPage({
                   if ((field.section ?? "main") !== section.id) return false;
                   if (
                     managedProvider &&
-                    ["protocol", "baseUrl", "apiKey", "authMode", "usageSource", "expectedAuthRevision", "config"].includes(field.key)
+                    ["protocol", "baseUrl", "apiKey", "authMode", "usageSource", "expectedAuthRevision", "config", "openaiApi"].includes(field.key)
                   ) return false;
+                  if (resource === "providers" && field.key === "openaiApi" && values.protocol !== "openai") return false;
+                  if (resource === "providers" && field.key === "outputTokenParam" && values.openaiApi === "responses") return false;
                   if (managedProvider && mode === "create" && field.key === "status") return false;
                   if (mode === "create" && field.updateOnly) return false;
                   if (

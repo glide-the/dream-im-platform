@@ -2,11 +2,12 @@
 // [Output] Strict Registry120/121 DTOs with server-derived dispatch and claim-bound turn authority.
 // [Pos] Cross-project contract; no actor override, SQL, table, transaction or Runtime selector.
 // [Sync] 2026-09-16: add claim-turn without exposing actor, Thread, Run, purpose or scope selectors.
+// [Sync] 2026-10-09: keep the registered claim-turn output on its frozen delegation scope enum.
 import { z } from "zod";
 import { decimalIdDto, requestIdDto } from "../auth/dto";
 import { stripPydanticString } from "./deckPluginManifestDto";
 import { workflowRunIdDto } from "./workflowRunDto";
-import { delegationOutputDto } from "../auth/delegationDto";
+import { dreamOperationDelegationOutputDto } from "../auth/delegationDto";
 
 const text = z.string().overwrite(stripPydanticString);
 const codePoints = (value: string, maximum: number) => Array.from(value).length <= maximum;
@@ -108,7 +109,7 @@ export const storyWorkspaceConfirmationClaimOutputDto = z.strictObject({
 });
 export const storyWorkspaceConfirmationClaimTurnOutputDto = z.strictObject({
   dispatch: storyWorkspaceConfirmationDispatchDto.nullable(),
-  authority: delegationOutputDto.nullable(),
+  authority: dreamOperationDelegationOutputDto.nullable(),
 }).refine(value => (value.dispatch === null) === (value.authority === null));
 export const storyWorkspaceConfirmationLeaseOutputDto = z.strictObject({
   renewed: z.boolean(),

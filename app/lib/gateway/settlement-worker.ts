@@ -1,12 +1,18 @@
-// [Input] Usage-unknown Gateway requests and reconciliation policy.
-// [Output] Idempotent conservative Token capture through the shared account transaction gate.
+// [Sync] 2026-10-11: preserve official Responses reported-Token scope and inclusive cache accounting.
+// [Sync] 2026-10-11: recover native inclusive usage despite the outer Messages request row retaining fresh semantics.
+// [Input] Usage-unknown or persisted-known Gateway requests and reconciliation policy.
+// [Output] Idempotent conservative reservation capture or actual Image Token settlement.
 // [Pos] Gateway settlement worker; candidate discovery is lock-free and finalization rechecks under account then request locks.
 // [Sync] 2026-10-03: acquire the account gate before the request and allowance rows.
+// [Sync] 2026-10-09: recover known Image usage separately without replaying the Provider request.
+// [Sync] 2026-10-09: mark conservative unknown-usage capture settled after the Token freeze is closed.
 
 import type { PoolClient } from "pg";
 
 import { withPlatformTransaction } from "../platform-db";
 import { settleSubscriptionAllowanceOnClient } from "../subscriptions/gateway";
+import { settleGatewayRequestOnClient } from "../billing/repository";
+import type { TokenUsage } from "../billing/types";
 import { lockGatewayAccountOnClient } from "./account-lock";
 
 type UnknownUsageRequest = {
@@ -22,11 +28,12 @@ type UnknownUsageRequest = {
   allowance_reserved_tokens: string | number;
   allowance_reserved_microusd: string | number;
   response_summary: Record<string, unknown> | null;
+  operation: string;
 };
 
 export type UnknownUsageResolution = {
   requestId: string;
-  outcome: "conservative_capture" | "idempotent";
+  outcome: "conservative_capture" | "actual_usage_capture" | "idempotent";
   capturedTokens: number;
 };
 
@@ -69,7 +76,7 @@ export async function resolveUnknownGatewayUsageOnClient(
             subscription_id, subscription_plan_version_id,
             subscription_allowance_id, subscription_coverage_mode,
             allowance_reserved_tokens, allowance_reserved_microusd,
-            response_summary
+            response_summary, operation
      FROM gateway_requests
      WHERE id = $1
      FOR UPDATE`,
@@ -96,6 +103,7 @@ export async function resolveUnknownGatewayUsageOnClient(
       request.allowance_reserved_microusd,
       "reserved_microusd",
     ) !== 0
+    || request.response_summary?.usageKnown === true
   ) {
     throw new Error("GATEWAY_UNKNOWN_USAGE_REQUEST_NOT_TOKEN_ONLY");
   }
@@ -122,7 +130,8 @@ export async function resolveUnknownGatewayUsageOnClient(
 
   const updated = await client.query(
     `UPDATE gateway_requests
-     SET allowance_charged_tokens = $2,
+     SET status = 'settled',
+         allowance_charged_tokens = $2,
          allowance_charged_microusd = 0,
          charged_microusd = 0,
          response_summary = COALESCE(response_summary, '{}'::jsonb)
@@ -145,6 +154,97 @@ export async function resolveUnknownGatewayUsageOnClient(
     requestId: request.id,
     outcome: "conservative_capture",
     capturedTokens: reservedTokens,
+  };
+}
+
+type KnownUsageRequest = {
+  id: string;
+  operation: string;
+  outcome: "failed" | "cancelled";
+  input_token_semantics: "fresh" | "total_including_cache";
+  input_tokens: string | number;
+  output_tokens: string | number;
+  cache_read_tokens: string | number;
+  cache_write_tokens: string | number;
+  input_text_tokens: string | number | null;
+  input_image_tokens: string | number | null;
+  output_text_tokens: string | number | null;
+  output_image_tokens: string | number | null;
+  upstream_request_id: string | null;
+  http_status: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  latency_ms: number | null;
+  first_token_ms: number | null;
+  response_summary: Record<string, unknown> | null;
+};
+
+export async function resolveKnownGatewayUsageOnClient(
+  client: PoolClient,
+  input: { requestId: string },
+) {
+  const result = await client.query<KnownUsageRequest>(
+    `SELECT id, operation, outcome, input_token_semantics,
+            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+            input_text_tokens, input_image_tokens,
+            output_text_tokens, output_image_tokens,
+            upstream_request_id, http_status, error_code, error_message,
+            latency_ms, first_token_ms, response_summary
+       FROM gateway_requests
+      WHERE id = $1 AND status = 'settlement_failed' AND settled_at IS NULL`,
+    [input.requestId],
+  );
+  const row = result.rows[0];
+  if (!row || row.response_summary?.usageKnown !== true) {
+    throw new Error("GATEWAY_KNOWN_USAGE_REQUEST_NOT_RECOVERABLE");
+  }
+  const detail = [
+    row.input_text_tokens,
+    row.input_image_tokens,
+    row.output_text_tokens,
+    row.output_image_tokens,
+  ];
+  if (row.operation !== "text" && detail.some((value) => value === null)) {
+    throw new Error("GATEWAY_KNOWN_IMAGE_USAGE_DETAILS_REQUIRED");
+  }
+  const nativeReportedUsage = row.response_summary?.billingScope === "responses_reported_tokens"
+    && row.response_summary.requireFullTokenAllowanceCapture === true;
+  const usage: TokenUsage = {
+    inputTokens: safeTokenCount(row.input_tokens, "input_tokens"),
+    outputTokens: safeTokenCount(row.output_tokens, "output_tokens"),
+    cacheReadTokens: safeTokenCount(row.cache_read_tokens, "cache_read_tokens"),
+    cacheWriteTokens: safeTokenCount(row.cache_write_tokens, "cache_write_tokens"),
+    inputTokenSemantics: nativeReportedUsage ? "total_including_cache" : row.input_token_semantics,
+    upstreamRequestId: row.upstream_request_id ?? undefined,
+    ...(row.operation === "text" ? {} : {
+      inputTextTokens: safeTokenCount(row.input_text_tokens!, "input_text_tokens"),
+      inputImageTokens: safeTokenCount(row.input_image_tokens!, "input_image_tokens"),
+      outputTextTokens: safeTokenCount(row.output_text_tokens!, "output_text_tokens"),
+      outputImageTokens: safeTokenCount(row.output_image_tokens!, "output_image_tokens"),
+    }),
+  };
+  const settled = await settleGatewayRequestOnClient(client, {
+    gatewayRequestId: row.id,
+    usage,
+    outcome: row.outcome,
+    httpStatus: row.http_status ?? undefined,
+    errorCode: row.error_code ?? undefined,
+    errorMessage: row.error_message ?? undefined,
+    latencyMs: row.latency_ms ?? undefined,
+    firstTokenMs: row.first_token_ms ?? undefined,
+    responseSummary: {
+      ...(row.response_summary ?? {}),
+      usageKnown: true,
+      settlementResolution: "actual_usage_recovered",
+    },
+    actorType: "system",
+    actorId: "gateway-settlement-worker",
+    settlementDescription: "Recover persisted provider usage",
+    requireFullTokenAllowanceCapture: row.operation !== "text" || nativeReportedUsage,
+  });
+  return {
+    settled,
+    actualTokens: usage.inputTokens + usage.outputTokens,
   };
 }
 
@@ -180,8 +280,8 @@ export async function reconcileUnknownGatewayUsage(input?: {
 
   for (let index = 0; index < limit; index += 1) {
     const result = await withPlatformTransaction(async (client) => {
-      const due = await client.query<{ id: string }>(
-        `SELECT id
+      const due = await client.query<{ id: string; usage_known: boolean }>(
+        `SELECT id, COALESCE((response_summary ->> 'usageKnown')::boolean, false) AS usage_known
          FROM gateway_requests
          WHERE status = 'settlement_failed'
            AND settled_at IS NULL
@@ -193,6 +293,18 @@ export async function reconcileUnknownGatewayUsage(input?: {
       );
       const row = due.rows[0];
       if (!row) return null;
+      if (row.usage_known) {
+        const recovered = await resolveKnownGatewayUsageOnClient(client, {
+          requestId: row.id,
+        });
+        return {
+          requestId: row.id,
+          outcome: recovered.settled.idempotent
+            ? "idempotent" as const
+            : "actual_usage_capture" as const,
+          capturedTokens: recovered.actualTokens,
+        };
+      }
       return await resolveUnknownGatewayUsageOnClient(client, {
         requestId: row.id,
         resolvedAt: at,

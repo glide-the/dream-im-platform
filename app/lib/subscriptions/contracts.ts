@@ -1,3 +1,8 @@
+// [Input] Admin subscription plan/version/entitlement payloads.
+// [Output] Strict revisioned subscription DTOs and allowed Gateway scopes.
+// [Pos] Subscription validation contract; Image pricing remains in Billing.
+// [Sync] 2026-10-09: allow explicit images:create entitlements.
+
 import { z } from "zod";
 
 const code = z
@@ -45,9 +50,9 @@ export const entitlementCreateSchema = z.strictObject({
   planVersionId: z.string().trim().min(1).max(100),
   modelId: z.string().trim().min(1).max(100),
   gatewayScopes: z
-    .array(z.enum(["messages:create", "chat:create", "models:list"]))
+    .array(z.enum(["messages:create", "chat:create", "models:list", "images:create"]))
     .min(1)
-    .max(3),
+    .max(4),
   requestsPerMinute: z.number().int().positive().nullable().optional(),
   dailyTokenLimit: optionalLimit,
   monthlyTokenLimit: optionalLimit,

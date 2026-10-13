@@ -1,3 +1,4 @@
+// [Sync] 2026-10-10: cover explicit generic Responses selection, original defaults and fail-closed ownership.
 // [Input] Static/managed validation contracts, bounded real response streams, and injected Provider access.
 // [Output] Provider-free success/failure evidence including redaction and concrete upstream rejection reasons.
 // [Pos] Admin model-validation domain regression; no credentials or business database are used.
@@ -246,4 +247,18 @@ describe("model validation", () => {
     expect(result).toMatchObject({ status: "operational", usable: true, responseTimeMs: 25 });
     expect(JSON.stringify(result)).not.toContain("managed-secret");
   });
+  it("validates explicit Responses with the same endpoint and request shape as execution", async () => {
+    const cancel = vi.fn();
+    const fetcher = vi.fn(async (_url: string, _init: RequestInit) => ({ status: 200, body: new ReadableStream<Uint8Array>({ cancel }) }));
+    expect(await validateUpstreamModel({ protocol: "openai", baseUrl: "https://api.openai.com/v1/responses", upstreamModel: "upstream", credential: "fixture", config: { openaiApi: "responses" } }, { fetcher })).toMatchObject({ usable: true });
+    expect(fetcher.mock.calls[0][0]).toBe("https://api.openai.com/v1/responses");
+    const body = JSON.parse(String(fetcher.mock.calls[0][1].body));
+    expect(body).toMatchObject({ model: "upstream", input: [{ role: "user", content: [{ type: "input_text", text: "ping" }] }], max_output_tokens: 1, store: false, stream: false });
+    expect(body).not.toHaveProperty("messages");
+    expect(body.tools).toEqual([]);
+    expect(cancel).toHaveBeenCalledOnce();
+    await expect(validateUpstreamModel({ protocol: "openai", baseUrl: "https://api.openai.com/v1/chat/completions", upstreamModel: "upstream", credential: "fixture", config: { openaiApi: "responses" } }, { fetcher })).rejects.toMatchObject({ code: "PROVIDER_ENDPOINT_API_MISMATCH" });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
 });

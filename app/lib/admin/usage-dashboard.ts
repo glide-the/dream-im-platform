@@ -1,3 +1,12 @@
+// [Sync] 2026-10-11: preserve official Responses reported-Token scope and inclusive cache accounting.
+// [Sync] 2026-10-10: include Responses image requests with unknown complete usage after conservative settlement.
+// [Input] Authorized Admin usage filters and persisted Gateway request accounting facts.
+// [Output] Usage aggregates that separate known costs from Image requests with unknown settlement cost.
+// [Pos] Read-only Admin usage-report query boundary.
+// [Sync] 2026-10-09: exclude unknown Image costs from monetary sums and count them explicitly.
+// [Sync] 2026-10-10: filter text/Image accounting inside the existing billing dashboard.
+// [Sync] 2026-10-10: use explicit UTC boundaries and buckets regardless of the PostgreSQL session timezone.
+
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { withPlatformClient } from "../platform-db";
@@ -8,6 +17,7 @@ const querySchema = z.strictObject({
   from: z.iso.date(),
   to: z.iso.date(),
   protocol: z.enum(["anthropic", "openai"]).optional(),
+  operation: z.enum(["text", "images.generations", "images.edits"]).optional(),
   providerId: z.string().min(1).max(100).optional(),
   modelId: z.string().min(1).max(100).optional(),
   platformUserId: z.string().min(1).max(100).optional(),
@@ -19,11 +29,12 @@ type UsageQuery = z.infer<typeof querySchema>;
 function usageWhere(query: UsageQuery) {
   const values: unknown[] = [query.from, query.to];
   const clauses = [
-    "r.created_at >= $1::date",
-    "r.created_at < ($2::date + INTERVAL '1 day')",
+    "r.created_at >= ($1::date::timestamp AT TIME ZONE 'UTC')",
+    "r.created_at < (($2::date + 1)::timestamp AT TIME ZONE 'UTC')",
   ];
   for (const [column, value] of [
     ["r.protocol", query.protocol],
+    ["r.operation", query.operation],
     ["r.provider_id", query.providerId],
     ["r.model_id", query.modelId],
     ["r.platform_user_id", query.platformUserId],
@@ -36,6 +47,11 @@ function usageWhere(query: UsageQuery) {
   return { sql: `WHERE ${clauses.join(" AND ")}`, values };
 }
 
+// Responses input includes cached tokens; retain the original convention for other request scopes.
+const processedTokens = `CASE WHEN r.response_summary ->> 'billingScope' = 'responses_reported_tokens'
+  THEN COALESCE(r.input_tokens, 0) + COALESCE(r.output_tokens, 0)
+  ELSE COALESCE(r.input_tokens, 0) + COALESCE(r.output_tokens, 0) + COALESCE(r.cache_read_tokens, 0) + COALESCE(r.cache_write_tokens, 0) END`;
+
 async function queryUsageDashboard(client: PoolClient, query: UsageQuery) {
   const where = usageWhere(query);
   const from = new Date(`${query.from}T00:00:00.000Z`);
@@ -46,25 +62,35 @@ async function queryUsageDashboard(client: PoolClient, query: UsageQuery) {
     client.query<Record<string, unknown>>(
       `SELECT COUNT(*)::text AS requests,
               COUNT(*) FILTER (WHERE r.outcome = 'success' OR (r.http_status >= 200 AND r.http_status < 300))::text AS successful_requests,
-              COALESCE(SUM(r.input_tokens), 0)::text AS input_tokens,
-              COALESCE(SUM(r.output_tokens), 0)::text AS output_tokens,
-              COALESCE(SUM(r.cache_read_tokens), 0)::text AS cache_read_tokens,
-              COALESCE(SUM(r.cache_write_tokens), 0)::text AS cache_write_tokens,
-              COALESCE(SUM(r.provider_cost_microusd), 0)::text AS provider_cost_microusd,
-              COALESCE(SUM(r.charged_microusd), 0)::text AS charged_microusd,
+              COALESCE(SUM(${processedTokens}) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS tokens,
+              COALESCE(SUM(r.input_tokens) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS input_tokens,
+              COALESCE(SUM(r.output_tokens) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS output_tokens,
+              COALESCE(SUM(r.cache_read_tokens) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS cache_read_tokens,
+              COALESCE(SUM(r.cache_write_tokens) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS cache_write_tokens,
+              COALESCE(SUM(r.provider_cost_microusd) FILTER (
+                WHERE NOT (COALESCE(r.response_summary ->> 'usageKnown' = 'false', false))
+              ), 0)::text AS provider_cost_microusd,
+              COALESCE(SUM(r.charged_microusd) FILTER (
+                WHERE NOT (COALESCE(r.response_summary ->> 'usageKnown' = 'false', false))
+              ), 0)::text AS charged_microusd,
+              COUNT(*) FILTER (
+                WHERE COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)
+              )::text AS unknown_cost_requests,
               COUNT(*) FILTER (WHERE r.status = 'settlement_failed')::text AS settlement_failures,
               MAX(r.created_at) AS latest_request_at
        FROM gateway_requests r ${where.sql}`,
       where.values,
     ),
     client.query<Record<string, unknown>>(
-      `SELECT date_trunc($${where.values.length + 1}, r.created_at) AS bucket,
+      `SELECT date_trunc($${where.values.length + 1}, r.created_at, 'UTC') AS bucket,
               COUNT(*)::text AS requests,
-              COALESCE(SUM(r.input_tokens), 0)::text AS input_tokens,
-              COALESCE(SUM(r.output_tokens), 0)::text AS output_tokens,
-              COALESCE(SUM(r.cache_read_tokens), 0)::text AS cache_read_tokens,
-              COALESCE(SUM(r.cache_write_tokens), 0)::text AS cache_write_tokens,
-              COALESCE(SUM(r.charged_microusd), 0)::text AS charged_microusd
+              COALESCE(SUM(${processedTokens}) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS tokens,
+              COALESCE(SUM(r.input_tokens) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS input_tokens,
+              COALESCE(SUM(r.output_tokens) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS output_tokens,
+              COALESCE(SUM(r.cache_read_tokens) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS cache_read_tokens,
+              COALESCE(SUM(r.cache_write_tokens) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS cache_write_tokens,
+              COALESCE(SUM(r.charged_microusd) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS charged_microusd,
+              COUNT(*) FILTER (WHERE COALESCE(r.response_summary ->> 'usageKnown' = 'false', false))::text AS unknown_cost_requests
        FROM gateway_requests r ${where.sql}
        GROUP BY 1 ORDER BY 1 ASC`,
       [...where.values, bucket],
@@ -73,9 +99,16 @@ async function queryUsageDashboard(client: PoolClient, query: UsageQuery) {
       `SELECT p.id AS provider_id, p.code AS provider_code, p.name AS provider_name,
               COUNT(*)::text AS requests,
               COUNT(*) FILTER (WHERE r.outcome = 'success' OR (r.http_status >= 200 AND r.http_status < 300))::text AS successful_requests,
-              COALESCE(SUM(COALESCE(r.input_tokens, 0) + COALESCE(r.output_tokens, 0) + COALESCE(r.cache_read_tokens, 0) + COALESCE(r.cache_write_tokens, 0)), 0)::text AS tokens,
-              COALESCE(SUM(r.provider_cost_microusd), 0)::text AS provider_cost_microusd,
-              COALESCE(SUM(r.charged_microusd), 0)::text AS charged_microusd,
+              COALESCE(SUM(${processedTokens}) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS tokens,
+              COALESCE(SUM(r.provider_cost_microusd) FILTER (
+                WHERE NOT (COALESCE(r.response_summary ->> 'usageKnown' = 'false', false))
+              ), 0)::text AS provider_cost_microusd,
+              COALESCE(SUM(r.charged_microusd) FILTER (
+                WHERE NOT (COALESCE(r.response_summary ->> 'usageKnown' = 'false', false))
+              ), 0)::text AS charged_microusd,
+              COUNT(*) FILTER (
+                WHERE COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)
+              )::text AS unknown_cost_requests,
               COALESCE(AVG(r.latency_ms) FILTER (WHERE r.latency_ms IS NOT NULL), 0)::text AS average_latency_ms
        FROM gateway_requests r JOIN ai_providers p ON p.id = r.provider_id
        ${where.sql} GROUP BY p.id, p.code, p.name ORDER BY COUNT(*) DESC, p.code ASC`,
@@ -85,9 +118,16 @@ async function queryUsageDashboard(client: PoolClient, query: UsageQuery) {
       `SELECT m.id AS model_id, m.code AS model_code, m.display_name,
               p.code AS provider_code, COUNT(*)::text AS requests,
               COUNT(*) FILTER (WHERE r.outcome = 'success' OR (r.http_status >= 200 AND r.http_status < 300))::text AS successful_requests,
-              COALESCE(SUM(COALESCE(r.input_tokens, 0) + COALESCE(r.output_tokens, 0) + COALESCE(r.cache_read_tokens, 0) + COALESCE(r.cache_write_tokens, 0)), 0)::text AS tokens,
-              COALESCE(SUM(r.provider_cost_microusd), 0)::text AS provider_cost_microusd,
-              COALESCE(SUM(r.charged_microusd), 0)::text AS charged_microusd
+              COALESCE(SUM(${processedTokens}) FILTER (WHERE NOT COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)), 0)::text AS tokens,
+              COALESCE(SUM(r.provider_cost_microusd) FILTER (
+                WHERE NOT (COALESCE(r.response_summary ->> 'usageKnown' = 'false', false))
+              ), 0)::text AS provider_cost_microusd,
+              COALESCE(SUM(r.charged_microusd) FILTER (
+                WHERE NOT (COALESCE(r.response_summary ->> 'usageKnown' = 'false', false))
+              ), 0)::text AS charged_microusd,
+              COUNT(*) FILTER (
+                WHERE COALESCE(r.response_summary ->> 'usageKnown' = 'false', false)
+              )::text AS unknown_cost_requests
        FROM gateway_requests r
        JOIN ai_models m ON m.id = r.model_id
        JOIN ai_providers p ON p.id = r.provider_id
@@ -121,7 +161,7 @@ export async function handleAdminUsageDashboard(request: Request) {
       .toISOString()
       .slice(0, 10);
     const raw = Object.fromEntries(
-      ["from", "to", "protocol", "providerId", "modelId", "platformUserId", "outcome"]
+      ["from", "to", "protocol", "operation", "providerId", "modelId", "platformUserId", "outcome"]
         .map((key) => [key, url.searchParams.get(key) || undefined]),
     );
     raw.from ??= defaultFrom;

@@ -2,6 +2,7 @@
 // [Output] Strict configuration/capability DTO containing only available registered operations.
 // [Pos] Dream readiness/contract discovery boundary, no global-head coupling.
 // [Sync] 2026-09-14: separate schema capability receipts from API availability.
+// [Sync] 2026-10-11: publish image-turn API descriptors only when all exact operation requirements are installed.
 import { schemaCapabilities } from "@ink-memory/db/schema/capabilities";
 import { authConfiguration, authScopes, requiredAuthValue } from "./config";
 import { capabilitiesDto } from "./dto";

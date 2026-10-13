@@ -5,14 +5,20 @@
 // [Sync] 2026-09-04: resolve managed validation only through the Provider-owned account.
 // [Sync] 2026-10-02: preserve concrete rejection reasons without persisting response bodies or reading successful output.
 // [Sync] 2026-10-02: share Gateway's model-scoped Codex client metadata precedence.
+// [Sync] 2026-10-10: validate the configured Chat/Responses endpoint with Gateway's same request conversion.
+// [Sync] 2026-10-11: verify one real hosted Responses image through the original audited model boundary.
 
 import type { PoolClient } from "pg";
+import { z } from "zod";
+import { imageApiPolicy } from "../../../config/image-api-policy";
+import { readLimitedBody } from "../gateway/read-limited-body";
+import { readResponsesImageValidation, responsesImageValidationKind, responsesImageValidationPrompt, type ResponsesImageValidationSummary } from "./responses-image-validation";
 
 import type { AiProviderProtocol } from "../billing/types";
 import { resolveManagedProviderAccess } from "../gateway/managed-provider-credentials";
 import { adaptProviderRequest } from "../gateway/protocol-adapters";
 import { resolveProviderAuthMode } from "../gateway/provider-auth";
-import { resolveProviderBaseUrl } from "../gateway/provider-endpoint";
+import { resolveProviderInferenceEndpoint, resolveProviderApi } from "../gateway/provider-endpoint";
 import { redactProviderErrorBody } from "../gateway/payloads";
 import { readResponseText } from "../providers/http";
 import { withPlatformClient, withPlatformTransaction } from "../platform-db";
@@ -36,6 +42,7 @@ type ModelValidationRow = {
   id: string;
   code: string;
   upstream_model: string;
+  max_output_tokens: number | null;
   request_headers: unknown;
   provider_id: string;
   provider_code: string;
@@ -67,7 +74,14 @@ export type ModelValidationResult = {
   message: string;
   upstreamMessage?: string;
   upstreamRequestId?: string;
+  validationKind?: typeof responsesImageValidationKind;
+  failureCode?: string;
+  upstreamErrorCode?: string;
+  upstreamErrorType?: string;
+  imageSummary?: ResponsesImageValidationSummary;
 };
+
+export const modelValidationInputSchema = z.strictObject({ validationKind: z.literal(responsesImageValidationKind).optional() });
 
 type ValidationResponse = Pick<Response, "status"> & Partial<Pick<Response, "headers" | "body">>;
 
@@ -115,14 +129,6 @@ async function validationDiagnostics(
   return result;
 }
 
-function endpoint(baseUrl: string, protocol: AiProviderProtocol) {
-  const url = new URL(baseUrl);
-  const suffix = protocol === "anthropic" ? "messages" : "chat/completions";
-  const path = url.pathname.replace(/\/+$/, "");
-  url.pathname = path.endsWith("/v1") ? `${path}/${suffix}` : `${path}/v1/${suffix}`;
-  return url.toString();
-}
-
 function validationMessage(status: number) {
   if (status >= 200 && status < 300) {
     return { status: "operational" as const, usable: true, message: "凭据与上游模型验证通过" };
@@ -159,6 +165,8 @@ export async function validateUpstreamModel(
     config?: Record<string, unknown>;
     requestHeaders?: ModelRequestHeaders;
     timeoutMs?: number;
+    validationKind?: typeof responsesImageValidationKind;
+    maxOutputTokens?: number;
   },
   dependencies: {
     fetcher?: ValidationFetch;
@@ -166,7 +174,11 @@ export async function validateUpstreamModel(
     testedAt?: () => Date;
   } = {},
 ): Promise<ModelValidationResult> {
-  const baseUrl = resolveProviderBaseUrl({ protocol: input.protocol, baseUrl: input.baseUrl });
+  const imageValidation = input.validationKind === responsesImageValidationKind;
+  if (imageValidation && (input.protocol !== "openai" || resolveProviderApi(input) !== "responses")) {
+    throw new AdminError("RESPONSES_IMAGE_VALIDATION_UNSUPPORTED", "请选择 Codex 或已明确使用 Responses 的 OpenAI Provider 模型。", 409);
+  }
+  const endpoint = resolveProviderInferenceEndpoint(input);
   const fetcher = dependencies.fetcher ?? fetch;
   const now = dependencies.now ?? Date.now;
   const testedAt = dependencies.testedAt ?? (() => new Date());
@@ -191,19 +203,34 @@ export async function validateUpstreamModel(
     input.protocol === "openai" && input.config?.outputTokenParam === "max_completion_tokens"
       ? "max_completion_tokens"
       : "max_tokens";
-  const body = input.protocol === "anthropic"
+  const outputTokens = imageValidation ? input.maxOutputTokens : 1;
+  if (imageValidation && (!Number.isSafeInteger(outputTokens) || outputTokens! <= 0)) {
+    throw new AdminError("MODEL_OUTPUT_BUDGET_UNAVAILABLE", "请先配置模型输出预算再核实图片能力。", 409);
+  }
+  const prompt = imageValidation ? responsesImageValidationPrompt : "ping";
+  const chatBody = input.protocol === "anthropic"
     ? { model: input.upstreamModel, max_tokens: 1, stream: false, messages: [{ role: "user", content: "ping" }] }
-    : { model: input.upstreamModel, [outputTokenParam]: 1, stream: false, messages: [{ role: "user", content: "ping" }] };
+    : { model: input.upstreamModel, [outputTokenParam]: outputTokens, stream: false, messages: [{ role: "user", content: prompt }] };
+  const body = resolveProviderApi(input) === "responses"
+    ? adaptProviderRequest({ externalProtocol: "openai", providerProtocol: input.protocol,
+        providerConfig: input.config, body: chatBody, model: input.upstreamModel, maxOutputTokens: outputTokens! })
+    : chatBody;
+  if (imageValidation) Object.assign(body, { tools: [{ type: "image_generation" }], tool_choice: "auto", parallel_tool_calls: false });
 
   try {
-    const response = await fetcher(endpoint(baseUrl, input.protocol), {
+    const signal = AbortSignal.timeout(imageValidation ? input.timeoutMs ?? 8_000 : Math.min(Math.max(input.timeoutMs ?? 8_000, 1_000), 15_000));
+    const response = await fetcher(endpoint, {
       method: "POST",
       headers: requestHeaders,
       body: JSON.stringify(body),
       redirect: "manual",
       cache: "no-store",
-      signal: AbortSignal.timeout(Math.min(Math.max(input.timeoutMs ?? 8_000, 1_000), 15_000)),
+      signal,
     });
+    if (imageValidation) return {
+      ...await readResponsesImageValidation({ response, adapterKind: "generic", credentialHeaders: requestHeaders, signal }),
+      responseTimeMs: Math.max(0, now() - startedAt), httpStatus: response.status, testedAt: testedAt().toISOString(),
+    };
     const classified = validationMessage(response.status);
     const diagnostics = await validationDiagnostics(response, requestHeaders);
     return {
@@ -221,6 +248,7 @@ export async function validateUpstreamModel(
       httpStatus: null,
       testedAt: testedAt().toISOString(),
       message: abortMessage(error),
+      ...(imageValidation ? { validationKind: responsesImageValidationKind, failureCode: "RESPONSES_IMAGE_TRANSPORT_FAILED" } : {}),
     };
   }
 }
@@ -236,6 +264,9 @@ export async function validateManagedUpstreamModel(
     credentialRevision: number;
     upstreamModel: string;
     requestHeaders?: ModelRequestHeaders;
+    validationKind?: typeof responsesImageValidationKind;
+    timeoutMs?: number;
+    maxOutputTokens?: number;
   },
   dependencies: {
     fetcher?: ValidationFetch;
@@ -244,6 +275,10 @@ export async function validateManagedUpstreamModel(
     testedAt?: () => Date;
   } = {},
 ): Promise<ModelValidationResult> {
+  const imageValidation = input.validationKind === responsesImageValidationKind;
+  if (imageValidation && input.adapterKind !== "codex") {
+    throw new AdminError("RESPONSES_IMAGE_VALIDATION_UNSUPPORTED", "请选择 Codex 或已明确使用 Responses 的 OpenAI Provider 模型。", 409);
+  }
   const fetcher = dependencies.fetcher ?? fetch;
   const resolveAccess = dependencies.resolveAccess ?? resolveManagedProviderAccess;
   const now = dependencies.now ?? Date.now;
@@ -266,12 +301,13 @@ export async function validateManagedUpstreamModel(
       body: {
         model: input.upstreamModel,
         max_completion_tokens: 1,
-        messages: [{ role: "user", content: "ping" }],
+        messages: [{ role: "user", content: imageValidation ? responsesImageValidationPrompt : "ping" }],
         stream: false,
       },
       model: input.upstreamModel,
       maxOutputTokens: 1,
     });
+    if (imageValidation) Object.assign(body, { tools: [{ type: "image_generation" }], tool_choice: "auto", parallel_tool_calls: false });
     const headers = new Headers({
       accept: (body as { stream?: boolean }).stream
         ? "text/event-stream"
@@ -280,14 +316,19 @@ export async function validateManagedUpstreamModel(
     });
     applyModelRequestHeaders(headers, input.requestHeaders ?? {});
     applyManagedProviderRequestHeaders(headers, access.headers, input.requestHeaders ?? {}, input.adapterKind);
+    const signal = AbortSignal.timeout(imageValidation ? input.timeoutMs ?? 15_000 : 15_000);
     const response = await fetcher(access.url, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
       redirect: "manual",
       cache: "no-store",
-      signal: AbortSignal.timeout(15_000),
+      signal,
     });
+    if (imageValidation) return {
+      ...await readResponsesImageValidation({ response, adapterKind: input.adapterKind, credentialHeaders: headers, signal }),
+      responseTimeMs: Math.max(0, now() - startedAt), httpStatus: response.status, testedAt: testedAt().toISOString(),
+    };
     const classified = validationMessage(response.status);
     const diagnostics = await validationDiagnostics(response, headers);
     return {
@@ -305,13 +346,14 @@ export async function validateManagedUpstreamModel(
       httpStatus: null,
       testedAt: testedAt().toISOString(),
       message: abortMessage(error),
+      ...(imageValidation ? { validationKind: responsesImageValidationKind, failureCode: "RESPONSES_IMAGE_TRANSPORT_FAILED" } : {}),
     };
   }
 }
 
 async function loadModel(client: PoolClient, modelId: string) {
   const { rows } = await client.query<ModelValidationRow>(
-    `SELECT m.id, m.code, m.upstream_model, m.request_headers,
+    `SELECT m.id, m.code, m.upstream_model, m.request_headers, m.max_output_tokens,
             p.id AS provider_id, p.code AS provider_code,
             p.status AS provider_status, p.protocol, p.base_url,
             p.adapter_kind, p.active_credential_kind, p.auth_epoch,
@@ -367,6 +409,14 @@ export async function handleModelValidation(request: Request, modelId: string) {
   try {
     assertAdminMutationOrigin(request);
     const identity = await requireAdminRequest(request, "models.write");
+    let validationKind: typeof responsesImageValidationKind | undefined;
+    try {
+      const raw = await readLimitedBody({ body: request.body, declaredLength: request.headers.get("content-length"), maxBytes: imageApiPolicy.maxPromptBytes });
+      const text = new TextDecoder().decode(raw);
+      validationKind = modelValidationInputSchema.parse(text.trim() ? JSON.parse(text) : {}).validationKind;
+    } catch {
+      throw new AdminError("MODEL_VALIDATION_INPUT_INVALID", "模型验证请求格式不正确。", 400);
+    }
     const model = await withPlatformClient((client) => loadModel(client, modelId));
     const requestHeaders = modelRequestHeadersSchema.safeParse(model.request_headers ?? {});
     if (!requestHeaders.success) {
@@ -385,6 +435,8 @@ export async function handleModelValidation(request: Request, modelId: string) {
           config: model.config ?? {},
           requestHeaders: requestHeaders.data,
           timeoutMs: model.timeout_ms,
+          validationKind,
+          maxOutputTokens: model.max_output_tokens ?? undefined,
         })
       : await validateManagedUpstreamModel({
           providerId: model.provider_id,
@@ -396,6 +448,9 @@ export async function handleModelValidation(request: Request, modelId: string) {
           credentialRevision: model.managed_credential_revision!,
           upstreamModel: model.upstream_model,
           requestHeaders: requestHeaders.data,
+          validationKind,
+          timeoutMs: model.timeout_ms,
+          maxOutputTokens: model.max_output_tokens ?? undefined,
         });
 
     await withPlatformTransaction(async (client) => {
@@ -413,6 +468,11 @@ export async function handleModelValidation(request: Request, modelId: string) {
           usable: data.usable,
           responseTimeMs: data.responseTimeMs,
           httpStatus: data.httpStatus,
+          ...(data.validationKind ? {
+            validationKind: data.validationKind, failureCode: data.failureCode,
+            upstreamErrorCode: data.upstreamErrorCode, upstreamErrorType: data.upstreamErrorType,
+            upstreamRequestId: data.upstreamRequestId, imageSummary: data.imageSummary,
+          } : {}),
         },
       });
     });

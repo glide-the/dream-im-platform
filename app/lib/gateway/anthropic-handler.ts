@@ -2,6 +2,7 @@
 // [Output] Compatible responses with protocol-aware reservation/count estimates.
 // [Pos] Anthropic Gateway orchestration; provider transport and settlement remain shared.
 // [Sync] 2026-09-13: estimate image blocks independently from base64 JSON byte length.
+// [Sync] 2026-10-10: share validated native image history projection between Messages and count_tokens.
 
 import type { MessageCountTokensParams } from "@anthropic-ai/sdk/resources/messages";
 import { authenticateGatewayRequest } from "./auth";
@@ -13,6 +14,12 @@ import { deriveGatewayIdempotencyKey, parseGatewayJson, parseGatewayJsonCapture 
 import { estimateInputTokens } from "./input-token-estimate";
 import { gatewayProtocolErrorResponse, proxyNonStreaming, proxyStreaming } from "./proxy-handler";
 import { resolveBillableModel } from "../models/resolver";
+import { proxyResponsesImage } from "./responses-image-proxy";
+import { record, validateNativeImageHistory, nativeHistoryForAnthropic } from "./protocol-adapters";
+function hasNativeImageHistory(messages: unknown[]) {
+  return messages.some(message => { const value = record(message); return Array.isArray(value?.content)
+    && value.content.some(block => record(block)?.type === "image_generation_tool_result"); });
+}
 
 export async function handleAnthropicMessages(request: Request) {
   try {
@@ -25,12 +32,17 @@ export async function handleAnthropicMessages(request: Request) {
       requestedModel: body.model,
       isStreaming: body.stream,
       idempotencyKey: deriveGatewayIdempotencyKey(request.headers, captured.rawBody),
-      estimatedInputTokens: (providerProtocol) => estimateInputTokens("anthropic", { messages: body.messages, system: body.system, tools: body.tools }, providerProtocol),
+      estimatedInputTokens: (providerProtocol) => estimateInputTokens("anthropic", { messages: body.messages, system: body.system, tools: body.tools }, providerProtocol,
+        { nativeImageHistory: hasNativeImageHistory(body.messages), currentImageMaterials: request.headers.has("x-ink-image-turn-key") }),
       requestedMaxOutputTokens: body.max_tokens,
       requestCapture: { request, rawBody: captured.rawBody, body: captured.body },
+      imageConversation: request.headers.has("x-ink-image-turn-key") ? {
+        turnKey: request.headers.get("x-ink-image-turn-key")!, body } : undefined,
     });
     if (result.kind !== "ready") return await preparationErrorResponse(result, "anthropic");
-    const input = { request, externalProtocol: "anthropic" as const, prepared: result.value, body };
+    const input = { request, externalProtocol: "anthropic" as const, prepared: result.value,
+      body: result.value.conversationBody ?? body };
+    if (result.value.nativeImageTurn) return await proxyResponsesImage(input);
     return body.stream ? await proxyStreaming(input) : await proxyNonStreaming(input);
   } catch (error) {
     return gatewayProtocolErrorResponse("anthropic", error);
@@ -41,12 +53,14 @@ export async function handleAnthropicCountTokens(request: Request) {
   try {
     const body = await parseGatewayJson(request, anthropicCountTokensSchema);
     const principal = await authenticateGatewayRequest(request.headers, "messages:create");
+    await validateNativeImageHistory(body);
     const resolved = await resolveBillableModel({ platformUserId: principal.platformUserId, requestedModel: body.model, protocol: "anthropic" });
     if (resolved.provider.protocol === "openai") {
-      return Response.json({ input_tokens: estimateInputTokens("anthropic", { messages: body.messages, system: body.system, tools: body.tools }, "openai") }, { headers: { "cache-control": "no-store" } });
+      return Response.json({ input_tokens: estimateInputTokens("anthropic", { messages: body.messages, system: body.system, tools: body.tools }, "openai",
+        { nativeImageHistory: hasNativeImageHistory(body.messages), currentImageMaterials: request.headers.has("x-ink-image-turn-key") }) }, { headers: { "cache-control": "no-store" } });
     }
     const client = createAnthropicProviderClient(resolved);
-    const response = await client.messages.countTokens({ ...body, model: resolved.model.upstreamModel } as unknown as MessageCountTokensParams, { signal: request.signal });
+    const response = await client.messages.countTokens({ ...nativeHistoryForAnthropic(body), model: resolved.model.upstreamModel } as unknown as MessageCountTokensParams, { signal: request.signal });
     return Response.json(response, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     return gatewayErrorResponse(toProviderGatewayError(error));

@@ -2,6 +2,7 @@
 // [Output] A request-memory validation receipt or a stable, audited Admin failure with no credential disclosure.
 // [Pos] Provider static-credential lifecycle boundary used before the final PostgreSQL revision CAS.
 // [Sync] 2026-09-04: validate credential-sensitive updates before replacing the effective encrypted credential.
+// [Sync] 2026-10-10: API dialect changes require the existing model validation and auth revision CAS.
 
 import type { PoolClient } from "pg";
 
@@ -179,6 +180,7 @@ function isCredentialSensitive(
       effectiveAuthMode(input.config) !== effectiveAuthMode(currentConfig)
       || effectiveOutputTokenParam(input.config)
         !== effectiveOutputTokenParam(currentConfig)
+      || (input.config.openaiApi ?? "chat") !== (currentConfig.openaiApi ?? "chat")
     );
   return input.apiKey !== undefined
     || baseUrlChanged

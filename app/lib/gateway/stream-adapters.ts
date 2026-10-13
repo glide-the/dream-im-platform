@@ -2,6 +2,7 @@
 // [Output] Incrementally translated SSE events with usage, finish, and error semantics preserved.
 // [Pos] Stateful streaming protocol boundary used by the Gateway proxy after transport authentication.
 // [Sync] 2026-09-04: add Codex/xAI Responses stream translation while leaving Copilot on OpenAI Chat.
+// [Sync] 2026-10-10: select Responses SSE translation from the actual candidate's explicit API configuration.
 
 import {
   anthropicStopToOpenAI,
@@ -10,6 +11,7 @@ import {
   type GatewayProtocol,
 } from "./protocol-adapters";
 import { ResponsesToOpenAIChatStreamState } from "./responses-adapter";
+import { resolveResponsesAdapter } from "./provider-endpoint";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -219,9 +221,10 @@ export function createProtocolStreamAdapter(input: {
   externalProtocol: GatewayProtocol;
   providerProtocol: GatewayProtocol;
   providerAdapterKind?: string;
+  providerConfig?: JsonRecord;
   requestedModel: string;
 }): ProtocolStreamAdapter {
-  if (input.providerAdapterKind === "codex" || input.providerAdapterKind === "xai") {
+  if (resolveResponsesAdapter({ protocol: input.providerProtocol, adapterKind: input.providerAdapterKind, config: input.providerConfig })) {
     const responses = new ResponsesToOpenAIChatStreamState(input.requestedModel);
     if (input.externalProtocol === "openai") {
       return {
