@@ -1,3 +1,4 @@
+// [Sync] 2026-10-13: add nullable task-private analysis content for additive Reflections selection operations.
 // [Sync] 2026-10-07: declare v3 recurrence, source/new Thread mode, model snapshots and mode-scoped trigger uniqueness for forward 0077.
 // [Sync] 2026-10-07: declare interval cadence, immutable Editor targets and durable unknown-recheck cursors for forward 0075.
 // [Sync] 2026-09-28: declare effective scheduled Chat definitions and fenced trigger history for 0069.
@@ -371,6 +372,7 @@ export const reflection_task = pgTable("reflection_task", {
 	service_client_id: text(),
 	auth_user_id: text(),
 	launch_snapshot_json: text(),
+	analysis_content_json: text(),
 	revision: integer().default(1).notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
 	started_at: timestamp({ withTimezone: true, mode: 'string' }),

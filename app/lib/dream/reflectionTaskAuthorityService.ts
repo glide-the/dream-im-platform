@@ -2,6 +2,7 @@
 // [Output] Short-lived Reflections worker bearer with exact operation allowlist, renewal and revocation.
 // [Pos] Registered child persistence authority; separate from frozen runtime_delegations semantics.
 // [Sync] 2026-09-16: authorize one Admin-side gateway-cli exchange without exposing the RTA to CLI.
+// [Sync] 2026-10-13: project renewal metadata before strict validation; the stable bearer stays encrypted internally.
 // [Sync] 2026-09-15: expose only six exact existing operation names without a service bypass.
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -81,7 +82,8 @@ export async function renewReflectionTaskAuthority(tx: DataTransaction, task: Re
   const store = new ReflectionTaskAuthorityRepository(tx), row = await store.lockLive(task.id, section.section), now = new Date();
   if (!row || !validRunningBinding(row, task, section, serviceId) || row.revokedAt || row.maximumExpiresAt <= now) throw new AuthBoundaryError("REFLECTION_AUTHORITY_REQUIRED", 401);
   const renewed = await refreshWithinMaximum(store, row, now);
-  return reflectionAuthorityDto.omit({ token: true }).parse(renewed);
+  const { token: _token, ...metadata } = renewed;
+  return reflectionAuthorityDto.omit({ token: true }).parse(metadata);
 }
 
 export async function revokeReflectionTaskAuthority(tx: DataTransaction, taskId: string, section: string) {

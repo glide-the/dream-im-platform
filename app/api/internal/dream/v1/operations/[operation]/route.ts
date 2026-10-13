@@ -1,3 +1,4 @@
+// [Sync] 2026-10-13: dispatch the three additive Reflections content operations to their capability-gated handler.
 // [Sync] 2026-10-10: register exact image-turn bind/select and original entity-bound receipt recovery.
 // [Input] Explicit registered local-data, Thread/message, scheduled Chat, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
 // [Sync] 2026-09-28: route named scheduled Chat user and background operations to one capability-gated handler.
@@ -32,6 +33,8 @@ import { handleDreamLaunchFailure } from "../../../../../../lib/dream/dreamLaunc
 import { handleUserSystemConfig, isUserSystemConfigOperation } from "../../../../../../lib/dream/userSystemConfigHandler";
 import { handleThreadSystemConfig, isThreadSystemConfigOperation } from "../../../../../../lib/dream/threadSystemConfigHandler";
 import { handleReflectionsSectionConfig, isReflectionsSectionConfigOperation } from "../../../../../../lib/dream/reflectionsSectionConfigHandler";
+import { handleReflectionAnalysisOperation, isReflectionAnalysisOperation } from "../../../../../../lib/dream/reflectionAnalysisContentHandler";
+// [Sync] 2026-10-13: route additive Reflections analysis input operations.
 import { handleReflectionTaskOperation, isReflectionTaskOperation } from "../../../../../../lib/dream/reflectionTaskHandler";
 import { handleLocalDataImport, isLocalDataImportOperation } from "../../../../../../lib/dream/localDataImportHandler";
 import { handlePictureHistory, isPictureHistoryOperation } from "../../../../../../lib/dream/pictureHistoryHandler";
@@ -84,6 +87,7 @@ export async function POST(request: Request, context: { params: Promise<{ operat
   if (isUserSystemConfigOperation(name)) return handleUserSystemConfig(request, name);
   if (isThreadSystemConfigOperation(name)) return handleThreadSystemConfig(request, name);
   if (isReflectionsSectionConfigOperation(name)) return handleReflectionsSectionConfig(request, name);
+  if (isReflectionAnalysisOperation(name)) return handleReflectionAnalysisOperation(request, name);
   if (isReflectionTaskOperation(name)) return handleReflectionTaskOperation(request, name);
   if (name === "workspace-default.ensure") return handleWorkspaceDefault(request, name);
   if (isWorkflowRunCreationOperation(name)) return handleWorkflowRunCreation(request, name);

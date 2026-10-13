@@ -1,3 +1,4 @@
+// [Sync] 2026-10-13: keep the additive Reflections input capability independent of domain-service import order.
 // [Input] Frozen additive identity/receipt schema descriptor produced by Admin Drizzle.
 // [Sync] 2026-09-28: expose exact 0070 scheduled Chat Runtime source capability.
 // [Output] Exact version/hash requirement for shared identity and receipt consumers.
@@ -9,6 +10,7 @@ import runtimeContract from "../../../drizzle/contracts/identity-runtime-delegat
 import purposeContract from "../../../drizzle/contracts/identity-runtime-purpose-v1.json";
 import deckCanonicalContract from "../../../drizzle/contracts/dream-deck-content-canonical-storage-v1.json";
 import preflightRequestContract from "../../../drizzle/contracts/dream-workflow-preflight-request-v1.json";
+import reflectionAnalysisContract from "../../../drizzle/contracts/dream-reflection-analysis-content-v1.json";
 import reflectionTaskContract from "../../../drizzle/contracts/dream-reflection-task-persistence-v1.json";
 import runtimeConfirmationClaimContract from "../../../drizzle/contracts/identity-runtime-confirmation-claim-v1.json";
 import runtimeReflectionAuthorityContract from "../../../drizzle/contracts/identity-runtime-reflection-authority-v1.json";
@@ -25,3 +27,5 @@ export const workflowPreflightRequestSchemaRequirement = { capability: "dream.wo
 export const workflowPreflightExecutionSchemaRequirements = [identitySchemaRequirement, dreamUnifiedSchemaRequirement, workflowPreflightRequestSchemaRequirement] as const;
 export const reflectionTaskSchemaRequirement = { capability: "dream.reflection-task-persistence.v1", version: 1, contractSha256: reflectionTaskContract.contract_sha256 } as const;
 export const reflectionTaskSchemaRequirements = [dreamUnifiedSchemaRequirement, reflectionTaskSchemaRequirement] as const;
+
+export const reflectionAnalysisSchemaRequirement = { capability: "dream.reflection-analysis-content.v1", version: 1, contractSha256: reflectionAnalysisContract.contract_sha256 } as const;

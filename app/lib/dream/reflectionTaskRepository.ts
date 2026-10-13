@@ -1,3 +1,4 @@
+// [Sync] 2026-10-13: expose the caller-owned UOW to additive task input reads.
 // [Input] Existing Admin UOW, canonical owner or configured service, and closed Reflections commands.
 // [Output] Owner/service-filtered task aggregate persistence with locks, CAS and stable ordering.
 // [Pos] Registered typed Reflections Repository; no pool, commit, caller SQL, user or Thread selector.
@@ -50,6 +51,7 @@ export function requireNextReflectionEventSequence(current: number, requested: n
 
 export class ReflectionTaskRepository {
   constructor(private readonly tx: DataTransaction) {}
+  transaction() { return this.tx; }
   private owner(canonicalUserId: string) { return eq(task.user_id, sql`${decimalIdDto.parse(canonicalUserId)}::bigint`); }
 
   async create(canonicalUserId: string, authUserId: string, serviceClientId: string, sections: readonly string[], input: ReflectionTaskPublicInput) {

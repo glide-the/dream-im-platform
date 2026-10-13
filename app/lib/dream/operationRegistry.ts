@@ -68,6 +68,9 @@ import { userSystemConfigSchemaRequirements } from "./userSystemConfigService";
 import { threadSystemConfigOperationContracts } from "./threadSystemConfigDto";
 import { threadSystemConfigSchemaRequirements } from "./threadSystemConfigService";
 import { reflectionsSectionConfigOperationContracts } from "./reflectionsSectionConfigDto";
+import { reflectionAnalysisContentOperations } from "./reflectionAnalysisContentDto";
+import { reflectionAnalysisSchemaRequirement } from "./schemaRequirements";
+// [Sync] 2026-10-13: append content operations without changing existing registry positions.
 import { reflectionTaskOperationContracts } from "./reflectionTaskDto";
 import { localDataImportOperationContracts } from "./localDataImportDto";
 import { localDataImportSchemaRequirements } from "./localDataImportService";
@@ -283,5 +286,10 @@ export const dreamOperations = [
   )),
   ...Object.entries(imageTurnOperationContracts).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output, imageTurnSchemaRequirements, operation.userScope,
+  )),
+  ...Object.entries(reflectionAnalysisContentOperations).map(([name, operation]) => descriptor(
+    name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
+    operation.input, operation.output, [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, reflectionAnalysisSchemaRequirement],
+    operation.audience === "oauth" ? operation.userScope : null,
   )),
 ] as const;
