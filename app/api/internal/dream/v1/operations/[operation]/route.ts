@@ -1,3 +1,4 @@
+// [Sync] 2026-10-14: dispatch only the registered analysis history-page read.
 // [Sync] 2026-10-13: dispatch the three additive Reflections content operations to their capability-gated handler.
 // [Sync] 2026-10-10: register exact image-turn bind/select and original entity-bound receipt recovery.
 // [Input] Explicit registered local-data, Thread/message, scheduled Chat, Session/Editor, Workflow, Reflections, Deck/Voice or profile request.
@@ -58,9 +59,11 @@ import { handleStoryWorkspaceArtifact, isStoryWorkspaceArtifactOperation } from 
 import { handleTaskSessionResult, isTaskSessionResultOperation } from "../../../../../../lib/dream/taskSessionResultHandler";
 import { handleChatScheduledTaskOperation, isChatScheduledTaskOperation } from "../../../../../../lib/dream/chatScheduledTaskHandler";
 import { handleImageTurnOperation, isImageTurnOperation } from "../../../../../../lib/dream/imageTurnHandler";
+import { handleReflectionHistory } from "../../../../../../lib/dream/reflectionHistoryHandler";
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
+  if (name === "analysis-report.history-page") return handleReflectionHistory(request);
   if (isImageTurnOperation(name)) return handleImageTurnOperation(request, name);
   if (isChatScheduledTaskOperation(name)) return handleChatScheduledTaskOperation(request, name);
   if (isTaskSessionResultOperation(name)) return handleTaskSessionResult(request, name);

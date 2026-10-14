@@ -1,3 +1,4 @@
+// [Sync] 2026-10-14: append read-only analysis history after the entire frozen registry.
 // [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
 // [Sync] 2026-10-10: register exact image-turn bind/select and original entity-bound receipt recovery.
 // [Sync] 2026-10-11: image-turn discovery remains conditional on its published capability and existing identity/domain requirements.
@@ -68,6 +69,7 @@ import { userSystemConfigSchemaRequirements } from "./userSystemConfigService";
 import { threadSystemConfigOperationContracts } from "./threadSystemConfigDto";
 import { threadSystemConfigSchemaRequirements } from "./threadSystemConfigService";
 import { reflectionsSectionConfigOperationContracts } from "./reflectionsSectionConfigDto";
+import { reflectionHistoryOperations } from "./reflectionHistoryDto";
 import { reflectionAnalysisContentOperations } from "./reflectionAnalysisContentDto";
 import { reflectionAnalysisSchemaRequirement } from "./schemaRequirements";
 // [Sync] 2026-10-13: append content operations without changing existing registry positions.
@@ -291,5 +293,9 @@ export const dreamOperations = [
     name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
     operation.input, operation.output, [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, reflectionAnalysisSchemaRequirement],
     operation.audience === "oauth" ? operation.userScope : null,
+  )),
+  ...Object.entries(reflectionHistoryOperations).map(([name, operation]) => descriptor(
+    name, operation.kind, null, operation.input, operation.output,
+    [identitySchemaRequirement, ...reflectionTaskSchemaRequirements], operation.userScope,
   )),
 ] as const;
