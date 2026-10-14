@@ -1,3 +1,4 @@
+// [Sync] 2026-10-15: add revisioned Reflections memory documents and owner behavior settings.
 // [Sync] 2026-10-13: add nullable task-private analysis content for additive Reflections selection operations.
 // [Sync] 2026-10-07: declare v3 recurrence, source/new Thread mode, model snapshots and mode-scoped trigger uniqueness for forward 0077.
 // [Sync] 2026-10-07: declare interval cadence, immutable Editor targets and durable unknown-recheck cursors for forward 0075.
@@ -1806,4 +1807,35 @@ export const claude_agent_resource_snapshots = pgTable("claude_agent_resource_sn
 	check("ck_claude_agent_resource_snapshots_heartbeat", sql`heartbeat_at >= process_started_at`),
 	check("ck_claude_agent_resource_snapshots_sampled", sql`sampled_at IS NULL OR (sampled_at >= process_started_at AND sampled_at <= heartbeat_at)`),
 	check("ck_claude_agent_resource_snapshots_updated", sql`updated_at >= created_at`),
+]);
+
+
+export const memory_artifact = pgTable("memory_artifact", {
+  id: text().notNull(), revision: integer().notNull(),
+  user_id: bigint({ mode: "bigint" }).notNull(), report_id: bigint({ mode: "bigint" }).notNull(),
+  service_client_id: text().notNull(), source_json: text().notNull(), source_sha256: text().notNull(),
+  conversion_revision: text().notNull(), state: text().notNull().default("pending"),
+  claim_token: text(), claim_expires_at: timestamp({ withTimezone: true, mode: "date" }),
+  document: text(), document_sha256: text(), body_sha256: text(), byte_length: integer(),
+  theme_state: text().notNull().default("pending"), theme_document: text(), theme_sha256: text(),
+  metadata_json: text().notNull().default("{}"), error_code: text(),
+  created_at: timestamp({ withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  updated_at: timestamp({ withTimezone: true, mode: "date" }).notNull().defaultNow(),
+}, t => [
+  primaryKey({ columns: [t.id, t.revision] }),
+  unique("uq_memory_artifact_source").on(t.report_id, t.source_sha256, t.conversion_revision),
+  index("idx_memory_artifact_owner").on(t.user_id, t.created_at, t.id),
+  index("idx_memory_artifact_claim").on(t.service_client_id, t.state, t.claim_expires_at),
+  foreignKey({ columns: [t.user_id], foreignColumns: [users.id], name: "fk_memory_artifact_owner" }).onDelete("cascade"),
+  foreignKey({ columns: [t.report_id], foreignColumns: [analysis_reports.id], name: "fk_memory_artifact_report" }).onDelete("cascade"),
+  check("memory_artifact_revision_check", sql`${t.revision} >= 1`),
+  check("memory_artifact_state_check", sql`${t.state} IN ('pending','running','publishing','ready','empty','failed')`),
+  check("memory_theme_state_check", sql`${t.theme_state} IN ('pending','ready','empty','failed')`),
+]);
+export const memory_behavior_settings = pgTable("memory_behavior_settings", {
+  user_id: bigint({ mode: "bigint" }).primaryKey(), revision: integer().notNull(), desired_json: text().notNull(),
+  updated_at: timestamp({ withTimezone: true, mode: "date" }).notNull().defaultNow(),
+}, t => [
+  foreignKey({ columns: [t.user_id], foreignColumns: [users.id], name: "fk_memory_behavior_owner" }).onDelete("cascade"),
+  check("memory_behavior_revision_check", sql`${t.revision} >= 1`),
 ]);

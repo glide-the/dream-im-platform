@@ -1,3 +1,5 @@
+// [Sync] 2026-10-15: dispatch named memory operations.
+import { handleMemoryOperation,isMemoryOperation } from "../../../../../../lib/dream/memoryHandler";
 // [Sync] 2026-10-14: dispatch only the registered analysis history-page read.
 // [Sync] 2026-10-13: dispatch the three additive Reflections content operations to their capability-gated handler.
 // [Sync] 2026-10-10: register exact image-turn bind/select and original entity-bound receipt recovery.
@@ -96,5 +98,6 @@ export async function POST(request: Request, context: { params: Promise<{ operat
   if (isWorkflowRunCreationOperation(name)) return handleWorkflowRunCreation(request, name);
   if (isDreamLaunchSourceOperation(name)) return handleDreamLaunchSource(request, name);
   if (isDreamLaunchDispatchOperation(name)) return handleDreamLaunchDispatch(request, name);
+  if (isMemoryOperation(name)) return handleMemoryOperation(request,name);
   return name === "user-profile.current" ? handleUserProfile(request) : name === "workflow-context.resolve" ? handleWorkflowContext(request) : name === "workflow-preflight.read" ? handleWorkflowPreflightRead(request) : name === "workflow-preflight.execute" ? handleWorkflowPreflightExecute(request) : name === "chat-user-message.persist" ? handleUserMessage(request) : isWorkflowRunOperation(name) ? handleWorkflowRun(request, name) : isWorkflowRunCommandOperation(name) ? handleWorkflowRunCommand(request, name) : isEditorSessionOperation(name) ? handleEditorSessionOperation(request, name) : isDeckVoiceOperation(name) ? handleDeckVoiceOperation(request, name) : isDeckRuntimeDataOperation(name) ? handleDeckRuntimeData(request, name) : isUserPreferencesOperation(name) ? handleUserPreferences(request, name) : isSocialFriendshipOperation(name) ? handleSocialFriendship(request, name) : handleChatThreadOperation(request, name);
 }
