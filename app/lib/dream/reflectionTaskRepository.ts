@@ -1,3 +1,4 @@
+// [Sync] 2026-10-14: read owner-bound history with exact task creation time and report bigint cursors.
 // [Sync] 2026-10-13: expose the caller-owned UOW to additive task input reads.
 // [Input] Existing Admin UOW, canonical owner or configured service, and closed Reflections commands.
 // [Output] Owner/service-filtered task aggregate persistence with locks, CAS and stable ordering.
@@ -258,6 +259,21 @@ export class ReflectionTaskRepository {
   async reports(canonicalUserId: string, limit: number) {
     return this.tx.select({ id: sql<string>`${report.id}::text`, reportType: report.report_type, reportDataJson: report.report_data_json, createdAt: sql<string | null>`${report.created_at}::text` })
       .from(report).where(eq(report.user_id, sql`${decimalIdDto.parse(canonicalUserId)}::bigint`)).orderBy(desc(report.created_at), desc(report.id)).limit(limit);
+  }
+
+  async reportHistory(canonicalUserId: string, input: { limit: number; before: { created_at: string; id: string } | null }) {
+    // A linked report must use its owned task; only a genuinely unlinked legacy analysis uses its own creation.
+    const created = sql`CASE WHEN ${report.reflection_task_id} IS NULL THEN ${report.created_at} ELSE ${task.created_at} END`;
+    const instant = sql<string>`to_char(${created} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+    const owner = sql`${decimalIdDto.parse(canonicalUserId)}::bigint`;
+    return this.tx.select({
+      id: sql<string>`${report.id}::text`, report_type: report.report_type, report_data_json: report.report_data_json,
+      created_at: sql<string | null>`to_char(${report.created_at} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, task_id: report.reflection_task_id,
+      analysis_created_at: instant,
+    }).from(report).leftJoin(task, and(eq(task.id, report.reflection_task_id), eq(task.user_id, owner)))
+      .where(and(eq(report.user_id, owner), input.before === null ? undefined
+        : or(isNull(created), sql`(${created}, ${report.id}) < (${input.before.created_at}::timestamptz, ${decimalIdDto.parse(input.before.id)}::bigint)`)))
+      .orderBy(sql`${created} DESC NULLS LAST`, desc(report.id)).limit(input.limit + 1);
   }
 
   async reportForTask(taskId: string) {
