@@ -1,4 +1,5 @@
 // [Sync] 2026-10-15: append exact memory operations without altering prior descriptors.
+// [Sync] 2026-10-15: append v2 classification operations after all frozen descriptors.
 // [Sync] 2026-10-14: append read-only analysis history after the entire frozen registry.
 // [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
 // [Sync] 2026-10-10: register exact image-turn bind/select and original entity-bound receipt recovery.
@@ -27,8 +28,8 @@
 // [Output] Version/hash descriptors for implemented operations only.
 // [Pos] API compatibility registry; independent from the global Drizzle head.
 // [Sync] 2026-09-15: append Story Workspace guidance persistence as Registry115.
-import { memoryOperations } from "./memoryDto";
-import { memorySchemaRequirement } from "./memoryService";
+import { memoryOperations, memoryV2Operations } from "./memoryDto";
+import { memorySchemaRequirement, memoryClassificationRequirement } from "./memoryService";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { canonicalContractJson } from "./canonicalContractJson";
@@ -304,5 +305,9 @@ export const dreamOperations = [
   ...Object.entries(memoryOperations).map(([name, operation]) => descriptor(
     name, operation.kind, operation.backgroundScope, operation.input, operation.output,
     [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, memorySchemaRequirement], operation.userScope,
+  )),
+  ...Object.entries(memoryV2Operations).map(([name, operation]) => descriptor(
+    name, operation.kind, operation.backgroundScope, operation.input, operation.output,
+    [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, memorySchemaRequirement, memoryClassificationRequirement], operation.userScope,
   )),
 ] as const;

@@ -2,6 +2,7 @@
 // [Output] Closed versioned memory operations; no arbitrary path or actor selection.
 // [Pos] Additive Reflections memory contract, independent of frozen Registry99.
 // [Sync] 2026-10-15: define artifact publication and owner behavior CAS.
+// [Sync] 2026-10-15: append v2 protocol DTOs; preserve every v1 schema and descriptor.
 import { z } from "zod";
 import policy from "../../../config/memory-policy.json";
 import { reflectionAnalysisSummaryDto } from "./reflectionAnalysisContentDto";
@@ -55,3 +56,22 @@ export const memoryOperations = {
   "memory.behavior.save": user(z.strictObject({ expected_revision: z.number().int().nonnegative().max(2147483646), desired: desiredDto }), settingsDto, true),
 };
 export type MemoryOperation = keyof typeof memoryOperations;
+
+export const artifactV2Dto = artifactDto.extend({ conversion_revision: z.enum(["memory-rules-v1", "memory-rules-v2"]) });
+export const settingsV2Dto = settingsDto.extend({ taxonomy_revision: z.literal("memory-rules-v2") });
+export const memoryV2Operations = {
+  "memory.v2.artifacts.discover": bg(memoryOperations["memory.artifacts.discover"].input, memoryOperations["memory.artifacts.discover"].output),
+  "memory.v2.artifacts.claim": bg(memoryOperations["memory.artifacts.claim"].input, z.strictObject({ artifact: artifactV2Dto.nullable(), claim_token: id.nullable(), source: memorySourceDto.nullable() })),
+  "memory.v2.artifacts.stage": bg(memoryOperations["memory.artifacts.stage"].input, artifactV2Dto),
+  "memory.v2.artifacts.publish": bg(memoryOperations["memory.artifacts.publish"].input, artifactV2Dto),
+  "memory.v2.artifacts.fail": bg(memoryOperations["memory.artifacts.fail"].input, artifactV2Dto),
+  "memory.v2.distillations.list": user(memoryOperations["memory.distillations.list"].input, z.strictObject({ artifacts: z.array(artifactV2Dto), next_cursor: memoryOperations["memory.distillations.list"].output.shape.next_cursor })),
+  "memory.v2.distillations.read": user(lookup, artifactV2Dto),
+  "memory.v2.behavior.get": user(memoryOperations["memory.behavior.get"].input, settingsV2Dto),
+  "memory.v2.behavior.save": user(memoryOperations["memory.behavior.save"].input, settingsV2Dto, true),
+};
+export const allMemoryOperations = { ...memoryOperations, ...memoryV2Operations };
+export type AnyMemoryOperation = keyof typeof allMemoryOperations;
+export function baseMemoryOperation(name: AnyMemoryOperation): MemoryOperation {
+  return name.replace(/^memory\.v2\./, "memory.") as MemoryOperation;
+}

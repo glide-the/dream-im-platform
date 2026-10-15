@@ -1,6 +1,7 @@
-// [Sync] 2026-10-15: recover only original owner-bound memory behavior saves.
+// [Sync] 2026-10-15: recover v1/v2 owner-bound saves by their original operation and request key.
 import { settingsDto } from "./memoryDto";
-import { memorySchemaRequirement } from "./memoryService";
+import { memoryRequirements } from "./memoryService";
+import { settingsV2Dto } from "./memoryDto";
 // [Sync] 2026-10-13: recover original content-aware task creation under the exact owner, operation and request key.
 // [Sync] 2026-10-10: register exact image-turn bind/select and original entity-bound receipt recovery.
 // [Sync] 2026-10-10: recover independent Image preference writes under their exact original operation.
@@ -122,13 +123,13 @@ export async function handleReceipt(request: Request, requestId: string) {
     setRequestId(parsed.data);
     const query = new URL(request.url).searchParams;
     const name = query.get("operation") ?? "";
-    if (name === "memory.behavior.save") {
+    if (name === "memory.behavior.save" || name === "memory.v2.behavior.save") {
       if (query.size !== 1 || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE",404);
-      return withDataTransaction([identitySchemaRequirement,...reflectionTaskSchemaRequirements,memorySchemaRequirement],async tx=>{
+      return withDataTransaction([identitySchemaRequirement,...reflectionTaskSchemaRequirements,...memoryRequirements(name)],async tx=>{
         const principal=await principalForServiceToken(tx,request.headers.get("authorization")?.replace(/^Bearer /,"")??"",service,"dream:write");
         const row=await new ReceiptRepository(tx,service.id,principal.canonical_user_id).find(name,parsed.data);
         if (row && (row.threadScope!==null || row.editorSessionScope!==null || row.runScope!==null)) throw new AuthBoundaryError("MEMORY_RECEIPT_INVALID");
-        return row ? { status:"committed",operation:name,request_id:parsed.data,result:settingsDto.parse(row.result) } : { status:"absent",operation:name,request_id:parsed.data };
+        return row ? { status:"committed",operation:name,request_id:parsed.data,result:(name.startsWith("memory.v2.") ? settingsV2Dto : settingsDto).parse(row.result) } : { status:"absent",operation:name,request_id:parsed.data };
       });
     }
     if (isClaudePluginOperation(name)) {
