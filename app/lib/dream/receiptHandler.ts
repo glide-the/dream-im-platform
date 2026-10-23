@@ -1,3 +1,4 @@
+// [Sync] 2026-10-23: recover v2 scope creation by the original OAuth operation/request identity.
 // [Sync] 2026-10-15: recover v1/v2 owner-bound saves by their original operation and request key.
 import { settingsDto } from "./memoryDto";
 import { memoryRequirements } from "./memoryService";
@@ -68,6 +69,7 @@ import { userSystemConfigSchemaRequirements } from "./userSystemConfigService";
 import { isReflectionsSectionConfigReceiptOperation, readOriginalReflectionsSectionConfigReceipt } from "./reflectionsSectionConfigOriginalReceiptService";
 import { reflectionsSectionConfigSchemaRequirements } from "./reflectionsSectionConfigService";
 import { reflectionTaskIdDto, reflectionTaskOperationContracts, type ReflectionTaskBackgroundOperation, type ReflectionTaskOperation } from "./reflectionTaskDto";
+import { reflectionNotionScopeOperations } from "./reflectionNotionScopeDto";
 import { reflectionAnalysisContentOperations } from "./reflectionAnalysisContentDto";
 import { reflectionAnalysisSchemaRequirement } from "./reflectionAnalysisContentService";
 // [Sync] 2026-10-13: recover the original owner-scoped content-create receipt.
@@ -310,9 +312,9 @@ export async function handleReceipt(request: Request, requestId: string) {
         return receiptResultDto.parse({ status: row ? "committed" : "absent", operation: name, request_id: parsed.data, ...(row ? { result: row.result } : {}) });
       });
     }
-    if (name === "reflection-task.create-with-content") {
+    if (name === "reflection-task.create-with-content" || name === "reflection-task.v2.create-with-content") {
       if (query.size !== 1 || query.getAll("operation").length !== 1) throw new AuthBoundaryError("OPERATION_UNAVAILABLE", 404);
-      const operation = reflectionAnalysisContentOperations[name];
+      const operation = name === "reflection-task.create-with-content" ? reflectionAnalysisContentOperations[name] : reflectionNotionScopeOperations[name];
       const output = z.discriminatedUnion("status", [
         z.strictObject({ status: z.literal("absent"), operation: z.literal(name), request_id: requestIdDto }),
         z.strictObject({ status: z.literal("committed"), operation: z.literal(name), request_id: requestIdDto, result: operation.output }),

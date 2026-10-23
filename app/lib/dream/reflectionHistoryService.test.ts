@@ -1,6 +1,7 @@
 // [Input] Real history Service/DTO and owner-scoped repository responses.
 // [Output] Page cursor, configured bounds, owner denial and missing-time fail-closed regression.
 // [Pos] Deterministic Reflections read contract, independent of PostgreSQL and providers.
+// [Sync] 2026-10-23: locate the frozen history descriptor by name as additive operations are appended.
 // [Sync] 2026-10-14: preserve exact instants and decimal IDs; no writes or legacy contract changes.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DataTransaction } from "./database";
@@ -40,5 +41,5 @@ it("rejects missing analysis creation instead of falling back to saved time", as
 it("keeps input closed and advertises the exact additional read under existing capabilities", () => {
   expect(reflectionHistoryInputDto.safeParse({ before: { id: "1", created_at: "2026-02-30T00:00:00Z" } }).success).toBe(false);
   expect(reflectionHistoryInputDto.safeParse({ user_id: "caller" }).success).toBe(false);
-  expect(dreamOperations.at(-1)?.capability).toMatchObject({ name: "analysis-report.history-page", kind: "read", user_scope: "dream:read", contract_sha256: "a946906d179dc9d7b0b920d21f8b6d4d8a198730114514c99fd0fbc586bcc710" });
+  expect(dreamOperations.find(operation => operation.capability.name === "analysis-report.history-page")?.capability).toMatchObject({ name: "analysis-report.history-page", kind: "read", user_scope: "dream:read", contract_sha256: "a946906d179dc9d7b0b920d21f8b6d4d8a198730114514c99fd0fbc586bcc710" });
 });

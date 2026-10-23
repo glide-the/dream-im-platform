@@ -1,3 +1,4 @@
+// [Sync] 2026-10-23: append v2 Reflections scope/evidence descriptors; preserve the released registry prefix.
 // [Sync] 2026-10-15: append exact memory operations without altering prior descriptors.
 // [Sync] 2026-10-15: append v2 classification operations after all frozen descriptors.
 // [Sync] 2026-10-14: append read-only analysis history after the entire frozen registry.
@@ -121,6 +122,7 @@ import { storyWorkspaceArtifactSchemaRequirements } from "./storyWorkspaceArtifa
 import { chatScheduledTaskOperationContracts, chatScheduledTaskV2OperationContracts, chatScheduledTaskV3OperationContracts,
   scheduledTaskThreadInputDto, scheduledTaskThreadResultDto, scheduledTaskThreadV3ResultDto } from "./chatScheduledTaskDto";
 import { chatScheduledTaskSchemaRequirements, chatScheduledTaskV2SchemaRequirements, chatScheduledTaskV3SchemaRequirements } from "./chatScheduledTaskService";
+import { reflectionNotionScopeOperations } from "./reflectionNotionScopeDto";
 function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
@@ -309,5 +311,10 @@ export const dreamOperations = [
   ...Object.entries(memoryV2Operations).map(([name, operation]) => descriptor(
     name, operation.kind, operation.backgroundScope, operation.input, operation.output,
     [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, memorySchemaRequirement, memoryClassificationRequirement], operation.userScope,
+  )),
+  ...Object.entries(reflectionNotionScopeOperations).map(([name, operation]) => descriptor(
+    name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
+    operation.input, operation.output, [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, reflectionAnalysisSchemaRequirement],
+    operation.audience === "oauth" ? operation.userScope : null,
   )),
 ] as const;

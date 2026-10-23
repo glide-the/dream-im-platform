@@ -1,3 +1,4 @@
+// [Sync] 2026-10-23: v2 scope tasks preserve diary selection and project actual Notion evidence into reports.
 // [Sync] 2026-10-13: include persisted content provenance in task-linked reports without changing Registry99 DTOs.
 // [Input] Verified OAuth owner or configured Reflections executor, closed command and existing Admin UOW.
 // [Output] Validated task aggregate projection; task writes and receipts remain in the same transaction.
@@ -166,7 +167,8 @@ function sessionText(raw: string) {
 async function buildLaunchSnapshot(store: ReflectionTaskRepository, row: ReflectionTaskStorageRow, sections: readonly z.infer<typeof dto.reflectionSectionDto>[]) {
   const input = dto.reflectionTaskPublicInputDto.parse(parseJson(row.inputSnapshotJson, "REFLECTION_TASK_DATA_INVALID"));
   const analysisContent = row.agentContractVersion === "reflections-analysis-content-v1"
-    ? await import("./reflectionAnalysisContentService").then(content => content.readReflectionAnalysisInput(store.transaction(), row.id)) : null;
+    ? await import("./reflectionAnalysisContentService").then(content => content.readReflectionAnalysisInput(store.transaction(), row.id))
+    : row.agentContractVersion === "reflections-analysis-content-v2" ? await import("./reflectionNotionScopeService").then(content => content.readReflectionScopeInput(store.transaction(), row.id)) : null;
   const source = analysisContent?.diary_session_ids?.length === 0 ? [] : await store.sourceSessions(row.userId, input);
   const sessions = source.map(item => {
     const text = sessionText(item.stateJson);
@@ -221,7 +223,8 @@ export async function runReflectionTaskBackgroundOperation(name: dto.ReflectionT
       await store.insertMissingSections(row, sections.data);
       let snapshot = row.launchSnapshotJson === null ? await buildLaunchSnapshot(store, row, sections.data) : parseLaunchSnapshot(row);
       const contentBytes = row.agentContractVersion === "reflections-analysis-content-v1"
-        ? Buffer.byteLength(JSON.stringify(await import("./reflectionAnalysisContentService").then(content => content.readReflectionAnalysisInput(tx, taskId))), "utf8") : 0;
+        ? Buffer.byteLength(JSON.stringify(await import("./reflectionAnalysisContentService").then(content => content.readReflectionAnalysisInput(tx, taskId))), "utf8")
+        : row.agentContractVersion === "reflections-analysis-content-v2" ? Buffer.byteLength(JSON.stringify(await import("./reflectionNotionScopeService").then(content => content.readReflectionScopeInput(tx, taskId))), "utf8") : 0;
       const bytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8") + contentBytes;
       if (bytes > policy.launchSnapshotMaxBytes) throw new AuthBoundaryError("REFLECTION_LAUNCH_SNAPSHOT_TOO_LARGE", 413);
       if (row.launchSnapshotJson === null) {
@@ -319,6 +322,9 @@ export async function runReflectionTaskBackgroundOperation(name: dto.ReflectionT
         ? await import("./reflectionAnalysisContentService").then(async content => {
           const projection = await import("./reflectionAnalysisContentDto");
           return projection.reflectionAnalysisSummary(await content.readReflectionAnalysisInput(tx, taskId));
+        }) : row.agentContractVersion === "reflections-analysis-content-v2" ? await import("./reflectionNotionScopeService").then(async content => {
+          const projection = await import("./reflectionNotionScopeDto");
+          return projection.reflectionScopeSummary(await content.readReflectionScopeInput(tx, taskId));
         }) : null;
       const inserted = await store.insertReport(row, reportType, canonicalContractJson({ ...bySection, stats: snapshot.stats, task_id: taskId, failed_sections: sections.filter(item => item.status === "FAILED").map(item => item.section), ...(analysisContent === null ? {} : { analysis_content: analysisContent }) }));
       if (!inserted) throw new AuthBoundaryError("REFLECTION_REPORT_WRITE_FAILED");
