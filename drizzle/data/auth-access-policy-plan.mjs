@@ -1,3 +1,4 @@
+// [Sync] 2026-10-15: exact memory capability grants DATA only SELECT/INSERT/UPDATE on both memory tables.
 // [Sync] 2026-10-07: grant only DATA the forward Notion actor-lock function when the exact capability is installed.
 // [Input] A verified PostgreSQL connection, database name and four distinct limited role names.
 // [Output] One deterministic least-privilege statement plan and redacted policy digest.
@@ -186,6 +187,10 @@ export async function buildAuthAccessPolicy(client, database, roles) {
     grant(roles.data, "SELECT, INSERT, UPDATE, DELETE", `TABLE public.${quoteIdentifier(key.slice(7))}`);
   }
   grant(roles.data, "SELECT, INSERT, UPDATE, DELETE", "TABLE public.reflection_task_section");
+  const memoryCapability = (await client.query("SELECT 1 FROM drizzle.schema_capabilities WHERE capability='dream.memory.v1' AND version=1 AND contract_sha256='d08fae4c65a4ee448d64e80ebfcb371c2fbfb0a9fe1091825971c35756aacbc6'")).rowCount;
+  if (memoryCapability) {
+    grant(roles.data, "SELECT, INSERT, UPDATE", "TABLE public.memory_artifact, public.memory_behavior_settings");
+  }
   const sequences = await client.query(
     `SELECT n.nspname, c.relname
        FROM pg_class c

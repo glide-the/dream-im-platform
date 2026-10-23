@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "tables": {
+    "memory_artifact": [
+      "id",
+      "revision",
+      "user_id",
+      "report_id",
+      "service_client_id",
+      "source_json",
+      "source_sha256",
+      "conversion_revision",
+      "state",
+      "claim_token",
+      "claim_expires_at",
+      "document",
+      "document_sha256",
+      "body_sha256",
+      "byte_length",
+      "theme_state",
+      "theme_document",
+      "theme_sha256",
+      "metadata_json",
+      "error_code",
+      "created_at",
+      "updated_at"
+    ],
+    "memory_behavior_settings": [
+      "user_id",
+      "revision",
+      "desired_json",
+      "updated_at"
+    ]
+  },
+  "ownership": "report-owner-and-reflections-service",
+  "recovery": "canonical-utf8-republish",
+  "conversion": "memory-rules-v1",
+  "policy": {
+    "revision": "memory-rules-v1",
+    "execution_mode": "deterministic_source_preserving",
+    "themes": [
+      {
+        "id": "THEME_FRUSTRATION",
+        "label": "挫败",
+        "default_action": "acknowledge_then_help",
+        "actions": [
+          "acknowledge_then_help",
+          "help_only",
+          "ask_support_type"
+        ],
+        "tags": [
+          "TAG_FRS_WORK_BLOCK",
+          "TAG_FRS_WORK_ISO",
+          "TAG_FRS_EMO_DISCONN",
+          "TAG_FRS_EMO_VENT"
+        ]
+      },
+      {
+        "id": "THEME_DEFENSE",
+        "label": "防御",
+        "default_action": "respect_distance",
+        "actions": [
+          "respect_distance",
+          "help_only",
+          "ask_support_type"
+        ],
+        "tags": [
+          "TAG_DEF_WORK_ORDER",
+          "TAG_DEF_EMO_DETACH",
+          "TAG_DEF_EMO_RATIONAL",
+          "TAG_DEF_GEN_DENIAL"
+        ]
+      },
+      {
+        "id": "THEME_PRESSURE",
+        "label": "压力",
+        "default_action": "prioritize_actions",
+        "actions": [
+          "prioritize_actions",
+          "acknowledge_then_help",
+          "ask_support_type"
+        ],
+        "tags": [
+          "TAG_PRE_WORK_TIME",
+          "TAG_PRE_WORK_MUST",
+          "TAG_PRE_EMO_COMP",
+          "TAG_PRE_EMO_SELF"
+        ]
+      },
+      {
+        "id": "THEME_VALUE",
+        "label": "价值",
+        "default_action": "connect_goal_to_choice",
+        "actions": [
+          "connect_goal_to_choice",
+          "acknowledge_only",
+          "help_only"
+        ],
+        "tags": [
+          "TAG_VAL_WORK_MEANING",
+          "TAG_VAL_EMO_LOVE",
+          "TAG_VAL_GEN_CONN",
+          "TAG_VAL_GEN_AFFIRM"
+        ]
+      }
+    ],
+    "tag_patterns": {
+      "TAG_FRS_WORK_BLOCK": "(卡住|受阻|没有进展|做不到|失败).*(沮丧|挫败|无力|难受)|(沮丧|挫败|无力).*(工作|任务|进展)|(?:stuck|blocked).*(?:frustrat|helpless)",
+      "TAG_FRS_WORK_ISO": "(工作|团队|同事).*(孤独|孤立|没人理解|没人支持)|work.*(?:isolated|lonely)",
+      "TAG_FRS_EMO_DISCONN": "(我|自己|用户).*(不被理解|无人理解|无法连接|情感断联)|I feel.*disconnected",
+      "TAG_FRS_EMO_VENT": "(我|自己|用户).*(想倾诉|想吐槽|想发泄|很委屈)|I.*need to vent",
+      "TAG_DEF_WORK_ORDER": "(担心|害怕|不安).*(失控|秩序|掌控)|(通过|依靠).*(掌控|控制).*(安全|不安)",
+      "TAG_DEF_EMO_DETACH": "(我|自己|用户).*(抽离|疏离|回避情感|避免亲密|不愿表达感受)",
+      "TAG_DEF_EMO_RATIONAL": "(用|通过|依靠).*(理性|分析).*(回避|掩盖|隔离).*(感受|情绪)",
+      "TAG_DEF_GEN_DENIAL": "(我|自己|用户).*(否认|压抑).*(需要|需求|感受)",
+      "TAG_PRE_WORK_TIME": "(截止|时间|期限|任务|工作).*(焦虑|紧张|压力|喘不过气)|(焦虑|紧张|喘不过气).*(截止|时间|任务)|(?:deadline|work).*(?:anxious|overwhelmed|stressed)",
+      "TAG_PRE_WORK_MUST": "(我必须|我应该|要求自己).*(完美|不能失败|不能犯错|一定成功)|(完美|不能失败).*(压力|焦虑)",
+      "TAG_PRE_EMO_COMP": "(比较|别人|他人).*(自卑|焦虑|不如|不够好)",
+      "TAG_PRE_EMO_SELF": "(我|自己|用户).*(责怪自己|自我否定|自责|不够好)|I.*(?:blame myself|not good enough)",
+      "TAG_VAL_WORK_MEANING": "(我|自己|用户).*(工作|任务|项目).*(意义|价值|为什么做)|my work.*meaning",
+      "TAG_VAL_EMO_LOVE": "(我|自己|用户).*(渴望|希望|需要).*(被爱|爱我|关爱)",
+      "TAG_VAL_GEN_CONN": "(我|自己|用户).*(希望|渴望|需要).*(连接|归属|陪伴)|I.*(?:belong|connection)",
+      "TAG_VAL_GEN_AFFIRM": "(我|自己|用户).*(希望|渴望|需要).*(被肯定|被认可|被看见)|I.*(?:recognition|affirmation)"
+    },
+    "excluded_expression": "(不是我|他人的|小说|虚构|引用|角色设定|API contract|数据库迁移|接口合同|代码规范|技术架构)",
+    "explicit_boundary": "(别再|不要|不想|不用).{0,12}(谈|分析|提|聊).{0,12}(情绪|心理|感受|压力|这个)|只.{0,8}(改代码|解决问题|修复|给方案)|do not.*(?:emotion|feelings|psycholog)",
+    "negated_expression": "(没有|并不|不觉得|不再|已经不|not feeling|no longer).{0,5}(压力|焦虑|紧张|沮丧|挫败|孤独|自责|stress|anxious)",
+    "interpretation_rejection": "(这个|这份|这种).{0,8}(分析|判断|解释|心理|主题).{0,8}(不对|错误|不符合|不是我)|(不符合|不是).{0,5}(我的情况|我本人|这个主题)|^不是这个[。！! ]*$",
+    "boundary_restore": "(现在|这次|可以|愿意).{0,8}(谈|聊|分析).{0,8}(情绪|感受|心理)"
+  },
+  "contract_sha256": "d08fae4c65a4ee448d64e80ebfcb371c2fbfb0a9fe1091825971c35756aacbc6"
+}

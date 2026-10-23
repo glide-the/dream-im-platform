@@ -1,4 +1,5 @@
 // [Sync] 2026-09-27: include the additive task-result relation.
+// [Sync] 2026-10-23: inventory includes memory_artifact and memory_behavior_settings from forward 0082.
 // [Sync] 2026-10-05: inventory includes the already published 0069 scheduled task and trigger relations.
 // [Sync] 2026-09-26: include the additive durable Chat input queue relation.
 // [Input] Complete Admin-owned Dream Drizzle schema export.
@@ -20,7 +21,7 @@ import {
 } from "./schema";
 
 describe("complete Dream Drizzle schema", () => {
-  it("declares exactly 65 Dream and canonical baseline tables", () => {
+  it("declares exactly 67 Dream and canonical baseline tables", () => {
     const generatedNames = Object.values(dreamSchema)
       .filter(isTable)
       .map(getTableName);
@@ -34,7 +35,7 @@ describe("complete Dream Drizzle schema", () => {
     );
     const allNames = [...generatedNames, ...canonicalBaselineNames];
 
-    expect(generatedNames).toHaveLength(62);
+    expect(generatedNames).toHaveLength(64);
     expect(managedMcpNames).toEqual([
       "dream_mcp_servers",
       "dream_mcp_credentials",
@@ -53,7 +54,9 @@ describe("complete Dream Drizzle schema", () => {
     expect(generatedNames).toContain("chat_task_result");
     expect(generatedNames).toContain("chat_scheduled_task");
     expect(generatedNames).toContain("chat_scheduled_trigger");
-    expect(allNames).toHaveLength(65);
-    expect(new Set(allNames).size).toBe(65);
+    expect(generatedNames).toContain("memory_artifact");
+    expect(generatedNames).toContain("memory_behavior_settings");
+    expect(allNames).toHaveLength(67);
+    expect(new Set(allNames).size).toBe(67);
   });
 });

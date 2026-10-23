@@ -1,3 +1,4 @@
+// [Sync] 2026-10-23: delegate additive v2 scope/evidence operations through the existing ingress.
 // [Input] Existing internal auth handler, explicit additive content capability and request envelope.
 // [Output] Owner-scoped create/summary and service-only task-bound input dispatch.
 // [Pos] Additive Reflections input ingress; no business logic in Route Handlers.
@@ -13,8 +14,12 @@ import { withDataTransaction } from "./database";
 import { reflectionAnalysisContentOperations, type ReflectionAnalysisOperation } from "./reflectionAnalysisContentDto";
 import { reflectionAnalysisSchemaRequirement, runReflectionAnalysisBackgroundOperation, runReflectionAnalysisUserOperation } from "./reflectionAnalysisContentService";
 
-export function isReflectionAnalysisOperation(name: string): name is ReflectionAnalysisOperation { return Object.hasOwn(reflectionAnalysisContentOperations, name); }
-export async function handleReflectionAnalysisOperation(request: Request, name: ReflectionAnalysisOperation) {
+import { isReflectionNotionScopeOperation, handleReflectionNotionScopeOperation } from "./reflectionNotionScopeHandler";
+import type { ReflectionNotionScopeOperation } from "./reflectionNotionScopeDto";
+
+export function isReflectionAnalysisOperation(name: string): name is ReflectionAnalysisOperation | ReflectionNotionScopeOperation { return Object.hasOwn(reflectionAnalysisContentOperations, name) || isReflectionNotionScopeOperation(name); }
+export async function handleReflectionAnalysisOperation(request: Request, name: ReflectionAnalysisOperation | ReflectionNotionScopeOperation) {
+  if (isReflectionNotionScopeOperation(name)) return handleReflectionNotionScopeOperation(request, name);
   return handleInternalAuthRequest(request, async (service, setRequestId) => {
     const contract = reflectionAnalysisContentOperations[name];
     const envelope = await parseAuthDto(request, z.strictObject({ request_id: requestIdDto, input: contract.input }), Number(requiredAuthValue("DREAM_DATA_MAX_BODY_BYTES")));

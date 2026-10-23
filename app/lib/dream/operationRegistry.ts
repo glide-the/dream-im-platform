@@ -1,3 +1,6 @@
+// [Sync] 2026-10-23: append v2 Reflections scope/evidence descriptors; preserve the released registry prefix.
+// [Sync] 2026-10-15: append exact memory operations without altering prior descriptors.
+// [Sync] 2026-10-15: append v2 classification operations after all frozen descriptors.
 // [Sync] 2026-10-14: append read-only analysis history after the entire frozen registry.
 // [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
 // [Sync] 2026-10-10: register exact image-turn bind/select and original entity-bound receipt recovery.
@@ -26,6 +29,8 @@
 // [Output] Version/hash descriptors for implemented operations only.
 // [Pos] API compatibility registry; independent from the global Drizzle head.
 // [Sync] 2026-09-15: append Story Workspace guidance persistence as Registry115.
+import { memoryOperations, memoryV2Operations } from "./memoryDto";
+import { memorySchemaRequirement, memoryClassificationRequirement } from "./memoryService";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { canonicalContractJson } from "./canonicalContractJson";
@@ -117,6 +122,7 @@ import { storyWorkspaceArtifactSchemaRequirements } from "./storyWorkspaceArtifa
 import { chatScheduledTaskOperationContracts, chatScheduledTaskV2OperationContracts, chatScheduledTaskV3OperationContracts,
   scheduledTaskThreadInputDto, scheduledTaskThreadResultDto, scheduledTaskThreadV3ResultDto } from "./chatScheduledTaskDto";
 import { chatScheduledTaskSchemaRequirements, chatScheduledTaskV2SchemaRequirements, chatScheduledTaskV3SchemaRequirements } from "./chatScheduledTaskService";
+import { reflectionNotionScopeOperations } from "./reflectionNotionScopeDto";
 function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
@@ -297,5 +303,18 @@ export const dreamOperations = [
   ...Object.entries(reflectionHistoryOperations).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...reflectionTaskSchemaRequirements], operation.userScope,
+  )),
+  ...Object.entries(memoryOperations).map(([name, operation]) => descriptor(
+    name, operation.kind, operation.backgroundScope, operation.input, operation.output,
+    [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, memorySchemaRequirement], operation.userScope,
+  )),
+  ...Object.entries(memoryV2Operations).map(([name, operation]) => descriptor(
+    name, operation.kind, operation.backgroundScope, operation.input, operation.output,
+    [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, memorySchemaRequirement, memoryClassificationRequirement], operation.userScope,
+  )),
+  ...Object.entries(reflectionNotionScopeOperations).map(([name, operation]) => descriptor(
+    name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
+    operation.input, operation.output, [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, reflectionAnalysisSchemaRequirement],
+    operation.audience === "oauth" ? operation.userScope : null,
   )),
 ] as const;
