@@ -25,6 +25,7 @@
 // [Sync] 2026-09-16: append launch scope/plan/prepare operations as Registry130-132.
 // [Sync] 2026-09-16: append Agent-type clear/plan/prepare operations as Registry127-129.
 // [Sync] 2026-09-16: append claim-bound confirmation Runtime authority as Registry121.
+// [Sync] 2026-10-28: append deck.catalog after the existing operation descriptors.
 // [Input] Named domain input/output DTOs and exact schema requirements.
 // [Output] Version/hash descriptors for implemented operations only.
 // [Pos] API compatibility registry; independent from the global Drizzle head.
@@ -134,7 +135,7 @@ export const dreamOperations = [
   descriptor("user-profile.current", "read", null, userProfileInputDto, userProfileOutputDto, [identitySchemaRequirement], "dream:read"),
   ...Object.entries(editorSessionOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, runtimePurposeSchemaRequirement], operation.userScope)),
   ...Object.entries(workflowContextOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
-  ...Object.entries(deckVoiceOperationContracts).map(([name, operation]) => descriptor(name, operation.kind === "read" ? "read" : "write", null, operation.input, operation.output, [identitySchemaRequirement, ...deckVoiceSchemaRequirements], operation.kind === "read" ? "dream:read" : "dream:write")),
+  ...Object.entries(deckVoiceOperationContracts).filter(([name]) => name !== "deck.catalog").map(([name, operation]) => descriptor(name, operation.kind === "read" ? "read" : "write", null, operation.input, operation.output, [identitySchemaRequirement, ...deckVoiceSchemaRequirements], operation.kind === "read" ? "dream:read" : "dream:write")),
   ...Object.entries(userMessageOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
   ...Object.entries(workflowRunOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
   ...Object.entries(workflowRunCommandOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, workflowRunCommandSchemaRequirements(name as keyof typeof workflowRunCommandOperationContracts), operation.userScope)),
@@ -317,4 +318,6 @@ export const dreamOperations = [
     operation.input, operation.output, [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, reflectionAnalysisSchemaRequirement],
     operation.audience === "oauth" ? operation.userScope : null,
   )),
+  descriptor("deck.catalog", "read", null, deckVoiceOperationContracts["deck.catalog"].input, deckVoiceOperationContracts["deck.catalog"].output,
+    [identitySchemaRequirement, ...deckVoiceSchemaRequirements], "dream:read"),
 ] as const;

@@ -585,3 +585,11 @@ Admin 通过 Registry148-168 提供 connector、selected resource、canonical sn
 `notion.resources.replace` 在锁定 owner connector 后完成旧选择删除、新选择插入和 config 更新。`notion.snapshot.save` 与 `notion.sync-snapshot.save` 在一个 Admin transaction 中完成 snapshot upsert、current snapshot/source/cursor 更新、database page 替换与精确 resource sync 状态更新。所有写操作通过 operation receipt 处理未知提交结果；用户写与后台写使用不同 subject，后台 receipt 查询必须同时给出原 operation 和 connector ID。
 
 Dream 继续执行 Notion CLI 登录轮询、远端资源发现、同步策略判断、canonical snapshot 构建、共享文件发布与 Agent thread 投影。Admin 不接收 credential path、workspace path 或任意 SQL，也不执行 Notion 网络请求。现有五张表已由 Admin Drizzle 和 `dream.schema.unified.v1` 管理，本阶段不新增 migration。
+
+## Deck / Agent catalog read
+
+`deck.catalog` is an appended OAuth-only read operation with empty input, `dream:read` scope and the existing Deck schema requirements. It returns the actor-owned Deck list fields plus each Deck's ordered Voice array. `DeckVoiceRepository.catalog` reuses `list(false)` visibility and policy decoration, then performs one Voice query restricted to the returned Deck IDs. Empty catalogs skip that query. Voice Memory JSON remains raw text for Dream's existing public projection.
+
+Dream exposes `GET /api/decks/catalog`, validates the exact capability, strict fields, unique Deck/Voice IDs and Voice-to-Deck correspondence, and returns the complete catalog. Frontend callers share in-flight reads by transport and current session CSRF; completed and failed reads are released. A changed session rejects the earlier response. Chat, Voice initialization, Reflections, Deck management and native setup use the aggregate instead of per-Deck detail hydration. Session events, system configuration and storage retain their own owners.
+
+Publication order: publish Admin's `deck.catalog` descriptor and handler, then update Dream backend/frontend. Missing capability produces the existing structured unavailable error. This change adds no database migration and preserves the original 292 operation descriptors. Provider-free contract and browser results verify transport and presentation behavior; normal-account and real-model acceptance require their own receipts.
