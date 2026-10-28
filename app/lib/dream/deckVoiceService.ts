@@ -1,3 +1,4 @@
+// [Sync] 2026-10-28: dispatch the read-only actor Deck/Agent catalog within the existing authenticated UOW.
 // [Input] Strict named domain operation, verified actor and the existing Admin receipt/UOW transaction.
 // [Output] Validated Deck/Voice result; every aggregate write remains atomic with its receipt.
 // [Pos] Admin domain dispatch, never runs Runtime, filesystem operations or independent transactions.
@@ -19,6 +20,7 @@ export async function runDeckVoiceOperation(operation:dto.DeckVoiceOperation,inp
  const contract=dto.deckVoiceOperationContracts[operation];if(!contract)throw new AuthBoundaryError("DREAM_OPERATION_NOT_FOUND",404);const parsed=contract.input.safeParse(input);if(!parsed.success)throw new AuthBoundaryError("INPUT_INVALID",400);const principal=principalDto.parse(actor.principal);if(actor.threadScope!==null)throw new AuthBoundaryError("DREAM_DELEGATION_SCOPE_REQUIRED",403);if(!principal.scopes.includes(contract.kind==="read"?"dream:read":"dream:write"))throw new AuthBoundaryError("DREAM_SCOPE_REQUIRED",403);
  const store=new DeckVoiceRepository(tx,principal.canonical_user_id,policy);let output:unknown;
  switch(operation){
+ case"deck.catalog":output={decks:await store.catalog()};break;
  case"deck.list":output={decks:await store.list(dto.deckListInputDto.parse(parsed.data).community)};break;
  case"deck.detail":output={deck:await store.detail(dto.deckIdInputDto.parse(parsed.data).deck_id)};break;
  case"deck.create":{const result=await store.create(dto.deckCreateInputDto.parse(parsed.data));output={deck_id:result.id};break;}
