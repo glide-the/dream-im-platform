@@ -33,3 +33,7 @@ ECS当前服务与用户已按运维手册核实。候选目录从实际运行�
 原iOS宿主从Google按钮转交通用authorize，现有loginPage要求再次选择Google。宿主在原授权查询加入单值`identity_provider=google`，provider沿原签名机制保留该值。账户页面验证签名及有效期后调用原`adminAuthClient.signIn.social`，界面显示正在打开Google；同一挂载实例最多发起一次。Google失败回到原签名页面的`#google-error`，原重试控件恢复，自动重定向停止。原密码、注册和Web默认登录保持。该选择值仅影响页面入口；Client、S256、scope、账户关联及授权校验保持。
 
 源码依据为已安装@better-auth/oauth-provider 1.7.4的passthrough授权查询、signParams与oauth_query hook。官方[OAuth Provider说明](https://github.com/better-auth/better-auth/blob/main/docs/content/docs/plugins/oauth-provider.mdx)与[Apple系统认证会话](https://developer.apple.com/documentation/authenticationservices/aswebauthenticationsession/)查阅于2026-11-02；实际兼容资格按当前安装版本验证。
+
+### Google错误回调重试
+
+已安装Better Auth通过appendQueryParams向errorCallbackURL追加error/error_description。#google-error页面在显示原失败控件前移除这两项provider公开字段，保留原已签名查询和fragment；用户再次点击Google时，原oauth_query签名上下文继续有效。自动重试为0，密码、注册、scope与权限保持。
