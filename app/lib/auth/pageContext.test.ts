@@ -3,8 +3,23 @@
 // [Pos] Provider-free auth UI context tests.
 import { makeSignature } from "better-auth/crypto";
 import { describe, expect, it } from "vitest";
-import { validConsentQuery, localLoginReturn } from "./pageContext";
+import { validConsentQuery, localLoginReturn, selectedGoogleLogin } from "./pageContext";
 describe("auth page context", () => {
+  it("continues only an exact unexpired signed Google selection", async () => {
+    const secret = "fixture-signing-secret-longer-than-32-bytes", now = 1_000_000;
+    const query = new URLSearchParams({ client_id: "original-browser", exp: "1100", identity_provider: "google" }); query.sort();
+    query.set("sig", await makeSignature(query.toString(), secret));
+    expect(await selectedGoogleLogin(query, secret, now)).toBe(true);
+    expect(await selectedGoogleLogin(query, secret, now + 100_001)).toBe(false);
+    for (const provider of ["github", "", "Google"]) {
+      const changed = new URLSearchParams(query); changed.set("identity_provider", provider);
+      expect(await selectedGoogleLogin(changed, secret, now)).toBe(false);
+    }
+    const duplicate = new URLSearchParams(query); duplicate.append("identity_provider", "google");
+    expect(await selectedGoogleLogin(duplicate, secret, now)).toBe(false);
+    query.set("client_id", "other-client"); expect(await selectedGoogleLogin(query, secret, now)).toBe(false);
+    expect(await selectedGoogleLogin(new URLSearchParams({ identity_provider: "google" }), secret, now)).toBe(false);
+  });
   it("accepts only the unexpired exact signed OAuth query", async () => {
     const secret = "fixture-signing-secret-longer-than-32-bytes", now = 1_000_000;
     const query = new URLSearchParams({ client_id: "browser", exp: "1100", scope: "openid dream:read" }); query.sort();

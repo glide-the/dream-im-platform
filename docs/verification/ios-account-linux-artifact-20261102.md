@@ -12,3 +12,7 @@ This isolated branch reuses the existing manual Test Suite workflow. Config, uni
 The ECS operator must compare every runtime source and the lock hash, verify the archive and extracted output digests, and retain the original private config, dependency graph, database directory and permissions. Existing pnpm build and start:embedded stages retain their owners; this release runs the complete build in CI and only the original supervisor on ECS. Failed activation returns to the original verified artifact. No schema migration or credentials are carried by the artifact.
 
 The Dream issue record owns physical-device and public-auth acceptance. A successful CI build alone does not prove Google identity verification, account creation, mobile UI, or service availability.
+
+## 第一次CI与同步
+
+run41403579754的unit阶段23项失败，构建与制品步骤未执行。21项由Registry293源码与旧生成清单不一致触发，2项采用已部署Run绑定和catalog变更之前的断言。现从已提交c0ddbde恢复catalog测试和生成清单，并从原Admin工作区只读复制两份对应现有实现的测试；运行源码保持逐字节一致，门禁继续完整执行。Google选择连续性采用独立PR42的3份实现及相关测试，保持原账户与权限；候选运行源码清单按此增量重新核对。
