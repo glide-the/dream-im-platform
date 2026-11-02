@@ -1,11 +1,13 @@
 // [Input] Named PostgreSQL, restricted role and Registry120/121 confirmation/delegation services.
 // [Output] Lifecycle, claim-bound grant recovery/fencing and least-privilege ACL evidence.
 // [Pos] Isolated destructive contract test; disabled unless the dedicated harness supplies both URLs.
+// [Sync] 2026-10-26: verify an occupied confirmation scan returns while original entity authorization holds shared locks.
 // [Sync] 2026-09-17: reproduce and prevent the claim-message/grant lock-order deadlock.
 // [Sync] 2026-09-16: verify claim-turn grant recovery, lease fencing and ACK invalidation.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { sql } from "drizzle-orm";
 import {
   runStoryWorkspaceConfirmationBackgroundOperation,
   runStoryWorkspaceConfirmationOAuthOperation,
@@ -177,6 +179,30 @@ describe.skipIf(!enabled)("Story Workspace confirmation PostgreSQL contract", ()
       "story-workspace-confirmation.claim-turn", { message_id: message, claim_id: "claim-pg-1" }, service, tx));
     expect(recovered.authority?.token).toBe(claim.authority?.token);
 
+    let releaseEntityReader = () => undefined;
+    let entityReaderReady = () => undefined;
+    const entityReaderMayFinish = new Promise<void>(resolve => { releaseEntityReader = resolve; });
+    const entityReaderHasLocks = new Promise<void>(resolve => { entityReaderReady = resolve; });
+    const entityReader = database.transaction(async tx => {
+      expect(await new DelegationRepository(tx).ownsEntities("1", "thread-confirmation-1", runId)).toBe(true);
+      entityReaderReady();
+      await entityReaderMayFinish;
+    });
+    await Promise.race([entityReaderHasLocks, entityReader]);
+    try {
+      const occupied = await database.transaction(async tx => {
+        await tx.execute(sql`SET LOCAL lock_timeout = '500ms'`);
+        return runStoryWorkspaceConfirmationBackgroundOperation(
+          "story-workspace-confirmation.claim-turn",
+          { message_id: message, claim_id: "other-live-claim" }, service, tx,
+        );
+      });
+      expect(occupied).toEqual({ dispatch: null, authority: null });
+    } finally {
+      releaseEntityReader();
+      await entityReader;
+    }
+
     let releaseHolder = () => undefined;
     let holderReady = () => undefined;
     const holderMayRead = new Promise<void>(resolve => { releaseHolder = resolve; });
@@ -188,7 +214,7 @@ describe.skipIf(!enabled)("Story Workspace confirmation PostgreSQL contract", ()
       await holderMayRead;
       return repository.confirmationClaimSource(message, "1", "thread-confirmation-1");
     });
-    await holderHasGrantLock;
+    await Promise.race([holderHasGrantLock, holder]);
     let concurrentRecoverySettled = false;
     const concurrentRecovery = database.transaction(tx => runStoryWorkspaceConfirmationBackgroundOperation(
       "story-workspace-confirmation.claim-turn", { message_id: message, claim_id: "claim-pg-1" }, service, tx))

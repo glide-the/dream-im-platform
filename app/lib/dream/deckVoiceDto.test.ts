@@ -1,4 +1,3 @@
-// [Sync] 2026-10-29: cover the appended catalog operation without changing existing wire descriptors.
 // [Input] Closed Deck/Voice wire fields and exact legacy numeric-text codec.
 // [Output] No arbitrary identity/column selectors, lexical preservation and strict snapshot tests.
 // [Pos] Meaningful provider-free contract boundaries; no business persistence.

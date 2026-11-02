@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-02: 发布前检查构建预算，失败后复用完整制品与 start:embedded 恢复，保留既有无交换策略。 -->
 # AGENTS Instructions Guidelines (ink-memory-admin)
 
 
@@ -15,6 +16,18 @@
 - `packages/db/src/schema/**`：唯一 Drizzle schema 来源；`app/lib/db/schema*` 仅兼容导出
 - `packages/db/src/migrate.ts`：显式 migration runner 与内嵌 PostgreSQL 生命周期
 - `drizzle/**`：必须提交且不可变的 PostgreSQL SQL/journal/snapshot 历史
+## 部署入口
+
+- SSH 源码发布入口为 `pnpm local:stable`，包含构建及 Admin/内嵌 PostgreSQL 启动；运行身份必须是专用非 root 服务账户。服务器构建前必须通过[构建内存与发布失败恢复手册](docs/release-build-memory-and-recovery.md)中的容量、入口、期限与原制品检查。
+- 资源不足时优先评估目标兼容主机生成的完整制品。已构建发布与故障恢复复用现有 `pnpm run start:embedded`，保留原 supervisor、配置和现用数据库；切换启动入口须按当次授权维护，禁止将重新构建作为唯一恢复方式。
+- 预算须覆盖所有 worker、原生内存、运行服务、数据库和系统余量；核对脚本内联参数与有效覆盖项。禁止超预算构建、并行重试及失败后无检查重启；单次事故的堆/进程组限额不得固化成通用默认值。
+- SSH 超时、502/503 或 SIGKILL 只作为诊断线索；OOM 判定须关联同一时间和目标的内核/cgroup 记录。出现重复构建失败时先停止本轮失败循环，恢复已验证完整制品；构建、服务恢复、真实业务验收与发布分别留存证据。
+- ECS 禁用 swap 与 zswap，Admin 的 `MemorySwapMax=0`。OOM 后由 systemd 自动重启 Admin；不得为通过构建或恢复服务重新启用交换。
+- 当前部署指南为 `docs/deploy.md`。先核对实际进程、服务管理器、源码和数据目录，不能把遗留容器或旧配置当作当前运行方式。
+- 未经用户明确要求，不启动本机 Docker、不选择容器发布，也不将 AutoDL standalone 启动器套用到 ECS。
+- 数据迁入必须保留现用配置、密钥、角色与权限；应用启动不执行 migration，不能以旧备份或空库替代现用数据。
+- ECS 迁移后，本机 `3000` 由 SSH 转发连接现用 Admin，旧源 PostgreSQL 保留且停用；不得为恢复本机入口而再次启动旧源库，造成两个可写的数据源。实际服务拓扑见部署指南。
+
 ## Vibe Contract
 - Any functional, architectural, or coding-style change must update affected folder docs and file headers before session end.
 - Prefer reuse-first refactor: search existing modules/components before adding new implementations.
@@ -30,7 +43,7 @@
 6. 实现和测试必须聚焦当前业务目标，不得增加 Chromium revision、重复环境初始化、远程环境、部署状态或其他与验收无关的检查。
 
 ## Source Of Truth
-- Root pointer: `CLAUDE.md`
+- Root contracts: `AGENTS.md`、`.folder.md`
 - Folder contracts: `**/.folder.md`
 - Rules index: `docs/rules/README.md`
 - Cursor rules: `.cursor/rules/*.mdc`

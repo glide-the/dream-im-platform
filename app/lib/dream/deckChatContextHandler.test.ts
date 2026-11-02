@@ -3,13 +3,15 @@
 // [Pos] Provider-free Deck chat-context HTTP boundary test; Dream owns enabled/ready policy.
 // [Sync] 2026-09-15: prove OAuth dream:read and return only typed storage status facts.
 // [Sync] 2026-09-28: verify claim-bound server-persistence reads and reject other purposes.
+// [Sync] 2026-10-26: require the same active Run before Run-bound Deck/Voice reads and retain ordinary source-Thread behavior.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), delegation: vi.fn(), transaction: vi.fn(), run: vi.fn() }));
+const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), delegation: vi.fn(), transaction: vi.fn(), run: vi.fn(), context: vi.fn() }));
 vi.mock("../auth/serviceIdentity", async original => ({ ...await original<typeof import("../auth/serviceIdentity")>(), requireDreamService: mocks.service }));
 vi.mock("../auth/serviceAccessToken", () => ({ principalForServiceToken: mocks.principal }));
 vi.mock("../auth/delegationService", () => ({ DelegationService: class { resolve = mocks.delegation; } }));
 vi.mock("./database", () => ({ withDataTransaction: mocks.transaction }));
+vi.mock("./workflowContextService", () => ({ authoritativeWorkflowContext: mocks.context }));
 vi.mock("./deckChatContextService", async original => ({
   ...await original<typeof import("./deckChatContextService")>(),
   runDeckChatContextOperation: mocks.run,
@@ -35,9 +37,10 @@ function request(rawInput: unknown, name = "deck-chat-context.resolve", token = 
 beforeEach(() => {
   vi.resetAllMocks(); vi.stubEnv("DREAM_DATA_MAX_BODY_BYTES", "65536");
   mocks.service.mockReturnValue(service); mocks.principal.mockResolvedValue(principal);
-  mocks.delegation.mockResolvedValue({ principal, threadId: "source-thread", purpose: "server-persistence" });
+  mocks.delegation.mockResolvedValue({ principal, threadId: "source-thread", runId: null, editorSessionId: null, purpose: "server-persistence" });
   mocks.transaction.mockImplementation(async (_requirements, action) => action(tx));
   mocks.run.mockResolvedValue(output);
+  mocks.context.mockResolvedValue(null);
 });
 
 it("limits a delegated read to a live source Thread persistence grant", async () => {
@@ -45,10 +48,43 @@ it("limits a delegated read to a live source Thread persistence grant", async ()
   expect(response.status).toBe(200);
   expect(mocks.transaction.mock.calls[0][0]).toEqual([identitySchemaRequirement,
     ...deckChatContextSchemaRequirements, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement]);
-  expect(mocks.delegation).toHaveBeenCalledExactlyOnceWith("idg_source", "dream:read", service.id, undefined, null, null);
+  expect(mocks.delegation).toHaveBeenCalledExactlyOnceWith("idg_source", "dream:read", service.id, undefined, undefined, null);
   expect(mocks.run).toHaveBeenCalledExactlyOnceWith("deck-chat-context.resolve", input,
     { principal, threadScope: "source-thread" }, tx);
   expect(mocks.principal).not.toHaveBeenCalled();
+  expect(mocks.context).not.toHaveBeenCalled();
+});
+
+it("reads the original Thread-bound Deck only after its Run grant matches stored context", async () => {
+  const runId = `run_${"a".repeat(32)}`;
+  mocks.delegation.mockResolvedValueOnce({ principal, threadId: "source-thread", runId, editorSessionId: null, purpose: "server-persistence" });
+  mocks.context.mockResolvedValueOnce({ workflow_run_id: runId });
+  const response = await handleDeckChatContext(request(input, "deck-chat-context.resolve", "idg_run"), "deck-chat-context.resolve");
+  expect(response.status).toBe(200);
+  expect(mocks.context).toHaveBeenCalledExactlyOnceWith(tx, principal.canonical_user_id, "source-thread");
+  expect(mocks.run).toHaveBeenCalledExactlyOnceWith("deck-chat-context.resolve", input,
+    { principal, threadScope: "source-thread" }, tx);
+  expect(mocks.principal).not.toHaveBeenCalled();
+});
+
+it.each([null, { workflow_run_id: `run_${"b".repeat(32)}` }])("rejects a Run grant with missing or different active context", async context => {
+  mocks.delegation.mockResolvedValueOnce({ principal, threadId: "source-thread", runId: `run_${"a".repeat(32)}`, editorSessionId: null, purpose: "server-persistence" });
+  mocks.context.mockResolvedValueOnce(context);
+  const response = await handleDeckChatContext(request(input, "deck-chat-context.resolve", "idg_run"), "deck-chat-context.resolve");
+  expect(response.status).toBe(403);
+  expect((await response.json()).error.code).toBe("DELEGATION_ENTITY_DENIED");
+  expect(mocks.run).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["expired or revoked", "DELEGATION_REQUIRED", 401],
+  ["different service or editor", "DELEGATION_ENTITY_DENIED", 403],
+] as const)("propagates %s grant rejection before context reads", async (_label, code, status) => {
+  mocks.delegation.mockRejectedValueOnce(new AuthBoundaryError(code, status));
+  const response = await handleDeckChatContext(request(input, "deck-chat-context.resolve", "idg_run"), "deck-chat-context.resolve");
+  expect(response.status).toBe(status);
+  expect(mocks.context).not.toHaveBeenCalled();
+  expect(mocks.run).not.toHaveBeenCalled();
 });
 
 it("rejects a non-persistence Thread grant before reading the Deck", async () => {

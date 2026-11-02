@@ -1,3 +1,5 @@
+<!-- [Sync] 2026-10-26: Confirmation scans evaluate current claim eligibility before taking Run/entity write locks; original authority and transition checks remain on eligible claims. -->
+<!-- [Sync] 2026-10-26: Workflow/Deck context reads validate an exact active Run persistence grant for original confirmation continuation, without changing OAuth, DTOs or grant issuance. -->
 <!-- [Sync] 2026-09-29: include schedule:execute in the explicit confidential-client background scope allowlist. -->
 <!-- [Sync] 2026-09-28: retain task-return dispatch as a compatibility scope; current Dream wait_threads does not request it. -->
 <!-- [Sync] 2026-09-27: document candidate Registry199-204 task-result handoff without claiming normal database activation. -->
@@ -27,6 +29,12 @@
 # Admin / Dream 认证与领域数据契约
 
 版本`0.1`。状态：既有认证与管理服务已按下述协议运行；本次 Registry199-204 和迁移 0068 仅在工作树与隔离 PostgreSQL 验证，正常数据库尚未激活。精确旧 Google 主体采用、精确旧 Dream credential 采用、真实 Google/credential 返回 Dream 和 Device approve/deny/refresh/revoke 已通过。Dream 模型入口经 Gateway key exact-scope rotation 后返回200，启用的外部MCP OAuth replacement仍待完成后复测可见模型输出。[204 操作源码契约](admin-dream-operation-contracts.json)由真实 Zod 输入/输出与注册表生成，是否可用仍由各操作的物理 capability 判定。Registry170-174 Deck Plugin control、Registry175-182 Claude Plugin、Registry183-184 builtin plugin、Registry185-191 Story Workspace artifact、Registry192-198 Chat queue/task-session和 Registry199-204 task-result 操作按append-only顺序追加，并继续使用DTO → Domain Service → typed Repository → Drizzle路径。Dream生产源码关闭门禁已证明无PostgreSQL凭据、驱动、SQL、ORM、UOW、DDL或数据库fallback；该证据与真实 Google/Device/模型业务回执分别记录，不能相互替代。本稿不是完整生产部署声明。
+
+## Story Workspace Artifact：故事索引锁键
+
+`StoryWorkspaceArtifactRepository.lockIndexKey`将原`workspace_id / dream_episode / project_id`元组按原NUL分隔编码后取SHA-256十六进制摘要，再传给原`pg_advisory_xact_lock(hashtextextended(..., 0))`。PostgreSQL text参数只接收摘要字符；同工作区同Project共用事务锁，不同Project各自执行，事务结束释放锁。
+
+该修订处理真实Dream后置同步已触发的`UTF8 0x00`编码失败。原actor、Thread、Run、Episode authority、projection、CAS、receipt和事务范围保持，使用现有schema与接口。仓库回归覆盖参数编码及键身份；具名隔离PostgreSQL验证实际编码、同键等待、异键并发和提交释放。正常业务恢复继续走原故事索引重试入口，已保存助手回复与文件保留。
 
 ## Registry199–204：独立任务结果交接兼容候选
 
@@ -137,6 +145,16 @@ sequenceDiagram
 
 ### Story Workspace Confirmation（注册120）
 
+#### 确认续接的上下文读取
+
+`story-workspace-confirmation.claim-turn`沿用已存在的service-only入口，签发绑定当前claim、Thread及Run的`server-persistence` grant。`DelegationService.resolve`继续验证service、scope、purpose、有效期、撤销状态、active subject、claim来源及Thread/Run归属。签发格式、TTL、scope、正常网页登录和用户权限保持原合同。
+
+`workflow-context.resolve`在同一Admin事务中，从grant所属用户及请求Thread读取`authoritativeWorkflowContext`。Run grant要求服务端结果非空且`workflow_run_id`与grant.runId完全相等；缺失、终态或其他Run返回403 `DELEGATION_ENTITY_DENIED`。原null-Run Thread grant与OAuth请求沿用现有上下文投影。
+
+`deck-chat-context.resolve`对Run grant执行相同的当前Run匹配，随后复用原`DeckChatContextRepository.resolveForThread`核对grant所属Thread的Deck和Voice绑定。其他service、过期或撤销grant、editor范围、其他purpose、跨Run及跨Deck/Voice读取继续拒绝。读取接口保持原严格DTO、operation hash和schema capability，执行上下文派生不接受调用方提交的Run、actor或数据库选择器。
+
+源码修订与边界测试通过后才进入候选部署；真实确认续接和原iOS Runtime执行分别取得正常业务回执。当前新增`workflowContextHandler.test.ts`覆盖成功、拒绝及原OAuth/null-Run行为，`deckChatContextHandler.test.ts`补充Run匹配及拒绝传播；原grant签发和来源测试继续复用。
+
 `story-workspace-confirmation.submit`只接受一份完整confirmation command JSON；current OAuth `dream:write`是唯一用户身份。Admin重新解析严格命令，派生canonical actor、owned Run/Workspace/source Thread、确定性message ID、command fingerprint、Chat parts和metadata。首次提交在一个capability-checked UOW内锁定业务identity，写入普通user消息、更新Thread时间、按`running → output_validating → pending_review → confirmed`推进合法Run并写transition、result和operation receipt。完全相同的业务重放返回原消息且`dispatch:null`；第二份确认或内容变化返回409。只有实际创建持久行的提交返回即时dispatch，避免并发HTTP响应重复启动Runtime。
 
 `fact`要求OAuth `dream:read`，从owned Run派生Thread并只读accepted/dispatched状态，不获取更新锁。`claim/lease/ack`只接受配置了`story-confirmation:dispatch`的Dream服务身份，不接受用户Bearer、actor、数据库、表列、SQL、路径、状态或Runtime选择器。claim锁定指定或最早eligible消息，以exact claim ID取得pending或过期租约；lease只续期当前claim且不能超过Admin配置；ack只在Run为confirmed/completed时将同一claim标为dispatched，并保存不可逆claim摘要。同claim重试在持有claim消息/Run锁时重新验证当前claim、active subject、Thread/Run/Workspace归属、完整grant行和加密结果，直接恢复原grant，不再递归取得grant更新锁；普通委托读取保持grant→claim消息顺序，因此并发恢复不会形成反向锁环。其他claim不能覆盖；服务中断后由租约过期和reconcile接管。
@@ -144,6 +162,12 @@ sequenceDiagram
 Dream在submit前后读取并验证共享文件系统投影，接收Admin DTO后继续使用既有same-Thread Runtime、heartbeat、EventBus与SSE。Admin不可用、scope/capability/hash/DTO不匹配、越权、状态冲突或未知提交均失败关闭；OAuth未知写只读取原request receipt，不重发POST，后台claim用同claim ID重试并由后续扫描恢复，绝不回退Dream PostgreSQL。文件路径、文件字节及`.dream`投影不穿越接口，也不进入Admin。
 
 五个operation SHA依次为`2571aa2cc9c19656c4ac90d33221da65e8a631657adebf9f535ab0fe3c76bb12`、`f455a6075161751d25a229dd64479e2a6d6ca781ea7aacfa5575ec4561f52beb`、`c049317c4383584a7574b11daea1b8c626875d589e0dbbd45dfb739c4ca8cde1`、`a5720992e5a0cbc39773481dd3f98a32e6b535c34ea24df230de6ad5646817e6`与`12aeed9beb6584354aa584ebadf7ce352d68084632c0d2c90a2c768c3a8626c6`；Registry115 prefix SHA为`58ab3cd933165dca7d6ae2d6eb50f46ff8f148e8e7eaf3dd5e46ceab1ad2ba9b`，完整Registry120 SHA为`4b0bbfa8caecd42acf0ecc89be4153b6d6fb1e124aac4ff27e937ecb14904795`。现有Run、Transition、Thread、Message与receipt结构满足本阶段，无Drizzle schema或migration变更。
+
+#### 有效claim占用期间的扫描
+
+`claim`与`claim-turn`在锁定并解析原确认消息后，先用数据库时钟判断pending、相同claim或租约过期。其他有效claim仍占用时立即返回空dispatch；该分支保持Run、Workspace及Thread无新增更新锁。满足领取条件后，沿用原`scopedRun`归属校验、实体锁、合法Run转换、消息CAS及原grant签发。消息校验、租约、权限、operation DTO/hash和schema保持原合同。
+
+该顺序消除无业务写入的扫描与`DelegationRepository.ownsEntities`共享锁之间的等待环。隔离PostgreSQL测试通过原授权Repository持有实体共享锁，再从原`claim-turn`入口提交其他claim；原实现触发锁超时，修订后返回`{dispatch:null,authority:null}`。同claim恢复、过期接管、ACK及越权拒绝继续通过既有合同测试；正常业务结果另行验收。
 
 ### Story Workspace Guidance（注册115）
 
@@ -585,6 +609,8 @@ Admin 通过 Registry148-168 提供 connector、selected resource、canonical sn
 `notion.resources.replace` 在锁定 owner connector 后完成旧选择删除、新选择插入和 config 更新。`notion.snapshot.save` 与 `notion.sync-snapshot.save` 在一个 Admin transaction 中完成 snapshot upsert、current snapshot/source/cursor 更新、database page 替换与精确 resource sync 状态更新。所有写操作通过 operation receipt 处理未知提交结果；用户写与后台写使用不同 subject，后台 receipt 查询必须同时给出原 operation 和 connector ID。
 
 Dream 继续执行 Notion CLI 登录轮询、远端资源发现、同步策略判断、canonical snapshot 构建、共享文件发布与 Agent thread 投影。Admin 不接收 credential path、workspace path 或任意 SQL，也不执行 Notion 网络请求。现有五张表已由 Admin Drizzle 和 `dream.schema.unified.v1` 管理，本阶段不新增 migration。
+<!-- [Sync] 2026-10-26: Story-index transaction locks hash the original tuple before PostgreSQL text encoding; index content and authorization remain unchanged. -->
+
 
 ## Deck / Agent catalog read
 

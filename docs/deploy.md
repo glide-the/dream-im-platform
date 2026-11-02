@@ -1,162 +1,153 @@
+<!--
+[Input] The confirmed SSH host, exact Admin source release, private runtime configuration and existing PostgreSQL data.
+[Output] Admin-only deployment through pnpm local:stable, with explicit data transfer and service verification.
+[Pos] Authoritative Admin deployment guide; container tooling is not the SSH release path.
+[Sync] 2026-10-25: remove retired ECS Docker instructions and use the agreed native pnpm entrypoint.
+[Sync] 2026-10-29: add the complete service creation, maintenance, logging and usage-record companion.
+[Sync] 2026-10-29: scope production operations to ECS; move temporary workstation bridges to an incident record.
+[Sync] 2026-10-31: disable swap/zswap and allow systemd to restart Admin after OOM.
+[Sync] 2026-11-02: require capacity checks before building and document prebuilt recovery through start:embedded.
+-->
 # Ink Memory Admin 部署
 
-Admin 仓库拥有 Admin/Gateway、内嵌 PostgreSQL、Artifact volume 与 Drizzle
-migration。Dream 只发布 frontend/backend，通过共享网络消费 Admin 和数据库。
-独立 PostgreSQL 与 MinIO 服务已经移除，文件存储当前显式禁用。
+本指南仅说明线上 ECS 的部署。三个 systemd 服务的完整配置、创建步骤、启停与更新、日志、限速恢复和操作记录，见[Admin 线上服务创建、维护与使用记录](deploy-services.md)。所有运维命令在 ECS 上执行。
 
-架构细节见
-[数据库 Package 与内嵌 PostgreSQL](architecture/database-package-and-embedded-postgresql.md)。
+线上出口和持久文件应由服务器设施提供，不以个人电脑、桌面代理或用户登录会话为部署前提。当前线上仍有迁移时引入的临时出口和文件复制依赖，尚未完成替换；具体事实与影响见[临时桥接问题记录](verification/ecs-admin-temporary-bridges-20261029.md)。该记录不是生产部署步骤。
 
-## AutoDL SSH 直接部署
+## 部署方式与范围
 
-AutoDL 使用独立的 `deploy/autodl-ssh` 平台，不复用 ECS 的 Docker/nginx 路径。先以明确的 Admin/Dream 公网 origin 生成安全配置，再执行首次 `bootstrap` 或常规 `deploy`：
+源码发布入口为 `pnpm local:stable`，执行 `pnpm build && pnpm run start:embedded`，由现有 PostgreSQL supervisor 启动 Admin、Gateway 和内嵌 PostgreSQL。目标服务器构建须先通过[构建内存与发布失败恢复手册](release-build-memory-and-recovery.md)的容量与恢复检查；资源不足时优先评估兼容主机准备完整候选。完整制品的运行与恢复复用已有 `pnpm run start:embedded`。本轮仅修订文档，实际 unit 与发布方式按维护时核对结果处理，不启动本机 Docker。
 
-先将 `deploy/autodl-ssh/platform.env.example` 复制为 gitignored 的 `platform.env` 并填写 SSH、`/root` 路径及 Dream/Admin 公网映射；发布入口会自动读取该文件。
+本次约定的 SSH 目标为 `root@39.97.252.88`，Admin 公网入口为 `https://ink-admin.suoxya.com`。SSH 登录身份与运行身份不同：内嵌 PostgreSQL 拒绝 root，应用和数据库必须使用专用非 root 服务账户。代码目录、服务名称、端口和数据目录以实际运行配置为准。
 
-```bash
-AUTODL_ADMIN_PUBLIC_ORIGIN=https://admin-tunnel.example.com:8443 \
-AUTODL_DREAM_PUBLIC_ORIGIN=https://dream-tunnel.example.com:8443 \
-./deploy/autodl-ssh/prepare-env.sh
+只部署 Admin 不包含发布 Dream。服务器上的旧 Dream 项目、遗留镜像或已退出容器不能作为当前部署方式的证据；Dream 数据表由 Admin PostgreSQL 持有，删除 Dream 项目不等于删除这些业务数据。
 
-export AUTODL_SSH_HOST=connect.example.com
-export AUTODL_SSH_USER=root
-export AUTODL_SSH_PORT=22
-export AUTODL_ADMIN_PUBLIC_ORIGIN=https://admin-tunnel.example.com:8443
-./deploy/autodl-ssh/deploy.sh check
-./deploy/autodl-ssh/deploy.sh bootstrap
-```
+旧 `deploy/remote-ssh` Docker 发布入口、Compose 和配置投影器已移除。可复用的反向代理模板保留在 [`deploy/nginx/ink-memory-admin.conf.template`](../deploy/nginx/ink-memory-admin.conf.template)。`docker/` 仅用于明确请求的容器验证，不参与本流程。
 
-Admin 固定监听 `127.0.0.1:6008`，SeetaCloud 负责 HTTPS 端口映射。应用与嵌入式 PostgreSQL 以专用非 root 用户运行；代码、配置与版本化 release 在 `/root/ink-autodl/admin`，PostgreSQL 默认在服务用户 home 的 `/var/lib/ink-memory/data/postgres`，共享 Artifact 在 `/root/autodl-tmp/ink-memory/artifacts`。`bootstrap` 对非空目标 fail closed。日常发布以 commit 与 UTC 时间组成唯一 candidate ID，禁止同一 commit 重试时覆盖当前目录；候选根目录必须包含 `drizzle/meta/_journal.json`。脚本在 `16008` 对候选 Next 应用做隔离冒烟；随后停止旧 Admin，以候选 release 的 Drizzle 和 Provider migration orchestrator 执行前向 migration，再原子切换 `current`。切换失败时只在本轮内恢复仍存在的旧应用；公网、本机端口与 migration 验证全部通过后立即删除旧 release、`previous` 和 `candidate`，不保留长期应用回滚点，也不逆转数据库 migration。若检测到旧 `/root/autodl-tmp/ink-memory/postgres/PG_VERSION` 且新目录尚无 cluster，initializer 会停止，要求运维先按停机、备份、校验流程处理真实数据；发布脚本不会自行移动或删除它。
+## 发布前核对
 
-运行配置由 bash 启动器 `source`。部署生成器必须用 shell 安全形式写入 `DREAM_DATA_SERVICE_CLIENTS`，并以 source 后的原始 JSON 值执行合同测试；否则 JSON 标点会被 shell 当作语法字符，Admin 将以 `AUTH_NOT_CONFIGURED` 关闭 Dream 内部接口。
+构建前必须确认物理可用内存、有效 cgroup 限额、Node 实际堆选项、所有 worker 预算及原完整制品。512 MiB 堆与 900 MiB 构建限额属于单次事故参数；检查步骤、失败判断和恢复条件见[专项手册](release-build-memory-and-recovery.md)。容量不足时停止发布，禁止并行构建或反复 restart 重试。
 
-## 阿里云 ECS
+先通过 SSH 确认实际服务进程、服务管理器、源码提交、监听端口和数据库目录，再准备候选代码。不要覆盖其他任务的未提交修改，也不要把过期配置、旧备份或旧数据卷默认为当前数据源。
 
-生产入口是 [`../deploy/remote-ssh/deploy.sh`](../deploy/remote-ssh/deploy.sh)：
+服务器需要与 `package.json` 匹配的 Node.js 和 `pnpm@9.15.0`，并安装完整依赖：
 
 ```bash
-ADMIN_PUBLIC_ORIGIN=https://ink-admin.suoxya.com \
-DREAM_PUBLIC_ORIGIN=https://ink-frontend.suoxya.com \
-./deploy/remote-ssh/prepare-env.sh
-
-export REMOTE_SSH_HOST=<ecs-host-or-ip>
-export REMOTE_SSH_USER=<ssh-user>
-export REMOTE_APP_DIR=/srv/ink-admin-memory
-
-./deploy/remote-ssh/deploy.sh check
-./deploy/remote-ssh/deploy.sh deploy
+pnpm install --frozen-lockfile
 ```
 
-Compose 只有 `ink-memory-admin`：镜像内 `@ink-memory/db` supervisor 以非 root
-运行 PostgreSQL 18.1 与 Next.js。数据分别持久化到
-`ink_memory_postgres_data`、`ink_memory_artifact_data`。Admin 使用
-`127.0.0.1:5432`；Dream 通过 private network alias
-`ink-memory-postgres:5432` 访问；5432 不映射到 ECS host。
+`local:stable` 使用源码、TypeScript、esbuild 和 tsx，不能使用 `--prod` 安装或用 standalone `server.js` 目录代替完整项目。普通部署不在本机另起服务、不安装本机容器运行时。
 
-### 首次导入现有数据库
-
-首次空目标直接使用 Admin package 管理的本机内嵌 PostgreSQL：
+服务器禁用 swap 与 zswap，Admin 设置 `MemorySwapMax=0`。构建前核对物理内存与磁盘，资源预算以实际物理容量为准。现有构建配置支持以下显式资源选项：
 
 ```bash
-./deploy/remote-ssh/deploy.sh bootstrap
+export NEXT_BUILD_CPUS=1
+export NEXT_WEBPACK_MEMORY_OPTIMIZATIONS=true
 ```
 
-脚本从 mode-0600 `.env.local` 验证 `INK_DATABASE_MODE=embedded-postgres`、绝对数据
-目录与 `PG_VERSION`，临时启动该 cluster 后生成 gzip 压缩的纯 SQL dump，并保留一份
-到远端 `backups/`，然后调用
-`@ink-memory/db` 流式 restore。纯 SQL 避免 `pg_restore` archive 版本不兼容；内嵌目标
-已有任意用户表时立即失败、不覆盖，本机数据目录也不删除。MinIO 数据不上传、不初始化。
-dump 进程只通过子进程环境接收 `PGPASSWORD`，不会等待交互输入或打印 secret。
-需要使用其他源 env 时显式设置
-`LOCAL_SOURCE_ENV_FILE`。
-若镜像已经成功构建、但首次 dump/import 在后续步骤失败，可执行
-`./deploy/remote-ssh/deploy.sh bootstrap-resume`；它先验证现有目标 image，再从空库
-guard 继续导入、migration、启动与验证，不重复消耗 ECS 内存构建镜像。
-若 dump 已完整上传，额外设置
-`REMOTE_BOOTSTRAP_DUMP=/srv/ink-admin-memory/backups/<file>.sql.gz` 可复用远端文件；路径
-必须位于当前 `REMOTE_APP_DIR/backups/` 且非空，不会重复传输大体积数据。
+共享 Next.js 配置显式启用 `experimental.webpackBuildWorker`，使自定义 extension alias 不再关闭独立编译 worker，避免编译进程与后续类型检查叠加占用内存。此方式来自 [Next.js 内存优化说明](https://nextjs.org/docs/app/guides/memory-usage#webpack-build-worker)，保留完整 TypeScript 检查。
 
-维护镜像同时固定 `postgresql-client-18`，与 embedded server major 一致；dump/restore
-命令不会退回 Debian 默认的旧 major 客户端。
+这些选项只控制构建资源。Node heap 上限通过 `NODE_OPTIONS` 按物理内存预算设置，并为其他进程和 native 内存预留空间；V8 heap 上限不等于进程总内存。通过 systemd 的物理内存上限、`MemoryHigh` 与 OOM 计数判断资源状态。OOM 后由 systemd 自动重启 Admin，不启用交换作为构建或恢复手段。
 
-### 发布顺序
+## 运行配置与数据
 
-`deploy` 顺序固定为：preflight → nginx → rsync → shared network → image snapshot →
-single image build → package migration → migration check → Admin start → PostgreSQL/
-Admin/nginx verify。
+运行配置保存在项目根目录的 `.env.local`，权限为 `0600`，归运行服务账户所有。沿用与现有数据匹配的密钥、OAuth 注册、Gateway binding 和业务策略，不能通过重新生成配置替换已有加密密钥。
 
-面向当前 2 GiB ECS，Dockerfile 先完成 Next.js builder，再安装 runner 的系统包，借由
-stage dependency 阻止 BuildKit 同时运行 Next 编译与 `apt`。远端默认只启用 1 个 Next
-worker，并把每个 Node 进程的 V8 old-space 上限设为 `640MB`；该限制只影响镜像构建。
-生成的阿里云 env 同时把 Debian、Debian Security 与 PGDG build mirror 指向 ECS VPC
-镜像地址；Dockerfile 的默认值仍是上游官方源，因此其他平台不继承阿里云网络假设。
-部署脚本、文档、`backups/` 与 SQL dump 不进入 image build context，发布编排调整不会
-使 Next builder 缓存失效，数据库备份也不会进入 BuildKit cache。
+必须确认：
 
-镜像固定 `RUN_DB_MIGRATIONS=false`，入口遇到 `true` 会失败。业务启动和重启都不会
-执行 DDL。migration 保留 38 个历史 receipt 的连续前缀和 hash 校验。
+- `INK_DATABASE_MODE=embedded-postgres`，`RUN_DB_MIGRATIONS=false`。
+- `EMBEDDED_POSTGRES_DATA_DIR` 是明确的持久化目录，由服务账户拥有，权限为 `0700`。
+- `DATABASE_URL`、`MIGRATION_DATABASE_URL` 和三个受限角色连接指向同一个目标数据库及端口，各角色凭据仍保持独立。
+- issuer、trusted origins、service callbacks 与实际 Admin/Dream 公网入口一致，保留仍在使用的现有客户端注册。
+- `FILE_STORAGE_TYPE=disabled`；Artifact 和 Reflections 的目录合同保持一致，已有绝对路径不能被随意重写。
 
-## 本机与 Docker
+普通 dotenv 中含 JSON，不要把 `.env.local` 当 shell 脚本 `source`。Next.js 与数据库 package 使用已有配置加载路径；独立维护命令可使用支持 `--env-file` 的 Node.js 显式加载文件，secret 不进入命令行参数或日志。
 
-本机默认完全不需要 PostgreSQL 容器：
+原生 `next start` 从 `PORT` 读取端口，不依靠 `HOSTNAME` 环境变量限制监听地址；内嵌 PostgreSQL 当前默认监听所有接口。以实际监听结果和服务器防火墙、安全组保护应用及数据库端口，只将 nginx 入口对外开放。
+
+### 迁入现用数据
+
+数据迁移必须有明确授权，并先确认现用源库及其配置。切换前停止源写入，导出最终一致快照；若源服务重新启动，先前快照不能直接作为最终切换数据。
+
+使用 PostgreSQL 兼容客户端导出完整数据库、角色和权限，并校验备份摘要。`--no-owner` 只在确认所有对象仍属于同一数据库所有者时使用；不能用 `--no-privileges` 丢弃受限角色的对象或数据库级授权。备份、SQL、密码哈希和正文保持私有，不在控制台打印。
+
+只向明确命名、验证为空的新目标恢复。保留源数据和旧目标，不覆盖未知数据库，不以空库初始化代替恢复。Artifact 复制保持相对目录和已有路径合同，向 Admin Reader 提供只读挂载；跨主机部署还需确认 Dream 后续产物的共享方式，单次复制不会形成持续共享。
+
+恢复后在应用启动前比对表行数、schema、索引、约束、角色、对象所有者、权限和 Drizzle receipt。只有迁移历史确有缺项时，才按已授权发布步骤运行现有前向迁移编排；启动命令不执行 DDL。
+
+权限核对应比较实际授权。`pg_dump` 可能将冗余的所有者 ACL 还原成 `NULL` 默认 ACL；按 PostgreSQL [`acldefault`](https://www.postgresql.org/docs/18/functions-info.html) 展开后，逐项比较授权者、被授权者、权限和 grant option，同时独立比较对象所有者与数据库级授权。不要因原始 ACL 表示不同而补授额外权限。
+
+## 启动与进程托管
+
+以专用非 root 服务账户，在确认的项目根目录执行：
 
 ```bash
-pnpm install
-pnpm env:setup
-pnpm db:migrate
-pnpm dev
+pnpm local:stable
 ```
 
-`.env.local` 明确配置 `INK_DATABASE_MODE=embedded-postgres`，默认数据目录
-`.ink-memory/postgres`、端口 `54329`。`pnpm dev` 由 package supervisor 同时管理
-PG 与 Next.js；停止开发进程会干净关闭 PG，数据目录保留。
+该入口先构建，再启动 PostgreSQL 和 `next start`。代码变化后重新执行同一入口生成新构建。不要同时启动第二个 supervisor 争用同一数据库目录。
 
-需要容器 parity 时：
+正式运行使用服务器已有进程管理器托管，设置实际的项目目录、服务账户、`PORT`、资源配置和持久日志。systemd 的 `WorkingDirectory` 必须为完整项目目录，`ExecStart` 指向实际 pnpm 绝对路径；源码构建入口为 `local:stable`，已构建运行及故障恢复入口为 `run start:embedded`。入口切换按专项手册保留完整依赖和原配置，停止时管理整个进程组。配置只由原有 dotenv 路径读取，不把 `.env.local` 直接放入 shell 启动器。
+
+本次 `ink-memory-admin.service`、出口服务、防火墙服务及 drop-in 的完整创建配置，见[服务手册的 ECS 创建章节](deploy-services.md#ecs-首次创建与配置记录)。已有服务的日志、发布目录切换、回滚与 `start-limit-hit` 处理，见[日常使用与维护](deploy-services.md#ecs-日常使用与维护)。
+
+发布前记录原服务和日志归属。构建、恢复或启动失败时，只处理本轮明确拥有的进程；不能清理别人的服务或源数据库。`local:stable` 中断后须确认 PostgreSQL 正常关闭。
+
+## nginx 与验证
+
+按实际域名、绑定地址、端口和转发协议渲染[Admin nginx 模板](../deploy/nginx/ink-memory-admin.conf.template)，放入 nginx 的 HTTP include（如 `sites-available`/`sites-enabled`）。`__ADMIN_FORWARDED_PROTO__` 在本次上游终止 TLS 的拓扑中使用 `https`；由 nginx 自身终止 TLS 时可使用 `$scheme`。模板包含独立的 WebSocket upgrade map，并对 Google callback 关闭携带授权码的请求日志与 upstream 重试。
+
+本次主机配置为 `/etc/nginx/sites-available/ink-memory-admin`，上游为 `http://127.0.0.1:3000`。先保留现有 Admin 配置，确认候选应用和最终源数据通过验证，再执行 `nginx -t` 并平滑 reload。只修改文件而未 reload 时，现有 worker 仍使用旧配置，不能据此宣称公网已切换。
+
+先验证数据库身份与完整迁移记录，再验证本机端口、nginx 域名路由和公网入口：
 
 ```bash
-pnpm env:setup
-pnpm docker:up
-pnpm docker:logs
+curl -fsS http://127.0.0.1:<admin-port>/admin/login >/dev/null
+curl -fsS -H 'Host: <admin-domain>' http://127.0.0.1/admin/login >/dev/null
+curl -fsS https://<admin-domain>/admin/login >/dev/null
 ```
 
-本地 Compose 仍只有一个 Admin service，并将其内嵌 PG 绑定到
-`127.0.0.1:5433` 供本机工具访问。`pnpm docker:up` 先用 one-off container 执行
-migration，再启动常驻容器。
+登录页返回 `200` 只证明路由可达。还要用既有受限角色验证数据库访问，并按当前业务范围验证认证和受保护能力。最终回执记录源码提交、启动命令、运行身份、服务状态、数据校验和各验证命令的退出码；文档更新本身不代表远端已经部署完成。
 
-## 配置合同
+## 本次 ECS 的服务拓扑与维护
 
-- `INK_DATABASE_MODE=embedded-postgres`
-- `POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DB`
-- `EMBEDDED_POSTGRES_DATA_DIR`、`EMBEDDED_POSTGRES_PORT`
-- AutoDL `AUTODL_ADMIN_HOME`（必须位于 Dream `AUTODL_DATA_ROOT` 之外）
-- `EMBEDDED_POSTGRES_SHARED_BUFFERS`（ECS 默认 `96MB`）
-- `EMBEDDED_POSTGRES_MAX_CONNECTIONS`（ECS 默认 `50`）
-- `NEXT_BUILD_CPUS`、`NEXT_BUILD_MAX_OLD_SPACE_MB`（只约束镜像 build，ECS 为 `1`/`640`）
-- `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR`、`PGDG_MIRROR`（只约束镜像 build）
-- Admin、Gateway、Provider 加密和 Product API secrets
-- `FILE_STORAGE_TYPE=disabled`
-- `RUN_DB_MIGRATIONS=false`
+下表保留既有 ECS 部署记录；实时 `WorkingDirectory`、`ExecStart`、堆选项与资源覆盖项须在每次维护时核对。2048 MiB 堆属于已记录的容量风险，禁止直接复制为新构建预算。历史创建参数与修订后的操作要求分别由[服务手册](deploy-services.md)及[专项手册](release-build-memory-and-recovery.md)承载。
 
-`prepare-env.sh` 从 mode-0600 `docker/.env` 保留 PostgreSQL 和控制面 secret，删除
-MinIO/S3/AWS 字段并生成 ECS origin/topology。两个 env 文件都不得提交或打印。
+| 项目 | 实际配置 |
+| --- | --- |
+| Admin 服务 | `ink-memory-admin.service`，用户 `ink-admin`，执行 `/opt/ink-admin-node/bin/pnpm local:stable` |
+| 完整源码 | `/srv/ink-admin-releases/20261024T164343Z-ee0497b43115` |
+| PostgreSQL | `/var/lib/ink-memory-admin/postgres`，本机端口 `54329` |
+| Admin 监听 | 端口 `3000`，主机防火墙拒绝来自非回环接口的 `3000`、`54329` 访问 |
+| nginx | `/etc/nginx/sites-available/ink-memory-admin` → `http://127.0.0.1:3000` |
+| Artifact 数据目录 | `/var/lib/ink-memory-admin/artifacts`，只读 bind 到数据库已有的 workspace 绝对路径；持续存储接入仍有临时依赖 |
+| 指定域名出口 | `ink-admin-egress.service`，Tinyproxy 只监听 `127.0.0.1:17891`；当前上游仍有临时依赖 |
+| 当前资源配置 | 1 worker、原有 2048 MiB V8 heap 上限、1328 MiB 物理内存上限；`MemorySwapMax=0`，主机 swap / zswap 均关闭 |
 
-## 健康、日志、备份与回滚
+实际资源限制通过 `systemctl show ink-memory-admin.service` 核对，包括 `/etc/systemd/system.control/` 中的资源覆盖项。2026-10-31 已从 fstab 移除 `/swapfile` 条目，屏蔽 `swapfile.swap`，将 tmpfiles 的 zswap 开机设置改为 `N`，并将 `vm.swappiness` 设为 `0`。`swappiness=0` 本身不等于禁用交换，必须同时确认 `swapon --show` 为空、`SwapTotal=0` 和服务 `MemorySwapMax=0`。
+
+Linux 上沿用的 `/Users/dmeck/project/ink-dream-memory/backend/data/agent-workspace` 是 ECS 内已有的只读挂载别名，用于兼容数据库中的历史路径，不要求在该目录部署 Dream。调整路径前必须处理现有数据绑定，不能只改 unit 中的目录。
+
+需要代理的域名应使用 ECS 可独立访问、由线上运维管理的出口。Admin 通过 systemd 覆盖项读取回环代理地址及 Node `--use-env-proxy`；Tinyproxy 的上游按实际线上出口配置，其他可直连域名保持直连。创建配置见[服务手册](deploy-services.md#4-创建指定域名的出口服务)，其中上游占位符必须先替换为已验证的线上配置。
+
+应用使用 `OOMPolicy=stop` 与 `Restart=on-failure`：发生 OOM 时停止服务进程组，10 秒后重启 Admin；`StartLimitIntervalSec=0` 取消原启动次数限制。现有 `pnpm local:stable` 在重启时仍会执行构建，内存不足造成的构建失败也遵循该重启策略。出口使用 `Restart=always`，5 分钟内最多启动三次。实际观察到出口重载会正常退出，因此依靠托管策略重新拉起；修改后要核对监听端口并做连通探测。应用通过 `Wants` 启动出口服务，出口故障不会触发 Admin 重新构建。
+
+Artifact 的持续来源必须符合现有 Reader 的只读目录、版本和 hash 合同。一次迁移复制或周期副本均不能证明生产共享存储已经接通。
+
+最终切换后的旧源 PostgreSQL 保留且停用，不能为恢复其他入口而重新上线，形成两个可写数据源。恢复与回滚均以当前 ECS 数据及已核验备份为依据。
+
+服务器上分别检查应用、出口和防火墙服务，再检查 nginx：
 
 ```bash
-./deploy/remote-ssh/deploy.sh verify
-./deploy/remote-ssh/deploy.sh ps
-./deploy/remote-ssh/deploy.sh logs
-./deploy/remote-ssh/deploy.sh backup
-./deploy/remote-ssh/deploy.sh rollback
+systemctl status ink-memory-admin.service ink-admin-egress.service ink-admin-local-ports.service
+journalctl -u ink-memory-admin.service --since '10 minutes ago'
+nginx -t
 ```
 
-`verify` 在运行容器内执行 DB identity query，再验证 `/admin/login` 和 nginx。
-`backup` 短暂停止 Admin，对关闭的 cluster volume 生成物理 `tar.gz`，随后立即启动并
-复验。物理备份只能恢复到相同 embedded PostgreSQL major/runtime；恢复必须人工确认
-目标 volume。`rollback` 只换应用镜像，不回滚或删除 PG volume。
+日志可能含业务诊断，只在私有终端查看并按范围脱敏。旧 Docker、Docker socket 和 containerd 已停止并禁用；旧 Admin 数据卷保留，不能以清理构建空间为由删除。
 
-## 文件存储
+## AutoDL 与可选容器工具
 
-当前没有 MinIO、bucket、storage volume 或端口。`GET /api/storage` 返回
-`FILE_STORAGE_DISABLED`；上传、下载和 Admin storage resource fail closed。
-恢复对象存储必须显式选择 Vercel Blob 或外部 S3，并同步恢复凭据、部署变量和验收。
+AutoDL/SeetaCloud 的独立平台配置和专用打包流程仍在 [`deploy/autodl-ssh`](../deploy/autodl-ssh/.folder.md)。其端口映射、目录和 standalone 启动器只适用于该平台，不能套用到本次 ECS 的 `pnpm local:stable` 服务。
+
+[`docker/`](../docker/.folder.md) 保留显式容器验证工具。没有明确的容器需求时，不运行 `pnpm docker:*`、Docker Desktop 或旧 Compose 发布命令。

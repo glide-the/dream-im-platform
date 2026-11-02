@@ -1,6 +1,7 @@
 <!-- [Input] Actual Better Auth composition, explicit legacy mapping and browser/service topology. -->
 <!-- [Output] Current authentication architecture, ownership and product interaction contract. -->
 <!-- [Pos] Auth domain entry document; complete domain/API state remains in the shared contract. -->
+<!-- [Sync] 2026-10-31: add exact account callbacks to the existing Client with required native metadata and original PKCE/service permissions. -->
 <!-- [Sync] 2026-09-17: adopt an exact legacy Dream credential through DTO/service/Drizzle while keeping Admin operators separate. -->
 <!-- [Sync] 2026-09-17: restore Dream's product login card through exact-origin Admin form ingress without moving credential authority. -->
 <!-- [Sync] 2026-09-17: record client-local Dream logout, retained central SSO, and independent Admin management sessions. -->
@@ -60,3 +61,27 @@ Dream 退出只撤销当前 Dream browser client 的 OAuth refresh grant/lineage
 Better Auth 的未知插件或 ORM 异常必须抛到 Admin 外层事务边界，由该边界回滚并只返回 `Cache-Control: no-store` 的 `503 {"error":"temporarily_unavailable"}`。服务端不得记录异常对象，避免 SQL 参数携带 device_code、user_code、token 或 secret 进入日志。
 
 独立[设备授权](auth-device.md)只使用注册公有 CLI client；[领域操作](admin-dream-operation-contracts.json)和[委托契约](admin-dream-delegation-contracts.json)来自实际严格 DTO。Runtime 只有对应用途的 opaque bearer，不接收数据库或共享服务密钥。
+
+## 端侧账号精确回调兼容
+
+目标：iOS的系统授权回到原App后，继续使用Dream原Client ID、S256、交易Cookie、Browser Session及用户权限。原Google→Admin回调、Web登录表单、原HTTP(S)回调、主体绑定和现有API保持。源码适配限定配置校验、现有OAuth目录及原exchange；新增客户端身份、账户、scope、grant、业务API和schema均为0。
+
+| 配置或状态 | 定义 |
+| --- | --- |
+| default | `DREAM_DATA_SERVICE_CLIENTS`原`redirectUri`为当前service主Web地址，省略可选数组时保留既有行为 |
+| desired | 同一service的可选`redirectUris`提供额外精确地址，规范化集合始终保留主回调；App URI从目标Info.plist确定 |
+| effective | 已发布OAuth Client行的精确redirectUris与applicationType，实际code/token/exchange仍执行各自原校验 |
+| revision | 已有源码版本、配置摘要及发布回执标识该次配置，行变更继续沿原updatedAt；本次沿既有schema |
+| 状态转换 | 源码验证 → 兼容代码采用 → 配置desired → dry-run核对 → 显式发布 → 读回verified → App既有env映射 → 真实账号验收 |
+
+主回调继续HTTP(S)同源；额外Web回调继续同一service来源。私有账号URI限定规范反向域名`.auth:/auth/callback`、HTTP精确loopback service来源、无authority/query/hash或路径变体。规范URI示例为`com.example.ink.auth:/auth/callback`，实际值使用目标应用标识。服务密钥、原Client ID、主Web回调及后台scope均保持原配置；新增配置只表达该Client的回调集合。`AUTH_TRUSTED_ORIGINS`继续原HTTP(S)来源，账号URI由OAuth精确登记管理。
+
+原应用主Web回调集合继续既有目录规则；新增额外URI只加入配置它的Client。存在私有账号URI的同一公开Client使用既有`applicationType=native`，`tokenEndpointAuthMethod=none`、`requirePKCE=true`、原grant/scope及subject规则保持。实际安装的Better Auth `validateClientRedirectUri`允许native登记非loopback HTTPS、精确HTTP loopback及反向域名私有URI，拒绝HTTPS loopback；保留集合出现该冲突时目录生成关闭，原Web配置默认行为保持。
+
+原发布入口`pnpm auth:provision-dream-oauth --browser-redirects`默认dry-run。现有行只有在新增规范App账号URI且其他字段全部一致时，允许同时把`applicationType`从web推进native；写入字段限定`redirectUris`、该必要元数据及`updatedAt`。Client ID、secret hash、认证方式、requirePKCE、grant、scope、主体、资源绑定与DPoP漂移继续拒绝；回调缩小和无新增账号URI的类型变化继续拒绝。原行锁、事务、逐字段读回与幂等核对保持，`--apply`沿原显式发布流程。
+
+原`BrowserSessionService.exchange`接受当前已认证service的精确集合；额外URI不会进入其他service的交换许可。交易指纹继续包含redirect_uri，同交易更换URI返回原冲突，未知交换结果恢复原加密handle；OAuth code/S256、Client及active subject校验保持。
+
+当前状态：源码与8文件53项Provider-free合同、类型和lint通过，Dream BFF/Admin实际函数29项跨仓库探针通过；隔离目录的正常构建通过，兼容代码已采用到本机正常Admin。原supervisor完成必要重启，原PostgreSQL数据目录inode保持，现Admin46563/PG46507继续端口3000/54329。现有loopback service只增加`com.inkmemory.loginntn.auth:/auth/callback`与`com.inkmemory.mobile.auth:/auth/callback`，原Client及Web地址保持。原发布入口apply verified=true，随后真实read-only事务dry-run为0差异，数据库/端口/认证主体匹配。普通Simulator已采用，原密码表单→App回调→exchange/session→关闭及一项真实Chat通过；系统会话进入原Admin并取消返回。完整Google账户与真机继续实施，技术、配置发布及真实账号业务按各自范围验收。
+
+采用顺序保留原Web与当前会话：先验证兼容代码，再设置同Client的精确URI并按原发布入口扩展目录，核对Client/权限字段保持后采用App配置。回退优先保留已发布的兼容地址与服务端支持，通过修复版本恢复；缺少本次集合校验的旧Admin代码会影响新App重新认证，需要在回退范围中保留兼容实现。源码、运行配置、已注册状态、App采用和真实授权分别验收。

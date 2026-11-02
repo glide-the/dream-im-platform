@@ -1,6 +1,7 @@
 // [Input] Verified OAuth principal or exact scoped background service and Registry120 command.
 // [Output] Durable confirmation state plus claim-bound Runtime authority through one Admin UOW.
 // [Pos] DTO-Service-Drizzle composition; Dream retains filesystem validation, Runtime, EventBus and SSE.
+// [Sync] 2026-10-26: reject occupied claims before acquiring Run/entity write locks; retained claims still revalidate ownership before mutation.
 // [Sync] 2026-09-16: issue Registry121 server-persistence authority in the claim transaction.
 import { createHash, randomUUID } from "node:crypto";
 import { AuthBoundaryError, requiredAuthValue, type DreamServiceClient } from "../auth/config";
@@ -243,8 +244,6 @@ async function claimExisting(
   const currentRow = await store.message(row.id);
   const decoded = currentRow ? await decodeRow(currentRow) : null;
   if (!currentRow || !decoded || currentRow.metadata_json === null) return null;
-  const run = await store.scopedRun(decoded.metadata.actor, decoded.metadata.story_workspace_run_id, decoded.dispatch.thread_id);
-  if (!run) return null;
   const now = await store.clockSeconds();
   if (!Number.isFinite(now) || now < 0) throw new AuthBoundaryError("DREAM_CONFIRMATION_POLICY_INVALID");
   const sameClaim = decoded.metadata.dispatch_status === "dispatching"
@@ -254,6 +253,8 @@ async function claimExisting(
       && typeof decoded.metadata.dispatch_claim_lease_until === "number"
       && decoded.metadata.dispatch_claim_lease_until <= now);
   if (!eligible) return null;
+  const run = await store.scopedRun(decoded.metadata.actor, decoded.metadata.story_workspace_run_id, decoded.dispatch.thread_id);
+  if (!run) return null;
   await advanceToConfirmed(store, run, decoded.metadata.actor);
   const refreshed = await buildConfirmationEnvelope(decoded.envelope.command_json, decoded.metadata.actor);
   if (refreshed.status !== "valid" || refreshed.message_id !== currentRow.id

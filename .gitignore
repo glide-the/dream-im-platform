@@ -38,6 +38,8 @@ pnpm-debug.log*
 .playwright-mcp
 app/api/chat/route.ts
 .env
+# Retired SSH deployment secrets remain local after its tracked Docker files are removed.
+/deploy/remote-ssh/.env
 agent-workspaces
 output
 playwright-report

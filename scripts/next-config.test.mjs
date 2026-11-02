@@ -4,6 +4,7 @@
 // [Sync] 2026-09-18: pin the prebuilt embedded launch used by Dream integration.
 // [Sync] 2026-10-05: require the stdio preload in both normal Next.js runtime commands.
 // [Sync] 2026-09-15: pin NodeNext workspace extension aliases and all four fixed Dream codec traces.
+// [Sync] 2026-10-25: retain a separate build worker alongside custom Webpack aliases and resource options.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -25,6 +26,7 @@ function readConfig(cwd = projectRoot, overrides = {}) {
       reactStrictMode: config.reactStrictMode,
       distDir: config.distDir,
       cpus: config.experimental?.cpus,
+      webpackBuildWorker: config.experimental?.webpackBuildWorker,
       output: config.output,
     }));
   `], { cwd, env: { ...env, ...overrides }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
@@ -48,7 +50,7 @@ function readWebpackExtensionAlias() {
 }
 
 test('Turbopack uses the configuration file directory as its absolute root', () => {
-  assert.deepEqual(readConfig(), { root: projectRoot, reactStrictMode: true });
+  assert.deepEqual(readConfig(), { root: projectRoot, reactStrictMode: true, webpackBuildWorker: true });
 });
 
 test('launching from an ancestor directory does not change the project root', () => {
@@ -65,6 +67,7 @@ test('existing isolated dist, build CPU and standalone options remain intact', (
     reactStrictMode: true,
     distDir: '.next-e2e-admin-config-contract',
     cpus: 2,
+    webpackBuildWorker: true,
     output: 'standalone',
   });
 });

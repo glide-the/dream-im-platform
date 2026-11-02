@@ -1,3 +1,5 @@
+<!-- [Sync] 2026-10-25: deployment index points to native pnpm SSH operation. -->
+<!-- [Sync] 2026-10-29: index ECS systemd creation and maintenance; keep workstation bridges in historical problem records. -->
 <!-- [Sync] 2026-10-10: 同步Dream模型用途、公开能力与历史索引；本轮验证见专项执行记录。 -->
 <!-- [Sync] 2026-10-03: Gateway deadlock design now records the implemented per-user transaction gate; no schema or runtime configuration change. -->
 <!-- [Sync] 2026-10-02: clarify Gateway sequence transaction boundaries and concurrent execution; remove shared background shading. -->
@@ -7,6 +9,7 @@
 <!-- [Sync] 2026-10-02: index the Gateway deadlock proposal including minimum-lock review and business sequences; minimal correctness implementation and validation are tracked separately. -->
 <!-- [Sync] 2026-09-15: index Registry83 after isolated Reflections public/atomic acceptance; consumer remains pending. -->
 
+<!-- [Sync] 2026-11-02: 索引构建内存与发布失败恢复专项手册，原制品恢复沿 start:embedded。 -->
 # 文档索引
 
 ## 当前执行入口
@@ -52,7 +55,11 @@
 - [ink-dream-memory 产品交互设计](design/ink-dream-memory/README.md)
 - [项目架构设计说明](architecture/项目架构设计说明.md)
 - [数据库 Package 与内嵌 PostgreSQL](architecture/database-package-and-embedded-postgresql.md)
-- [部署指南](deploy.md)
+- [部署指南：SSH 服务器直接运行 pnpm local:stable](deploy.md)
+- [构建内存与发布失败恢复](release-build-memory-and-recovery.md)
+- [Admin 线上服务创建、维护、日志与使用记录](deploy-services.md)
+- [ECS Admin 原生部署与现用数据迁移回执](verification/ecs-admin-native-20261025.md)
+- [Admin deck.catalog ECS 发布回执与只读验证](verification/admin-deck-catalog-ecs-20261029.md)
 - [Dream Claude Agent 资源 Observer 与 Admin 控制台设计](design/dream-agent-resource-observer-console.md)
 - [模型提供方认证能力与凭据生命周期](design/provider-authentication-capability-and-credential-lifecycle.md)
 
@@ -61,6 +68,8 @@
 Dream 主库 43 表与 Notion Connector 5 表的 PostgreSQL 全量迁移、真实订阅展示、计费协作、Gateway 与新推理调用链现为 Planned/Implementation scope；Admin 现有控制面能力须按 Current / Target / Release Gate 逐项补齐。真实第三方支付渠道仍 Deferred，只实现 PaymentAdapter、Webhook 幂等边界与测试环境 Fake Adapter。范围状态以 [Dream 总索引](architecture/ink-dream-memory/README.md) 为准，历史延期决定见 [范围变更入口](architecture/ink-dream-memory/90-deferred-billing-subscription-inference-payment.md)。
 
 ## 历史与验证
+
+- [ECS Admin 临时桥接问题与待替换项](verification/ecs-admin-temporary-bridges-20261029.md)
 
 - [Dream 数据接入审计](verification/ink-dream-memory-data-integration-audit.md)
 - [Dream PG / Billing / Gateway 处理判断](verification/ink-dream-memory-pg-billing-gateway-treatment-decision.md)

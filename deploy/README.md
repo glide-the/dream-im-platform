@@ -1,18 +1,19 @@
+<!--
+[Input] The agreed Admin SSH runtime and platform-specific deployment contracts.
+[Output] Route operators to pnpm local:stable and maintained optional platform resources.
+[Pos] Deployment inventory; retired ECS Docker release entrypoints have been removed.
+[Sync] 2026-10-25: make native pnpm the Admin SSH deployment entrypoint.
+-->
+<!-- [Sync] 2026-10-29: link ECS-only service operations; workstation bridges are historical issues. -->
 # Admin deployment
 
-Admin 仓库负责发布 Admin/Gateway、内嵌 PostgreSQL 与 Artifact 读取边界。
-Dream 仓库只发布 Dream frontend/backend，并通过注册的服务身份消费 Admin 数据接口与
-Gateway；Dream 不接收 PostgreSQL 网络入口或 DSN。两边通过受控挂载访问共享 Artifact，
-MinIO 当前关闭，storage capability 显式 disabled。
+Admin 在 SSH 服务器上直接运行 `pnpm local:stable`，由同一 PostgreSQL supervisor 管理 Admin、Gateway 和内嵌 PostgreSQL。默认在服务器构建；本机负责 SSH 和已授权传输，不启动本机 Docker。
 
-| 平台 | 入口 | 说明 |
-|------|------|------|
-| Remote SSH（含阿里云 ECS） | [`remote-ssh/deploy.sh`](remote-ssh/deploy.sh) | 单镜像构建、embedded PG 导入、package migration、nginx、物理备份与回滚 |
-| AutoDL SSH | [`autodl-ssh/deploy.sh`](autodl-ssh/deploy.sh) | 直接本机 Node/screen 发布；Admin 监听 `127.0.0.1:6008`，embedded PG 由专用非 root 用户管理，不使用 Docker/nginx |
+完整操作、数据迁移、非 root 运行、资源预算、nginx 与验收要求见[部署指南](../docs/deploy.md)。ECS systemd 的完整配置、创建命令、维护与操作记录见[服务手册](../docs/deploy-services.md)。本次目标为 `root@39.97.252.88`；代码目录、服务账户和端口必须核对当前实际运行配置。
 
-AutoDL 的 PostgreSQL 默认位于 Admin 服务用户 home 下的 `/var/lib/ink-memory/data/postgres`；共享 Artifact 位于 Dream 数据盘 `/root/autodl-tmp/ink-memory/artifacts`。脚本发现旧 `/root/autodl-tmp/ink-memory/postgres` cluster 且新位置为空时会停止，不会自动迁移或初始化替代数据库。
+| 路径 | 用途 |
+| --- | --- |
+| [`nginx/`](nginx/.folder.md) | Admin 反向代理模板，参数来自实际域名和监听配置 |
+| [`autodl-ssh/`](autodl-ssh/.folder.md) | 独立 AutoDL/SeetaCloud 平台入口，不替代本次 ECS 的 pnpm 启动方式 |
 
-真实 secret 只保存在对应平台 ignored `.env` 和远端 mode-0640 配置；Remote SSH 使用
-[`remote-ssh/prepare-env.sh`](remote-ssh/prepare-env.sh) 从现有 ignored `docker/.env`
-生成，AutoDL 使用 [`autodl-ssh/prepare-env.sh`](autodl-ssh/prepare-env.sh) 从 `.env.local`
-投影。两条路径都要求部署层提供与 Dream public origin/callback 一致的 service-client JSON，固定 Better Auth issuer 为 Admin `/api/auth`，且不在命令输出中打印 secret 值。
+旧 `remote-ssh` 的 Docker 发布脚本、Compose、配置投影器及其测试已删除。历史 ignored 配置仍受 Git 忽略保护，不作为有效发布入口。`docker/` 只用于明确请求的容器验证。

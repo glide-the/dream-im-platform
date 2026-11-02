@@ -2,6 +2,7 @@
 // [Input] Admin Drizzle history and isolated Registry120/121 confirmation integration test.
 // [Output] Disposable database, claim-bound delegation/least-privilege receipt and cleanup.
 // [Pos] Technical verification harness; never targets the configured normal business database.
+// [Sync] 2026-10-26: allow the isolated restricted role to read current schema capability gates used by delegation resolution.
 // [Sync] 2026-09-16: replay 0062 and verify claim-bound authority fencing on PostgreSQL.
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -67,7 +68,8 @@ try {
     if (!/^[A-Za-z0-9_-]+$/.test(executorPassword)) throw new Error("Generated executor secret is invalid");
     await admin.query(`CREATE ROLE ink_story_confirmation_executor LOGIN PASSWORD '${executorPassword}'`);
     await admin.query(`GRANT CONNECT ON DATABASE ${databaseName} TO ink_story_confirmation_executor`);
-    await admin.query("GRANT USAGE ON SCHEMA public, dream, identity TO ink_story_confirmation_executor");
+    await admin.query("GRANT USAGE ON SCHEMA public, dream, identity, drizzle TO ink_story_confirmation_executor");
+    await admin.query("GRANT SELECT ON drizzle.schema_capabilities TO ink_story_confirmation_executor");
     await admin.query(`GRANT SELECT, UPDATE ON
       story_workspace_workspaces, workflow_runs, chat_thread TO ink_story_confirmation_executor`);
     await admin.query("GRANT SELECT, INSERT, UPDATE ON chat_message TO ink_story_confirmation_executor");

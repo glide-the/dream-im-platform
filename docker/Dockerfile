@@ -1,6 +1,6 @@
 # [Input] pnpm workspace sources, @ink-memory/db, immutable Drizzle history, and Next.js app.
 # [Output] Single Admin image supervising embedded PostgreSQL and explicit migration tools.
-# [Pos] Shared local/Alibaba Cloud production image; no separate database or MinIO image is required.
+# [Pos] Explicit optional container image; normal SSH deployment uses pnpm local:stable.
 # [Sync] 2026-09-14: ship Python stdlib canonical Deck codec and existing explicit DB tooling.
 FROM node:22-bookworm-slim AS builder
 
@@ -34,7 +34,7 @@ ARG PGDG_MIRROR=https://apt.postgresql.org/pub/repos/apt
 
 # Keep these builder copies before runtime package installation. This creates an
 # explicit stage dependency, so BuildKit cannot run apt and Next.js compilation
-# concurrently on the 2 GiB ECS host.
+# concurrently during optional container builds on constrained hosts.
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/drizzle ./drizzle

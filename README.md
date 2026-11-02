@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-10-25: native SSH deployment uses pnpm local:stable; retired ECS Docker entrypoints removed. -->
 <!-- [Sync] 2026-09-28: require explicit task-return scope on the Dream confidential client. -->
 <!-- [Sync] 2026-09-17: document hidden-TTY, default-dry-run recovery for an independent Admin password. -->
 <!-- [Sync] 2026-09-17: separate Dream Better Auth/OAuth authority from the independent Admin operator password/session domain in the repository overview. -->
@@ -41,6 +42,8 @@ canonical `pathlib` 算法一致。包含 `skills.md` 与 `skills/<name>/SKILL.m
 - Vitest、Playwright、ESLint
 
 ## 本地开发
+
+现用 Admin 迁到 ECS 后，这台 Mac 的 `127.0.0.1:3000` 由 SSH 转发连接 ECS，旧源 PostgreSQL 停用并保留。实际服务与文件同步见[部署指南](docs/deploy.md#本次-ecs-的服务拓扑与维护)；不要在现用配置上重新启动旧源库。以下命令用于明确配置的开发实例。
 
 环境要求：Node.js 20+、pnpm 9+。应用本地开发不要求 Docker PostgreSQL。
 
@@ -121,38 +124,13 @@ pnpm auth:reset-admin-password --email admin@example.com --apply
 
 新密码必须为14–256个字符。apply使用`ADMIN_CONTROL_DATABASE_URL`和身份capability，在单一Drizzle事务内只更新`admin_users.password_hash`、撤销该管理员全部旧`admin_sessions`并写入脱敏audit；Dream用户、Better Auth credential、OAuth subject与产品数据保持不变。
 
-## Docker 部署
+## 服务器部署
 
-环境初始化会同时生成 `docker/.env`，并生成本机可安全生成的随机密钥。Google OAuth、三个受限数据库角色 DSN、Gateway binding 与业务策略仍需由部署负责人显式填写并通过校验：
+SSH 服务器直接运行 `pnpm local:stable`，构建和服务启动均在目标服务器完成。该入口由专用非 root 服务账户运行，监督 Admin、Gateway 和内嵌 PostgreSQL；应用启动不执行 migration。
 
-```bash
-pnpm env:setup
-${EDITOR:-vi} docker/.env
-pnpm env:check
-pnpm docker:up
-pnpm docker:logs
-```
+本次 SSH 目标为 `root@39.97.252.88`，登录身份与服务运行身份分离。先核对实际服务、源码、配置和数据，再按[部署指南](docs/deploy.md)处理候选发布、数据迁入、nginx 和验证。
 
-`pnpm docker:up` 先构建单一镜像，再用 one-off container 执行 package migration，
-最后启动包含 Admin/Gateway 与内嵌 PostgreSQL 的容器。应用启动不会自动迁移。
-停止服务：
-
-```bash
-pnpm docker:down
-```
-
-生产部署前至少确认公开端口、数据库密码、管理后台 Origin，并将敏感值交由部署平台注入。数据库密码需使用至少 16 位 URL-safe 字符。Compose 会拒绝必需密钥为空。
-
-阿里云 ECS 使用 Admin-owned [`deploy/remote-ssh/deploy.sh`](deploy/remote-ssh/deploy.sh)，
-发布单一 Admin/Gateway/内嵌 PostgreSQL 容器与 Artifact volume；Dream frontend/backend
-由 Dream 仓库单独发布。首次空目标数据引导、常规发布、单实例 migration、备份、
-验证和回滚见 [部署指南](docs/deploy.md)。
-
-AutoDL 直接部署将 embedded PostgreSQL 固定到 Admin 服务用户拥有的
-`/root/ink-autodl/data/postgres`，共享 Artifact 仍位于 Dream 数据盘
-`/root/autodl-tmp/ink-memory/artifacts`。initializer 会拒绝符号链接和未经确认的旧
-cluster 路径切换，不会自动迁移、删除或用空库替代真实数据。
-常规 AutoDL 发布先在 `16008` 冒烟候选应用，再用候选 release 执行前向 migration 和原子切换；公开验证通过后删除旧应用 release，不保留长期回滚版本，PostgreSQL 与共享 Artifact 不参与清理。
+旧 ECS Docker 发布脚本、Compose 和配置投影器已删除。默认部署不启动本机 Docker。可选容器验证资源见 [`docker/`](docker/.folder.md)，仅在明确需要容器时使用；AutoDL 的独立平台说明见 [`deploy/autodl-ssh/`](deploy/autodl-ssh/.folder.md)。
 
 ## 环境变量
 
