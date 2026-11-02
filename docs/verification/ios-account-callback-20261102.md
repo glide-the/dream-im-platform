@@ -27,3 +27,9 @@ ECS当前服务与用户已按运维手册核实。候选目录从实际运行�
 原登记CLI的`--browser-redirects` dry-run已通过：只更新一个已有Client，新增URI一项，必要的applicationType为native；scope与secret变更为0。正式apply、生产构建/重启与真机Google回调仍需对应回执；本记录中的候选与测试资格独立于上线结果。
 
 正式采用沿原Admin服务执行，保留数据库目录、加密材料、身份与审计。故障恢复使用原运行目录和原配置；新增回调保持精确所属关系，删除原回调及扩大权限均退出本次范围。实际设备与上线回执由Dream本轮账号修复记录维护。
+
+## Google选择连续性
+
+原iOS宿主从Google按钮转交通用authorize，现有loginPage要求再次选择Google。宿主在原授权查询加入单值`identity_provider=google`，provider沿原签名机制保留该值。账户页面验证签名及有效期后调用原`adminAuthClient.signIn.social`，界面显示正在打开Google；同一挂载实例最多发起一次。Google失败回到原签名页面的`#google-error`，原重试控件恢复，自动重定向停止。原密码、注册和Web默认登录保持。该选择值仅影响页面入口；Client、S256、scope、账户关联及授权校验保持。
+
+源码依据为已安装@better-auth/oauth-provider 1.7.4的passthrough授权查询、signParams与oauth_query hook。官方[OAuth Provider说明](https://github.com/better-auth/better-auth/blob/main/docs/content/docs/plugins/oauth-provider.mdx)与[Apple系统认证会话](https://developer.apple.com/documentation/authenticationservices/aswebauthenticationsession/)查阅于2026-11-02；实际兼容资格按当前安装版本验证。

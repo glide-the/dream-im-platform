@@ -1,12 +1,22 @@
 // [Input] Restricted local return and user-entered password/Google registration choice.
 // [Output] Same-origin official Better Auth sign-in, preserving OAuth query through its plugin.
 // [Pos] Login product interaction; credentials never enter storage or diagnostics.
+// [Sync] 2026-11-02: resume the signed Google choice once; error callbacks retain the original retry controls.
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { adminAuthClient } from "../../lib/auth/client";
 import { authResponseRedirect, googleLoginCallback } from "../../lib/auth/browserRedirect";
-export default function AuthSignIn({ returnTo }: { returnTo: string }) {
+export default function AuthSignIn({ returnTo, selectedGoogle = false }: { returnTo: string; selectedGoogle?: boolean }) {
   const [register, setRegister] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const googleStarted = useRef(false);
+  useEffect(() => {
+    if (window.location.hash === "#google-error") { setError("Google 登录暂时不可用，请重试。"); return; }
+    if (!selectedGoogle || googleStarted.current) return;
+    googleStarted.current = true;
+    void google();
+    // The selected provider belongs to this mounted signed login document.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGoogle]);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError("");
     const form = new FormData(event.currentTarget);
@@ -19,10 +29,15 @@ export default function AuthSignIn({ returnTo }: { returnTo: string }) {
   }
   async function google() {
     setBusy(true); setError("");
-    try { const result = await adminAuthClient.signIn.social({ provider: "google", callbackURL: googleLoginCallback(window.location.origin, returnTo, window.location.search) }); if (result.error) setError("Google 登录暂时不可用，请重试。"); }
+    try {
+      const callbackURL = googleLoginCallback(window.location.origin, returnTo, window.location.search);
+      const result = await adminAuthClient.signIn.social({ provider: "google", callbackURL, errorCallbackURL: `${callbackURL}#google-error` });
+      if (result.error) setError("Google 登录暂时不可用，请重试。");
+    }
     catch { setError("Google 登录暂时不可用，请重试。"); } finally { setBusy(false); }
   }
   const field = "mt-2 w-full rounded-xl border border-border-default bg-bg-primary px-4 py-3 outline-none focus:ring-2 focus:ring-accent-primary";
+  if (selectedGoogle && !error) return <p role="status">正在打开 Google 登录…</p>;
   return <><h1 className="text-2xl font-semibold">{register ? "创建账号" : "登录"}</h1><form onSubmit={submit} className="mt-7 space-y-5">
     {register && <label className="block text-sm">名称<input className={field} name="name" autoComplete="name" required /></label>}
     <label className="block text-sm">邮箱<input className={field} type="email" name="email" autoComplete="email" required /></label>
