@@ -20,3 +20,7 @@ run41403579754的unit阶段23项失败，构建与制品步骤未执行。21项�
 ## 制品上传目录修订
 
 run41405015995完整unit、lint、类型、build、打包及隔离migration均通过。upload-artifact默认排除隐藏目录，.release-output下的三项工件未上传，作业最终失败。输出目录调整为release-output，内容与校验保持，再执行完整门禁；该轮资格保留为构建通过、制品留存失败。
+
+## Google错误回调补充
+
+原provider在错误回调追加error/error_description，当前登录组件在google-error恢复页清理这两项公开查询字段，保留原OAuth签名上下文供显式重试。该修订复用原页面并独立PR跟踪；运行源码清单继续917份，候选对应单文件增量后重新校验。

@@ -2,6 +2,7 @@
 // [Output] Same-origin official Better Auth sign-in, preserving OAuth query through its plugin.
 // [Pos] Login product interaction; credentials never enter storage or diagnostics.
 // [Sync] 2026-11-02: resume the signed Google choice once; error callbacks retain the original retry controls.
+// [Sync] 2026-11-02: remove provider-added public errors before reusing the original signed OAuth query.
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { adminAuthClient } from "../../lib/auth/client";
@@ -10,7 +11,12 @@ export default function AuthSignIn({ returnTo, selectedGoogle = false }: { retur
   const [register, setRegister] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const googleStarted = useRef(false);
   useEffect(() => {
-    if (window.location.hash === "#google-error") { setError("Google 登录暂时不可用，请重试。"); return; }
+    if (window.location.hash === "#google-error") {
+      const returned = new URL(window.location.href);
+      returned.searchParams.delete("error"); returned.searchParams.delete("error_description");
+      window.history.replaceState(window.history.state, "", returned);
+      setError("Google 登录暂时不可用，请重试。"); return;
+    }
     if (!selectedGoogle || googleStarted.current) return;
     googleStarted.current = true;
     void google();
