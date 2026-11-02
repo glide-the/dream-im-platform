@@ -16,3 +16,7 @@ The Dream issue record owns physical-device and public-auth acceptance. A succes
 ## 第一次CI与同步
 
 run41403579754的unit阶段23项失败，构建与制品步骤未执行。21项由Registry293源码与旧生成清单不一致触发，2项采用已部署Run绑定和catalog变更之前的断言。现从已提交c0ddbde恢复catalog测试和生成清单，并从原Admin工作区只读复制两份对应现有实现的测试；运行源码保持逐字节一致，门禁继续完整执行。Google选择连续性采用独立PR42的3份实现及相关测试，保持原账户与权限；候选运行源码清单按此增量重新核对。
+
+## 制品上传目录修订
+
+run41405015995完整unit、lint、类型、build、打包及隔离migration均通过。upload-artifact默认排除隐藏目录，.release-output下的三项工件未上传，作业最终失败。输出目录调整为release-output，内容与校验保持，再执行完整门禁；该轮资格保留为构建通过、制品留存失败。

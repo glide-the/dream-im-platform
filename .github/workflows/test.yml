@@ -65,7 +65,7 @@ jobs:
 
       - name: Package the verified Linux build
         run: |
-          mkdir -p .release-output
+          mkdir -p release-output
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           import path from 'node:path';
@@ -82,15 +82,15 @@ jobs:
           if(receipt.platform!=='linux'||receipt.arch!=='x64')throw Error('Linux x64 release required');
           fs.writeFileSync('release-source-receipt.json',JSON.stringify(receipt,null,2)+'\n');
           NODE
-          tar --exclude=.next/cache -czf .release-output/admin-linux-build.tgz .next packages/db/dist release-source-receipt.json
-          sha256sum .release-output/admin-linux-build.tgz > .release-output/admin-linux-build.tgz.sha256
-          cp release-source-receipt.json .release-output/
+          tar --exclude=.next/cache -czf release-output/admin-linux-build.tgz .next packages/db/dist release-source-receipt.json
+          sha256sum release-output/admin-linux-build.tgz > release-output/admin-linux-build.tgz.sha256
+          cp release-source-receipt.json release-output/
 
       - name: Retain source-bound Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: admin-linux-build-${{ github.sha }}
-          path: .release-output/
+          path: release-output/
           if-no-files-found: error
           retention-days: 7
 
