@@ -2,6 +2,7 @@
 // [Input] Validated Admin auth/service configuration and the dedicated auth Drizzle transaction.
 // [Output] Redacted plan/receipt plus public browser/device and confidential service OAuth clients.
 // [Pos] Release-time OAuth client catalog service; runtime auth routes only consume the registered rows.
+// [Sync] 2026-10-31: scope extra account callbacks to their existing Client and permit only their checked Web-to-native registration metadata transition.
 // [Sync] 2026-09-17: provision confidential client_credentials registrations for background service calls.
 // [Sync] 2026-10-11: publish the Dream application's exact callbacks to each existing Browser client; narrow updates never rewrite credentials or grants.
 import { createHash } from "node:crypto";
@@ -17,8 +18,10 @@ import {
   authScopes,
   AuthBoundaryError,
   dreamServiceClients,
+  isAccountAppRedirectUri,
   oauthProviderScopes,
   requiredAuthValue,
+  serviceRedirectUris,
 } from "./config";
 import type { AuthRepositoryDatabase } from "./database";
 
@@ -99,7 +102,7 @@ export function dreamOAuthCatalogDto(environment: Record<string, string | undefi
   for (const service of services) {
     const current = browsers.get(service.oauthClientId) ?? { origins: new Set(), redirects: new Set() };
     current.origins.add(service.origin);
-    current.redirects.add(service.redirectUri);
+    serviceRedirectUris(service).forEach(uri => current.redirects.add(uri));
     browsers.set(service.oauthClientId, current);
   }
   const serviceClientIds = new Set(services.map(service => service.id));
@@ -107,23 +110,31 @@ export function dreamOAuthCatalogDto(environment: Record<string, string | undefi
     || [...browsers.keys()].some(clientId => serviceClientIds.has(clientId))) throw new AuthBoundaryError("AUTH_CLIENT_CATALOG_INVALID");
 
   const browserClients = [...browsers.entries()].sort(([left], [right]) => left.localeCompare(right)).map(
-    ([clientId, values]): OAuthCatalogClientDto => normalizedClient({
-      clientId,
-      name: "Ink Dream Browser",
-      uri: values.origins.size === 1 ? [...values.origins][0] : null,
-      redirectUris: applicationCallbacks,
-      scopes: [...authScopes],
-      grantTypes: ["authorization_code", "refresh_token"],
-      responseTypes: ["code"],
-      tokenEndpointAuthMethod: "none",
-      applicationType: "web",
-      requirePKCE: true,
-      subjectType: "public",
-      disabled: false,
-      skipConsent: false,
-      clientCredentialsScopes: [],
-      clientSecretHash: null,
-    }),
+    ([clientId, values]): OAuthCatalogClientDto => {
+      const redirectUris = uniqueSorted([...applicationCallbacks, ...values.redirects]);
+      const native = [...values.redirects].some(isAccountAppRedirectUri);
+      if (native && redirectUris.some(uri => {
+        const url = new URL(uri);
+        return url.protocol === "https:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+      })) throw new AuthBoundaryError("AUTH_CLIENT_CATALOG_INVALID");
+      return normalizedClient({
+        clientId,
+        name: "Ink Dream Browser",
+        uri: values.origins.size === 1 ? [...values.origins][0] : null,
+        redirectUris,
+        scopes: [...authScopes],
+        grantTypes: ["authorization_code", "refresh_token"],
+        responseTypes: ["code"],
+        tokenEndpointAuthMethod: "none",
+        applicationType: native ? "native" : "web",
+        requirePKCE: true,
+        subjectType: "public",
+        disabled: false,
+        skipConsent: false,
+        clientCredentialsScopes: [],
+        clientSecretHash: null,
+      });
+    },
   );
   const deviceClient = normalizedClient({
     clientId: deviceClientId,
@@ -381,12 +392,14 @@ export function planDreamBrowserRedirects(target: OAuthCatalogDto, current: OAut
     && current.dpop?.clients.find(row => row.clientId === client.clientId)?.bound !== false)) {
     throw new AuthBoundaryError("AUTH_BROWSER_REDIRECT_CATALOG_DRIFT");
   }
-  const updates: { clientId: string; redirectUris: string[]; added: string[] }[] = [];
+  const updates: { clientId: string; redirectUris: string[]; added: string[]; applicationType?: "native" }[] = [];
   for (const desired of target.clients) {
     const existing = current.clients.find(client => client.clientId === desired.clientId);
     if (!existing) throw new AuthBoundaryError("AUTH_BROWSER_REDIRECT_CATALOG_DRIFT");
     const browser = desired.grantTypes.includes("authorization_code") && desired.tokenEndpointAuthMethod === "none";
-    if (!sameValue({ ...desired, redirectUris: [] }, { ...existing, redirectUris: [] })
+    const nativeUpgrade = browser && desired.applicationType === "native" && existing.applicationType === "web"
+      && desired.redirectUris.some(uri => isAccountAppRedirectUri(uri) && !existing.redirectUris.includes(uri));
+    if (!sameValue({ ...desired, redirectUris: [], ...(nativeUpgrade ? { applicationType: existing.applicationType } : {}) }, { ...existing, redirectUris: [] })
       || (!browser && !sameValue(desired.redirectUris, existing.redirectUris))) {
       throw new AuthBoundaryError("AUTH_BROWSER_REDIRECT_CATALOG_DRIFT");
     }
@@ -395,7 +408,7 @@ export function planDreamBrowserRedirects(target: OAuthCatalogDto, current: OAut
     }
     if (browser && !sameValue(desired.redirectUris, existing.redirectUris)) {
       updates.push({ clientId: desired.clientId, redirectUris: desired.redirectUris,
-        added: desired.redirectUris.filter(uri => !existing.redirectUris.includes(uri)) });
+        added: desired.redirectUris.filter(uri => !existing.redirectUris.includes(uri)), ...(nativeUpgrade ? { applicationType: "native" as const } : {}) });
     }
   }
   return updates;
@@ -409,16 +422,17 @@ export async function provisionDreamBrowserRedirects(database: AuthRepositoryDat
   const updates = planDreamBrowserRedirects(target, await readSnapshot(database, target));
   if (apply) {
     for (const update of updates) {
-      await database.update(oauthClient).set({ redirectUris: update.redirectUris, updatedAt: new Date() })
+      await database.update(oauthClient).set({ redirectUris: update.redirectUris, ...(update.applicationType ? { applicationType: update.applicationType } : {}), updatedAt: new Date() })
         .where(eq(oauthClient.clientId, update.clientId));
     }
     const afterRows = await database.select().from(oauthClient)
       .where(inArray(oauthClient.clientId, target.clients.map(client => client.clientId)));
-    const changed = new Set(updates.map(update => update.clientId));
+    const changed = new Map(updates.map(update => [update.clientId, update]));
     for (const before of beforeRows) {
       const after = afterRows.find(row => row.clientId === before.clientId);
       if (!after || Object.keys(before).some(key => {
-        if (changed.has(before.clientId) && ["redirectUris", "updatedAt"].includes(key)) return false;
+        const update = changed.get(before.clientId);
+        if (update && (["redirectUris", "updatedAt"].includes(key) || (key === "applicationType" && update.applicationType === "native"))) return false;
         return !sameValue(before[key as keyof typeof before], after[key as keyof typeof after]);
       })) throw new AuthBoundaryError("AUTH_BROWSER_REDIRECT_WRITE_FAILED");
     }

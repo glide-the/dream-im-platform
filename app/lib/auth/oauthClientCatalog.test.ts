@@ -2,6 +2,7 @@
 // [Input] Provider-free auth configuration and catalog snapshots.
 // [Output] Deterministic DTO, drift plan and collision validation evidence.
 // [Pos] Unit contract for release-time Dream OAuth client catalog provisioning.
+// [Sync] 2026-10-31: keep new account callbacks with their original Client and gate additive native metadata changes without permission drift.
 // [Sync] 2026-09-28: register task-return dispatch for normal confidential client credentials.
 import { describe, expect, it } from "vitest";
 import { dreamOAuthCatalogDto, planDreamOAuthCatalog, planDreamBrowserRedirects, publishedBrowserRedirectAvailable } from "./oauthClientCatalog";
@@ -107,4 +108,46 @@ it("rejects DPoP-incompatible or inactive published Browser clients before prese
     const database = { select: () => ({ from: () => query }) } as unknown as Parameters<typeof publishedBrowserRedirectAvailable>[0];
     expect(await publishedBrowserRedirectAvailable(database, service.oauthClientId, environment.DREAM_API_RESOURCE, service.redirectUri)).toBe(expected);
   }
+});
+
+it("adds private account callbacks only to their configured public Client while preserving original Web callbacks and grants", () => {
+  const app = "com.inkmemory.example.auth:/auth/callback", otherApp = "com.inkmemory.other.auth:/auth/callback";
+  const local = { ...service, id: "local-service", oauthClientId: "local-browser", origin: "http://localhost:5173", redirectUri: "http://localhost:5173/auth/callback", redirectUris: [app] };
+  const other = { ...local, id: "other-service", oauthClientId: "other-browser", origin: "http://localhost:5174", redirectUri: "http://localhost:5174/auth/callback", redirectUris: [otherApp] };
+  const baseline = dreamOAuthCatalogDto({ ...environment, DREAM_DATA_SERVICE_CLIENTS: JSON.stringify([service, { ...local, redirectUris: undefined }, { ...other, redirectUris: undefined }]) });
+  const target = dreamOAuthCatalogDto({ ...environment, DREAM_DATA_SERVICE_CLIENTS: JSON.stringify([service, local, other]) });
+  for (const [id, expected] of [[local.oauthClientId, app], [other.oauthClientId, otherApp]] as const) {
+    const client = target.clients.find(item => item.clientId === id)!;
+    expect(client.redirectUris).toContain(expected);
+    expect(client.redirectUris).not.toContain(expected === app ? otherApp : app);
+    expect(client.applicationType).toBe("native");
+    const before = baseline.clients.find(item => item.clientId === id)!;
+    expect({ ...client, applicationType: before.applicationType, redirectUris: before.redirectUris }).toEqual(before);
+  }
+  expect(target.clients.find(item => item.clientId === service.oauthClientId)).toEqual(baseline.clients.find(item => item.clientId === service.oauthClientId));
+  expect(target.clients.find(item => item.clientId === environment.AUTH_DEVICE_CLIENT_ID)).toEqual(baseline.clients.find(item => item.clientId === environment.AUTH_DEVICE_CLIENT_ID));
+});
+
+it("publishes only additive redirects and the required existing public Client web-to-native metadata transition", () => {
+  const app = "com.inkmemory.example.auth:/auth/callback";
+  const local = { ...service, id: "local-service", oauthClientId: "local-browser", origin: "http://localhost:5173", redirectUri: "http://localhost:5173/auth/callback" };
+  const before = dreamOAuthCatalogDto({ ...environment, DREAM_DATA_SERVICE_CLIENTS: JSON.stringify([service, local]) });
+  const target = dreamOAuthCatalogDto({ ...environment, DREAM_DATA_SERVICE_CLIENTS: JSON.stringify([service, { ...local, redirectUris: [app] }]) });
+  const current = { resource: before.resource, clients: before.clients, links: before.clients.map(client => ({ clientId: client.clientId, resourceId: before.resource.identifier })),
+    dpop: { resourceRequired: false, clients: before.clients.map(client => ({ clientId: client.clientId, bound: false })) } };
+  expect(planDreamBrowserRedirects(target, current)).toEqual([{ clientId: local.oauthClientId,
+    redirectUris: target.clients.find(client => client.clientId === local.oauthClientId)!.redirectUris, added: [app], applicationType: "native" }]);
+  expect(planDreamBrowserRedirects(target, { ...current, clients: target.clients })).toEqual([]);
+  const drifted = current.clients.map(client => client.clientId === local.oauthClientId ? { ...client, scopes: [] } : client);
+  expect(() => planDreamBrowserRedirects(target, { ...current, clients: drifted })).toThrow("AUTH_BROWSER_REDIRECT_CATALOG_DRIFT");
+  const metadataOnly = { ...before, clients: before.clients.map(client => client.clientId === local.oauthClientId ? { ...client, applicationType: "native" as const } : client) };
+  expect(() => planDreamBrowserRedirects(metadataOnly, current)).toThrow("AUTH_BROWSER_REDIRECT_CATALOG_DRIFT");
+  const shrink = { ...current, clients: current.clients.map(client => client.clientId === local.oauthClientId ? { ...client, redirectUris: [...client.redirectUris, "https://custom.example.test/auth/callback"] } : client) };
+  expect(() => planDreamBrowserRedirects(target, shrink)).toThrow("AUTH_BROWSER_REDIRECT_SHRINK_DENIED");
+});
+
+it("fails closed when a retained application callback conflicts with the installed native registration URI rules", () => {
+  const local = { ...service, id: "local-service", oauthClientId: "local-browser", origin: "http://localhost:5173", redirectUri: "http://localhost:5173/auth/callback", redirectUris: ["com.inkmemory.example.auth:/auth/callback"] };
+  const incompatible = { ...service, id: "loopback-https-service", oauthClientId: "loopback-https-browser", origin: "https://localhost:5174", redirectUri: "https://localhost:5174/auth/callback" };
+  expect(() => dreamOAuthCatalogDto({ ...environment, DREAM_DATA_SERVICE_CLIENTS: JSON.stringify([service, local, incompatible]) })).toThrow("AUTH_CLIENT_CATALOG_INVALID");
 });

@@ -1,11 +1,12 @@
 // [Input] Validated BFF exchange/handle DTO, authenticated service binding and identity ORM transaction.
 // [Output] Opaque handle or server-only token projection, with serialized refresh and transaction recovery.
 // [Pos] Browser-session domain service; ciphertext/entities never cross the public DTO boundary.
+// [Sync] 2026-10-31: admit only the current service's exact configured redirects while preserving original exchange/recovery and principal binding.
 // [Sync] 2026-09-14: code exchange and handle receipt commit together; failed refresh commits login-required state.
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { AuthBoundaryError, authConfiguration, requiredAuthValue, type DreamServiceClient } from "./config";
+import { AuthBoundaryError, authConfiguration, requiredAuthValue, serviceRedirectUris, type DreamServiceClient } from "./config";
 import { browserExchangeDto, browserExchangeResultDto, browserResolveResultDto, oauthTokenSetDto, principalDto } from "./dto";
 import { BrowserSessionRepository } from "./browserSessionRepository";
 import { SubjectRepository } from "./subjectRepository";
@@ -50,7 +51,7 @@ export class BrowserSessionService {
   }
 
   async exchange(input: z.infer<typeof browserExchangeDto>): Promise<DomainResult<z.infer<typeof browserExchangeResultDto>>> {
-    if (input.redirect_uri !== this.service.redirectUri) throw new AuthBoundaryError("AUTH_REDIRECT_DENIED", 403);
+    if (!serviceRedirectUris(this.service).includes(input.redirect_uri)) throw new AuthBoundaryError("AUTH_REDIRECT_DENIED", 403);
     const fingerprint = handleHash(JSON.stringify({ transaction_id: input.transaction_id, code: input.code, code_verifier: input.code_verifier, redirect_uri: input.redirect_uri }));
     const lockKey = handleHash(`${this.service.id}:${input.transaction_id}`);
     await this.tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);

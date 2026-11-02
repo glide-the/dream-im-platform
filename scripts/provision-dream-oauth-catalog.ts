@@ -5,6 +5,7 @@
 // [Pos] Release operator entry point; default execution never mutates the auth catalog.
 // [Sync] 2026-09-17: reconcile client_credentials service registrations without emitting client secrets.
 // [Sync] 2026-10-11: permit an existing-client callback-only release with drift checks and full-row readback.
+// [Sync] 2026-10-31: the same narrow release may add the required native registration metadata only alongside a new configured account URI.
 import { resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
 import { closeAuthDatabaseConnections, withAuthTransaction } from "../app/lib/auth/database";
