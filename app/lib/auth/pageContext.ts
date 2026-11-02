@@ -1,6 +1,7 @@
 // [Input] Installed-provider signed query, exact auth configuration and registered OAuth client.
 // [Output] Safe consent display context and restricted local login return.
 // [Pos] Auth UI context validation; actual grants remain independently verified by Better Auth.
+// [Sync] 2026-11-02: continue an explicitly selected Google provider only within the original signed OAuth query.
 // [Sync] 2026-09-14: reuse public Better Auth signing primitives; no alternate OAuth issuance.
 import { makeSignature, constantTimeEqual } from "better-auth/crypto";
 import { eq } from "drizzle-orm";
@@ -31,6 +32,10 @@ export async function validConsentQuery(query: URLSearchParams, secret: string, 
   const unsigned = new URLSearchParams(query); unsigned.delete("sig");
   const canonical = new URLSearchParams([...unsigned.entries()].sort(([ka, va], [kb, vb]) => ka < kb ? -1 : ka > kb ? 1 : va < vb ? -1 : va > vb ? 1 : 0));
   return constantTimeEqual(signatures[0], await makeSignature(canonical.toString(), secret));
+}
+export async function selectedGoogleLogin(query: URLSearchParams, secret: string, now = Date.now()) {
+  return query.getAll("identity_provider").length === 1 && query.get("identity_provider") === "google"
+    && await validConsentQuery(query, secret, now);
 }
 export async function readConsentContext(query: URLSearchParams) {
   const config = authConfiguration();
