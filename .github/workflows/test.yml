@@ -1,3 +1,4 @@
+# [Sync] 2026-11-02: retain a source-hashed Linux artifact on this exact deployed-source validation branch; env and dependencies are excluded.
 # [Input] A pushed Admin commit or pull request plus an ephemeral PostgreSQL service.
 # [Output] Deterministic config, unit, lint, type, build and immutable Drizzle journal receipts.
 # [Pos] GitHub release gate; real providers and normal-database rollout remain explicit operator stages.
@@ -37,7 +38,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.23.4"
           cache: pnpm
 
       - name: Install dependencies
@@ -56,7 +57,42 @@ jobs:
         run: pnpm exec tsc --noEmit
 
       - name: Build application
+        env:
+          NEXT_BUILD_CPUS: "2"
+          NEXT_WEBPACK_MEMORY_OPTIMIZATIONS: "true"
+          NODE_OPTIONS: "--max-old-space-size=2048"
         run: pnpm build
+
+      - name: Package the verified Linux build
+        run: |
+          mkdir -p .release-output
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import crypto from 'node:crypto';
+          import {execFileSync} from 'node:child_process';
+          const hash=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+          const tracked=execFileSync('git',['ls-files','-z'],{encoding:'utf8'}).split('\0').filter(Boolean);
+          const runtime=tracked.filter(name=>/^(app|packages|scripts|drizzle|public)\//.test(name)||['package.json','pnpm-lock.yaml','next.config.js','tsconfig.json','pnpm-workspace.yaml'].includes(name)).filter(name=>!name.endsWith('.md')&&!/\.(test|spec)\./.test(name)&&!name.split('/').some(part=>part==='__tests__'||part==='tests'||part==='e2e'||part==='fixtures'||part==='node_modules'||part==='dist'||part==='cache'||part.startsWith('.env')));
+          const outputs=[];
+          function walk(directory){for(const entry of fs.readdirSync(directory,{withFileTypes:true})){const name=path.posix.join(directory,entry.name);if(name==='.next/cache')continue;if(entry.isSymbolicLink())throw Error('Unexpected output symlink: '+name);if(entry.isDirectory())walk(name);else outputs.push({path:name,sha256:hash(name)});}}
+          walk('.next');walk('packages/db/dist');
+          if(outputs.some(item=>item.path.split('/').some(part=>part.startsWith('.env'))))throw Error('Environment file in output');
+          const receipt={version:1,baseDeployedCommit:'ee0497b43115',sourceCommit:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID,platform:process.platform,arch:process.arch,nodeVersion:process.version,buildId:fs.readFileSync('.next/BUILD_ID','utf8').trim(),lockSha256:hash('pnpm-lock.yaml'),runtimeSources:runtime.sort().map(name=>({path:name,sha256:hash(name)})),outputFiles:outputs.sort((a,b)=>a.path.localeCompare(b.path)),environmentIncluded:false,dependenciesIncluded:false};
+          if(receipt.platform!=='linux'||receipt.arch!=='x64')throw Error('Linux x64 release required');
+          fs.writeFileSync('release-source-receipt.json',JSON.stringify(receipt,null,2)+'\n');
+          NODE
+          tar --exclude=.next/cache -czf .release-output/admin-linux-build.tgz .next packages/db/dist release-source-receipt.json
+          sha256sum .release-output/admin-linux-build.tgz > .release-output/admin-linux-build.tgz.sha256
+          cp release-source-receipt.json .release-output/
+
+      - name: Retain source-bound Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-linux-build-${{ github.sha }}
+          path: .release-output/
+          if-no-files-found: error
+          retention-days: 7
 
   migration-journal:
     name: Drizzle migration journal
@@ -95,7 +131,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.23.4"
           cache: pnpm
 
       - name: Install dependencies

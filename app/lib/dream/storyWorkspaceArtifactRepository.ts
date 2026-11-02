@@ -1,7 +1,9 @@
 // [Input] Canonical actor plus closed Run, Episode and Story-index business values.
 // [Output] Typed Drizzle authority rows, row-locked CAS and lifecycle/index mutations.
 // [Pos] Registry185-191 persistence adapter; it owns all PostgreSQL access for this domain.
+// [Sync] 2026-10-26: hash the Story-index lock tuple before passing it as PostgreSQL text.
 // [Sync] 2026-09-16: replace Dream Story Workspace SQL with one Admin ORM repository.
+import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, lt, or, sql } from "drizzle-orm";
 import { storyWorkspaceStories as stories, storyWorkspaceWorkspaces as workspaces } from "@ink-memory/db/schema";
 import {
@@ -211,7 +213,8 @@ export class StoryWorkspaceArtifactRepository {
   }
 
   async lockIndexKey(workspaceId: string, projectId: string) {
-    await this.tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${workspaceId}\0dream_episode\0${projectId}`}, 0))`);
+    const key = createHash("sha256").update(`${workspaceId}\0dream_episode\0${projectId}`, "utf8").digest("hex");
+    await this.tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
   }
 
   async indexRecord(workspaceId: string, projectId: string, lock = false) {

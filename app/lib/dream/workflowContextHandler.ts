@@ -3,6 +3,7 @@
 // [Pos] Thin domain orchestration; entity grants cannot acquire new Workflow activation authority.
 // [Sync] 2026-09-28: allow exact source Thread claim grants to read context for task-result continuation.
 // [Sync] 2026-09-14: accept the public production operation envelope and exclude external actor selectors.
+// [Sync] 2026-10-26: accept a Run-bound persistence grant only for the authoritative active Run of its exact Thread.
 import { z } from "zod";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 import { DelegationService } from "../auth/delegationService";
@@ -24,20 +25,25 @@ export async function handleWorkflowContext(request: Request) {
       ...(delegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : [])];
     return withDataTransaction(requirements, async tx => {
       let canonicalUserId: string;
+      let runScope: string | null = null;
       if (delegated) {
         const token = (request.headers.get("authorization") ?? "").replace(/^Bearer /, "");
         const grant = await new DelegationService(tx).resolve(token, "dream:read", service.id, input.input.thread_id);
-        if (grant.purpose !== "server-persistence" || grant.editorSessionId !== null || grant.runId !== null)
+        if (grant.purpose !== "server-persistence" || grant.editorSessionId !== null)
           throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
         canonicalUserId = grant.principal.canonical_user_id;
+        runScope = grant.runId;
       } else {
         const actor = await requireDataActor(tx, request.headers, service, "dream:read", input.input.thread_id,
           undefined, "workflow-context.resolve");
         canonicalUserId = actor.principal.canonical_user_id;
       }
-      return workflowContextOutputDto.parse({ context: await authoritativeWorkflowContext(
+      const context = await authoritativeWorkflowContext(
         tx, canonicalUserId, input.input.thread_id,
-      ) });
+      );
+      if (runScope !== null && context?.workflow_run_id !== runScope)
+        throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
+      return workflowContextOutputDto.parse({ context });
     });
   });
 }

@@ -1,3 +1,4 @@
+// [Sync] 2026-10-28: catalog reuses owned list visibility/policy and reads all matching Voices in one query.
 // [Input] Verified canonical actor, strict domain policy/input DTOs and caller-owned Drizzle transaction.
 // [Output] Owner/public filtered Deck/Voice aggregates, atomic refs/forks/updates and immutable CAS versions.
 // [Pos] Admin database repository; Runtime, artifact verification, shared filesystem and HTTP stay outside.
@@ -52,6 +53,16 @@ export class DeckVoiceRepository {
   const result=[];
   for(const row of rows){const counts=(await this.transaction.select({total:sql<number>`count(*)::int`,enabled:sql<number>`count(*) FILTER(WHERE ${voices.enabled} IS TRUE)::int`}).from(voices).where(eq(voices.deck_id,row.id)))[0];const authors=row.owner_id===null?[]:await this.transaction.select({name:users.display_name}).from(users).where(eq(users.id,sql`${row.owner_id}::bigint`)).limit(1);result.push(dto.deckListItemDto.parse({...deckRow(row),...await this.decoration(row,community?counts.enabled:counts.total),voice_count:counts.enabled,total_voice_count:community?null:counts.total,author_display_name:community?authors[0]?.name??null:null}));}
   return result;
+ }
+ async catalog(){
+  const items=await this.list(false);
+  if(items.length===0)return [];
+  const agents=await this.transaction.select(voiceFields).from(voices)
+   .where(inArray(voices.deck_id,items.map(item=>item.id)))
+   .orderBy(asc(voices.deck_id),asc(voices.order_index),asc(voices.created_at),asc(voices.id));
+  const byDeck=new Map<string,z.infer<typeof dto.deckVoiceRowDto>[]>();
+  for(const agent of agents){const group=byDeck.get(agent.deck_id)??[];group.push(projectDeckVoiceRow(agent));byDeck.set(agent.deck_id,group);}
+  return items.map(item=>dto.deckCatalogItemDto.parse({...item,voices:byDeck.get(item.id)??[]}));
  }
  async detail(id:string){const row=await this.deck(id,"share");if(!row)return null;const agents=await this.allVoices(id);return dto.deckDetailDto.parse({...deckRow(row),...await this.decoration(row,agents.length),voices:agents.map(projectDeckVoiceRow)});}
  private async defaultRef(id:string,evidence:z.infer<typeof dto.deckDefaultPluginEvidenceDto>){

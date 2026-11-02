@@ -3,6 +3,7 @@
 // [Pos] Thin named ingress; access rules and typed persistence stay in Service/Repository.
 // [Sync] 2026-09-15: dispatch one OAuth-only read without receipt, prompt mode or Runtime inputs.
 // [Sync] 2026-09-28: allow claim-bound source Thread reads after verifying null Run/editor scope and server-persistence purpose.
+// [Sync] 2026-10-26: verify a Run persistence grant against its authoritative Thread context before the original Deck/Voice binding read.
 import { z } from "zod";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 import { requestIdDto } from "../auth/dto";
@@ -13,6 +14,7 @@ import { withDataTransaction } from "./database";
 import { deckChatContextOperationContracts, type DeckChatContextOperation } from "./deckChatContextDto";
 import { deckChatContextSchemaRequirements, runDeckChatContextOperation } from "./deckChatContextService";
 import { identitySchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement } from "./schemaRequirements";
+import { authoritativeWorkflowContext } from "./workflowContextService";
 
 export function isDeckChatContextOperation(name: string): name is DeckChatContextOperation {
   return Object.hasOwn(deckChatContextOperationContracts, name);
@@ -34,9 +36,14 @@ export async function handleDeckChatContext(request: Request, name: string) {
       ...(delegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : [])], async tx => {
       if (delegated) {
         const authority = await new DelegationService(tx).resolve(
-          bearer, operation.userScope, service.id, undefined, null, null,
+          bearer, operation.userScope, service.id, undefined, undefined, null,
         );
         if (authority.purpose !== "server-persistence") throw new AuthBoundaryError("DELEGATION_PURPOSE_DENIED", 403);
+        if (authority.runId !== null) {
+          const context = await authoritativeWorkflowContext(tx, authority.principal.canonical_user_id, authority.threadId);
+          if (context?.workflow_run_id !== authority.runId)
+            throw new AuthBoundaryError("DELEGATION_ENTITY_DENIED", 403);
+        }
         return runDeckChatContextOperation(name, envelope.input,
           { principal: authority.principal, threadScope: authority.threadId }, tx);
       }

@@ -1,6 +1,7 @@
-// [Input] Container command plus explicit embedded PostgreSQL configuration.
+// [Input] Application or maintenance command plus explicit embedded PostgreSQL configuration.
 // [Output] One supervised process tree containing PostgreSQL and the requested Admin command.
-// [Pos] Container runtime entry owned by @ink-memory/db; it deliberately never migrates.
+// [Pos] Shared native/container process supervisor owned by @ink-memory/db; it deliberately never migrates.
+// [Sync] 2026-10-25: document the shared supervisor used by native pnpm local:stable.
 // [Sync] 2026-08-21: supervise embedded PostgreSQL and Admin in one container.
 // [Sync] 2026-10-05: supervise the whole command group and always stop PostgreSQL on command failure.
 import { startEmbeddedPostgres } from "./embedded-postgres.js";

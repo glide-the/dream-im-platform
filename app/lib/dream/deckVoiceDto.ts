@@ -1,3 +1,4 @@
+// [Sync] 2026-10-28: add the actor-owned Deck/Agent catalog using existing list and Voice fields.
 // [Input] Closed Deck/Voice and content-version business operations, separate from physical ORM entities.
 // [Output] Strict candidate wire schemas, exact decimal identity, nullable legacy fields and revision/CAS state.
 // [Pos] Primary-owned domain DTO; operations are advertised only after Repository/Service/public contracts exist.
@@ -17,6 +18,7 @@ export const deckVoiceRowDto = z.strictObject({ id, deck_id: id, name: z.string(
 export const deckRowDto = z.strictObject({ id, ...localizedFields, is_system: z.boolean().nullable(), parent_id: text, owner_id: decimalIdDto.nullable(), enabled: z.boolean().nullable(), has_local_changes: z.boolean().nullable(), order_index: integer.nullable(), published: z.boolean().nullable(), author_name: text, install_count: integer.nullable(), draft_revision: positive, latest_version: nonnegative, published_draft_revision: nonnegative, created_at: isoTimeDto.nullable(), updated_at: isoTimeDto.nullable() });
 const deckPolicyFields = { agent_type: z.enum(["chat", "dream"]), agent_type_revision: nonnegative, deck_plugin_id: text, deck_plugin_version: text, can_publish: z.boolean(), publish_block_reason: z.literal("default_initialized").nullable(), deck_version_capability: z.literal(true), deck_version: positive.nullable(), deck_version_dirty: z.boolean(), deck_version_status: z.enum(["unpublished", "draft", "published"]), next_deck_version: positive };
 export const deckListItemDto = deckRowDto.extend({ ...deckPolicyFields, voice_count: nonnegative, total_voice_count: nonnegative.nullable(), author_display_name: text });
+export const deckCatalogItemDto = deckListItemDto.extend({ voices: z.array(deckVoiceRowDto) });
 export const deckDetailDto = deckRowDto.extend({ ...deckPolicyFields, voices: z.array(deckVoiceRowDto) });
 export const deckIdInputDto = z.strictObject({ deck_id: id });
 export const deckListInputDto = z.strictObject({ community: z.boolean() });
@@ -104,5 +106,6 @@ export const deckVoiceOperationContracts = {
   "deck-content.commit": contract("mutation",deckVersionCommitInputDto,deckVersionCommitDto),
   "deck-content.history": contract("read",deckVersionHistoryInputDto,deckVersionHistoryDto),
   "deck-content.detail": contract("read",deckVersionDetailInputDto,deckVersionDetailDto),
+  "deck.catalog": contract("read",z.strictObject({}),z.strictObject({decks:z.array(deckCatalogItemDto)})),
 } as const;
 export type DeckVoiceOperation = keyof typeof deckVoiceOperationContracts;

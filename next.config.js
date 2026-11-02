@@ -4,6 +4,7 @@
 // [Sync] 2026-09-16: keep local dev on Webpack so NodeNext .js source specifiers use the same extension aliases as builds.
 // [Sync] 2026-09-15: resolve @ink-memory/db NodeNext .js specifiers to workspace TypeScript during Webpack builds.
 // [Sync] 2026-09-19: allow deployment-owned Webpack memory optimizations on constrained build hosts.
+// [Sync] 2026-10-25: release Webpack worker memory before TypeScript checks with the existing custom aliases.
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,6 +24,7 @@ if (webpackMemoryOptimizationsRaw && !['true', 'false'].includes(webpackMemoryOp
 }
 const webpackMemoryOptimizations = webpackMemoryOptimizationsRaw === 'true';
 const experimental = {
+  webpackBuildWorker: true,
   ...(buildCpus && { cpus: buildCpus }),
   ...(webpackMemoryOptimizations && { webpackMemoryOptimizations: true }),
 };
@@ -44,9 +46,8 @@ const nextConfig = {
     return config;
   },
   ...(e2eDistDir && { distDir: e2eDistDir }),
-  ...(Object.keys(experimental).length > 0 && { experimental }),
-  // Enable standalone output for Docker deployments
-  // Set NEXT_STANDALONE_OUTPUT=true when building in Docker
+  experimental,
+  // Explicit standalone packaging for AutoDL or optional container workflows.
   ...(process.env.NEXT_STANDALONE_OUTPUT === 'true' && { output: 'standalone' }),
 };
 
