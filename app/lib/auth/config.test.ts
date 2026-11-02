@@ -1,10 +1,11 @@
 // [Input] Explicit configuration fixtures without credentials or live services.
 // [Output] Success/failure evidence for exact origin/issuer and per-service permissions.
 // [Pos] Provider-free auth configuration tests.
+// [Sync] 2026-10-31: preserve primary Web callbacks and admit only exact same-service account URI additions.
 // [Sync] 2026-10-11: browser request authority may vary; unknown relay and loopback port substitution remain denied.
 // [Sync] 2026-09-15: cover the exact Reflections executor background scope.
 import { describe, expect, it } from "vitest";
-import { authConfiguration, browserAuthOrigin, dreamServiceClients, exactAuthUrl } from "./config";
+import { authConfiguration, browserAuthOrigin, dreamServiceClients, exactAuthUrl, serviceRedirectUris } from "./config";
 
 const environment = {
   BETTER_AUTH_URL: "https://admin.example.test/api/auth", BETTER_AUTH_SECRET: "fixture-secret-longer-than-32-bytes",
@@ -43,5 +44,21 @@ describe("auth configuration", () => {
       { "x-forwarded-host": "localhost:5173", "x-forwarded-proto": "http" },
       { "x-forwarded-host": "localhost:3000/path", "x-forwarded-proto": "http" },
     ]) expect(() => browserAuthOrigin(request(headers), configuration)).toThrow("AUTH_BROWSER_ORIGIN_DENIED");
+  });
+  it("keeps the existing service, Client and primary callback when exact account redirects are configured", () => {
+    const client = { id: "local-bff", secret: "fixture-service-longer-than-32-bytes", origin: "http://localhost:5173", oauthClientId: "original-browser", redirectUri: "http://localhost:5173/auth/callback", backgroundScopes: ["capabilities:read"] };
+    const app = "com.inkmemory.example.auth:/auth/callback";
+    const parse = (input: unknown) => dreamServiceClients({ DREAM_DATA_SERVICE_CLIENTS: JSON.stringify([input]) })[0];
+    expect(parse(client)).toEqual(client);
+    const configured = parse({ ...client, redirectUris: [app, client.redirectUri, app] });
+    expect(configured).toMatchObject({ id: client.id, oauthClientId: client.oauthClientId, redirectUri: client.redirectUri, backgroundScopes: client.backgroundScopes });
+    expect(serviceRedirectUris(configured)).toEqual([client.redirectUri, app]);
+    expect(serviceRedirectUris(parse(client))).toEqual([client.redirectUri]);
+    expect(() => parse({ ...client, origin: "https://dream.example.test", redirectUri: "https://dream.example.test/auth/callback", redirectUris: [app] })).toThrow("AUTH_INVALID_REDIRECT");
+    expect(() => parse({ ...client, redirectUris: ["http://localhost:5174/auth/callback"] })).toThrow("AUTH_INVALID_REDIRECT");
+    for (const value of ["com.inkmemory.example.mcp:/oauth/callback", "com.inkmemory.example.auth://auth/callback", "com.inkmemory.example.auth:///auth/callback", "com.inkmemory.example.auth:/auth/%63allback", app + "?code=value", app + "#fragment", app + "\n", app + "/"]) {
+      expect(() => parse({ ...client, redirectUris: [value] })).toThrow();
+    }
+    expect(() => parse({ ...client, redirectUris: [] })).toThrow("AUTH_NOT_CONFIGURED");
   });
 });

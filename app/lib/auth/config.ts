@@ -2,6 +2,7 @@
 // [Sync] 2026-09-28: reserve schedule:execute for the configured confidential service only.
 // [Output] Strict single-topology authentication configuration; missing capability fails closed.
 // [Pos] Server-only configuration boundary shared by auth/domain services.
+// [Sync] 2026-10-31: preserve the primary Web redirect and validate additional exact account callbacks for the same service/public Client.
 // [Sync] 2026-09-27: reserve a service-only task-return dispatch scope.
 // [Sync] 2026-09-17: separate delegated scopes from confidential-client background scopes.
 // [Sync] 2026-10-09: admit images:create only as an explicit Gateway delegated scope.
@@ -44,10 +45,19 @@ const serviceClientSchema = z.strictObject({
   origin: z.string(),
   oauthClientId: z.string().min(1).max(160),
   redirectUri: z.string(),
+  redirectUris: z.array(z.string()).min(1).optional(),
   backgroundScopes: z.array(z.enum(backgroundAuthScopes)).min(1),
 });
 
 export type DreamServiceClient = z.infer<typeof serviceClientSchema>;
+
+export function isAccountAppRedirectUri(value: string): boolean {
+  return /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\.auth:\/auth\/callback$/.test(value) && new URL(value).href === value;
+}
+
+export function serviceRedirectUris(service: DreamServiceClient): string[] {
+  return [...new Set([service.redirectUri, ...(service.redirectUris ?? [])])];
+}
 
 export function dreamServiceClients(environment: AuthEnvironment = process.env): DreamServiceClient[] {
   let parsed: unknown;
@@ -59,7 +69,17 @@ export function dreamServiceClients(environment: AuthEnvironment = process.env):
     const origin = exactAuthUrl(client.origin, true);
     const redirectUri = exactAuthUrl(client.redirectUri);
     if (new URL(redirectUri).origin !== origin) throw new AuthBoundaryError("AUTH_INVALID_REDIRECT");
-    return { ...client, origin, redirectUri };
+    const redirectUris = client.redirectUris?.map(value => {
+      if (isAccountAppRedirectUri(value)) {
+        const source = new URL(origin);
+        if (source.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(source.hostname)) throw new AuthBoundaryError("AUTH_INVALID_REDIRECT");
+        return value;
+      }
+      const callback = exactAuthUrl(value);
+      if (new URL(callback).origin !== origin) throw new AuthBoundaryError("AUTH_INVALID_REDIRECT");
+      return callback;
+    });
+    return { ...client, origin, redirectUri, ...(redirectUris ? { redirectUris: [...new Set([redirectUri, ...redirectUris])] } : {}) };
   });
 }
 
