@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: exact configured loopback callbacks support independent app/Web listeners.
 // [Input] Explicit Admin auth origin, Google secrets, token key and configured service clients.
 // [Sync] 2026-09-28: reserve schedule:execute for the configured confidential service only.
 // [Output] Strict single-topology authentication configuration; missing capability fails closed.
@@ -59,6 +60,13 @@ export function serviceRedirectUris(service: DreamServiceClient): string[] {
   return [...new Set([service.redirectUri, ...(service.redirectUris ?? [])])];
 }
 
+export function serviceBrowserRedirect(service: DreamServiceClient, origin: string): string | undefined {
+  return serviceRedirectUris(service).find(value => {
+    const callback = new URL(value);
+    return callback.origin === origin && callback.pathname === new URL(service.redirectUri).pathname;
+  });
+}
+
 export function dreamServiceClients(environment: AuthEnvironment = process.env): DreamServiceClient[] {
   let parsed: unknown;
   try { parsed = JSON.parse(requiredAuthValue("DREAM_DATA_SERVICE_CLIENTS", environment)); }
@@ -76,7 +84,10 @@ export function dreamServiceClients(environment: AuthEnvironment = process.env):
         return value;
       }
       const callback = exactAuthUrl(value);
-      if (new URL(callback).origin !== origin) throw new AuthBoundaryError("AUTH_INVALID_REDIRECT");
+      const source = new URL(origin), destination = new URL(callback);
+      const loopback = (url: URL) => url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+      if (destination.origin !== origin && !(loopback(source) && loopback(destination)
+        && destination.pathname === new URL(redirectUri).pathname)) throw new AuthBoundaryError("AUTH_INVALID_REDIRECT");
       return callback;
     });
     return { ...client, origin, redirectUri, ...(redirectUris ? { redirectUris: [...new Set([redirectUri, ...redirectUris])] } : {}) };
