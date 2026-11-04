@@ -1,9 +1,10 @@
+// [Sync] 2026-11-04: select only configured and published exact loopback callback origins.
 // [Input] Admin-issued client_credentials access token and configured service client/origin/background scopes.
 // [Output] Authenticated confidential-client context plus explicit user/service bearer-shape detection.
 // [Pos] Internal Dream API authentication boundary.
 // [Sync] 2026-09-17: replace static custom-header authentication with OAuth client_credentials tokens.
 // [Sync] 2026-10-11: select only the same Browser client's published exact callback from the actual Origin.
-import { AuthBoundaryError, authConfiguration, dreamServiceClients, type DreamServiceClient } from "./config";
+import { AuthBoundaryError, authConfiguration, dreamServiceClients, serviceBrowserRedirect, type DreamServiceClient } from "./config";
 import { verifyAdminAccessToken, type VerifiedAdminAccessToken } from "./accessToken";
 import { withAuthTransaction } from "./database";
 import { publishedBrowserRedirectAvailable } from "./oauthClientCatalog";
@@ -37,8 +38,8 @@ export async function requireDreamService(
       if (url.origin !== origin || url.username || url.password) throw new Error();
       redirectUri = new URL(callback.pathname, origin).href;
     } catch { throw new AuthBoundaryError("DREAM_ORIGIN_DENIED", 403); }
-    const matches = clients.filter(client => client.origin === origin);
-    if (matches.length !== 1 || matches[0].redirectUri !== redirectUri
+    const matches = clients.filter(client => serviceBrowserRedirect(client, origin) !== undefined);
+    if (matches.length !== 1 || serviceBrowserRedirect(matches[0], origin) !== redirectUri
       || !await redirectVerifier(configured, redirectUri)) {
       throw new AuthBoundaryError("DREAM_ORIGIN_DENIED", 403);
     }
