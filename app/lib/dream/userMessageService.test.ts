@@ -1,9 +1,11 @@
+// [Sync] 2026-11-04: cover additive continuation registration and exact publication gates.
 // [Input] Verified user/entity actors, strict raw business JSON and injected shared repositories.
 // [Output] Atomic owner-before-guard ordering, control preservation and ordinary title persistence.
 // [Pos] Production user-turn composition tests; no DB fixtures or synthetic state machine.
 // [Sync] 2026-09-15: preserve Unicode title boundaries and deny identity/table/Run overrides.
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ owned: vi.fn(), save: vi.fn(), guard: vi.fn() }));
+const mocks = vi.hoisted(() => ({ owned: vi.fn(), save: vi.fn(), guard: vi.fn(), continuationReady: vi.fn() }));
+vi.mock("./database", async importOriginal => ({ ...await importOriginal<typeof import("./database")>(), hasSchemaCapability: mocks.continuationReady }));
 vi.mock("./chatThreadRepository", () => ({ ChatThreadRepository: class { requireOwned = mocks.owned; persistUserMessageRaw = mocks.save; } }));
 vi.mock("./confirmationGuard", () => ({ guardPersistedDreamConfirmation: mocks.guard }));
 import { persistCanonicalUserMessage } from "./userMessageService";
@@ -12,9 +14,16 @@ import type { DataTransaction } from "./database";
 const tx = {} as DataTransaction;
 const actor = { principal: { subject: "auth-user", canonical_user_id: "9007199254740993", client_id: "browser", scopes: ["dream:write"], status: "active" as const }, threadScope: null as string | null };
 const input = { thread_id: "thread1", message_id: "message1", parts_json: '[{"type":"text","text":"hello"}]', metadata_json: null, title_candidate: " 😀云正文 " };
-beforeEach(() => { vi.clearAllMocks(); mocks.owned.mockResolvedValue(undefined); mocks.guard.mockResolvedValue(false); mocks.save.mockResolvedValue(input.message_id); });
+beforeEach(() => { vi.clearAllMocks(); mocks.continuationReady.mockResolvedValue(false); mocks.owned.mockResolvedValue(undefined); mocks.guard.mockResolvedValue(false); mocks.save.mockResolvedValue(input.message_id); });
 afterEach(() => vi.unstubAllEnvs());
 describe("atomic canonical user message", () => {
+  it("requires continuation for ordinary input after publication and preserves server technical input", async () => {
+    mocks.continuationReady.mockResolvedValue(true);
+    await expect(persistCanonicalUserMessage(tx, actor, input)).rejects.toMatchObject({ code: "CHAT_CONTINUATION_REQUIRED" });
+    expect(mocks.save).not.toHaveBeenCalled();
+    const technical = { ...input, metadata_json: '{"kind":"scheduled-chat"}' };
+    await expect(persistCanonicalUserMessage(tx, actor, technical)).resolves.toMatchObject({ message_id: input.message_id });
+  });
   it("locks ownership before guard and reuses raw ordinary message persistence", async () => {
     vi.stubEnv("DREAM_CHAT_AUTO_TITLE_MAX_CHARACTERS", "2");
     expect(await persistCanonicalUserMessage(tx, actor, input)).toEqual({ message_id: input.message_id, confirmation_preserved: false });
