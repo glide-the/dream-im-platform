@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: qualify explicit loopback aliases with exact callback and publication checks.
 // [Input] Explicit configuration fixtures without credentials or live services.
 // [Output] Success/failure evidence for exact origin/issuer and per-service permissions.
 // [Pos] Provider-free auth configuration tests.
@@ -55,7 +56,11 @@ describe("auth configuration", () => {
     expect(serviceRedirectUris(configured)).toEqual([client.redirectUri, app]);
     expect(serviceRedirectUris(parse(client))).toEqual([client.redirectUri]);
     expect(() => parse({ ...client, origin: "https://dream.example.test", redirectUri: "https://dream.example.test/auth/callback", redirectUris: [app] })).toThrow("AUTH_INVALID_REDIRECT");
-    expect(() => parse({ ...client, redirectUris: ["http://localhost:5174/auth/callback"] })).toThrow("AUTH_INVALID_REDIRECT");
+    expect(serviceRedirectUris(parse({ ...client, redirectUris: ["http://127.0.0.1:4173/auth/callback"] })))
+      .toEqual([client.redirectUri, "http://127.0.0.1:4173/auth/callback"]);
+    for (const value of ["http://localhost:5174/other", "https://localhost:5174/auth/callback", "https://other.example.test/auth/callback"]) {
+      expect(() => parse({ ...client, redirectUris: [value] })).toThrow("AUTH_INVALID_REDIRECT");
+    }
     for (const value of ["com.inkmemory.example.mcp:/oauth/callback", "com.inkmemory.example.auth://auth/callback", "com.inkmemory.example.auth:///auth/callback", "com.inkmemory.example.auth:/auth/%63allback", app + "?code=value", app + "#fragment", app + "\n", app + "/"]) {
       expect(() => parse({ ...client, redirectUris: [value] })).toThrow();
     }
