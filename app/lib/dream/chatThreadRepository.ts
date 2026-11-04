@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: retain original DTOs, add creation origin and protect managed queue rows.
 // [Sync] 2026-09-27: atomically publish target completion and freeze return intent without changing legacy create semantics.
 // [Sync] 2026-09-28: keep ordinary task creation compatible with pre-0068 schema and require exact capability for returning tasks.
 // [Sync] 2026-09-27: project owner-filtered source and created task-session navigation links.
@@ -17,6 +18,7 @@ import { decimalIdDto } from "../auth/dto";
 import type { DataTransaction } from "./database";
 import { canonicalMessageJson, chatThreadDto, chatThreadSummaryDto, decodeChatMessage, pgTimestampToIso, messagePersistInputDto, queueEntryDto, taskSessionDto, taskSessionLinkDto, taskSessionSourceLinkDto, type MessagePersistInput } from "./chatThreadDto";
 import { z } from "zod";
+import continuationContract from "../../../drizzle/contracts/dream-chat-continuation-v1.json";
 import {canonicalBusinessJson} from "./deckContentCanonical";
 import {guardPersistedDreamConfirmation,type ConfirmationGuardInput} from "./confirmationGuard";
 import { messagePageInputDto, threadCreateInputDto, threadListInputDto, threadSelectVoiceInputDto, queueEnqueueInputDto, queueTransitionInputDto, taskSessionCreateInputDto, taskSessionLaunchInputDto } from "./chatThreadDto";
@@ -70,7 +72,7 @@ function projectQueueEntry(row: { message_id: string; thread_id: string; queue_s
   const { parts: ignored, ...entry } = row; void ignored;
   return queueEntryDto.parse({ ...entry, text, queue_sequence: row.queue_sequence.toString(), created_at: pgTimestampToIso(row.created_at) });
 }
-function projectThread(row: Omit<typeof thread.$inferSelect, "user_id"> & { user_id: string }) {
+function projectThread(row: Omit<typeof thread.$inferSelect, "user_id" | "created_execution_origin"> & { user_id: string }) {
   return chatThreadDto.parse({ ...row, user_id: String(row.user_id), created_at: pgTimestampToIso(row.created_at), updated_at: pgTimestampToIso(row.updated_at) });
 }
 function projectSummary(row: { id: string; title: string | null; deck_id: string | null; voice_id: string | null; created_at: string | null; updated_at: string | null }) {
@@ -98,10 +100,10 @@ export class ChatThreadRepository {
       if (!agents[0]) throw new AuthBoundaryError("AGENT_ACCESS_DENIED", 404);
     }
   }
-  async create(input: z.infer<typeof threadCreateInputDto>) {
+  async create(input: z.infer<typeof threadCreateInputDto>, origin: string | null = null) {
     if (input.deck_id !== null) await this.requireDeck(input.deck_id, input.voice_id);
     const id = randomUUID();
-    await this.transaction.insert(thread).values({ id, user_id: sql`${this.canonicalUserId}::bigint`, title: input.title, deck_id: input.deck_id, voice_id: input.voice_id });
+    await this.transaction.insert(thread).values({ id, user_id: sql`${this.canonicalUserId}::bigint`, title: input.title, deck_id: input.deck_id, voice_id: input.voice_id, ...(origin === null ? {} : { created_execution_origin: origin }) });
     return { thread_id: id, deck_id: input.deck_id, voice_id: input.voice_id };
   }
   async list(input: z.infer<typeof threadListInputDto>) {
@@ -250,6 +252,9 @@ export class ChatThreadRepository {
     const current = (await this.transaction.select({ ...queueFields, parts: message.parts }).from(inputQueue).innerJoin(message, eq(message.id, inputQueue.message_id)).where(and(eq(inputQueue.message_id, input.message_id), eq(inputQueue.thread_id, input.thread_id))).limit(1))[0];
     if (!current) throw new AuthBoundaryError("CHAT_INPUT_NOT_FOUND", 404);
     if (current.revision !== input.expected_revision) throw new AuthBoundaryError("CHAT_INPUT_REVISION_CONFLICT", 409);
+    const continuationReady = await hasSchemaCapability(this.transaction, { capability: continuationContract.capability, version: 1, contractSha256: continuationContract.contract_sha256 });
+    const managed = continuationReady ? await this.transaction.select({ owner: inputQueue.continuation_owner }).from(inputQueue).where(eq(inputQueue.message_id, input.message_id)).limit(1) : [];
+    if (managed[0]?.owner) throw new AuthBoundaryError("CHAT_CONTINUATION_REQUIRED", 409);
     const action = input.action;
     const allowed =
       action === "select" ? current.status === "queued" && input.dispatch_turn_id === null :
@@ -263,7 +268,7 @@ export class ChatThreadRepository {
       if (selected.length) throw new AuthBoundaryError("CHAT_INPUT_SELECTION_CONFLICT", 409);
     }
     if (action === "claim") {
-      const active = await this.transaction.select({ id: inputQueue.message_id }).from(inputQueue).where(and(eq(inputQueue.thread_id, input.thread_id), eq(inputQueue.status, "dispatching"))).limit(1);
+      const active = await this.transaction.select({ id: inputQueue.message_id }).from(inputQueue).where(and(eq(inputQueue.thread_id, input.thread_id), sql`${inputQueue.status} IN ('dispatching', 'state_unknown')`)).limit(1);
       if (active.length) throw new AuthBoundaryError("CHAT_INPUT_DISPATCH_CONFLICT", 409);
       if (current.status === "queued") {
         const selected = await this.transaction.select({ id: inputQueue.message_id }).from(inputQueue).where(and(eq(inputQueue.thread_id, input.thread_id), eq(inputQueue.status, "selected"))).limit(1);

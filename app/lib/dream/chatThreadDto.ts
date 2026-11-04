@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: append exact continuation and creation-origin DTOs.
 // [Sync] 2026-09-27: expose a distinct task creation operation that requests result return.
 // [Sync] 2026-09-27: add an owner-filtered task-session source/created navigation projection.
 // [Sync] 2026-09-27: define strict task-session create/get/launch DTOs and launch states.
@@ -99,6 +100,18 @@ export const taskSessionSourceLinkDto = taskSessionLinkDto.extend({ source_title
 export const taskSessionLinksResultDto = z.strictObject({
   source: taskSessionSourceLinkDto.nullable(), created: z.array(taskSessionLinkDto),
 });
+// Additive contracts; legacy descriptor shapes remain byte-stable.
+export const continuationSnapshotInputDto = z.strictObject({ thread_id: entityId, message_id: entityId.nullable(), dispatch_turn_id: entityId.nullable() });
+export const continuationSnapshotDto = z.strictObject({ thread: chatThreadDto, messages: z.array(chatMessageDto), history_digest: z.string().regex(/^[a-f0-9]{64}$/) });
+export const continuationClaimInputDto = z.strictObject({ thread_id: entityId, message_id: entityId, parts_json: z.string().min(1), metadata_json: z.string().nullable(), title_candidate: z.string(), history_digest: z.string().regex(/^[a-f0-9]{64}$/), claude_session_id: entityId.nullable(), owner: z.uuid(), dispatch_turn_id: entityId });
+export const continuationProgressInputDto = z.strictObject({ thread_id: entityId, message_id: entityId, owner: z.uuid(), dispatch_turn_id: entityId, expected_revision: z.number().int().positive().safe(), action: z.enum(["arm_query", "complete", "fail_before_query", "fail_after_query", "mark_unknown"]) });
+export const chatContinuationContracts = {
+  "chat-thread.create-with-origin": { kind: "write", input: threadCreateInputDto.safeExtend({ created_execution_origin: z.enum(["web_cloud", "mobile_ios", "mobile_android"]) }), output: threadCreateResultDto },
+  "chat-message.resume-snapshot": { kind: "read", input: continuationSnapshotInputDto, output: continuationSnapshotDto },
+  "chat-input.claim-continuation": { kind: "write", input: continuationClaimInputDto, output: queueEntryResultDto },
+  "chat-input.continuation-progress": { kind: "write", input: continuationProgressInputDto, output: queueEntryResultDto },
+} as const;
+
 export const chatThreadOperationContracts = {
   "chat-thread.create": { kind: "write", input: threadCreateInputDto, output: threadCreateResultDto },
   "chat-thread.get": { kind: "read", input: threadIdInputDto, output: threadResultDto },
@@ -122,6 +135,7 @@ export const chatThreadOperationContracts = {
   "task-session.links": { kind: "read", input: threadIdInputDto, output: taskSessionLinksResultDto },
   "task-session.launch": { kind: "write", input: taskSessionLaunchInputDto, output: taskSessionLaunchResultDto },
   "task-session.create-returning": { kind: "write", input: taskSessionCreateInputDto, output: taskSessionResultDto },
+  ...chatContinuationContracts,
 } as const;
 export type ChatThreadOperation = keyof typeof chatThreadOperationContracts;
 

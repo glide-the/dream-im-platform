@@ -603,6 +603,13 @@
       "when": 1792044052587,
       "tag": "0085_memory_classification_v2_capability",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1793768405177,
+      "tag": "0086_chat_continuation",
+      "breakpoints": true
     }
   ]
 }

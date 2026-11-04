@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: owner-scoped continuation transactions.
 // [Sync] 2026-09-27: require the task-result capability for returning task creation.
 // [Sync] 2026-09-27: expose task-session navigation links under the existing v2 capability.
 // [Sync] 2026-09-27: gate task-session operations on Admin Drizzle v2 capability.
@@ -9,6 +10,8 @@
 import { AuthBoundaryError } from "../auth/config";
 import { principalDto, type PrincipalDto } from "../auth/dto";
 import type { DataTransaction, SchemaRequirement } from "./database";
+import { ChatContinuationRepository } from "./chatContinuationRepository";
+import continuationContract from "../../../drizzle/contracts/dream-chat-continuation-v1.json";
 import { ChatThreadRepository } from "./chatThreadRepository";
 import * as dto from "./chatThreadDto";
 import chatInputQueueContract from "../../../drizzle/contracts/dream-chat-input-queue-v1.json";
@@ -36,6 +39,7 @@ export const chatTaskResultSchemaRequirement: SchemaRequirement = {
   capability: "dream.chat-task-result.v1", version: 1,
   contractSha256: chatTaskResultContract.contract_sha256,
 };
+export const chatContinuationSchemaRequirement: SchemaRequirement = { capability: continuationContract.capability, version: 1, contractSha256: continuationContract.contract_sha256 };
 export type ChatThreadActor = { principal: PrincipalDto; threadScope: string | null };
 export function validateChatThreadActor(actor: ChatThreadActor, operation: dto.ChatThreadOperation, input: unknown) {
   const principal = principalDto.parse(actor.principal);
@@ -58,6 +62,10 @@ export async function runChatThreadOperation(operation: dto.ChatThreadOperation,
   const store = new ChatThreadRepository(transaction, principal.canonical_user_id);
   let output: unknown;
   switch (operation) {
+    case "chat-thread.create-with-origin": output = await new ChatContinuationRepository(transaction, principal.canonical_user_id).create(dto.chatContinuationContracts[operation].input.parse(validated.data)); break;
+    case "chat-message.resume-snapshot": output = await new ChatContinuationRepository(transaction, principal.canonical_user_id).snapshot(dto.continuationSnapshotInputDto.parse(validated.data)); break;
+    case "chat-input.claim-continuation": output = await new ChatContinuationRepository(transaction, principal.canonical_user_id).claim(dto.continuationClaimInputDto.parse(validated.data)); break;
+    case "chat-input.continuation-progress": output = await new ChatContinuationRepository(transaction, principal.canonical_user_id).progress(dto.continuationProgressInputDto.parse(validated.data)); break;
     case "chat-thread.create": output = await store.create(dto.threadCreateInputDto.parse(validated.data)); break;
     case "chat-thread.get": output = { thread: await store.get(dto.threadIdInputDto.parse(validated.data).thread_id) }; break;
     case "chat-thread.list": output = { threads: await store.list(dto.threadListInputDto.parse(validated.data)) }; break;
