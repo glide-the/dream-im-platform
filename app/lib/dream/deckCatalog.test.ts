@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: cover additive continuation registration and exact publication gates.
 // [Input] Registered catalog operation, actor scope, owned list visibility and injected Drizzle read boundary.
 // [Output] Ordered single-batch Voice hydration, empty catalog, strict authority and append-only descriptor evidence.
 // [Pos] Provider-free catalog validation; no database connections, writes or Runtime execution.
@@ -53,7 +54,7 @@ describe('owned Deck/Agent catalog',()=>{
   await expect(runDeckVoiceOperation('deck.catalog',scenario.input,scenario.actor,{} as DataTransaction,policy)).rejects.toMatchObject({code:scenario.code});expect(read).not.toHaveBeenCalled();
  });
  it('appends its exact read capability while retaining list/detail hashes and the generated inventory',()=>{
-  expect(dreamOperations.at(-1)?.capability).toEqual({name:'deck.catalog',kind:'read',user_scope:'dream:read',background_scope:null,input_schema_version:1,output_schema_version:1,contract_sha256:'0c53861e1a635742e37f7b26ab954a57af1f550261d3ddc1ea5dbfb17f574a5e'});
+  expect(dreamOperations.find(item=>item.capability.name==='deck.catalog')?.capability).toEqual({name:'deck.catalog',kind:'read',user_scope:'dream:read',background_scope:null,input_schema_version:1,output_schema_version:1,contract_sha256:'0c53861e1a635742e37f7b26ab954a57af1f550261d3ddc1ea5dbfb17f574a5e'});
   expect(dreamOperations.find(item=>item.capability.name==='deck.list')?.capability.contract_sha256).toBe('4c8b3d396a30c9c3bb534aca04f50e4d90dad37dd9ecb96ad8c217894e6eb8eb');
   expect(dreamOperations.find(item=>item.capability.name==='deck.detail')?.capability.contract_sha256).toBe('52f1448eaa4935c662bec1811633a80d4ffc4ed764503210edc541a99369e964');
   expect(inventory).toEqual(dreamOperations);
