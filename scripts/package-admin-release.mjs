@@ -14,6 +14,7 @@ export function releaseEntries(root, sourceFiles) {
     if (excluded(name) || names.has(name)) return;
     const absolute = path.resolve(root, name), stat = fs.lstatSync(absolute);
     if (stat.isSymbolicLink()) {
+      if (path.isAbsolute(fs.readlinkSync(absolute))) throw Error('Absolute release symlink is not relocatable');
       const target = fs.realpathSync(absolute);
       if (!target.startsWith(root + path.sep)) throw Error('Release symlink escapes checkout');
       names.add(name);
