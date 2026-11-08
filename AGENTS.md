@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: 发布仅由GitHub手动Actions触发，ECS使用完整制品和原start:embedded，普通发布只检查迁移。 -->
 <!-- [Sync] 2026-11-02: 发布前检查构建预算，失败后复用完整制品与 start:embedded 恢复，保留既有无交换策略。 -->
 # AGENTS Instructions Guidelines (ink-memory-admin)
 
