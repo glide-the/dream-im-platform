@@ -1,6 +1,7 @@
 # [Input] A pushed Admin commit or pull request plus an ephemeral PostgreSQL service.
 # [Output] Deterministic config, unit, lint, type, build and immutable Drizzle journal receipts.
 # [Pos] GitHub release gate; real providers and normal-database rollout remain explicit operator stages.
+# [Sync] 2026-11-08: validate the same Python release receiver contracts as manual publication.
 # [Sync] 2026-09-16: replace schema push and retired integration target with current release commands.
 
 name: Test Suite
@@ -40,11 +41,19 @@ jobs:
           node-version: "20"
           cache: pnpm
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Validate deployment projections
         run: pnpm test:config
+
+      - name: Validate release receiver
+        run: pnpm test:release-receiver
 
       - name: Run provider-free tests
         run: pnpm test:run

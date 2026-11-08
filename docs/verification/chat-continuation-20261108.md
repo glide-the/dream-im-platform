@@ -1,3 +1,7 @@
+<!-- [Input] 原ECS实例、正常Admin数据库、精确capability及本轮Actions回执。 -->
+<!-- [Output] 0086、接口／制品采用、数据保持与分层验收状态。 -->
+<!-- [Pos] Admin跨端续接发布验证记录；现行操作归deploy.md。 -->
+<!-- [Sync] 2026-11-08: 手动Actions、公网检查及原数据保持分别记录，真实模型验收待完成。 -->
 <!-- [Input] 0086不可变迁移、正常ECS数据库、Linux CI制品、现有Client回调及Simulator发布回执。 -->
 <!-- [Output] 跨端续接的迁移、接口发布、数据保持与分层验收记录。 -->
 <!-- [Pos] Admin正常发布证据；Dream端业务结果由关联执行记录所有。 -->
@@ -88,3 +92,40 @@ deploy的受限SSH preflight和Publish步骤通过。服务启用`/srv/ink-admin
 同URL从Mac取得Cloudflare200；ECS curl取得Cloudflare200，完整body读取10s超时；ECS Python urllib取得200。runner的具体403策略项待核对。当前修订把固定公网URL门禁放入ECS receiver preflight／激活后，失败复用原回滚；runner状态写入独立网络诊断，403原值保持。WAF、认证、IP策略与所有secrets保持。接收器12项技术合同、Python compile及YAML手动触发合同退出0；root receiver SHA `7444c14e7675fc9175ee74aea0d0ddd283dfdc843ae8299d213416614c70a825`，原配置备份0600，待下一次修订后的完整手动运行回执。
 
 Safari使用手机已登录的现有Google账户尝试正常登录，在Google出现本人验证／reCAPTCHA，停止在该验证页。原Chrome账户与历史保留，模型发送0；同一账户的真实跨端续接仍依赖本人完成Web验证。
+
+
+### 公网门禁第二次回执与失败分类（2026-11-08）
+
+PR [45](https://github.com/glide-the/dream-im-platform/pull/45)合并至 `01139a32191b7e445df6fbab7a8f899dbacfa6e0` 后，显式workflow_dispatch运行 [42476219452](https://github.com/glide-the/dream-im-platform/actions/runs/42476219452)。build通过，Linux artifact为311,921,771字节、ZIP digest `06ad12be7e240ab6bed6cc05de34dae8fc995b111c8236980dd278ca0302141a`。deploy在受限preflight的公网检查处失败，Publish未运行，候选目录未创建；现用首次Actions制品保持，原库inode1056781、active、NRestarts0。
+
+后续只读检查：受限key preflight取得publicHttp200；ECS公网urllib样本约3秒、origin约0.03秒，个人SSH配置无转发。旧失败仅返回固定Published route分类，具体HTTP状态／超时类型未保存，原因保持待核实。PR [46](https://github.com/glide-the/dream-im-platform/pull/46)为固定公网探测增加服务器显式20秒预算，以及仅含异常类型／HTTP状态的失败记录；HTTP200门禁、入口策略、回滚和本机健康期限保持。receiver unittest 15项、Python compile、两仓库diff check均退出0；18文档／211本地链接检查通过。该修订的合并、root receiver采用和部署重跑回执后续追加。
+
+本机正常服务在无代理loopback检查中Web localhost5173 HTTP200、backend8765 HTTP200、Admin3000 HTTP200。原Google验证页和手机／Web不同主体保持，真实模型发送0。
+
+
+### 手动Actions最终采用与数据读回（2026-11-08 20:02后）
+
+PR [46](https://github.com/glide-the/dream-im-platform/pull/46)的CI [42477563762](https://github.com/glide-the/dream-im-platform/actions/runs/42477563762)两项job全部成功，包含provider-free tests、eslint、完整TypeScript、Next构建和不可变迁移检查；合并main为 `46309115767fc50cce2b1e165ede0af6264ba984`。服务器root receiver采用SHA `e27d5b5f10cc14e4a7a178c7501f3e2d00a99cb8295204515139b91689b0f5cf`，公网期限20秒；原配置字段逐项保持，旧receiver／配置私有备份保留。受限专用key preflight退出0、publicHttp200。
+
+确认旧失败尚未创建候选后，仅重跑 [42476219452](https://github.com/glide-the/dream-im-platform/actions/runs/42476219452/attempts/2) 的失败deploy，复用同次已验证build／artifact；整体 `completed/success`。preflight、Publish、本机和ECS公网HTTP200门禁通过。应用source为 `01139a32191b7e445df6fbab7a8f899dbacfa6e0`，BUILD_ID `8j55EPjZRN3tSoqU4Ydtl`，当前目录 `/srv/ink-admin-releases/actions-42476219452-01139a32191b/app`；main4630911的后续差异为发布receiver／测试／文档，应用制品仍准确登记01139a3。
+
+部署回执artifact `13616158390`（372字节，30天），ZIP digest `938d23539d521e32f28a8011b8ea6c8663731ac48e967fcdbb40a51b2880f411`。正常服务active/running、NRestarts0、内存约437MB；旧完整Actions制品保留。前后只读数据：users37、Thread1647、消息4344、Gateway20344、迁移87均相同；原数据库54329及inode1056781、私有env字节、精确capability与摘要均保持。前后读回存于原私有维护目录的 `actions-before-rerun-42476219452.json`／`actions-after-rerun-42476219452.json`，无重复迁移或数据恢复。
+
+发布门禁成功后，一次独立公网复查发生TimeoutError，本机HTTP保持200。后续分阶段诊断：DNS约0.07秒、TLS连接累计2.03秒、HTTP200累计5.5秒，未使用HTTP代理；公网访问存在间歇波动，具体网络原因待核实。入口策略、HTTP200门禁及回滚规则保持。首次runner403与这次TimeoutError分别记录；workflow成功归发布采用证据，真实账户和模型验收单列。
+
+本机正常Web localhost5173、backend8765、Admin3000最终直连均200。Simulator40、原偏好和登录保持；正常同账户的跨端模型验收受Google本人验证阻挡，本轮真实模型发送0。指定旧Thread的state_unknown保留，历史队列回执核实未完成。
+
+后续发布入口为 [Build and deploy Admin (manual)](https://github.com/glide-the/dream-im-platform/actions/workflows/deploy-admin.yml)，在GitHub点击Run workflow并选择main。push／PR仅执行原CI，不自动发布；专用受限SSH key与GitHub环境已设置。技术验证命令 `python3 -m unittest discover -s scripts -p test_admin_action_deploy.py -v` 退出0、15项通过；源码／发布完成与真实业务完成分别判定。
+
+
+### 发布合同与项目文档同步（2026-11-08，本地验证完成）
+
+新增根命令`pnpm test:release-receiver`复用现有Python unittest。Admin普通`test.yml`准备Python3.12并执行该命令，手动`deploy-admin.yml`调用同一入口；Node packer合同继续归`test:config`。手动workflow保留唯一workflow_dispatch／main守卫、原环境、专用ECS key及原发布／回滚协议。应用、receiver和packer的生产逻辑保持本轮已验证版本。
+
+Admin同步package、两workflow、GitHub／scripts／根目录合同、AGENTS、README、发布指南、服务手册、内存恢复手册和本回执。服务手册以当前start:embedded／zzzz-github-actions.conf为日常入口，旧基础unit和源码目录维护原文保留为历史；失败重试按preflight未创建候选与Publish已开始分别定义。Dream同步阿里云分流、部署索引及内存恢复说明，原Compose正文8544字节完整保留，SHA256 `d894b00c2c2ed3fc7e5adedaa081b19016e1c71f47ef769249649585063b0f54`。旧Admin容器bootstrap、PG alias及swap步骤退出当前发布流程，Dream现有配置和数据源保持。
+
+验证：`corepack pnpm test:release-receiver`退出0、15项通过；`node --test scripts/package-admin-release.test.mjs`退出0、3项通过。两workflow YAML结构检查退出0；20文档／231本地链接／25锚点、50段仅bash -n检查、569行新增用语检查及两仓库diff check均通过。技术证据位于Dream `frontend/output/chat-continuation-20261104/sync-release-contract-20261108/validation.log`。
+
+Admin发布合同实现提交为`2873473dd7f6fc4cc3717a2745b201d4409b11e4`，包含14个明确文件；后续校验回执作为追加文档保存，原两仓库工作树与其他Agent改动保留。GitHub main在本次同步开始时为4630911；连接器写权限拒绝，当前gh OAuth授权缺少workflow scope。按用户已有SSH自动设置授权尝试单仓库临时deploy key推送后，GitHub仍拒绝workflow写入；临时key169173183已撤销、本机临时私钥已删除。已登录页面提交受到当前浏览器控制中断，本轮workflow同步尚未推送／合并，完整本地提交作为待提交交付物保留。
+
+现用已成功发布的运行42476219452 attempt2及应用01139a3保持；本轮同步无新生产发布、服务重启、数据库或模型操作。普通CI接入新增receiver测试的GitHub采用状态保持待提交；本地YAML与合同验证单列，当前GitHub主分支未取得本次同步的新CI回执。
