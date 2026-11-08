@@ -102,7 +102,7 @@ class ActivationContract(unittest.TestCase):
                 output.add(source, arcname='.')
             archive = packed.getvalue()
             config = root / 'config.json'
-            config.write_text(json.dumps({'hostname': 'fixture-host', 'node': 'fixture-node', 'pnpm': 'fixture-pnpm', 'service': 'fixture.service', 'user': 'fixture-user', 'releases': str(releases), 'data_dir': str(data), 'dropin': str(dropin), 'health_url': 'http://fixture.invalid', 'lock': str(root/'lock'), 'min_mem_available_bytes': 1, 'max_archive_bytes': 1000000, 'unpack_disk_factor': 1, 'health_timeout_seconds': 3}))
+            config.write_text(json.dumps({'hostname': 'fixture-host', 'node': 'fixture-node', 'pnpm': 'fixture-pnpm', 'service': 'fixture.service', 'user': 'fixture-user', 'releases': str(releases), 'data_dir': str(data), 'dropin': str(dropin), 'health_url': 'http://fixture.invalid', 'public_health_url': 'https://public.fixture.invalid/admin/login', 'lock': str(root/'lock'), 'min_mem_available_bytes': 1, 'max_archive_bytes': 1000000, 'unpack_disk_factor': 1, 'health_timeout_seconds': 3}))
             config.chmod(0o600)
             commands = []
             def execute(args, **kwargs):
@@ -131,11 +131,11 @@ class ActivationContract(unittest.TestCase):
                 return original_read(path, *args, **kwargs)
             identity = types.SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
             ticks = iter(range(100))
-            responses = iter([False, False, True] if fail else [True])
+            responses = iter([True, False, True] if fail == 'public' else [False, False, True] if fail else [True, True])
             stdout = io.StringIO()
             with patch.object(receiver.sys, 'argv', ['receiver', str(config)]), patch.dict(os.environ, {'SSH_ORIGINAL_COMMAND': 'deploy '+ 'a'*40+' '+hashlib.sha256(archive).hexdigest()+' 123'}), patch.object(receiver.os, 'geteuid', return_value=0), patch.object(receiver.os, 'chown'), patch.object(receiver.socket, 'gethostname', return_value='fixture-host'), patch.object(receiver.pwd, 'getpwnam', return_value=identity), patch.object(receiver, 'run', side_effect=execute), patch.object(receiver, 'healthy', side_effect=lambda _: next(responses)), patch.object(receiver.time, 'monotonic', side_effect=lambda: next(ticks)), patch.object(receiver.time, 'sleep'), patch.object(receiver.signal, 'signal'), patch.object(receiver.sys, 'stdin', types.SimpleNamespace(buffer=io.BytesIO(archive))), patch.object(Path, 'stat', metadata), patch.object(Path, 'read_text', read), contextlib.redirect_stdout(stdout):
                 if fail:
-                    with self.assertRaisesRegex(ValueError, 'health deadline'):
+                    with self.assertRaisesRegex(ValueError, 'Published route' if fail == 'public' else 'health deadline'):
                         receiver.main()
                 else:
                     receiver.main()
@@ -155,6 +155,25 @@ class ActivationContract(unittest.TestCase):
 
     def test_failed_health_restores_previous_dropin_and_data(self):
         self.scenario(True)
+
+    def test_failed_published_route_restores_previous_release(self):
+        self.scenario('public')
+
+
+class PreflightContract(unittest.TestCase):
+    def test_public_probe_is_bound_to_server_configuration(self):
+        from unittest.mock import patch
+        cfg = {'node': 'fixture-node', 'service': 'fixture.service', 'public_health_url': 'https://public.fixture.invalid/admin/login'}
+        with patch.object(receiver, 'run', side_effect=['v22.23.4', 'x86_64', 'active']), patch.object(receiver, 'healthy', return_value=True) as probe:
+            self.assertEqual(receiver.preflight(cfg)['publicHttp'], 200)
+            probe.assert_called_once_with(cfg['public_health_url'])
+
+    def test_failed_public_probe_blocks_preflight(self):
+        from unittest.mock import patch
+        cfg = {'node': 'fixture-node', 'service': 'fixture.service', 'public_health_url': 'https://public.fixture.invalid/admin/login'}
+        with patch.object(receiver, 'run', side_effect=['v22.23.4', 'x86_64', 'active']), patch.object(receiver, 'healthy', return_value=False):
+            with self.assertRaisesRegex(ValueError, 'Published route'):
+                receiver.preflight(cfg)
 
 
 if __name__ == '__main__':

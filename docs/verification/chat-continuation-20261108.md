@@ -64,3 +64,27 @@ Linux CI [42452463519](https://github.com/glide-the/dream-im-platform/actions/ru
 准备新备份期间SSH banner exchange和公网检查超时；已终止本轮三条自有SSH连接，远端备份／准备进程状态待控制台核对。0086旧备份路径本次未读到文件，上文为迁移当时回执，当前可恢复性待核对。当前无内核／cgroup OOM证据，无主机重启、数据恢复或重复迁移。阿里云备用入口需要本人登录，恢复时先检查原实例并停止本轮具名备份，再核对原服务和数据库。
 
 Simulator39覆盖安装及原产品Session通过；手机Google主体与Web原主体不同，当前模型发送0，等待原账户登录后完成同Thread／Claude会话验收。原数据和未知队列状态保留。
+
+
+### 手动Actions采用准备与ECS恢复补充（2026-11-08）
+
+用户指定参考`-Ink-Memory/.github/workflows`，要求后续发布在GitHub主动点击触发，并授权自动设置专用SSH key。当前workflow仅`workflow_dispatch`及main分支，独立build/deploy job；push／PR继续原CI检查。原test.yml的临时制品打包已移入手动workflow，原自动检查合同保留。当前代码与[发布指南](../../../ink-admin-memory/docs/deploy.md)对应，首次完整手动发布回执后续追加。
+
+阿里云本人登录后，云助手`t-bj072guiil578xs`安全检查退出0、14秒：原service active/running、NRestarts0，本机HTTP200，数据库目录inode1056781、0700、ink-admin保持；无swap。停止本轮具名备份后SSH恢复，进程核对pg_dump为0，公网再次200。内核OOM检索无匹配回执，故障归因保留待核实；无主机重启或数据恢复。当前新dump为2,535,784,448字节，完整性未确认，保留私有文件并退出恢复依据。
+
+专用Actions key以`restrict`和固定receiver command附加到原authorized_keys，原公钥字节前缀保持。GitHub admin-production环境仅允许main，原个人私钥未上传。受限key preflight退出0（原实例、Node22.23.4、x86_64、service active），普通uname命令退出1、固定白名单反馈。root所有的接收脚本SHA `b0cf45d73401a646ae9fc1b350f8b7c9ed4933b7329fb13889546c6080b52d10`。代码打包3项、接收器9项、eslint、Python compile和YAML解析退出0；9项覆盖实际合成激活／回滚及原env/data inode保持。actionlint未安装，未声明通过。
+
+Simulator40 Next来源579项、完整Next与Xcode构建退出0；覆盖安装退出0，前后偏好摘要一致，原Bundle ID保持。可见Chat页配置错误消失，原Session保持；空／部分可选配置沿用既有workspace开启和手动确认默认，已保存错误类型保持拒绝。native setup技术fixture10项、生产源lint及完整tsc退出0；spec合并lint保留27项any检查失败回执。正常Web5173曾无监听，已沿原任务参数重新启动，Web200、backend8765 health200、Admin3000保持。
+
+手机产品主体与Web原主体仍不同，原账户本人登录待完成；本轮真实模型发送0，退出跨端业务通过声明。指定历史回归对话的state_unknown保留，退出自动消息重放范围。
+
+
+### 首次GitHub手动发布回执与公网探测修订
+
+PR [44](https://github.com/glide-the/dream-im-platform/pull/44)通过最终CI [42455551924](https://github.com/glide-the/dream-im-platform/actions/runs/42455551924)后合并，main `998f76c7780506883b716753f75f5d103c92b868`。主执行者在GitHub页面实际选择main并点击Run workflow，运行[42456107493](https://github.com/glide-the/dream-im-platform/actions/runs/42456107493)。build job通过；完整Linux artifact为311,940,781字节，artifact digest `dbf1834b91b840e5df242c2f8668834ac7b35a819574c45abf3a6946cfde4270`。
+
+deploy的受限SSH preflight和Publish步骤通过。服务启用`/srv/ink-admin-releases/actions-42456107493-998f76c77805/app`、BUILD_ID `BGzVS0iFjKkdHsitL-Mr7`，原release仍保留，原data inode1056781，active/running、NRestarts0。workflow最终状态failure来自GitHub runner的末尾公网curl403；制品激活步骤为success，未回滚正常服务。
+
+同URL从Mac取得Cloudflare200；ECS curl取得Cloudflare200，完整body读取10s超时；ECS Python urllib取得200。runner的具体403策略项待核对。当前修订把固定公网URL门禁放入ECS receiver preflight／激活后，失败复用原回滚；runner状态写入独立网络诊断，403原值保持。WAF、认证、IP策略与所有secrets保持。接收器12项技术合同、Python compile及YAML手动触发合同退出0；root receiver SHA `7444c14e7675fc9175ee74aea0d0ddd283dfdc843ae8299d213416614c70a825`，原配置备份0600，待下一次修订后的完整手动运行回执。
+
+Safari使用手机已登录的现有Google账户尝试正常登录，在Google出现本人验证／reCAPTCHA，停止在该验证页。原Chrome账户与历史保留，模型发送0；同一账户的真实跨端续接仍依赖本人完成Web验证。
