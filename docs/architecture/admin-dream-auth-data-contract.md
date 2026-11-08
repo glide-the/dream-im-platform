@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: 原Client可显式登记同路径HTTP loopback回调以支持独立App监听；issuer与资源保持。 -->
 <!-- [Sync] 2026-10-26: Confirmation scans evaluate current claim eligibility before taking Run/entity write locks; original authority and transition checks remain on eligible claims. -->
 <!-- [Sync] 2026-10-26: Workflow/Deck context reads validate an exact active Run persistence grant for original confirmation continuation, without changing OAuth, DTOs or grant issuance. -->
 <!-- [Sync] 2026-09-29: include schedule:execute in the explicit confidential-client background scope allowlist. -->
@@ -619,3 +620,8 @@ Dream 继续执行 Notion CLI 登录轮询、远端资源发现、同步策略�
 Dream exposes `GET /api/decks/catalog`, validates the exact capability, strict fields, unique Deck/Voice IDs and Voice-to-Deck correspondence, and returns the complete catalog. Frontend callers share in-flight reads by transport and current session CSRF; completed and failed reads are released. A changed session rejects the earlier response. Chat, Voice initialization, Reflections, Deck management and native setup use the aggregate instead of per-Deck detail hydration. Session events, system configuration and storage retain their own owners.
 
 Publication order: publish Admin's `deck.catalog` descriptor and handler, then update Dream backend/frontend. Missing capability produces the existing structured unavailable error. This change adds no database migration and preserves the original 292 operation descriptors. Provider-free contract and browser results verify transport and presentation behavior; normal-account and real-model acceptance require their own receipts.
+
+
+## 2026-11-08 独立本地执行端回调
+
+前文localhost拓扑为原Web注册示例。App与Web具有独立监听时，复用原服务及Browser Client，在`redirectUris`显式登记HTTP loopback回调；配置parser要求源与目标均为HTTP loopback且pathname与原回调一致。每次Origin选择仍要求唯一配置匹配、有效原service OAuth token及原Browser Client已发布精确回调。issuer、resource、secret、scope、PKCE和canonical用户域保持；浏览器请求不得生成或选择未登记地址。运行发布见[回执](../verification/chat-continuation-20261108.md)。
