@@ -1,3 +1,5 @@
+// [Sync] 2026-11-09: route default outbound requests through the shared model-center Docker NAT policy.
+import { modelEgressFetch } from "../model-egress";
 import type { PoolClient } from "pg";
 
 import { withPlatformClient, withPlatformTransaction } from "../platform-db";
@@ -61,7 +63,7 @@ export async function probeProviderReachability(
   } = {},
 ): Promise<ProviderReachabilityResult> {
   const baseUrl = resolveProviderBaseUrl(input);
-  const fetcher = dependencies.fetcher ?? fetch;
+  const fetcher = dependencies.fetcher ?? modelEgressFetch;
   const now = dependencies.now ?? Date.now;
   const testedAt = dependencies.testedAt ?? (() => new Date());
   const timeoutMs = dependencies.timeoutMs ?? PROBE_TIMEOUT_MS;

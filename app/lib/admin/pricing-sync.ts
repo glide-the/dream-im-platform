@@ -1,8 +1,10 @@
+// [Sync] 2026-11-09: route default outbound requests through the shared model-center Docker NAT policy.
 // [Input] Authenticated Admin requests, models.dev catalog and immutable PostgreSQL pricing snapshots.
 // [Output] Catalog matches and audited price versions from unique or explicitly selected snapshot candidates.
 // [Pos] Server boundary for pricing discovery, candidate validation and transactional apply.
 // [Sync] 2026-09-14: retain all candidate prices and validate manual choices against the locked snapshot.
 // [Sync] 2026-10-10: scope Image discovery and retain a separately configured image-input platform price.
+import { modelEgressFetch } from "../model-egress";
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
@@ -215,7 +217,7 @@ export function matchModelsDevPricing(localModels: LocalModel[], entries: Models
   });
 }
 
-async function fetchCatalog(imageOnly: boolean, fetcher: typeof fetch = fetch) {
+async function fetchCatalog(imageOnly: boolean, fetcher: typeof fetch = modelEgressFetch) {
   const response = await fetcher(MODELS_DEV_API_URL, {
     headers: { accept: "application/json", "accept-encoding": "identity", "user-agent": "Ink-Memory-Admin/Pricing-Sync" },
     cache: "no-store",

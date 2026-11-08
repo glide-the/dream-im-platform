@@ -1,8 +1,10 @@
+// [Sync] 2026-11-09: route default outbound requests through the shared model-center Docker NAT policy.
 // [Input] Resolved Image Provider, normalized JSON or multipart body, cancellation, and request fence.
 // [Output] Authenticated OpenAI/Codex Image response with one bounded managed-credential renewal retry.
 // [Pos] Images-only HTTP transport; it never enters Messages/Chat adaptation or payload capture.
 // [Sync] 2026-10-09: add distinct public OpenAI and registry-owned Codex Images transport paths.
 
+import { resolveModelEgressFetch } from "../model-egress";
 import type { ResolvedBillableModel } from "../models/resolver";
 import type { TokenUsage } from "../billing/types";
 import { applyManagedProviderRequestHeaders, applyModelRequestHeaders } from "../models/request-headers";
@@ -202,8 +204,9 @@ export async function sendImageProviderRequest(input: {
   const credentialHeaders = [new Headers(headers)];
   try {
     throwIfRequestAborted(input.requestSignal);
+    let fetcher = await resolveModelEgressFetch(abort.signal);
     input.onDispatch?.();
-    let response = await fetch(endpoint, {
+    let response = await fetcher(endpoint, {
       method: "POST",
       headers,
       body: encodedBody,
@@ -238,9 +241,10 @@ export async function sendImageProviderRequest(input: {
         managedAccountAuthEpoch: access.accountAuthEpoch,
         renewalAttempted: true,
       });
+      fetcher = await resolveModelEgressFetch(abort.signal);
       throwIfRequestAborted(input.requestSignal);
       input.onDispatch?.();
-      response = await fetch(endpoint, {
+      response = await fetcher(endpoint, {
         method: "POST",
         headers,
         body: encodedBody,

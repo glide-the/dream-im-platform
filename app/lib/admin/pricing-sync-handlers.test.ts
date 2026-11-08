@@ -2,6 +2,7 @@
 // [Output] Current discovery/apply handler proof without calling a model or a normal database.
 // [Pos] Provider-free unit boundary; isolated E2E separately proves SQL and persistence.
 // [Sync] 2026-10-10: cover scoped Image discovery, upstream errors, safe writes and missing platform prices.
+// [Sync] 2026-11-09: explicitly resolve the shared network policy to its default in this isolated database boundary.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -27,6 +28,7 @@ function request(body: unknown) {
 }
 function database(existing: Record<string, unknown> | undefined = current) {
   mocks.query.mockImplementation(async (sql: string) => {
+    if (sql.includes("FROM system_settings")) return { rows: [] };
     if (sql.includes("SELECT m.id")) return { rows: [local] };
     if (sql.includes("FROM ai_pricing_sync_snapshots")) return { rows: [{ id: "snapshot", status: "ready", expires_at: new Date(Date.now() + 60_000), matches, catalog_version: "v1", catalog_hash: "hash" }] };
     if (sql.includes("SELECT * FROM ai_pricing_rules")) return { rows: existing ? [existing] : [] };

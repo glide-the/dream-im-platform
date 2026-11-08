@@ -4,6 +4,9 @@
 // [Sync] 2026-10-09: cover dispatch fences, bounded failures, and one managed credential renewal.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveModelEgressFetch } from "../model-egress";
+// [Sync] 2026-11-09: isolate network policy while retaining the real Images credential/timeout lifecycle.
+vi.mock("../model-egress", () => ({ resolveModelEgressFetch: vi.fn(async () => (...args: Parameters<typeof fetch>) => globalThis.fetch(...args)) }));
 
 import {
   ImageProviderHttpError,
@@ -53,6 +56,15 @@ beforeEach(() => {
 });
 
 describe("Images Provider transport", () => {
+  it("does not mark an image dispatch when network configuration cannot be resolved", async () => {
+    vi.mocked(resolveModelEgressFetch).mockRejectedValueOnce(new Error("network policy unavailable"));
+    const onDispatch = vi.fn();
+    const fetcher = vi.spyOn(globalThis, "fetch");
+    try {
+      await expect(sendImageProviderRequest({ resolved: genericResolved, operation: "images.generations", body: {}, requestSignal: new AbortController().signal, gatewayRequestId: "req-network-policy", onDispatch })).rejects.toThrow("network policy unavailable");
+      expect(onDispatch).not.toHaveBeenCalled(); expect(fetcher).not.toHaveBeenCalled();
+    } finally { fetcher.mockRestore(); }
+  });
   it("does not fetch when the downstream signal is already aborted", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     const controller = new AbortController();

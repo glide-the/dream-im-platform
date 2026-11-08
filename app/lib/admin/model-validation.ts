@@ -1,3 +1,4 @@
+// [Sync] 2026-11-09: route default outbound requests through the shared model-center Docker NAT policy.
 // [Input] Authenticated model-validation requests plus generic static or product-managed Provider state.
 // [Output] Minimal validation status plus bounded, credential-redacted upstream failure diagnostics for models.write.
 // [Pos] Shared Admin model validation primitive using the same auth and product dialects as Gateway.
@@ -8,6 +9,7 @@
 // [Sync] 2026-10-10: validate the configured Chat/Responses endpoint with Gateway's same request conversion.
 // [Sync] 2026-10-11: verify one real hosted Responses image through the original audited model boundary.
 
+import { modelEgressFetch } from "../model-egress";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { imageApiPolicy } from "../../../config/image-api-policy";
@@ -179,7 +181,7 @@ export async function validateUpstreamModel(
     throw new AdminError("RESPONSES_IMAGE_VALIDATION_UNSUPPORTED", "请选择 Codex 或已明确使用 Responses 的 OpenAI Provider 模型。", 409);
   }
   const endpoint = resolveProviderInferenceEndpoint(input);
-  const fetcher = dependencies.fetcher ?? fetch;
+  const fetcher = dependencies.fetcher ?? modelEgressFetch;
   const now = dependencies.now ?? Date.now;
   const testedAt = dependencies.testedAt ?? (() => new Date());
   const startedAt = now();
@@ -279,7 +281,7 @@ export async function validateManagedUpstreamModel(
   if (imageValidation && input.adapterKind !== "codex") {
     throw new AdminError("RESPONSES_IMAGE_VALIDATION_UNSUPPORTED", "请选择 Codex 或已明确使用 Responses 的 OpenAI Provider 模型。", 409);
   }
-  const fetcher = dependencies.fetcher ?? fetch;
+  const fetcher = dependencies.fetcher ?? modelEgressFetch;
   const resolveAccess = dependencies.resolveAccess ?? resolveManagedProviderAccess;
   const now = dependencies.now ?? Date.now;
   const testedAt = dependencies.testedAt ?? (() => new Date());

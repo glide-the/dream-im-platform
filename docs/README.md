@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: 索引价格目录接入ECS现有Docker NAT出口的维护回执。 -->
 <!-- [Sync] 2026-11-08: 索引完整手动发布成功回执和原数据保持记录。 -->
 <!-- [Sync] 2026-11-08: 索引GitHub手动发布，旧源码构建及恢复记录保留。 -->
 <!-- [Sync] 2026-10-25: deployment index points to native pnpm SSH operation. -->
@@ -15,6 +16,9 @@
 # 文档索引
 
 ## 当前执行入口
+
+- [模型中心本机 Docker NAT 代理](design/model-center-network-proxy.md)
+- [模型中心 Docker NAT 开关验证](verification/model-center-network-proxy-20261109.md)
 
 - [Dream 图片模型分工专项执行记录](/Users/dmeck/project/ink-dream-memory/docs/exec/image-model-call-division-20261010.md)
 - [Image 模型分工修订前 PRD 原文（历史）](prd/image-model-center/history-20261010-dream-model-division.md)
@@ -61,6 +65,7 @@
 - [手动发布与原数据保持的验证回执](verification/chat-continuation-20261108.md)
 - [构建内存与发布失败恢复](release-build-memory-and-recovery.md)
 - [Admin 线上服务创建、维护、日志与使用记录](deploy-services.md)
+- [价格目录接入ECS现有Docker NAT出口回执](verification/ecs-pricing-catalog-egress-20261108.md)
 - [ECS Admin 原生部署与现用数据迁移回执](verification/ecs-admin-native-20261025.md)
 - [Admin deck.catalog ECS 发布回执与只读验证](verification/admin-deck-catalog-ecs-20261029.md)
 - [Dream Claude Agent 资源 Observer 与 Admin 控制台设计](design/dream-agent-resource-observer-console.md)

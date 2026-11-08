@@ -1,6 +1,8 @@
+// [Sync] 2026-11-09: route default outbound requests through the shared model-center Docker NAT policy.
 // [Input] Named upstream usage source, server-only request credentials and bounded JSON responses.
 // [Output] Semantic metrics that preserve missing values, currency, windows and reset timestamps.
 // [Pos] Pure usage adapters; no database, scripts, inferred balances or platform billing aggregation.
+import { modelEgressFetch } from "../model-egress";
 import { readJsonRecord } from "./http";
 export type UsageSource = "openrouter" | "deepseek" | "codex" | "github_copilot";
 export type UpstreamMetric = { label: string; value: number; unit: "USD" | "CNY" | "percent" | "requests"; resetAt?: string; windowSeconds?: number };
@@ -66,7 +68,7 @@ export async function queryUpstreamUsage(input: { source: UsageSource; url: stri
   const now = dependencies.now ?? Date.now;
   const stamp = () => ({ queriedAt: new Date(now()).toISOString(), expiresAt: new Date(now() + input.ttlSeconds * 1_000).toISOString() });
   try {
-    const response = await (dependencies.fetcher ?? fetch)(input.url, { headers: input.headers, method: "GET", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(input.timeoutMs) });
+    const response = await (dependencies.fetcher ?? modelEgressFetch)(input.url, { headers: input.headers, method: "GET", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(input.timeoutMs) });
     if (!response.ok) {
       await response.body?.cancel();
       return { status: response.status === 401 || response.status === 403 ? "forbidden" : "failed", source: input.source, metrics: [], ...stamp(),

@@ -1,3 +1,4 @@
+// [Sync] 2026-11-09: route default outbound requests through the shared model-center Docker NAT policy.
 // [Sync] 2026-10-10: bind image operation/model ownership and preserve real call identity through original authorization, files and history.
 // [Input] Resolved generic/product Provider, request body, cancellation signal, credential revision, and timeout policy.
 // [Output] Authenticated response, credential-redacted upstream error bodies, lifecycle-safe abort control, and bounded 401 recovery.
@@ -8,6 +9,7 @@
 // [Sync] 2026-10-09: share static credential opening with the isolated Images transport.
 // [Sync] 2026-10-10: send static requests to the explicitly configured inference API without dialect fallback.
 
+import { resolveModelEgressFetch } from "../model-egress";
 import { decryptCredential } from "../security/credential-encryption";
 import type { ResolvedBillableModel } from "../models/resolver";
 import { GatewayError } from "./errors";
@@ -172,9 +174,10 @@ export async function sendProviderRequest(input: {
   const credentialHeaders = [new Headers(headers)];
   try {
     const serializedBody = JSON.stringify(input.body);
+    let fetcher = await resolveModelEgressFetch(abort.signal);
     if (input.onDispatch && input.requestSignal.aborted) throw input.requestSignal.reason;
     input.onDispatch?.();
-    let response = await fetch(requestEndpoint, {
+    let response = await fetcher(requestEndpoint, {
       method: "POST",
       headers,
       body: serializedBody,
@@ -208,7 +211,8 @@ export async function sendProviderRequest(input: {
           renewalAttempted: true,
         });
       }
-      response = await fetch(renewed.url, {
+      fetcher = await resolveModelEgressFetch(abort.signal);
+      response = await fetcher(renewed.url, {
         method: "POST",
         headers,
         body: JSON.stringify(input.body),
