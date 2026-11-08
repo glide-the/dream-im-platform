@@ -22,13 +22,13 @@
 1. 打开GitHub仓库Actions，选择 **Build and deploy Admin (manual)**。
 2. 点击 **Run workflow**，选择`main`并运行。build job执行锁定依赖安装、配置／单元／lint／完整类型检查和Next构建，打包完整Linux源码、依赖闭包与构建输出。
 3. deploy job从同一次运行读取制品，使用`admin-production`环境的专用SSH key，严格核对已登记host key；受限入口校验主机、摘要、Node版本、磁盘、内存、原完整制品、配置和数据库目录。
-4. check-only迁移检查通过后，切换原systemd到候选，继续`pnpm run start:embedded`。健康失败恢复前一drop-in及原完整制品；成功输出source SHA、BUILD_ID、前后release路径和数据库inode。登录页200属于HTTP检查，真实账户、业务与模型验收单列。
+4. check-only迁移检查通过后，切换原systemd到候选，继续`pnpm run start:embedded`。本机健康或配置中的公网路由检查失败时恢复前一drop-in及原完整制品；成功输出source SHA、BUILD_ID、前后release路径、数据库inode和publicHttp200。登录页200属于HTTP检查，真实账户、业务与模型验收单列。
 
 构建预算只作用于GitHub runner。ECS无构建、依赖安装、全库备份或自动DDL；存在pending migration、身份／配置／依赖／摘要差异时，在服务切换前停止。前向schema发布沿原Admin显式迁移流程单独执行，0086已发布能力由迁移记录核对。所有发布共享一个并发组，`cancel-in-progress=false`，主机再使用文件锁；重复执行以新手动运行建立独立release目录。
 
 仓库变量：`ADMIN_NODE_VERSION`。环境变量：`ADMIN_SSH_HOST`、`ADMIN_SSH_PORT`、`ADMIN_SSH_USER`、`ADMIN_PUBLIC_ORIGIN`。环境secrets：`ADMIN_DEPLOY_SSH_KEY`与`ADMIN_DEPLOY_KNOWN_HOSTS`。专用公钥保留现有authorized_keys，仅附加带`restrict`和固定command的发布入口；原个人SSH key保持在原位置。`admin-production`仅允许main，部署执行无需新增人工确认。
 
-接收脚本[admin-action-deploy.py](../scripts/admin-action-deploy.py)安装为root所有，配置保存在服务器`/etc/ink-memory-admin/github-deploy.json`，权限0600。配置明确原实例、service、运行用户、Node/pnpm、release根、现用PostgreSQL根、健康URL及本机预算；脚本只接受`preflight`或四段具名deploy命令，退出任意shell／scp／端口转发路径。制品由[package-admin-release.mjs](../scripts/package-admin-release.mjs)生成，私有env保留在ECS，从原release复制并校验字节，不进入GitHub制品。
+接收脚本[admin-action-deploy.py](../scripts/admin-action-deploy.py)安装为root所有，配置保存在服务器`/etc/ink-memory-admin/github-deploy.json`，权限0600。配置明确原实例、service、运行用户、Node/pnpm、release根、现用PostgreSQL根、本机／公网健康URL及本机预算；公网URL固定为当前Admin域名的`/admin/login`，preflight和激活后分别检查。脚本只接受`preflight`或四段具名deploy命令，退出任意shell／scp／端口转发路径。制品由[package-admin-release.mjs](../scripts/package-admin-release.mjs)生成，私有env保留在ECS，从原release复制并校验字节，不进入GitHub制品。
 
 当前流程取代下文历史的服务器原地源码构建步骤。手动诊断、服务恢复及原迁移权限继续沿既有运维合同。
 
@@ -169,3 +169,8 @@ nginx -t
 AutoDL/SeetaCloud 的独立平台配置和专用打包流程仍在 [`deploy/autodl-ssh`](../deploy/autodl-ssh/.folder.md)。其端口映射、目录和 standalone 启动器只适用于该平台，不能套用到本次 ECS 的 `pnpm local:stable` 服务。
 
 [`docker/`](../docker/.folder.md) 保留显式容器验证工具。没有明确的容器需求时，不运行 `pnpm docker:*`、Docker Desktop 或旧 Compose 发布命令。
+
+
+### 公网探测来源
+
+首发Actions的ECS制品激活已成功，GitHub runner的末尾公网GET返回403；Mac同URL返回Cloudflare HTTP200，ECS的curl与Python urllib均取得HTTP200。runner的具体403策略项待核对。当前发布门禁由ECS访问服务端固定`public_health_url`，验证公网DNS／TLS／入口与本机健康；公网检查失败进入原回滚。GitHub runner同URL的结果作为独立网络诊断写入Step Summary，403保持原值。入口WAF、认证和IP策略保持；该探测退出真实账户和模型验收范围。
