@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: 当前发布改为GitHub手动Actions，在Linux runner构建完整制品，ECS保持start:embedded与原数据库。 -->
 <!--
 [Input] The confirmed SSH host, exact Admin source release, private runtime configuration and existing PostgreSQL data.
 [Output] Admin-only deployment through pnpm local:stable, with explicit data transfer and service verification.
@@ -14,7 +15,24 @@
 
 线上出口和持久文件应由服务器设施提供，不以个人电脑、桌面代理或用户登录会话为部署前提。当前线上仍有迁移时引入的临时出口和文件复制依赖，尚未完成替换；具体事实与影响见[临时桥接问题记录](verification/ecs-admin-temporary-bridges-20261029.md)。该记录不是生产部署步骤。
 
-## 部署方式与范围
+## GitHub 手动打包发布（当前入口）
+
+参考用户指定的`-Ink-Memory/.github/workflows/deploy-pages.yml`，构建与发布采用独立job。Admin使用[deploy-admin.yml](../.github/workflows/deploy-admin.yml)，仅注册`workflow_dispatch`，运行分支限定`main`。push、PR、合并和定时任务均无部署动作；原test.yml继续执行CI检查。[GitHub workflow语法](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)定义手动事件和并发规则。
+
+1. 打开GitHub仓库Actions，选择 **Build and deploy Admin (manual)**。
+2. 点击 **Run workflow**，选择`main`并运行。build job执行锁定依赖安装、配置／单元／lint／完整类型检查和Next构建，打包完整Linux源码、依赖闭包与构建输出。
+3. deploy job从同一次运行读取制品，使用`admin-production`环境的专用SSH key，严格核对已登记host key；受限入口校验主机、摘要、Node版本、磁盘、内存、原完整制品、配置和数据库目录。
+4. check-only迁移检查通过后，切换原systemd到候选，继续`pnpm run start:embedded`。健康失败恢复前一drop-in及原完整制品；成功输出source SHA、BUILD_ID、前后release路径和数据库inode。登录页200属于HTTP检查，真实账户、业务与模型验收单列。
+
+构建预算只作用于GitHub runner。ECS无构建、依赖安装、全库备份或自动DDL；存在pending migration、身份／配置／依赖／摘要差异时，在服务切换前停止。前向schema发布沿原Admin显式迁移流程单独执行，0086已发布能力由迁移记录核对。所有发布共享一个并发组，`cancel-in-progress=false`，主机再使用文件锁；重复执行以新手动运行建立独立release目录。
+
+仓库变量：`ADMIN_NODE_VERSION`。环境变量：`ADMIN_SSH_HOST`、`ADMIN_SSH_PORT`、`ADMIN_SSH_USER`、`ADMIN_PUBLIC_ORIGIN`。环境secrets：`ADMIN_DEPLOY_SSH_KEY`与`ADMIN_DEPLOY_KNOWN_HOSTS`。专用公钥保留现有authorized_keys，仅附加带`restrict`和固定command的发布入口；原个人SSH key保持在原位置。`admin-production`仅允许main，部署执行无需新增人工确认。
+
+接收脚本[admin-action-deploy.py](../scripts/admin-action-deploy.py)安装为root所有，配置保存在服务器`/etc/ink-memory-admin/github-deploy.json`，权限0600。配置明确原实例、service、运行用户、Node/pnpm、release根、现用PostgreSQL根、健康URL及本机预算；脚本只接受`preflight`或四段具名deploy命令，退出任意shell／scp／端口转发路径。制品由[package-admin-release.mjs](../scripts/package-admin-release.mjs)生成，私有env保留在ECS，从原release复制并校验字节，不进入GitHub制品。
+
+当前流程取代下文历史的服务器原地源码构建步骤。手动诊断、服务恢复及原迁移权限继续沿既有运维合同。
+
+## 历史源码部署方式与范围
 
 源码发布入口为 `pnpm local:stable`，执行 `pnpm build && pnpm run start:embedded`，由现有 PostgreSQL supervisor 启动 Admin、Gateway 和内嵌 PostgreSQL。目标服务器构建须先通过[构建内存与发布失败恢复手册](release-build-memory-and-recovery.md)的容量与恢复检查；资源不足时优先评估兼容主机准备完整候选。完整制品的运行与恢复复用已有 `pnpm run start:embedded`。本轮仅修订文档，实际 unit 与发布方式按维护时核对结果处理，不启动本机 Docker。
 
