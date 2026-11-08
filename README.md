@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: Admin当前采用GitHub手动Actions构建与ECS制品发布，服务器保留原start:embedded。 -->
 <!-- [Sync] 2026-10-25: native SSH deployment uses pnpm local:stable; retired ECS Docker entrypoints removed. -->
 <!-- [Sync] 2026-09-28: require explicit task-return scope on the Dream confidential client. -->
 <!-- [Sync] 2026-09-17: document hidden-TTY, default-dry-run recovery for an independent Admin password. -->
@@ -126,7 +127,7 @@ pnpm auth:reset-admin-password --email admin@example.com --apply
 
 ## 服务器部署
 
-SSH 服务器直接运行 `pnpm local:stable`，构建和服务启动均在目标服务器完成。该入口由专用非 root 服务账户运行，监督 Admin、Gateway 和内嵌 PostgreSQL；应用启动不执行 migration。
+Admin发布在GitHub Actions手动点击 **Build and deploy Admin (manual) → Run workflow**，仅接受main。Linux runner完成检查与完整制品打包，ECS校验后由专用非root账户沿`pnpm run start:embedded`运行。push／PR保留CI检查，发布阶段仅执行check-only迁移检查；原PostgreSQL和配置保持，失败恢复前一完整制品。
 
 本次 SSH 目标为 `root@39.97.252.88`，登录身份与服务运行身份分离。先核对实际服务、源码、配置和数据，再按[部署指南](docs/deploy.md)处理候选发布、数据迁入、nginx 和验证。
 

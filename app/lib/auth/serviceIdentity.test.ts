@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: qualify explicit loopback aliases with exact callback and publication checks.
 // [Sync] 2026-10-11: enforce same-client exact callbacks and reject incompatible DPoP without changing token protocol.
 // [Input] OAuth service bearer, registered clients and background scopes.
 // [Output] client_credentials binding, scope enforcement and user-override rejection evidence.
@@ -55,6 +56,17 @@ describe("same-client published browser address", () => {
     oauthClientId: "local-browser", redirectUri: "http://localhost:5173/auth/callback" };
   const both = [clients[0], local];
   const localToken = verified({ subject: local.id, clientId: local.id });
+  it("requires both exact configuration and original Client publication for another loopback listener", async () => {
+    const callback = "http://127.0.0.1:4173/auth/callback";
+    const configured = { ...local, redirectUris: [callback] };
+    const check = vi.fn().mockResolvedValue(true);
+    const result = await requireDreamService(request({ origin: "http://127.0.0.1:4173" }), [configured], localToken, check);
+    expect(result).toMatchObject({ id: local.id, oauthClientId: local.oauthClientId, origin: "http://127.0.0.1:4173", redirectUri: callback });
+    expect(check).toHaveBeenCalledWith(configured, callback);
+    check.mockResolvedValue(false);
+    await expect(requireDreamService(request({ origin: "http://127.0.0.1:4173" }), [configured], localToken, check)).rejects.toThrow("DREAM_ORIGIN_DENIED");
+    await expect(requireDreamService(request({ origin: "http://127.0.0.1:4174" }), [configured], localToken, check)).rejects.toThrow("DREAM_ORIGIN_DENIED");
+  });
   it("keeps the verified service/client and scopes when selecting a published public callback", async () => {
     const check = vi.fn().mockResolvedValue(true);
     const result = await requireDreamService(request({ origin: clients[0].origin }), both, localToken, check);

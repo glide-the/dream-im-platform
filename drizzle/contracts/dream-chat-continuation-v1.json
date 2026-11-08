@@ -1,0 +1,19 @@
+{
+  "capability": "dream.chat-continuation.v1",
+  "version": 1,
+  "thread_origin": [
+    "web_cloud",
+    "mobile_ios",
+    "mobile_android"
+  ],
+  "queue_columns": [
+    "continuation_owner",
+    "continuation_phase"
+  ],
+  "phase": [
+    "prepared",
+    "armed"
+  ],
+  "coordination": "owner-thread-lock;history-digest;single-dispatching-or-unknown;arm-before-runner;no-takeover",
+  "contract_sha256": "86bc59653c2f5d68a77cc4d922f1f4ebb670599411af6e4d3a64a93db814c3a8"
+}

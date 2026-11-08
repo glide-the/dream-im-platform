@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: allow exact same-Thread continuation operations.
 // [Input] Task-bound service authority, child Thread binding and encrypted server-side token storage.
 // [Output] Short-lived Reflections worker bearer with exact operation allowlist, renewal and revocation.
 // [Pos] Registered child persistence authority; separate from frozen runtime_delegations semantics.
@@ -18,6 +19,9 @@ import { reflectionAuthorityDto, reflectionAuthorityTokenDto } from "./reflectio
 export const reflectionTaskAuthorityOperationScopes = Object.freeze({
   "chat-user-message.persist": "dream:write",
   "chat-message.persist": "dream:write",
+  "chat-message.resume-snapshot": "dream:read",
+  "chat-input.claim-continuation": "dream:write",
+  "chat-input.continuation-progress": "dream:write",
   "chat-thread.get": "dream:read",
   "chat-thread.update-session": "dream:write",
   "thread-system-config.get": "dream:read",

@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: additive Thread origin and queue continuation ownership/phase.
 // [Sync] 2026-10-15: add revisioned Reflections memory documents and owner behavior settings.
 // [Sync] 2026-10-13: add nullable task-private analysis content for additive Reflections selection operations.
 // [Sync] 2026-10-07: declare v3 recurrence, source/new Thread mode, model snapshots and mode-scoped trigger uniqueness for forward 0077.
@@ -611,10 +612,12 @@ export const chat_thread = pgTable("chat_thread", {
 	deck_id: text(),
 	voice_id: text(),
 	claude_session_id: text(),
+	created_execution_origin: text(),
 	agent_contract_version: text(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
 	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
+	check("ck_chat_thread_origin", sql`created_execution_origin IS NULL OR created_execution_origin IN ('web_cloud','mobile_ios','mobile_android')`),
 	index("idx_chat_thread_user").using("btree", table.user_id.asc().nullsLast().op("int8_ops"), table.updated_at.asc().nullsLast().op("int8_ops")),
 	foreignKey({
 			columns: [table.voice_id],
@@ -673,11 +676,14 @@ export const chat_input_queue = pgTable("chat_input_queue", {
 	status: text().default("queued").notNull(),
 	revision: integer().default(1).notNull(),
 	dispatch_turn_id: text(),
+  continuation_owner: text(),
+  continuation_phase: text(),
 	created_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
 	updated_at: timestamp({ withTimezone: true, mode: "string" }).defaultNow().notNull(),
 }, (table) => [
 	unique("uq_chat_input_queue_sequence").on(table.queue_sequence),
-	index("idx_chat_input_queue_thread_order").on(table.thread_id, table.queue_sequence),
+	check("ck_chat_input_continuation", sql`(continuation_owner IS NULL AND continuation_phase IS NULL) OR (continuation_owner IS NOT NULL AND continuation_phase IS NOT NULL AND continuation_phase IN ('prepared','armed'))`),
+  index("idx_chat_input_queue_thread_order").on(table.thread_id, table.queue_sequence),
 	foreignKey({ columns: [table.message_id], foreignColumns: [chat_message.id], name: "fk_chat_input_queue_message" }).onDelete("cascade"),
 	foreignKey({ columns: [table.thread_id], foreignColumns: [chat_thread.id], name: "fk_chat_input_queue_thread" }).onDelete("cascade"),
 	check("ck_chat_input_queue_status", sql`status IN ('queued','selected','dispatching','consumed','cancelled','failed','state_unknown')`),

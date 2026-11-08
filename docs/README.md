@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: 索引GitHub手动发布，旧源码构建及恢复记录保留。 -->
 <!-- [Sync] 2026-10-25: deployment index points to native pnpm SSH operation. -->
 <!-- [Sync] 2026-10-29: index ECS systemd creation and maintenance; keep workstation bridges in historical problem records. -->
 <!-- [Sync] 2026-10-10: 同步Dream模型用途、公开能力与历史索引；本轮验证见专项执行记录。 -->
@@ -55,7 +56,7 @@
 - [ink-dream-memory 产品交互设计](design/ink-dream-memory/README.md)
 - [项目架构设计说明](architecture/项目架构设计说明.md)
 - [数据库 Package 与内嵌 PostgreSQL](architecture/database-package-and-embedded-postgresql.md)
-- [部署指南：SSH 服务器直接运行 pnpm local:stable](deploy.md)
+- [部署指南：GitHub手动Actions打包与ECS制品发布](deploy.md)
 - [构建内存与发布失败恢复](release-build-memory-and-recovery.md)
 - [Admin 线上服务创建、维护、日志与使用记录](deploy-services.md)
 - [ECS Admin 原生部署与现用数据迁移回执](verification/ecs-admin-native-20261025.md)

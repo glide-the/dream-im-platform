@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: allow exact same-Thread continuation operations.
 // [Input] Admin-prepared trigger, configured service identity and short-lived signed bearer.
 // [Output] Exact trigger/claim/owner/Chat/Editor-bound persistence actor after live database checks.
 // [Pos] Scheduled worker authority boundary; this token is not OAuth or a general runtime delegation.
@@ -20,7 +21,7 @@ const payloadDto = z.strictObject({
   issued_at: z.number().int().positive().safe(), expires_at: z.number().int().positive().safe(),
 });
 type Payload = z.infer<typeof payloadDto>;
-const allowedOperations = new Set(["chat-user-message.persist", "chat-message.persist", "chat-thread.get", "chat-thread.update-session", "runtime-delegation.create", "scheduled-trigger.authority.resolve", "scheduled-trigger.v2.authority.resolve", "scheduled-trigger.v3.authority.resolve"]);
+const allowedOperations = new Set(["chat-message.resume-snapshot", "chat-input.claim-continuation", "chat-input.continuation-progress", "chat-user-message.persist", "chat-message.persist", "chat-thread.get", "chat-thread.update-session", "runtime-delegation.create", "scheduled-trigger.authority.resolve", "scheduled-trigger.v2.authority.resolve", "scheduled-trigger.v3.authority.resolve"]);
 function secret() {
   const value = requiredAuthValue("AUTH_CHAT_SCHEDULE_AUTHORITY_SECRET");
   if (Buffer.byteLength(value) < 32) throw new AuthBoundaryError("SCHEDULE_AUTHORITY_NOT_CONFIGURED");

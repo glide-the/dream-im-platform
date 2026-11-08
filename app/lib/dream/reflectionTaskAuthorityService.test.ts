@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: cover additive continuation registration and exact publication gates.
 // [Input] Fixed task/section bindings, encrypted rta bearer rows, clock and repository seams.
 // [Output] Exact persistence/exchange allowlist, restart recovery, maximum-expiry, revocation and entity-denial evidence.
 // [Pos] Provider-free Reflections authority gate; no Registry, Route, PostgreSQL, network or Agent.
@@ -48,11 +49,14 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
-it("keeps six child persistence operations plus one Admin-only Gateway exchange", () => {
+it("keeps child persistence and continuation operations plus one Admin-only Gateway exchange", () => {
   expect(reflectionTaskAuthorityOperationScopes).toEqual({
     "chat-user-message.persist": "dream:write", "chat-message.persist": "dream:write", "chat-thread.get": "dream:read",
     "chat-thread.update-session": "dream:write", "thread-system-config.get": "dream:read", "session.list": "dream:read",
     "runtime-delegation.create": "dream:write",
+    "chat-message.resume-snapshot": "dream:read",
+    "chat-input.claim-continuation": "dream:write",
+    "chat-input.continuation-progress": "dream:write",
   });
   expect(() => requireReflectionTaskAuthorityOperation("chat-thread.create")).toThrow("REFLECTION_AUTHORITY_OPERATION_DENIED");
 });

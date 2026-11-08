@@ -1,0 +1,114 @@
+# [Input] Explicit Run workflow on main, locked source and the Admin production SSH registration.
+# [Output] Verified Linux release, manual ECS activation, retained previous release and deployment receipt.
+# [Pos] Sole Admin publish trigger; push and pull requests only run independent CI.
+# [Sync] 2026-11-08: build outside ECS and publish only by workflow_dispatch.
+name: Build and deploy Admin (manual)
+run-name: Admin manual release by @${{ github.actor }}
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: admin-production-release
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ vars.ADMIN_NODE_VERSION }}
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install locked Linux dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check config, units, lint and types
+        run: |
+          pnpm test:config
+          python3 -m unittest discover -s scripts -p test_admin_action_deploy.py
+          pnpm test:run
+          pnpm lint
+          pnpm exec tsc --noEmit
+      - name: Build complete Admin
+        env:
+          NEXT_BUILD_CPUS: '2'
+          NEXT_WEBPACK_MEMORY_OPTIMIZATIONS: 'true'
+          NODE_OPTIONS: --max-old-space-size=2048
+        run: pnpm build
+      - name: Package exact source and dependency closure
+        run: node scripts/package-admin-release.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: admin-release-${{ github.sha }}
+          path: release-output/
+          retention-days: 7
+          if-no-files-found: error
+  deploy:
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    environment:
+      name: admin-production
+      url: ${{ vars.ADMIN_PUBLIC_ORIGIN }}
+    env:
+      ADMIN_HOST: ${{ vars.ADMIN_SSH_HOST }}
+      ADMIN_USER: ${{ vars.ADMIN_SSH_USER }}
+      ADMIN_PORT: ${{ vars.ADMIN_SSH_PORT }}
+      ADMIN_PUBLIC_ORIGIN: ${{ vars.ADMIN_PUBLIC_ORIGIN }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: admin-release-${{ github.sha }}
+          path: release-output
+      - name: Load dedicated restricted SSH identity
+        env:
+          ADMIN_SSH_KEY: ${{ secrets.ADMIN_DEPLOY_SSH_KEY }}
+          ADMIN_KNOWN_HOSTS: ${{ secrets.ADMIN_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$ADMIN_HOST" && test -n "$ADMIN_USER" && test -n "$ADMIN_PORT"
+          test -n "$ADMIN_SSH_KEY" && test -n "$ADMIN_KNOWN_HOSTS"
+          umask 077
+          mkdir -p "$RUNNER_TEMP/admin-ssh"
+          printf '%s\n' "$ADMIN_SSH_KEY" > "$RUNNER_TEMP/admin-ssh/key"
+          printf '%s\n' "$ADMIN_KNOWN_HOSTS" > "$RUNNER_TEMP/admin-ssh/known_hosts"
+      - name: Check existing host and release receiver
+        run: >-
+          ssh -i "$RUNNER_TEMP/admin-ssh/key" -p "$ADMIN_PORT"
+          -o BatchMode=yes -o StrictHostKeyChecking=yes
+          -o UserKnownHostsFile="$RUNNER_TEMP/admin-ssh/known_hosts"
+          -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2
+          "$ADMIN_USER@$ADMIN_HOST" preflight
+      - name: Publish source-bound complete release
+        run: |
+          set -euo pipefail
+          digest="$(cat release-output/archive.sha256)"
+          test "$(sha256sum release-output/admin-release.tgz | cut -d ' ' -f 1)" = "$digest"
+          ssh -i "$RUNNER_TEMP/admin-ssh/key" -p "$ADMIN_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/admin-ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$ADMIN_USER@$ADMIN_HOST" "deploy $GITHUB_SHA $digest $GITHUB_RUN_ID" \
+            < release-output/admin-release.tgz | tee deployment-receipt.json
+      - name: Check public login endpoint
+        run: curl --fail --silent --show-error --max-time 15 "$ADMIN_PUBLIC_ORIGIN/admin/login" -o /dev/null
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: admin-deployment-receipt-${{ github.run_id }}
+          path: deployment-receipt.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Remove runner SSH files
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/admin-ssh"

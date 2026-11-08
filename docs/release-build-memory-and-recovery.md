@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: 用户授权GitHub手动发布，当前按deploy.md完整Linux制品流程执行；保留原构建事故与恢复规则。 -->
 <!-- [Input] Admin package/Next 配置、既有 ECS 服务手册、发布事故记录及 Node/systemd 官方资料。 -->
 <!-- [Output] 构建资源检查、构建与运行入口选择、原制品恢复和完成判定操作要求。 -->
 <!-- [Pos] Admin 发布专项手册；与 deploy.md、deploy-services.md 配套。 -->
@@ -27,7 +28,7 @@
 | [packages/db/src/supervise.ts:11](../packages/db/src/supervise.ts#L11) 拒绝启动时 migration；[同文件:18](../packages/db/src/supervise.ts#L18) 启动 PostgreSQL 并负责收尾 | 恢复仍沿同一 supervisor；禁止另起 PostgreSQL、切换数据源或借恢复执行 migration |
 | [服务手册](deploy-services.md) 记录 `local:stable`、2048 MiB 堆和 systemd OOM 自动重启策略 | 单纯 restart 可重复进入构建；以实时 `ExecStart` 与有效覆盖项核对实际行为 |
 
-方案收敛：保留 `local:stable` 源码发布入口与现有 `start:embedded` 运行入口，通过操作流程区分构建、切换和恢复。资源不足时优先评估兼容构建主机；现有 ECS 无通用制品上传发布器，本轮不新增脚本、服务或发布中台。
+2026-11-02历史方案收敛：保留 `local:stable` 源码发布入口与现有 `start:embedded` 运行入口，通过操作流程区分构建、切换和恢复。资源不足时优先评估兼容构建主机；现有 ECS 无通用制品上传发布器，本轮不新增脚本、服务或发布中台。
 
 ## 概念与规则
 

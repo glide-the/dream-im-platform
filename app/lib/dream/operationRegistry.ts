@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: append continuation descriptors after frozen operations.
 // [Sync] 2026-10-23: append v2 Reflections scope/evidence descriptors; preserve the released registry prefix.
 // [Sync] 2026-10-15: append exact memory operations without altering prior descriptors.
 // [Sync] 2026-10-15: append v2 classification operations after all frozen descriptors.
@@ -40,8 +41,8 @@ import { claudeAgentResourcePolicy as policy } from "../../../config/claude-agen
 import { resourcePolicyReadInputDto, resourcePolicyReadOutputDto, resourceObserverPublishInputDto, resourceObserverPublishOutputDto } from "./resourceDto";
 import type { SchemaRequirement } from "./database";
 import { identitySchemaRequirement, reflectionTaskSchemaRequirements, workflowPreflightExecutionSchemaRequirements, scheduledChatRuntimeSchemaRequirement } from "./schemaRequirements";
-import { chatThreadOperationContracts } from "./chatThreadDto";
-import { chatThreadSchemaRequirements, chatInputQueueSchemaRequirement, chatTaskSessionSchemaRequirement, chatTaskResultSchemaRequirement } from "./chatThreadService";
+import { chatThreadOperationContracts, chatContinuationContracts } from "./chatThreadDto";
+import { chatContinuationSchemaRequirement, chatThreadSchemaRequirements, chatInputQueueSchemaRequirement, chatTaskSessionSchemaRequirement, chatTaskResultSchemaRequirement } from "./chatThreadService";
 import { taskSessionResultContracts } from "./taskSessionResultDto";
 import { runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement } from "./schemaRequirements";
 import { userProfileInputDto, userProfileOutputDto } from "./userProfileDto";
@@ -131,7 +132,7 @@ function descriptor(name: string, kind: "read" | "write", backgroundScope: strin
 export const dreamOperations = [
   descriptor("resource-policy.read", "read", "resource-policy:read", resourcePolicyReadInputDto, resourcePolicyReadOutputDto, [policy.observer, policy.claudeCodeRuntime]),
   descriptor("resource-observer.publish", "write", "resource-observer:write", resourceObserverPublishInputDto, resourceObserverPublishOutputDto, [policy.observer, identitySchemaRequirement]),
-  ...Object.entries(chatThreadOperationContracts).filter(([name]) => !name.startsWith("chat-input.") && !name.startsWith("task-session.")).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...chatThreadSchemaRequirements], operation.kind === "read" ? "dream:read" : "dream:write")),
+  ...Object.entries(chatThreadOperationContracts).filter(([name]) => !Object.hasOwn(chatContinuationContracts, name) && !name.startsWith("chat-input.") && !name.startsWith("task-session.")).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...chatThreadSchemaRequirements], operation.kind === "read" ? "dream:read" : "dream:write")),
   descriptor("user-profile.current", "read", null, userProfileInputDto, userProfileOutputDto, [identitySchemaRequirement], "dream:read"),
   ...Object.entries(editorSessionOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, runtimePurposeSchemaRequirement], operation.userScope)),
   ...Object.entries(workflowContextOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
@@ -251,7 +252,7 @@ export const dreamOperations = [
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...storyWorkspaceArtifactSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(chatThreadOperationContracts).filter(([name]) => name.startsWith("chat-input.") || name.startsWith("task-session.")).map(([name, operation]) => descriptor(
+  ...Object.entries(chatThreadOperationContracts).filter(([name]) => !Object.hasOwn(chatContinuationContracts, name) && (name.startsWith("chat-input.") || name.startsWith("task-session."))).map(([name, operation]) => descriptor(
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...chatThreadSchemaRequirements, ...(name.startsWith("chat-input.") ? [chatInputQueueSchemaRequirement] : [chatTaskSessionSchemaRequirement, chatInputQueueSchemaRequirement]), ...(name === "task-session.create-returning" ? [chatTaskResultSchemaRequirement] : [])],
     operation.kind === "read" ? "dream:read" : "dream:write",
@@ -320,4 +321,5 @@ export const dreamOperations = [
   )),
   descriptor("deck.catalog", "read", null, deckVoiceOperationContracts["deck.catalog"].input, deckVoiceOperationContracts["deck.catalog"].output,
     [identitySchemaRequirement, ...deckVoiceSchemaRequirements], "dream:read"),
+  ...Object.entries(chatContinuationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...chatThreadSchemaRequirements, chatInputQueueSchemaRequirement, chatContinuationSchemaRequirement], operation.kind === "read" ? "dream:read" : "dream:write")),
 ] as const;

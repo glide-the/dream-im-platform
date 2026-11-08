@@ -1,3 +1,4 @@
+// [Sync] 2026-11-04: require exact continuation capability for additive operations.
 // [Sync] 2026-09-28: require scheduled storage capability when a target-scoped sta_ bearer is presented.
 // [Sync] 2026-09-27: require the exact result capability before returning-task creation.
 // [Sync] 2026-09-27: authorize task-session navigation against the current Thread owner.
@@ -15,8 +16,8 @@ import { withDataTransaction } from "./database";
 import { identitySchemaRequirement, reflectionTaskSchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement } from "./schemaRequirements";
 import { requireDataActor } from "./principal";
 import { ReceiptRepository } from "./receipts";
-import { chatThreadOperationContracts, type ChatThreadOperation } from "./chatThreadDto";
-import { chatThreadSchemaRequirements, chatInputQueueSchemaRequirement, chatTaskSessionSchemaRequirement, chatTaskResultSchemaRequirement, runChatThreadOperation } from "./chatThreadService";
+import { chatThreadOperationContracts, chatContinuationContracts, type ChatThreadOperation } from "./chatThreadDto";
+import { chatContinuationSchemaRequirement, chatThreadSchemaRequirements, chatInputQueueSchemaRequirement, chatTaskSessionSchemaRequirement, chatTaskResultSchemaRequirement, runChatThreadOperation } from "./chatThreadService";
 import { chatScheduledTaskSchemaRequirement, chatScheduledTurnBindingSchemaRequirement, chatScheduledLinkLifecycleSchemaRequirement } from "./chatScheduledTaskService";
 export function isChatThreadOperation(name: string): name is ChatThreadOperation { return Object.hasOwn(chatThreadOperationContracts, name); }
 export async function handleChatThreadOperation(request: Request, operationName: string) {
@@ -26,7 +27,7 @@ export async function handleChatThreadOperation(request: Request, operationName:
     const requestDto = await parseAuthDto(request, z.strictObject({ request_id: requestIdDto, input: operation.input }), Number(requiredAuthValue("DREAM_DATA_MAX_BODY_BYTES")));
     setRequestId(requestDto.request_id);
     const bearer = request.headers.get("authorization") ?? "", isDelegated = bearer.startsWith("Bearer idg_"), isReflectionAuthority = bearer.startsWith("Bearer rta_"), isScheduleAuthority = bearer.startsWith("Bearer sta_");
-    const requirements = [identitySchemaRequirement, ...chatThreadSchemaRequirements, ...(operationName.startsWith("chat-input.") ? [chatInputQueueSchemaRequirement] : []), ...(operationName.startsWith("task-session.") ? [chatTaskSessionSchemaRequirement, chatInputQueueSchemaRequirement] : []), ...(operationName === "task-session.create-returning" ? [chatTaskResultSchemaRequirement] : []), ...(isDelegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : []), ...(isReflectionAuthority ? [reflectionTaskSchemaRequirement] : []), ...(isScheduleAuthority ? [chatScheduledTaskSchemaRequirement, chatScheduledTurnBindingSchemaRequirement, chatScheduledLinkLifecycleSchemaRequirement] : [])];
+    const requirements = [...(Object.hasOwn(chatContinuationContracts, operationName) ? [chatContinuationSchemaRequirement, chatInputQueueSchemaRequirement] : []), identitySchemaRequirement, ...chatThreadSchemaRequirements, ...(operationName.startsWith("chat-input.") ? [chatInputQueueSchemaRequirement] : []), ...(operationName.startsWith("task-session.") ? [chatTaskSessionSchemaRequirement, chatInputQueueSchemaRequirement] : []), ...(operationName === "task-session.create-returning" ? [chatTaskResultSchemaRequirement] : []), ...(isDelegated ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : []), ...(isReflectionAuthority ? [reflectionTaskSchemaRequirement] : []), ...(isScheduleAuthority ? [chatScheduledTaskSchemaRequirement, chatScheduledTurnBindingSchemaRequirement, chatScheduledLinkLifecycleSchemaRequirement] : [])];
     return withDataTransaction(requirements, async tx => {
       const input = requestDto.input;
       const threadId = input && typeof input === "object"

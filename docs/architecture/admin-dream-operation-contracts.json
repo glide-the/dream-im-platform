@@ -79591,5 +79591,853 @@
       "output_schema_version": 1,
       "contract_sha256": "0c53861e1a635742e37f7b26ab954a57af1f550261d3ddc1ea5dbfb17f574a5e"
     }
+  },
+  {
+    "contract": {
+      "name": "chat-thread.create-with-origin",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deck_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "voice_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_execution_origin": {
+            "type": "string",
+            "enum": [
+              "web_cloud",
+              "mobile_ios",
+              "mobile_android"
+            ]
+          }
+        },
+        "required": [
+          "deck_id",
+          "voice_id",
+          "title",
+          "created_execution_origin"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deck_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "voice_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "thread_id",
+          "deck_id",
+          "voice_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.chat-history-keyset-pagination.v1",
+        "version": 1,
+        "contractSha256": "a0dfe5f8d4b4330a9e17db07a8716d5d2bc25e291f3624f09005e79c01fc8ab0"
+      },
+      {
+        "capability": "dream.chat-history-final-projection.v1",
+        "version": 1,
+        "contractSha256": "50c27f86113c170064b0913bf052f9bd12884d3345c920d7b11468a768e0a432"
+      },
+      {
+        "capability": "dream.chat-input-queue.v1",
+        "version": 1,
+        "contractSha256": "2bb2490d6c8220e9f14a5dd41732d0c60c10d08db5de2bc997aeceeca544a2e1"
+      },
+      {
+        "capability": "dream.chat-continuation.v1",
+        "version": 1,
+        "contractSha256": "86bc59653c2f5d68a77cc4d922f1f4ebb670599411af6e4d3a64a93db814c3a8"
+      }
+    ],
+    "capability": {
+      "name": "chat-thread.create-with-origin",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "9634a3bdf7bd906f264180d35e50adc1c692289fdc092da56eabb31f6f257540"
+    }
+  },
+  {
+    "contract": {
+      "name": "chat-message.resume-snapshot",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dispatch_turn_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "thread_id",
+          "message_id",
+          "dispatch_turn_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "user_id": {
+                "type": "string",
+                "pattern": "^[1-9]\\d{0,18}$"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deck_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "voice_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "claude_session_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_contract_version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "created_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updated_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "user_id",
+              "title",
+              "deck_id",
+              "voice_id",
+              "claude_session_id",
+              "agent_contract_version",
+              "created_at",
+              "updated_at"
+            ],
+            "additionalProperties": false
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ]
+                },
+                "parts": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                },
+                "metadata": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema1"
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "metadata_decode_error": {
+                  "type": "boolean"
+                },
+                "created_at": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "history_final_text": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "history_process_available": {
+                  "type": "boolean"
+                },
+                "history_projection_version": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "const": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "role",
+                "parts",
+                "metadata",
+                "metadata_decode_error",
+                "created_at",
+                "history_final_text",
+                "history_process_available",
+                "history_projection_version"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "history_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "thread",
+          "messages",
+          "history_digest"
+        ],
+        "additionalProperties": false,
+        "$defs": {
+          "__schema0": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/__schema0"
+                }
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                }
+              }
+            ]
+          },
+          "__schema1": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/__schema1"
+                }
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema1"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.chat-history-keyset-pagination.v1",
+        "version": 1,
+        "contractSha256": "a0dfe5f8d4b4330a9e17db07a8716d5d2bc25e291f3624f09005e79c01fc8ab0"
+      },
+      {
+        "capability": "dream.chat-history-final-projection.v1",
+        "version": 1,
+        "contractSha256": "50c27f86113c170064b0913bf052f9bd12884d3345c920d7b11468a768e0a432"
+      },
+      {
+        "capability": "dream.chat-input-queue.v1",
+        "version": 1,
+        "contractSha256": "2bb2490d6c8220e9f14a5dd41732d0c60c10d08db5de2bc997aeceeca544a2e1"
+      },
+      {
+        "capability": "dream.chat-continuation.v1",
+        "version": 1,
+        "contractSha256": "86bc59653c2f5d68a77cc4d922f1f4ebb670599411af6e4d3a64a93db814c3a8"
+      }
+    ],
+    "capability": {
+      "name": "chat-message.resume-snapshot",
+      "kind": "read",
+      "user_scope": "dream:read",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "6a10afccfbafb8d01d9f5a5102b71331676bec580652d0b216efc1433f9a343a"
+    }
+  },
+  {
+    "contract": {
+      "name": "chat-input.claim-continuation",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parts_json": {
+            "type": "string",
+            "minLength": 1
+          },
+          "metadata_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title_candidate": {
+            "type": "string"
+          },
+          "history_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "claude_session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "owner": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "dispatch_turn_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "thread_id",
+          "message_id",
+          "parts_json",
+          "metadata_json",
+          "title_candidate",
+          "history_digest",
+          "claude_session_id",
+          "owner",
+          "dispatch_turn_id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "entry": {
+            "type": "object",
+            "properties": {
+              "message_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "thread_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "queue_sequence": {
+                "type": "string",
+                "pattern": "^[1-9]\\d{0,18}$"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "selected",
+                  "dispatching",
+                  "consumed",
+                  "cancelled",
+                  "failed",
+                  "state_unknown"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "dispatch_turn_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "message_id",
+              "thread_id",
+              "queue_sequence",
+              "status",
+              "revision",
+              "dispatch_turn_id",
+              "created_at",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "entry"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.chat-history-keyset-pagination.v1",
+        "version": 1,
+        "contractSha256": "a0dfe5f8d4b4330a9e17db07a8716d5d2bc25e291f3624f09005e79c01fc8ab0"
+      },
+      {
+        "capability": "dream.chat-history-final-projection.v1",
+        "version": 1,
+        "contractSha256": "50c27f86113c170064b0913bf052f9bd12884d3345c920d7b11468a768e0a432"
+      },
+      {
+        "capability": "dream.chat-input-queue.v1",
+        "version": 1,
+        "contractSha256": "2bb2490d6c8220e9f14a5dd41732d0c60c10d08db5de2bc997aeceeca544a2e1"
+      },
+      {
+        "capability": "dream.chat-continuation.v1",
+        "version": 1,
+        "contractSha256": "86bc59653c2f5d68a77cc4d922f1f4ebb670599411af6e4d3a64a93db814c3a8"
+      }
+    ],
+    "capability": {
+      "name": "chat-input.claim-continuation",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "58addda0a57e9ea3956eb74d5a29e88944c37759fd498592227b8903c9ac7537"
+    }
+  },
+  {
+    "contract": {
+      "name": "chat-input.continuation-progress",
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "dispatch_turn_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected_revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "arm_query",
+              "complete",
+              "fail_before_query",
+              "fail_after_query",
+              "mark_unknown"
+            ]
+          }
+        },
+        "required": [
+          "thread_id",
+          "message_id",
+          "owner",
+          "dispatch_turn_id",
+          "expected_revision",
+          "action"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "entry": {
+            "type": "object",
+            "properties": {
+              "message_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "thread_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "queue_sequence": {
+                "type": "string",
+                "pattern": "^[1-9]\\d{0,18}$"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "selected",
+                  "dispatching",
+                  "consumed",
+                  "cancelled",
+                  "failed",
+                  "state_unknown"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "dispatch_turn_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "message_id",
+              "thread_id",
+              "queue_sequence",
+              "status",
+              "revision",
+              "dispatch_turn_id",
+              "created_at",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "entry"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": [
+      {
+        "capability": "identity.better-auth.v1",
+        "version": 1,
+        "contractSha256": "1dc05e229d3f4147923fcdfe117c4c4930a43bf9f31439d7b4bc83d2a0d04cd3"
+      },
+      {
+        "capability": "dream.schema.unified.v1",
+        "version": 1,
+        "contractSha256": "8b71cf5687f61dee884c3e6f2fb109c7a951b0789066a0f13583a7b67757fa71"
+      },
+      {
+        "capability": "dream.chat-history-keyset-pagination.v1",
+        "version": 1,
+        "contractSha256": "a0dfe5f8d4b4330a9e17db07a8716d5d2bc25e291f3624f09005e79c01fc8ab0"
+      },
+      {
+        "capability": "dream.chat-history-final-projection.v1",
+        "version": 1,
+        "contractSha256": "50c27f86113c170064b0913bf052f9bd12884d3345c920d7b11468a768e0a432"
+      },
+      {
+        "capability": "dream.chat-input-queue.v1",
+        "version": 1,
+        "contractSha256": "2bb2490d6c8220e9f14a5dd41732d0c60c10d08db5de2bc997aeceeca544a2e1"
+      },
+      {
+        "capability": "dream.chat-continuation.v1",
+        "version": 1,
+        "contractSha256": "86bc59653c2f5d68a77cc4d922f1f4ebb670599411af6e4d3a64a93db814c3a8"
+      }
+    ],
+    "capability": {
+      "name": "chat-input.continuation-progress",
+      "kind": "write",
+      "user_scope": "dream:write",
+      "background_scope": null,
+      "input_schema_version": 1,
+      "output_schema_version": 1,
+      "contract_sha256": "4d04ae28a8070fffc29d5988ca3b88b3b83478ac22b2f02567714e0348e15d85"
+    }
   }
 ]
