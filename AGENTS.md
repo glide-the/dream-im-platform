@@ -18,6 +18,8 @@
 - `drizzle/**`：必须提交且不可变的 PostgreSQL SQL/journal/snapshot 历史
 ## 部署入口
 
+- 2026-11-08当前发布入口：GitHub Actions `deploy-admin.yml`，仅手动Run workflow及main分支；Linux runner打包完整制品，ECS复用`start:embedded`。push／PR只检查；普通发布仅检查迁移，保留原数据及回滚制品。下述源码入口供历史维护与明确授权的构建使用。
+
 - SSH 源码发布入口为 `pnpm local:stable`，包含构建及 Admin/内嵌 PostgreSQL 启动；运行身份必须是专用非 root 服务账户。服务器构建前必须通过[构建内存与发布失败恢复手册](docs/release-build-memory-and-recovery.md)中的容量、入口、期限与原制品检查。
 - 资源不足时优先评估目标兼容主机生成的完整制品。已构建发布与故障恢复复用现有 `pnpm run start:embedded`，保留原 supervisor、配置和现用数据库；切换启动入口须按当次授权维护，禁止将重新构建作为唯一恢复方式。
 - 预算须覆盖所有 worker、原生内存、运行服务、数据库和系统余量；核对脚本内联参数与有效覆盖项。禁止超预算构建、并行重试及失败后无检查重启；单次事故的堆/进程组限额不得固化成通用默认值。
