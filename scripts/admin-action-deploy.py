@@ -2,7 +2,7 @@
 # [Input] Root-owned target config, forced SSH command and SHA-bound Linux archive on stdin.
 # [Output] Verified candidate activation or restored previous systemd release; original PostgreSQL remains.
 # [Pos] Narrow Admin Actions receiver; no shell, DDL, key replacement or database restore.
-# [Sync] 2026-11-08: gate the deployed public route from ECS while preserving the existing Cloudflare ingress policy.
+# [Sync] 2026-11-08: public health uses an explicit deadline and reports fixed failure classes without URL or response data.
 import fcntl
 import hashlib
 import json
@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tarfile
 import time
+import urllib.error
 import urllib.request
 
 
@@ -57,17 +58,26 @@ def verify_files(root, receipt):
         raise ValueError('Unregistered release files')
 
 
-def healthy(url):
+def healthy(url, timeout=5, diagnostic=False):
     try:
-        with urllib.request.urlopen(url, timeout=5) as response:
-            return response.status == 200
-    except Exception:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            if response.status == 200:
+                return True
+            if diagnostic:
+                print(json.dumps({'event': 'public_health_failed', 'httpStatus': response.status}), file=sys.stderr)
+            return False
+    except Exception as error:
+        if diagnostic:
+            detail = {'event': 'public_health_failed', 'errorClass': type(error).__name__}
+            if isinstance(error, urllib.error.HTTPError):
+                detail['httpStatus'] = error.code
+            print(json.dumps(detail), file=sys.stderr)
         return False
 
 
 def preflight(cfg):
     result = {'hostname': socket.gethostname(), 'nodeVersion': run([cfg['node'], '--version']), 'arch': run(['uname', '-m']), 'state': run(['systemctl', 'is-active', cfg['service']])}
-    if not healthy(cfg['public_health_url']):
+    if not healthy(cfg['public_health_url'], timeout=cfg['public_health_timeout_seconds'], diagnostic=True):
         raise ValueError('Published route check failed')
     return {**result, 'publicHttp': 200}
 
@@ -167,7 +177,7 @@ def main():
                 time.sleep(2)
             else:
                 raise ValueError('Candidate health deadline exceeded')
-            if not healthy(cfg['public_health_url']):
+            if not healthy(cfg['public_health_url'], timeout=cfg['public_health_timeout_seconds'], diagnostic=True):
                 raise ValueError('Published route check failed')
             if before != (data.stat().st_dev, data.stat().st_ino) or digest(env) != digest(candidate / '.env.local'):
                 raise ValueError('Persistent state identity changed')
