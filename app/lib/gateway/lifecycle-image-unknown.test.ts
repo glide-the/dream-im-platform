@@ -2,11 +2,23 @@
 // [Output] Evidence that delivery remains successful while billing stays explicitly unknown with safe identity.
 // [Pos] Provider-free lifecycle contract; no model calls or ledger writes.
 // [Sync] 2026-10-10: distinguish image delivery from conservative reservation closure.
+// [Sync] 2026-11-08: cancelled streams retain real usage and never become retryable connection failures.
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ mark: vi.fn(), settle: vi.fn() }));
 vi.mock("../billing/repository", () => ({ markGatewayRequestSettlementFailed: mocks.mark, settleGatewayRequest: mocks.settle }));
 import { finalizeUnknownUsage, finalizeProviderFailure, finalizeKnownUsage } from "./lifecycle";
 beforeEach(() => { vi.clearAllMocks(); mocks.mark.mockResolvedValue({ updated: true }); });
+it.each([false, true])("classifies downstream cancellation with known usage=%s", async known => {
+  mocks.settle.mockResolvedValue({});
+  const usage = known ? { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, inputTokenSemantics: "fresh" as const } : undefined;
+  const mapped = await finalizeProviderFailure({ requestId: "req_stopped", protocol: "anthropic", error: new DOMException("stopped", "AbortError"),
+    startedAt: Date.now(), cancelled: true, usage });
+  expect(mapped).toMatchObject({ code: "CLIENT_CANCELLED", status: 499, retryable: false });
+  const writer = known ? mocks.settle : mocks.mark;
+  expect(writer).toHaveBeenCalledWith(expect.objectContaining({ outcome: "cancelled", httpStatus: 499, errorCode: "CLIENT_CANCELLED" }));
+  if (known) expect(mocks.settle).toHaveBeenCalledWith(expect.objectContaining({ usage }));
+  else expect(mocks.settle).not.toHaveBeenCalled();
+});
 it("retains successful delivery and actual call identity without promoting a usage estimate", async () => {
   await finalizeUnknownUsage({ requestId: "req_image", outcome: "succeeded", httpStatus: 200,
     errorCode: "RESPONSES_IMAGE_USAGE_UNKNOWN", errorMessage: "Complete image usage is unavailable",
