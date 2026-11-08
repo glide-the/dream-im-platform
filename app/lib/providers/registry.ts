@@ -1,8 +1,10 @@
+// [Sync] 2026-11-09: route default outbound requests through the shared model-center Docker NAT policy.
 // [Input] Explicit deployment configs or named environment config plus injected fetch/clock dependencies.
 // [Output] Process-stable registry of fail-closed Codex, xAI, and GitHub Copilot product adapters.
 // [Pos] Provider product composition root shared by Admin orchestration and Gateway resource routing.
 // [Sync] 2026-09-04: add explicit and environment-backed registry construction.
 
+import { modelEgressFetch } from "../model-egress";
 import { CodexProviderAdapter } from "./codex";
 import {
   providerProductConfigsFromEnv,
@@ -29,7 +31,7 @@ export function createProviderProductRegistry(
   input: CreateProviderProductRegistryInput,
 ): ProviderProductRegistry {
   const dependencies = {
-    fetch: input.fetch ?? globalThis.fetch,
+    fetch: input.fetch ?? modelEgressFetch,
     now: input.now ?? Date.now,
   };
   const adapters: Record<ProviderProductKind, ProviderProductAdapter> = {

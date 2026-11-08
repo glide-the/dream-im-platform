@@ -8,6 +8,9 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProviderTimeoutError, sendProviderRequest } from "./provider-transport";
+import { resolveModelEgressFetch } from "../model-egress";
+// [Sync] 2026-11-09: isolate the network-policy boundary; real dispatch selection has its own CONNECT contract.
+vi.mock("../model-egress", () => ({ resolveModelEgressFetch: vi.fn(async () => (...args: Parameters<typeof fetch>) => globalThis.fetch(...args)) }));
 
 const managedMocks = vi.hoisted(() => ({
   resolve: vi.fn(),
@@ -80,6 +83,13 @@ function managedAccess(token = "managed-token", credentialRevision = 2) {
 }
 
 describe("provider transport Claude Code compatibility", () => {
+  it("does not mark a Provider dispatch when network configuration cannot be resolved", async () => {
+    vi.mocked(resolveModelEgressFetch).mockRejectedValueOnce(new Error("network policy unavailable"));
+    const onDispatch = vi.fn();
+    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+    await expect(sendProviderRequest({ resolved: resolved(), body: {}, requestSignal: new AbortController().signal, onDispatch })).rejects.toThrow("network policy unavailable");
+    expect(onDispatch).not.toHaveBeenCalled(); expect(fetcher).not.toHaveBeenCalled();
+  });
   it.each(["codex", "xai", "github_copilot"] as const)("captures %s JSON rejection details and the upstream request id", async (adapterKind) => {
     managedMocks.resolve.mockResolvedValue(managedAccess());
     const body = { detail: "This model is not supported with this account.", error: { code: "model_not_supported", param: "model" } };

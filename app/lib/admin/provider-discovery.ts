@@ -1,8 +1,10 @@
+// [Sync] 2026-11-09: route default outbound requests through the shared model-center Docker NAT policy.
 // [Input] Authenticated Provider discovery requests, static or Provider-owned managed credentials, and bounded upstream catalogs.
 // [Output] Generation-fenced, secret-safe model discovery snapshots and deterministic apply diffs.
 // [Pos] Admin Provider model-catalog domain; product protocol calls remain in app/lib/providers and credential lifecycle in the broker.
 // [Sync] 2026-09-04: add account-scoped Codex, xAI, and Copilot catalogs with advisory-lock snapshot idempotency.
 
+import { modelEgressFetch } from "../model-egress";
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 
@@ -270,7 +272,7 @@ async function responseJson(response: Response) {
 export async function fetchProviderModelCatalog(
   provider: Pick<ProviderDiscoveryRow, "protocol" | "config" | "timeout_ms"> & { base_url: string },
   credential: string,
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch = modelEgressFetch,
 ) {
   if (provider.config?.modelCatalogMode === "manual") {
     throw new AdminError(

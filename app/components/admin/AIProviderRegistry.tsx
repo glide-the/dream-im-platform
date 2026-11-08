@@ -3,7 +3,7 @@
 // [Sync] 2026-10-10: retain independent Image Provider navigation with server-side admission filtering.
 // [Sync] 2026-10-05: add server-only upstream account usage separately from local traffic.
 // [Input] Safe Provider list projections for static and managed credentials plus Admin permissions.
-// [Output] Provider cards with one managed account identity and dependency-aware deletion.
+// [Output] Provider cards with shared Docker NAT policy, managed account identity and dependency-aware deletion.
 // [Pos] Provider operations overview; credential validation and authorization remain server-owned.
 // [Sync] 2026-09-04: make same-product accounts distinguishable without exposing implementation metadata.
 // [Sync] 2026-09-04: expose confirmed Provider deletion while preserving model, Pricing, and history gates.
@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AdminCollapsibleFilters, AdminListHeader, countActiveFilterValues } from "./AdminListChrome";
 import ProviderUpstreamUsage from "./ProviderUpstreamUsage";
 import ProviderDeleteAction from "./ProviderDeleteAction";
+import ModelEgressControl from "./ModelEgressControl";
 
 type ReachabilityState = {
   pending?: boolean;
@@ -210,6 +211,7 @@ export default function AIProviderRegistry({ imageOnly = false }: { imageOnly?: 
 
   return (
     <div className="space-y-6">
+      <ModelEgressControl />
       <section className="admin-panel overflow-hidden">
         <AdminListHeader eyebrow="Provider registry · proxy supply" title="供应商" description="每个 Provider 对应一个上游账号和一组运行配置；同一产品接入多个账号时，请分别创建多个 Provider。" actions={access.data?.can ? <Link href={`${centerPath}/providers/new`} className="inline-flex min-h-11 items-center bg-accent px-4 text-sm font-semibold text-white hover:brightness-95">＋ 添加 Provider</Link> : null} />
 
