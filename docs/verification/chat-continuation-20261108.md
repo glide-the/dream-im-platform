@@ -53,3 +53,14 @@ Simulator build37启动成功，登录表单恢复可用；Google正常认证流
 本机87条迁移与原continuation capability SHA已存在；只读check退出0、87/87、pending为空，未重复迁移。原DATA库保留users37、Thread1615、消息4294、Gateway20239的初始只读计数，后续业务增量单列。窄callback发布同样仅增加4173，verified=true，原loginntn／mobile／Web回调保留。私有env备份位于`.ink-memory/maintenance/chat-continuation-20261108/`，0600；其他值及原Client字段逐项保持。
 
 原Node24.13.0 supervisor正常退出后，以同一start:embedded入口启动当前已构建制品；原DB目录inode133609098、0700保持，Admin登录200、手机/auth/options200，正常服务读取297操作、continuation_ready=True。首次直接check遇到embedded目录已占用后停止；改为原显式DSN只读check，无DDL执行。当前手机Google认证继续，真实消息验收保持待完成。
+
+
+## 2026-11-08 后续采用与恢复检查
+
+本机原start:embedded采用合并源 `825b9422fc14636ba6c3152662b6876c335e00d5` 的Mac制品，BUILD_ID `-ziAoTgO_iMMgzuEq0Rds`。922项运行输入匹配，完整类型检查／Next构建退出0，前一完整`.next`在原维护目录保留；原PostgreSQL目录inode133609098和0700保持。Gateway下游取消映射CLIENT_CANCELLED／499，已知／未知用量定向13项、eslint、tsc退出0；历史502与结算记录保留。
+
+Linux CI [42452463519](https://github.com/glide-the/dream-im-platform/actions/runs/42452463519)成功；对应制品SHA `91c919bde507be715c8b6a4da6fc0bef1b2bb97a6f228b9862aaeb934c6e6583`、BUILD_ID `0trGoNTZ0eoEEnSMDXOP2`。ECS候选`/srv/ink-admin-releases/20261108T-chat-cancel-825b942`已上传，目录准备完成与依赖预检未取得回执，服务切换未执行。最后成功检查的服务仍为前表a1c9b96，active、NRestarts0、内存约482MB、无swap。
+
+准备新备份期间SSH banner exchange和公网检查超时；已终止本轮三条自有SSH连接，远端备份／准备进程状态待控制台核对。0086旧备份路径本次未读到文件，上文为迁移当时回执，当前可恢复性待核对。当前无内核／cgroup OOM证据，无主机重启、数据恢复或重复迁移。阿里云备用入口需要本人登录，恢复时先检查原实例并停止本轮具名备份，再核对原服务和数据库。
+
+Simulator39覆盖安装及原产品Session通过；手机Google主体与Web原主体不同，当前模型发送0，等待原账户登录后完成同Thread／Claude会话验收。原数据和未知队列状态保留。
