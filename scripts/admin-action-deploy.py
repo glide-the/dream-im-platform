@@ -2,7 +2,7 @@
 # [Input] Root-owned target config, forced SSH command and SHA-bound Linux archive on stdin.
 # [Output] Verified candidate activation or restored previous systemd release; original PostgreSQL remains.
 # [Pos] Narrow Admin Actions receiver; no shell, DDL, key replacement or database restore.
-# [Sync] 2026-11-08: receive one manual release with a host lock and bounded rollback.
+# [Sync] 2026-11-08: gate the deployed public route from ECS while preserving the existing Cloudflare ingress policy.
 import fcntl
 import hashlib
 import json
@@ -65,6 +65,13 @@ def healthy(url):
         return False
 
 
+def preflight(cfg):
+    result = {'hostname': socket.gethostname(), 'nodeVersion': run([cfg['node'], '--version']), 'arch': run(['uname', '-m']), 'state': run(['systemctl', 'is-active', cfg['service']])}
+    if not healthy(cfg['public_health_url']):
+        raise ValueError('Published route check failed')
+    return {**result, 'publicHttp': 200}
+
+
 def main():
     config_path = Path(sys.argv[1])
     if os.geteuid() != 0 or config_path.is_symlink() or config_path.stat().st_uid != 0 or config_path.stat().st_mode & 0o022:
@@ -78,7 +85,7 @@ def main():
         raise ValueError('Host identity mismatch')
     command = shlex.split(os.environ.get('SSH_ORIGINAL_COMMAND', ''))
     if command == ['preflight']:
-        print(json.dumps({'hostname': socket.gethostname(), 'nodeVersion': run([cfg['node'], '--version']), 'arch': run(['uname', '-m']), 'state': run(['systemctl', 'is-active', cfg['service']])}))
+        print(json.dumps(preflight(cfg)))
         return
     if len(command) != 4 or command[0] != 'deploy' or not re.fullmatch('[a-f0-9]{40}', command[1]) or not re.fullmatch('[a-f0-9]{64}', command[2]) or not re.fullmatch('[0-9]+', command[3]):
         raise ValueError('Only preflight or exact deploy command is permitted')
@@ -160,9 +167,11 @@ def main():
                 time.sleep(2)
             else:
                 raise ValueError('Candidate health deadline exceeded')
+            if not healthy(cfg['public_health_url']):
+                raise ValueError('Published route check failed')
             if before != (data.stat().st_dev, data.stat().st_ino) or digest(env) != digest(candidate / '.env.local'):
                 raise ValueError('Persistent state identity changed')
-            print(json.dumps({'state': 'deployed', 'sourceCommit': sha, 'buildId': receipt['buildId'], 'previousRelease': str(previous), 'release': str(candidate), 'dataInode': before[1]}))
+            print(json.dumps({'state': 'deployed', 'sourceCommit': sha, 'buildId': receipt['buildId'], 'previousRelease': str(previous), 'release': str(candidate), 'dataInode': before[1], 'publicHttp': 200}))
         except Exception:
             run(['systemctl', 'stop', cfg['service']], timeout=120)
             if prior is None:
