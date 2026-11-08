@@ -116,3 +116,16 @@ PR [46](https://github.com/glide-the/dream-im-platform/pull/46)的CI [4247756376
 本机正常Web localhost5173、backend8765、Admin3000最终直连均200。Simulator40、原偏好和登录保持；正常同账户的跨端模型验收受Google本人验证阻挡，本轮真实模型发送0。指定旧Thread的state_unknown保留，历史队列回执核实未完成。
 
 后续发布入口为 [Build and deploy Admin (manual)](https://github.com/glide-the/dream-im-platform/actions/workflows/deploy-admin.yml)，在GitHub点击Run workflow并选择main。push／PR仅执行原CI，不自动发布；专用受限SSH key与GitHub环境已设置。技术验证命令 `python3 -m unittest discover -s scripts -p test_admin_action_deploy.py -v` 退出0、15项通过；源码／发布完成与真实业务完成分别判定。
+
+
+### 发布合同与项目文档同步（2026-11-08，本地验证完成）
+
+新增根命令`pnpm test:release-receiver`复用现有Python unittest。Admin普通`test.yml`准备Python3.12并执行该命令，手动`deploy-admin.yml`调用同一入口；Node packer合同继续归`test:config`。手动workflow保留唯一workflow_dispatch／main守卫、原环境、专用ECS key及原发布／回滚协议。应用、receiver和packer的生产逻辑保持本轮已验证版本。
+
+Admin同步package、两workflow、GitHub／scripts／根目录合同、AGENTS、README、发布指南、服务手册、内存恢复手册和本回执。服务手册以当前start:embedded／zzzz-github-actions.conf为日常入口，旧基础unit和源码目录维护原文保留为历史；失败重试按preflight未创建候选与Publish已开始分别定义。Dream同步阿里云分流、部署索引及内存恢复说明，原Compose正文8544字节完整保留，SHA256 `d894b00c2c2ed3fc7e5adedaa081b19016e1c71f47ef769249649585063b0f54`。旧Admin容器bootstrap、PG alias及swap步骤退出当前发布流程，Dream现有配置和数据源保持。
+
+验证：`corepack pnpm test:release-receiver`退出0、15项通过；`node --test scripts/package-admin-release.test.mjs`退出0、3项通过。两workflow YAML结构检查退出0；20文档／231本地链接／25锚点、50段仅bash -n检查、569行新增用语检查及两仓库diff check均通过。技术证据位于Dream `frontend/output/chat-continuation-20261104/sync-release-contract-20261108/validation.log`。
+
+Admin发布合同实现提交为`2873473dd7f6fc4cc3717a2745b201d4409b11e4`，包含14个明确文件；后续校验回执作为追加文档保存，原两仓库工作树与其他Agent改动保留。GitHub main在本次同步开始时为4630911；连接器写权限拒绝，当前gh OAuth授权缺少workflow scope。按用户已有SSH自动设置授权尝试单仓库临时deploy key推送后，GitHub仍拒绝workflow写入；临时key169173183已撤销、本机临时私钥已删除。已登录页面提交受到当前浏览器控制中断，本轮workflow同步尚未推送／合并，完整本地提交作为待提交交付物保留。
+
+现用已成功发布的运行42476219452 attempt2及应用01139a3保持；本轮同步无新生产发布、服务重启、数据库或模型操作。普通CI接入新增receiver测试的GitHub采用状态保持待提交；本地YAML与合同验证单列，当前GitHub主分支未取得本次同步的新CI回执。
