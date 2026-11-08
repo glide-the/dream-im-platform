@@ -69,5 +69,93 @@ class ManifestContract(unittest.TestCase):
 
 
 
+class ActivationContract(unittest.TestCase):
+    def scenario(self, fail):
+        import contextlib
+        import io
+        import json
+        import os
+        import types
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory(prefix='ink-admin-activation-contract-') as tmp:
+            root = Path(tmp).resolve()
+            releases = root / 'releases'
+            old = releases / 'old'
+            (old / '.next').mkdir(parents=True)
+            (old / '.next/BUILD_ID').write_text('old-build')
+            (old / '.env.local').write_text('SYNTHETIC=fixture-only')
+            (old / '.env.local').chmod(0o600)
+            data = root / 'postgres'
+            data.mkdir(mode=0o700)
+            data_inode = data.stat().st_ino
+            dropin = root / 'service.conf'
+            prior = b'[Service]\nWorkingDirectory=original-fixture\n'
+            dropin.write_bytes(prior)
+            source = root / 'source'
+            (source / '.next').mkdir(parents=True)
+            (source / '.next/BUILD_ID').write_text('new-build')
+            receipt = {'sourceCommit': 'a'*40, 'runId': '123', 'platform': 'linux', 'arch': 'x64', 'nodeVersion': 'v22.23.4', 'buildId': 'new-build', 'files': [{'path': '.next/BUILD_ID', 'sha256': receiver.digest(source / '.next/BUILD_ID')}]}
+            (source / 'release-output').mkdir()
+            (source / 'release-output/receipt.json').write_text(json.dumps(receipt))
+            packed = io.BytesIO()
+            with receiver.tarfile.open(fileobj=packed, mode='w:gz') as output:
+                output.add(source, arcname='.')
+            archive = packed.getvalue()
+            config = root / 'config.json'
+            config.write_text(json.dumps({'hostname': 'fixture-host', 'node': 'fixture-node', 'pnpm': 'fixture-pnpm', 'service': 'fixture.service', 'user': 'fixture-user', 'releases': str(releases), 'data_dir': str(data), 'dropin': str(dropin), 'health_url': 'http://fixture.invalid', 'lock': str(root/'lock'), 'min_mem_available_bytes': 1, 'max_archive_bytes': 1000000, 'unpack_disk_factor': 1, 'health_timeout_seconds': 3}))
+            config.chmod(0o600)
+            commands = []
+            def execute(args, **kwargs):
+                commands.append(args)
+                if args == ['fixture-node', '--version']:
+                    return 'v22.23.4'
+                if 'WorkingDirectory' in args:
+                    return str(old)
+                if 'User' in args:
+                    return 'fixture-user'
+                return ''
+            original_stat, original_read = Path.stat, Path.read_text
+            def metadata(path, *args, **kwargs):
+                value = original_stat(path, *args, **kwargs)
+                if path == config:
+                    values = list(value);values[4] = 0
+                    return os.stat_result(values)
+                return value
+            def read(path, *args, **kwargs):
+                if str(path) == '/proc/meminfo':
+                    return 'MemAvailable: 999999 kB'
+                if str(path) == '/sys/module/zswap/parameters/enabled':
+                    return 'N'
+                if str(path) == '/proc/swaps':
+                    return 'Filename Type Size Used Priority\n'
+                return original_read(path, *args, **kwargs)
+            identity = types.SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
+            ticks = iter(range(100))
+            responses = iter([False, False, True] if fail else [True])
+            stdout = io.StringIO()
+            with patch.object(receiver.sys, 'argv', ['receiver', str(config)]), patch.dict(os.environ, {'SSH_ORIGINAL_COMMAND': 'deploy '+ 'a'*40+' '+hashlib.sha256(archive).hexdigest()+' 123'}), patch.object(receiver.os, 'geteuid', return_value=0), patch.object(receiver.os, 'chown'), patch.object(receiver.socket, 'gethostname', return_value='fixture-host'), patch.object(receiver.pwd, 'getpwnam', return_value=identity), patch.object(receiver, 'run', side_effect=execute), patch.object(receiver, 'healthy', side_effect=lambda _: next(responses)), patch.object(receiver.time, 'monotonic', side_effect=lambda: next(ticks)), patch.object(receiver.time, 'sleep'), patch.object(receiver.signal, 'signal'), patch.object(receiver.sys, 'stdin', types.SimpleNamespace(buffer=io.BytesIO(archive))), patch.object(Path, 'stat', metadata), patch.object(Path, 'read_text', read), contextlib.redirect_stdout(stdout):
+                if fail:
+                    with self.assertRaisesRegex(ValueError, 'health deadline'):
+                        receiver.main()
+                else:
+                    receiver.main()
+            self.assertEqual(data.stat().st_ino, data_inode)
+            self.assertEqual((old / '.env.local').read_text(), 'SYNTHETIC=fixture-only')
+            self.assertTrue(any(receiver.MIGRATION_CHECK_SCRIPT in args for args in commands))
+            if fail:
+                self.assertEqual(dropin.read_bytes(), prior)
+                self.assertIn('rolled_back', stdout.getvalue())
+                self.assertIn(['systemctl', 'stop', 'fixture.service'], commands)
+            else:
+                self.assertIn('deployed', stdout.getvalue())
+                self.assertIn('actions-123-', dropin.read_text())
+
+    def test_success_preserves_private_config_and_original_data(self):
+        self.scenario(False)
+
+    def test_failed_health_restores_previous_dropin_and_data(self):
+        self.scenario(True)
+
+
 if __name__ == '__main__':
     unittest.main()
