@@ -90,18 +90,24 @@ def main():
         releases = Path(cfg['releases']).resolve()
         if not previous.is_relative_to(releases) or not (previous / '.next/BUILD_ID').is_file():
             raise ValueError('Previous complete release required')
+        owner = pwd.getpwnam(cfg['user'])
+        if run(['systemctl', 'show', cfg['service'], '-p', 'User', '--value']) != cfg['user']:
+            raise ValueError('Runtime user mismatch')
         env = previous / '.env.local'
-        if env.is_symlink() or stat.S_IMODE(env.stat().st_mode) != 0o600:
+        if env.is_symlink() or env.stat().st_uid != owner.pw_uid or stat.S_IMODE(env.stat().st_mode) != 0o600:
             raise ValueError('Original private configuration required')
         data = Path(cfg['data_dir'])
         before = (data.stat().st_dev, data.stat().st_ino)
-        if data.is_symlink() or stat.S_IMODE(data.stat().st_mode) != 0o700:
+        if data.is_symlink() or data.stat().st_uid != owner.pw_uid or stat.S_IMODE(data.stat().st_mode) != 0o700:
             raise ValueError('Original PostgreSQL directory required')
         mem = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
         if int(mem['MemAvailable'].split()[0]) * 1024 < cfg['min_mem_available_bytes']:
             raise ValueError('Insufficient runtime headroom')
         if len(Path('/proc/swaps').read_text().splitlines()) != 1:
             raise ValueError('Disabled swap policy required')
+        zswap = Path('/sys/module/zswap/parameters/enabled')
+        if zswap.exists() and zswap.read_text().strip() != 'N':
+            raise ValueError('Disabled zswap policy required')
         directory = releases / ('actions-' + run_id + '-' + sha[:12])
         directory.mkdir(mode=0o700)
         archive = directory / 'incoming.tgz'
@@ -126,7 +132,6 @@ def main():
             raise ValueError('Build ID mismatch')
         shutil.copyfile(env, candidate / '.env.local')
         os.chmod(candidate / '.env.local', 0o600)
-        owner = pwd.getpwnam(cfg['user'])
         for root, dirs, files in os.walk(directory, followlinks=False):
             os.chown(root, owner.pw_uid, owner.pw_gid)
             for name in dirs + files:
