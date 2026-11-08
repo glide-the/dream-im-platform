@@ -2,6 +2,7 @@
 // [Input] Provider outcome, reliable or unknown usage, and reserved Gateway request identity.
 // [Output] Atomic settlement or persisted recovery facts with stable public errors.
 // [Pos] Shared Gateway finalization boundary; it never replays Provider requests.
+// [Sync] 2026-11-08: downstream cancellation keeps CLIENT_CANCELLED/499 for both known and unknown usage.
 // [Sync] 2026-10-09: preserve reliable Image details/known-usage markers and require full Token allowance capture.
 // [Sync] 2026-10-10: preserve successful native-image delivery independently of unknown complete billing usage.
 
@@ -138,7 +139,9 @@ export async function finalizeProviderFailure(input: {
   requireFullTokenAllowanceCapture?: boolean;
   responseSummary?: Record<string, unknown>;
 }) {
-  const mapped = toProviderGatewayError(input.error);
+  const mapped = input.cancelled
+    ? new GatewayError("CLIENT_CANCELLED", "The downstream client cancelled the request", 499, "invalid_request_error")
+    : toProviderGatewayError(input.error);
   const usage = input.usage ?? emptyTokenUsage(
     input.protocol === "anthropic" ? "fresh" : "total_including_cache",
   );
