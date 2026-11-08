@@ -1,7 +1,7 @@
 # [Input] Explicit Run workflow on main, locked source and the Admin production SSH registration.
 # [Output] Verified Linux release, manual ECS activation, retained previous release and deployment receipt.
 # [Pos] Sole Admin publish trigger; push and pull requests only run independent CI.
-# [Sync] 2026-11-08: build outside ECS and publish only by workflow_dispatch.
+# [Sync] 2026-11-08: manually publish with ECS public-route gating and a separate runner network diagnostic.
 name: Build and deploy Admin (manual)
 run-name: Admin manual release by @${{ github.actor }}
 on:
@@ -100,8 +100,10 @@ jobs:
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$ADMIN_USER@$ADMIN_HOST" "deploy $GITHUB_SHA $digest $GITHUB_RUN_ID" \
             < release-output/admin-release.tgz | tee deployment-receipt.json
-      - name: Check public login endpoint
-        run: curl --fail --silent --show-error --max-time 15 "$ADMIN_PUBLIC_ORIGIN/admin/login" -o /dev/null
+      - name: Record runner public probe
+        run: |
+          status="$(curl --silent --show-error --max-time 15 --output /dev/null --write-out '%{http_code}' "$ADMIN_PUBLIC_ORIGIN/admin/login")" || status=transport_error
+          printf 'Runner public probe: `%s`. Release route verification runs from ECS through the configured public URL.\n' "$status" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
