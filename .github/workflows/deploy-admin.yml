@@ -1,7 +1,7 @@
 # [Input] Explicit Run workflow on main, locked source and the Admin production SSH registration.
 # [Output] Verified Linux release, manual ECS activation, retained previous release and deployment receipt.
 # [Pos] Sole Admin publish trigger; push and pull requests only run independent CI.
-# [Sync] 2026-11-08: manually publish with ECS public-route gating and a separate runner network diagnostic.
+# [Sync] 2026-11-08: manual release and ordinary CI share the release receiver test command.
 name: Build and deploy Admin (manual)
 run-name: Admin manual release by @${{ github.actor }}
 on:
@@ -35,7 +35,7 @@ jobs:
       - name: Check config, units, lint and types
         run: |
           pnpm test:config
-          python3 -m unittest discover -s scripts -p test_admin_action_deploy.py
+          pnpm test:release-receiver
           pnpm test:run
           pnpm lint
           pnpm exec tsc --noEmit

@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: 区分当前手动发布与历史源码入口，正常本机／ECS拓扑沿已核对实例维护。 -->
 <!-- [Sync] 2026-11-08: 发布仅由GitHub手动Actions触发，ECS使用完整制品和原start:embedded，普通发布只检查迁移。 -->
 <!-- [Sync] 2026-11-02: 发布前检查构建预算，失败后复用完整制品与 start:embedded 恢复，保留既有无交换策略。 -->
 # AGENTS Instructions Guidelines (ink-memory-admin)
@@ -21,7 +22,7 @@
 
 - 2026-11-08当前发布入口：GitHub Actions `deploy-admin.yml`，仅手动Run workflow及main分支；Linux runner打包完整制品，ECS复用`start:embedded`。push／PR只检查；普通发布仅检查迁移，保留原数据及回滚制品。下述源码入口供历史维护与明确授权的构建使用。
 
-- SSH 源码发布入口为 `pnpm local:stable`，包含构建及 Admin/内嵌 PostgreSQL 启动；运行身份必须是专用非 root 服务账户。服务器构建前必须通过[构建内存与发布失败恢复手册](docs/release-build-memory-and-recovery.md)中的容量、入口、期限与原制品检查。
+- `pnpm local:stable` 供本机源码构建与已明确授权的历史维护，包含构建及 Admin/内嵌 PostgreSQL 启动；ECS日常发布执行上述手动Actions，运行身份保持专用非 root 服务账户。服务器构建前必须通过[构建内存与发布失败恢复手册](docs/release-build-memory-and-recovery.md)中的容量、入口、期限与原制品检查。
 - 资源不足时优先评估目标兼容主机生成的完整制品。已构建发布与故障恢复复用现有 `pnpm run start:embedded`，保留原 supervisor、配置和现用数据库；切换启动入口须按当次授权维护，禁止将重新构建作为唯一恢复方式。
 - 预算须覆盖所有 worker、原生内存、运行服务、数据库和系统余量；核对脚本内联参数与有效覆盖项。禁止超预算构建、并行重试及失败后无检查重启；单次事故的堆/进程组限额不得固化成通用默认值。
 - SSH 超时、502/503 或 SIGKILL 只作为诊断线索；OOM 判定须关联同一时间和目标的内核/cgroup 记录。出现重复构建失败时先停止本轮失败循环，恢复已验证完整制品；构建、服务恢复、真实业务验收与发布分别留存证据。
@@ -29,7 +30,7 @@
 - 当前部署指南为 `docs/deploy.md`。先核对实际进程、服务管理器、源码和数据目录，不能把遗留容器或旧配置当作当前运行方式。
 - 未经用户明确要求，不启动本机 Docker、不选择容器发布，也不将 AutoDL standalone 启动器套用到 ECS。
 - 数据迁入必须保留现用配置、密钥、角色与权限；应用启动不执行 migration，不能以旧备份或空库替代现用数据。
-- ECS 迁移后，本机 `3000` 由 SSH 转发连接现用 Admin，旧源 PostgreSQL 保留且停用；不得为恢复本机入口而再次启动旧源库，造成两个可写的数据源。实际服务拓扑见部署指南。
+- ECS 与本机服务按当次核对的正常拓扑维护；禁止自动改写Dream数据源或将已停用源库重新上线作为ECS现用库。主机、运行实例、数据库与传输入口分别核对，当前本机服务及历史SSH转发状态归执行回执。
 
 ## Vibe Contract
 - Any functional, architectural, or coding-style change must update affected folder docs and file headers before session end.

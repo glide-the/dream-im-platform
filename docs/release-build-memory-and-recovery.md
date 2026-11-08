@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: 当前发布器已验证，PR与手动发布共享receiver合同；11-02调查原文保留。 -->
 <!-- [Sync] 2026-11-08: 用户授权GitHub手动发布，当前按deploy.md完整Linux制品流程执行；保留原构建事故与恢复规则。 -->
 <!-- [Input] Admin package/Next 配置、既有 ECS 服务手册、发布事故记录及 Node/systemd 官方资料。 -->
 <!-- [Output] 构建资源检查、构建与运行入口选择、原制品恢复和完成判定操作要求。 -->
@@ -17,6 +18,12 @@
 发布前确认资源预算，故障时恢复已验证制品，避免自动重启反复执行失败构建。保留正常登录、现有 Client/PKCE/Cookie、权限、Gateway 和 PostgreSQL 数据。
 
 本文只维护文档、索引与 `AGENTS.md`。不执行构建、安装、SSH、服务启停、配置调整、数据操作或发布；文中的操作模板供后续已授权维护使用。Dream 对应说明见其[专项手册](../../ink-dream-memory/docs/deploy/build-memory-and-recovery.md)。
+
+## 当前发布合同（2026-11-08）
+
+普通Admin发布在GitHub手动Run workflow中完成锁定安装、Node打包合同、`pnpm test:release-receiver`、单元／lint／完整类型与构建。receiver合同由PR CI及手动发布共享；ECS只执行完整制品校验、显式check-only迁移检查与原`start:embedded`切换。当前步骤及失败重试归[发布指南](deploy.md)，已执行回执归[采用记录](verification/chat-continuation-20261108.md)。
+
+下节调查表和原方案保留2026-11-02调查时点；其中“无通用制品上传发布器”为历史事实。现用Actions接收器已验证，服务器资源不足时保持原完整制品，禁止回到原地源码构建或通过交换增加预算。
 
 ## 当前代码事实与处理判断
 

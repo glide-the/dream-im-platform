@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: 统一发布脚本测试入口，补充阶段性重试、原制品恢复与root receiver独立维护。 -->
 <!-- [Sync] 2026-11-08: 当前发布改为GitHub手动Actions，在Linux runner构建完整制品，ECS保持start:embedded与原数据库。 -->
 <!--
 [Input] The confirmed SSH host, exact Admin source release, private runtime configuration and existing PostgreSQL data.
@@ -177,3 +178,28 @@ AutoDL/SeetaCloud 的独立平台配置和专用打包流程仍在 [`deploy/auto
 
 
 公网检查期限由服务器`public_health_timeout_seconds`显式配置；本机启动探测沿用原期限。ECS公网GET正常样本约3秒；一次使用5秒期限的preflight未通过，旧日志缺少具体失败分类。该目标配置20秒网络预算；失败日志仅记录异常类型或HTTP状态，URL、响应正文和凭证退出日志。HTTP200门禁、入口策略和失败回滚保持。
+
+
+## 发布脚本与验证入口
+
+| 对象 | 执行入口与职责 |
+| --- | --- |
+| 打包 | `scripts/package-admin-release.mjs`；Linux runner完成构建后生成完整制品及SHA清单，Node合同归`pnpm test:config` |
+| 接收 | `scripts/admin-action-deploy.py`；root安装版本读取服务端配置，受限key只允许preflight／deploy |
+| 接收器合同 | `pnpm test:release-receiver`；根package脚本调用同一Python unittest，PR／push CI和手动发布均准备Python3.12并执行 |
+| 日常发布 | GitHub的Run workflow；仅main，`admin-production`及专用key按本指南管理 |
+| root receiver维护 | 单独核对已安装摘要、root配置／备份、原子替换及受限preflight；应用发布保留已安装接收器 |
+
+2026-11-08验证回执：接收器15项、Node打包3项通过；完整CI及手动发布结果见[本次采用记录](verification/chat-continuation-20261108.md)。服务器receiver、工作流、测试入口、服务手册和跨仓库索引作为同一发布合同维护。更新对应文件时同步文件头和目录合同，验收回执按实际source／BUILD_ID／run登记。
+
+## 失败后重试与恢复
+
+| 停止位置 | 核对与后续操作 |
+| --- | --- |
+| build未完成 | 保留当前服务；修正源码后新建Run workflow，保持完整类型检查与锁定依赖 |
+| preflight失败，Publish未开始且本轮候选目录未创建 | 核对具体错误并修正条件后，可对同次运行使用Re-run failed jobs复用已验证build；不变条件下停止重复尝试 |
+| Publish已开始、候选目录已创建或已回滚 | 保留候选、原制品与回执；修正条件后新建Run workflow获得新run ID；禁止清空原release以绕过目录冲突 |
+| 原服务恢复未通过 | 停止发布并按[服务手册](deploy-services.md)定位；沿原systemd与已验证制品恢复，保留数据库和私有配置 |
+| runner独立公网诊断为403／transport_error | 保留实际诊断结果；ECS固定公网门禁与本机健康按原规则执行，具体入口策略／网络原因单列核实 |
+
+前向schema迁移独立于应用重试。0086已登记的SQL、journal、snapshot及capability保持字节；重试发布只检查既有迁移，不执行DDL或旧备份恢复。

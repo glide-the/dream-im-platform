@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: 当前服务沿手动Actions与完整制品维护，历史基础unit原文保留，发布／网络／真实业务分别留证。 -->
 <!--
 [Input] Read-only inspection of the ECS systemd fragments, drop-ins and server-owned data paths.
 [Output] Reproducible service creation, operation, update, recovery, logging and dated usage records.
@@ -8,10 +9,9 @@
 -->
 # Admin 线上服务创建、维护与使用记录
 
-发布与故障恢复先读[构建内存与发布失败恢复](release-build-memory-and-recovery.md)。下文 2048 MiB 堆与服务创建模板保留为既有配置记录；其有效覆盖项和实际入口须实时核对，禁止直接复制到容量不足的主机。`local:stable` 重启会再次构建；已有完整制品恢复沿现有 `start:embedded`，具体入口调整按授权维护流程执行。本次文档修订未修改服务器配置。
+当前Admin打包发布从GitHub **Build and deploy Admin (manual) → Run workflow → main** 发起，完整Linux制品由受限SSH接收器切换原systemd服务。操作步骤归[部署指南](deploy.md)，构建预算与异常处理归[构建内存与发布失败恢复](release-build-memory-and-recovery.md)。
 
-本手册与[部署指南](deploy.md)配套。2026-10-28～29 已通过 SSH 核对实际 unit、覆盖项和状态；2026-10-31 按用户要求关闭交换并更新 OOM 重启策略，下面的 Admin unit 和内存配置已同步为当前值。出口上游改为必须填入的线上配置占位符，当前临时配置另存问题记录。日常操作从“日常使用”开始，创建部分用于首次部署或有备份的配置重建，不要在现有服务器上直接整段覆盖执行。
-
+本手册维护服务职责、当前有效drop-in、日常日志与计划启停。首次创建章节保留2026-10-25～31的基础unit及出口配置原文，其中`local:stable`和2048MiB堆为历史记录；现用入口由发布drop-in设置为`pnpm run start:embedded`。修改前读取合并后的有效属性，保留原服务账户、私有配置和数据库。
 - [ECS 首次创建与配置记录](#ecs-首次创建与配置记录)
 - [ECS 日常使用与维护](#ecs-日常使用与维护)
 - [创建与使用记录](#创建与使用记录)
@@ -20,7 +20,7 @@
 
 | 所在位置 | 服务 / 标签 | 配置位置 | 职责及正常状态 |
 | --- | --- | --- | --- |
-| ECS | `ink-memory-admin.service` | `/etc/systemd/system/ink-memory-admin.service` | 运行 `pnpm local:stable`；构建后由 supervisor 启动 Next.js / Gateway / PostgreSQL；就绪后为 `active (running)` |
+| ECS | `ink-memory-admin.service` | `/etc/systemd/system/ink-memory-admin.service` | 运行完整制品的 `pnpm run start:embedded`；supervisor管理Next.js／Gateway／原PostgreSQL，正常为active/running |
 | ECS | `ink-admin-egress.service` | `/etc/systemd/system/ink-admin-egress.service` | 回环地址上的 Tinyproxy；转发指定域名请求，当前上游见临时问题记录；`active (running)` |
 | ECS | `ink-admin-local-ports.service` | `/etc/systemd/system/ink-admin-local-ports.service` | 加载本服务自己的 nftables 表；一次性任务完成后为 `active (exited)` |
 
@@ -28,9 +28,23 @@
 
 没有单独创建 `postgresql.service`。内嵌 PostgreSQL 属于 Admin supervisor 的生命周期，停止 Admin 会同时关闭它拥有的应用进程组与数据库。
 
-Admin **Requires** 防火墙服务，并要求 Artifact bind mount 可用；对出口服务使用 **Wants**。出口服务故障不触发 Admin 重新构建，外部请求仍按各自边界报错。`Type=simple` 在构建时也会显示 running，必须结合 `Ready` 日志及 HTTP / 鉴权检查判断就绪。
+Admin **Requires** 防火墙服务，并要求Artifact bind mount可用；对出口服务使用 **Wants**。出口失败按请求边界反馈。`Type=simple` 的running用于进程状态，完整就绪还需Ready日志、HTTP与鉴权检查。
+
+## 当前发布与恢复（2026-11-08）
+
+- 发布由[手动Actions](https://github.com/glide-the/dream-im-platform/actions/workflows/deploy-admin.yml)产生完整源码、Linux依赖闭包、db／Next构建输出与逐文件摘要。ECS只消费已验证制品，保留原PostgreSQL、env、认证和权限。
+- root所有的`/usr/local/libexec/ink-admin-action-deploy.py`读取0600配置`/etc/ink-memory-admin/github-deploy.json`。专用key仅允许固定preflight／deploy命令；GitHub `admin-production`只允许main，个人SSH key留在原位置。
+- 当前发布器所有的覆盖项为`/etc/systemd/system/ink-memory-admin.service.d/zzzz-github-actions.conf`，设置候选WorkingDirectory、清空旧ExecStart并指定`pnpm run start:embedded`。创建章节的基础unit与较早drop-in继续保留；有效入口由`systemctl show`核对。
+- 普通发布只执行显式目标的check-only迁移检查。有pending migration时在切换前停止，schema继续由Admin Drizzle显式前向发布。
+- receiver校验原实例／运行账户、Node版本、制品摘要、原私有env、数据库目录及资源后才切换。本机健康或固定公网HTTP200检查失败时恢复前一drop-in／完整制品；保留现用数据库，禁止用旧库或空目录替换。
+- 公网等待预算由服务器`public_health_timeout_seconds`提供，当前ECS为20秒。本机健康期限独立；runner公网结果写入Step Summary，HTTP状态或transport_error保持原值。公网失败分类只记录异常类型／HTTP状态，凭据和正文退出日志。
+- 更新root receiver属于具名运维变更，先运行`pnpm test:release-receiver`、核对已安装摘要、保留root私有备份，再原子替换并校验受限preflight。普通应用制品发布保留已安装receiver；本轮采用摘要与[发布回执](verification/chat-continuation-20261108.md)对应。
+
+截至[运行42476219452 attempt2](https://github.com/glide-the/dream-im-platform/actions/runs/42476219452/attempts/2)，应用source为`01139a32191b7e445df6fbab7a8f899dbacfa6e0`，BUILD_ID `8j55EPjZRN3tSoqU4Ydtl`，整体completed/success。原env字节和数据目录inode1056781保持；本机／ECS公网门禁200。后续独立公网复查发生过TimeoutError，再次分阶段诊断返回200；网络波动与发布成功分别记录，正常账户／模型业务验收单列。
 
 ## ECS 首次创建与配置记录
+
+> 历史创建记录：以下基础unit及命令保留当时配置。当前已有实例沿上节手动Actions维护，禁止将历史源码构建模板覆盖现用drop-in。
 
 以下命令在 `ssh root@39.97.252.88` 登录后的服务器执行。涉及服务启停的步骤属于维护窗口操作；2026-10-31 的交换策略更新使用 daemon-reload 与在线属性设置，未重启当前服务。
 
@@ -318,7 +332,7 @@ curl -fsS --max-time 15 http://127.0.0.1:3000/admin/login >/dev/null
 systemctl status ink-memory-admin.service ink-admin-egress.service ink-admin-local-ports.service --no-pager -l
 systemctl is-enabled ink-memory-admin.service ink-admin-egress.service ink-admin-local-ports.service
 
-# Admin：构建、Next.js、Gateway 及 supervisor 转发的运行日志。
+# Admin：Next.js、Gateway 及 supervisor 转发的运行日志。
 journalctl -u ink-memory-admin.service -n 100 -f
 journalctl -u ink-memory-admin.service --since '1 hour ago' --no-pager
 journalctl -u ink-memory-admin.service -b --no-pager
@@ -345,11 +359,11 @@ systemctl stop ink-memory-admin.service
 # 确认服务停止、其 PostgreSQL 正常关闭后再处理该服务的数据或配置。
 systemctl status ink-memory-admin.service --no-pager -l
 systemctl start ink-memory-admin.service
-# restart 相当于停止后重新启动，会再次构建并产生中断。
+# restart 重新启动当前完整制品及原PostgreSQL，会产生计划中断。
 # systemctl restart ink-memory-admin.service
 ```
 
-普通停服不删除数据；不要用 `killall node`、`pkill postgres` 清理其他服务，也不要同时手动执行第二份 `pnpm local:stable`。只取消开机启动用 `systemctl disable ink-memory-admin.service`；立即停服并取消开机启动用 `systemctl disable --now ink-memory-admin.service`，两者含义不同。
+普通停服不删除数据；不要用 `killall node`、`pkill postgres` 清理其他服务，禁止同时手动启动第二份embedded supervisor。只取消开机启动用 `systemctl disable ink-memory-admin.service`；立即停服并取消开机启动用 `systemctl disable --now ink-memory-admin.service`，两者含义不同。
 
 ### 修改 unit、资源或发布目录
 
@@ -364,6 +378,11 @@ systemctl show ink-memory-admin.service \
 
 修改流程是：备份 → 修改指定文件 → `systemd-analyze verify` → `systemctl daemon-reload` → 计划重启 → 日志与就绪验证。资源变更优先使用 `systemctl set-property`；它会应用到当前 cgroup，不必为了修改资源值重启应用，值必须来自实际容量评估。
 
+应用更新在GitHub手动发布；receiver独占维护`zzzz-github-actions.conf`。计划调整其他unit／资源项时，保留现有发布覆盖项，并核对DropInPaths与最终ExecStart。故障恢复使用前一完整制品及对应drop-in，流程归[部署指南](deploy.md#失败后重试与恢复)；schema、角色、原数据库与密钥保持。
+
+<details>
+<summary>历史源码发布目录维护说明（保留原文）</summary>
+
 发布新源码时，先准备完整新 release、依赖和沿用密钥的私有配置，再通过 `/etc/systemd/system/ink-memory-admin.service.d/release.conf` 指定新的绝对 WorkingDirectory：
 
 ```ini
@@ -372,6 +391,8 @@ WorkingDirectory=/srv/ink-admin-releases/REPLACE_WITH_VERIFIED_RELEASE
 ```
 
 上面的名称是待替换示例。若还要更换 pnpm 可执行文件，需要先用空的 `ExecStart=` 清除旧命令，再设置完整的新 ExecStart 和一致的 PATH。更新后的 `local:stable` 仍执行完整类型检查与构建。源码回滚可恢复旧 release 指针和其配置，但不自动回滚 schema、覆盖新数据库或把旧源库重新上线；已有 schema 兼容性按正式发布协议判断。
+
+</details>
 
 ### 出口变更与限速恢复
 
@@ -386,7 +407,7 @@ journalctl -u ink-admin-egress.service --since '10 minutes ago' --no-pager
 
 检查 `127.0.0.1:17891` 监听，再用不携带账户凭据的连通探测确认出口。无认证的 HEAD 返回 403/404 可以证明网络连通，不能作为真实模型或 Google 登录验收。只需要重新拉起时可 `systemctl restart ink-admin-egress.service`，不为此重启 Admin。
 
-Admin 当前为 `StartLimitIntervalSec=0`、`OOMPolicy=stop`、`Restart=on-failure`、`RestartSec=10`。OOM 后 systemd 停止服务进程组，再自动启动同一入口；30 分钟两次的旧限制已取消。`StartLimitBurst=2` 在限流区间为 `0` 时不生效。`local:stable` 的恢复仍包括完整构建，禁止通过重新启用交换来绕过内存失败。
+Admin 当前为 `StartLimitIntervalSec=0`、`OOMPolicy=stop`、`Restart=on-failure`、`RestartSec=10`。OOM 后 systemd 停止服务进程组，再自动启动同一入口；30 分钟两次的旧限制已取消。`StartLimitBurst=2` 在限流区间为 `0` 时不生效。当前完整制品的重启沿`start:embedded`运行；历史`local:stable`模板包含构建，维护时核对有效ExecStart。交换保持禁用。
 
 出口服务仍保留 5 分钟最多 3 次的限制。若出口出现 `start-limit-hit`，修正失败原因后恢复该服务：
 
@@ -431,8 +452,9 @@ rm /run/ink-admin-local-update.nft
 | 2026-10-29 | 按线上范围修正文档，移出个人电脑操作，将出口上游改为明确占位的生产模板 | 临时桥接事实另存问题记录；未修改线上服务配置或重启服务 |
 | 2026-10-29 | 发布 `deck.catalog` 的四个源码文件与完整 operation JSON，沿既有 `pnpm local:stable` 重建并启动 Admin | [发布回执与只读检查](verification/admin-deck-catalog-ecs-20261029.md)；293 项广告与精确 hash 通过，数据库与运行配置未改 |
 | 2026-10-31 | 关闭 swap / zswap，移除 fstab 的 swap 条目并 mask `swapfile.swap`；Admin swap 上限设为 0，取消旧启动限流 | `swapon --show` 为空、SwapTotal=0、zswap=N；Admin 原 PID 1070 保持，未重启；`systemd-analyze verify` 退出 0，登录页 200 |
+| 2026-11-08 | GitHub手动Actions完整制品发布；专用受限key、root receiver、check-only检查及start:embedded采用 | [发布回执](verification/chat-continuation-20261108.md)：run42476219452 attempt2成功，原env、数据inode、87条迁移及精确capability保持；真实跨端模型验收待本人认证 |
 
-本次文档补全不代表重新部署或真实模型验收。以后每次维护应追加日期、操作对象、修改文件、执行命令、退出码 / 关键结果、就绪验证和回退情况；不把 DSN、密钥、token、用户正文写进记录。
+每次维护追加日期、操作对象、修改文件、执行命令、退出码／关键结果、就绪验证和回退情况；DSN、密钥、token及用户正文退出记录。发布、HTTP检查、真实账户／模型验收分别登记。
 
 ### 文档校验记录
 
