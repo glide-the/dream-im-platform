@@ -174,3 +174,6 @@ AutoDL/SeetaCloud 的独立平台配置和专用打包流程仍在 [`deploy/auto
 ### 公网探测来源
 
 首发Actions的ECS制品激活已成功，GitHub runner的末尾公网GET返回403；Mac同URL返回Cloudflare HTTP200，ECS的curl与Python urllib均取得HTTP200。runner的具体403策略项待核对。当前发布门禁由ECS访问服务端固定`public_health_url`，验证公网DNS／TLS／入口与本机健康；公网检查失败进入原回滚。GitHub runner同URL的结果作为独立网络诊断写入Step Summary，403保持原值。入口WAF、认证和IP策略保持；该探测退出真实账户和模型验收范围。
+
+
+公网检查期限由服务器`public_health_timeout_seconds`显式配置；本机启动探测沿用原期限。ECS公网GET正常样本约3秒；一次使用5秒期限的preflight未通过，旧日志缺少具体失败分类。该目标配置20秒网络预算；失败日志仅记录异常类型或HTTP状态，URL、响应正文和凭证退出日志。HTTP200门禁、入口策略和失败回滚保持。
