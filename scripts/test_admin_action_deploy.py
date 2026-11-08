@@ -1,7 +1,7 @@
 # [Input] Disposable files and a mocked command runner; no normal services or data.
 # [Output] Receiver manifest and check-only migration protection evidence.
 # [Pos] Isolated release receiver contract.
-# [Sync] 2026-11-08: reject altered, extra, escaped or private release files.
+# [Sync] 2026-11-08: verify public deadlines, sanitized failure classes, manifest integrity and activation rollback.
 import hashlib
 import importlib.util
 from pathlib import Path
@@ -102,7 +102,7 @@ class ActivationContract(unittest.TestCase):
                 output.add(source, arcname='.')
             archive = packed.getvalue()
             config = root / 'config.json'
-            config.write_text(json.dumps({'hostname': 'fixture-host', 'node': 'fixture-node', 'pnpm': 'fixture-pnpm', 'service': 'fixture.service', 'user': 'fixture-user', 'releases': str(releases), 'data_dir': str(data), 'dropin': str(dropin), 'health_url': 'http://fixture.invalid', 'public_health_url': 'https://public.fixture.invalid/admin/login', 'lock': str(root/'lock'), 'min_mem_available_bytes': 1, 'max_archive_bytes': 1000000, 'unpack_disk_factor': 1, 'health_timeout_seconds': 3}))
+            config.write_text(json.dumps({'hostname': 'fixture-host', 'node': 'fixture-node', 'pnpm': 'fixture-pnpm', 'service': 'fixture.service', 'user': 'fixture-user', 'releases': str(releases), 'data_dir': str(data), 'dropin': str(dropin), 'health_url': 'http://fixture.invalid', 'public_health_url': 'https://public.fixture.invalid/admin/login', 'public_health_timeout_seconds': 20, 'lock': str(root/'lock'), 'min_mem_available_bytes': 1, 'max_archive_bytes': 1000000, 'unpack_disk_factor': 1, 'health_timeout_seconds': 3}))
             config.chmod(0o600)
             commands = []
             def execute(args, **kwargs):
@@ -133,7 +133,7 @@ class ActivationContract(unittest.TestCase):
             ticks = iter(range(100))
             responses = iter([True, False, True] if fail == 'public' else [False, False, True] if fail else [True, True])
             stdout = io.StringIO()
-            with patch.object(receiver.sys, 'argv', ['receiver', str(config)]), patch.dict(os.environ, {'SSH_ORIGINAL_COMMAND': 'deploy '+ 'a'*40+' '+hashlib.sha256(archive).hexdigest()+' 123'}), patch.object(receiver.os, 'geteuid', return_value=0), patch.object(receiver.os, 'chown'), patch.object(receiver.socket, 'gethostname', return_value='fixture-host'), patch.object(receiver.pwd, 'getpwnam', return_value=identity), patch.object(receiver, 'run', side_effect=execute), patch.object(receiver, 'healthy', side_effect=lambda _: next(responses)), patch.object(receiver.time, 'monotonic', side_effect=lambda: next(ticks)), patch.object(receiver.time, 'sleep'), patch.object(receiver.signal, 'signal'), patch.object(receiver.sys, 'stdin', types.SimpleNamespace(buffer=io.BytesIO(archive))), patch.object(Path, 'stat', metadata), patch.object(Path, 'read_text', read), contextlib.redirect_stdout(stdout):
+            with patch.object(receiver.sys, 'argv', ['receiver', str(config)]), patch.dict(os.environ, {'SSH_ORIGINAL_COMMAND': 'deploy '+ 'a'*40+' '+hashlib.sha256(archive).hexdigest()+' 123'}), patch.object(receiver.os, 'geteuid', return_value=0), patch.object(receiver.os, 'chown'), patch.object(receiver.socket, 'gethostname', return_value='fixture-host'), patch.object(receiver.pwd, 'getpwnam', return_value=identity), patch.object(receiver, 'run', side_effect=execute), patch.object(receiver, 'healthy', side_effect=lambda _, **options: next(responses)), patch.object(receiver.time, 'monotonic', side_effect=lambda: next(ticks)), patch.object(receiver.time, 'sleep'), patch.object(receiver.signal, 'signal'), patch.object(receiver.sys, 'stdin', types.SimpleNamespace(buffer=io.BytesIO(archive))), patch.object(Path, 'stat', metadata), patch.object(Path, 'read_text', read), contextlib.redirect_stdout(stdout):
                 if fail:
                     with self.assertRaisesRegex(ValueError, 'Published route' if fail == 'public' else 'health deadline'):
                         receiver.main()
@@ -163,17 +163,45 @@ class ActivationContract(unittest.TestCase):
 class PreflightContract(unittest.TestCase):
     def test_public_probe_is_bound_to_server_configuration(self):
         from unittest.mock import patch
-        cfg = {'node': 'fixture-node', 'service': 'fixture.service', 'public_health_url': 'https://public.fixture.invalid/admin/login'}
+        cfg = {'node': 'fixture-node', 'service': 'fixture.service', 'public_health_url': 'https://public.fixture.invalid/admin/login', 'public_health_timeout_seconds': 20}
         with patch.object(receiver, 'run', side_effect=['v22.23.4', 'x86_64', 'active']), patch.object(receiver, 'healthy', return_value=True) as probe:
             self.assertEqual(receiver.preflight(cfg)['publicHttp'], 200)
-            probe.assert_called_once_with(cfg['public_health_url'])
+            probe.assert_called_once_with(cfg['public_health_url'], timeout=20, diagnostic=True)
 
     def test_failed_public_probe_blocks_preflight(self):
         from unittest.mock import patch
-        cfg = {'node': 'fixture-node', 'service': 'fixture.service', 'public_health_url': 'https://public.fixture.invalid/admin/login'}
+        cfg = {'node': 'fixture-node', 'service': 'fixture.service', 'public_health_url': 'https://public.fixture.invalid/admin/login', 'public_health_timeout_seconds': 20}
         with patch.object(receiver, 'run', side_effect=['v22.23.4', 'x86_64', 'active']), patch.object(receiver, 'healthy', return_value=False):
             with self.assertRaisesRegex(ValueError, 'Published route'):
                 receiver.preflight(cfg)
+
+    def test_health_probe_forwards_its_explicit_network_deadline(self):
+        from unittest.mock import MagicMock, patch
+        response = MagicMock()
+        response.__enter__.return_value.status = 200
+        with patch.object(receiver.urllib.request, 'urlopen', return_value=response) as request:
+            self.assertTrue(receiver.healthy('https://fixture.invalid', timeout=20))
+            request.assert_called_once_with('https://fixture.invalid', timeout=20)
+
+
+    def assert_sanitized_probe_failure(self, error, expected):
+        import contextlib
+        import io
+        import json
+        from unittest.mock import patch
+        output = io.StringIO()
+        with patch.object(receiver.urllib.request, 'urlopen', side_effect=error), contextlib.redirect_stderr(output):
+            self.assertFalse(receiver.healthy('https://fixture.invalid/?private=synthetic', timeout=20, diagnostic=True))
+        self.assertEqual(json.loads(output.getvalue()), {'event': 'public_health_failed', **expected})
+        self.assertNotIn('private', output.getvalue())
+        self.assertNotIn('synthetic', output.getvalue())
+
+    def test_http_failure_reports_status_without_private_details(self):
+        error = receiver.urllib.error.HTTPError('https://fixture.invalid/?private=synthetic', 403, 'synthetic', {}, None)
+        self.assert_sanitized_probe_failure(error, {'errorClass': 'HTTPError', 'httpStatus': 403})
+
+    def test_timeout_reports_class_without_private_details(self):
+        self.assert_sanitized_probe_failure(TimeoutError('private synthetic'), {'errorClass': 'TimeoutError'})
 
 
 if __name__ == '__main__':
