@@ -1,3 +1,4 @@
+// [Sync] 2026-11-12: include the additive external_shares relation from forward 0087.
 // [Sync] 2026-09-27: include the additive task-result relation.
 // [Sync] 2026-10-23: inventory includes memory_artifact and memory_behavior_settings from forward 0082.
 // [Sync] 2026-10-05: inventory includes the already published 0069 scheduled task and trigger relations.
@@ -21,7 +22,7 @@ import {
 } from "./schema";
 
 describe("complete Dream Drizzle schema", () => {
-  it("declares exactly 67 Dream and canonical baseline tables", () => {
+  it("declares exactly 68 Dream and canonical baseline tables", () => {
     const generatedNames = Object.values(dreamSchema)
       .filter(isTable)
       .map(getTableName);
@@ -35,7 +36,7 @@ describe("complete Dream Drizzle schema", () => {
     );
     const allNames = [...generatedNames, ...canonicalBaselineNames];
 
-    expect(generatedNames).toHaveLength(64);
+    expect(generatedNames).toHaveLength(65);
     expect(managedMcpNames).toEqual([
       "dream_mcp_servers",
       "dream_mcp_credentials",
@@ -56,7 +57,8 @@ describe("complete Dream Drizzle schema", () => {
     expect(generatedNames).toContain("chat_scheduled_trigger");
     expect(generatedNames).toContain("memory_artifact");
     expect(generatedNames).toContain("memory_behavior_settings");
-    expect(allNames).toHaveLength(67);
-    expect(new Set(allNames).size).toBe(67);
+    expect(generatedNames).toContain("external_shares");
+    expect(allNames).toHaveLength(68);
+    expect(new Set(allNames).size).toBe(68);
   });
 });

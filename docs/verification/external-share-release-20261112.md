@@ -34,3 +34,7 @@
 PR/CI、正常数据库迁移、Actions部署及部署后检查待执行。正常库仅应用已核对的新增0087，先保存Schema、迁移/capability元数据与原配置指纹，保留全部业务数据及原密钥。迁移沿原runner，应用启动保持check-only。发布仅操作Admin。
 
 真实用户内容分享、Web/Native完整交互与真实模型验收保持独立；本记录的合成fixture技术验证与线上只读检查分别列示。
+
+CI首轮迁移job通过，单元job发现生成目录仍为297项及schema清单仍为旧表数量。已同步301项生成目录、显式新表清单，并新增原297项摘要保护；原API前缀和migration均保持。CI重跑结果待登记。
+
+本机Node26完整单元首轮2640 passed、37 skipped，一项原有model-egress CONNECT测试因undici dispatcher协议差异失败；对应生产代码与main一致。相同定向测试在已安装Node24通过。CI使用Node20，正式发布使用原Node22.23.4；Node20完整单元结果后续登记。
