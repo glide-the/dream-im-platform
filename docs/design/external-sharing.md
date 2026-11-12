@@ -1,7 +1,7 @@
 <!-- [Input] Dream统一AI/笔记分享范围、现有OAuth/回执协议和共享PostgreSQL合同。 -->
 <!-- [Output] Admin快照、归属、终态、匿名读取、capability及采用边界。 -->
 <!-- [Pos] Admin分享持久化设计；Dream PRD与正式交互稿拥有产品规则和业务图。 -->
-<!-- [Sync] 2026-11-12: 新增统一分享源码和前向0087，正常数据库未迁移。 -->
+<!-- [Sync] 2026-11-12: 0087与精确能力已应用；技术检查及完整制品发布分别留证。 -->
 # 外部分享持久化
 
 ## 背景与问题
@@ -32,8 +32,8 @@ token具有唯一索引，owner/kind/status/created_at/id拥有列表索引。us
 
 ## 采用与验证
 
-本轮未应用迁移、写正常数据库、重启服务或发布。用户要求部署并验证后，已恢复本次检查，luna-test-stage保持暂停。局部类型/lint、5项单元、完整前缀/0087/并发/重复/漂移/ACL及4项真实Next匿名HTTP规格通过；CI构建、正常迁移和发布状态见[执行记录](../verification/external-share-release-20261112.md)。
+用户要求部署并验证后，本次技术检查由主Agent执行，luna-test-stage保持暂停。完整类型/lint、Node20的2641项单元、具名隔离PG完整88条迁移、并发/重复/漂移/ACL及4项原Next匿名HTTP规格通过。正常ECS沿原编译入口完成0087，88/88及精确能力已登记，迁移前后原业务计数、私有配置指纹和数据目录inode保持。
 
-后续先在具名可删除隔离库验证完整迁移、权限、归属、幂等及并发，再按expand → Admin代码与capability → Dream代码采用 → 正常业务验收推进。缺能力时fail closed。应用回退须保留快照、终态、回执及逐次状态检查，保留新增Schema；旧文件token读取继续关闭。
+发布顺序为expand → Admin代码与capability → Dream代码采用 → 正常业务验收。三轮Actions的源码、制品、上传期限与部署后检查见[执行记录](../verification/external-share-release-20261112.md)。前两轮均在服务切换前取消慢速上传，原服务继续运行，第三轮使用90分钟按次期限并完成制品采用与线上只读接口检查。缺能力时fail closed。应用回退须保留快照、终态、回执及逐次状态检查，保留新增Schema；旧文件token读取继续关闭。
 
 Dream设计位于其仓库`docs/design/sharing/external-links.md`，执行记录位于`docs/exec/external-share-refactor-20261112.md`。
