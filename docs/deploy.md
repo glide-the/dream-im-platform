@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-12: 订阅周期任务绑定当前Admin release，以独立systemd timer执行原续期服务。 -->
 <!-- [Sync] 2026-11-08: 统一发布脚本测试入口，补充阶段性重试、原制品恢复与root receiver独立维护。 -->
 <!-- [Sync] 2026-11-08: 当前发布改为GitHub手动Actions，在Linux runner构建完整制品，ECS保持start:embedded与原数据库。 -->
 <!--
@@ -15,6 +16,16 @@
 本指南仅说明线上 ECS 的部署。三个 systemd 服务的完整配置、创建步骤、启停与更新、日志、限速恢复和操作记录，见[Admin 线上服务创建、维护与使用记录](deploy-services.md)。所有运维命令在 ECS 上执行。
 
 线上出口和持久文件应由服务器设施提供，不以个人电脑、桌面代理或用户登录会话为部署前提。当前线上仍有迁移时引入的临时出口和文件复制依赖，尚未完成替换；具体事实与影响见[临时桥接问题记录](verification/ecs-admin-temporary-bridges-20261029.md)。该记录不是生产部署步骤。
+
+## 订阅周期自动推进
+
+订阅周期逻辑位于 `app/lib/subscriptions/period-worker.ts` 与 `app/lib/subscriptions/service.ts`。线上主机使用 [systemd service](../deploy/systemd/ink-memory-subscription-periods.service.template) 和 [timer](../deploy/systemd/ink-memory-subscription-periods.timer.template) 定时执行[原服务入口](../scripts/run-subscription-period-worker.sh)。HTTP `POST /api/internal/subscriptions/periods` 保留为配置独立 worker secret 的外部调度入口。
+
+本机调度以 Admin 原运行账户执行，每次从 `INK_ADMIN_APP_SERVICE` 的有效 `WorkingDirectory` 读取当前 release，使用配置的 `INK_ADMIN_NODE_BIN`、原 `.env.local`、依赖及 `advanceDueSubscriptions`。任务只关闭自身进程的数据库连接池。Admin 停止或 release 缺少原入口时任务退出，后续触发重新读取当前 service。业务规则、月度锚点、行锁、幂等键、额度及审计沿用原订阅服务。
+
+安装前核对 service、运行账户、Node 路径、物理可用内存和当前业务负载。将脚本安装到 root 所有的稳定运维路径，渲染模板中的 service、账户、Node、脚本、执行期限和检查间隔，校验 unit 后执行 `systemctl daemon-reload` 与 `systemctl enable --now ink-memory-subscription-periods.timer`。主机轮询间隔属于运维配置；月度订阅边界继续按原订阅锚点计算。
+
+验收核对 timer 的下次触发、oneshot 的退出码、处理数量、结果计数及持久化的 `period_boundary` 审计；重复触发应处理零条已完成边界。任务日志只记录计数和安全错误码。恢复时停止并禁用本任务的 timer，保留既有订阅、额度、历史事件及 Admin 主服务。
 
 ## GitHub 手动打包发布（当前入口）
 
