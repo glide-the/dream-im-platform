@@ -1,3 +1,5 @@
+// [Sync] 2026-11-12: dispatch owner-scoped external-share publication and revocation.
+import {handleExternalShareOperation,isExternalShareOperation} from '../../../../../../lib/dream/externalShareHandler';
 // [Sync] 2026-10-15: dispatch named memory operations.
 import { handleMemoryOperation,isMemoryOperation } from "../../../../../../lib/dream/memoryHandler";
 // [Sync] 2026-10-14: dispatch only the registered analysis history-page read.
@@ -65,6 +67,7 @@ import { handleReflectionHistory } from "../../../../../../lib/dream/reflectionH
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
+  if (isExternalShareOperation(name)) return handleExternalShareOperation(request, name);
   if (name === "analysis-report.history-page") return handleReflectionHistory(request);
   if (isImageTurnOperation(name)) return handleImageTurnOperation(request, name);
   if (isChatScheduledTaskOperation(name)) return handleChatScheduledTaskOperation(request, name);

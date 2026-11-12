@@ -1,3 +1,5 @@
+// [Sync] 2026-11-12: append external-share operations gated by the exact additive capability.
+import {externalShareOperations, externalShareRequirement} from './externalShareDto';
 // [Sync] 2026-11-04: append continuation descriptors after frozen operations.
 // [Sync] 2026-10-23: append v2 Reflections scope/evidence descriptors; preserve the released registry prefix.
 // [Sync] 2026-10-15: append exact memory operations without altering prior descriptors.
@@ -322,4 +324,5 @@ export const dreamOperations = [
   descriptor("deck.catalog", "read", null, deckVoiceOperationContracts["deck.catalog"].input, deckVoiceOperationContracts["deck.catalog"].output,
     [identitySchemaRequirement, ...deckVoiceSchemaRequirements], "dream:read"),
   ...Object.entries(chatContinuationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...chatThreadSchemaRequirements, chatInputQueueSchemaRequirement, chatContinuationSchemaRequirement], operation.kind === "read" ? "dream:read" : "dream:write")),
+  ...Object.entries(externalShareOperations).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, runtimePurposeSchemaRequirement, externalShareRequirement], operation.userScope)),
 ] as const;
