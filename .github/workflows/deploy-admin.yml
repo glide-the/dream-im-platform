@@ -2,10 +2,21 @@
 # [Output] Verified Linux release, manual ECS activation, retained previous release and deployment receipt.
 # [Pos] Sole Admin publish trigger; push and pull requests only run independent CI.
 # [Sync] 2026-11-08: manual release and ordinary CI share the release receiver test command.
+# [Sync] 2026-11-12: retain the 20-minute default with bounded per-run upload/activation budgets.
 name: Build and deploy Admin (manual)
 run-name: Admin manual release by @${{ github.actor }}
 on:
   workflow_dispatch:
+    inputs:
+      deploy_timeout_minutes:
+        description: ECS upload and activation time budget
+        type: choice
+        required: true
+        default: '20'
+        options:
+          - '20'
+          - '40'
+          - '60'
 permissions:
   contents: read
 concurrency:
@@ -56,7 +67,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: ${{ inputs.deploy_timeout_minutes == '60' && 60 || inputs.deploy_timeout_minutes == '40' && 40 || 20 }}
     environment:
       name: admin-production
       url: ${{ vars.ADMIN_PUBLIC_ORIGIN }}

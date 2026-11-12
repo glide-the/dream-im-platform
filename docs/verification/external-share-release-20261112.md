@@ -38,3 +38,5 @@ PR/CI、正常数据库迁移、Actions部署及部署后检查待执行。正�
 CI首轮迁移job通过，单元job发现生成目录仍为297项及schema清单仍为旧表数量。已同步301项生成目录、显式新表清单，并新增原297项摘要保护；原API前缀和migration均保持。CI重跑结果待登记。
 
 本机Node26完整单元首轮2640 passed、37 skipped，一项原有model-egress CONNECT测试因undici dispatcher协议差异失败；对应生产代码与main一致。相同定向测试在已安装Node24通过。CI使用Node20，正式发布使用原Node22.23.4；Node20完整单元结果后续登记。
+
+首轮手动发布run43169612223的Node22检查与构建完成；312MB制品上传约180KB/s，预计超出原deploy job20分钟期限。上传在服务切换前取消。后续通过显式按次期限重试，默认20分钟保留。
