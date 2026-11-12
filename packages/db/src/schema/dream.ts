@@ -1,3 +1,4 @@
+// [Sync] 2026-11-12: declare owner-scoped immutable external shares and terminal revocation.
 // [Sync] 2026-11-04: additive Thread origin and queue continuation ownership/phase.
 // [Sync] 2026-10-15: add revisioned Reflections memory documents and owner behavior settings.
 // [Sync] 2026-10-13: add nullable task-private analysis content for additive Reflections selection operations.
@@ -1844,4 +1845,26 @@ export const memory_behavior_settings = pgTable("memory_behavior_settings", {
 }, t => [
   foreignKey({ columns: [t.user_id], foreignColumns: [users.id], name: "fk_memory_behavior_owner" }).onDelete("cascade"),
   check("memory_behavior_revision_check", sql`${t.revision} >= 1`),
+]);
+
+
+// Public content is stored in the shared database so native/cloud readers use the same state.
+export const external_shares = pgTable("external_shares", {
+  id: text().primaryKey().notNull(),
+  user_id: bigint({mode: "number"}).notNull(),
+  kind: text().notNull(),
+  source_id: text().notNull(),
+  token: text().notNull(),
+  title: text().notNull(),
+  snapshot: jsonb().notNull(),
+  status: text().default("active").notNull(),
+  created_at: timestamp({withTimezone: true, mode: "string"}).defaultNow().notNull(),
+  revoked_at: timestamp({withTimezone: true, mode: "string"}),
+}, table => [
+  uniqueIndex("external_shares_token_unique").on(table.token),
+  index("external_shares_owner_kind_state_created").on(table.user_id, table.kind, table.status, table.created_at, table.id),
+  foreignKey({columns: [table.user_id], foreignColumns: [users.id], name: "external_shares_owner_fk"}).onDelete("cascade"),
+  check("external_shares_kind_check", sql`${table.kind} IN ('chat','note')`),
+  check("external_shares_state_check", sql`(${table.status} = 'active' AND ${table.revoked_at} IS NULL) OR (${table.status} = 'revoked' AND ${table.revoked_at} IS NOT NULL)`),
+  check("external_shares_token_check", sql`${table.token} ~ '^[A-Za-z0-9_-]{43}$'`),
 ]);

@@ -610,6 +610,13 @@
       "when": 1793768405177,
       "tag": "0086_chat_continuation",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1794420468260,
+      "tag": "0087_external_shares",
+      "breakpoints": true
     }
   ]
 }

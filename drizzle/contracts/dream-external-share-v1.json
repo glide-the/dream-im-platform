@@ -1,0 +1,18 @@
+{
+  "capability": "dream.external-share.v1",
+  "version": 1,
+  "table": "external_shares",
+  "kinds": [
+    "chat",
+    "note"
+  ],
+  "states": [
+    "active",
+    "revoked"
+  ],
+  "ownership": "canonical-user",
+  "content": "immutable-public-text-snapshot",
+  "revoke": "terminal;checked-on-every-public-read",
+  "source_delete": "retain-snapshot",
+  "contract_sha256": "14414d3204886c46eb0f38b1afa49acc6870822dcb93a6f4924b910a7857f8ba"
+}

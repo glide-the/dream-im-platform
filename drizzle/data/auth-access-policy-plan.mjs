@@ -1,3 +1,4 @@
+// [Sync] 2026-11-12: exact share capability grants DATA only SELECT/INSERT/UPDATE on external_shares.
 // [Sync] 2026-10-15: exact memory capability grants DATA only SELECT/INSERT/UPDATE on both memory tables.
 // [Sync] 2026-10-07: grant only DATA the forward Notion actor-lock function when the exact capability is installed.
 // [Input] A verified PostgreSQL connection, database name and four distinct limited role names.
@@ -190,6 +191,12 @@ export async function buildAuthAccessPolicy(client, database, roles) {
   const memoryCapability = (await client.query("SELECT 1 FROM drizzle.schema_capabilities WHERE capability='dream.memory.v1' AND version=1 AND contract_sha256='d08fae4c65a4ee448d64e80ebfcb371c2fbfb0a9fe1091825971c35756aacbc6'")).rowCount;
   if (memoryCapability) {
     grant(roles.data, "SELECT, INSERT, UPDATE", "TABLE public.memory_artifact, public.memory_behavior_settings");
+  }
+  const shareCapability = (await client.query("SELECT contract_sha256 FROM drizzle.schema_capabilities WHERE capability='dream.external-share.v1' AND version=1")).rows[0];
+  if (shareCapability) {
+    const shareContract = JSON.parse(await readFile(new URL("../contracts/dream-external-share-v1.json", import.meta.url), "utf8"));
+    if (shareCapability.contract_sha256 !== shareContract.contract_sha256) throw new Error("EXTERNAL_SHARE_CAPABILITY_MISMATCH");
+    grant(roles.data, "SELECT, INSERT, UPDATE", "TABLE public.external_shares");
   }
   const sequences = await client.query(
     `SELECT n.nspname, c.relname
