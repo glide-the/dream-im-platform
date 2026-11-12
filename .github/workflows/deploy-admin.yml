@@ -3,6 +3,7 @@
 # [Pos] Sole Admin publish trigger; push and pull requests only run independent CI.
 # [Sync] 2026-11-08: manual release and ordinary CI share the release receiver test command.
 # [Sync] 2026-11-12: retain the 20-minute default with bounded per-run upload/activation budgets.
+# [Sync] 2026-11-12: include a 90-minute per-run budget for the measured slow transfer.
 name: Build and deploy Admin (manual)
 run-name: Admin manual release by @${{ github.actor }}
 on:
@@ -17,6 +18,7 @@ on:
           - '20'
           - '40'
           - '60'
+          - '90'
 permissions:
   contents: read
 concurrency:
@@ -67,7 +69,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-22.04
-    timeout-minutes: ${{ inputs.deploy_timeout_minutes == '60' && 60 || inputs.deploy_timeout_minutes == '40' && 40 || 20 }}
+    timeout-minutes: ${{ inputs.deploy_timeout_minutes == '90' && 90 || inputs.deploy_timeout_minutes == '60' && 60 || inputs.deploy_timeout_minutes == '40' && 40 || 20 }}
     environment:
       name: admin-production
       url: ${{ vars.ADMIN_PUBLIC_ORIGIN }}
