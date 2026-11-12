@@ -1,0 +1,20 @@
+# [Input] Confirmed Admin service, runtime account, Node executable and installed scheduler script.
+# [Output] One bounded execution of the original subscription period worker.
+# [Pos] Host scheduler service template; render all placeholders before installation.
+# [Sync] 2026-11-12: schedule the existing production service independently of Admin process restarts.
+[Unit]
+Description=Ink Memory subscription period advancement
+After=@ADMIN_SERVICE@
+
+[Service]
+Type=oneshot
+User=@RUNTIME_USER@
+Group=@RUNTIME_GROUP@
+Environment=INK_ADMIN_APP_SERVICE=@ADMIN_SERVICE@
+Environment=INK_ADMIN_NODE_BIN=@NODE_BIN@
+ExecStart=@WORKER_SCRIPT@
+TimeoutStartSec=@TIMEOUT@
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict

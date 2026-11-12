@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-12: 登记独立订阅周期timer、原服务入口及正常触发回执。 -->
 <!-- [Sync] 2026-11-08: 当前服务沿手动Actions与完整制品维护，历史基础unit原文保留，发布／网络／真实业务分别留证。 -->
 <!--
 [Input] Read-only inspection of the ECS systemd fragments, drop-ins and server-owned data paths.
@@ -41,6 +42,10 @@ Admin **Requires** 防火墙服务，并要求Artifact bind mount可用；对出
 - 更新root receiver属于具名运维变更，先运行`pnpm test:release-receiver`、核对已安装摘要、保留root私有备份，再原子替换并校验受限preflight。普通应用制品发布保留已安装receiver；本轮采用摘要与[发布回执](verification/chat-continuation-20261108.md)对应。
 
 截至[运行42476219452 attempt2](https://github.com/glide-the/dream-im-platform/actions/runs/42476219452/attempts/2)，应用source为`01139a32191b7e445df6fbab7a8f899dbacfa6e0`，BUILD_ID `8j55EPjZRN3tSoqU4Ydtl`，整体completed/success。原env字节和数据目录inode1056781保持；本机／ECS公网门禁200。后续独立公网复查发生过TimeoutError，再次分阶段诊断返回200；网络波动与发布成功分别记录，正常账户／模型业务验收单列。
+
+## 订阅周期任务
+
+`ink-memory-subscription-periods.timer` 与对应 oneshot service 使用独立进程执行原订阅周期服务。每次读取 `ink-memory-admin.service` 的有效 WorkingDirectory，沿原 Node、账户和私有配置计算到期边界。任务不启动或重启 Admin，日志只输出处理数量和结果计数。模板及恢复步骤归[部署指南](deploy.md#订阅周期自动推进)，现场状态归[本次回执](verification/subscription-period-recovery-20261112.md)。
 
 ## ECS 首次创建与配置记录
 

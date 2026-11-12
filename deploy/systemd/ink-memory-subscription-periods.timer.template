@@ -1,0 +1,14 @@
+# [Input] Host-owned polling interval and matching subscription period service.
+# [Output] Serial recurring checks; the existing worker handles overdue monthly boundaries.
+# [Pos] Scheduler timer template; monthly cycle rules remain in the subscription service.
+# [Sync] 2026-11-12: activate automatic Free renewal through the existing period worker.
+[Unit]
+Description=Check Ink Memory subscription period boundaries
+
+[Timer]
+OnBootSec=@INTERVAL@
+OnUnitInactiveSec=@INTERVAL@
+Unit=ink-memory-subscription-periods.service
+
+[Install]
+WantedBy=timers.target
