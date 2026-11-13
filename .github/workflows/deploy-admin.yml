@@ -4,6 +4,7 @@
 # [Sync] 2026-11-08: manual release and ordinary CI share the release receiver test command.
 # [Sync] 2026-11-12: retain the 20-minute default with bounded per-run upload/activation budgets.
 # [Sync] 2026-11-12: include a 90-minute per-run budget for the measured slow transfer.
+# [Sync] 2026-11-14: bind preflight and activation to the server-owned PostgreSQL topology.
 name: Build and deploy Admin (manual)
 run-name: Admin manual release by @${{ github.actor }}
 on:
@@ -78,6 +79,7 @@ jobs:
       ADMIN_USER: ${{ vars.ADMIN_SSH_USER }}
       ADMIN_PORT: ${{ vars.ADMIN_SSH_PORT }}
       ADMIN_PUBLIC_ORIGIN: ${{ vars.ADMIN_PUBLIC_ORIGIN }}
+      ADMIN_DATABASE_MODE: ${{ vars.ADMIN_DATABASE_MODE || 'embedded-postgres' }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -91,6 +93,10 @@ jobs:
           set -euo pipefail
           test -n "$ADMIN_HOST" && test -n "$ADMIN_USER" && test -n "$ADMIN_PORT"
           test -n "$ADMIN_SSH_KEY" && test -n "$ADMIN_KNOWN_HOSTS"
+          case "$ADMIN_DATABASE_MODE" in
+            embedded-postgres|postgres) ;;
+            *) echo 'Unsupported database topology' >&2; exit 1 ;;
+          esac
           umask 077
           mkdir -p "$RUNNER_TEMP/admin-ssh"
           printf '%s\n' "$ADMIN_SSH_KEY" > "$RUNNER_TEMP/admin-ssh/key"
@@ -101,7 +107,7 @@ jobs:
           -o BatchMode=yes -o StrictHostKeyChecking=yes
           -o UserKnownHostsFile="$RUNNER_TEMP/admin-ssh/known_hosts"
           -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2
-          "$ADMIN_USER@$ADMIN_HOST" preflight
+          "$ADMIN_USER@$ADMIN_HOST" "preflight $ADMIN_DATABASE_MODE"
       - name: Publish source-bound complete release
         run: |
           set -euo pipefail
@@ -111,7 +117,7 @@ jobs:
             -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$RUNNER_TEMP/admin-ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$ADMIN_USER@$ADMIN_HOST" "deploy $GITHUB_SHA $digest $GITHUB_RUN_ID" \
+            "$ADMIN_USER@$ADMIN_HOST" "deploy $GITHUB_SHA $digest $GITHUB_RUN_ID $ADMIN_DATABASE_MODE" \
             < release-output/admin-release.tgz | tee deployment-receipt.json
       - name: Record runner public probe
         run: |

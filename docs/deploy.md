@@ -13,6 +13,7 @@
 [Sync] 2026-10-31: disable swap/zswap and allow systemd to restart Admin after OOM.
 [Sync] 2026-11-02: require capacity checks before building and document prebuilt recovery through start:embedded.
 -->
+<!-- [Sync] 2026-11-14: document external PostgreSQL receiver and workflow topology assertions; activation is a separate operational cutover. -->
 # Ink Memory Admin 部署
 
 本指南仅说明线上 ECS 的部署。三个 systemd 服务的完整配置、创建步骤、启停与更新、日志、限速恢复和操作记录，见[Admin 线上服务创建、维护与使用记录](deploy-services.md)。所有运维命令在 ECS 上执行。
@@ -82,6 +83,14 @@ export NEXT_WEBPACK_MEMORY_OPTIMIZATIONS=true
 这些选项只控制构建资源。Node heap 上限通过 `NODE_OPTIONS` 按物理内存预算设置，并为其他进程和 native 内存预留空间；V8 heap 上限不等于进程总内存。通过 systemd 的物理内存上限、`MemoryHigh` 与 OOM 计数判断资源状态。OOM 后由 systemd 自动重启 Admin，不启用交换作为构建或恢复手段。
 
 ## 运行配置与数据
+
+### 外部 PostgreSQL 的发布配置
+
+外部数据库切换采用 `INK_DATABASE_MODE=postgres`，五个角色连接（`DATABASE_URL`、`MIGRATION_DATABASE_URL`、`AUTH_DATABASE_URL`、`ADMIN_CONTROL_DATABASE_URL`、`DREAM_DATA_DATABASE_URL`）必须指向同一目标库，保留各自凭据。服务使用已有 `pnpm run start`，不再进入 embedded supervisor。
+
+root-owned receiver 配置设置 `database_mode=postgres` 和 `database_target`，后者包含 `host`、整数 `port`、`name`、`systemIdentifier` 与 `databaseOid`。从现用库的 `pg_control_system()` 和 `pg_database` 读取身份并在迁移核验后登记，不重新生成数据库身份。接收器通过原 migration credential 做只读身份核对；缺少身份、权限或五个角色目标不一致时停止发布。
+
+GitHub `admin-production` 环境变量 `ADMIN_DATABASE_MODE` 与服务器模式保持一致；未设置时沿用 `embedded-postgres`。工作流在 `preflight` 和 `deploy` 中传递期望模式，服务器配置仍拥有实际拓扑与启动方式，工作流变量不能自行切换数据库。必须先安装匹配的 root receiver，再运行带模式断言的新工作流。普通发布与应用回滚保持同一外部数据库，只检查 migration，不执行 DDL 或恢复旧源库。以下内嵌部署说明保留给仍明确配置为 `embedded-postgres` 的实例。
 
 运行配置保存在项目根目录的 `.env.local`，权限为 `0600`，归运行服务账户所有。沿用与现有数据匹配的密钥、OAuth 注册、Gateway binding 和业务策略，不能通过重新生成配置替换已有加密密钥。
 

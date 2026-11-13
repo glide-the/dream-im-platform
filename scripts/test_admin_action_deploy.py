@@ -194,6 +194,13 @@ class ExternalDatabaseContract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 receiver.database_state(cfg, Path('/fixture'), None)
 
+    def test_workflow_cannot_override_server_topology(self):
+        receiver.assert_database_mode({}, 'embedded-postgres')
+        receiver.assert_database_mode({'database_mode': 'postgres'}, 'postgres')
+        for expected in ('embedded-postgres', 'unknown'):
+            with self.assertRaisesRegex(ValueError, 'topology mismatch'):
+                receiver.assert_database_mode({'database_mode': 'postgres'}, expected)
+
     def test_all_role_urls_and_topology_are_required_without_disclosing_credentials(self):
         import json
         import os

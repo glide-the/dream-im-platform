@@ -56,6 +56,11 @@ def database_mode(cfg):
     return mode
 
 
+def assert_database_mode(cfg, expected):
+    if expected != database_mode(cfg):
+        raise ValueError('Workflow and server database topology mismatch')
+
+
 def database_state(cfg, release, owner):
     if database_mode(cfg) == 'embedded-postgres':
         data = Path(cfg['data_dir'])
@@ -127,7 +132,7 @@ def preflight(cfg):
     result = {'hostname': socket.gethostname(), 'nodeVersion': run([cfg['node'], '--version']), 'arch': run(['uname', '-m']), 'state': run(['systemctl', 'is-active', cfg['service']])}
     if not healthy(cfg['public_health_url'], timeout=cfg['public_health_timeout_seconds'], diagnostic=True):
         raise ValueError('Published route check failed')
-    return {**result, 'publicHttp': 200}
+    return {**result, 'databaseMode': database_mode(cfg), 'publicHttp': 200}
 
 
 def main():
@@ -142,12 +147,16 @@ def main():
     if socket.gethostname() != cfg['hostname']:
         raise ValueError('Host identity mismatch')
     command = shlex.split(os.environ.get('SSH_ORIGINAL_COMMAND', ''))
-    if command == ['preflight']:
+    if command == ['preflight'] or len(command) == 2 and command[0] == 'preflight':
+        if len(command) == 2:
+            assert_database_mode(cfg, command[1])
         print(json.dumps(preflight(cfg)))
         return
-    if len(command) != 4 or command[0] != 'deploy' or not re.fullmatch('[a-f0-9]{40}', command[1]) or not re.fullmatch('[a-f0-9]{64}', command[2]) or not re.fullmatch('[0-9]+', command[3]):
+    if len(command) not in (4, 5) or command[0] != 'deploy' or not re.fullmatch('[a-f0-9]{40}', command[1]) or not re.fullmatch('[a-f0-9]{64}', command[2]) or not re.fullmatch('[0-9]+', command[3]):
         raise ValueError('Only preflight or exact deploy command is permitted')
-    sha, expected_hash, run_id = command[1:]
+    if len(command) == 5:
+        assert_database_mode(cfg, command[4])
+    sha, expected_hash, run_id = command[1:4]
     os.umask(0o077)
     with open(cfg['lock'], 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
