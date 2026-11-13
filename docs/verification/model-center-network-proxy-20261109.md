@@ -43,3 +43,5 @@ NODE_OPTIONS=--max-old-space-size=2048 pnpm build
 ## 发布边界
 
 源码与验证已完成，尚未执行 GitHub 手动发布、服务重启或正常业务数据库写入。启用前需要运维核对已有 Docker NAT 监听，并将 `MODEL_EGRESS_PROXY_URL` 配置到应用进程；该地址不在页面输入或回显。线上真实供应商、价格目录和真实模型验收仍需在发布后分别执行。
+
+后续发布已完成，提交、Actions和运行状态见[发布回执](model-center-network-proxy-release-20261109.md)；上述“尚未发布”描述保留为原实现阶段的历史范围。

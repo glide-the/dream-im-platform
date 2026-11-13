@@ -1,4 +1,5 @@
 <!-- [Sync] 2026-11-12: 登记独立订阅周期timer、原服务入口及正常触发回执。 -->
+<!-- [Sync] 2026-11-08: 核对ECS现有Docker NAT出口，并将models.dev按精确域名接入Tinyproxy。 -->
 <!-- [Sync] 2026-11-08: 当前服务沿手动Actions与完整制品维护，历史基础unit原文保留，发布／网络／真实业务分别留证。 -->
 <!--
 [Input] Read-only inspection of the ECS systemd fragments, drop-ins and server-owned data paths.
@@ -22,10 +23,10 @@
 | 所在位置 | 服务 / 标签 | 配置位置 | 职责及正常状态 |
 | --- | --- | --- | --- |
 | ECS | `ink-memory-admin.service` | `/etc/systemd/system/ink-memory-admin.service` | 运行完整制品的 `pnpm run start:embedded`；supervisor管理Next.js／Gateway／原PostgreSQL，正常为active/running |
-| ECS | `ink-admin-egress.service` | `/etc/systemd/system/ink-admin-egress.service` | 回环地址上的 Tinyproxy；转发指定域名请求，当前上游见临时问题记录；`active (running)` |
+| ECS | `ink-admin-egress.service` | `/etc/systemd/system/ink-admin-egress.service` | Tinyproxy监听回环17891，指定域名经ECS现有Docker NAT出口17892转发；`active (running)` |
 | ECS | `ink-admin-local-ports.service` | `/etc/systemd/system/ink-admin-local-ports.service` | 加载本服务自己的 nftables 表；一次性任务完成后为 `active (exited)` |
 
-本手册的创建与维护命令全部在 ECS 上执行。个人电脑的代理、SSH 隧道和 LaunchAgent 不属于生产部署前提。当前尚存的临时依赖及替换条件见[问题记录](verification/ecs-admin-temporary-bridges-20261029.md)；更新本文不代表运行配置已经切换。
+本手册的创建与维护命令全部在 ECS 上执行。2026-11-08已实际核对并使用ECS本机Docker NAT出口，见[价格目录出口回执](verification/ecs-pricing-catalog-egress-20261108.md)。个人电脑桥接的历史事实与其他待核对项保留在[问题记录](verification/ecs-admin-temporary-bridges-20261029.md)。
 
 没有单独创建 `postgresql.service`。内嵌 PostgreSQL 属于 Admin supervisor 的生命周期，停止 Admin 会同时关闭它拥有的应用进程组与数据库。
 
@@ -160,7 +161,7 @@ chmod 0644 /etc/systemd/system/ink-admin-local-ports.service
 
 ### 4. 创建指定域名的出口服务
 
-先准备 ECS 可独立访问、由线上运维管理的 HTTP 出口，并验证需要访问的域名。以下是新建配置模板，`__ADMIN_EGRESS_HOST__` 和 `__ADMIN_EGRESS_PORT__` 必须替换为实际线上出口后再保存；它们不是已经部署的地址。尚未取得有效出口时不要覆盖现用配置或启动这份模板。当前线上临时配置仅保留在[问题记录](verification/ecs-admin-temporary-bridges-20261029.md)。
+先准备 ECS 可独立访问、由线上运维管理的 HTTP 出口，并验证需要访问的域名。以下是新建配置模板，`__ADMIN_EGRESS_HOST__` 和 `__ADMIN_EGRESS_PORT__` 必须替换为实际线上出口后再保存；它们不是已经部署的地址。尚未取得有效出口时不要覆盖现用配置或启动这份模板。2026-10-29的临时配置保留在[问题记录](verification/ecs-admin-temporary-bridges-20261029.md)，当前出口以本手册2026-11-08章节为准。
 
 本次安装的是 `tinyproxy-bin`，由自己的 unit 托管，不启用另一套默认 tinyproxy 服务。准备专用配置和日志目录：
 
@@ -399,6 +400,16 @@ WorkingDirectory=/srv/ink-admin-releases/REPLACE_WITH_VERIFIED_RELEASE
 
 </details>
 
+### 当前指定域名出口（2026-11-08）
+
+Admin继续使用`HTTP_PROXY/HTTPS_PROXY=http://127.0.0.1:17891`及Node的`--use-env-proxy`。Tinyproxy将原Google/Codex域名和新增精确域名`models.dev`转到既有`127.0.0.1:17892`；该回环端口由已运行的`ink-admin-egress-tun-proxy-1`映射到容器7890端口。容器配置来自`/opt/ink-admin-egress/config.yaml`，本次复用原容器及配置。
+
+本次仅在`/etc/tinyproxy/tinyproxy.conf`追加以下规则，并重启出口服务。原配置备份、首次即时探针失败后的恢复、端口就绪检查和完整目录验证见[维护回执](verification/ecs-pricing-catalog-egress-20261108.md)。Admin与其内嵌PostgreSQL保持原进程。
+
+```conf
+Upstream http 127.0.0.1:17892 "models.dev"
+```
+
 ### 出口变更与限速恢复
 
 更改 `/etc/tinyproxy/tinyproxy.conf` 后，只维护出口 unit。该版本在重载后曾正常退出，`Restart=always` 会尝试拉起；重载成功消息不代表端口已恢复。
@@ -458,6 +469,7 @@ rm /run/ink-admin-local-update.nft
 | 2026-10-29 | 发布 `deck.catalog` 的四个源码文件与完整 operation JSON，沿既有 `pnpm local:stable` 重建并启动 Admin | [发布回执与只读检查](verification/admin-deck-catalog-ecs-20261029.md)；293 项广告与精确 hash 通过，数据库与运行配置未改 |
 | 2026-10-31 | 关闭 swap / zswap，移除 fstab 的 swap 条目并 mask `swapfile.swap`；Admin swap 上限设为 0，取消旧启动限流 | `swapon --show` 为空、SwapTotal=0、zswap=N；Admin 原 PID 1070 保持，未重启；`systemd-analyze verify` 退出 0，登录页 200 |
 | 2026-11-08 | GitHub手动Actions完整制品发布；专用受限key、root receiver、check-only检查及start:embedded采用 | [发布回执](verification/chat-continuation-20261108.md)：run42476219452 attempt2成功，原env、数据inode、87条迁移及精确capability保持；真实跨端模型验收待本人认证 |
+| 2026-11-08 | 为价格目录追加models.dev精确出口规则，复用现有ECS Docker NAT代理，仅重启Tinyproxy | [出口回执](verification/ecs-pricing-catalog-egress-20261108.md)：应用相同Node配置完整下载5966066字节，HTTP200、852毫秒、退出0；Admin原PID保持 |
 
 每次维护追加日期、操作对象、修改文件、执行命令、退出码／关键结果、就绪验证和回退情况；DSN、密钥、token及用户正文退出记录。发布、HTTP检查、真实账户／模型验收分别登记。
 

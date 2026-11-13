@@ -19,6 +19,7 @@
 
 - [模型中心本机 Docker NAT 代理](design/model-center-network-proxy.md)
 - [模型中心 Docker NAT 开关验证](verification/model-center-network-proxy-20261109.md)
+- [模型中心 Docker NAT 开关发布](verification/model-center-network-proxy-release-20261109.md)
 
 - [Dream 图片模型分工专项执行记录](/Users/dmeck/project/ink-dream-memory/docs/exec/image-model-call-division-20261010.md)
 - [Image 模型分工修订前 PRD 原文（历史）](prd/image-model-center/history-20261010-dream-model-division.md)

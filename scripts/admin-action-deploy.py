@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # [Input] Root-owned target config, forced SSH command and SHA-bound Linux archive on stdin.
-# [Output] Verified candidate activation or restored previous systemd release; original PostgreSQL remains.
+# [Output] Verified candidate activation or restored previous release against the configured PostgreSQL topology.
 # [Pos] Narrow Admin Actions receiver; no shell, DDL, key replacement or database restore.
 # [Sync] 2026-11-08: public health uses an explicit deadline and reports fixed failure classes without URL or response data.
+# [Sync] 2026-11-14: external PostgreSQL binds all role URLs and cluster identity; release rollback retains that database.
 import fcntl
 import hashlib
 import json
@@ -24,6 +25,53 @@ import urllib.request
 
 
 MIGRATION_CHECK_SCRIPT = "if(!process.env.MIGRATION_DATABASE_URL)throw Error('Explicit migration target required');process.argv=['node','migrate','--check'];await import('./packages/db/dist/migrate.js')"
+DATABASE_STATE_SCRIPT = r"""
+import pg from 'pg';
+let client;
+try {
+    const expected = JSON.parse(process.argv[1]);
+    if (process.env.INK_DATABASE_MODE !== 'postgres') throw Error();
+    for (const key of ['DATABASE_URL', 'MIGRATION_DATABASE_URL', 'AUTH_DATABASE_URL', 'ADMIN_CONTROL_DATABASE_URL', 'DREAM_DATA_DATABASE_URL']) {
+        const url = new URL(process.env[key]);
+        if (!['postgres:', 'postgresql:'].includes(url.protocol) || url.hostname !== expected.host || Number(url.port || 5432) !== expected.port || decodeURIComponent(url.pathname.slice(1)) !== expected.name) throw Error();
+    }
+    client = new pg.Client({connectionString: process.env.MIGRATION_DATABASE_URL, connectionTimeoutMillis: 5000, query_timeout: 10000});
+    await client.connect();
+    await client.query('SET default_transaction_read_only = on');
+    const {rows: [row]} = await client.query("SELECT system_identifier::text AS cluster, (SELECT oid::text FROM pg_database WHERE datname=current_database()) AS database FROM pg_control_system()");
+    console.log(JSON.stringify({...expected, systemIdentifier: row.cluster, databaseOid: row.database}));
+} catch {
+    console.error('EXTERNAL_DATABASE_CHECK_FAILED');
+    process.exitCode = 1;
+} finally {
+    await client?.end().catch(() => {});
+}
+"""
+
+
+def database_mode(cfg):
+    mode = cfg.get('database_mode', 'embedded-postgres')
+    if mode not in ('embedded-postgres', 'postgres'):
+        raise ValueError('Explicit supported database topology required')
+    return mode
+
+
+def database_state(cfg, release, owner):
+    if database_mode(cfg) == 'embedded-postgres':
+        data = Path(cfg['data_dir'])
+        metadata = data.stat()
+        if data.is_symlink() or metadata.st_uid != owner.pw_uid or stat.S_IMODE(metadata.st_mode) != 0o700:
+            raise ValueError('Original PostgreSQL directory required')
+        return {'mode': 'embedded-postgres', 'device': metadata.st_dev, 'dataInode': metadata.st_ino}
+    expected = cfg.get('database_target')
+    if not isinstance(expected, dict) or set(expected) != {'host', 'port', 'name', 'systemIdentifier', 'databaseOid'}:
+        raise ValueError('Explicit external PostgreSQL identity required')
+    if any(not isinstance(expected[key], str) or not expected[key] for key in ('host', 'name', 'systemIdentifier', 'databaseOid')) or type(expected['port']) is not int or not 1 <= expected['port'] <= 65535:
+        raise ValueError('Invalid external PostgreSQL identity')
+    actual = json.loads(run(['runuser', '-u', cfg['user'], '--', cfg['node'], '--env-file=.env.local', '--input-type=module', '-e', DATABASE_STATE_SCRIPT, json.dumps(expected)], cwd=release, timeout=30))
+    if actual != expected:
+        raise ValueError('External PostgreSQL identity mismatch')
+    return {'mode': 'postgres', **actual}
 
 def run(args, **kwargs):
     return subprocess.run(args, check=True, timeout=kwargs.pop('timeout', 30), capture_output=True, text=True, **kwargs).stdout.strip()
@@ -113,10 +161,7 @@ def main():
         env = previous / '.env.local'
         if env.is_symlink() or env.stat().st_uid != owner.pw_uid or stat.S_IMODE(env.stat().st_mode) != 0o600:
             raise ValueError('Original private configuration required')
-        data = Path(cfg['data_dir'])
-        before = (data.stat().st_dev, data.stat().st_ino)
-        if data.is_symlink() or data.stat().st_uid != owner.pw_uid or stat.S_IMODE(data.stat().st_mode) != 0o700:
-            raise ValueError('Original PostgreSQL directory required')
+        before = database_state(cfg, previous, owner)
         mem = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
         if int(mem['MemAvailable'].split()[0]) * 1024 < cfg['min_mem_available_bytes']:
             raise ValueError('Insufficient runtime headroom')
@@ -153,6 +198,8 @@ def main():
             os.chown(root, owner.pw_uid, owner.pw_gid)
             for name in dirs + files:
                 os.chown(Path(root) / name, owner.pw_uid, owner.pw_gid, follow_symlinks=False)
+        if database_state(cfg, candidate, owner) != before:
+            raise ValueError('Candidate database identity changed')
         # Check-only uses the existing explicit migration credential; it never starts another PostgreSQL.
         run(['runuser', '-u', cfg['user'], '--', cfg['node'], '--env-file=.env.local', '--input-type=module', '-e', MIGRATION_CHECK_SCRIPT], cwd=candidate, timeout=90)
         dropin = Path(cfg['dropin'])
@@ -161,7 +208,8 @@ def main():
             (directory / 'previous-dropin.conf').write_bytes(prior)
         def activate(location, content=None):
             if content is None:
-                content = ('[Service]\nWorkingDirectory=' + str(location) + '\nExecStart=\nExecStart=' + cfg['pnpm'] + ' run start:embedded\n').encode()
+                script = 'start:embedded' if database_mode(cfg) == 'embedded-postgres' else 'start'
+                content = ('[Service]\nWorkingDirectory=' + str(location) + '\nExecStart=\nExecStart=' + cfg['pnpm'] + ' run ' + script + '\n').encode()
             temporary = dropin.with_suffix('.tmp')
             temporary.write_bytes(content)
             os.chmod(temporary, 0o644)
@@ -179,9 +227,9 @@ def main():
                 raise ValueError('Candidate health deadline exceeded')
             if not healthy(cfg['public_health_url'], timeout=cfg['public_health_timeout_seconds'], diagnostic=True):
                 raise ValueError('Published route check failed')
-            if before != (data.stat().st_dev, data.stat().st_ino) or digest(env) != digest(candidate / '.env.local'):
+            if before != database_state(cfg, candidate, owner) or digest(env) != digest(candidate / '.env.local'):
                 raise ValueError('Persistent state identity changed')
-            print(json.dumps({'state': 'deployed', 'sourceCommit': sha, 'buildId': receipt['buildId'], 'previousRelease': str(previous), 'release': str(candidate), 'dataInode': before[1], 'publicHttp': 200}))
+            print(json.dumps({'state': 'deployed', 'sourceCommit': sha, 'buildId': receipt['buildId'], 'previousRelease': str(previous), 'release': str(candidate), 'database': before, 'dataInode': before.get('dataInode'), 'publicHttp': 200}))
         except Exception:
             run(['systemctl', 'stop', cfg['service']], timeout=120)
             if prior is None:

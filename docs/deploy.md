@@ -1,5 +1,6 @@
 <!-- [Sync] 2026-11-12: 按次发布期限保持20分钟默认；登记慢速制品传输与正常Admin发布回执。 -->
 <!-- [Sync] 2026-11-12: 订阅周期任务绑定当前Admin release，以独立systemd timer执行原续期服务。 -->
+<!-- [Sync] 2026-11-08: 指定域名出口已核对为ECS本机Docker NAT代理，价格目录沿既有Tinyproxy接入。 -->
 <!-- [Sync] 2026-11-08: 统一发布脚本测试入口，补充阶段性重试、原制品恢复与root receiver独立维护。 -->
 <!-- [Sync] 2026-11-08: 当前发布改为GitHub手动Actions，在Linux runner构建完整制品，ECS保持start:embedded与原数据库。 -->
 <!--
@@ -16,7 +17,7 @@
 
 本指南仅说明线上 ECS 的部署。三个 systemd 服务的完整配置、创建步骤、启停与更新、日志、限速恢复和操作记录，见[Admin 线上服务创建、维护与使用记录](deploy-services.md)。所有运维命令在 ECS 上执行。
 
-线上出口和持久文件应由服务器设施提供，不以个人电脑、桌面代理或用户登录会话为部署前提。当前线上仍有迁移时引入的临时出口和文件复制依赖，尚未完成替换；具体事实与影响见[临时桥接问题记录](verification/ecs-admin-temporary-bridges-20261029.md)。该记录不是生产部署步骤。
+线上出口和持久文件应由服务器设施提供。2026-11-08已核对指定域名经ECS本机现有Docker NAT代理转发，并为价格目录接入同一出口，见[价格目录出口回执](verification/ecs-pricing-catalog-egress-20261108.md)。历史个人电脑桥接及文件复制事项保留在[临时桥接问题记录](verification/ecs-admin-temporary-bridges-20261029.md)；本次只核对并维护价格目录出口，未重新验收文件同步。
 
 ## 订阅周期自动推进
 
@@ -152,7 +153,7 @@ curl -fsS https://<admin-domain>/admin/login >/dev/null
 | Admin 监听 | 端口 `3000`，主机防火墙拒绝来自非回环接口的 `3000`、`54329` 访问 |
 | nginx | `/etc/nginx/sites-available/ink-memory-admin` → `http://127.0.0.1:3000` |
 | Artifact 数据目录 | `/var/lib/ink-memory-admin/artifacts`，只读 bind 到数据库已有的 workspace 绝对路径；持续存储接入仍有临时依赖 |
-| 指定域名出口 | `ink-admin-egress.service`，Tinyproxy 只监听 `127.0.0.1:17891`；当前上游仍有临时依赖 |
+| 指定域名出口 | `ink-admin-egress.service`，Tinyproxy监听`127.0.0.1:17891`；指定域名经ECS本机既有Docker NAT代理`127.0.0.1:17892`转发，见2026-11-08出口回执 |
 | 当前资源配置 | 1 worker、原有 2048 MiB V8 heap 上限、1328 MiB 物理内存上限；`MemorySwapMax=0`，主机 swap / zswap 均关闭 |
 
 实际资源限制通过 `systemctl show ink-memory-admin.service` 核对，包括 `/etc/systemd/system.control/` 中的资源覆盖项。2026-10-31 已从 fstab 移除 `/swapfile` 条目，屏蔽 `swapfile.swap`，将 tmpfiles 的 zswap 开机设置改为 `N`，并将 `vm.swappiness` 设为 `0`。`swappiness=0` 本身不等于禁用交换，必须同时确认 `swapon --show` 为空、`SwapTotal=0` 和服务 `MemorySwapMax=0`。
@@ -175,7 +176,7 @@ journalctl -u ink-memory-admin.service --since '10 minutes ago'
 nginx -t
 ```
 
-日志可能含业务诊断，只在私有终端查看并按范围脱敏。旧 Docker、Docker socket 和 containerd 已停止并禁用；旧 Admin 数据卷保留，不能以清理构建空间为由删除。
+日志可能含业务诊断，只在私有终端查看并按范围脱敏。2026-10-31的Docker禁用属于历史状态；2026-11-08已核对Docker正在承载现有NAT出口容器，维护Admin时须保留该出口。旧Admin容器与数据卷不作为当前应用运行入口，也不能以清理构建空间为由删除。
 
 ## AutoDL 与可选容器工具
 

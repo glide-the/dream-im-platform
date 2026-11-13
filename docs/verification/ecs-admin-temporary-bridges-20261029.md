@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-08: 出口上游已核对为ECS现有Docker NAT代理，原Mac隧道记录保留为历史。 -->
 <!--
 [Input] The 2026-10-25 migration receipt and 2026-10-29 read-only ECS service/config inspection.
 [Output] Temporary workstation dependencies, operational impact and the conditions for replacing them.
@@ -5,6 +6,10 @@
 [Sync] 2026-10-29: remove workstation bridges from the production handbook without hiding live dependencies.
 -->
 # ECS Admin 临时桥接问题记录（2026-10-29）
+
+## 2026-11-08出口复核
+
+本次实际读取Tinyproxy配置，上游已为ECS回环`127.0.0.1:17892`，由已运行的Docker容器`ink-admin-egress-tun-proxy-1`提供。用户授权将`models.dev`加入同一出口后，应用相同Node配置完整下载目录成功，见[价格目录出口回执](ecs-pricing-catalog-egress-20261108.md)。以下Mac反向转发及17890配置属于2026-10-29的历史观察；本次未重新验收Artifact复制或其他历史任务。
 
 ## 问题与当前状态
 
@@ -53,7 +58,7 @@ Upstream http 127.0.0.1:17890 "auth.openai.com"
 3. 将外部调用方改为其可访问的正式 Admin/Gateway 地址，保留既有 issuer、客户端注册、密钥和权限并验证调用。
 4. 上述依赖逐项替换并核验后，再停用对应的临时任务，确认线上在个人电脑离线时仍可正常工作。
 
-当前未记录可直接替换的已验证服务器出口和生产文件共享接入。本记录不提供重建个人电脑代理或同步任务的安装步骤。
+截至2026-10-29尚未记录可直接替换的已验证服务器出口和生产文件共享接入。出口的后续观察以上方2026-11-08回执为准，文件共享的完成状态仍须独立核对。本记录不提供重建个人电脑代理或同步任务的安装步骤。
 
 ## 既有临时任务定位
 
