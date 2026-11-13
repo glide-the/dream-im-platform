@@ -1,4 +1,5 @@
 <!-- [Sync] 2026-11-08: 发布接收器共用test:release-receiver，服务维护与失败重试统一引用现行指南。 -->
+<!-- [Sync] 2026-11-14: ECS uses external PostgreSQL and app-only start; workflow assertions match the server-owned topology. -->
 <!-- [Sync] 2026-11-08: Admin当前采用GitHub手动Actions构建与ECS制品发布，服务器保留原start:embedded。 -->
 <!-- [Sync] 2026-10-25: native SSH deployment uses pnpm local:stable; retired ECS Docker entrypoints removed. -->
 <!-- [Sync] 2026-09-28: require explicit task-return scope on the Dream confidential client. -->
@@ -38,7 +39,7 @@ canonical `pathlib` 算法一致。包含 `skills.md` 与 `skills/<name>/SKILL.m
 
 - Next.js 16 App Router、React 19、TypeScript
 - Refine Core 5、Next.js Router、TanStack Query
-- 内嵌 PostgreSQL 18.1、Drizzle ORM 与版本化 SQL migrations
+- PostgreSQL 18.1（显式外部或内嵌拓扑）、Drizzle ORM 与版本化 SQL migrations
 - Anthropic SDK、OpenAI SDK
 - AWS S3 SDK、Vercel Blob
 - Vitest、Playwright、ESLint
@@ -128,7 +129,7 @@ pnpm auth:reset-admin-password --email admin@example.com --apply
 
 ## 服务器部署
 
-Admin发布在GitHub Actions手动点击 **Build and deploy Admin (manual) → Run workflow**，仅接受main。Linux runner完成检查与完整制品打包，ECS校验后由专用非root账户沿`pnpm run start:embedded`运行。push／PR保留CI检查，发布阶段仅执行check-only迁移检查；原PostgreSQL和配置保持，失败恢复前一完整制品。
+Admin发布在GitHub Actions手动点击 **Build and deploy Admin (manual) → Run workflow**，仅接受main。Linux runner完成检查与完整制品打包，ECS校验后按明确的数据库拓扑启动。当前应用使用`INK_DATABASE_MODE=postgres`与`pnpm run start`，连接独立内网PostgreSQL；GitHub `ADMIN_DATABASE_MODE`与root receiver配置保持一致。`ADMIN_SSH_HOST`仍指向应用服务器。push／PR只做CI检查，普通发布仅执行check-only迁移检查；失败恢复前一完整应用制品，继续连接同一现用数据库，不启动保留的旧源库。
 
 发布接收器的统一技术检查为`pnpm test:release-receiver`，PR CI与手动发布共用；Node打包合同继续由`pnpm test:config`执行。服务日常维护与历史unit模板见[服务手册](docs/deploy-services.md)，阶段性重试规则见[发布指南](docs/deploy.md#失败后重试与恢复)。
 

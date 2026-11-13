@@ -9,11 +9,12 @@
 [Sync] 2026-10-31: reflect disabled swap/zswap and uncapped OOM restart policy.
 [Sync] 2026-11-02: mark historical heap values and require verified-artifact recovery before repeating a failed build.
 -->
+<!-- [Sync] 2026-11-14: scope the existing NAT HTTPS proxy to the restricted release receiver for public route verification. -->
 # Admin 线上服务创建、维护与使用记录
 
 当前Admin打包发布从GitHub **Build and deploy Admin (manual) → Run workflow → main** 发起，完整Linux制品由受限SSH接收器切换原systemd服务。操作步骤归[部署指南](deploy.md)，构建预算与异常处理归[构建内存与发布失败恢复](release-build-memory-and-recovery.md)。
 
-本手册维护服务职责、当前有效drop-in、日常日志与计划启停。首次创建章节保留2026-10-25～31的基础unit及出口配置原文，其中`local:stable`和2048MiB堆为历史记录；现用入口由发布drop-in设置为`pnpm run start:embedded`。修改前读取合并后的有效属性，保留原服务账户、私有配置和数据库。
+本手册维护服务职责、当前有效drop-in、日常日志与计划启停。首次创建章节保留2026-10-25～31的基础unit及出口配置原文，其中`local:stable`和2048MiB堆为历史记录。2026-11-14切换外部PostgreSQL后，应用入口为`pnpm run start`，数据库由另一主机的独立服务托管。修改前读取合并后的有效属性，保留各自服务账户、私有配置和现用数据库。
 - [ECS 首次创建与配置记录](#ecs-首次创建与配置记录)
 - [ECS 日常使用与维护](#ecs-日常使用与维护)
 - [创建与使用记录](#创建与使用记录)
@@ -22,24 +23,26 @@
 
 | 所在位置 | 服务 / 标签 | 配置位置 | 职责及正常状态 |
 | --- | --- | --- | --- |
-| ECS | `ink-memory-admin.service` | `/etc/systemd/system/ink-memory-admin.service` | 运行完整制品的 `pnpm run start:embedded`；supervisor管理Next.js／Gateway／原PostgreSQL，正常为active/running |
+| 应用ECS `39.97.252.88` | `ink-memory-admin.service` | `/etc/systemd/system/ink-memory-admin.service` | 运行完整制品的`pnpm run start`；托管Next.js／Gateway，正常为active/running |
+| 数据库ECS `172.24.244.97` | `ink-memory-postgresql.service` | `/etc/systemd/system/ink-memory-postgresql.service` | 以`ink-postgres`运行PostgreSQL 18.1，监听私网54329；active/running、开机启用 |
 | ECS | `ink-admin-egress.service` | `/etc/systemd/system/ink-admin-egress.service` | Tinyproxy监听回环17891，指定域名经ECS现有Docker NAT出口17892转发；`active (running)` |
 | ECS | `ink-admin-local-ports.service` | `/etc/systemd/system/ink-admin-local-ports.service` | 加载本服务自己的 nftables 表；一次性任务完成后为 `active (exited)` |
 
-本手册的创建与维护命令全部在 ECS 上执行。2026-11-08已实际核对并使用ECS本机Docker NAT出口，见[价格目录出口回执](verification/ecs-pricing-catalog-egress-20261108.md)。个人电脑桥接的历史事实与其他待核对项保留在[问题记录](verification/ecs-admin-temporary-bridges-20261029.md)。
+本手册命令在对应主机执行；历史首次创建章节属于应用ECS，独立数据库维护属于数据库ECS。2026-11-08已实际核对并使用应用ECS本机Docker NAT出口，见[价格目录出口回执](verification/ecs-pricing-catalog-egress-20261108.md)。个人电脑桥接的历史事实与其他待核对项保留在[问题记录](verification/ecs-admin-temporary-bridges-20261029.md)。
 
-没有单独创建 `postgresql.service`。内嵌 PostgreSQL 属于 Admin supervisor 的生命周期，停止 Admin 会同时关闭它拥有的应用进程组与数据库。
+2026-11-14起，数据库独立于Admin应用生命周期。停止或重启应用不再关闭PostgreSQL；原应用主机的数据目录保留停机快照，不能自动重新上线。内嵌supervisor生命周期仅适用于明确配置为`embedded-postgres`的实例。
 
 Admin **Requires** 防火墙服务，并要求Artifact bind mount可用；对出口服务使用 **Wants**。出口失败按请求边界反馈。`Type=simple` 的running用于进程状态，完整就绪还需Ready日志、HTTP与鉴权检查。
 
-## 当前发布与恢复（2026-11-08）
+## 当前发布与恢复（2026-11-14）
 
 - 发布由[手动Actions](https://github.com/glide-the/dream-im-platform/actions/workflows/deploy-admin.yml)产生完整源码、Linux依赖闭包、db／Next构建输出与逐文件摘要。ECS只消费已验证制品，保留原PostgreSQL、env、认证和权限。
 - root所有的`/usr/local/libexec/ink-admin-action-deploy.py`读取0600配置`/etc/ink-memory-admin/github-deploy.json`。专用key仅允许固定preflight／deploy命令；GitHub `admin-production`只允许main，个人SSH key留在原位置。
-- 当前发布器所有的覆盖项为`/etc/systemd/system/ink-memory-admin.service.d/zzzz-github-actions.conf`，设置候选WorkingDirectory、清空旧ExecStart并指定`pnpm run start:embedded`。创建章节的基础unit与较早drop-in继续保留；有效入口由`systemctl show`核对。
+- 当前发布器所有的覆盖项为`/etc/systemd/system/ink-memory-admin.service.d/zzzz-github-actions.conf`，设置候选WorkingDirectory、清空旧ExecStart并按root配置选择入口。现用`postgres`模式为`pnpm run start`，GitHub环境变量`ADMIN_DATABASE_MODE=postgres`与之核对。创建章节的基础unit与较早drop-in继续保留；有效入口由`systemctl show`核对。
 - 普通发布只执行显式目标的check-only迁移检查。有pending migration时在切换前停止，schema继续由Admin Drizzle显式前向发布。
-- receiver校验原实例／运行账户、Node版本、制品摘要、原私有env、数据库目录及资源后才切换。本机健康或固定公网HTTP200检查失败时恢复前一drop-in／完整制品；保留现用数据库，禁止用旧库或空目录替换。
+- receiver校验原实例／运行账户、Node版本、制品摘要、原私有env及资源后才切换；外部模式核对五个角色连接和cluster/database身份，内嵌模式才核对本机数据库目录。本机健康或固定公网HTTP200检查失败时恢复前一应用drop-in／完整制品，继续使用同一现用数据库。
 - 公网等待预算由服务器`public_health_timeout_seconds`提供，当前ECS为20秒。本机健康期限独立；runner公网结果写入Step Summary，HTTP状态或transport_error保持原值。公网失败分类只记录异常类型／HTTP状态，凭据和正文退出日志。
+- 2026-11-14直连公网回查不稳定后，仅为专用发布key的固定command设置既有NAT出口`HTTPS_PROXY=http://127.0.0.1:17892`与回环`NO_PROXY`。保留restrict、原Python接收器、HTTPS证书与URL检查；该设置只作用于接收器进程，不改变应用systemd或模型策略。现场证据见[外部PostgreSQL迁移记录](verification/external-postgresql-cutover-20261114.md)。
 - 更新root receiver属于具名运维变更，先运行`pnpm test:release-receiver`、核对已安装摘要、保留root私有备份，再原子替换并校验受限preflight。普通应用制品发布保留已安装receiver；本轮采用摘要与[发布回执](verification/chat-continuation-20261108.md)对应。
 
 截至[运行42476219452 attempt2](https://github.com/glide-the/dream-im-platform/actions/runs/42476219452/attempts/2)，应用source为`01139a32191b7e445df6fbab7a8f899dbacfa6e0`，BUILD_ID `8j55EPjZRN3tSoqU4Ydtl`，整体completed/success。原env字节和数据目录inode1056781保持；本机／ECS公网门禁200。后续独立公网复查发生过TimeoutError，再次分阶段诊断返回200；网络波动与发布成功分别记录，正常账户／模型业务验收单列。
@@ -47,6 +50,49 @@ Admin **Requires** 防火墙服务，并要求Artifact bind mount可用；对出
 ## 订阅周期任务
 
 `ink-memory-subscription-periods.timer` 与对应 oneshot service 使用独立进程执行原订阅周期服务。每次读取 `ink-memory-admin.service` 的有效 WorkingDirectory，沿原 Node、账户和私有配置计算到期边界。任务不启动或重启 Admin，日志只输出处理数量和结果计数。模板及恢复步骤归[部署指南](deploy.md#订阅周期自动推进)，现场状态归[本次回执](verification/subscription-period-recovery-20261112.md)。
+
+## 独立 PostgreSQL 服务（2026-11-14）
+
+以下配置在数据库主机`172.24.244.97`维护。原生PostgreSQL 18.1取自原已验证完整制品，安装在`/opt/ink-memory-postgres/18.1`，由root拥有，目录与可执行文件为0755、其他运行文件可供服务账户读取。数据库账户为`ink-postgres`；父目录与命名数据目录`/var/lib/ink-memory-postgresql/data-20261114`属于该账户、权限0700。数据目录来自正常关闭后的完整同步，不执行initdb或应用启动DDL。
+
+实际unit为：
+
+```ini
+[Unit]
+Description=Ink Memory PostgreSQL database
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=ink-postgres
+Group=ink-postgres
+WorkingDirectory=/var/lib/ink-memory-postgresql
+Environment=LD_LIBRARY_PATH=/opt/ink-memory-postgres/18.1/lib
+RuntimeDirectory=ink-memory-postgresql
+RuntimeDirectoryMode=0700
+ExecStart=/opt/ink-memory-postgres/18.1/bin/postgres -D /var/lib/ink-memory-postgresql/data-20261114 -p 54329 -c listen_addresses=127.0.0.1,172.24.244.97 -c unix_socket_directories=/run/ink-memory-postgresql -c shared_buffers=96MB -c max_connections=50
+KillSignal=SIGINT
+TimeoutStopSec=90
+Restart=on-failure
+RestartSec=10
+OOMPolicy=stop
+MemorySwapMax=0
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`shared_buffers=96MB`与`max_connections=50`沿用源实例的技术配置，不是产品限制。服务已开机启用，维护前先核对`systemctl show ink-memory-postgresql.service`及实际数据身份。数据目录、原生运行文件和启动账户分别验证；非root执行`postgres --version`、`postgres -D <data-dir> -C data_directory`与`-C hba_file`应成功。
+
+现用HBA以SCRAM允许应用私网`172.24.244.96/32`上的四个既有登录角色及回环连接，其他来源不匹配允许规则。应用主机继续管理自己的回环端口防火墙；本轮没有修改安全组或主机防火墙。目标swap为空、zswap为N，`swapfile.swap`已mask，fstab对应条目移除，交换文件本身保留。
+
+普通应用维护在应用ECS执行，数据库启停在数据库ECS执行。原源库保留在应用主机`/var/lib/ink-memory-admin/postgres`，不能用它替换现用目标库。完整切换、首轮恢复和最终核验见[迁移回执](verification/external-postgresql-cutover-20261114.md)。
 
 ## ECS 首次创建与配置记录
 
@@ -396,7 +442,7 @@ systemctl show ink-memory-admin.service \
 WorkingDirectory=/srv/ink-admin-releases/REPLACE_WITH_VERIFIED_RELEASE
 ```
 
-上面的名称是待替换示例。若还要更换 pnpm 可执行文件，需要先用空的 `ExecStart=` 清除旧命令，再设置完整的新 ExecStart 和一致的 PATH。更新后的 `local:stable` 仍执行完整类型检查与构建。源码回滚可恢复旧 release 指针和其配置，但不自动回滚 schema、覆盖新数据库或把旧源库重新上线；已有 schema 兼容性按正式发布协议判断。
+上面的名称是待替换示例。若还要更换 pnpm 可执行文件，需要先用空的 `ExecStart=` 清除旧命令，再设置完整的新 ExecStart 和一致的 PATH。当前外部模式保持`pnpm run start`；`local:stable`仅供明确授权的内嵌源码构建。应用回滚恢复旧release及兼容配置，继续连接同一现用数据库，不自动回滚schema或重新上线旧源库。
 
 </details>
 
@@ -423,7 +469,7 @@ journalctl -u ink-admin-egress.service --since '10 minutes ago' --no-pager
 
 检查 `127.0.0.1:17891` 监听，再用不携带账户凭据的连通探测确认出口。无认证的 HEAD 返回 403/404 可以证明网络连通，不能作为真实模型或 Google 登录验收。只需要重新拉起时可 `systemctl restart ink-admin-egress.service`，不为此重启 Admin。
 
-Admin 当前为 `StartLimitIntervalSec=0`、`OOMPolicy=stop`、`Restart=on-failure`、`RestartSec=10`。OOM 后 systemd 停止服务进程组，再自动启动同一入口；30 分钟两次的旧限制已取消。`StartLimitBurst=2` 在限流区间为 `0` 时不生效。当前完整制品的重启沿`start:embedded`运行；历史`local:stable`模板包含构建，维护时核对有效ExecStart。交换保持禁用。
+Admin 当前为 `StartLimitIntervalSec=0`、`OOMPolicy=stop`、`Restart=on-failure`、`RestartSec=10`。OOM 后 systemd 停止服务进程组，再自动启动同一入口；30 分钟两次的旧限制已取消。`StartLimitBurst=2` 在限流区间为 `0` 时不生效。当前外部模式重启沿`pnpm run start`运行；显式内嵌实例才使用`start:embedded`，历史`local:stable`模板包含构建。维护时核对有效ExecStart，交换保持禁用。
 
 出口服务仍保留 5 分钟最多 3 次的限制。若出口出现 `start-limit-hit`，修正失败原因后恢复该服务：
 

@@ -15,7 +15,11 @@
 <!-- [Sync] 2026-11-02: 索引构建内存与发布失败恢复专项手册，原制品恢复沿 start:embedded。 -->
 # 文档索引
 
+<!-- [Sync] 2026-11-14: index the staged external PostgreSQL migration and workflow topology receipt. -->
+
 ## 当前执行入口
+
+- [Admin 外部 PostgreSQL 迁移与发布流程调整](verification/external-postgresql-cutover-20261114.md)
 
 - [模型中心本机 Docker NAT 代理](design/model-center-network-proxy.md)
 - [模型中心 Docker NAT 开关验证](verification/model-center-network-proxy-20261109.md)

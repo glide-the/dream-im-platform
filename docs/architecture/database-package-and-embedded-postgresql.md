@@ -1,6 +1,10 @@
 # 数据库 Package 与内嵌 PostgreSQL 设计
 
-> 更新：2026-10-05
+> 更新：2026-11-14
+<!-- [Input] Shared PostgreSQL package boundaries and explicitly configured database topology. -->
+<!-- [Output] One schema/migration authority with independent external or embedded process ownership. -->
+<!-- [Pos] Database package architecture; current host details remain in the deployment runbook. -->
+<!-- [Sync] 2026-11-14: current ECS uses postgres mode and an independent database service; retain embedded as an explicit topology. -->
 <!-- [Sync] 2026-10-05: specify stdio-failure and owned-process-group shutdown without database or business changes. -->
 
 ## 决策
@@ -9,7 +13,9 @@ Admin 采用与 Paperclip `packages/db` 相同的 workspace 边界：`@ink-memor
 统一拥有数据库 client、Drizzle schema、migration integrity、内嵌 PostgreSQL
 进程和维护命令。Next.js 应用只通过 package client/schema 使用数据库。
 
-阿里云和本地 Docker 不再部署独立 PostgreSQL 服务。一个 Admin 容器包含：
+数据库的业务合同、schema、权限和migration历史与运行位置无关。显式`INK_DATABASE_MODE=postgres`连接独立PostgreSQL，应用使用已有`pnpm run start`；数据库由其主机的systemd管理，应用启动只检查能力，普通发布只检查migration。2026-11-14现用ECS已采用此拓扑，实际主机、目录与核验见[部署指南](../deploy.md)及[切换回执](../verification/external-postgresql-cutover-20261114.md)。
+
+显式`embedded-postgres`仍由同一package管理数据库进程和调用方命令。以下容器示意属于该内嵌拓扑的历史设计，不是现用ECS发布入口：
 
 ```mermaid
 flowchart LR
@@ -40,7 +46,7 @@ schema-generation config、目标解析与发布执行权均在 `@ink-memory/db`
 
 ## 启动与 migration 分离
 
-`supervise.ts` 只执行以下基础设施动作：
+仅在显式内嵌拓扑下，`supervise.ts`执行以下基础设施动作；外部模式不进入该supervisor：
 
 1. 验证显式 `INK_DATABASE_MODE=embedded-postgres` 与 PostgreSQL 配置；
 2. 初始化持久 cluster，创建 `ink-memory` database，并允许私有 Docker network 使用
@@ -86,6 +92,8 @@ dry-run 后显式 apply，再执行 0048 和 check；生产制品不依赖 `tsx`
 显式 `MIGRATION_DATABASE_URL` 对具名外部/隔离 PostgreSQL 执行 migration。
 
 ## 数据、网络与恢复
+
+当前外部拓扑的应用与数据库按各自主机维护，五个角色DSN指向同一PostgreSQL。应用发布与回滚保持同一数据库身份；数据迁移必须先正常停止源写入，再完成一致同步与角色、权限、schema、历史记录核验。当前主机的完整制品、root-owned原生文件和非root数据库账户见[服务手册](../deploy-services.md)。下列volume、Docker network和镜像构建说明保留给历史显式内嵌拓扑，不用于当前ECS。
 
 - Admin volume `ink_memory_postgres_data` 挂载到
   `/var/lib/ink-memory/postgres`；容器以 `node` 用户运行 PostgreSQL。
