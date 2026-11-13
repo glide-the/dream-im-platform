@@ -5,7 +5,7 @@
 <!-- [Sync] 2026-11-08: 当前发布改为GitHub手动Actions，在Linux runner构建完整制品，ECS保持start:embedded与原数据库。 -->
 <!--
 [Input] The confirmed SSH host, exact Admin source release, private runtime configuration and existing PostgreSQL data.
-[Output] Admin-only deployment through pnpm local:stable, with explicit data transfer and service verification.
+[Output] Complete-artifact Admin deployment with explicit database topology, data transfer and service verification.
 [Pos] Authoritative Admin deployment guide; container tooling is not the SSH release path.
 [Sync] 2026-10-25: remove retired ECS Docker instructions and use the agreed native pnpm entrypoint.
 [Sync] 2026-10-29: add the complete service creation, maintenance, logging and usage-record companion.
@@ -16,7 +16,9 @@
 <!-- [Sync] 2026-11-14: document external PostgreSQL receiver and workflow topology assertions; activation is a separate operational cutover. -->
 # Ink Memory Admin 部署
 
-本指南仅说明线上 ECS 的部署。三个 systemd 服务的完整配置、创建步骤、启停与更新、日志、限速恢复和操作记录，见[Admin 线上服务创建、维护与使用记录](deploy-services.md)。所有运维命令在 ECS 上执行。
+本指南仅说明线上 ECS 的部署。各项 systemd 服务的完整配置、创建步骤、启停与更新、日志、限速恢复和操作记录，见[Admin 线上服务创建、维护与使用记录](deploy-services.md)。所有运维命令在对应 ECS 上执行。
+
+2026-11-14现用拓扑：应用仍在`39.97.252.88`（私网`172.24.244.96`），以`INK_DATABASE_MODE=postgres`和`pnpm run start`运行；PostgreSQL在`172.24.244.97:54329`，由独立`ink-memory-postgresql.service`管理。五个角色连接均使用同一个目标数据库，凭据及密钥保留。原应用主机的数据目录仅保留停机快照，不再自动启动。切换与验证见[本次回执](verification/external-postgresql-cutover-20261114.md)。
 
 线上出口和持久文件应由服务器设施提供。2026-11-08已核对指定域名经ECS本机现有Docker NAT代理转发，并为价格目录接入同一出口，见[价格目录出口回执](verification/ecs-pricing-catalog-egress-20261108.md)。历史个人电脑桥接及文件复制事项保留在[临时桥接问题记录](verification/ecs-admin-temporary-bridges-20261029.md)；本次只核对并维护价格目录出口，未重新验收文件同步。
 
@@ -37,7 +39,7 @@
 1. 打开GitHub仓库Actions，选择 **Build and deploy Admin (manual)**。
 2. 点击 **Run workflow**，选择`main`并运行。build job执行锁定依赖安装、配置／单元／lint／完整类型检查和Next构建，打包完整Linux源码、依赖闭包与构建输出。
 3. deploy job从同一次运行读取制品，使用`admin-production`环境的专用SSH key，严格核对已登记host key；受限入口校验主机、摘要、Node版本、磁盘、内存、原完整制品、配置和数据库目录。
-4. check-only迁移检查通过后，切换原systemd到候选，继续`pnpm run start:embedded`。本机健康或配置中的公网路由检查失败时恢复前一drop-in及原完整制品；成功输出source SHA、BUILD_ID、前后release路径、数据库inode和publicHttp200。登录页200属于HTTP检查，真实账户、业务与模型验收单列。
+4. check-only迁移检查通过后，按root receiver配置切换原systemd到候选：`postgres`使用`pnpm run start`，明确的`embedded-postgres`实例才使用`start:embedded`。本机健康或公网路由检查失败时恢复前一应用drop-in及完整制品，保留同一现用数据库；成功输出source SHA、BUILD_ID、前后release路径、数据库身份和publicHttp200。登录页200属于HTTP检查，真实账户、业务与模型验收单列。
 
 构建预算只作用于GitHub runner。ECS无构建、依赖安装、全库备份或自动DDL；存在pending migration、身份／配置／依赖／摘要差异时，在服务切换前停止。前向schema发布沿原Admin显式迁移流程单独执行，0086已发布能力由迁移记录核对。所有发布共享一个并发组，`cancel-in-progress=false`，主机再使用文件锁；重复执行以新手动运行建立独立release目录。
 
@@ -90,11 +92,13 @@ export NEXT_WEBPACK_MEMORY_OPTIMIZATIONS=true
 
 root-owned receiver 配置设置 `database_mode=postgres` 和 `database_target`，后者包含 `host`、整数 `port`、`name`、`systemIdentifier` 与 `databaseOid`。从现用库的 `pg_control_system()` 和 `pg_database` 读取身份并在迁移核验后登记，不重新生成数据库身份。接收器通过原 migration credential 做只读身份核对；缺少身份、权限或五个角色目标不一致时停止发布。
 
+2026-11-14 服务器直连公网健康 URL 出现超时，既有 `127.0.0.1:17892` 出口访问相同 HTTPS URL 返回 200。已为专用发布 key 的固定 command 前置 `HTTPS_PROXY` 与回环 `NO_PROXY`，仅作用于接收器进程；原 `restrict`、固定 Python 入口、证书校验、健康 URL 与期限均保留。应用 systemd 环境和模型网络策略没有随之切换。具体证据见[外部 PostgreSQL 迁移记录](verification/external-postgresql-cutover-20261114.md)。
+
 GitHub `admin-production` 环境变量 `ADMIN_DATABASE_MODE` 与服务器模式保持一致；未设置时沿用 `embedded-postgres`。工作流在 `preflight` 和 `deploy` 中传递期望模式，服务器配置仍拥有实际拓扑与启动方式，工作流变量不能自行切换数据库。必须先安装匹配的 root receiver，再运行带模式断言的新工作流。普通发布与应用回滚保持同一外部数据库，只检查 migration，不执行 DDL 或恢复旧源库。以下内嵌部署说明保留给仍明确配置为 `embedded-postgres` 的实例。
 
 运行配置保存在项目根目录的 `.env.local`，权限为 `0600`，归运行服务账户所有。沿用与现有数据匹配的密钥、OAuth 注册、Gateway binding 和业务策略，不能通过重新生成配置替换已有加密密钥。
 
-必须确认：
+以下为明确使用内嵌拓扑的实例配置；当前外部模式按上节核对，不启动旧源库：
 
 - `INK_DATABASE_MODE=embedded-postgres`，`RUN_DB_MIGRATIONS=false`。
 - `EMBEDDED_POSTGRES_DATA_DIR` 是明确的持久化目录，由服务账户拥有，权限为 `0700`。
@@ -119,6 +123,8 @@ GitHub `admin-production` 环境变量 `ADMIN_DATABASE_MODE` 与服务器模式�
 权限核对应比较实际授权。`pg_dump` 可能将冗余的所有者 ACL 还原成 `NULL` 默认 ACL；按 PostgreSQL [`acldefault`](https://www.postgresql.org/docs/18/functions-info.html) 展开后，逐项比较授权者、被授权者、权限和 grant option，同时独立比较对象所有者与数据库级授权。不要因原始 ACL 表示不同而补授额外权限。
 
 ## 启动与进程托管
+
+当前ECS的外部模式由原Admin systemd服务执行`pnpm run start`，数据库生命周期由内网目标主机的独立服务负责。停止或回滚应用不会关闭或替换现用数据库。以下`local:stable`与supervisor说明仅用于明确授权的内嵌源码实例。
 
 以专用非 root 服务账户，在确认的项目根目录执行：
 
@@ -152,13 +158,14 @@ curl -fsS https://<admin-domain>/admin/login >/dev/null
 
 ## 本次 ECS 的服务拓扑与维护
 
-下表保留既有 ECS 部署记录；实时 `WorkingDirectory`、`ExecStart`、堆选项与资源覆盖项须在每次维护时核对。2048 MiB 堆属于已记录的容量风险，禁止直接复制为新构建预算。历史创建参数与修订后的操作要求分别由[服务手册](deploy-services.md)及[专项手册](release-build-memory-and-recovery.md)承载。
+下表记录2026-11-14核对后的现用拓扑；实时`WorkingDirectory`、`ExecStart`、堆选项与资源覆盖项仍须在每次维护时核对。2048 MiB堆属于已记录的容量风险，禁止直接复制为新构建预算。历史创建参数与修订后的操作要求分别由[服务手册](deploy-services.md)及[专项手册](release-build-memory-and-recovery.md)承载。
 
 | 项目 | 实际配置 |
 | --- | --- |
-| Admin 服务 | `ink-memory-admin.service`，用户 `ink-admin`，执行 `/opt/ink-admin-node/bin/pnpm local:stable` |
-| 完整源码 | `/srv/ink-admin-releases/20261024T164343Z-ee0497b43115` |
-| PostgreSQL | `/var/lib/ink-memory-admin/postgres`，本机端口 `54329` |
+| Admin 服务 | `39.97.252.88`上的`ink-memory-admin.service`，用户`ink-admin`，执行`/opt/ink-admin-node/bin/pnpm run start` |
+| 完整制品 | `/srv/ink-admin-releases/actions-43462851337-7cd999efef57/app`，source `7cd999efef57b97c20723e56427e8cda677762d0` |
+| PostgreSQL | `172.24.244.97:54329`，`ink-memory-postgresql.service`，用户`ink-postgres`，数据目录`/var/lib/ink-memory-postgresql/data-20261114` |
+| 旧源库保留 | 应用主机`/var/lib/ink-memory-admin/postgres`，已停止且不自动重启 |
 | Admin 监听 | 端口 `3000`，主机防火墙拒绝来自非回环接口的 `3000`、`54329` 访问 |
 | nginx | `/etc/nginx/sites-available/ink-memory-admin` → `http://127.0.0.1:3000` |
 | Artifact 数据目录 | `/var/lib/ink-memory-admin/artifacts`，只读 bind 到数据库已有的 workspace 绝对路径；持续存储接入仍有临时依赖 |
@@ -171,7 +178,7 @@ Linux 上沿用的 `/Users/dmeck/project/ink-dream-memory/backend/data/agent-wor
 
 需要代理的域名应使用 ECS 可独立访问、由线上运维管理的出口。Admin 通过 systemd 覆盖项读取回环代理地址及 Node `--use-env-proxy`；Tinyproxy 的上游按实际线上出口配置，其他可直连域名保持直连。创建配置见[服务手册](deploy-services.md#4-创建指定域名的出口服务)，其中上游占位符必须先替换为已验证的线上配置。
 
-应用使用 `OOMPolicy=stop` 与 `Restart=on-failure`：发生 OOM 时停止服务进程组，10 秒后重启 Admin；`StartLimitIntervalSec=0` 取消原启动次数限制。现有 `pnpm local:stable` 在重启时仍会执行构建，内存不足造成的构建失败也遵循该重启策略。出口使用 `Restart=always`，5 分钟内最多启动三次。实际观察到出口重载会正常退出，因此依靠托管策略重新拉起；修改后要核对监听端口并做连通探测。应用通过 `Wants` 启动出口服务，出口故障不会触发 Admin 重新构建。
+应用使用`OOMPolicy=stop`与`Restart=on-failure`：发生OOM时停止服务进程组，10秒后以现用`pnpm run start`重启Admin；`StartLimitIntervalSec=0`取消原启动次数限制。当前ECS重启不构建，也不启动旧源库。出口使用`Restart=always`，5分钟内最多启动三次。实际观察到出口重载会正常退出，因此依靠托管策略重新拉起；修改后核对监听端口与连通性。应用通过`Wants`启动出口服务，出口故障不会触发应用重新构建。
 
 Artifact 的持续来源必须符合现有 Reader 的只读目录、版本和 hash 合同。一次迁移复制或周期副本均不能证明生产共享存储已经接通。
 

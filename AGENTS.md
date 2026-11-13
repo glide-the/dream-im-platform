@@ -1,3 +1,4 @@
+<!-- [Sync] 2026-11-14: 当前ECS使用外部PostgreSQL与start；发布和恢复按显式拓扑执行，不自动启动保留的旧源库。 -->
 <!-- [Sync] 2026-11-08: 区分当前手动发布与历史源码入口，正常本机／ECS拓扑沿已核对实例维护。 -->
 <!-- [Sync] 2026-11-08: 发布仅由GitHub手动Actions触发，ECS使用完整制品和原start:embedded，普通发布只检查迁移。 -->
 <!-- [Sync] 2026-11-02: 发布前检查构建预算，失败后复用完整制品与 start:embedded 恢复，保留既有无交换策略。 -->
@@ -20,10 +21,10 @@
 - `drizzle/**`：必须提交且不可变的 PostgreSQL SQL/journal/snapshot 历史
 ## 部署入口
 
-- 2026-11-08当前发布入口：GitHub Actions `deploy-admin.yml`，仅手动Run workflow及main分支；Linux runner打包完整制品，ECS复用`start:embedded`。push／PR只检查；普通发布仅检查迁移，保留原数据及回滚制品。下述源码入口供历史维护与明确授权的构建使用。
+- 2026-11-14当前发布入口：GitHub Actions `deploy-admin.yml`，仅手动Run workflow及main分支；Linux runner打包完整制品，receiver按root配置的数据库拓扑启动。现用ECS为`INK_DATABASE_MODE=postgres`、`pnpm run start`，PostgreSQL由已核对的独立内网主机托管；GitHub `ADMIN_DATABASE_MODE`必须与服务器配置一致。push／PR只检查，普通发布仅检查迁移，保留现用数据及回滚制品。`start:embedded`仅用于明确配置的内嵌实例；下述源码入口供历史维护与明确授权的构建使用。
 
 - `pnpm local:stable` 供本机源码构建与已明确授权的历史维护，包含构建及 Admin/内嵌 PostgreSQL 启动；ECS日常发布执行上述手动Actions，运行身份保持专用非 root 服务账户。服务器构建前必须通过[构建内存与发布失败恢复手册](docs/release-build-memory-and-recovery.md)中的容量、入口、期限与原制品检查。
-- 资源不足时优先评估目标兼容主机生成的完整制品。已构建发布与故障恢复复用现有 `pnpm run start:embedded`，保留原 supervisor、配置和现用数据库；切换启动入口须按当次授权维护，禁止将重新构建作为唯一恢复方式。
+- 资源不足时优先评估目标兼容主机生成的完整制品。已构建发布与故障恢复复用完整制品及当前明确拓扑的启动入口：外部数据库使用`pnpm run start`，内嵌实例才使用`pnpm run start:embedded`。保留配置和现用数据库，不自动恢复保留的旧源库；切换拓扑须按当次授权维护，禁止将重新构建作为唯一恢复方式。
 - 预算须覆盖所有 worker、原生内存、运行服务、数据库和系统余量；核对脚本内联参数与有效覆盖项。禁止超预算构建、并行重试及失败后无检查重启；单次事故的堆/进程组限额不得固化成通用默认值。
 - SSH 超时、502/503 或 SIGKILL 只作为诊断线索；OOM 判定须关联同一时间和目标的内核/cgroup 记录。出现重复构建失败时先停止本轮失败循环，恢复已验证完整制品；构建、服务恢复、真实业务验收与发布分别留存证据。
 - ECS 禁用 swap 与 zswap，Admin 的 `MemorySwapMax=0`。OOM 后由 systemd 自动重启 Admin；不得为通过构建或恢复服务重新启用交换。
