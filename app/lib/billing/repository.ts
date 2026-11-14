@@ -3,6 +3,7 @@
 // [Input] PostgreSQL transaction client, Gateway request identity, reliable usage and stored pricing snapshots.
 // [Output] Atomic, idempotent settlement of rate counters, subscription allowance and append-only financial effects.
 // [Pos] Billing persistence boundary; account gate precedes request, rate, allowance and account row locks.
+// [Sync] 2026-11-14: passive settlement timing includes online and recovery callers without changing atomic effects.
 // [Sync] 2026-10-03: serialize each user's short settlement transaction before taking shared row locks.
 // [Sync] 2026-10-09: persist Image usage details and enforce transactional full Token allowance capture.
 
@@ -20,6 +21,7 @@ import { createPlatformId } from "../platform-ids";
 import { totalProcessedTokens } from "../gateway/usage";
 import { lockGatewayAccountOnClient } from "../gateway/account-lock";
 import { settleSubscriptionAllowanceOnClient } from "../subscriptions/gateway";
+import { observeCapacityOperation } from "../observability/capacity";
 
 type AccountRow = {
   id: string;
@@ -385,6 +387,13 @@ export type SettleGatewayRequestInput = {
 };
 
 export async function settleGatewayRequestOnClient(
+  client: PoolClient,
+  input: SettleGatewayRequestInput,
+) {
+  return observeCapacityOperation("settlement", () => settleGatewayRequestEffectsOnClient(client, input));
+}
+
+async function settleGatewayRequestEffectsOnClient(
   client: PoolClient,
   input: SettleGatewayRequestInput,
 ) {

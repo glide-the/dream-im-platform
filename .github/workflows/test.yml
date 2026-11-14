@@ -58,6 +58,9 @@ jobs:
       - name: Run provider-free tests
         run: pnpm test:run
 
+      - name: Check capacity observation transport
+        run: pnpm exec playwright test -c tests/capacity-observer.playwright.config.ts
+
       - name: Run ESLint
         run: pnpm lint
 

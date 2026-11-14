@@ -1,8 +1,10 @@
 // [Input] PostgreSQL capability objects installed by explicit migrations.
 // [Output] Fail-closed domain clients/transactions without startup DDL.
 // [Pos] Shared platform readiness, including same-model routing evidence.
+// [Sync] 2026-11-14: close passive account-lock observation after transaction commit or rollback.
 import type { PoolClient } from "pg";
 import { getPool } from "./db";
+import { observeTransactionEnd } from "./observability/capacity";
 
 let schemaCheck: Promise<void> | undefined;
 
@@ -94,6 +96,8 @@ export async function withPlatformTransaction<T>(
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
+    } finally {
+      observeTransactionEnd(client);
     }
   });
 }

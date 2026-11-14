@@ -1,3 +1,8 @@
+// [Input] Ordered payload tasks and optional byte weights.
+// [Output] The original bounded queue plus passive depth, byte and backpressure observations.
+// [Pos] Request-local payload ordering; no change to queue capacity or error behavior.
+import { observeCapacityOperation, observePayloadQueue } from "../observability/capacity";
+
 /**
  * A request-local sequential task queue with an explicit memory bound.
  *
@@ -20,12 +25,13 @@ export class BoundedTaskQueue {
     }
   }
 
-  async enqueue(task: () => void | Promise<void>) {
+  async enqueue(task: () => void | Promise<void>, byteLength = 0) {
     if (this.pending >= this.capacity) {
-      await new Promise<void>((resolve) => this.slotWaiters.push(resolve));
+      await observeCapacityOperation("payload_queue_wait", () => new Promise<void>((resolve) => this.slotWaiters.push(resolve)));
     }
 
     this.pending += 1;
+    observePayloadQueue(1, byteLength);
     this.tail = this.tail
       .then(task)
       .catch(async (error) => {
@@ -33,6 +39,7 @@ export class BoundedTaskQueue {
       })
       .then(() => {
         this.pending -= 1;
+        observePayloadQueue(-1, -byteLength);
         this.slotWaiters.shift()?.();
       });
   }

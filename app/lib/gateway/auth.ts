@@ -1,6 +1,7 @@
 // [Input] Active Gateway key plus Admin OAuth grant, or Admin-issued entity-limited runtime bearer.
 // [Output] Canonical billing principal preserving active key scope and account/model restrictions.
 // [Pos] Gateway authentication; Dream cannot sign user tokens or share a service key with runtime.
+// [Sync] 2026-11-14: report only verified account activity to the optional capacity observer.
 // [Sync] 2026-09-14: retire HS256 subject authority and add opaque delegation authentication.
 // [Sync] 2026-10-10: retain verified Runtime entity identity for server-bound image routing without exposing credentials.
 import type { PoolClient } from "pg";
@@ -15,6 +16,7 @@ import { AuthBoundaryError } from "../auth/config";
 import { withDataTransaction } from "../dream/database";
 import { identitySchemaRequirement, runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement } from "../dream/schemaRequirements";
 import { DelegationService } from "../auth/delegationService";
+import { observeAuthenticatedActor } from "../observability/capacity";
 
 
 export type GatewayPrincipal = {
@@ -159,7 +161,7 @@ function principalFromIdentity(
   scopes: string[],
   identity: GatewayIdentityRow,
 ): GatewayPrincipal {
-  return {
+  const principal = {
     apiKeyId,
     platformUserId: identity.platform_user_id,
     source: identity.source,
@@ -175,6 +177,8 @@ function principalFromIdentity(
       "monthly token limit",
     ),
   };
+  observeAuthenticatedActor("gateway", principal.platformUserId);
+  return principal;
 }
 
 export async function authenticateGatewayRequest(

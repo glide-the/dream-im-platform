@@ -1,11 +1,13 @@
 // [Input] Gateway application payloads, Provider error bodies, and sensitive request/response headers.
 // [Output] PostgreSQL payload capture with credential redaction and separately protected upstream error evidence.
 // [Pos] Gateway payload persistence and redaction boundary; Admin full-payload reads enforce permission and audit.
+// [Sync] 2026-11-14: observe event write duration and failures without changing stored payloads.
 // [Sync] 2026-10-02: redact echoed inference credentials while preserving upstream JSON and text error details.
 
 import { createHash } from "node:crypto";
 import { withPlatformClient } from "../platform-db";
 import { createPlatformId } from "../platform-ids";
+import { observeCapacityOperation } from "../observability/capacity";
 
 const REDACTED = "[REDACTED]";
 const SENSITIVE_HEADER_NAMES = new Set([
@@ -253,7 +255,7 @@ export async function recordGatewayResponseEvent(input: {
   startedAt: number;
 }) {
   const byteLength = new TextEncoder().encode(input.rawEvent).byteLength;
-  await withPlatformClient(async (client) => {
+  await observeCapacityOperation("payload_write", () => withPlatformClient(async (client) => {
     await client.query(
       `INSERT INTO gateway_response_events (
          id, gateway_request_id, sequence, event_type, raw_data, raw_event,
@@ -278,7 +280,7 @@ export async function recordGatewayResponseEvent(input: {
        WHERE gateway_request_id = $1`,
       [input.requestId, byteLength],
     );
-  });
+  }));
 }
 
 export async function completeGatewayStreamPayload(input: {
