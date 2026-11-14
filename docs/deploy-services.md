@@ -12,6 +12,8 @@
 <!-- [Sync] 2026-11-14: scope the existing NAT HTTPS proxy to the restricted release receiver for public route verification. -->
 # Admin 线上服务创建、维护与使用记录
 
+<!-- [Sync] 2026-11-14: keep monitoring release requirements here and maintain operational configuration, diagrams and receipts in Notion. -->
+
 当前Admin打包发布从GitHub **Build and deploy Admin (manual) → Run workflow → main** 发起，完整Linux制品由受限SSH接收器切换原systemd服务。操作步骤归[部署指南](deploy.md)，构建预算与异常处理归[构建内存与发布失败恢复](release-build-memory-and-recovery.md)。
 
 本手册维护服务职责、当前有效drop-in、日常日志与计划启停。首次创建章节保留2026-10-25～31的基础unit及出口配置原文，其中`local:stable`和2048MiB堆为历史记录。2026-11-14切换外部PostgreSQL后，应用入口为`pnpm run start`，数据库由另一主机的独立服务托管。修改前读取合并后的有效属性，保留各自服务账户、私有配置和现用数据库。
@@ -46,6 +48,12 @@ Admin **Requires** 防火墙服务，并要求Artifact bind mount可用；对出
 - 更新root receiver属于具名运维变更，先运行`pnpm test:release-receiver`、核对已安装摘要、保留root私有备份，再原子替换并校验受限preflight。普通应用制品发布保留已安装receiver；本轮采用摘要与[发布回执](verification/chat-continuation-20261108.md)对应。
 
 截至[运行42476219452 attempt2](https://github.com/glide-the/dream-im-platform/actions/runs/42476219452/attempts/2)，应用source为`01139a32191b7e445df6fbab7a8f899dbacfa6e0`，BUILD_ID `8j55EPjZRN3tSoqU4Ydtl`，整体completed/success。原env字节和数据目录inode1056781保持；本机／ECS公网门禁200。后续独立公网复查发生过TimeoutError，再次分阶段诊断返回200；网络波动与发布成功分别记录，正常账户／模型业务验收单列。
+
+## 监控发布部署要求
+
+普通应用发布保持服务器管理的探针、私有凭据、原启动参数和现用外部数据库拓扑。部署后分别核对原发布门禁、云端指标和近期接口调用链；监控回退按变更所有权执行，不覆盖原业务规则或恢复旧源库。
+
+具体合同见[监控发布部署要求](observability-deployment-requirements.md)。详细配置、Grafana 大盘、ARMS 接口覆盖、数据流向与时序图及验收记录统一维护在 [Notion 运维手册](https://app.notion.com/p/41830b7547c3810d9056c656f54c35af)。
 
 ## 订阅周期任务
 

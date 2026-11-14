@@ -1,11 +1,13 @@
 // [Input] Admin-only cookie, server session policy and independent Admin member/RBAC tables.
 // [Output] Opaque management Session primitives, live Admin identity and bootstrap-secret proof.
 // [Pos] Admin authorization boundary; Dream Better Auth Session and OAuth tokens are never accepted here.
+// [Sync] 2026-11-14: report verified Admin activity without exporting actor identifiers.
 // [Sync] 2026-09-17: restore admin_sessions as the independent Admin operator Session authority.
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { withAuthTransaction } from "../auth/database";
 import { AdminSessionRepository } from "../auth/adminSessionRepository";
 import { exactAuthUrl, requiredAuthValue, AuthBoundaryError } from "../auth/config";
+import { observeAuthenticatedActor } from "../observability/capacity";
 export const ADMIN_SESSION_COOKIE = "ink_admin_session";
 export type AdminIdentity = { id: string; email: string; displayName?: string; roles: string[]; permissions: string[]; sessionId: string };
 
@@ -50,9 +52,11 @@ export function clearedAdminSessionCookie() {
 export async function getAdminIdentity(headers: Headers): Promise<AdminIdentity | null> {
   const token = parseAdminSessionCookie(headers);
   if (!token || !token.startsWith("adm_")) return null;
-  return withAuthTransaction(async tx => {
+  const identity = await withAuthTransaction(async tx => {
     return new AdminSessionRepository(tx).current(hashAdminSessionToken(token));
   });
+  if (identity) observeAuthenticatedActor("admin", identity.id);
+  return identity;
 }
 export function hasAdminPermission(identity: AdminIdentity, permission: string) { return identity.permissions.includes(permission); }
 export function verifyBootstrapToken(candidate: string | null) {

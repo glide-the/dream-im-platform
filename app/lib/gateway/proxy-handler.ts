@@ -1,6 +1,7 @@
 // [Input] Prepared billable request, product dialect, client cancellation, protocol body, and provider response.
 // [Output] Adapted JSON/SSE response with payload capture, renewal snapshot, usage accounting, and settlement.
 // [Pos] Core provider proxy lifecycle joining protocol adapters, transport, billing, and response persistence.
+// [Sync] 2026-11-14: report queued SSE bytes without changing output, capture ordering or queue bounds.
 // [Sync] 2026-09-17: accept headerless Codex Responses SSE while keeping other provider content-type checks strict.
 // [Sync] 2026-10-03: retain streamed output when non-streaming terminal responses omit it.
 
@@ -37,6 +38,7 @@ import {
 } from "./usage";
 import { markGatewayRequestStreaming } from "./repository";
 import { BoundedTaskQueue } from "./bounded-task-queue";
+import { observeFirstToken } from "../observability/capacity";
 import { ImageTurnSourceObserver } from "./image-turn-source";
 import type { ImageTurnContext } from "./image-turn-receipts";
 
@@ -353,10 +355,13 @@ export async function proxyStreaming(input: {
     controller.enqueue(new TextEncoder().encode(serialized.rawEvent));
     if (data !== "[DONE]") {
       usage = applyOutputUsage(input.externalProtocol, usage, data);
-      if (firstTokenAt === undefined && containsFirstToken(input.externalProtocol, data)) firstTokenAt = Date.now();
+      if (firstTokenAt === undefined && containsFirstToken(input.externalProtocol, data)) {
+        firstTokenAt = Date.now();
+        observeFirstToken();
+      }
     }
     const currentSequence = sequence++;
-    await captureQueue.enqueue(() => recordGatewayResponseEvent({ requestId: input.prepared.requestId, sequence: currentSequence, eventType: serialized.eventType, rawData: serialized.rawData, rawEvent: serialized.rawEvent, startedAt }));
+    await captureQueue.enqueue(() => recordGatewayResponseEvent({ requestId: input.prepared.requestId, sequence: currentSequence, eventType: serialized.eventType, rawData: serialized.rawData, rawEvent: serialized.rawEvent, startedAt }), Buffer.byteLength(serialized.rawEvent, "utf8"));
   };
 
   const finish = async (controller: ReadableStreamDefaultController<Uint8Array>) => {

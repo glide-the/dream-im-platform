@@ -19,6 +19,9 @@
 
 ## 当前执行入口
 
+- [监控发布部署要求](observability-deployment-requirements.md)
+- [Admin 运维手册：Grafana、Prometheus 与 ARMS（Notion）](https://app.notion.com/p/41830b7547c3810d9056c656f54c35af)
+
 <!-- [Sync] 2026-11-14: index the complete post-migration topology snapshot. -->
 
 - [Admin部署迁移后的完整架构拓扑](architecture/admin-infrastructure-topology-20261114.md)

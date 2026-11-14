@@ -51,6 +51,7 @@ jobs:
           pnpm test:config
           pnpm test:release-receiver
           pnpm test:run
+          pnpm exec playwright test -c tests/capacity-observer.playwright.config.ts
           pnpm lint
           pnpm exec tsc --noEmit
       - name: Build complete Admin
