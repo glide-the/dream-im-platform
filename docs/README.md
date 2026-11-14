@@ -19,6 +19,10 @@
 
 ## 当前执行入口
 
+<!-- [Sync] 2026-11-14: index the complete post-migration topology snapshot. -->
+
+- [Admin部署迁移后的完整架构拓扑](architecture/admin-infrastructure-topology-20261114.md)
+
 - [Admin 外部 PostgreSQL 迁移与发布流程调整](verification/external-postgresql-cutover-20261114.md)
 
 - [模型中心本机 Docker NAT 代理](design/model-center-network-proxy.md)
