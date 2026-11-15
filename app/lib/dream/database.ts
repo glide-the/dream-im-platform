@@ -2,9 +2,10 @@
 // [Output] Typed Drizzle pool/UOW without runtime DDL or Dream-held credentials.
 // [Pos] Dream data persistence boundary owned and executed by Admin.
 // [Sync] 2026-09-14: require exact physical capability versions and hashes per operation.
+// [Sync] 2026-11-16: batch request-local ledger reads and deduplicate exact requirements inside the original transaction.
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { schemaCapabilities } from "@ink-memory/db/schema/capabilities";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 
@@ -24,13 +25,29 @@ export function dreamDataDatabase() {
 export type DataDatabase = ReturnType<typeof dreamDataDatabase>;
 export type DataTransaction = Parameters<Parameters<DataDatabase["transaction"]>[0]>[0];
 export type DataRepositoryDatabase = DataDatabase | DataTransaction;
+export async function readSchemaCapabilities(database: DataRepositoryDatabase, requirements: readonly SchemaRequirement[]) {
+  const names = [...new Set(requirements.map(required => required.capability))];
+  if (!names.length) return new Map<string, SchemaRequirement>();
+  const rows = await database.select({ capability: schemaCapabilities.capability, version: schemaCapabilities.version, contractSha256: schemaCapabilities.contractSha256 })
+    .from(schemaCapabilities).where(inArray(schemaCapabilities.capability, names));
+  return new Map(rows.map(row => [row.capability, row]));
+}
+export function schemaCapabilityMatches(ledger: ReadonlyMap<string, SchemaRequirement>, required: SchemaRequirement) {
+  const actual = ledger.get(required.capability);
+  return actual?.version === required.version && actual.contractSha256 === required.contractSha256;
+}
 export async function hasSchemaCapability(database: DataRepositoryDatabase, required: SchemaRequirement) {
-  const rows = await database.select({ version: schemaCapabilities.version, hash: schemaCapabilities.contractSha256 }).from(schemaCapabilities).where(eq(schemaCapabilities.capability, required.capability)).limit(1);
-  return rows[0]?.version === required.version && rows[0].hash === required.contractSha256;
+  return schemaCapabilityMatches(await readSchemaCapabilities(database, [required]), required);
 }
 export async function withDataTransaction<T>(requirements: readonly SchemaRequirement[], handler: (transaction: DataTransaction) => Promise<T>, database = dreamDataDatabase()) {
   return database.transaction(async tx => {
-    for (const required of requirements) if (!await hasSchemaCapability(tx, required)) throw new AuthBoundaryError("DREAM_DATA_SCHEMA_NOT_READY");
+    const unique = new Map<string, SchemaRequirement>();
+    for (const required of requirements) {
+      if (unique.has(required.capability) && !schemaCapabilityMatches(unique, required)) throw new AuthBoundaryError("DREAM_DATA_SCHEMA_NOT_READY");
+      unique.set(required.capability, required);
+    }
+    const ledger = await readSchemaCapabilities(tx, [...unique.values()]);
+    if (![...unique.values()].every(required => schemaCapabilityMatches(ledger, required))) throw new AuthBoundaryError("DREAM_DATA_SCHEMA_NOT_READY");
     return handler(tx);
   });
 }
