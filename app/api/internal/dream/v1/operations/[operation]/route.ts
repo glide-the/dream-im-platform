@@ -65,25 +65,20 @@ import { handleTaskSessionResult, isTaskSessionResultOperation } from "../../../
 import { handleChatScheduledTaskOperation, isChatScheduledTaskOperation } from "../../../../../../lib/dream/chatScheduledTaskHandler";
 import { handleImageTurnOperation, isImageTurnOperation } from "../../../../../../lib/dream/imageTurnHandler";
 import { handleReflectionHistory } from "../../../../../../lib/dream/reflectionHistoryHandler";
-import { dreamOperations } from "../../../../../../lib/dream/operationRegistry";
-import { nameDreamOperationTrace, traceDreamOperationStep } from "../../../../../../lib/observability/dreamOperationTrace";
+import { getDreamOperationTrace } from "../../../../../../lib/dream/operationRegistry";
+import { traceDreamOperationHandler } from "../../../../../../lib/observability/dreamOperationTrace";
 
-const registeredOperations = new Set<string>(dreamOperations.map(operation => operation.contract.name));
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
-  const registered = registeredOperations.has(name);
-  if (registered) nameDreamOperationTrace(name);
+  const operation = getDreamOperationTrace(name);
   function run<Args extends unknown[]>(
     file: string,
     target: Record<string, (...args: Args) => Promise<Response>>,
     ...args: Args
   ): Promise<Response> {
     const [handlerName, handler] = Object.entries(target)[0];
-    const invoke = () => handler(...args);
-    return registered ? traceDreamOperationStep(handlerName, `app/lib/dream/${file}.ts`, invoke, {
-      "ink.dream.operation": name,
-    }) : invoke();
+    return traceDreamOperationHandler(operation, handlerName, `app/lib/dream/${file}.ts`, () => handler(...args));
   }
   if (isExternalShareOperation(name)) return run("externalShareHandler", { handleExternalShareOperation }, request, name);
   if (name === "analysis-report.history-page") return run("reflectionHistoryHandler", { handleReflectionHistory }, request);

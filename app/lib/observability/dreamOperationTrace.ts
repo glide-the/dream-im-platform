@@ -8,7 +8,9 @@ type RequestTrace = {
   span: Span;
   attributes: NonNullable<ReturnType<ReturnType<typeof getTracer>["getRootSpanAttributes"]>>;
 };
+type OperationTrace = { operation: string; dtoName: string; dtoFile: string };
 const requestTraceKey = createContextKey("ink-memory-admin.dream.request");
+const operationTraceKey = createContextKey("ink-memory-admin.dream.operation");
 const installedKey = Symbol.for("ink-memory-admin.dream.request-trace-installed");
 const operationPrefix = "/api/internal/dream/v1/operations/";
 
@@ -35,7 +37,7 @@ export function registerDreamOperationTrace(): void {
   Reflect.set(tracer, installedKey, true);
 }
 
-export function nameDreamOperationTrace(operation: string): void {
+function nameDreamOperationTrace(operation: string): void {
   try {
     const requestTrace = context.active().getValue(requestTraceKey) as RequestTrace | undefined;
     if (requestTrace) {
@@ -47,16 +49,34 @@ export function nameDreamOperationTrace(operation: string): void {
   }
 }
 
+export function traceDreamOperationHandler<T>(
+  operation: OperationTrace | undefined,
+  name: string,
+  file: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  if (!operation || !trace.getActiveSpan()?.isRecording()) return run();
+  nameDreamOperationTrace(operation.operation);
+  const scope = context.active().setValue(operationTraceKey, operation);
+  return context.with(scope, () => traceDreamOperationStep(name, file, run));
+}
+
 export async function traceDreamOperationStep<T>(
   name: string,
   file: string,
   run: () => Promise<T>,
-  attributes?: Attributes,
+  includeInputDto = false,
 ): Promise<T> {
-  if (!trace.getActiveSpan()?.isRecording()) return run();
+  const operation = context.active().getValue(operationTraceKey) as OperationTrace | undefined;
+  if (!operation || !trace.getActiveSpan()?.isRecording()) return run();
 
   return trace.getTracer("ink-memory-admin.dream").startActiveSpan(name, {
-    attributes: { ...attributes, "code.function.name": name, "code.file.path": file },
+    attributes: {
+      "ink.dream.operation": operation.operation,
+      "code.function.name": name,
+      "code.file.path": file,
+      ...(includeInputDto ? { "ink.dream.dto.name": operation.dtoName, "ink.dream.dto.file": operation.dtoFile } : {}),
+    },
   }, async (span: Span) => {
     try {
       return await run();

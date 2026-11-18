@@ -3,11 +3,13 @@
 // [Pos] Dream data persistence boundary owned and executed by Admin.
 // [Sync] 2026-09-14: require exact physical capability versions and hashes per operation.
 // [Sync] 2026-11-16: batch request-local ledger reads and deduplicate exact requirements inside the original transaction.
+// [Sync] 2026-11-19: trace the registered operation transaction and its batch ledger read.
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { inArray } from "drizzle-orm";
 import { schemaCapabilities } from "@ink-memory/db/schema/capabilities";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
+import { traceDreamOperationStep } from "../observability/dreamOperationTrace";
 
 type DataGlobal = typeof globalThis & { __ink_dream_data_pool?: Pool };
 export type SchemaRequirement = { capability: string; version: number; contractSha256: string };
@@ -40,14 +42,15 @@ export async function hasSchemaCapability(database: DataRepositoryDatabase, requ
   return schemaCapabilityMatches(await readSchemaCapabilities(database, [required]), required);
 }
 export async function withDataTransaction<T>(requirements: readonly SchemaRequirement[], handler: (transaction: DataTransaction) => Promise<T>, database = dreamDataDatabase()) {
-  return database.transaction(async tx => {
+  return traceDreamOperationStep("withDataTransaction", "app/lib/dream/database.ts", () => database.transaction(async tx => {
     const unique = new Map<string, SchemaRequirement>();
     for (const required of requirements) {
       if (unique.has(required.capability) && !schemaCapabilityMatches(unique, required)) throw new AuthBoundaryError("DREAM_DATA_SCHEMA_NOT_READY");
       unique.set(required.capability, required);
     }
-    const ledger = await readSchemaCapabilities(tx, [...unique.values()]);
+    const ledger = await traceDreamOperationStep("readSchemaCapabilities", "app/lib/dream/database.ts",
+      () => readSchemaCapabilities(tx, [...unique.values()]));
     if (![...unique.values()].every(required => schemaCapabilityMatches(ledger, required))) throw new AuthBoundaryError("DREAM_DATA_SCHEMA_NOT_READY");
     return handler(tx);
-  });
+  }));
 }

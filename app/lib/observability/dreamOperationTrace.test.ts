@@ -1,13 +1,19 @@
 // [Input] The production operation route with in-memory Next request and child spans.
 // [Output] Concrete names for registered operations and a bounded fallback for unknown names.
 // [Pos] Provider-free trace naming and dispatch contract.
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { context, ROOT_CONTEXT, SpanStatusCode, trace, type Span } from "next/dist/compiled/@opentelemetry/api";
 import { POST } from "../../api/internal/dream/v1/operations/[operation]/route";
-import { registerDreamOperationTrace, traceDreamOperationStep } from "./dreamOperationTrace";
+import { POST as resourcePolicyRead } from "../../api/internal/dream/v1/operations/resource-policy.read/route";
+import { withDataTransaction, type DataDatabase } from "../dream/database";
+import { getDreamOperationTrace } from "../dream/operationRegistry";
+import { registerDreamOperationTrace, traceDreamOperationHandler, traceDreamOperationStep } from "./dreamOperationTrace";
 
-const mocks = vi.hoisted(() => ({ tracer: vi.fn(), resolve: vi.fn(), fallback: vi.fn() }));
+const mocks = vi.hoisted(() => ({ tracer: vi.fn(), resolve: vi.fn(), fallback: vi.fn(), service: vi.fn() }));
 vi.mock("next/dist/server/lib/trace/tracer", () => ({ getTracer: mocks.tracer }));
+vi.mock("../auth/serviceIdentity", async original => ({
+  ...await original<typeof import("../auth/serviceIdentity")>(), requireDreamService: mocks.service,
+}));
 vi.mock("next/dist/compiled/@opentelemetry/api", async original => {
   const api = await original<typeof import("next/dist/compiled/@opentelemetry/api")>();
   return {
@@ -34,6 +40,8 @@ let server: { getRootSpanAttributes: () => Map<string, string>; trace: (...args:
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubEnv("DREAM_DATA_MAX_BODY_BYTES", "65536");
+  mocks.service.mockResolvedValue({ id: "trace-fixture" });
   attributes.clear();
   attributes.set("next.route", template);
   activeContext = ROOT_CONTEXT;
@@ -49,10 +57,11 @@ beforeEach(() => {
   mocks.tracer.mockReturnValue(server);
   registerDreamOperationTrace();
 });
+afterEach(() => vi.unstubAllEnvs());
 
-function callRoute(request: Request, operation: string): Promise<Response> {
+function callRoute(request: Request, operation: string, invoke = () => POST(request, { params: Promise.resolve({ operation }) })): Promise<Response> {
   const options = { attributes: { "http.method": request.method, "http.target": new URL(request.url).pathname } };
-  return server.trace("BaseServer.handleRequest", options, () => POST(request, { params: Promise.resolve({ operation }) })) as Promise<Response>;
+  return server.trace("BaseServer.handleRequest", options, invoke) as Promise<Response>;
 }
 
 it.each([200, 403])("names the registered operation and preserves status %i", async status => {
@@ -102,8 +111,47 @@ it("dispatches the original request without an active probe", async () => {
 it("ends the child span and forwards an operation exception without recording its message", async () => {
   const error = new Error("detail to exclude");
   const run = vi.fn().mockRejectedValue(error);
-  await expect(traceDreamOperationStep("parseAuthDto", "app/lib/auth/internalHandler.ts", run)).rejects.toBe(error);
+  await expect(traceDreamOperationHandler(getDreamOperationTrace("deck.default-plugin.resolve"),
+    "handleDeckDefaultPluginResolve", "app/lib/dream/deckDefaultPluginResolveHandler.ts",
+    () => traceDreamOperationStep("parseAuthDto", "app/lib/auth/internalHandler.ts", run, true))).rejects.toBe(error);
   expect(run).toHaveBeenCalledTimes(1);
-  expect(span.setStatus).toHaveBeenCalledExactlyOnceWith({ code: SpanStatusCode.ERROR });
-  expect(span.end).toHaveBeenCalledTimes(1);
+  expect(span.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
+  expect(span.end).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  ["scheduled-task.v3.create", "handleChatScheduledTaskOperation", 'chatScheduledTaskV3OperationContracts["scheduled-task.v3.create"].input', "chatScheduledTaskDto"],
+  ["managed-mcp.servers.list", "handleManagedMcp", 'managedMcpOperationContracts["managed-mcp.servers.list"].input', "managedMcpDto"],
+  ["resource-policy.read", "handleResourcePolicyRead", "resourcePolicyReadInputDto", "resourceDto"],
+])("traces the actual handler and DTO of %s", async (operation, handler, dtoName, dtoFile) => {
+  const request = new Request(`http://admin.test${prefix}${operation}`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+  });
+  const invoke = operation === "resource-policy.read" ? () => resourcePolicyRead(request) : undefined;
+  expect((await callRoute(request, operation, invoke)).status).toBe(400);
+  expect(startActiveSpan.mock.calls.map(([name]) => name)).toEqual([handler, "requireDreamService", "parseAuthDto"]);
+  expect(startActiveSpan).toHaveBeenLastCalledWith("parseAuthDto", {
+    attributes: {
+      "ink.dream.operation": operation,
+      "code.function.name": "parseAuthDto",
+      "code.file.path": "app/lib/auth/internalHandler.ts",
+      "ink.dream.dto.name": dtoName,
+      "ink.dream.dto.file": `app/lib/dream/${dtoFile}.ts`,
+    },
+  }, expect.any(Function));
+});
+
+it("traces the actual transaction and batch capability check for an operation", async () => {
+  const operation = getDreamOperationTrace("managed-mcp.servers.list");
+  const capability = { capability: "fixture", version: 1, contractSha256: "a".repeat(64) };
+  const query = vi.fn().mockResolvedValue([capability]);
+  const transaction = { select: () => ({ from: () => ({ where: query }) }) };
+  const database = { transaction: (invoke: (tx: typeof transaction) => unknown) => invoke(transaction) } as unknown as DataDatabase;
+  const result = await traceDreamOperationHandler(operation, "handleManagedMcp", "app/lib/dream/managedMcpHandler.ts",
+    () => withDataTransaction([capability], async () => "result", database));
+  expect(result).toBe("result");
+  expect(query).toHaveBeenCalledTimes(1);
+  expect(startActiveSpan.mock.calls.map(([name]) => name)).toEqual([
+    "handleManagedMcp", "withDataTransaction", "readSchemaCapabilities",
+  ]);
 });

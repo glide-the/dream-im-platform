@@ -29,6 +29,7 @@ import {externalShareOperations, externalShareRequirement} from './externalShare
 // [Sync] 2026-09-16: append Agent-type clear/plan/prepare operations as Registry127-129.
 // [Sync] 2026-09-16: append claim-bound confirmation Runtime authority as Registry121.
 // [Sync] 2026-10-28: append deck.catalog after the existing operation descriptors.
+// [Sync] 2026-11-19: record source-only DTO identifiers alongside registry construction.
 // [Input] Named domain input/output DTOs and exact schema requirements.
 // [Output] Version/hash descriptors for implemented operations only.
 // [Pos] API compatibility registry; independent from the global Drizzle head.
@@ -127,35 +128,49 @@ import { chatScheduledTaskOperationContracts, chatScheduledTaskV2OperationContra
   scheduledTaskThreadInputDto, scheduledTaskThreadResultDto, scheduledTaskThreadV3ResultDto } from "./chatScheduledTaskDto";
 import { chatScheduledTaskSchemaRequirements, chatScheduledTaskV2SchemaRequirements, chatScheduledTaskV3SchemaRequirements } from "./chatScheduledTaskService";
 import { reflectionNotionScopeOperations } from "./reflectionNotionScopeDto";
-function descriptor(name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
+const operationTraces = new Map<string, { operation: string; dtoName: string; dtoFile: string }>();
+
+export function getDreamOperationTrace(operation: string) {
+  return operationTraces.get(operation);
+}
+
+function inputSource(file: string, symbol: string, operation?: string) {
+  return {
+    dtoName: operation ? `${symbol}[${JSON.stringify(operation)}].input` : symbol,
+    dtoFile: `app/lib/dream/${file}.ts`,
+  };
+}
+
+function descriptor(source: ReturnType<typeof inputSource>, name: string, kind: "read" | "write", backgroundScope: string | null, input: z.ZodType, output: z.ZodType, requirements: readonly SchemaRequirement[], userScope: string | null = null) {
   const contract = { name, input_schema_version: 1 as const, output_schema_version: 1 as const, input: z.toJSONSchema(input, { io: "input" }), output: z.toJSONSchema(output, { io: "output" }) };
+  operationTraces.set(name, { operation: name, ...source });
   return { contract, requirements, capability: { name, kind, user_scope: userScope, background_scope: backgroundScope, input_schema_version: 1 as const, output_schema_version: 1 as const, contract_sha256: createHash("sha256").update(canonicalContractJson(contract)).digest("hex") } };
 }
 export const dreamOperations = [
-  descriptor("resource-policy.read", "read", "resource-policy:read", resourcePolicyReadInputDto, resourcePolicyReadOutputDto, [policy.observer, policy.claudeCodeRuntime]),
-  descriptor("resource-observer.publish", "write", "resource-observer:write", resourceObserverPublishInputDto, resourceObserverPublishOutputDto, [policy.observer, identitySchemaRequirement]),
-  ...Object.entries(chatThreadOperationContracts).filter(([name]) => !Object.hasOwn(chatContinuationContracts, name) && !name.startsWith("chat-input.") && !name.startsWith("task-session.")).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...chatThreadSchemaRequirements], operation.kind === "read" ? "dream:read" : "dream:write")),
-  descriptor("user-profile.current", "read", null, userProfileInputDto, userProfileOutputDto, [identitySchemaRequirement], "dream:read"),
-  ...Object.entries(editorSessionOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, runtimePurposeSchemaRequirement], operation.userScope)),
-  ...Object.entries(workflowContextOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
-  ...Object.entries(deckVoiceOperationContracts).filter(([name]) => name !== "deck.catalog").map(([name, operation]) => descriptor(name, operation.kind === "read" ? "read" : "write", null, operation.input, operation.output, [identitySchemaRequirement, ...deckVoiceSchemaRequirements], operation.kind === "read" ? "dream:read" : "dream:write")),
-  ...Object.entries(userMessageOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
-  ...Object.entries(workflowRunOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
-  ...Object.entries(workflowRunCommandOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, workflowRunCommandSchemaRequirements(name as keyof typeof workflowRunCommandOperationContracts), operation.userScope)),
-  ...Object.entries(deckRuntimeDataOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...deckRuntimeDataSchemaRequirements], operation.userScope)),
-  ...Object.entries(workflowPreflightOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
-  ...Object.entries(userPreferencesOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...userPreferencesSchemaRequirements], operation.userScope)),
-  ...Object.entries(socialFriendshipOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...socialFriendshipSchemaRequirements], operation.userScope)),
-  ...Object.entries(workflowPreflightExecutionOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, workflowPreflightExecutionSchemaRequirements, operation.userScope)),
-  ...Object.entries(workflowRunCreationOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, workflowRunCreationSchemaRequirements, operation.userScope)),
-  ...Object.entries(dreamLaunchSourceOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
-  ...Object.entries(dreamLaunchDispatchOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
-  ...Object.entries(workspaceDefaultOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
-  ...Object.entries(dreamLaunchFailureOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
-  ...Object.entries(userSystemConfigOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...userSystemConfigSchemaRequirements], operation.userScope)),
-  ...Object.entries(threadSystemConfigOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...threadSystemConfigSchemaRequirements], operation.userScope)),
-  ...Object.entries(reflectionsSectionConfigOperationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
-  ...Object.entries(reflectionTaskOperationContracts).map(([name, operation]) => descriptor(
+  descriptor(inputSource("resourceDto", "resourcePolicyReadInputDto"), "resource-policy.read", "read", "resource-policy:read", resourcePolicyReadInputDto, resourcePolicyReadOutputDto, [policy.observer, policy.claudeCodeRuntime]),
+  descriptor(inputSource("resourceDto", "resourceObserverPublishInputDto"), "resource-observer.publish", "write", "resource-observer:write", resourceObserverPublishInputDto, resourceObserverPublishOutputDto, [policy.observer, identitySchemaRequirement]),
+  ...Object.entries(chatThreadOperationContracts).filter(([name]) => !Object.hasOwn(chatContinuationContracts, name) && !name.startsWith("chat-input.") && !name.startsWith("task-session.")).map(([name, operation]) => descriptor(inputSource("chatThreadDto", "chatThreadOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...chatThreadSchemaRequirements], operation.kind === "read" ? "dream:read" : "dream:write")),
+  descriptor(inputSource("userProfileDto", "userProfileInputDto"), "user-profile.current", "read", null, userProfileInputDto, userProfileOutputDto, [identitySchemaRequirement], "dream:read"),
+  ...Object.entries(editorSessionOperationContracts).map(([name, operation]) => descriptor(inputSource("editorSessionDto", "editorSessionOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, runtimePurposeSchemaRequirement], operation.userScope)),
+  ...Object.entries(workflowContextOperationContracts).map(([name, operation]) => descriptor(inputSource("workflowContextDto", "workflowContextOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
+  ...Object.entries(deckVoiceOperationContracts).filter(([name]) => name !== "deck.catalog").map(([name, operation]) => descriptor(inputSource("deckVoiceDto", "deckVoiceOperationContracts", name), name, operation.kind === "read" ? "read" : "write", null, operation.input, operation.output, [identitySchemaRequirement, ...deckVoiceSchemaRequirements], operation.kind === "read" ? "dream:read" : "dream:write")),
+  ...Object.entries(userMessageOperationContracts).map(([name, operation]) => descriptor(inputSource("userMessageDto", "userMessageOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
+  ...Object.entries(workflowRunOperationContracts).map(([name, operation]) => descriptor(inputSource("workflowRunDto", "workflowRunOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
+  ...Object.entries(workflowRunCommandOperationContracts).map(([name, operation]) => descriptor(inputSource("workflowRunCommandDto", "workflowRunCommandOperationContracts", name), name, operation.kind, null, operation.input, operation.output, workflowRunCommandSchemaRequirements(name as keyof typeof workflowRunCommandOperationContracts), operation.userScope)),
+  ...Object.entries(deckRuntimeDataOperationContracts).map(([name, operation]) => descriptor(inputSource("deckRuntimeDataDto", "deckRuntimeDataOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...deckRuntimeDataSchemaRequirements], operation.userScope)),
+  ...Object.entries(workflowPreflightOperationContracts).map(([name, operation]) => descriptor(inputSource("workflowPreflightDto", "workflowPreflightOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
+  ...Object.entries(userPreferencesOperationContracts).map(([name, operation]) => descriptor(inputSource("userPreferencesDto", "userPreferencesOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...userPreferencesSchemaRequirements], operation.userScope)),
+  ...Object.entries(socialFriendshipOperationContracts).map(([name, operation]) => descriptor(inputSource("socialFriendshipDto", "socialFriendshipOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...socialFriendshipSchemaRequirements], operation.userScope)),
+  ...Object.entries(workflowPreflightExecutionOperationContracts).map(([name, operation]) => descriptor(inputSource("workflowPreflightExecutionDto", "workflowPreflightExecutionOperationContracts", name), name, operation.kind, null, operation.input, operation.output, workflowPreflightExecutionSchemaRequirements, operation.userScope)),
+  ...Object.entries(workflowRunCreationOperationContracts).map(([name, operation]) => descriptor(inputSource("workflowRunCreationDto", "workflowRunCreationOperationContracts", name), name, operation.kind, null, operation.input, operation.output, workflowRunCreationSchemaRequirements, operation.userScope)),
+  ...Object.entries(dreamLaunchSourceOperationContracts).map(([name, operation]) => descriptor(inputSource("dreamLaunchSourceDto", "dreamLaunchSourceOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
+  ...Object.entries(dreamLaunchDispatchOperationContracts).map(([name, operation]) => descriptor(inputSource("dreamLaunchDispatchDto", "dreamLaunchDispatchOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
+  ...Object.entries(workspaceDefaultOperationContracts).map(([name, operation]) => descriptor(inputSource("workspaceDefaultDto", "workspaceDefaultOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
+  ...Object.entries(dreamLaunchFailureOperationContracts).map(([name, operation]) => descriptor(inputSource("dreamLaunchFailureDto", "dreamLaunchFailureOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
+  ...Object.entries(userSystemConfigOperationContracts).map(([name, operation]) => descriptor(inputSource("userSystemConfigDto", "userSystemConfigOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...userSystemConfigSchemaRequirements], operation.userScope)),
+  ...Object.entries(threadSystemConfigOperationContracts).map(([name, operation]) => descriptor(inputSource("threadSystemConfigDto", "threadSystemConfigOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...threadSystemConfigSchemaRequirements], operation.userScope)),
+  ...Object.entries(reflectionsSectionConfigOperationContracts).map(([name, operation]) => descriptor(inputSource("reflectionsSectionConfigDto", "reflectionsSectionConfigOperationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope)),
+  ...Object.entries(reflectionTaskOperationContracts).map(([name, operation]) => descriptor(inputSource("reflectionTaskDto", "reflectionTaskOperationContracts", name),
     name,
     operation.kind,
     operation.audience === "background" ? operation.backgroundScope : null,
@@ -164,51 +179,51 @@ export const dreamOperations = [
     [identitySchemaRequirement, ...reflectionTaskSchemaRequirements],
     operation.audience === "oauth" ? operation.userScope : null,
   )),
-  ...Object.entries(localDataImportOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(localDataImportOperationContracts).map(([name, operation]) => descriptor(inputSource("localDataImportDto", "localDataImportOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...localDataImportSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(pictureHistoryOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(pictureHistoryOperationContracts).map(([name, operation]) => descriptor(inputSource("pictureHistoryDto", "pictureHistoryOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...pictureHistorySchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(deckDefaultPluginResolveOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(deckDefaultPluginResolveOperationContracts).map(([name, operation]) => descriptor(inputSource("deckDefaultPluginResolveDto", "deckDefaultPluginResolveOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...deckDefaultPluginResolveSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(deckChatContextOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(deckChatContextOperationContracts).map(([name, operation]) => descriptor(inputSource("deckChatContextDto", "deckChatContextOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...deckChatContextSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(deckWorkspacePluginsOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(deckWorkspacePluginsOperationContracts).map(([name, operation]) => descriptor(inputSource("deckWorkspacePluginsDto", "deckWorkspacePluginsOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...deckWorkspacePluginsSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(workflowManagedMcpScopeOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(workflowManagedMcpScopeOperationContracts).map(([name, operation]) => descriptor(inputSource("workflowManagedMcpScopeDto", "workflowManagedMcpScopeOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...workflowManagedMcpScopeSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(workflowRuntimeActivationOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(workflowRuntimeActivationOperationContracts).map(([name, operation]) => descriptor(inputSource("workflowRuntimeActivationDto", "workflowRuntimeActivationOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...workflowRuntimeActivationSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(storyWorkspaceOutputOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(storyWorkspaceOutputOperationContracts).map(([name, operation]) => descriptor(inputSource("storyWorkspaceOutputDto", "storyWorkspaceOutputOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...storyWorkspaceOutputSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(storyWorkspaceReviewOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(storyWorkspaceReviewOperationContracts).map(([name, operation]) => descriptor(inputSource("storyWorkspaceReviewDto", "storyWorkspaceReviewOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...storyWorkspaceReviewSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(storyWorkspaceCatalogOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(storyWorkspaceCatalogOperationContracts).map(([name, operation]) => descriptor(inputSource("storyWorkspaceCatalogDto", "storyWorkspaceCatalogOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...storyWorkspaceCatalogSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(storyWorkspaceGuidanceOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(storyWorkspaceGuidanceOperationContracts).map(([name, operation]) => descriptor(inputSource("storyWorkspaceGuidanceDto", "storyWorkspaceGuidanceOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...storyWorkspaceGuidanceSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(storyWorkspaceConfirmationOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(storyWorkspaceConfirmationOperationContracts).map(([name, operation]) => descriptor(inputSource("storyWorkspaceConfirmationDto", "storyWorkspaceConfirmationOperationContracts", name),
     name,
     operation.kind,
     operation.audience === "background" ? operation.backgroundScope : null,
@@ -217,19 +232,19 @@ export const dreamOperations = [
     [identitySchemaRequirement, ...storyWorkspaceConfirmationRequirements(name as keyof typeof storyWorkspaceConfirmationOperationContracts)],
     operation.audience === "oauth" ? operation.userScope : null,
   )),
-  ...Object.entries(deckPluginBindingOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(deckPluginBindingOperationContracts).map(([name, operation]) => descriptor(inputSource("deckPluginBindingDto", "deckPluginBindingOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...deckPluginBindingSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(dreamLaunchReplayOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(dreamLaunchReplayOperationContracts).map(([name, operation]) => descriptor(inputSource("dreamLaunchSourceDto", "dreamLaunchReplayOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, dreamUnifiedSchemaRequirement], operation.userScope,
   )),
-  ...Object.entries(managedMcpOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(managedMcpOperationContracts).map(([name, operation]) => descriptor(inputSource("managedMcpDto", "managedMcpOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...managedMcpSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(notionConnectorOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(notionConnectorOperationContracts).map(([name, operation]) => descriptor(inputSource("notionConnectorDto", "notionConnectorOperationContracts", name),
     name,
     operation.kind,
     operation.audience === "background" ? operation.backgroundScope : null,
@@ -238,91 +253,91 @@ export const dreamOperations = [
     [identitySchemaRequirement, ...notionConnectorSchemaRequirements],
     operation.audience === "user" ? operation.userScope : null,
   )),
-  ...Object.entries(dreamAutoRepairOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(dreamAutoRepairOperationContracts).map(([name, operation]) => descriptor(inputSource("dreamAutoRepairDto", "dreamAutoRepairOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...dreamAutoRepairSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(deckPluginControlOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(deckPluginControlOperationContracts).map(([name, operation]) => descriptor(inputSource("deckPluginControlDto", "deckPluginControlOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...deckPluginControlSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(claudePluginOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(claudePluginOperationContracts).map(([name, operation]) => descriptor(inputSource("claudePluginDataDto", "claudePluginOperationContracts", name),
     name, operation.kind, operation.backgroundScope, operation.input, operation.output,
     [identitySchemaRequirement, ...claudePluginDataSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(storyWorkspaceArtifactOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(storyWorkspaceArtifactOperationContracts).map(([name, operation]) => descriptor(inputSource("storyWorkspaceArtifactDto", "storyWorkspaceArtifactOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...storyWorkspaceArtifactSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(chatThreadOperationContracts).filter(([name]) => !Object.hasOwn(chatContinuationContracts, name) && (name.startsWith("chat-input.") || name.startsWith("task-session."))).map(([name, operation]) => descriptor(
+  ...Object.entries(chatThreadOperationContracts).filter(([name]) => !Object.hasOwn(chatContinuationContracts, name) && (name.startsWith("chat-input.") || name.startsWith("task-session."))).map(([name, operation]) => descriptor(inputSource("chatThreadDto", "chatThreadOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...chatThreadSchemaRequirements, ...(name.startsWith("chat-input.") ? [chatInputQueueSchemaRequirement] : [chatTaskSessionSchemaRequirement, chatInputQueueSchemaRequirement]), ...(name === "task-session.create-returning" ? [chatTaskResultSchemaRequirement] : [])],
     operation.kind === "read" ? "dream:read" : "dream:write",
   )),
-  ...Object.entries(taskSessionResultContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(taskSessionResultContracts).map(([name, operation]) => descriptor(inputSource("taskSessionResultDto", "taskSessionResultContracts", name),
     name, operation.kind, operation.backgroundScope, operation.input, operation.output,
     [identitySchemaRequirement, ...chatThreadSchemaRequirements, chatTaskSessionSchemaRequirement,
       chatTaskResultSchemaRequirement, ...(operation.audience === "background" ? [runtimeDelegationSchemaRequirement, runtimePurposeSchemaRequirement] : [])],
     operation.userScope,
   )),
-  ...Object.entries(chatScheduledTaskOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(chatScheduledTaskOperationContracts).map(([name, operation]) => descriptor(inputSource("chatScheduledTaskDto", "chatScheduledTaskOperationContracts", name),
     name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
     operation.input, operation.output, [identitySchemaRequirement, ...chatScheduledTaskSchemaRequirements,
       ...(operation.audience === "background" ? [scheduledChatRuntimeSchemaRequirement] : [])],
     operation.audience === "user" ? operation.userScope : null,
   )),
-  ...Object.entries(chatScheduledTaskV2OperationContracts).filter(([name]) => name !== "scheduled-task.v2.thread").map(([name, operation]) => descriptor(
+  ...Object.entries(chatScheduledTaskV2OperationContracts).filter(([name]) => name !== "scheduled-task.v2.thread").map(([name, operation]) => descriptor(inputSource("chatScheduledTaskDto", "chatScheduledTaskV2OperationContracts", name),
     name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
     operation.input, operation.output, [identitySchemaRequirement, ...chatScheduledTaskV2SchemaRequirements,
       ...(operation.audience === "background" ? [scheduledChatRuntimeSchemaRequirement] : [])],
     operation.audience === "user" ? operation.userScope : null,
   )),
-  ...Object.entries(chatScheduledTaskV3OperationContracts).filter(([name]) => name !== "scheduled-task.v3.thread").map(([name, operation]) => descriptor(
+  ...Object.entries(chatScheduledTaskV3OperationContracts).filter(([name]) => name !== "scheduled-task.v3.thread").map(([name, operation]) => descriptor(inputSource("chatScheduledTaskDto", "chatScheduledTaskV3OperationContracts", name),
     name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
     operation.input, operation.output, [identitySchemaRequirement, ...chatScheduledTaskV3SchemaRequirements,
       ...(operation.audience === "background" ? [scheduledChatRuntimeSchemaRequirement] : [])],
     operation.audience === "user" ? operation.userScope : null,
   )),
-  ...Object.entries(notionSyncRunOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(notionSyncRunOperationContracts).map(([name, operation]) => descriptor(inputSource("notionSyncRunDto", "notionSyncRunOperationContracts", name),
     name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
     operation.input, operation.output, [identitySchemaRequirement, ...notionConnectorSchemaRequirements, notionSyncOwnershipRequirement],
     operation.audience === "user" ? operation.userScope : null,
   )),
-  descriptor("scheduled-task.v2.thread", "read", null, scheduledTaskThreadInputDto, scheduledTaskThreadResultDto,
+  descriptor(inputSource("chatScheduledTaskDto", "scheduledTaskThreadInputDto"), "scheduled-task.v2.thread", "read", null, scheduledTaskThreadInputDto, scheduledTaskThreadResultDto,
     [identitySchemaRequirement, ...chatScheduledTaskV2SchemaRequirements], "dream:read"),
-  descriptor("scheduled-task.v3.thread", "read", null, scheduledTaskThreadInputDto, scheduledTaskThreadV3ResultDto,
+  descriptor(inputSource("chatScheduledTaskDto", "scheduledTaskThreadInputDto"), "scheduled-task.v3.thread", "read", null, scheduledTaskThreadInputDto, scheduledTaskThreadV3ResultDto,
     [identitySchemaRequirement, ...chatScheduledTaskV3SchemaRequirements], "dream:read"),
-  ...Object.entries(userImageModelOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(userImageModelOperationContracts).map(([name, operation]) => descriptor(inputSource("userSystemConfigDto", "userImageModelOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...userSystemConfigSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(imageTurnOperationContracts).map(([name, operation]) => descriptor(
+  ...Object.entries(imageTurnOperationContracts).map(([name, operation]) => descriptor(inputSource("imageTurnDto", "imageTurnOperationContracts", name),
     name, operation.kind, null, operation.input, operation.output, imageTurnSchemaRequirements, operation.userScope,
   )),
-  ...Object.entries(reflectionAnalysisContentOperations).map(([name, operation]) => descriptor(
+  ...Object.entries(reflectionAnalysisContentOperations).map(([name, operation]) => descriptor(inputSource("reflectionAnalysisContentDto", "reflectionAnalysisContentOperations", name),
     name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
     operation.input, operation.output, [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, reflectionAnalysisSchemaRequirement],
     operation.audience === "oauth" ? operation.userScope : null,
   )),
-  ...Object.entries(reflectionHistoryOperations).map(([name, operation]) => descriptor(
+  ...Object.entries(reflectionHistoryOperations).map(([name, operation]) => descriptor(inputSource("reflectionHistoryDto", "reflectionHistoryOperations", name),
     name, operation.kind, null, operation.input, operation.output,
     [identitySchemaRequirement, ...reflectionTaskSchemaRequirements], operation.userScope,
   )),
-  ...Object.entries(memoryOperations).map(([name, operation]) => descriptor(
+  ...Object.entries(memoryOperations).map(([name, operation]) => descriptor(inputSource("memoryDto", "memoryOperations", name),
     name, operation.kind, operation.backgroundScope, operation.input, operation.output,
     [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, memorySchemaRequirement], operation.userScope,
   )),
-  ...Object.entries(memoryV2Operations).map(([name, operation]) => descriptor(
+  ...Object.entries(memoryV2Operations).map(([name, operation]) => descriptor(inputSource("memoryDto", "memoryV2Operations", name),
     name, operation.kind, operation.backgroundScope, operation.input, operation.output,
     [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, memorySchemaRequirement, memoryClassificationRequirement], operation.userScope,
   )),
-  ...Object.entries(reflectionNotionScopeOperations).map(([name, operation]) => descriptor(
+  ...Object.entries(reflectionNotionScopeOperations).map(([name, operation]) => descriptor(inputSource("reflectionNotionScopeDto", "reflectionNotionScopeOperations", name),
     name, operation.kind, operation.audience === "background" ? operation.backgroundScope : null,
     operation.input, operation.output, [identitySchemaRequirement, ...reflectionTaskSchemaRequirements, reflectionAnalysisSchemaRequirement],
     operation.audience === "oauth" ? operation.userScope : null,
   )),
-  descriptor("deck.catalog", "read", null, deckVoiceOperationContracts["deck.catalog"].input, deckVoiceOperationContracts["deck.catalog"].output,
+  descriptor(inputSource("deckVoiceDto", "deckVoiceOperationContracts", "deck.catalog"), "deck.catalog", "read", null, deckVoiceOperationContracts["deck.catalog"].input, deckVoiceOperationContracts["deck.catalog"].output,
     [identitySchemaRequirement, ...deckVoiceSchemaRequirements], "dream:read"),
-  ...Object.entries(chatContinuationContracts).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...chatThreadSchemaRequirements, chatInputQueueSchemaRequirement, chatContinuationSchemaRequirement], operation.kind === "read" ? "dream:read" : "dream:write")),
-  ...Object.entries(externalShareOperations).map(([name, operation]) => descriptor(name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, runtimePurposeSchemaRequirement, externalShareRequirement], operation.userScope)),
+  ...Object.entries(chatContinuationContracts).map(([name, operation]) => descriptor(inputSource("chatThreadDto", "chatContinuationContracts", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, ...chatThreadSchemaRequirements, chatInputQueueSchemaRequirement, chatContinuationSchemaRequirement], operation.kind === "read" ? "dream:read" : "dream:write")),
+  ...Object.entries(externalShareOperations).map(([name, operation]) => descriptor(inputSource("externalShareDto", "externalShareOperations", name), name, operation.kind, null, operation.input, operation.output, [identitySchemaRequirement, runtimePurposeSchemaRequirement, externalShareRequirement], operation.userScope)),
 ] as const;
