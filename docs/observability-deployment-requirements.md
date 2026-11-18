@@ -1,6 +1,7 @@
 <!-- [Input] 现用发布入口、服务器所有的监控配置和已授权的数据采集边界。 -->
 <!-- [Output] 应用发布、部署验收和回滚必须保持的监控要求。 -->
 <!-- [Pos] 仓库只保存发布部署合同；详细运维说明、配置、图表和回执维护在 Notion。 -->
+<!-- [Sync] 2026-11-19: 增加 Dream operation 入口、业务子 Span 与源码定位验收。 -->
 
 # 监控发布部署要求
 
@@ -18,6 +19,8 @@
 
 - 原服务、HTTP、认证与数据库能力继续通过既有发布检查。
 - 分别核对主机及数据库指标在实际数据源持续更新、Admin 的近期接口和数据库调用链可查询；本机 exporter HTTP 200 或 SDK 初始化日志不能单独作为云端验收。
+- 在新采样的 Admin 调用链中核对 Dream operation 的入口名称，例如 `POST /api/internal/dream/v1/operations/deck.default-plugin.resolve`。已注册 operation 用具体路径分组，未注册输入沿用路由模板。升级 Next.js 时回查入口 Span 名称及 `http.route`。
+- 展开入口下的实际处理函数，例如 `handleDeckDefaultPluginResolve`。在 Span 属性中查看 `code.function.name`、`code.file.path` 和 `ink.dream.operation`。默认插件解析及默认 Deck 对齐还可查看输入校验、事务、业务服务及仓储 Span。输入校验 Span 的 `ink.dream.dto.name` 与 `ink.dream.dto.file` 标明合同行和定义文件。
 - 数据库 exporter 的存活与其到 PostgreSQL 的连接成功分别检查。采集来源变化时先核对实际来源，再维护监控专用规则；不改原业务规则。
 - 监控采样、角色权限及资源预算的修改单独留存变更和云端验收证据。正常流量快照不作为接口容量结论，连接池调整需要另行测量。
 

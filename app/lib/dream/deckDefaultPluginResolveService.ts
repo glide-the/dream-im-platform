@@ -2,8 +2,10 @@
 // [Output] One closed configured ready candidate or null without local artifact/CLI verification.
 // [Pos] Registry104 service boundary; existing Deck writes retain independent evidence rechecks.
 // [Sync] 2026-09-15: require dream:read, reject entity grants and fail closed on malformed stored projection.
+// [Sync] 2026-11-19: trace the exact ready-installation lookup.
 import { AuthBoundaryError } from "../auth/config";
 import { principalDto } from "../auth/dto";
+import { traceDreamOperationStep } from "../observability/dreamOperationTrace";
 import type { DataTransaction } from "./database";
 import type { DeckVoiceActor } from "./deckVoiceService";
 import { configuredDeckVoicePolicy, deckVoiceSchemaRequirements } from "./deckVoiceService";
@@ -28,7 +30,10 @@ export async function runDeckDefaultPluginResolveOperation(
   if (!principal.scopes.includes(contract.userScope)) throw new AuthBoundaryError("DREAM_SCOPE_REQUIRED", 403);
   if (actor.threadScope !== null) throw new AuthBoundaryError("DREAM_DELEGATION_ENTITY_DENIED", 403);
   const policy = suppliedPolicy ?? configuredDeckVoicePolicy();
-  const result = { installation: await new DeckDefaultPluginResolveRepository(tx).resolve(policy) };
+  const installation = await traceDreamOperationStep("DeckDefaultPluginResolveRepository.resolve",
+    "app/lib/dream/deckDefaultPluginResolveRepository.ts",
+    () => new DeckDefaultPluginResolveRepository(tx).resolve(policy));
+  const result = { installation };
   const output = contract.output.safeParse(result);
   if (!output.success) throw new AuthBoundaryError("DEFAULT_DECK_PLUGIN_DATA_INVALID");
   return output.data;

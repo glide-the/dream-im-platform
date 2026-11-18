@@ -5,6 +5,7 @@
 // [Sync] 2026-09-15: resolve @ink-memory/db NodeNext .js specifiers to workspace TypeScript during Webpack builds.
 // [Sync] 2026-09-19: allow deployment-owned Webpack memory optimizations on constrained build hosts.
 // [Sync] 2026-10-25: release Webpack worker memory before TypeScript checks with the existing custom aliases.
+// [Sync] 2026-11-19: share Next's server-side request tracer with the Dream operation route.
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,13 +37,19 @@ const nextConfig = {
   outputFileTracingIncludes: {
     '/api/internal/dream/v1/operations/*': ['./app/lib/dream/deckContentCanonical.py', './app/lib/dream/dreamLaunchEnvelope.py', './app/lib/dream/dreamLaunchFailureEnvelope.py', './app/lib/dream/userSystemConfigCodec.py'],
   },
-  webpack(config) {
+  webpack(config, { nextRuntime } = {}) {
     config.resolve.extensionAlias = {
       ...config.resolve.extensionAlias,
       '.js': ['.ts', '.tsx', '.js'],
       '.mjs': ['.mts', '.mjs'],
       '.cjs': ['.cts', '.cjs'],
     };
+    if (nextRuntime === 'nodejs') {
+      // The tracer's request attributes must be shared with the running Next server.
+      config.externals.unshift({
+        'next/dist/server/lib/trace/tracer': 'commonjs next/dist/server/lib/trace/tracer',
+      });
+    }
     return config;
   },
   ...(e2eDistDir && { distDir: e2eDistDir }),

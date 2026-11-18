@@ -4,9 +4,11 @@
 // [Pos] Admin domain dispatch, never runs Runtime, filesystem operations or independent transactions.
 // [Sync] 2026-09-19: merge code-owned system Deck templates into the validated deployment policy.
 // [Sync] 2026-09-14: exact schema requirements; long-turn delegation never grants Deck management.
+// [Sync] 2026-11-19: trace the default Deck reconciliation repository call.
 import { z } from "zod";
 import { AuthBoundaryError,requiredAuthValue } from "../auth/config";
 import { principalDto,type PrincipalDto } from "../auth/dto";
+import { traceDreamOperationStep } from "../observability/dreamOperationTrace";
 import type {DataTransaction,SchemaRequirement} from "./database";
 import * as dto from "./deckVoiceDto";
 import {DeckVoiceRepository} from "./deckVoiceRepository";
@@ -29,7 +31,10 @@ export async function runDeckVoiceOperation(operation:dto.DeckVoiceOperation,inp
  case"deck.toggle-publication":output={published:await store.togglePublication(dto.deckIdInputDto.parse(parsed.data).deck_id)};break;
  case"deck.collect":output={deck_id:await store.collect(dto.deckIdInputDto.parse(parsed.data).deck_id)};break;
  case"deck.sync-parent":output=await store.syncParent(dto.deckIdInputDto.parse(parsed.data).deck_id);break;
- case"deck.reconcile-default":output=await store.reconcileDefault((parsed.data as z.infer<typeof dto.deckVoiceOperationContracts["deck.reconcile-default"]["input"]>).default_plugin_evidence);break;
+ case "deck.reconcile-default":
+   output = await traceDreamOperationStep("DeckVoiceRepository.reconcileDefault", "app/lib/dream/deckVoiceRepository.ts",
+     () => store.reconcileDefault((parsed.data as z.infer<typeof dto.deckVoiceOperationContracts["deck.reconcile-default"]["input"]>).default_plugin_evidence));
+   break;
  case"deck.provision-default":output={deck_id:await store.provisionDefault((parsed.data as z.infer<typeof dto.deckVoiceOperationContracts["deck.provision-default"]["input"]>).default_plugin_evidence)};break;
  case"voice.create":output={voice_id:await store.createVoice(dto.voiceCreateInputDto.parse(parsed.data))};break;
  case"voice.update":output={changed:await store.updateVoice(dto.voiceUpdateInputDto.parse(parsed.data))};break;
