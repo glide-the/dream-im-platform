@@ -2,18 +2,24 @@
 // [Output] Exact limit, capability list, no-receipt read and fail-closed ingress evidence.
 // [Pos] Provider-free default-plugin HTTP boundary test; policy/filtering remain in Service/Repository.
 // [Sync] 2026-09-15: prove OAuth dream:read and reject every caller selector before UOW.
+// [Sync] 2026-11-19: verify the service span follows authentication and DTO validation.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ service: vi.fn(), principal: vi.fn(), transaction: vi.fn(), run: vi.fn() }));
 vi.mock("../auth/serviceIdentity", async original => ({ ...await original<typeof import("../auth/serviceIdentity")>(), requireDreamService: mocks.service }));
 vi.mock("../auth/serviceAccessToken", () => ({ principalForServiceToken: mocks.principal }));
 vi.mock("./database", () => ({ withDataTransaction: mocks.transaction }));
+vi.mock("../observability/dreamOperationTrace", async original => {
+  const tracing = await original<typeof import("../observability/dreamOperationTrace")>();
+  return { ...tracing, traceDreamOperationStep: vi.fn(tracing.traceDreamOperationStep) };
+});
 vi.mock("./deckDefaultPluginResolveService", async original => ({
   ...await original<typeof import("./deckDefaultPluginResolveService")>(),
   runDeckDefaultPluginResolveOperation: mocks.run,
 }));
 
 import { AuthBoundaryError } from "../auth/config";
+import { traceDreamOperationStep } from "../observability/dreamOperationTrace";
 import { handleDeckDefaultPluginResolve } from "./deckDefaultPluginResolveHandler";
 import { deckDefaultPluginResolveSchemaRequirements } from "./deckDefaultPluginResolveService";
 import { identitySchemaRequirement } from "./schemaRequirements";
@@ -43,6 +49,11 @@ it("executes one OAuth read in the exact capability-checked UOW without a receip
   expect(mocks.transaction.mock.calls[0][0]).toEqual([identitySchemaRequirement, ...deckDefaultPluginResolveSchemaRequirements]);
   expect(mocks.principal).toHaveBeenCalledExactlyOnceWith(tx, "oauth", service, "dream:read");
   expect(mocks.run).toHaveBeenCalledExactlyOnceWith("deck.default-plugin.resolve", {}, { principal, threadScope: null }, tx);
+  expect(vi.mocked(traceDreamOperationStep).mock.calls.map(([name, file]) => [name, file])).toEqual([
+    ["requireDreamService", "app/lib/auth/serviceIdentity.ts"],
+    ["parseAuthDto", "app/lib/auth/internalHandler.ts"],
+    ["runDeckDefaultPluginResolveOperation", "app/lib/dream/deckDefaultPluginResolveService.ts"],
+  ]);
 });
 
 it("rejects actor, policy, evidence and physical selectors before opening a UOW", async () => {

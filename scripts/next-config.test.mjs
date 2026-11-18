@@ -5,6 +5,7 @@
 // [Sync] 2026-10-05: require the stdio preload in both normal Next.js runtime commands.
 // [Sync] 2026-09-15: pin NodeNext workspace extension aliases and all four fixed Dream codec traces.
 // [Sync] 2026-10-25: retain a separate build worker alongside custom Webpack aliases and resource options.
+// [Sync] 2026-11-19: verify Next's request tracer is shared by Node server bundles.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -40,12 +41,12 @@ function readTracing() {
   `], { cwd: projectRoot, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
 }
 
-function readWebpackExtensionAlias() {
+function readWebpackConfig(nextRuntime) {
   const env = { ...process.env };
   return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
     import config from ${JSON.stringify(configUrl.href)};
-    const result = config.webpack({ resolve: { extensionAlias: { '.jsx': ['.jsx'] } } });
-    console.log(JSON.stringify(result.resolve.extensionAlias));
+    const result = config.webpack({ externals: [], resolve: { extensionAlias: { '.jsx': ['.jsx'] } } }, { nextRuntime: ${JSON.stringify(nextRuntime)} });
+    console.log(JSON.stringify({ aliases: result.resolve.extensionAlias, externals: result.externals }));
   `], { cwd: projectRoot, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
 }
 
@@ -91,12 +92,20 @@ test('internal Dream operations trace every fixed Python codec from the reposito
 });
 
 test('Webpack resolves NodeNext JavaScript specifiers to workspace TypeScript sources', () => {
-  assert.deepEqual(readWebpackExtensionAlias(), {
+  assert.deepEqual(readWebpackConfig('nodejs').aliases, {
     '.jsx': ['.jsx'],
     '.js': ['.ts', '.tsx', '.js'],
     '.mjs': ['.mts', '.mjs'],
     '.cjs': ['.cts', '.cjs'],
   });
+});
+
+test('only the Node server shares the Next request tracer with the application bundle', () => {
+  assert.deepEqual(readWebpackConfig('nodejs').externals, [{
+    'next/dist/server/lib/trace/tracer': 'commonjs next/dist/server/lib/trace/tracer',
+  }]);
+  assert.deepEqual(readWebpackConfig('edge').externals, []);
+  assert.deepEqual(readWebpackConfig(undefined).externals, []);
 });
 
 test('stable local integration builds once and starts under the embedded PostgreSQL supervisor', () => {

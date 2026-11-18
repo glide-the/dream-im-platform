@@ -2,11 +2,13 @@
 // [Output] Strict configured default-plugin candidate from the existing capability-checked UOW.
 // [Pos] Thin named ingress; policy, selection and storage validation remain in Service/Repository.
 // [Sync] 2026-09-15: dispatch an OAuth-only read without receipt, evidence input or filesystem access.
+// [Sync] 2026-11-19: trace the default-plugin resolve service inside its transaction.
 import { z } from "zod";
 import { AuthBoundaryError, requiredAuthValue } from "../auth/config";
 import { requestIdDto } from "../auth/dto";
 import { handleInternalAuthRequest, parseAuthDto } from "../auth/internalHandler";
 import { principalForServiceToken } from "../auth/serviceAccessToken";
+import { traceDreamOperationStep } from "../observability/dreamOperationTrace";
 import { withDataTransaction } from "./database";
 import { deckDefaultPluginResolveOperationContracts, type DeckDefaultPluginResolveOperation } from "./deckDefaultPluginResolveDto";
 import { deckDefaultPluginResolveSchemaRequirements, runDeckDefaultPluginResolveOperation } from "./deckDefaultPluginResolveService";
@@ -33,7 +35,8 @@ export async function handleDeckDefaultPluginResolve(request: Request, name: str
         service,
         operation.userScope,
       );
-      return runDeckDefaultPluginResolveOperation(name, envelope.input, { principal, threadScope: null }, tx);
+      return traceDreamOperationStep("runDeckDefaultPluginResolveOperation", "app/lib/dream/deckDefaultPluginResolveService.ts",
+        () => runDeckDefaultPluginResolveOperation(name, envelope.input, { principal, threadScope: null }, tx));
     });
   });
 }

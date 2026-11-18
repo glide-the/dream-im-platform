@@ -1,4 +1,5 @@
 // [Sync] 2026-11-12: dispatch owner-scoped external-share publication and revocation.
+// [Sync] 2026-11-19: name registered entry spans and trace the dispatched handler with its source file.
 import {handleExternalShareOperation,isExternalShareOperation} from '../../../../../../lib/dream/externalShareHandler';
 // [Sync] 2026-10-15: dispatch named memory operations.
 import { handleMemoryOperation,isMemoryOperation } from "../../../../../../lib/dream/memoryHandler";
@@ -64,43 +65,67 @@ import { handleTaskSessionResult, isTaskSessionResultOperation } from "../../../
 import { handleChatScheduledTaskOperation, isChatScheduledTaskOperation } from "../../../../../../lib/dream/chatScheduledTaskHandler";
 import { handleImageTurnOperation, isImageTurnOperation } from "../../../../../../lib/dream/imageTurnHandler";
 import { handleReflectionHistory } from "../../../../../../lib/dream/reflectionHistoryHandler";
+import { getDreamOperationTrace } from "../../../../../../lib/dream/operationRegistry";
+import { traceDreamOperationHandler } from "../../../../../../lib/observability/dreamOperationTrace";
+
 export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ operation: string }> }) {
   const name = (await context.params).operation;
-  if (isExternalShareOperation(name)) return handleExternalShareOperation(request, name);
-  if (name === "analysis-report.history-page") return handleReflectionHistory(request);
-  if (isImageTurnOperation(name)) return handleImageTurnOperation(request, name);
-  if (isChatScheduledTaskOperation(name)) return handleChatScheduledTaskOperation(request, name);
-  if (isTaskSessionResultOperation(name)) return handleTaskSessionResult(request, name);
-  if (isStoryWorkspaceArtifactOperation(name)) return handleStoryWorkspaceArtifact(request, name);
-  if (isClaudePluginOperation(name)) return handleClaudePluginOperation(request, name);
-  if (isDeckPluginControlOperation(name)) return handleDeckPluginControl(request, name);
-  if (isDreamAutoRepairOperation(name)) return handleDreamAutoRepair(request, name);
-  if (isNotionConnectorOperation(name)) return handleNotionConnector(request, name);
-  if (isManagedMcpOperation(name)) return handleManagedMcp(request, name);
-  if (isDeckPluginBindingOperation(name)) return handleDeckPluginBinding(request, name);
-  if (isStoryWorkspaceConfirmationOperation(name)) return handleStoryWorkspaceConfirmation(request, name);
-  if (isStoryWorkspaceGuidanceOperation(name)) return handleStoryWorkspaceGuidance(request, name);
-  if (isStoryWorkspaceCatalogOperation(name)) return handleStoryWorkspaceCatalog(request, name);
-  if (isStoryWorkspaceReviewOperation(name)) return handleStoryWorkspaceReview(request, name);
-  if (isStoryWorkspaceOutputOperation(name)) return handleStoryWorkspaceOutput(request, name);
-  if (isWorkflowRuntimeActivationOperation(name)) return handleWorkflowRuntimeActivation(request, name);
-  if (isWorkflowManagedMcpScopeOperation(name)) return handleWorkflowManagedMcpScope(request, name);
-  if (isDeckWorkspacePluginsOperation(name)) return handleDeckWorkspacePlugins(request, name);
-  if (isDeckChatContextOperation(name)) return handleDeckChatContext(request, name);
-  if (isDeckDefaultPluginResolveOperation(name)) return handleDeckDefaultPluginResolve(request, name);
-  if (isPictureHistoryOperation(name)) return handlePictureHistory(request, name);
-  if (isLocalDataImportOperation(name)) return handleLocalDataImport(request, name);
-  if (name === "dream-launch-failure.envelope") return handleDreamLaunchFailure(request, name);
-  if (isUserSystemConfigOperation(name)) return handleUserSystemConfig(request, name);
-  if (isThreadSystemConfigOperation(name)) return handleThreadSystemConfig(request, name);
-  if (isReflectionsSectionConfigOperation(name)) return handleReflectionsSectionConfig(request, name);
-  if (isReflectionAnalysisOperation(name)) return handleReflectionAnalysisOperation(request, name);
-  if (isReflectionTaskOperation(name)) return handleReflectionTaskOperation(request, name);
-  if (name === "workspace-default.ensure") return handleWorkspaceDefault(request, name);
-  if (isWorkflowRunCreationOperation(name)) return handleWorkflowRunCreation(request, name);
-  if (isDreamLaunchSourceOperation(name)) return handleDreamLaunchSource(request, name);
-  if (isDreamLaunchDispatchOperation(name)) return handleDreamLaunchDispatch(request, name);
-  if (isMemoryOperation(name)) return handleMemoryOperation(request,name);
-  return name === "user-profile.current" ? handleUserProfile(request) : name === "workflow-context.resolve" ? handleWorkflowContext(request) : name === "workflow-preflight.read" ? handleWorkflowPreflightRead(request) : name === "workflow-preflight.execute" ? handleWorkflowPreflightExecute(request) : name === "chat-user-message.persist" ? handleUserMessage(request) : isWorkflowRunOperation(name) ? handleWorkflowRun(request, name) : isWorkflowRunCommandOperation(name) ? handleWorkflowRunCommand(request, name) : isEditorSessionOperation(name) ? handleEditorSessionOperation(request, name) : isDeckVoiceOperation(name) ? handleDeckVoiceOperation(request, name) : isDeckRuntimeDataOperation(name) ? handleDeckRuntimeData(request, name) : isUserPreferencesOperation(name) ? handleUserPreferences(request, name) : isSocialFriendshipOperation(name) ? handleSocialFriendship(request, name) : handleChatThreadOperation(request, name);
+  const operation = getDreamOperationTrace(name);
+  function run<Args extends unknown[]>(
+    file: string,
+    target: Record<string, (...args: Args) => Promise<Response>>,
+    ...args: Args
+  ): Promise<Response> {
+    const [handlerName, handler] = Object.entries(target)[0];
+    return traceDreamOperationHandler(operation, handlerName, `app/lib/dream/${file}.ts`, () => handler(...args));
+  }
+  if (isExternalShareOperation(name)) return run("externalShareHandler", { handleExternalShareOperation }, request, name);
+  if (name === "analysis-report.history-page") return run("reflectionHistoryHandler", { handleReflectionHistory }, request);
+  if (isImageTurnOperation(name)) return run("imageTurnHandler", { handleImageTurnOperation }, request, name);
+  if (isChatScheduledTaskOperation(name)) return run("chatScheduledTaskHandler", { handleChatScheduledTaskOperation }, request, name);
+  if (isTaskSessionResultOperation(name)) return run("taskSessionResultHandler", { handleTaskSessionResult }, request, name);
+  if (isStoryWorkspaceArtifactOperation(name)) return run("storyWorkspaceArtifactHandler", { handleStoryWorkspaceArtifact }, request, name);
+  if (isClaudePluginOperation(name)) return run("claudePluginDataHandler", { handleClaudePluginOperation }, request, name);
+  if (isDeckPluginControlOperation(name)) return run("deckPluginControlHandler", { handleDeckPluginControl }, request, name);
+  if (isDreamAutoRepairOperation(name)) return run("dreamAutoRepairHandler", { handleDreamAutoRepair }, request, name);
+  if (isNotionConnectorOperation(name)) return run("notionConnectorHandler", { handleNotionConnector }, request, name);
+  if (isManagedMcpOperation(name)) return run("managedMcpHandler", { handleManagedMcp }, request, name);
+  if (isDeckPluginBindingOperation(name)) return run("deckPluginBindingHandler", { handleDeckPluginBinding }, request, name);
+  if (isStoryWorkspaceConfirmationOperation(name)) return run("storyWorkspaceConfirmationHandler", { handleStoryWorkspaceConfirmation }, request, name);
+  if (isStoryWorkspaceGuidanceOperation(name)) return run("storyWorkspaceGuidanceHandler", { handleStoryWorkspaceGuidance }, request, name);
+  if (isStoryWorkspaceCatalogOperation(name)) return run("storyWorkspaceCatalogHandler", { handleStoryWorkspaceCatalog }, request, name);
+  if (isStoryWorkspaceReviewOperation(name)) return run("storyWorkspaceReviewHandler", { handleStoryWorkspaceReview }, request, name);
+  if (isStoryWorkspaceOutputOperation(name)) return run("storyWorkspaceOutputHandler", { handleStoryWorkspaceOutput }, request, name);
+  if (isWorkflowRuntimeActivationOperation(name)) return run("workflowRuntimeActivationHandler", { handleWorkflowRuntimeActivation }, request, name);
+  if (isWorkflowManagedMcpScopeOperation(name)) return run("workflowManagedMcpScopeHandler", { handleWorkflowManagedMcpScope }, request, name);
+  if (isDeckWorkspacePluginsOperation(name)) return run("deckWorkspacePluginsHandler", { handleDeckWorkspacePlugins }, request, name);
+  if (isDeckChatContextOperation(name)) return run("deckChatContextHandler", { handleDeckChatContext }, request, name);
+  if (isDeckDefaultPluginResolveOperation(name)) return run("deckDefaultPluginResolveHandler", { handleDeckDefaultPluginResolve }, request, name);
+  if (isPictureHistoryOperation(name)) return run("pictureHistoryHandler", { handlePictureHistory }, request, name);
+  if (isLocalDataImportOperation(name)) return run("localDataImportHandler", { handleLocalDataImport }, request, name);
+  if (name === "dream-launch-failure.envelope") return run("dreamLaunchFailureHandler", { handleDreamLaunchFailure }, request, name);
+  if (isUserSystemConfigOperation(name)) return run("userSystemConfigHandler", { handleUserSystemConfig }, request, name);
+  if (isThreadSystemConfigOperation(name)) return run("threadSystemConfigHandler", { handleThreadSystemConfig }, request, name);
+  if (isReflectionsSectionConfigOperation(name)) return run("reflectionsSectionConfigHandler", { handleReflectionsSectionConfig }, request, name);
+  if (isReflectionAnalysisOperation(name)) return run("reflectionAnalysisContentHandler", { handleReflectionAnalysisOperation }, request, name);
+  if (isReflectionTaskOperation(name)) return run("reflectionTaskHandler", { handleReflectionTaskOperation }, request, name);
+  if (name === "workspace-default.ensure") return run("workspaceDefaultHandler", { handleWorkspaceDefault }, request, name);
+  if (isWorkflowRunCreationOperation(name)) return run("workflowRunCreationHandler", { handleWorkflowRunCreation }, request, name);
+  if (isDreamLaunchSourceOperation(name)) return run("dreamLaunchSourceHandler", { handleDreamLaunchSource }, request, name);
+  if (isDreamLaunchDispatchOperation(name)) return run("dreamLaunchDispatchHandler", { handleDreamLaunchDispatch }, request, name);
+  if (isMemoryOperation(name)) return run("memoryHandler", { handleMemoryOperation }, request, name);
+  if (name === "user-profile.current") return run("userProfileHandler", { handleUserProfile }, request);
+  if (name === "workflow-context.resolve") return run("workflowContextHandler", { handleWorkflowContext }, request);
+  if (name === "workflow-preflight.read") return run("workflowPreflightHandler", { handleWorkflowPreflightRead }, request);
+  if (name === "workflow-preflight.execute") return run("workflowPreflightHandler", { handleWorkflowPreflightExecute }, request);
+  if (name === "chat-user-message.persist") return run("userMessageHandler", { handleUserMessage }, request);
+  if (isWorkflowRunOperation(name)) return run("workflowRunHandler", { handleWorkflowRun }, request, name);
+  if (isWorkflowRunCommandOperation(name)) return run("workflowRunCommandHandler", { handleWorkflowRunCommand }, request, name);
+  if (isEditorSessionOperation(name)) return run("editorSessionHandler", { handleEditorSessionOperation }, request, name);
+  if (isDeckVoiceOperation(name)) return run("deckVoiceHandler", { handleDeckVoiceOperation }, request, name);
+  if (isDeckRuntimeDataOperation(name)) return run("deckRuntimeDataHandler", { handleDeckRuntimeData }, request, name);
+  if (isUserPreferencesOperation(name)) return run("userPreferencesHandler", { handleUserPreferences }, request, name);
+  if (isSocialFriendshipOperation(name)) return run("socialFriendshipHandler", { handleSocialFriendship }, request, name);
+  return run("chatThreadHandler", { handleChatThreadOperation }, request, name);
 }
