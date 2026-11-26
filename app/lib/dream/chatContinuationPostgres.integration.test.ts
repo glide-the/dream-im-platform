@@ -1,3 +1,4 @@
+// [Sync] 2026-11-27: 验证活动授权、过期、并发认领和旧回执拒绝。
 // [Input] Explicitly named, migrated and owned disposable PostgreSQL.
 // [Output] Production continuation service proofs for origin, owner, snapshot, CAS and no replay.
 // [Pos] Provider-free contract; preparation/migration and cleanup belong to the primary harness.
@@ -46,8 +47,30 @@ describe.skipIf(!enabled)('cross-platform continuation PostgreSQL',()=>{
   await expect(call('chat-input.continuation-progress',progress)).rejects.toMatchObject({code:'CHAT_CONTINUATION_CLAIM_CONFLICT'});
   await expect(call('chat-input.transition',{thread_id:f.id,message_id:entry.message_id,expected_revision:entry.revision,dispatch_turn_id:entry.dispatch_turn_id,action:'consume'})).rejects.toMatchObject({code:'CHAT_CONTINUATION_REQUIRED'});
   await call('chat-input.continuation-progress',{...progress,expected_revision:entry.revision,action:'mark_unknown'});
-  await expect(call('chat-message.resume-snapshot',{thread_id:f.id,message_id:null,dispatch_turn_id:null})).rejects.toMatchObject({code:'CHAT_CONTINUATION_BUSY'});
+  const stopped=continuationSnapshotDto.parse(await call('chat-message.resume-snapshot',{thread_id:f.id,message_id:null,dispatch_turn_id:null}));
+  expect(stopped.messages.map(row=>row.id)).toEqual([f.input.message_id]);
   expect((await pool.query('SELECT count(*)::int AS count FROM chat_message WHERE thread_id=$1',[f.id])).rows[0].count).toBe(1);
+ });
+ it('blocks another device while the grant lives, then accepts only one new turn after loss',async()=>{
+  const f=await fixture();
+  const subject=randomUUID(),token=randomUUID();
+  await pool.query('INSERT INTO identity."user"(id,name,email,"createdAt","updatedAt") VALUES($1,$1,$2,now(),now())',[subject,subject+'@example.invalid']);
+  await pool.query(`INSERT INTO identity.runtime_delegations(token_hash,service_client_id,auth_user_id,canonical_user_id,thread_id,scopes,purpose,expires_at)
+    VALUES($1,'test',$2,1,$3,ARRAY['dream:read','dream:write'],'server-persistence',now()+interval '5 minutes')`,[token,subject,f.id]);
+  const claimed=queueEntryResultDto.parse(await call('chat-input.claim-continuation',f.input)).entry;
+  const progress={thread_id:f.id,message_id:f.input.message_id,owner:f.input.owner,dispatch_turn_id:f.input.dispatch_turn_id,expected_revision:claimed.revision};
+  const armed=queueEntryResultDto.parse(await call('chat-input.continuation-progress',{...progress,action:'arm_query'})).entry;
+  const read={thread_id:f.id,message_id:null,dispatch_turn_id:null};
+  await expect(call('chat-message.resume-snapshot',read)).rejects.toMatchObject({code:'CHAT_CONTINUATION_BUSY'});
+  await pool.query('UPDATE identity.runtime_delegations SET expires_at=clock_timestamp() WHERE token_hash=$1',[token]);
+  const free=continuationSnapshotDto.parse(await call('chat-message.resume-snapshot',read));
+  expect(free.messages.map(v=>v.id)).toEqual([f.input.message_id]);
+  expect((await pool.query('SELECT status FROM chat_input_queue WHERE message_id=$1',[f.input.message_id])).rows[0].status).toBe('dispatching');
+  const next={...f.input,history_digest:free.history_digest};
+  const results=await Promise.allSettled([1,2].map(()=>call('chat-input.claim-continuation',{...next,message_id:randomUUID(),owner:randomUUID(),dispatch_turn_id:randomUUID()})));
+  expect(results.filter(v=>v.status==='fulfilled')).toHaveLength(1);
+  await expect(call('chat-input.continuation-progress',{...progress,expected_revision:armed.revision,action:'complete'})).rejects.toMatchObject({code:'CHAT_CONTINUATION_CLAIM_CONFLICT'});
+  expect((await pool.query('SELECT status FROM chat_input_queue WHERE message_id=$1',[f.input.message_id])).rows[0].status).toBe('failed');
  });
  it('rejects stale history before persistence and requires a committed assistant before release',async()=>{
   const f=await fixture();

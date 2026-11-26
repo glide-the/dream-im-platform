@@ -1,3 +1,5 @@
+// [Sync] 2026-11-27: 读取普通对话输入队列时投影执行占用。
+// [Sync] 2026-11-26: project expired ordinary execution ownership on queue reads.
 // [Sync] 2026-11-04: owner-scoped continuation transactions.
 // [Sync] 2026-09-27: require the task-result capability for returning task creation.
 // [Sync] 2026-09-27: expose task-session navigation links under the existing v2 capability.
@@ -9,7 +11,7 @@
 // [Sync] 2026-09-14: preserve ownership/CAS/replay and consume the published 0033 unified capability digest.
 import { AuthBoundaryError } from "../auth/config";
 import { principalDto, type PrincipalDto } from "../auth/dto";
-import type { DataTransaction, SchemaRequirement } from "./database";
+import { hasSchemaCapability, type DataTransaction, type SchemaRequirement } from "./database";
 import { ChatContinuationRepository } from "./chatContinuationRepository";
 import continuationContract from "../../../drizzle/contracts/dream-chat-continuation-v1.json";
 import { ChatThreadRepository } from "./chatThreadRepository";
@@ -81,7 +83,14 @@ export async function runChatThreadOperation(operation: dto.ChatThreadOperation,
     case "chat-message.process-detail": { const v = dto.messageDetailInputDto.parse(validated.data); output = { message: await store.processDetail(v.thread_id, v.message_id) }; break; }
     case "chat-message.latest": output = { message_id: await store.latest(dto.threadIdInputDto.parse(validated.data).thread_id) }; break;
     case "chat-input.enqueue": output = { entry: await store.enqueueInput(dto.queueEnqueueInputDto.parse(validated.data)) }; break;
-    case "chat-input.list": output = { entries: await store.listInputs(dto.threadIdInputDto.parse(validated.data).thread_id) }; break;
+    case "chat-input.list": {
+      const { thread_id } = dto.threadIdInputDto.parse(validated.data);
+      const entries = await store.listInputs(thread_id);
+      const managed = entries.some(row => row.status === "dispatching" || row.status === "state_unknown")
+        && await hasSchemaCapability(transaction, chatContinuationSchemaRequirement);
+      output = { entries: managed ? await new ChatContinuationRepository(transaction, principal.canonical_user_id).inputs(thread_id, false, entries) : entries };
+      break;
+    }
     case "chat-input.transition": output = { entry: await store.transitionInput(dto.queueTransitionInputDto.parse(validated.data)) }; break;
     case "task-session.create": output = { task: await store.createTaskSession(dto.taskSessionCreateInputDto.parse(validated.data)) }; break;
     case "task-session.create-returning": output = { task: await store.createTaskSession(dto.taskSessionCreateInputDto.parse(validated.data), true) }; break;
