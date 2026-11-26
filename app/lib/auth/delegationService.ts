@@ -1,3 +1,4 @@
+// [Sync] 2026-11-27: 续期持锁后复核授权到期和撤销状态。
 // [Input] Admin OAuth user grant or exact Admin-owned confirmation/task-result/scheduled claim; capability-gated data UOW.
 // [Sync] 2026-10-07: allow and revalidate editor-stdio only for the immutable owner-validated Editor target of a live v2 scheduled trigger.
 // [Sync] 2026-09-27: issue only source-Thread persistence grants from a live task-result claim.
@@ -552,6 +553,8 @@ export class DelegationService {
     const policy = delegationPolicy();
     return new ReceiptRepository(this.tx, row.serviceClientId, actor.principal.subject).execute("runtime-delegation.renew", requestId, { token_sha256: actor.tokenHash }, delegationRenewOutputDto, async () => {
       const now = Date.now();
+      // resolve() may have run before another transaction locked the grant.
+      if (row.revokedAt || row.expiresAt.getTime() <= now) throw new AuthBoundaryError("DELEGATION_REQUIRED", 401);
       let claimLeaseExpiresAt: Date | null = null;
       if (row.authoritySource === "scheduled-chat-authority") {
         const bound = await this.repository.scheduledGrantSource(row.tokenHash);
